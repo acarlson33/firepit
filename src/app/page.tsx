@@ -1,0 +1,24 @@
+"use client";
+
+export default function Home() {
+  return (
+    <div className="container mx-auto max-w-3xl px-4 py-2">
+      <div className="grid gap-6">
+        <section className="rounded-lg border p-4">
+          <h2 className="mb-2 font-medium">API Status</h2>
+          <p className="text-muted-foreground text-sm">
+            Configure your Appwrite env, then head to Chat.
+          </p>
+          <div className="mt-3 flex gap-3">
+            <a className="underline" href="/chat">
+              Open Chat
+            </a>
+            <a className="underline" href="/login">
+              Login / Register
+            </a>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

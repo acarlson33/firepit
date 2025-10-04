@@ -1,0 +1,107 @@
+import { ID, Query } from "appwrite";
+
+import {
+  getBrowserDatabases,
+  getEnvConfig,
+  materializePermissions,
+  perms,
+} from "./appwrite-core";
+
+function getDatabases() {
+  return getBrowserDatabases();
+}
+
+const env = getEnvConfig();
+const DATABASE_ID = env.databaseId;
+const AUDIT_COLLECTION_ID = env.collections.audit || undefined;
+
+export type AuditEvent = {
+  $id: string;
+  action: string;
+  targetId: string;
+  actorId: string;
+  $createdAt: string;
+  meta?: Record<string, unknown>;
+};
+
+export async function recordAudit(
+  action: string,
+  targetId: string,
+  actorId: string,
+  meta?: Record<string, unknown>
+) {
+  if (!AUDIT_COLLECTION_ID) {
+    return;
+  }
+  try {
+    const adminTeamId = env.teams.adminTeamId;
+    const permissionStrings = adminTeamId
+      ? [
+          // reuse perms.message for shape then filter to read only for audit visibility
+          ...perms.message(actorId, {
+            admin: adminTeamId,
+            mod: env.teams.moderatorTeamId,
+          }),
+        ].filter((p) => p.startsWith("read("))
+      : perms.message(actorId, { mod: env.teams.moderatorTeamId });
+    const permissions = materializePermissions(permissionStrings);
+    await getDatabases().createDocument({
+      databaseId: DATABASE_ID,
+      collectionId: AUDIT_COLLECTION_ID,
+      documentId: ID.unique(),
+      data: { action, targetId, actorId, meta },
+      permissions,
+    });
+  } catch {
+    // ignore audit failures
+  }
+}
+
+export type ListAuditOpts = {
+  limit?: number;
+  cursorAfter?: string;
+  action?: string;
+  actorId?: string;
+  targetId?: string;
+};
+
+export async function listAuditEvents(opts: ListAuditOpts = {}) {
+  if (!AUDIT_COLLECTION_ID) {
+    return { items: [], nextCursor: null as string | null };
+  }
+  const defaultAuditLimit = 50;
+  const limit = opts.limit || defaultAuditLimit;
+  const queries: string[] = [Query.limit(limit), Query.orderDesc("$createdAt")];
+  if (opts.cursorAfter) {
+    queries.push(Query.cursorAfter(opts.cursorAfter));
+  }
+  if (opts.action) {
+    queries.push(Query.equal("action", opts.action));
+  }
+  if (opts.actorId) {
+    queries.push(Query.equal("actorId", opts.actorId));
+  }
+  if (opts.targetId) {
+    queries.push(Query.equal("targetId", opts.targetId));
+  }
+  const res = await getDatabases().listDocuments({
+    databaseId: DATABASE_ID,
+    collectionId: AUDIT_COLLECTION_ID,
+    queries,
+  });
+  const items = res.documents.map((d) => ({
+    $id: String((d as Record<string, unknown>).$id),
+    action: String((d as Record<string, unknown>).action),
+    targetId: String((d as Record<string, unknown>).targetId),
+    actorId: String((d as Record<string, unknown>).actorId),
+    $createdAt: String((d as Record<string, unknown>).$createdAt),
+    meta: (d as Record<string, unknown>).meta as
+      | Record<string, unknown>
+      | undefined,
+  }));
+  const last = items.at(-1);
+  return {
+    items,
+    nextCursor: items.length === limit && last ? last.$id : null,
+  };
+}
