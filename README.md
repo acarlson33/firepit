@@ -5,11 +5,11 @@
 The original idea was for an open source "extension" of sorts to discord, since then it has expanded in scope to be it's own project. Functions like a discord clone with some added features.
 
 ## Features
-- **server support** - support for servers like on discord
-- **channel support** - support for channels like on discord
-- **user profiles and status support** - missing external integration, but support for in app statuses and profiles
+- **Server support** - support for servers like on discord
+- **Channel support** - support for channels like on discord
+- **User profiles and status support** - missing external integration, but support for in app statuses and profiles
 - **Moderation** - Instance wide moderation and administration 
-- **individual server moderation** - not currently supported, but will come in a later update with roles
+- **Individual server moderation** - not currently supported, but will come in a later update with roles
 
 ## Codebase Features
 
