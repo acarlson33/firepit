@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "firepit - QPC",
+  title: "firepit",
   description: "A better chat experience",
 };
 
