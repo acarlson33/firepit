@@ -19,6 +19,8 @@ import {
 	createChannelAction,
 	listServersAction,
 	listChannelsAction,
+	deleteServerAction,
+	deleteChannelAction,
 } from "./server-actions";
 
 type Server = {
@@ -156,6 +158,55 @@ export function ServerManagement({
 		}
 	};
 
+	const handleDeleteServer = async (serverId: string, serverName: string) => {
+		if (!confirm(`Are you sure you want to delete "${serverName}"? This will also delete all its channels.`)) {
+			return;
+		}
+
+		try {
+			const result = await deleteServerAction(serverId);
+			if (result.success) {
+				toast.success("Server deleted successfully");
+				// Clear selection if deleted server was selected
+				if (selectedServerId === serverId) {
+					setSelectedServerId("");
+					setChannels([]);
+				}
+				// Reload servers
+				await loadServers();
+			} else {
+				toast.error(result.error);
+			}
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to delete server"
+			);
+		}
+	};
+
+	const handleDeleteChannel = async (channelId: string, channelName: string) => {
+		if (!confirm(`Are you sure you want to delete "#${channelName}"?`)) {
+			return;
+		}
+
+		try {
+			const result = await deleteChannelAction(channelId);
+			if (result.success) {
+				toast.success("Channel deleted successfully");
+				// Reload channels for current server
+				if (selectedServerId) {
+					await loadChannels(selectedServerId);
+				}
+			} else {
+				toast.error(result.error);
+			}
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to delete channel"
+			);
+		}
+	};
+
 	return (
 		<section className="grid gap-6 md:grid-cols-2">
 			{/* Create Server (Admin Only) */}
@@ -201,25 +252,35 @@ export function ServerManagement({
 									{servers.map((server) => (
 										<div
 											key={server.$id}
-											className="cursor-pointer rounded px-2 py-1 text-sm transition-colors hover:bg-muted"
-											role="button"
-											tabIndex={0}
-											onClick={() => setSelectedServerId(server.$id)}
-											onKeyDown={(e) => {
-												if (e.key === "Enter" || e.key === " ") {
-													setSelectedServerId(server.$id);
-												}
-											}}
+											className="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-muted"
 										>
-											<span
-												className={
-													selectedServerId === server.$id
-														? "font-semibold"
-														: ""
-												}
+											<button
+												className="flex-1 cursor-pointer text-left"
+												type="button"
+												onClick={() => setSelectedServerId(server.$id)}
 											>
-												{server.name}
-											</span>
+												<span
+													className={
+														selectedServerId === server.$id
+															? "font-semibold"
+															: ""
+													}
+												>
+													{server.name}
+												</span>
+											</button>
+											<Button
+												aria-label={`Delete ${server.name}`}
+												size="sm"
+												type="button"
+												variant="ghost"
+												onClick={(e) => {
+													e.stopPropagation();
+													void handleDeleteServer(server.$id, server.name);
+												}}
+											>
+												✕
+											</Button>
 										</div>
 									))}
 								</div>
@@ -309,9 +370,18 @@ export function ServerManagement({
 											{channels.map((channel) => (
 												<div
 													key={channel.$id}
-													className="rounded px-2 py-1 text-sm"
+													className="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm"
 												>
-													# {channel.name}
+													<span># {channel.name}</span>
+													<Button
+														aria-label={`Delete ${channel.name}`}
+														size="sm"
+														type="button"
+														variant="ghost"
+														onClick={() => void handleDeleteChannel(channel.$id, channel.name)}
+													>
+														✕
+													</Button>
 												</div>
 											))}
 										</div>

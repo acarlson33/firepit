@@ -2,69 +2,14 @@ import { redirect } from "next/navigation";
 import {
 	getBasicStats,
 	listAllChannelsPage,
+	listAllServersPage,
 	listGlobalMessages,
 } from "@/lib/appwrite-admin";
 import { getUserRoleTags } from "@/lib/appwrite-roles";
 import { requireModerator } from "@/lib/auth-server";
-import { actionHardDelete, actionRestore, actionSoftDelete } from "./actions";
+import { ModerationMessageList } from "./ModerationMessageList";
 
 // server component file; no client side hooks required
-
-// Helper action buttons (server component: form actions) - using progressive enhancement pattern.
-function ActionButtons({
-	message,
-	canHardDelete,
-}: {
-	message: { $id: string; removedAt?: string };
-	canHardDelete: boolean;
-}) {
-	const removed = Boolean(message.removedAt);
-	return (
-		<div className="flex gap-2 text-xs">
-			<form
-				action={async () => {
-					if (!removed) {
-						await actionSoftDelete(message.$id);
-					}
-				}}
-			>
-				<button
-					className="underline disabled:opacity-40"
-					disabled={removed}
-					type="submit"
-				>
-					Remove
-				</button>
-			</form>
-			<form
-				action={async () => {
-					if (removed) {
-						await actionRestore(message.$id);
-					}
-				}}
-			>
-				<button
-					className="underline disabled:opacity-40"
-					disabled={!removed}
-					type="submit"
-				>
-					Restore
-				</button>
-			</form>
-			{canHardDelete && (
-				<form
-					action={async () => {
-						await actionHardDelete(message.$id);
-					}}
-				>
-					<button className="text-destructive underline" type="submit">
-						Hard
-					</button>
-				</form>
-			)}
-		</div>
-	);
-}
 
 type ModerationSearchParams = {
 	limit: number;
@@ -128,6 +73,25 @@ function parseModerationParams(
 }
 
 const CHANNEL_PAGE_SCAN_LIMIT = 3; // safety cap on pages
+const SERVER_PAGE_SCAN_LIMIT = 3; // safety cap on pages
+
+async function getAllServers() {
+	const collected: { $id: string; name: string }[] = [];
+	let cursor: string | undefined;
+	const pageLimit = 100;
+	for (let i = 0; i < SERVER_PAGE_SCAN_LIMIT; i += 1) {
+		const page = await listAllServersPage(pageLimit, cursor);
+		collected.push(
+			...page.items.map((s) => ({ $id: s.$id, name: s.name || "Unnamed Server" })),
+		);
+		if (!page.nextCursor) {
+			break;
+		}
+		cursor = page.nextCursor;
+	}
+	return collected;
+}
+
 async function getServerChannels(serverId: string | undefined) {
 	if (!serverId) {
 		return [] as { $id: string; name: string }[];
@@ -191,74 +155,16 @@ type ModerationMessage = {
 	removedBy?: string;
 	serverId?: string;
 	channelId?: string;
-	content?: string;
+	text?: string;
 	userId?: string;
 };
 
-function MessageRow({
-	m,
-	isAdmin,
-	authorBadges,
-	removerBadges,
-}: {
-	m: ModerationMessage;
-	isAdmin: boolean;
-	authorBadges: string[];
-	removerBadges: string[];
+export default async function ModerationPage(props: {
+	searchParams?: Promise<Record<string, string | string[]>>;
 }) {
-	const removed = Boolean(m.removedAt);
-	return (
-		<div
-			className={`flex flex-col gap-1 p-3 text-sm ${removed ? "opacity-60" : ""}`}
-		>
-			<div className="flex items-start justify-between gap-4">
-				<div className="flex-1 break-words">
-					<p className="font-medium text-muted-foreground text-xs">
-						{m.serverId} / {m.channelId}
-					</p>
-					<p>{m.content}</p>
-					{removed && m.removedAt && (
-						<span className="mt-1 inline-block rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
-							Removed
-						</span>
-					)}
-				</div>
-				<ActionButtons canHardDelete={isAdmin} message={m} />
-			</div>
-			<div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-				<span>ID: {m.$id}</span>
-				<span>User: {m.userId}</span>
-				{authorBadges.map((b) => (
-					<span className="rounded bg-secondary px-1 py-0.5" key={b}>
-						{b}
-					</span>
-				))}
-				{removed && m.removedAt && (
-					<span>Removed: {new Date(m.removedAt).toLocaleString()}</span>
-				)}
-				{removed && m.removedBy && (
-					<span>
-						Removed by: {m.removedBy}{" "}
-						{removerBadges.map((b) => (
-							<span className="ml-1 rounded bg-primary/10 px-1 py-0.5" key={b}>
-								{b}
-							</span>
-						))}
-					</span>
-				)}
-				{isAdmin && (
-					<span className="rounded bg-primary/10 px-1 py-0.5">admin view</span>
-				)}
-			</div>
-		</div>
-	);
-}
-
-export default async function ModerationPage({
-	searchParams,
-}: {
-	searchParams?: Record<string, string | string[]>;
-}) {
+	// Await searchParams as required by Next.js 15
+	const searchParams = await props.searchParams;
+	
 	// Middleware ensures auth; this double-checks moderator role
 	const { roles } = await requireModerator().catch(() => {
 		redirect("/");
@@ -274,13 +180,17 @@ export default async function ModerationPage({
 		<main className="mx-auto max-w-5xl space-y-6 p-6">
 			<Header />
 			<StatsGrid stats={data.stats} />
-			<FilterForm params={params} serverChannels={data.channels} />
+			<FilterForm 
+				params={params} 
+				serverChannels={data.channels}
+				servers={data.servers}
+			/>
 			<MessagesList
 				badgeMap={badgeMap}
 				documents={documents}
-				isAdmin={isAdmin}
 				nextCursor={nextCursor}
 				params={params}
+				isAdmin={isAdmin}
 			/>
 		</main>
 	);
@@ -290,12 +200,13 @@ async function fetchModerationData(
 	fetchMsgInput: ReturnType<typeof buildFetchInput>,
 	serverFilter?: string,
 ) {
-	const [messages, stats, channels] = await Promise.all([
+	const [messages, stats, channels, servers] = await Promise.all([
 		listGlobalMessages(fetchMsgInput),
 		getBasicStats(),
 		getServerChannels(serverFilter),
+		getAllServers(),
 	]);
-	return { messages, stats, channels };
+	return { messages, stats, channels, servers };
 }
 
 function Header() {
@@ -303,7 +214,7 @@ function Header() {
 		<header className="space-y-1">
 			<h1 className="font-semibold text-2xl">Moderation Panel</h1>
 			<p className="text-muted-foreground text-sm">
-				Review and manage messages across servers & channels.
+				Review and manage messages across servers & channels. Use the filters below to narrow down your search - select a server from the dropdown to see its channels.
 			</p>
 		</header>
 	);
@@ -335,98 +246,178 @@ function StatBox({ label, value }: { label: string; value: number }) {
 function FilterForm({
 	params,
 	serverChannels,
+	servers,
 }: {
 	params: ModerationSearchParams;
 	serverChannels: { $id: string; name: string }[];
+	servers: { $id: string; name: string }[];
 }) {
 	const multiChannels = serverChannels.length > 0;
 	return (
-		<section>
-			<form className="grid items-end gap-4 sm:grid-cols-12" method="get">
-				<TextInput
-					defaultValue={params.textFilter}
-					id="q"
-					label="Text"
-					name="q"
-					placeholder="search text"
-				/>
-				<TextInput
-					defaultValue={params.userFilter}
-					id="userId"
-					label="User ID"
-					name="userId"
-					placeholder="user"
-				/>
-				<TextInput
-					defaultValue={params.serverFilter}
-					id="serverId"
-					label="Server ID"
-					name="serverId"
-					placeholder="server"
-				/>
-				{multiChannels ? (
-					<div className="flex flex-col">
-						<label className="font-medium text-xs" htmlFor="channelIds">
-							Channels (multi)
+		<section className="rounded-lg border bg-card p-6">
+			<h2 className="mb-4 font-semibold text-lg">Filters</h2>
+			<form className="space-y-4" method="get">
+				{/* Search and User Filter Row */}
+				<div className="grid gap-4 md:grid-cols-2">
+					<div className="space-y-2">
+						<label className="font-medium text-sm" htmlFor="q">
+							Search Message Content
 						</label>
-						<select
-							className="min-h-[2.5rem] rounded border px-2 py-1 text-xs"
-							defaultValue={params.channelIdsFilter || []}
-							id="channelIds"
-							multiple
-							name="channelIds"
-						>
-							{serverChannels.map((c) => (
-								<option key={c.$id} value={c.$id}>
-									{c.name} ({c.$id})
-								</option>
-							))}
-						</select>
+						<input
+							className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							defaultValue={params.textFilter || ""}
+							id="q"
+							name="q"
+							placeholder="Search messages..."
+							type="text"
+						/>
 					</div>
-				) : (
-					<TextInput
-						defaultValue={params.channelFilter}
-						id="channelId"
-						label="Channel ID"
-						name="channelId"
-						placeholder="channel"
-					/>
-				)}
-				<CheckboxInput
-					defaultChecked={params.includeRemoved}
-					id="includeRemoved"
-					label="Include Removed"
-				/>
-				<CheckboxInput
-					defaultChecked={params.onlyRemoved}
-					id="onlyRemoved"
-					label="Only Removed"
-				/>
-				<CheckboxInput
-					defaultChecked={params.onlyMissingServerId}
-					id="onlyMissingServerId"
-					label="Missing serverId"
-				/>
-				<NumberInput
-					defaultValue={params.limit}
-					id="limit"
-					label="Limit"
-					name="limit"
-				/>
-				<div>
+					<div className="space-y-2">
+						<label className="font-medium text-sm" htmlFor="userId">
+							User ID <span className="text-muted-foreground">(optional)</span>
+						</label>
+						<input
+							className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							defaultValue={params.userFilter || ""}
+							id="userId"
+							name="userId"
+							placeholder="Filter by user..."
+							type="text"
+						/>
+					</div>
+				</div>
+
+				{/* Server and Channel Row */}
+				<div className="grid gap-4 md:grid-cols-2">
+					{servers.length > 0 ? (
+						<div className="space-y-2">
+							<label className="font-medium text-sm" htmlFor="serverId">
+								Server
+							</label>
+							<select
+								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								defaultValue={params.serverFilter || ""}
+								id="serverId"
+								name="serverId"
+							>
+								<option value="">All Servers</option>
+								{servers.map((s) => (
+									<option key={s.$id} value={s.$id}>
+										{s.name}
+									</option>
+								))}
+							</select>
+						</div>
+					) : (
+						<div className="space-y-2">
+							<label className="font-medium text-sm" htmlFor="serverId">
+								Server ID <span className="text-muted-foreground">(optional)</span>
+							</label>
+							<input
+								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								defaultValue={params.serverFilter || ""}
+								id="serverId"
+								name="serverId"
+								placeholder="Enter server ID..."
+								type="text"
+							/>
+						</div>
+					)}
+					{multiChannels ? (
+						<div className="space-y-2">
+							<label className="font-medium text-sm" htmlFor="channelIds">
+								Channels <span className="text-muted-foreground text-xs">(Ctrl/Cmd+Click for multiple)</span>
+							</label>
+							<select
+								className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								defaultValue={params.channelIdsFilter || []}
+								id="channelIds"
+								multiple
+								name="channelIds"
+								size={4}
+								title="Hold Ctrl/Cmd to select multiple channels"
+							>
+								{serverChannels.map((c) => (
+									<option key={c.$id} value={c.$id}>
+										{c.name}
+									</option>
+								))}
+							</select>
+						</div>
+					) : (
+						<div className="space-y-2">
+							<label className="font-medium text-sm" htmlFor="channelId">
+								Channel ID <span className="text-muted-foreground">(optional)</span>
+							</label>
+							<input
+								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								defaultValue={params.channelFilter || ""}
+								id="channelId"
+								name="channelId"
+								placeholder="Enter channel ID..."
+								type="text"
+							/>
+						</div>
+					)}
+				</div>
+
+				{/* Filter Options Row */}
+				<div className="flex flex-wrap items-center gap-6">
+					<div className="flex items-center space-x-2">
+						<input
+							className="h-4 w-4 rounded border-input ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							defaultChecked={params.includeRemoved}
+							id="includeRemoved"
+							name="includeRemoved"
+							type="checkbox"
+							value="true"
+						/>
+						<label className="text-sm leading-none" htmlFor="includeRemoved">
+							Include Removed Messages
+						</label>
+					</div>
+					<div className="flex items-center space-x-2">
+						<input
+							className="h-4 w-4 rounded border-input ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							defaultChecked={params.onlyRemoved}
+							id="onlyRemoved"
+							name="onlyRemoved"
+							type="checkbox"
+							value="true"
+						/>
+						<label className="text-sm leading-none" htmlFor="onlyRemoved">
+							Only Removed Messages
+						</label>
+					</div>
+					<div className="space-y-2">
+						<label className="font-medium text-sm" htmlFor="limit">
+							Results Limit
+						</label>
+						<input
+							className="w-20 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							defaultValue={params.limit}
+							id="limit"
+							max={100}
+							min={1}
+							name="limit"
+							type="number"
+						/>
+					</div>
+				</div>
+
+				{/* Action Buttons */}
+				<div className="flex gap-3 pt-2">
 					<button
-						className="mt-4 rounded border px-3 py-1 text-sm"
+						className="rounded-md bg-primary px-4 py-2 text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						type="submit"
 					>
-						Apply
+						Apply Filters
 					</button>
-				</div>
-				<div>
 					<a
-						className="mt-4 inline-block rounded border px-3 py-1 text-sm"
+						className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						href="/moderation"
 					>
-						Clear
+						Clear All
 					</a>
 				</div>
 			</form>
@@ -434,118 +425,27 @@ function FilterForm({
 	);
 }
 
-function TextInput({
-	id,
-	label,
-	name,
-	defaultValue,
-	placeholder,
-}: {
-	id: string;
-	label: string;
-	name: string;
-	defaultValue?: string;
-	placeholder?: string;
-}) {
-	return (
-		<div className="flex flex-col">
-			<label className="font-medium text-xs" htmlFor={id}>
-				{label}
-			</label>
-			<input
-				className="rounded border px-2 py-1 text-sm"
-				defaultValue={defaultValue || ""}
-				id={id}
-				name={name}
-				placeholder={placeholder}
-			/>
-		</div>
-	);
-}
-
-function NumberInput({
-	id,
-	label,
-	name,
-	defaultValue,
-}: {
-	id: string;
-	label: string;
-	name: string;
-	defaultValue: number;
-}) {
-	return (
-		<div>
-			<label className="font-medium text-xs" htmlFor={id}>
-				{label}
-			</label>
-			<input
-				className="w-20 rounded border px-2 py-1 text-sm"
-				defaultValue={defaultValue}
-				id={id}
-				max={100}
-				min={1}
-				name={name}
-				type="number"
-			/>
-		</div>
-	);
-}
-
-function CheckboxInput({
-	id,
-	label,
-	defaultChecked,
-}: {
-	id: string;
-	label: string;
-	defaultChecked?: boolean;
-}) {
-	return (
-		<div className="flex items-center gap-2">
-			<input
-				className="h-4 w-4"
-				defaultChecked={defaultChecked}
-				id={id}
-				name={id}
-				type="checkbox"
-			/>
-			<label className="text-xs" htmlFor={id}>
-				{label}
-			</label>
-		</div>
-	);
-}
-
 function MessagesList({
 	documents,
 	badgeMap,
-	isAdmin,
 	params,
 	nextCursor,
+	isAdmin,
 }: {
 	documents: ModerationMessage[];
 	badgeMap: Record<string, string[]>;
-	isAdmin: boolean;
 	params: ModerationSearchParams;
 	nextCursor?: string;
+	isAdmin: boolean;
 }) {
 	return (
 		<section className="space-y-4">
-			<div className="divide-y rounded border">
-				{documents.map((m) => (
-					<MessageRow
-						authorBadges={badgeMap[m.userId || ""] || []}
-						isAdmin={isAdmin}
-						key={m.$id}
-						m={m}
-						removerBadges={badgeMap[m.removedBy || ""] || []}
-					/>
-				))}
-				{documents.length === 0 && (
-					<p className="p-4 text-muted-foreground text-sm">No messages.</p>
-				)}
-			</div>
+			<h2 className="font-semibold text-lg">Messages</h2>
+			<ModerationMessageList
+				badgeMap={badgeMap}
+				initialMessages={documents}
+				isAdmin={isAdmin}
+			/>
 			<Pagination nextCursor={nextCursor} params={params} />
 		</section>
 	);
@@ -562,8 +462,7 @@ function Pagination({
 		return null;
 	}
 	return (
-		<div className="flex items-center justify-between">
-			<div />
+		<div className="flex justify-center pt-4">
 			<form method="get">
 				<input name="cursor" type="hidden" value={nextCursor} />
 				<input name="limit" type="hidden" value={params.limit} />
@@ -591,8 +490,11 @@ function Pagination({
 				{params.textFilter && (
 					<input name="q" type="hidden" value={params.textFilter} />
 				)}
-				<button className="rounded border px-3 py-1 text-sm" type="submit">
-					Next
+				<button 
+					className="rounded-md border border-input bg-background px-6 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" 
+					type="submit"
+				>
+					Load More Messages
 				</button>
 			</form>
 		</div>

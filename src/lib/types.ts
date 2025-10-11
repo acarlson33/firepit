@@ -15,6 +15,11 @@ export type Message = {
   editedAt?: string;
   removedAt?: string;
   removedBy?: string;
+  // Profile information (enriched from profiles collection)
+  displayName?: string;
+  pronouns?: string;
+  avatarFileId?: string;
+  avatarUrl?: string;
 };
 
 export type Server = {
@@ -43,4 +48,48 @@ export type Membership = {
   userId: string;
   role: "owner" | "member";
   $createdAt: string;
+};
+
+export type Conversation = {
+  $id: string;
+  participants: string[]; // Array of user IDs
+  lastMessageAt?: string;
+  $createdAt: string;
+  // Enriched data
+  otherUser?: {
+    userId: string;
+    displayName?: string;
+    avatarUrl?: string;
+    status?: string;
+  };
+  lastMessage?: {
+    text: string;
+    senderId: string;
+    createdAt: string;
+  };
+};
+
+export type DirectMessage = {
+  $id: string;
+  conversationId: string;
+  senderId: string;
+  receiverId: string;
+  text: string;
+  $createdAt: string;
+  editedAt?: string;
+  removedAt?: string;
+  removedBy?: string;
+  // Enriched profile data
+  senderDisplayName?: string;
+  senderAvatarUrl?: string;
+  senderPronouns?: string;
+};
+
+export type UserStatus = {
+  $id: string;
+  userId: string;
+  status: "online" | "away" | "busy" | "offline";
+  customMessage?: string;
+  lastSeenAt: string;
+  $updatedAt?: string;
 };

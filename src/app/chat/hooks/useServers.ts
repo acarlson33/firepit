@@ -20,6 +20,7 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const filterAllowedServers = useCallback(
     (all: Server[], mems: Membership[]): Server[] => {
@@ -37,10 +38,12 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   // initial load
   useEffect(() => {
     if (!userId) {
+      setInitialLoading(false);
       return;
     }
     (async () => {
       try {
+        setInitialLoading(true);
         const serverReq = fetch("/api/servers?limit=25")
           .then((res) => res.json())
           .then(
@@ -63,6 +66,8 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
         toast.error(
           err instanceof Error ? err.message : "Failed to load servers"
         );
+      } finally {
+        setInitialLoading(false);
       }
     })().catch(() => {
       /* error already surfaced */
@@ -135,6 +140,7 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     setSelectedServer,
     cursor,
     loading,
+    initialLoading,
     loadMore,
     create,
     join,

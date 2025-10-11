@@ -1,11 +1,12 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { recordAudit } from "../../lib/appwrite-audit";
 import {
-	deleteMessage,
-	restoreMessage,
-	softDeleteMessage,
-} from "../../lib/appwrite-messages";
+	adminDeleteMessage,
+	adminRestoreMessage,
+	adminSoftDeleteMessage,
+} from "../../lib/appwrite-admin";
 import { requireModerator } from "../../lib/auth-server";
 import { recordMetric, recordTiming } from "../../lib/monitoring";
 
@@ -43,7 +44,7 @@ export async function actionSoftDelete(messageId: string) {
 	const { userId } = await assertModerator();
 	checkRate(userId, "soft_delete", messageId);
 	const start = Date.now();
-	await softDeleteMessage(messageId, userId);
+	await adminSoftDeleteMessage(messageId, userId);
 	await recordAudit("soft_delete", messageId, userId, {
 		removedAt: new Date().toISOString(),
 	});
@@ -55,7 +56,7 @@ export async function actionRestore(messageId: string) {
 	const { userId } = await assertModerator();
 	checkRate(userId, "restore", messageId);
 	const start = Date.now();
-	await restoreMessage(messageId);
+	await adminRestoreMessage(messageId);
 	await recordAudit("restore", messageId, userId, {
 		restoredAt: new Date().toISOString(),
 	});
@@ -66,15 +67,43 @@ export async function actionRestore(messageId: string) {
 export async function actionHardDelete(messageId: string) {
 	const { user, roles } = await requireModerator();
 	if (!roles.isAdmin) {
-		throw new Error("Forbidden");
+		throw new Error("Forbidden: Only admins can permanently delete messages");
 	}
 	const userId = user.$id;
 	checkRate(userId, "hard_delete", messageId);
 	const start = Date.now();
-	await deleteMessage(messageId);
+	await adminDeleteMessage(messageId);
 	await recordAudit("hard_delete", messageId, userId, {
 		deletedAt: new Date().toISOString(),
 	});
 	recordMetric("moderation.hard_delete.count");
 	recordTiming("moderation.hard_delete.ms", start, { userId });
+}
+
+// Wrapper actions for form binding
+export async function actionSoftDeleteBound(formData: FormData) {
+	const messageId = formData.get("messageId") as string;
+	if (!messageId) {
+		throw new Error("Missing messageId");
+	}
+	await actionSoftDelete(messageId);
+	revalidatePath("/moderation");
+}
+
+export async function actionRestoreBound(formData: FormData) {
+	const messageId = formData.get("messageId") as string;
+	if (!messageId) {
+		throw new Error("Missing messageId");
+	}
+	await actionRestore(messageId);
+	revalidatePath("/moderation");
+}
+
+export async function actionHardDeleteBound(formData: FormData) {
+	const messageId = formData.get("messageId") as string;
+	if (!messageId) {
+		throw new Error("Missing messageId");
+	}
+	await actionHardDelete(messageId);
+	revalidatePath("/moderation");
 }

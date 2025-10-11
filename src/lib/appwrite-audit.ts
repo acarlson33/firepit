@@ -6,6 +6,7 @@ import {
   materializePermissions,
   perms,
 } from "./appwrite-core";
+import { getAdminClient } from "./appwrite-admin";
 
 function getDatabases() {
   return getBrowserDatabases();
@@ -90,6 +91,56 @@ export async function listAuditEvents(opts: ListAuditOpts = {}) {
     queries,
   });
   const items = res.documents.map((d) => ({
+    $id: String((d as Record<string, unknown>).$id),
+    action: String((d as Record<string, unknown>).action),
+    targetId: String((d as Record<string, unknown>).targetId),
+    actorId: String((d as Record<string, unknown>).actorId),
+    $createdAt: String((d as Record<string, unknown>).$createdAt),
+    meta: (d as Record<string, unknown>).meta as
+      | Record<string, unknown>
+      | undefined,
+  }));
+  const last = items.at(-1);
+  return {
+    items,
+    nextCursor: items.length === limit && last ? last.$id : null,
+  };
+}
+
+/**
+ * Admin version of listAuditEvents that uses server SDK with admin privileges
+ * Use this for admin-only pages to bypass permission checks
+ */
+export async function adminListAuditEvents(opts: ListAuditOpts = {}) {
+  if (!AUDIT_COLLECTION_ID) {
+    return { items: [], nextCursor: null as string | null };
+  }
+  const defaultAuditLimit = 50;
+  const limit = opts.limit || defaultAuditLimit;
+  const queries: string[] = [Query.limit(limit), Query.orderDesc("$createdAt")];
+  if (opts.cursorAfter) {
+    queries.push(Query.cursorAfter(opts.cursorAfter));
+  }
+  if (opts.action) {
+    queries.push(Query.equal("action", opts.action));
+  }
+  if (opts.actorId) {
+    queries.push(Query.equal("actorId", opts.actorId));
+  }
+  if (opts.targetId) {
+    queries.push(Query.equal("targetId", opts.targetId));
+  }
+  
+  // Use admin client to bypass permission checks
+  const { databases } = getAdminClient();
+  const res = await databases.listDocuments(
+    DATABASE_ID,
+    AUDIT_COLLECTION_ID,
+    queries,
+  );
+  
+  const rawDocuments = (res as unknown as { documents?: unknown[] }).documents || [];
+  const items = rawDocuments.map((d) => ({
     $id: String((d as Record<string, unknown>).$id),
     action: String((d as Record<string, unknown>).action),
     targetId: String((d as Record<string, unknown>).targetId),

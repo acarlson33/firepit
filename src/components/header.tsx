@@ -4,42 +4,76 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { ModeToggle } from "./mode-toggle";
+import { StatusSelector } from "./status-selector";
 import { Button } from "./ui/button";
 
-import { getAccount } from "@/lib/appwrite";
 import { logoutAction } from "@/app/(auth)/login/actions";
+import { getUserStatus, setUserStatus } from "@/lib/appwrite-status";
+import type { UserStatus } from "@/lib/types";
 
-type UserRoles = {
-  isAdmin: boolean;
-  isModerator: boolean;
+type UserData = {
+  userId: string;
+  name: string;
+  email: string;
+  roles: {
+    isAdmin: boolean;
+    isModerator: boolean;
+  };
 };
 
 export default function Header() {
   const router = useRouter();
-  const [isAuthed, setAuthed] = useState(false);
-  const [roles, setRoles] = useState<UserRoles | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
 
   useEffect(() => {
-    const acc = getAccount();
-    acc
-      .get()
-      .then(() => {
-        setAuthed(true);
-        // Fetch user roles
-        fetch("/api/me")
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.roles) {
-              setRoles(data.roles);
-            }
-          })
-          .catch(() => {
-            // Ignore errors
-          });
+    // Fetch user data from server endpoint (SSR-compatible)
+    fetch("/api/me")
+      .then((res) => {
+        if (res.ok) {
+          return res.json();
+        }
+        throw new Error("Not authenticated");
       })
-      .catch(() => setAuthed(false));
+      .then((data) => {
+        setUserData(data);
+        // Fetch user status
+        if (data.userId) {
+          void getUserStatus(data.userId).then((status) => {
+            if (status) {
+              setUserStatusState(status);
+            }
+          });
+        }
+      })
+      .catch(() => {
+        setUserData(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
+
+  async function handleStatusChange(status: "online" | "away" | "busy" | "offline", customMessage?: string) {
+    if (!userData?.userId) {
+      return;
+    }
+    
+    try {
+      await setUserStatus(userData.userId, status, customMessage);
+      const newStatus = await getUserStatus(userData.userId);
+      if (newStatus) {
+        setUserStatusState(newStatus);
+      }
+    } catch (err) {
+      // Error handled silently
+    }
+  }
+
+  const isAuthenticated = Boolean(userData);
+  const roles = userData?.roles;
 
   const baseLinks: Array<{ to: string; label: string }> = [
     { to: "/", label: "Home" },
@@ -48,6 +82,7 @@ export default function Header() {
 
   const links: Array<{ to: string; label: string }> = [
     ...baseLinks,
+    ...(isAuthenticated ? [{ to: "/settings", label: "Settings" }] : []),
     ...(roles?.isModerator ? [{ to: "/moderation", label: "Moderation" }] : []),
     ...(roles?.isAdmin ? [{ to: "/admin", label: "Admin" }] : []),
   ];
@@ -57,15 +92,38 @@ export default function Header() {
     setLoggingOut(true);
     try {
       await logoutAction();
-      setAuthed(false);
+      setUserData(null);
       router.push("/");
       router.refresh();
     } catch {
       // Ignore errors, redirect anyway
+      setUserData(null);
       location.href = "/";
     } finally {
       setLoggingOut(false);
     }
+  }
+
+  // Show skeleton while loading initial auth state
+  if (loading) {
+    return (
+      <div>
+        <div className="flex flex-row items-center justify-between px-2 py-1">
+          <nav className="flex gap-4 text-lg">
+            {baseLinks.map((link) => (
+              <Link href={link.to as `/` | `/chat`} key={link.to}>
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="flex items-center gap-2">
+            <div className="h-9 w-20 animate-pulse rounded bg-muted" />
+            <ModeToggle />
+          </div>
+        </div>
+        <hr />
+      </div>
+    );
   }
 
   return (
@@ -79,14 +137,28 @@ export default function Header() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          {isAuthed ? (
-            <form onSubmit={handleLogout}>
-              <Button disabled={loggingOut} type="submit" variant="outline">
-                {loggingOut ? "Logging out..." : "Logout"}
-              </Button>
-            </form>
+          {isAuthenticated && userData ? (
+            <>
+              {userData.name && (
+                <span className="text-muted-foreground text-sm">
+                  {userData.name}
+                </span>
+              )}
+              <StatusSelector
+                currentMessage={userStatus?.customMessage}
+                currentStatus={userStatus?.status || "offline"}
+                onStatusChange={handleStatusChange}
+              />
+              <form onSubmit={handleLogout}>
+                <Button disabled={loggingOut} type="submit" variant="outline">
+                  {loggingOut ? "Logging out..." : "Logout"}
+                </Button>
+              </form>
+            </>
           ) : (
-            <Link href="/login">Login</Link>
+            <Button asChild variant="outline">
+              <Link href="/login">Login</Link>
+            </Button>
           )}
           <ModeToggle />
         </div>

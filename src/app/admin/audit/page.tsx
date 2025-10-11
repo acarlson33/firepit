@@ -1,19 +1,21 @@
 import { redirect } from "next/navigation";
 
-import { listAuditEvents } from "@/lib/appwrite-audit";
+import { adminListAuditEvents } from "@/lib/appwrite-audit";
 import { requireAdmin } from "@/lib/auth-server";
 
 const DEFAULT_AUDIT_LIMIT = 50;
 
-export default async function AuditPage({
-	searchParams,
-}: {
-	searchParams?: Record<string, string | string[]>;
+export default async function AuditPage(props: {
+	searchParams?: Promise<Record<string, string | string[]>>;
 }) {
 	// Middleware ensures auth; this double-checks admin role
 	await requireAdmin().catch(() => {
 		redirect("/");
 	});
+	
+	// Await searchParams as required by Next.js 15
+	const searchParams = await props.searchParams;
+	
 	const limit = Number(searchParams?.limit) || DEFAULT_AUDIT_LIMIT;
 	const cursor =
 		typeof searchParams?.cursor === "string" ? searchParams?.cursor : undefined;
@@ -27,7 +29,7 @@ export default async function AuditPage({
 		typeof searchParams?.targetId === "string"
 			? searchParams?.targetId
 			: undefined;
-	const { items, nextCursor } = await listAuditEvents({
+	const { items, nextCursor } = await adminListAuditEvents({
 		limit,
 		cursorAfter: cursor,
 		action,

@@ -5,12 +5,9 @@ import { toast } from "sonner";
 
 import {
   canSend,
-  deleteMessage,
-  editMessage,
-  listRecentMessages,
-  sendMessage,
   setTyping,
 } from "@/lib/appwrite-messages";
+import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import type { Message } from "@/lib/types";
 
 type UseMessagesOptions = {
@@ -28,7 +25,9 @@ export function useMessages({
 }: UseMessagesOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [oldestCursor, setOldestCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState<boolean>(false);
   const [text, setText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<
     Record<string, { userId: string; userName?: string; updatedAt: string }>
   >({});
@@ -49,11 +48,12 @@ export function useMessages({
     if (!channelId) {
       setMessages([]);
       setOldestCursor(null);
+      setHasMore(false);
       return;
     }
     (async () => {
       try {
-        const initial = await listRecentMessages(
+        const initial = await getEnrichedMessages(
           pageSize,
           undefined,
           channelId
@@ -61,6 +61,10 @@ export function useMessages({
         setMessages(initial);
         if (initial.length) {
           setOldestCursor(initial[0].$id);
+          // If we got a full page, there might be more
+          setHasMore(initial.length === pageSize);
+        } else {
+          setHasMore(false);
         }
       } catch (err) {
         toast.error(
@@ -70,7 +74,7 @@ export function useMessages({
     })().catch(() => {
       /* error already surfaced via toast */
     });
-  }, [channelId]);
+  }, [channelId, pageSize]);
 
   // realtime subscription
   useEffect(() => {
@@ -105,7 +109,7 @@ export function useMessages({
             userId: String(p.userId),
             userName: p.userName as string | undefined,
             text: String(p.text),
-            createdAt: String(p.createdAt),
+            $createdAt: String(p.$createdAt),
             editedAt: p.editedAt as string | undefined,
             channelId: p.channelId as string | undefined,
             removedAt: p.removedAt as string | undefined,
@@ -121,16 +125,22 @@ export function useMessages({
           }
           return true;
         }
-        function applyCreate(base: Message) {
+        async function applyCreate(base: Message) {
+          // Enrich message with profile data before adding to state
+          const { enrichMessageWithProfile } = await import("@/lib/enrich-messages");
+          const enriched = await enrichMessageWithProfile(base);
           setMessages((prev) =>
-            [...prev, base].sort((a, b) =>
-              a.createdAt.localeCompare(b.createdAt)
+            [...prev, enriched].sort((a, b) =>
+              a.$createdAt.localeCompare(b.$createdAt)
             )
           );
         }
-        function applyUpdate(base: Message) {
+        async function applyUpdate(base: Message) {
+          // Enrich message with profile data before updating state
+          const { enrichMessageWithProfile } = await import("@/lib/enrich-messages");
+          const enriched = await enrichMessageWithProfile(base);
           setMessages((prev) =>
-            prev.map((m) => (m.$id === base.$id ? { ...m, ...base } : m))
+            prev.map((m) => (m.$id === enriched.$id ? { ...m, ...enriched } : m))
           );
         }
         function applyDelete(base: Message) {
@@ -138,11 +148,11 @@ export function useMessages({
         }
         function dispatchByEvents(evs: string[], base: Message) {
           if (evs.some((e) => e.endsWith(".create"))) {
-            applyCreate(base);
+            void applyCreate(base);
             return;
           }
           if (evs.some((e) => e.endsWith(".update"))) {
-            applyUpdate(base);
+            void applyUpdate(base);
             return;
           }
           if (evs.some((e) => e.endsWith(".delete"))) {
@@ -181,10 +191,15 @@ export function useMessages({
       return;
     }
     try {
-      const older = await listRecentMessages(pageSize, oldestCursor, channelId);
+      const older = await getEnrichedMessages(pageSize, oldestCursor, channelId);
       if (older.length) {
         setMessages((prev) => [...older, ...prev]);
         setOldestCursor(older[0].$id);
+        // If we got less than a full page, we've reached the end
+        setHasMore(older.length === pageSize);
+      } else {
+        // No more messages
+        setHasMore(false);
       }
     } catch (err) {
       toast.error(
@@ -195,12 +210,29 @@ export function useMessages({
 
   function startEdit(m: Message) {
     setText(m.text);
+    setEditingMessageId(m.$id);
+  }
+
+  function cancelEdit() {
+    setText("");
+    setEditingMessageId(null);
   }
 
   async function applyEdit(target: Message) {
     try {
-      await editMessage(target.$id, text.trim());
+      const response = await fetch(`/api/messages?id=${target.$id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.trim() }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to edit message");
+      }
+
       setText("");
+      setEditingMessageId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Edit failed");
     }
@@ -208,7 +240,14 @@ export function useMessages({
 
   async function remove(id: string) {
     try {
-      await deleteMessage(id);
+      const response = await fetch(`/api/messages?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to delete message");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
     }
@@ -291,33 +330,75 @@ export function useMessages({
     if (!value) {
       return;
     }
+
+    // If editing, find the message and apply edit
+    if (editingMessageId) {
+      const targetMessage = messages.find((m) => m.$id === editingMessageId);
+      if (targetMessage) {
+        await applyEdit(targetMessage);
+      }
+      return;
+    }
+
+    // Otherwise, send a new message
     if (!canSend()) {
       toast.error("You're sending messages too fast");
       return;
     }
     try {
       setText("");
-      await sendMessage({
-        userId,
-        text: value,
-        userName: userName || undefined,
-        channelId,
-        serverId: serverId || undefined,
+      const response = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: value,
+          channelId,
+          serverId: serverId || undefined,
+        }),
       });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to send message");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send");
     }
   }
 
+  // Determine if we should show the "Load Older" button
+  function shouldShowLoadOlder(): boolean {
+    // If no messages, don't show button
+    if (messages.length === 0) {
+      return false;
+    }
+    
+    // If we know there are no more messages, don't show button
+    if (!hasMore) {
+      return false;
+    }
+    
+    // If we have a cursor and there might be more, show the button
+    if (oldestCursor && hasMore) {
+      return true;
+    }
+    
+    return false;
+  }
+
   return {
     messages,
     oldestCursor,
+    hasMore,
     text,
+    editingMessageId,
     typingUsers,
     setTypingUsers,
     listRef,
     loadOlder,
+    shouldShowLoadOlder,
     startEdit,
+    cancelEdit,
     applyEdit,
     remove,
     onChangeText,

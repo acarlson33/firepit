@@ -6,13 +6,19 @@ import {
 	actionSoftDelete,
 } from "../app/moderation/actions";
 
+// Setup environment before any imports
+const env = process.env as Record<string, string>;
+env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
+env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
+env.APPWRITE_API_KEY = "test-api-key";
+
 vi.mock("../lib/appwrite-roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("../lib/appwrite-messages", () => ({
-	softDeleteMessage: vi.fn(),
-	restoreMessage: vi.fn(),
-	deleteMessage: vi.fn(),
-}));
 vi.mock("../lib/appwrite-audit", () => ({ recordAudit: vi.fn() }));
+vi.mock("../lib/appwrite-admin", () => ({
+	adminSoftDeleteMessage: vi.fn(),
+	adminRestoreMessage: vi.fn(),
+	adminDeleteMessage: vi.fn(),
+}));
 vi.mock("../lib/monitoring", () => ({
 	recordMetric: vi.fn(),
 	recordTiming: vi.fn(),
@@ -52,9 +58,11 @@ vi.mock("appwrite", () => {
 });
 
 const { getUserRoles } = await import("../lib/appwrite-roles");
-const { softDeleteMessage, restoreMessage, deleteMessage } = await import(
-	"../lib/appwrite-messages"
-);
+const {
+	adminSoftDeleteMessage,
+	adminRestoreMessage,
+	adminDeleteMessage,
+} = await import("../lib/appwrite-admin");
 const { recordAudit } = await import("../lib/appwrite-audit");
 const { requireModerator } = await import("../lib/auth-server");
 
@@ -74,18 +82,18 @@ beforeEach(async () => {
 describe("moderation actions", () => {
 	it("soft delete records audit + metrics", async () => {
 		await actionSoftDelete("m1");
-		expect(softDeleteMessage).toHaveBeenCalledWith("m1", "moderatorUser");
+		expect(adminSoftDeleteMessage).toHaveBeenCalledWith("m1", "moderatorUser");
 		expect(recordAudit).toHaveBeenCalled();
 	});
 	it("restore records audit", async () => {
 		await actionRestore("m2");
-		expect(restoreMessage).toHaveBeenCalledWith("m2");
+		expect(adminRestoreMessage).toHaveBeenCalledWith("m2");
 		expect(recordAudit).toHaveBeenCalled();
 	});
 	it("hard delete requires admin", async () => {
 		setRole(true, true);
 		await actionHardDelete("m3");
-		expect(deleteMessage).toHaveBeenCalledWith("m3");
+		expect(adminDeleteMessage).toHaveBeenCalledWith("m3");
 	});
 	it("hard delete forbidden for non-admin", async () => {
 		setRole(true, false);

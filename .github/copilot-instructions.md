@@ -317,12 +317,6 @@ Ultracite enforces strict type safety, accessibility standards, and consistent c
 - Make sure the assertion function, like expect, is placed inside an it() function call.
 - Don't use disabled tests.
 
-## Common Tasks
-
-- `npx ultracite init` - Initialize Ultracite in your project
-- `npx ultracite fix` - Format and fix code automatically
-- `npx ultracite check` - Check for issues without fixing
-
 ## Example: Error Handling
 
 ```typescript

@@ -207,3 +207,69 @@ export async function listChannelsAction(
 		return { channels: [] };
 	}
 }
+
+export type DeleteResult =
+	| { success: true }
+	| { success: false; error: string };
+
+/**
+ * Delete a server (Admin only)
+ */
+export async function deleteServerAction(
+	serverId: string
+): Promise<DeleteResult> {
+	try {
+		await requireAdmin();
+
+		if (!serverId) {
+			return { success: false, error: "Server ID is required" };
+		}
+
+		const { databases } = getServerClient();
+
+		// Delete the server
+		await databases.deleteDocument(
+			DATABASE_ID,
+			SERVERS_COLLECTION_ID,
+			serverId
+		);
+
+		return { success: true };
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : "Failed to delete server",
+		};
+	}
+}
+
+/**
+ * Delete a channel (Admin only)
+ */
+export async function deleteChannelAction(
+	channelId: string
+): Promise<DeleteResult> {
+	try {
+		await requireAdmin();
+
+		if (!channelId) {
+			return { success: false, error: "Channel ID is required" };
+		}
+
+		const { databases } = getServerClient();
+
+		// Delete the channel
+		await databases.deleteDocument(
+			DATABASE_ID,
+			CHANNELS_COLLECTION_ID,
+			channelId
+		);
+
+		return { success: true };
+	} catch (error) {
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : "Failed to delete channel",
+		};
+	}
+}

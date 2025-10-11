@@ -1,6 +1,4 @@
-// (No direct Appwrite imports needed beyond types)
-
-import type { Databases, Teams } from "appwrite";
+import { Query, Storage } from "node-appwrite";
 
 import { getEnvConfig, getServerClient } from "./appwrite-core";
 
@@ -11,6 +9,47 @@ const MESSAGES_COLLECTION = "messages";
 
 type PageResult<T> = { items: T[]; nextCursor?: string | null };
 
+export async function listAllServersPage(
+  limit: number,
+  cursor?: string
+): Promise<PageResult<{ $id: string; name?: string }>> {
+  const { databases } = getAdminClient();
+  const dbId = getEnvConfig().databaseId;
+  const queries: string[] = [
+    Query.limit(limit),
+    Query.orderAsc("$createdAt"),
+  ];
+  if (cursor) {
+    queries.push(Query.cursorAfter(cursor));
+  }
+  try {
+    const res = await databases.listDocuments(
+      dbId,
+      SERVERS_COLLECTION,
+      queries
+    );
+    const rawList =
+      (res as unknown as { documents?: unknown[] }).documents || [];
+    const items: { $id: string; name?: string }[] = [];
+    for (const raw of rawList) {
+      if (typeof raw === "object" && raw && "$id" in raw) {
+        const obj = raw as Record<string, unknown> & { $id: string };
+        items.push({
+          $id: String(obj.$id),
+          name: typeof obj.name === "string" ? obj.name : undefined,
+        });
+      }
+    }
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: items.length === limit && last ? last.$id : null,
+    };
+  } catch {
+    return { items: [], nextCursor: null };
+  }
+}
+
 export async function listAllChannelsPage(
   serverId: string,
   limit: number,
@@ -19,12 +58,12 @@ export async function listAllChannelsPage(
   const { databases } = getAdminClient();
   const dbId = getEnvConfig().databaseId;
   const queries: string[] = [
-    `limit(${limit})`,
-    "orderDesc($createdAt)",
-    `equal(serverId,${serverId})`,
+    Query.limit(limit),
+    Query.orderDesc("$createdAt"),
+    Query.equal("serverId", serverId),
   ];
   if (cursor) {
-    queries.push(`cursorAfter(${cursor})`);
+    queries.push(Query.cursorAfter(cursor));
   }
   try {
     const res = await databases.listDocuments(
@@ -73,7 +112,7 @@ export async function listGlobalMessages(
   PageResult<{
     $id: string;
     removedAt?: string;
-    content?: string;
+    text?: string;
     userId?: string;
     channelId?: string;
     serverId?: string;
@@ -105,7 +144,7 @@ export async function listGlobalMessages(
 type MappedMessage = {
   $id: string;
   removedAt?: string;
-  content?: string;
+  text?: string;
   userId?: string;
   channelId?: string;
   serverId?: string;
@@ -124,7 +163,7 @@ function coerceMessage(raw: unknown): MappedMessage | null {
   return {
     $id: String(obj.$id),
     removedAt: pick("removedAt"),
-    content: pick("content"),
+    text: pick("text"),
     userId: pick("userId"),
     channelId: pick("channelId"),
     serverId: pick("serverId"),
@@ -150,7 +189,7 @@ export async function getBasicStats() {
   // We only need counts; use small limit to reduce payload and rely on total.
   async function count(col: string) {
     try {
-      const res = await databases.listDocuments(dbId, col, ["limit(1)"]); // should return total
+      const res = await databases.listDocuments(dbId, col, [Query.limit(1)]); // should return total
       return (res as unknown as { total?: number }).total ?? 0;
     } catch {
       return 0;
@@ -179,34 +218,34 @@ export type MessageQueryOpts = {
 
 export function buildMessageQueries(opts: MessageQueryOpts, limit: number) {
   const queries: string[] = [];
-  queries.push(`limit(${limit})`);
-  queries.push("orderDesc($createdAt)");
+  queries.push(Query.limit(limit));
+  queries.push(Query.orderDesc("$createdAt"));
   if (opts.cursorAfter) {
-    queries.push(`cursorAfter(${opts.cursorAfter})`);
+    queries.push(Query.cursorAfter(opts.cursorAfter));
   }
   if (opts.userId) {
-    queries.push(`equal(authorId,${opts.userId})`);
+    queries.push(Query.equal("userId", opts.userId));
   }
   if (opts.channelId) {
-    queries.push(`equal(channelId,${opts.channelId})`);
+    queries.push(Query.equal("channelId", opts.channelId));
   }
   if (opts.channelIds?.length) {
-    // multi-channel filter
-    queries.push(`contains(channelId,[${opts.channelIds.join(",")}])`);
+    // multi-channel filter - use Query.equal with array for OR condition
+    queries.push(Query.equal("channelId", opts.channelIds));
   }
   if (opts.serverId) {
-    queries.push(`equal(serverId,${opts.serverId})`);
+    queries.push(Query.equal("serverId", opts.serverId));
   }
   if (opts.onlyMissingServerId) {
-    queries.push("isNull(serverId)");
+    queries.push(Query.isNull("serverId"));
   }
   if (opts.text) {
-    queries.push(`search(content,${opts.text})`);
+    queries.push(Query.search("text", opts.text));
   }
   if (opts.onlyRemoved) {
-    queries.push("notNull(removedAt)");
+    queries.push(Query.isNotNull("removedAt"));
   } else if (!opts.includeRemoved) {
-    queries.push("isNull(removedAt)");
+    queries.push(Query.isNull("removedAt"));
   }
   return queries;
 }
@@ -236,6 +275,45 @@ export function postFilterMessages<
   });
 }
 
-export function getAdminClient(): { databases: Databases; teams: Teams } {
-  return getServerClient();
+export function getAdminClient() {
+  const { client, databases, teams } = getServerClient();
+  const storage = new Storage(client);
+  return { databases, teams, storage };
+}
+
+// Admin moderation functions that bypass document permissions
+export async function adminSoftDeleteMessage(
+  messageId: string,
+  moderatorId: string
+) {
+  const { databases } = getAdminClient();
+  const dbId = getEnvConfig().databaseId;
+  const removedAt = new Date().toISOString();
+  await databases.updateDocument(
+    dbId,
+    MESSAGES_COLLECTION,
+    messageId,
+    { removedAt, removedBy: moderatorId }
+  );
+}
+
+export async function adminRestoreMessage(messageId: string) {
+  const { databases } = getAdminClient();
+  const dbId = getEnvConfig().databaseId;
+  await databases.updateDocument(
+    dbId,
+    MESSAGES_COLLECTION,
+    messageId,
+    { removedAt: null, removedBy: null }
+  );
+}
+
+export async function adminDeleteMessage(messageId: string) {
+  const { databases } = getAdminClient();
+  const dbId = getEnvConfig().databaseId;
+  await databases.deleteDocument(
+    dbId,
+    MESSAGES_COLLECTION,
+    messageId
+  );
 }

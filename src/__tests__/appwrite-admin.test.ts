@@ -88,8 +88,8 @@ vi.mock("../lib/appwrite-core", async () => {
   const databases = {
     listDocuments: vi.fn((_db: string, col: string, queries: string[]) => {
       if (col === "channels") {
-        // detect cursorAfter
-        const cursorQ = queries.find((q) => q.startsWith("cursorAfter("));
+        // detect cursorAfter - Query helper returns strings that include "cursorAfter"
+        const cursorQ = queries.find((q) => q.includes("cursorAfter"));
         const page1 = [
           { $id: "ch3", name: "Gamma" },
           { $id: "ch2", name: "Beta" },
@@ -101,9 +101,9 @@ vi.mock("../lib/appwrite-core", async () => {
       }
       if (col === "messages") {
         const docs = [
-          { $id: "m3", content: "Third" },
-          { $id: "m2", content: "Second", removedAt: "ts" },
-          { $id: "m1", content: "First" },
+          { $id: "m3", text: "Third" },
+          { $id: "m2", text: "Second", removedAt: "ts" },
+          { $id: "m1", text: "First" },
           { bad: true },
         ];
         return Promise.resolve({ documents: docs });

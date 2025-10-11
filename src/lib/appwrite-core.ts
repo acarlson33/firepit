@@ -3,7 +3,15 @@
 // permission builders, and normalized error types.
 // NOTE: Public function signatures used by existing integration files are preserved elsewhere.
 
-import { Account, Client, Databases, Permission, Role, Teams } from "appwrite";
+import {
+	Account,
+	Client,
+	Databases,
+	Permission,
+	Role,
+	Storage,
+	Teams,
+} from "appwrite";
 
 // ---------- Error Types ----------
 export class AppwriteIntegrationError extends Error {
@@ -53,6 +61,13 @@ export type EnvConfig = {
     audit: string;
     typing: string | null;
     memberships: string | null;
+    profiles: string;
+    conversations: string | null;
+    directMessages: string | null;
+    statuses: string | null;
+  };
+  buckets: {
+    avatars: string;
   };
   teams: {
     adminTeamId: string | null;
@@ -126,6 +141,30 @@ export function getEnvConfig(): EnvConfig {
       firstDefined(
         process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID
       ) || null,
+    profiles:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,
+        "profiles"
+      ) || "profiles",
+    conversations:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_CONVERSATIONS_COLLECTION_ID
+      ) || null,
+    directMessages:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_DIRECT_MESSAGES_COLLECTION_ID
+      ) || null,
+    statuses:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID
+      ) || null,
+  };
+  const buckets = {
+    avatars:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_AVATARS_BUCKET_ID,
+        "avatars"
+      ) || "avatars",
   };
   const teams = {
     adminTeamId:
@@ -139,7 +178,7 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_MODERATOR_TEAM_ID
       ) || null,
   };
-  cachedEnv = { endpoint, project, databaseId, collections, teams };
+  cachedEnv = { endpoint, project, databaseId, collections, buckets, teams };
   return cachedEnv;
 }
 
@@ -170,6 +209,10 @@ export function getBrowserDatabases(): Databases {
 
 export function getBrowserTeams(): Teams {
   return new Teams(getBrowserClient());
+}
+
+export function getBrowserStorage(): Storage {
+  return new Storage(getBrowserClient());
 }
 
 // Server client moved to appwrite-server.ts to use node-appwrite SDK

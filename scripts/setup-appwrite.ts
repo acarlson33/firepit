@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Idempotent Appwrite bootstrap script.
- * Creates database, collections, string attributes, indexes, and teams if they do not exist.
+ * Creates database, collections, string attributes, indexes, teams, and storage buckets if they do not exist.
  * Safe to re-run. Avoids console.* per project lint rules (writes directly to stdout/stderr).
  */
-import { Client, Databases, Teams } from "appwrite";
+import { Client, Databases, Storage, Teams } from "appwrite";
 
 // ---- Environment (DO NOT hardcode secrets) ----
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
@@ -37,9 +37,11 @@ if (
 }
 const databases = new Databases(client);
 const teams = new Teams(client);
+const storage = new Storage(client);
 
 // Provide compatibility with potential SDK signature variants (object vs positional)
 const dbAny = databases as any;
+const storageAny = storage as any;
 
 async function tryVariants<T>(variants: Array<() => Promise<T>>): Promise<T> {
 	let lastErr: unknown;
@@ -275,6 +277,67 @@ async function setupMemberships() {
 	]);
 }
 
+async function setupProfiles() {
+	await ensureCollection("profiles", "Profiles");
+	const fields: [string, number, boolean][] = [
+		["userId", LEN_ID, true],
+		["displayName", 255, false],
+		["bio", 5000, false],
+		["pronouns", 100, false],
+		["avatarFileId", LEN_ID, false],
+		["location", 255, false],
+		["website", 500, false],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("profiles", k, size, req);
+	}
+	await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
+	try {
+		await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
+			"displayName",
+		]);
+	} catch {
+		// optional fulltext search
+	}
+}
+
+async function ensureBucket(id: string, name: string) {
+	try {
+		await tryVariants([
+			() => storageAny.getBucket(id),
+			() => storageAny.getBucket?.({ bucketId: id }),
+		]);
+	} catch {
+		await tryVariants([
+			() =>
+				storageAny.createBucket(
+					id,
+					name,
+					[], // permissions - we'll set file-level permissions
+					false, // fileSecurity (document-level perms)
+					true, // enabled
+					2097152, // max file size: 2MB
+					["jpg", "jpeg", "png", "gif", "webp"], // allowed extensions
+				),
+			() =>
+				storageAny.createBucket?.({
+					bucketId: id,
+					name,
+					permissions: [],
+					fileSecurity: false,
+					enabled: true,
+					maximumFileSize: 2097152,
+					allowedFileExtensions: ["jpg", "jpeg", "png", "gif", "webp"],
+				}),
+		]);
+		info(`[setup] created bucket '${id}'`);
+	}
+}
+
+async function setupStorage() {
+	await ensureBucket("avatars", "User Avatars");
+}
+
 async function ensureTeams() {
 	if (skipTeams) {
 		info("[setup] skipping teams (SKIP_TEAMS set)");
@@ -351,6 +414,8 @@ async function run() {
 	await setupAudit();
 	await setupTyping();
 	await setupMemberships();
+	await setupProfiles();
+	await setupStorage();
 	await ensureTeams();
 	info("Setup complete.");
 }

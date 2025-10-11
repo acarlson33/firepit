@@ -1,0 +1,332 @@
+import { ID, Query, Permission, Role } from "appwrite";
+
+import type { Conversation, DirectMessage } from "./types";
+import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
+import { getUserProfile, getAvatarUrl } from "./appwrite-profiles";
+
+const env = getEnvConfig();
+const DATABASE_ID = env.databaseId;
+const CONVERSATIONS_COLLECTION = env.collections.conversations;
+const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
+
+function getDatabases() {
+	return getBrowserDatabases();
+}
+
+/**
+ * Get or create a conversation between two users
+ */
+export async function getOrCreateConversation(
+	userId1: string,
+	userId2: string,
+): Promise<Conversation> {
+	if (!CONVERSATIONS_COLLECTION) {
+		throw new Error("Conversations collection not configured");
+	}
+
+	// Sort user IDs to ensure consistent ordering
+	const [user1, user2] = [userId1, userId2].sort();
+	const participants = [user1, user2];
+
+	try {
+		// Try to find existing conversation
+		const existing = await getDatabases().listDocuments({
+			databaseId: DATABASE_ID,
+			collectionId: CONVERSATIONS_COLLECTION,
+			queries: [
+				Query.equal("participants", user1),
+				Query.equal("participants", user2),
+				Query.limit(1),
+			],
+		});
+
+		if (existing.documents.length > 0) {
+			const doc = existing.documents[0] as Record<string, unknown>;
+			return {
+				$id: String(doc.$id),
+				participants: doc.participants as string[],
+				lastMessageAt: doc.lastMessageAt
+					? String(doc.lastMessageAt)
+					: undefined,
+				$createdAt: String(doc.$createdAt),
+			};
+		}
+	} catch {
+		// Continue to create new conversation if not found
+	}
+
+	// Create new conversation
+	const permissions = [
+		Permission.read(Role.user(user1)),
+		Permission.read(Role.user(user2)),
+		Permission.update(Role.user(user1)),
+		Permission.update(Role.user(user2)),
+		Permission.delete(Role.user(user1)),
+		Permission.delete(Role.user(user2)),
+	];
+
+	const newConv = await getDatabases().createDocument({
+		databaseId: DATABASE_ID,
+		collectionId: CONVERSATIONS_COLLECTION,
+		documentId: ID.unique(),
+		data: {
+			participants,
+			lastMessageAt: new Date().toISOString(),
+		},
+		permissions,
+	});
+
+	const doc = newConv as unknown as Record<string, unknown>;
+	return {
+		$id: String(doc.$id),
+		participants: doc.participants as string[],
+		lastMessageAt: doc.lastMessageAt ? String(doc.lastMessageAt) : undefined,
+		$createdAt: String(doc.$createdAt),
+	};
+}
+
+/**
+ * List all conversations for a user
+ */
+export async function listConversations(
+	userId: string,
+): Promise<Conversation[]> {
+	if (!CONVERSATIONS_COLLECTION) {
+		return [];
+	}
+
+	try {
+		const response = await getDatabases().listDocuments({
+			databaseId: DATABASE_ID,
+			collectionId: CONVERSATIONS_COLLECTION,
+			queries: [
+				Query.equal("participants", userId),
+				Query.orderDesc("lastMessageAt"),
+				Query.limit(100),
+			],
+		});
+
+		const conversations = response.documents.map((doc) => {
+			const d = doc as Record<string, unknown>;
+			return {
+				$id: String(d.$id),
+				participants: d.participants as string[],
+				lastMessageAt: d.lastMessageAt ? String(d.lastMessageAt) : undefined,
+				$createdAt: String(d.$createdAt),
+			};
+		});
+
+		// Enrich with other user's profile data
+		const enriched = await Promise.all(
+			conversations.map(async (conv) => {
+				const otherUserId = conv.participants.find((id) => id !== userId);
+				if (!otherUserId) {
+					return conv;
+				}
+
+				try {
+					const profile = await getUserProfile(otherUserId);
+					return {
+						...conv,
+						otherUser: {
+							userId: otherUserId,
+							displayName: profile?.displayName,
+							avatarUrl: profile?.avatarFileId
+								? getAvatarUrl(profile.avatarFileId)
+								: undefined,
+						},
+					};
+				} catch {
+					return {
+						...conv,
+						otherUser: {
+							userId: otherUserId,
+						},
+					};
+				}
+			}),
+		);
+
+		return enriched;
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Send a direct message
+ */
+export async function sendDirectMessage(
+	conversationId: string,
+	senderId: string,
+	receiverId: string,
+	text: string,
+): Promise<DirectMessage> {
+	if (!DIRECT_MESSAGES_COLLECTION || !CONVERSATIONS_COLLECTION) {
+		throw new Error("Direct messages not configured");
+	}
+
+	const permissions = [
+		Permission.read(Role.user(senderId)),
+		Permission.read(Role.user(receiverId)),
+		Permission.update(Role.user(senderId)),
+		Permission.delete(Role.user(senderId)),
+	];
+
+	const message = await getDatabases().createDocument({
+		databaseId: DATABASE_ID,
+		collectionId: DIRECT_MESSAGES_COLLECTION,
+		documentId: ID.unique(),
+		data: {
+			conversationId,
+			senderId,
+			receiverId,
+			text,
+		},
+		permissions,
+	});
+
+	// Update conversation's lastMessageAt
+	try {
+		await getDatabases().updateDocument({
+			databaseId: DATABASE_ID,
+			collectionId: CONVERSATIONS_COLLECTION,
+			documentId: conversationId,
+			data: {
+				lastMessageAt: new Date().toISOString(),
+			},
+		});
+	} catch {
+		// Don't fail if conversation update fails
+	}
+
+	const doc = message as unknown as Record<string, unknown>;
+	return {
+		$id: String(doc.$id),
+		conversationId: String(doc.conversationId),
+		senderId: String(doc.senderId),
+		receiverId: String(doc.receiverId),
+		text: String(doc.text),
+		$createdAt: String(doc.$createdAt),
+		editedAt: doc.editedAt ? String(doc.editedAt) : undefined,
+		removedAt: doc.removedAt ? String(doc.removedAt) : undefined,
+		removedBy: doc.removedBy ? String(doc.removedBy) : undefined,
+	};
+}
+
+/**
+ * List direct messages in a conversation
+ */
+export async function listDirectMessages(
+	conversationId: string,
+	limit = 50,
+	cursor?: string,
+): Promise<{ items: DirectMessage[]; nextCursor?: string }> {
+	if (!DIRECT_MESSAGES_COLLECTION) {
+		return { items: [] };
+	}
+
+	const queries = [
+		Query.equal("conversationId", conversationId),
+		Query.orderDesc("$createdAt"),
+		Query.limit(limit),
+	];
+
+	if (cursor) {
+		queries.push(Query.cursorAfter(cursor));
+	}
+
+	try {
+		const response = await getDatabases().listDocuments({
+			databaseId: DATABASE_ID,
+			collectionId: DIRECT_MESSAGES_COLLECTION,
+			queries,
+		});
+
+		const items = response.documents.map((doc) => {
+			const d = doc as Record<string, unknown>;
+			return {
+				$id: String(d.$id),
+				conversationId: String(d.conversationId),
+				senderId: String(d.senderId),
+				receiverId: String(d.receiverId),
+				text: String(d.text),
+				$createdAt: String(d.$createdAt),
+				editedAt: d.editedAt ? String(d.editedAt) : undefined,
+				removedAt: d.removedAt ? String(d.removedAt) : undefined,
+				removedBy: d.removedBy ? String(d.removedBy) : undefined,
+			};
+		});
+
+		// Enrich with sender profile data
+		const enriched = await Promise.all(
+			items.map(async (msg) => {
+				try {
+					const profile = await getUserProfile(msg.senderId);
+					return {
+						...msg,
+						senderDisplayName: profile?.displayName,
+						senderAvatarUrl: profile?.avatarFileId
+							? getAvatarUrl(profile.avatarFileId)
+							: undefined,
+						senderPronouns: profile?.pronouns,
+					};
+				} catch {
+					return msg;
+				}
+			}),
+		);
+
+		const last = enriched.at(-1);
+		return {
+			items: enriched,
+			nextCursor: enriched.length === limit && last ? last.$id : undefined,
+		};
+	} catch {
+		return { items: [] };
+	}
+}
+
+/**
+ * Edit a direct message
+ */
+export async function editDirectMessage(
+	messageId: string,
+	newText: string,
+): Promise<void> {
+	if (!DIRECT_MESSAGES_COLLECTION) {
+		throw new Error("Direct messages not configured");
+	}
+
+	await getDatabases().updateDocument({
+		databaseId: DATABASE_ID,
+		collectionId: DIRECT_MESSAGES_COLLECTION,
+		documentId: messageId,
+		data: {
+			text: newText,
+			editedAt: new Date().toISOString(),
+		},
+	});
+}
+
+/**
+ * Delete a direct message (soft delete)
+ */
+export async function deleteDirectMessage(
+	messageId: string,
+	userId: string,
+): Promise<void> {
+	if (!DIRECT_MESSAGES_COLLECTION) {
+		throw new Error("Direct messages not configured");
+	}
+
+	await getDatabases().updateDocument({
+		databaseId: DATABASE_ID,
+		collectionId: DIRECT_MESSAGES_COLLECTION,
+		documentId: messageId,
+		data: {
+			removedAt: new Date().toISOString(),
+			removedBy: userId,
+		},
+	});
+}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/* eslint-disable no-console */
 /**
  * Quick test script to verify login works with the Appwrite SDK
  */
