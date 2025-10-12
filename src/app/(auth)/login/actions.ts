@@ -3,7 +3,7 @@
 import { Account, Client, ID, Query } from "node-appwrite";
 import { cookies } from "next/headers";
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig, materializePermissions, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
 
 /**
  * Automatically joins a user to the server if there's only one server on the instance.
@@ -47,7 +47,7 @@ async function autoJoinSingleServer(userId: string): Promise<void> {
     }
     
     // Create membership
-    const membershipPerms = materializePermissions(perms.serverOwner(userId));
+    const membershipPerms = perms.serverOwner(userId);
     await databases.createDocument(
       env.databaseId,
       membershipCollectionId,

@@ -91,16 +91,17 @@ async function ensureCollection(id: string, name: string) {
 		]);
 	} catch {
 		await tryVariants([
-			() => dbAny.createCollection(DB_ID, id, name, []),
+			() => dbAny.createCollection(DB_ID, id, name, [], true),
 			() =>
 				dbAny.createCollection?.({
 					databaseId: DB_ID,
 					collectionId: id,
 					name,
 					permissions: [],
+					documentSecurity: true,
 				}),
 		]);
-		info(`[setup] created collection '${id}'`);
+		info(`[setup] created collection '${id}' with document-level security enabled`);
 	}
 }
 

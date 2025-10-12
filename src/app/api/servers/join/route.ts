@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig, materializePermissions, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 
 /**
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Create membership
-		const membershipPerms = materializePermissions(perms.serverOwner(userId));
+		const membershipPerms = perms.serverOwner(userId);
 		await databases.createDocument(
 			env.databaseId,
 			membershipCollectionId,

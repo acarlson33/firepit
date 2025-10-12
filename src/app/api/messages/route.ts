@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { ID } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig, materializePermissions, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import type { Message } from "@/lib/types";
 
@@ -37,11 +37,10 @@ export async function POST(request: NextRequest) {
 		const userName = user.name;
 
 		// Create message permissions
-		const permissionStrings = perms.message(userId, {
+		const permissions = perms.message(userId, {
 			mod: env.teams.moderatorTeamId,
 			admin: env.teams.adminTeamId,
 		});
-		const permissions = materializePermissions(permissionStrings);
 
 		const { databases } = getServerClient();
 

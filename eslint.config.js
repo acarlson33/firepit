@@ -57,7 +57,7 @@ export default [
 			// Base TS recommended sets
 			...tsEslint.configs.recommended.rules,
 			...tsEslint.configs["recommended-type-checked"].rules,
-			"no-console": "warn",
+			"no-console": "off",
 			"no-debugger": "error",
 			eqeqeq: ["error", "always"],
 			"no-empty": ["error", { allowEmptyCatch: true }],

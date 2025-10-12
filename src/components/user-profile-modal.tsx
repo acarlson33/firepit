@@ -24,6 +24,11 @@ type UserProfile = {
 	website?: string;
 	avatarFileId?: string;
 	avatarUrl?: string;
+	status?: {
+		status: "online" | "away" | "busy" | "offline";
+		customMessage?: string;
+		lastSeenAt: string;
+	};
 };
 
 type UserProfileModalProps = {
@@ -60,7 +65,7 @@ export function UserProfileModal({
 			setError(null);
 
 			try {
-				const response = await fetch(`/api/profile/${userId}`);
+				const response = await fetch(`/api/users/${userId}/profile`);
 
 				if (!response.ok) {
 					throw new Error("Failed to fetch profile");
@@ -153,6 +158,29 @@ export function UserProfileModal({
 									<p className="text-muted-foreground text-sm">
 										{profile.pronouns}
 									</p>
+								)}
+								{profile?.status && (
+									<div className="mt-1 flex items-center gap-2 text-sm">
+										<span
+											className={`inline-block size-2 rounded-full ${
+												profile.status.status === "online"
+													? "bg-green-500"
+													: profile.status.status === "away"
+														? "bg-yellow-500"
+														: profile.status.status === "busy"
+															? "bg-red-500"
+															: "bg-gray-400"
+											}`}
+										/>
+										<span className="capitalize text-muted-foreground">
+											{profile.status.status}
+										</span>
+										{profile.status.customMessage && (
+											<span className="text-muted-foreground">
+												- {profile.status.customMessage}
+											</span>
+										)}
+									</div>
 								)}
 							</div>
 						</div>

@@ -3,8 +3,6 @@ import { ID, Query } from "appwrite";
 import {
   getBrowserDatabases,
   getEnvConfig,
-  materializePermissions,
-  perms,
 } from "./appwrite-core";
 import type { Message } from "./types";
 
@@ -96,17 +94,19 @@ type SendMessageInput = {
 
 export async function sendMessage(input: SendMessageInput): Promise<Message> {
   const { userId, text, userName, channelId, serverId } = input;
-  const permissionStrings = perms.message(userId, {
-    mod: env.teams.moderatorTeamId,
-    admin: env.teams.adminTeamId,
-  });
-  const materialized = materializePermissions(permissionStrings);
+  // Import Permission and Role from appwrite for client SDK
+  const { Permission, Role } = await import("appwrite");
+  const permissions = [
+    Permission.read(Role.any()),
+    Permission.update(Role.user(userId)),
+    Permission.delete(Role.user(userId)),
+  ];
   const res = await getDatabases().createDocument({
     databaseId: DATABASE_ID,
     collectionId: COLLECTION_ID,
     documentId: ID.unique(),
     data: { userId, text, userName, channelId, serverId },
-    permissions: materialized,
+    permissions,
   });
   const doc = res as unknown as Record<string, unknown>;
   return {
@@ -196,12 +196,8 @@ export async function setTyping(
         );
       } catch {
         try {
-          const typingPerms = materializePermissions(
-            perms.message(userId, {
-              mod: env.teams.moderatorTeamId,
-              admin: env.teams.adminTeamId,
-            })
-          );
+          const { Permission, Role } = await import("appwrite");
+          const typingPerms = [Permission.read(Role.any())];
           await db.createDocument(
             DATABASE_ID,
             TYPING_COLLECTION_ID,

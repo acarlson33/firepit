@@ -1,4 +1,4 @@
-import { ID, Query, Permission, Role } from "appwrite";
+import { Query } from "appwrite";
 
 import type { UserStatus } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
@@ -12,83 +12,47 @@ function getDatabases() {
 }
 
 /**
- * Set or update user status
+ * Set or update user status (via server API)
  */
 export async function setUserStatus(
 	userId: string,
 	status: "online" | "away" | "busy" | "offline",
 	customMessage?: string,
+	expiresAt?: string,
+	isManuallySet?: boolean,
 ): Promise<UserStatus> {
 	if (!STATUSES_COLLECTION) {
 		throw new Error("Statuses collection not configured");
 	}
 
-	const now = new Date().toISOString();
-
-	// Try to find existing status document
-	try {
-		const existing = await getDatabases().listDocuments({
-			databaseId: DATABASE_ID,
-			collectionId: STATUSES_COLLECTION,
-			queries: [Query.equal("userId", userId), Query.limit(1)],
-		});
-
-		if (existing.documents.length > 0) {
-			// Update existing
-			const doc = existing.documents[0] as Record<string, unknown>;
-			const updated = await getDatabases().updateDocument({
-				databaseId: DATABASE_ID,
-				collectionId: STATUSES_COLLECTION,
-				documentId: String(doc.$id),
-				data: {
-					status,
-					customMessage: customMessage || null,
-					lastSeenAt: now,
-				},
-			});
-
-			const u = updated as unknown as Record<string, unknown>;
-			return {
-				$id: String(u.$id),
-				userId: String(u.userId),
-				status: String(u.status) as "online" | "away" | "busy" | "offline",
-				customMessage: u.customMessage ? String(u.customMessage) : undefined,
-				lastSeenAt: String(u.lastSeenAt),
-				$updatedAt: u.$updatedAt ? String(u.$updatedAt) : undefined,
-			};
-		}
-	} catch {
-		// Continue to create new status
-	}
-
-	// Create new status document
-	const permissions = [
-		Permission.read(Role.any()),
-		Permission.update(Role.user(userId)),
-		Permission.delete(Role.user(userId)),
-	];
-
-	const created = await getDatabases().createDocument({
-		databaseId: DATABASE_ID,
-		collectionId: STATUSES_COLLECTION,
-		documentId: ID.unique(),
-		data: {
+	const response = await fetch("/api/status", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
 			userId,
 			status,
-			customMessage: customMessage || null,
-			lastSeenAt: now,
-		},
-		permissions,
+			customMessage,
+			expiresAt,
+			isManuallySet,
+		}),
 	});
 
-	const c = created as unknown as Record<string, unknown>;
+	if (!response.ok) {
+		throw new Error("Failed to set user status");
+	}
+
+	const data = await response.json();
 	return {
-		$id: String(c.$id),
-		userId: String(c.userId),
-		status: String(c.status) as "online" | "away" | "busy" | "offline",
-		customMessage: c.customMessage ? String(c.customMessage) : undefined,
-		lastSeenAt: String(c.lastSeenAt),
-		$updatedAt: c.$updatedAt ? String(c.$updatedAt) : undefined,
+		$id: String(data.$id),
+		userId: String(data.userId),
+		status: String(data.status) as "online" | "away" | "busy" | "offline",
+		customMessage: data.customMessage ? String(data.customMessage) : undefined,
+		lastSeenAt: String(data.lastSeenAt),
+		expiresAt: data.expiresAt ? String(data.expiresAt) : undefined,
+		isManuallySet: Boolean(data.isManuallySet),
+		$updatedAt: data.$updatedAt ? String(data.$updatedAt) : undefined,
 	};
 }
 
@@ -165,7 +129,7 @@ export async function getUsersStatuses(
 }
 
 /**
- * Update last seen timestamp
+ * Update last seen timestamp (via server API)
  */
 export async function updateLastSeen(userId: string): Promise<void> {
 	if (!STATUSES_COLLECTION) {
@@ -173,23 +137,13 @@ export async function updateLastSeen(userId: string): Promise<void> {
 	}
 
 	try {
-		const existing = await getDatabases().listDocuments({
-			databaseId: DATABASE_ID,
-			collectionId: STATUSES_COLLECTION,
-			queries: [Query.equal("userId", userId), Query.limit(1)],
+		await fetch("/api/status", {
+			method: "PATCH",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ userId }),
 		});
-
-		if (existing.documents.length > 0) {
-			const doc = existing.documents[0] as Record<string, unknown>;
-			await getDatabases().updateDocument({
-				databaseId: DATABASE_ID,
-				collectionId: STATUSES_COLLECTION,
-				documentId: String(doc.$id),
-				data: {
-					lastSeenAt: new Date().toISOString(),
-				},
-			});
-		}
 	} catch {
 		// Ignore errors for last seen updates
 	}

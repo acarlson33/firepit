@@ -56,13 +56,18 @@ export default function Header() {
       });
   }, []);
 
-  async function handleStatusChange(status: "online" | "away" | "busy" | "offline", customMessage?: string) {
+  async function handleStatusChange(
+    status: "online" | "away" | "busy" | "offline",
+    customMessage?: string,
+    expiresAt?: string,
+  ) {
     if (!userData?.userId) {
       return;
     }
     
     try {
-      await setUserStatus(userData.userId, status, customMessage);
+      // isManuallySet=true because user explicitly changed status
+      await setUserStatus(userData.userId, status, customMessage, expiresAt, true);
       const newStatus = await getUserStatus(userData.userId);
       if (newStatus) {
         setUserStatusState(newStatus);
