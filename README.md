@@ -1,10 +1,18 @@
-# 🔥 Firepit
+# firepit
 
-A modern, real-time chat platform built with Next.js and Appwrite. Features include servers, channels, direct messages, user status, moderation tools, and comprehensive role-based access control.
+> warning: missing important features. This is currently in early alpha testing, expect bugs and issues to arise. Not recommended for production or enterprise use.
 
-> **Converted from monorepo**: This project was previously a Turborepo monorepo and has been consolidated into a single Next.js application for simplified deployment and maintenance.
+The original idea was for an open source "extension" of sorts to discord, since then it has been scrapped and then re-made to be it's own project. Functions like a discord clone with some added features.
 
-## ✨ Features
+## Features
+
+- **Server support** - support for servers like on discord
+- **Channel support** - support for channels like on discord
+- **User profiles and status support** - missing external integration, but support for in app statuses and profiles
+- **Moderation** - Instance wide moderation and administration
+- **Individual server moderation** - not currently supported, but will come in a later update with roles
+
+## Codebase Features
 
 - **Real-time Chat** - WebSocket-based messaging with typing indicators
 - **Server & Channels** - Discord-like server organization with multiple channels
@@ -54,6 +62,7 @@ bun run setup
 bun dev
 ```
 
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the web application.
 Open [http://localhost:3000](http://localhost:3000) to see your application.
 
 ## 📚 Documentation
