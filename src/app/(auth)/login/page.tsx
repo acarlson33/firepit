@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginAction, registerAction } from "./actions";
 
-export default function LoginPage() {
+function LoginForm() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const [email, setEmail] = useState("");
@@ -124,5 +124,13 @@ export default function LoginPage() {
 				</div>
 			</form>
 		</div>
+	);
+}
+
+export default function LoginPage() {
+	return (
+		<Suspense fallback={<div className="container mx-auto max-w-md px-4 py-8">Loading...</div>}>
+			<LoginForm />
+		</Suspense>
 	);
 }

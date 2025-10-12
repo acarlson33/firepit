@@ -7,11 +7,12 @@ import { requireAdmin } from "@/lib/auth-server";
 import { type BackfillResult, backfillServerIds } from "./actions";
 import { ServerManagement } from "./server-management";
 
-export default async function AdminPage({
-	searchParams,
-}: {
-	searchParams?: Record<string, string | string[]>;
+export default async function AdminPage(props: {
+	searchParams?: Promise<Record<string, string | string[]>>;
 }) {
+	// Await searchParams as required by Next.js 15
+	const searchParams = await props.searchParams;
+	
 	// Middleware ensures auth; this double-checks admin role
 	const { user, roles } = await requireAdmin().catch(() => {
 		redirect("/");

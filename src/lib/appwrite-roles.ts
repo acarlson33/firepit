@@ -1,5 +1,6 @@
 import type { Teams } from "appwrite";
 import { Query } from "appwrite";
+import type { Teams as ServerTeams } from "node-appwrite";
 
 import {
   getBrowserTeams,
@@ -30,7 +31,7 @@ const moderatorUserOverrides = (process.env.APPWRITE_MODERATOR_USER_IDS || "")
 async function isMember(
   teamId: string,
   userId: string,
-  teams: Teams
+  teams: Teams | ServerTeams
 ): Promise<boolean> {
   // Quick guard
   if (!teamId) {
@@ -68,7 +69,7 @@ async function isMember(
   return false;
 }
 
-function selectTeamsClient(): Teams {
+function selectTeamsClient(): Teams | ServerTeams {
   // Prefer server client (API key) if available for reliable membership listing; otherwise fall back to browser teams.
   if (process.env.APPWRITE_API_KEY) {
     try {
@@ -161,7 +162,7 @@ function cacheStore(
 
 async function fetchCustomTeamTags(
   userId: string,
-  teams: Teams,
+  teams: Teams | ServerTeams,
   teamMap: Record<string, { label: string; color?: string }>
 ): Promise<RoleTag[]> {
   const tags: RoleTag[] = [];
