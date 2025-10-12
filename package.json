@@ -11,7 +11,8 @@
 		"lint": "eslint . --ext .ts,.tsx",
 		"lint:fix": "eslint . --ext .ts,.tsx --fix",
 		"check": "eslint . --ext .ts,.tsx",
-		"setup": "tsx scripts/setup-appwrite.ts"
+		"setup": "tsx scripts/setup-appwrite.ts",
+		"validate-env": "bun scripts/validate-env.ts"
 	},
 	"dependencies": {
 		"@radix-ui/react-dialog": "^1.1.15",
