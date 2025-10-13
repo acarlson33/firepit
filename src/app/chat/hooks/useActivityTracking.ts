@@ -28,8 +28,9 @@ export function useActivityTracking({ userId, enabled = true }: UseActivityTrack
 			return;
 		}
 
-		// Set initial status to online
-		void setUserStatus(userId, "online");
+		// Set initial status to online (isManuallySet=false means it's auto-generated)
+		// The API will preserve manually-set statuses that haven't expired
+		void setUserStatus(userId, "online", undefined, undefined, false);
 		isActiveRef.current = true;
 
 		// Function to handle user activity
@@ -43,15 +44,15 @@ export function useActivityTracking({ userId, enabled = true }: UseActivityTrack
 				clearTimeout(inactivityTimerRef.current);
 			}
 
-			// If user was inactive, set back to online
+			// If user was inactive, set back to online (auto-generated, not manual)
 			if (!isActiveRef.current) {
-				void setUserStatus(userId, "online");
+				void setUserStatus(userId, "online", undefined, undefined, false);
 				isActiveRef.current = true;
 			}
 
-			// Set new inactivity timer
+			// Set new inactivity timer (auto-generated away status)
 			inactivityTimerRef.current = setTimeout(() => {
-				void setUserStatus(userId, "away");
+				void setUserStatus(userId, "away", undefined, undefined, false);
 				isActiveRef.current = false;
 			}, INACTIVITY_TIMEOUT);
 		}

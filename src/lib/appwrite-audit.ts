@@ -3,8 +3,6 @@ import { ID, Query } from "appwrite";
 import {
   getBrowserDatabases,
   getEnvConfig,
-  materializePermissions,
-  perms,
 } from "./appwrite-core";
 import { getAdminClient } from "./appwrite-admin";
 
@@ -35,17 +33,9 @@ export async function recordAudit(
     return;
   }
   try {
-    const adminTeamId = env.teams.adminTeamId;
-    const permissionStrings = adminTeamId
-      ? [
-          // reuse perms.message for shape then filter to read only for audit visibility
-          ...perms.message(actorId, {
-            admin: adminTeamId,
-            mod: env.teams.moderatorTeamId,
-          }),
-        ].filter((p) => p.startsWith("read("))
-      : perms.message(actorId, { mod: env.teams.moderatorTeamId });
-    const permissions = materializePermissions(permissionStrings);
+    // Use client SDK Permission/Role for browser context
+    const { Permission, Role } = await import("appwrite");
+    const permissions = [Permission.read(Role.any())];
     await getDatabases().createDocument({
       databaseId: DATABASE_ID,
       collectionId: AUDIT_COLLECTION_ID,

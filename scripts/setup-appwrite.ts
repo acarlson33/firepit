@@ -91,16 +91,17 @@ async function ensureCollection(id: string, name: string) {
 		]);
 	} catch {
 		await tryVariants([
-			() => dbAny.createCollection(DB_ID, id, name, []),
+			() => dbAny.createCollection(DB_ID, id, name, [], true),
 			() =>
 				dbAny.createCollection?.({
 					databaseId: DB_ID,
 					collectionId: id,
 					name,
 					permissions: [],
+					documentSecurity: true,
 				}),
 		]);
-		info(`[setup] created collection '${id}'`);
+		info(`[setup] created collection '${id}' with document-level security enabled`);
 	}
 }
 
@@ -133,6 +134,36 @@ async function ensureStringAttribute(
 				}),
 		]);
 		info(`[setup] added ${collection}.${key}`);
+	}
+}
+
+async function ensureBooleanAttribute(
+	collection: string,
+	key: string,
+	required: boolean,
+) {
+	try {
+		await tryVariants([
+			() => dbAny.getAttribute(DB_ID, collection, key),
+			() =>
+				dbAny.getAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+				}),
+		]);
+	} catch {
+		await tryVariants([
+			() => dbAny.createBooleanAttribute(DB_ID, collection, key, required),
+			() =>
+				dbAny.createBooleanAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+					required,
+				}),
+		]);
+		info(`[setup] added ${collection}.${key} (boolean)`);
 	}
 }
 
@@ -301,6 +332,23 @@ async function setupProfiles() {
 	}
 }
 
+async function setupStatuses() {
+	await ensureCollection("statuses", "Statuses");
+	const fields: [string, number, boolean][] = [
+		["userId", LEN_ID, true],
+		["status", 64, true],
+		["customMessage", LEN_TEXT, false],
+		["lastSeenAt", LEN_TS, true],
+		["expiresAt", LEN_TS, false],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("statuses", k, size, req);
+	}
+	await ensureBooleanAttribute("statuses", "isManuallySet", false);
+	await ensureIndex("statuses", "idx_userId", "key", ["userId"]);
+	await ensureIndex("statuses", "idx_status", "key", ["status"]);
+}
+
 async function ensureBucket(id: string, name: string) {
 	try {
 		await tryVariants([
@@ -415,6 +463,7 @@ async function run() {
 	await setupTyping();
 	await setupMemberships();
 	await setupProfiles();
+	await setupStatuses();
 	await setupStorage();
 	await ensureTeams();
 	info("Setup complete.");

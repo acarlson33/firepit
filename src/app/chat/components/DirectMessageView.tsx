@@ -205,10 +205,11 @@ export function DirectMessageView({
 											)}
 										</div>
 										{isMine && !removed && (
-											<DropdownMenu open={isDeleting ? false : undefined}>
-												<DropdownMenuTrigger asChild>
+											<DropdownMenu>
+												<DropdownMenuTrigger asChild disabled={isDeleting}>
 													<Button
 														aria-label="Message options"
+														disabled={isDeleting}
 														size="sm"
 														type="button"
 														variant="ghost"

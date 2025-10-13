@@ -1,13 +1,13 @@
 import {
 	getProfilesByUserIds,
 	getAvatarUrl,
-	getUserProfile,
 } from "./appwrite-profiles";
 import type { Message } from "./types";
 
 /**
  * Enriches messages with profile information (displayName, pronouns, avatarUrl)
- * by batch-fetching profiles for all unique userIds
+ * by batch-fetching profiles for all unique userIds.
+ * This version uses server-side database access for better performance.
  */
 export async function enrichMessagesWithProfiles(
 	messages: Message[]
@@ -20,7 +20,7 @@ export async function enrichMessagesWithProfiles(
 		// Get unique user IDs from messages
 		const userIds = [...new Set(messages.map((m) => m.userId))];
 
-		// Batch fetch profiles
+		// Batch fetch profiles using server SDK
 		const profilesMap = await getProfilesByUserIds(userIds);
 
 		// Enrich messages with profile data
@@ -50,24 +50,26 @@ export async function enrichMessagesWithProfiles(
 /**
  * Enriches a single message with profile information
  * Useful for realtime updates where we receive one message at a time
+ * Uses client-side fetch to work in browser context
  */
 export async function enrichMessageWithProfile(
 	message: Message
 ): Promise<Message> {
 	try {
-		const profile = await getUserProfile(message.userId);
-		if (!profile) {
+		const response = await fetch(`/api/users/${message.userId}/profile`);
+		
+		if (!response.ok) {
 			return message;
 		}
+
+		const profile = await response.json();
 
 		return {
 			...message,
 			displayName: profile.displayName || undefined,
 			pronouns: profile.pronouns || undefined,
 			avatarFileId: profile.avatarFileId || undefined,
-			avatarUrl: profile.avatarFileId
-				? getAvatarUrl(profile.avatarFileId)
-				: undefined,
+			avatarUrl: profile.avatarUrl || undefined,
 		};
 	} catch (error) {
 		// If enrichment fails, return original message

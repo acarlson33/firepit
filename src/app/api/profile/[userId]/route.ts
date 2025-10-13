@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
+import { getUserStatus } from "@/lib/appwrite-status";
 
 type Props = {
 	params: Promise<{ userId: string }>;
@@ -27,6 +28,9 @@ export async function GET(_request: Request, { params }: Props) {
 			? getAvatarUrl(profile.avatarFileId)
 			: undefined;
 
+		// Get user status
+		const status = await getUserStatus(userId);
+
 		return NextResponse.json({
 			userId: profile.userId,
 			displayName: profile.displayName,
@@ -36,6 +40,13 @@ export async function GET(_request: Request, { params }: Props) {
 			website: profile.website,
 			avatarFileId: profile.avatarFileId,
 			avatarUrl,
+			status: status
+				? {
+						status: status.status,
+						customMessage: status.customMessage,
+						lastSeenAt: status.lastSeenAt,
+					}
+				: undefined,
 		});
 	} catch (error) {
 		return NextResponse.json(

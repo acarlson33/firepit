@@ -11,17 +11,45 @@ vi.mock("appwrite", () => ({
 		cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
 		equal: (field: string, value: string) => `equal(${field},${value})`,
 	},
+	Permission: {
+		read: (role: string) => `read(${role})`,
+		write: (role: string) => `write(${role})`,
+		update: (role: string) => `update(${role})`,
+		delete: (role: string) => `delete(${role})`,
+	},
+	Role: {
+		any: () => "any",
+		user: (id: string) => `user:${id}`,
+		users: () => "users",
+		guests: () => "guests",
+	},
+	Client: vi.fn(() => ({
+		setEndpoint: vi.fn().mockReturnThis(),
+		setProject: vi.fn().mockReturnThis(),
+	})),
+	Account: vi.fn(),
+	Databases: vi.fn(),
+	Storage: vi.fn(),
+	Teams: vi.fn(),
 }));
 
 // Mock appwrite-core
 vi.mock("../lib/appwrite-core", () => ({
 	getBrowserDatabases: () => ({
 		createDocument: vi.fn(async (params: unknown) => {
-			const mockDocs = (globalThis as any).__mockAuditDocs || [];
+			if (!(globalThis as Record<string, unknown>).__mockAuditDocs) {
+				(globalThis as Record<string, unknown>).__mockAuditDocs = [];
+			}
+			const mockDocs = (globalThis as Record<string, unknown>).__mockAuditDocs as unknown[];
+			const p = params as Record<string, unknown>;
+			const data = p.data as Record<string, unknown>;
 			const doc = {
-				...(params as any).data,
-				$id: (params as any).documentId,
+				$id: p.documentId as string,
 				$createdAt: new Date().toISOString(),
+				action: data.action,
+				targetId: data.targetId,
+				actorId: data.actorId,
+				meta: data.meta,
 			};
 			mockDocs.push(doc);
 			return doc;

@@ -91,5 +91,7 @@ export type UserStatus = {
   status: "online" | "away" | "busy" | "offline";
   customMessage?: string;
   lastSeenAt: string;
+  expiresAt?: string; // ISO 8601 timestamp when custom status should expire
+  isManuallySet?: boolean; // True if user explicitly set this status (not auto-generated)
   $updatedAt?: string;
 };

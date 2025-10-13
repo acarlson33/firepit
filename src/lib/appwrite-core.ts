@@ -241,13 +241,13 @@ export async function requireSession(): Promise<{ userId: string }> {
 }
 
 // ---------- Permission Helpers ----------
+// These use string format for compatibility with both client and server SDKs
 export const perms = {
   serverOwner(userId: string) {
     return [
       'read("any")',
       `update("user:${userId}")`,
       `delete("user:${userId}")`,
-      `write("user:${userId}")`,
     ];
   },
   message(
@@ -258,7 +258,6 @@ export const perms = {
       'read("any")',
       `update("user:${userId}")`,
       `delete("user:${userId}")`,
-      `write("user:${userId}")`,
     ];
     if (teamIds.mod) {
       base.push(

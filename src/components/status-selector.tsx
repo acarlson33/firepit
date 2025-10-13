@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Clock } from "lucide-react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -19,6 +19,7 @@ type StatusSelectorProps = {
 	onStatusChange: (
 		status: "online" | "away" | "busy" | "offline",
 		customMessage?: string,
+		expiresAt?: string,
 	) => Promise<void>;
 	children?: React.ReactNode;
 };
@@ -30,6 +31,16 @@ const statuses: Array<"online" | "away" | "busy" | "offline"> = [
 	"offline",
 ];
 
+const expirationOptions = [
+	{ label: "Don't clear", value: null },
+	{ label: "30 minutes", value: 30 * 60 * 1000 },
+	{ label: "1 hour", value: 60 * 60 * 1000 },
+	{ label: "2 hours", value: 2 * 60 * 60 * 1000 },
+	{ label: "4 hours", value: 4 * 60 * 60 * 1000 },
+	{ label: "Today", value: "today" as const },
+	{ label: "This week", value: 7 * 24 * 60 * 60 * 1000 },
+];
+
 export function StatusSelector({
 	currentStatus,
 	currentMessage,
@@ -37,15 +48,38 @@ export function StatusSelector({
 	children,
 }: StatusSelectorProps) {
 	const [customMessage, setCustomMessage] = useState(currentMessage || "");
+	const [selectedExpiration, setSelectedExpiration] = useState<number | "today" | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [open, setOpen] = useState(false);
+
+	const calculateExpiresAt = (
+		expiration: number | "today" | null,
+	): string | undefined => {
+		if (expiration === null) {
+			return undefined;
+		}
+
+		const now = new Date();
+
+		if (expiration === "today") {
+			// Set to end of today (11:59:59 PM)
+			const endOfDay = new Date(now);
+			endOfDay.setHours(23, 59, 59, 999);
+			return endOfDay.toISOString();
+		}
+
+		// Add milliseconds to current time
+		const expiresAt = new Date(now.getTime() + expiration);
+		return expiresAt.toISOString();
+	};
 
 	const handleStatusChange = async (
 		status: "online" | "away" | "busy" | "offline",
 	) => {
 		setLoading(true);
 		try {
-			await onStatusChange(status, customMessage || undefined);
+			const expiresAt = calculateExpiresAt(selectedExpiration);
+			await onStatusChange(status, customMessage || undefined, expiresAt);
 		} finally {
 			setLoading(false);
 		}
@@ -54,7 +88,8 @@ export function StatusSelector({
 	const handleMessageSave = async () => {
 		setLoading(true);
 		try {
-			await onStatusChange(currentStatus, customMessage || undefined);
+			const expiresAt = calculateExpiresAt(selectedExpiration);
+			await onStatusChange(currentStatus, customMessage || undefined, expiresAt);
 			setOpen(false);
 		} finally {
 			setLoading(false);
@@ -93,18 +128,49 @@ export function StatusSelector({
 					</DropdownMenuItem>
 				))}
 				<DropdownMenuSeparator />
-				<div className="space-y-2 p-2">
-					<Input
-						onChange={(e) => setCustomMessage(e.target.value)}
-						placeholder="Set a custom status message..."
-						value={customMessage}
-					/>
+				<div className="space-y-3 p-2">
+					<div>
+						<label className="mb-1 text-muted-foreground text-xs" htmlFor="status-message">
+							Custom message
+						</label>
+						<Input
+							id="status-message"
+							onChange={(e) => setCustomMessage(e.target.value)}
+							placeholder="What's your status?"
+							value={customMessage}
+						/>
+					</div>
+
+					<div>
+						<label className="mb-1 flex items-center gap-1 text-muted-foreground text-xs">
+							<Clock className="size-3" />
+							Clear status after
+						</label>
+						<div className="grid grid-cols-2 gap-1">
+							{expirationOptions.map((option) => (
+								<Button
+									key={option.label}
+									className="h-auto py-1.5 text-xs"
+									onClick={() => setSelectedExpiration(option.value)}
+									size="sm"
+									type="button"
+									variant={
+										selectedExpiration === option.value
+											? "default"
+											: "outline"
+									}
+								>
+									{option.label}
+								</Button>
+							))}
+						</div>
+					</div>
+
 					<Button
 						className="w-full"
 						disabled={loading}
 						onClick={() => void handleMessageSave()}
 						size="sm"
-						variant="outline"
 					>
 						{loading ? (
 							<>
@@ -112,7 +178,7 @@ export function StatusSelector({
 								Saving...
 							</>
 						) : (
-							"Save Message"
+							"Save Status"
 						)}
 					</Button>
 				</div>

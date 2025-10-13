@@ -4,8 +4,7 @@ import { ID, Query } from "node-appwrite";
 
 import { requireAdmin, requireModerator } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
-import { getEnvConfig } from "@/lib/appwrite-core";
-import { materializePermissions, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -57,8 +56,7 @@ export async function createServerAction(
 		const { databases } = getServerClient();
 
 		// Create server with owner permissions
-		const permissionStrings = perms.serverOwner(ownerId);
-		const permissions = materializePermissions(permissionStrings);
+		const permissions = perms.serverOwner(ownerId);
 
 		const serverDoc = await databases.createDocument(
 			DATABASE_ID,
@@ -71,7 +69,7 @@ export async function createServerAction(
 		// Create membership record if enabled
 		if (MEMBERSHIPS_COLLECTION_ID) {
 			try {
-				const membershipPerms = materializePermissions(perms.serverOwner(ownerId));
+				const membershipPerms = perms.serverOwner(ownerId);
 				await databases.createDocument(
 					DATABASE_ID,
 					MEMBERSHIPS_COLLECTION_ID,
@@ -123,8 +121,7 @@ export async function createChannelAction(
 		const { databases } = getServerClient();
 
 		// Create channel with public read permissions
-		const permissionStrings = ['read("any")'];
-		const permissions = materializePermissions(permissionStrings);
+		const permissions = ['read("any")'];
 
 		const channelDoc = await databases.createDocument(
 			DATABASE_ID,

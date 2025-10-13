@@ -3,9 +3,7 @@ import { ID, Query } from "appwrite";
 import {
   getBrowserDatabases,
   getEnvConfig,
-  materializePermissions,
   normalizeError,
-  perms,
   withSession,
 } from "./appwrite-core";
 import type { Channel, Membership, Server } from "./types";
@@ -74,8 +72,12 @@ export function createServer(name: string): Promise<Server> {
   return withSession(async ({ userId }) => {
     const ownerId = userId;
     try {
-      const permissionStrings = perms.serverOwner(ownerId);
-      const permissions = materializePermissions(permissionStrings);
+      const { Permission, Role } = await import("appwrite");
+      const permissions = [
+        Permission.read(Role.any()),
+        Permission.update(Role.user(ownerId)),
+        Permission.delete(Role.user(ownerId)),
+      ];
       const serverDoc = await getDatabases().createDocument({
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,
@@ -86,9 +88,11 @@ export function createServer(name: string): Promise<Server> {
       const s = serverDoc as unknown as Record<string, unknown>;
       if (MEMBERSHIPS_COLLECTION_ID) {
         try {
-          const membershipPerms = materializePermissions(
-            perms.serverOwner(ownerId)
-          );
+          const membershipPerms = [
+            Permission.read(Role.any()),
+            Permission.update(Role.user(ownerId)),
+            Permission.delete(Role.user(ownerId)),
+          ];
           await getDatabases().createDocument({
             databaseId: DATABASE_ID,
             collectionId: MEMBERSHIPS_COLLECTION_ID,
@@ -180,10 +184,10 @@ export async function listChannelsPage(
 export async function createChannel(
   serverId: string,
   name: string,
-  ownerId: string
+  _ownerId: string
 ): Promise<Channel> {
-  const permissionStrings = perms.serverOwner(ownerId);
-  const permissions = materializePermissions(permissionStrings);
+  const { Permission, Role } = await import("appwrite");
+  const permissions = [Permission.read(Role.any())];
   const res = await getDatabases().createDocument({
     databaseId: DATABASE_ID,
     collectionId: CHANNELS_COLLECTION_ID,
@@ -231,8 +235,12 @@ export async function joinServer(
   if (!MEMBERSHIPS_COLLECTION_ID) {
     return null;
   }
-  const permissionStrings = perms.serverOwner(userId);
-  const permissions = materializePermissions(permissionStrings);
+  const { Permission, Role } = await import("appwrite");
+  const permissions = [
+    Permission.read(Role.any()),
+    Permission.update(Role.user(userId)),
+    Permission.delete(Role.user(userId)),
+  ];
   const res = await getDatabases().createDocument({
     databaseId: DATABASE_ID,
     collectionId: MEMBERSHIPS_COLLECTION_ID,
