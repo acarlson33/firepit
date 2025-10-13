@@ -40,7 +40,9 @@ export async function setUserStatus(
 	});
 
 	if (!response.ok) {
-		throw new Error("Failed to set user status");
+		const errorData = await response.json().catch(() => ({}));
+		console.error("Failed to set user status:", response.status, errorData);
+		throw new Error(errorData.details || errorData.error || "Failed to set user status");
 	}
 
 	const data = await response.json();
@@ -84,6 +86,8 @@ export async function getUserStatus(
 			status: String(doc.status) as "online" | "away" | "busy" | "offline",
 			customMessage: doc.customMessage ? String(doc.customMessage) : undefined,
 			lastSeenAt: String(doc.lastSeenAt),
+			expiresAt: doc.expiresAt ? String(doc.expiresAt) : undefined,
+			isManuallySet: doc.isManuallySet ? Boolean(doc.isManuallySet) : undefined,
 			$updatedAt: doc.$updatedAt ? String(doc.$updatedAt) : undefined,
 		};
 	} catch {
@@ -117,6 +121,8 @@ export async function getUsersStatuses(
 				status: String(d.status) as "online" | "away" | "busy" | "offline",
 				customMessage: d.customMessage ? String(d.customMessage) : undefined,
 				lastSeenAt: String(d.lastSeenAt),
+				expiresAt: d.expiresAt ? String(d.expiresAt) : undefined,
+				isManuallySet: d.isManuallySet ? Boolean(d.isManuallySet) : undefined,
 				$updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
 			};
 			statusMap.set(status.userId, status);

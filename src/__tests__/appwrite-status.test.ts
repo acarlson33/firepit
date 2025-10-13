@@ -1,5 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { Models } from "appwrite";
+
+// Mock fetch globally
+const mockFetch = vi.fn();
+global.fetch = mockFetch as unknown as typeof fetch;
 
 // Mock environment variables
 beforeEach(() => {
@@ -7,11 +11,91 @@ beforeEach(() => {
 	process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
 	process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID = "main";
 	process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID = "statuses";
+	
+	// Clear mock documents
+	Object.keys(globalMockDocuments).forEach(key => delete globalMockDocuments[key]);
+	
+	// Reset fetch mock before each test
+	mockFetch.mockReset();
+	
+	// Default fetch mock implementation
+	mockFetch.mockImplementation(async (url: string, options?: RequestInit) => {
+		const method = options?.method || "GET";
+		
+		if (url === "/api/status" && method === "POST") {
+			const body = JSON.parse(options?.body as string);
+			const now = new Date().toISOString();
+			
+			const statusDoc = {
+				$id: `status-${body.userId}`,
+				$createdAt: now,
+				$updatedAt: now,
+				$permissions: [],
+				$collectionId: "statuses",
+				$databaseId: "main",
+				$sequence: 0,
+				userId: body.userId,
+				status: body.status,
+				customMessage: body.customMessage,
+				lastSeenAt: now,
+				expiresAt: body.expiresAt,
+				isManuallySet: body.isManuallySet,
+			} as Models.Document;
+			
+			// Also add to mock database so getUsersStatuses can find it
+			if (!globalMockDocuments.statuses) {
+				globalMockDocuments.statuses = [];
+			}
+			// Remove existing status for this user if any
+			globalMockDocuments.statuses = globalMockDocuments.statuses.filter(
+				(doc) => (doc as Record<string, unknown>).userId !== body.userId
+			);
+			globalMockDocuments.statuses.push(statusDoc);
+			
+			return {
+				ok: true,
+				json: async () => statusDoc,
+			} as Response;
+		}
+		
+		if (url === "/api/status" && method === "PATCH") {
+			const body = JSON.parse(options?.body as string);
+			const now = new Date().toISOString();
+			
+			// Update lastSeenAt in mock database
+			if (globalMockDocuments.statuses) {
+				const doc = globalMockDocuments.statuses.find(
+					(d) => (d as Record<string, unknown>).userId === body.userId
+				);
+				if (doc) {
+					(doc as Record<string, unknown>).lastSeenAt = now;
+					(doc as Record<string, unknown>).$updatedAt = now;
+				}
+			}
+			
+			return {
+				ok: true,
+				json: async () => ({ success: true }),
+			} as Response;
+		}
+		
+		return {
+			ok: false,
+			json: async () => ({ error: "Not found" }),
+		} as Response;
+	});
 });
+
+afterEach(() => {
+	mockFetch.mockReset();
+});
+
+// Shared mock document storage
+const globalMockDocuments: Record<string, Models.Document[]> = {};
 
 // Mock Appwrite
 vi.mock("appwrite", () => {
-	const mockDocuments: Record<string, Models.Document[]> = {};
+	const mockDocuments = globalMockDocuments;
 
 	class MockDatabases {
 		async listDocuments(params: {

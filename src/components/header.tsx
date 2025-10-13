@@ -73,7 +73,8 @@ export default function Header() {
         setUserStatusState(newStatus);
       }
     } catch (err) {
-      // Error handled silently
+      console.error("Failed to change status:", err);
+      // Error handled silently in UI but logged to console
     }
   }
 

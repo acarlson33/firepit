@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Message } from "../lib/types";
 
+// Mock fetch for single message enrichment
+const mockFetch = vi.fn();
+global.fetch = mockFetch as unknown as typeof fetch;
+
 // Mock environment variables
 beforeEach(() => {
 	process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
@@ -9,6 +13,45 @@ beforeEach(() => {
 	process.env.APPWRITE_PROFILES_COLLECTION_ID = "profiles";
 	process.env.APPWRITE_AVATARS_BUCKET_ID = "avatars";
 	process.env.APPWRITE_API_KEY = "test-api-key";
+	
+	// Reset and setup fetch mock
+	mockFetch.mockReset();
+	mockFetch.mockImplementation(async (url: string) => {
+		// Mock profile API responses
+		if (url.includes('/api/users/user1/profile')) {
+			return {
+				ok: true,
+				json: async () => ({
+					userId: "user1",
+					displayName: "Alice",
+					pronouns: "she/her",
+					avatarFileId: "avatar1",
+					avatarUrl: "http://localhost/storage/buckets/avatars/files/avatar1/view?project=test-project",
+				}),
+			} as Response;
+		}
+		if (url.includes('/api/users/user2/profile')) {
+			return {
+				ok: true,
+				json: async () => ({
+					userId: "user2",
+					displayName: "Bob",
+					avatarFileId: "avatar2",
+					avatarUrl: "http://localhost/storage/buckets/avatars/files/avatar2/view?project=test-project",
+				}),
+			} as Response;
+		}
+		if (url.includes('/api/users/user-no-profile/profile')) {
+			return {
+				ok: false,
+				json: async () => ({ error: "Not found" }),
+			} as Response;
+		}
+		return {
+			ok: false,
+			json: async () => ({ error: "Not found" }),
+		} as Response;
+	});
 });
 
 // Mock appwrite-profiles module

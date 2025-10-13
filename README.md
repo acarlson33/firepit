@@ -69,7 +69,6 @@ Open [http://localhost:3000](http://localhost:3000) to see your application.
 
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide with step-by-step instructions
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
-- **[TEST_COVERAGE_30_40_REPORT.md](./TEST_COVERAGE_30_40_REPORT.md)** - Current test coverage report
 
 ## 🗂️ Project Structure
 
@@ -157,8 +156,6 @@ Current test coverage: **22.36%** statements (growing)
 
 - 221+ tests passing
 - Focus on security-critical modules (auth, roles, moderation)
-
-See [TEST_COVERAGE_30_40_REPORT.md](./TEST_COVERAGE_30_40_REPORT.md) for details.
 
 ## 📦 Deployment
 
