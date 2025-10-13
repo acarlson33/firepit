@@ -51,6 +51,153 @@ describe("Utils - cn function", () => {
 		expect(result).not.toContain("hidden");
 	});
 
+	it("should merge complex combinations", () => {
+		const result = cn(
+			"base-class",
+			["array-class", "another-class"],
+			{ "object-class": true, "skipped": false },
+			null,
+			undefined,
+			"final-class"
+		);
+		expect(result).toContain("base-class");
+		expect(result).toContain("array-class");
+		expect(result).toContain("another-class");
+		expect(result).toContain("object-class");
+		expect(result).toContain("final-class");
+		expect(result).not.toContain("skipped");
+	});
+});
+
+describe("Utils - safeJsonParse", () => {
+	it("should parse valid JSON", async () => {
+		const { safeJsonParse } = await import("../lib/utils");
+		const result = safeJsonParse('{"name": "test"}', {});
+		expect(result).toEqual({ name: "test" });
+	});
+
+	it("should return fallback for invalid JSON", async () => {
+		const { safeJsonParse } = await import("../lib/utils");
+		const fallback = { default: true };
+		const result = safeJsonParse("invalid json", fallback);
+		expect(result).toBe(fallback);
+	});
+
+	it("should return fallback for empty string", async () => {
+		const { safeJsonParse } = await import("../lib/utils");
+		const result = safeJsonParse("", null);
+		expect(result).toBeNull();
+	});
+});
+
+describe("Utils - debounce", () => {
+	it("should debounce function calls", async () => {
+		const { debounce } = await import("../lib/utils");
+		let callCount = 0;
+		const fn = debounce(() => callCount++, 50);
+
+		fn();
+		fn();
+		fn();
+
+		expect(callCount).toBe(0);
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		expect(callCount).toBe(1);
+	});
+});
+
+describe("Utils - formatRelativeTime", () => {
+	it("should format recent times", async () => {
+		const { formatRelativeTime } = await import("../lib/utils");
+		const now = new Date();
+		expect(formatRelativeTime(now)).toBe("just now");
+	});
+
+	it("should format minutes ago", async () => {
+		const { formatRelativeTime } = await import("../lib/utils");
+		const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+		expect(formatRelativeTime(fiveMinutesAgo)).toBe("5 minutes ago");
+	});
+
+	it("should format hours ago", async () => {
+		const { formatRelativeTime } = await import("../lib/utils");
+		const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+		expect(formatRelativeTime(twoHoursAgo)).toBe("2 hours ago");
+	});
+
+	it("should handle singular forms", async () => {
+		const { formatRelativeTime } = await import("../lib/utils");
+		const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000);
+		expect(formatRelativeTime(oneMinuteAgo)).toBe("1 minute ago");
+	});
+});
+
+describe("Utils - truncate", () => {
+	it("should not truncate short text", async () => {
+		const { truncate } = await import("../lib/utils");
+		expect(truncate("short", 10)).toBe("short");
+	});
+
+	it("should truncate long text", async () => {
+		const { truncate } = await import("../lib/utils");
+		expect(truncate("this is a very long text", 10)).toBe("this is...");
+	});
+
+	it("should handle exact length", async () => {
+		const { truncate } = await import("../lib/utils");
+		expect(truncate("exactly10!", 10)).toBe("exactly10!");
+	});
+});
+
+describe("Utils - isNonEmptyString", () => {
+	it("should return true for non-empty strings", async () => {
+		const { isNonEmptyString } = await import("../lib/utils");
+		expect(isNonEmptyString("hello")).toBe(true);
+		expect(isNonEmptyString("  text  ")).toBe(true);
+	});
+
+	it("should return false for empty or whitespace strings", async () => {
+		const { isNonEmptyString } = await import("../lib/utils");
+		expect(isNonEmptyString("")).toBe(false);
+		expect(isNonEmptyString("   ")).toBe(false);
+	});
+
+	it("should return false for non-strings", async () => {
+		const { isNonEmptyString } = await import("../lib/utils");
+		expect(isNonEmptyString(null)).toBe(false);
+		expect(isNonEmptyString(undefined)).toBe(false);
+		expect(isNonEmptyString(123)).toBe(false);
+	});
+});
+
+describe("Utils - getInitials", () => {
+	it("should get initials from full name", async () => {
+		const { getInitials } = await import("../lib/utils");
+		expect(getInitials("John Doe")).toBe("JD");
+	});
+
+	it("should handle single name", async () => {
+		const { getInitials } = await import("../lib/utils");
+		expect(getInitials("John")).toBe("J");
+	});
+
+	it("should handle empty string", async () => {
+		const { getInitials } = await import("../lib/utils");
+		expect(getInitials("")).toBe("?");
+	});
+
+	it("should handle multiple spaces", async () => {
+		const { getInitials } = await import("../lib/utils");
+		expect(getInitials("John   Doe")).toBe("JD");
+	});
+
+	it("should uppercase initials", async () => {
+		const { getInitials } = await import("../lib/utils");
+		expect(getInitials("john doe")).toBe("JD");
+	});
+});
+
+describe("Utils - cn function (extended)", () => {
 	it("should merge responsive classes correctly", () => {
 		const result = cn("text-base", "md:text-lg", "lg:text-xl");
 		expect(result).toContain("text-base");

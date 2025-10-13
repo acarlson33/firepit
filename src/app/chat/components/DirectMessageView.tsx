@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MoreVertical, Loader2, ArrowLeft } from "lucide-react";
+import { MoreVertical, Loader2, ArrowLeft, MessageSquare } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -146,9 +146,13 @@ export function DirectMessageView({
 						))}
 					</div>
 				) : messages.length === 0 ? (
-					<div className="flex h-full items-center justify-center">
-						<p className="text-muted-foreground text-sm">
-							No messages yet. Start the conversation!
+					<div className="flex h-full flex-col items-center justify-center space-y-2 text-center">
+						<MessageSquare className="mb-2 size-12 text-muted-foreground" />
+						<p className="font-medium text-muted-foreground text-sm">
+							No messages yet
+						</p>
+						<p className="max-w-xs text-muted-foreground/70 text-xs">
+							Start the conversation! Send a message to begin chatting.
 						</p>
 					</div>
 				) : (

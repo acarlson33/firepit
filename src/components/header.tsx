@@ -113,40 +113,56 @@ export default function Header() {
   // Show skeleton while loading initial auth state
   if (loading) {
     return (
-      <div>
-        <div className="flex flex-row items-center justify-between px-2 py-1">
-          <nav className="flex gap-4 text-lg">
-            {baseLinks.map((link) => (
-              <Link href={link.to as `/` | `/chat`} key={link.to}>
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-20 animate-pulse rounded bg-muted" />
+      <header role="banner" className="border-b border-border/60 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-lg font-semibold tracking-tight">
+              firepit
+            </Link>
+            <nav aria-label="Main navigation" className="hidden items-center gap-3 text-sm font-medium sm:flex">
+              {baseLinks.map((link) => (
+                <span className="rounded-full bg-muted/70 px-3 py-1 text-muted-foreground" key={link.to}>
+                  {link.label}
+                </span>
+              ))}
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-24 animate-pulse rounded-full bg-muted" />
             <ModeToggle />
           </div>
         </div>
-        <hr />
-      </div>
+      </header>
     );
   }
 
   return (
-    <div>
-      <div className="flex flex-row items-center justify-between px-2 py-1">
-        <nav className="flex gap-4 text-lg">
-          {links.map((link) => (
-            <Link href={link.to as `/` | `/chat` | `/moderation` | `/admin`} key={link.to}>
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2">
+    <header role="banner" className="border-b border-border/60 bg-background/80 backdrop-blur">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold uppercase text-primary">
+              fp
+            </span>
+            <span className="hidden sm:inline">firepit</span>
+          </Link>
+          <nav aria-label="Main navigation" className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground">
+            {links.map((link) => (
+              <Link
+                href={link.to as `/` | `/chat` | `/moderation` | `/admin`}
+                key={link.to}
+                className="rounded-full border border-transparent px-3 py-1 transition-colors hover:border-border hover:text-foreground"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+        <div className="flex items-center gap-3 self-end sm:self-auto">
           {isAuthenticated && userData ? (
-            <>
+            <div className="flex items-center gap-3">
               {userData.name && (
-                <span className="text-muted-foreground text-sm">
+                <span className="hidden text-muted-foreground text-sm sm:inline">
                   {userData.name}
                 </span>
               )}
@@ -156,11 +172,11 @@ export default function Header() {
                 onStatusChange={handleStatusChange}
               />
               <form onSubmit={handleLogout}>
-                <Button disabled={loggingOut} type="submit" variant="outline">
+                <Button aria-label="Logout from your account" disabled={loggingOut} type="submit" variant="outline">
                   {loggingOut ? "Logging out..." : "Logout"}
                 </Button>
               </form>
-            </>
+            </div>
           ) : (
             <Button asChild variant="outline">
               <Link href="/login">Login</Link>
@@ -169,7 +185,6 @@ export default function Header() {
           <ModeToggle />
         </div>
       </div>
-      <hr />
-    </div>
+    </header>
   );
 }

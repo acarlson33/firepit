@@ -28,12 +28,23 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <Providers>
-          <div className="grid h-svh grid-rows-[auto_1fr]">
-            <Header />
-            {children}
+          <div className="relative min-h-screen overflow-hidden">
+            <div className="pointer-events-none fixed inset-0 -z-10">
+              <div className="absolute -top-24 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-sky-200/40 via-purple-200/40 to-transparent blur-3xl dark:from-sky-500/10 dark:via-purple-500/10" />
+              <div className="absolute bottom-0 right-[-10%] h-80 w-[28rem] rounded-full bg-gradient-to-tr from-emerald-200/40 via-teal-100/30 to-transparent blur-3xl dark:from-emerald-500/10 dark:via-teal-500/10" />
+            </div>
+            <div className="relative z-10 grid min-h-screen grid-rows-[auto_1fr]">
+              <Header />
+              <main className="relative">
+                <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background" aria-hidden="true" />
+                <div className="relative h-full">
+                  {children}
+                </div>
+              </main>
+            </div>
           </div>
         </Providers>
       </body>

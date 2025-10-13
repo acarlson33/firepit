@@ -136,15 +136,23 @@ export default function ChatPage() {
 
   function renderServers() {
     return (
-      <div>
-        <h2 className="mb-2 font-semibold text-sm">Servers</h2>
-        <ul className="mb-2 space-y-1">
+      <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold tracking-tight">Servers</h2>
+          <span className="text-xs text-muted-foreground">
+            {serversApi.servers.length} total
+          </span>
+        </div>
+        <ul className="space-y-2">
           {serversApi.servers.map((s) => {
             const active = s.$id === serversApi.selectedServer;
             return (
               <li key={s.$id}>
                 <Button
-                  className="w-full justify-start"
+                  aria-pressed={active}
+                  className={`w-full justify-between rounded-xl transition-colors ${
+                    active ? "" : "border border-border/60 bg-background"
+                  }`}
                   onClick={() => {
                     serversApi.setSelectedServer(s.$id);
                     setSelectedChannel(null);
@@ -152,14 +160,15 @@ export default function ChatPage() {
                   type="button"
                   variant={active ? "default" : "outline"}
                 >
-                  {s.name}
+                  <span className="truncate text-left font-medium">{s.name}</span>
+                  <span className="text-xs text-muted-foreground">ID {s.$id.slice(0, 4)}</span>
                 </Button>
               </li>
             );
           })}
         </ul>
         {serversApi.cursor && (
-          <div className="mb-2">
+          <div className="pt-2">
             <Button
               disabled={serversApi.loading}
               onClick={serversApi.loadMore}
@@ -172,8 +181,11 @@ export default function ChatPage() {
           </div>
         )}
         {serversApi.membershipEnabled && (
-          <div className="mt-2 text-muted-foreground text-xs">
-            Memberships: {serversApi.memberships.length}
+          <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <span>Memberships</span>
+            <span className="font-medium text-foreground">
+              {serversApi.memberships.length}
+            </span>
           </div>
         )}
       </div>
@@ -183,32 +195,36 @@ export default function ChatPage() {
   function renderChannels() {
     if (!serversApi.selectedServer) {
       return (
-        <p className="text-muted-foreground text-xs">
-          Select a server or create one.
+        <p className="rounded-2xl border border-dashed border-border/60 bg-muted/30 px-4 py-3 text-center text-xs text-muted-foreground">
+          Select a server to view its channels or create a new space.
         </p>
       );
     }
     return (
-      <>
-        <ul className="mb-2 space-y-1">
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
+        <ul className="space-y-2">
           {channelsApi.channels.map((c) => {
             const active = c.$id === selectedChannel;
             return (
               <li key={c.$id}>
                 <Button
-                  className="w-full justify-start"
+                  aria-pressed={active}
+                  className={`w-full justify-between rounded-xl transition-colors ${
+                    active ? "" : "border border-border/60 bg-background"
+                  }`}
                   onClick={() => selectChannel(c)}
                   type="button"
                   variant={active ? "default" : "outline"}
                 >
-                  {c.name}
+                  <span className="truncate text-left font-medium">{c.name}</span>
+                  <span className="text-xs text-muted-foreground">#{c.$id.slice(0, 4)}</span>
                 </Button>
               </li>
             );
           })}
         </ul>
         {channelsApi.cursor && (
-          <div className="mb-2">
+          <div className="pt-2">
             <Button
               disabled={channelsApi.loading}
               onClick={channelsApi.loadMore}
@@ -220,25 +236,25 @@ export default function ChatPage() {
             </Button>
           </div>
         )}
-      </>
+      </div>
     );
   }
 
   function renderMessages() {
     if (!showChat) {
       return (
-        <div className="flex h-[60vh] items-center justify-center rounded-md border p-6 text-muted-foreground text-sm">
-          Select a channel to start chatting.
+        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
+          Pick a channel or direct conversation to get started. Your messages will appear here.
         </div>
       );
     }
     return (
       <div
         aria-live="polite"
-        className="h-[60vh] overflow-y-auto rounded-md border p-3"
+        className="h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
       >
         {shouldShowLoadOlder() && (
-          <div className="mb-3 flex justify-center">
+          <div className="mb-4 flex justify-center">
             <Button
               onClick={loadOlder}
               size="sm"
@@ -257,13 +273,15 @@ export default function ChatPage() {
           const displayName = m.displayName || m.userName || m.userId.slice(0, userIdSlice);
           return (
             <div 
-              className={`mb-3 flex gap-3 rounded-lg p-2 transition-colors ${
-                isEditing ? "bg-blue-50 dark:bg-blue-950/20 ring-2 ring-blue-500/50" : ""
+              className={`group mb-4 flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
+                mine ? "ml-auto max-w-[85%] flex-row-reverse text-right" : "mr-auto max-w-[85%]"
+              } ${
+                isEditing ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30" : "hover:border-border/80"
               }`} 
               key={m.$id}
             >
               <button
-                className="shrink-0 cursor-pointer transition-opacity hover:opacity-80"
+                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
                 onClick={() => openProfileModal(m.userId, m.userName, m.displayName, m.avatarUrl)}
                 type="button"
               >
@@ -274,8 +292,9 @@ export default function ChatPage() {
                   src={m.avatarUrl}
                 />
               </button>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-2 text-muted-foreground text-xs">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
+                >
                   <span className="font-medium text-foreground">
                     {displayName}
                   </span>
@@ -293,8 +312,8 @@ export default function ChatPage() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 break-words">
+                <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+                  <div className="max-w-full flex-1 break-words rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
                     {removed ? (
                       <span className="italic opacity-70">Message removed</span>
                     ) : (
@@ -339,7 +358,7 @@ export default function ChatPage() {
                   )}
                 </div>
                 {isDeleting && (
-                  <div className="mt-2 flex items-center gap-2 rounded border border-destructive bg-destructive/10 p-2">
+                  <div className="mt-2 flex items-center gap-2 rounded-2xl border border-destructive/60 bg-destructive/10 p-3 text-left text-sm">
                     <span className="flex-1 text-sm">Delete this message?</span>
                     <Button
                       onClick={handleDelete}
@@ -364,7 +383,8 @@ export default function ChatPage() {
           );
         })}
         {Object.values(typingUsers).length > 0 && (
-          <div className="mt-4 text-muted-foreground text-xs">
+          <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
+            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
             {Object.values(typingUsers)
               .slice(0, maxTypingDisplay)
               .map((t) => t.userName || t.userId.slice(0, userIdSlice))
@@ -381,32 +401,36 @@ export default function ChatPage() {
   // Show loading skeleton during initial load
   if (serversApi.initialLoading) {
     return (
-      <div className="container mx-auto flex gap-4 px-4 py-6">
-        <aside className="w-64 shrink-0 space-y-6 rounded-md border p-3">
-          <div>
-            <Skeleton className="mb-2 h-5 w-20" />
-            <div className="space-y-2">
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
+      <div className="mx-auto w-full max-w-7xl px-6 py-8">
+        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+            <div className="flex gap-2">
+              <Skeleton className="h-10 flex-1 rounded-2xl" />
+              <Skeleton className="h-10 flex-1 rounded-2xl" />
             </div>
-          </div>
-          <div>
-            <Skeleton className="mb-2 h-5 w-20" />
-            <div className="space-y-2">
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-9 w-full" />
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-24" />
+              <div className="space-y-2">
+                <Skeleton className="h-9 rounded-2xl" />
+                <Skeleton className="h-9 rounded-2xl" />
+                <Skeleton className="h-9 rounded-2xl" />
+              </div>
             </div>
-          </div>
-        </aside>
-        <div className="flex-1">
-          <div className="grid max-w-3xl grid-rows-[1fr_auto] gap-4">
-            <div className="flex h-[60vh] items-center justify-center rounded-md border p-6 text-muted-foreground text-sm">
-              Loading...
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-24" />
+              <div className="space-y-2">
+                <Skeleton className="h-9 rounded-2xl" />
+                <Skeleton className="h-9 rounded-2xl" />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-10 flex-1" />
-              <Skeleton className="h-10 w-16" />
+          </aside>
+          <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+            <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-muted/20 text-muted-foreground">
+              Loading your workspace...
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-12 flex-1 rounded-2xl" />
+              <Skeleton className="h-12 w-24 rounded-2xl" />
             </div>
           </div>
         </div>
@@ -415,67 +439,81 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="container mx-auto flex gap-4 px-4 py-6">
-      <aside className="w-64 shrink-0 space-y-6 rounded-md border p-3">
-        {/* View Mode Toggle */}
-        <div className="flex gap-2">
-          <Button
-            className="flex-1"
-            onClick={() => {
-              setViewMode("channels");
-              setSelectedConversationId(null);
-            }}
-            size="sm"
-            type="button"
-            variant={viewMode === "channels" ? "default" : "outline"}
-          >
-            <Hash className="mr-2 h-4 w-4" />
-            Channels
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={() => {
-              setViewMode("dms");
-              setSelectedChannel(null);
-            }}
-            size="sm"
-            type="button"
-            variant={viewMode === "dms" ? "default" : "outline"}
-          >
-            <MessageSquare className="mr-2 h-4 w-4" />
-            DMs
-          </Button>
-        </div>
-
-        {viewMode === "channels" ? (
-          <>
-            {renderServers()}
-            <div>
-              <h2 className="mb-2 font-semibold text-sm">Channels</h2>
-              {renderChannels()}
+    <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+          {/* View Mode Toggle */}
+          <div className="rounded-2xl bg-muted/40 p-1">
+            <div className="grid grid-cols-2 gap-1">
+              <Button
+                aria-pressed={viewMode === "channels"}
+                className="rounded-xl"
+                onClick={() => {
+                  setViewMode("channels");
+                  setSelectedConversationId(null);
+                }}
+                size="sm"
+                type="button"
+                variant={viewMode === "channels" ? "default" : "ghost"}
+              >
+                <Hash className="mr-2 h-4 w-4" />
+                Channels
+              </Button>
+              <Button
+                aria-pressed={viewMode === "dms"}
+                className="rounded-xl"
+                onClick={() => {
+                  setViewMode("dms");
+                  setSelectedChannel(null);
+                }}
+                size="sm"
+                type="button"
+                variant={viewMode === "dms" ? "default" : "ghost"}
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                DMs
+              </Button>
             </div>
-            <ServerBrowser
-              membershipEnabled={membershipEnabled}
-              userId={userId}
-              joinedServerIds={serversApi.servers.map((s) => s.$id)}
-              onServerJoined={() => {
-                // Reload the page to refresh server list
-                window.location.reload();
-              }}
-            />
-          </>
-        ) : (
-          <ConversationList
-            conversations={conversationsApi.conversations}
-            loading={conversationsApi.loading}
-            onNewConversation={() => setNewConversationOpen(true)}
-            onSelectConversation={selectConversation}
-            selectedConversationId={selectedConversationId}
-          />
-        )}
-      </aside>
-      <div className="flex-1">
-        <div className="grid max-w-3xl grid-rows-[1fr_auto] gap-4">
+          </div>
+
+          {viewMode === "channels" ? (
+            <div className="space-y-4">
+              {renderServers()}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold tracking-tight">Channels</h2>
+                  {selectedChannel && (
+                    <span className="rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
+                      Active
+                    </span>
+                  )}
+                </div>
+                {renderChannels()}
+              </div>
+              <ServerBrowser
+                membershipEnabled={membershipEnabled}
+                userId={userId}
+                joinedServerIds={serversApi.servers.map((s) => s.$id)}
+                onServerJoined={() => {
+                  // Reload the page to refresh server list
+                  window.location.reload();
+                }}
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border/60 bg-background/60 p-2 shadow-sm">
+              <ConversationList
+                conversations={conversationsApi.conversations}
+                loading={conversationsApi.loading}
+                onNewConversation={() => setNewConversationOpen(true)}
+                onSelectConversation={selectConversation}
+                selectedConversationId={selectedConversationId}
+              />
+            </div>
+          )}
+        </aside>
+
+        <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
           {viewMode === "dms" && selectedConversation && userId ? (
             <DirectMessageView
               conversation={selectedConversation}
@@ -490,9 +528,9 @@ export default function ChatPage() {
           ) : (
             <>
               {renderMessages()}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {editingMessageId && (
-                  <div className="flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 text-sm dark:bg-blue-950/20">
+                  <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
                     <span className="text-blue-700 dark:text-blue-300">
                       Editing message
                     </span>
@@ -507,10 +545,10 @@ export default function ChatPage() {
                   </div>
                 )}
                 {editingMessageId ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <Input
                       aria-label="Edit message"
-                      className="ring-2 ring-blue-500/50"
+                      className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
                       onChange={onChangeText}
                       placeholder="Edit your message..."
                       value={text}
@@ -524,33 +562,40 @@ export default function ChatPage() {
                         }
                       }}
                     />
-                    <Button
-                      onClick={(e) => {
-                        void send(e);
-                      }}
-                      type="button"
-                      variant="default"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      onClick={cancelEdit}
-                      type="button"
-                      variant="outline"
-                    >
-                      Cancel
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={(e) => {
+                          void send(e);
+                        }}
+                        type="button"
+                        variant="default"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        onClick={cancelEdit}
+                        type="button"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <form className="flex items-center gap-2" onSubmit={send}>
+                  <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={send}>
                     <Input
                       aria-label="Message"
                       disabled={!showChat}
                       onChange={onChangeText}
                       placeholder={showChat ? "Type a message" : "Select a channel"}
                       value={text}
+                      className="flex-1 rounded-2xl border-border/60"
                     />
-                    <Button disabled={!showChat} type="submit">
+                    <Button
+                      className="rounded-2xl"
+                      disabled={!showChat}
+                      type="submit"
+                    >
                       Send
                     </Button>
                   </form>

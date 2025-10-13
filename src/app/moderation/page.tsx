@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { Filter, Hash, MessageSquare, Server, ShieldAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import {
 	getBasicStats,
 	listAllChannelsPage,
@@ -177,7 +179,7 @@ export default async function ModerationPage(props: {
 	const nextCursor = data.messages.nextCursor || undefined;
 	const badgeMap = await buildBadgeMapSimple(documents);
 	return (
-		<main className="mx-auto max-w-5xl space-y-6 p-6">
+		<main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-10">
 			<Header />
 			<StatsGrid stats={data.stats} />
 			<FilterForm 
@@ -211,11 +213,25 @@ async function fetchModerationData(
 
 function Header() {
 	return (
-		<header className="space-y-1">
-			<h1 className="font-semibold text-2xl">Moderation Panel</h1>
-			<p className="text-muted-foreground text-sm">
-				Review and manage messages across servers & channels. Use the filters below to narrow down your search - select a server from the dropdown to see its channels.
-			</p>
+		<header className="overflow-hidden rounded-3xl border border-border/60 bg-card/60 p-8 shadow-xl backdrop-blur">
+			<div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+				<div className="space-y-3">
+					<div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						<ShieldAlert className="h-4 w-4" aria-hidden="true" />
+						Live moderation tools
+					</div>
+					<h1 className="text-3xl font-semibold tracking-tight">Moderation panel</h1>
+					<p className="max-w-2xl text-sm text-muted-foreground">
+						Sweep messages across every server in seconds. Apply filters, jump into context, and take action without leaving this workspace.
+					</p>
+				</div>
+				<div className="rounded-3xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
+					<p className="font-semibold text-foreground">Need quicker pivots?</p>
+					<p className="mt-2 leading-relaxed">
+						Select a server to unlock channel filtering and narrow results instantly.
+					</p>
+				</div>
+			</div>
 		</header>
 	);
 }
@@ -225,20 +241,49 @@ function StatsGrid({
 }: {
 	stats: Awaited<ReturnType<typeof getBasicStats>>;
 }) {
+	const items = [
+		{
+			label: "Servers monitored",
+			value: stats.servers,
+			icon: <Server className="h-5 w-5" aria-hidden="true" />,
+		},
+		{
+			label: "Channels tracked",
+			value: stats.channels,
+			icon: <Hash className="h-5 w-5" aria-hidden="true" />,
+		},
+		{
+			label: "Messages indexed",
+			value: stats.messages,
+			icon: <MessageSquare className="h-5 w-5" aria-hidden="true" />,
+		},
+	];
 	return (
-		<section className="grid gap-4 sm:grid-cols-3">
-			<StatBox label="Servers" value={stats.servers} />
-			<StatBox label="Channels" value={stats.channels} />
-			<StatBox label="Messages" value={stats.messages} />
+		<section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{items.map((item) => (
+				<StatBox key={item.label} icon={item.icon} label={item.label} value={item.value} />
+			))}
 		</section>
 	);
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+
+function StatBox({
+	icon,
+	label,
+	value,
+}: {
+	icon: ReactNode;
+	label: string;
+	value: number;
+}) {
 	return (
-		<div className="rounded border p-3">
-			<p className="mb-1 font-medium text-xs">{label}</p>
-			<p className="font-semibold text-lg">{value}</p>
+		<div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
+			<div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+				<span>{label}</span>
+				{icon}
+			</div>
+			<p className="mt-4 text-3xl font-semibold text-foreground">{value}</p>
 		</div>
 	);
 }
@@ -254,53 +299,54 @@ function FilterForm({
 }) {
 	const multiChannels = serverChannels.length > 0;
 	return (
-		<section className="rounded-lg border bg-card p-6">
-			<h2 className="mb-4 font-semibold text-lg">Filters</h2>
-			<form className="space-y-4" method="get">
-				{/* Search and User Filter Row */}
+		<section className="rounded-3xl border border-border/60 bg-card/70 p-6 shadow-lg">
+			<div className="flex items-center gap-2 text-sm font-semibold">
+				<Filter className="h-4 w-4" aria-hidden="true" />
+				<span>Refine results</span>
+			</div>
+			<form className="mt-6 space-y-6" method="get">
 				<div className="grid gap-4 md:grid-cols-2">
 					<div className="space-y-2">
-						<label className="font-medium text-sm" htmlFor="q">
-							Search Message Content
+						<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="q">
+							Search message content
 						</label>
 						<input
-							className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							defaultValue={params.textFilter || ""}
 							id="q"
 							name="q"
-							placeholder="Search messages..."
+							placeholder="Keyword or phrase"
 							type="text"
 						/>
 					</div>
 					<div className="space-y-2">
-						<label className="font-medium text-sm" htmlFor="userId">
+						<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="userId">
 							User ID <span className="text-muted-foreground">(optional)</span>
 						</label>
 						<input
-							className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							defaultValue={params.userFilter || ""}
 							id="userId"
 							name="userId"
-							placeholder="Filter by user..."
+							placeholder="user_..."
 							type="text"
 						/>
 					</div>
 				</div>
 
-				{/* Server and Channel Row */}
 				<div className="grid gap-4 md:grid-cols-2">
 					{servers.length > 0 ? (
 						<div className="space-y-2">
-							<label className="font-medium text-sm" htmlFor="serverId">
+							<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="serverId">
 								Server
 							</label>
 							<select
-								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								defaultValue={params.serverFilter || ""}
 								id="serverId"
 								name="serverId"
 							>
-								<option value="">All Servers</option>
+								<option value="">All servers</option>
 								{servers.map((s) => (
 									<option key={s.$id} value={s.$id}>
 										{s.name}
@@ -310,26 +356,26 @@ function FilterForm({
 						</div>
 					) : (
 						<div className="space-y-2">
-							<label className="font-medium text-sm" htmlFor="serverId">
+							<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="serverId">
 								Server ID <span className="text-muted-foreground">(optional)</span>
 							</label>
 							<input
-								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								defaultValue={params.serverFilter || ""}
 								id="serverId"
 								name="serverId"
-								placeholder="Enter server ID..."
+								placeholder="server_..."
 								type="text"
 							/>
 						</div>
 					)}
 					{multiChannels ? (
 						<div className="space-y-2">
-							<label className="font-medium text-sm" htmlFor="channelIds">
-								Channels <span className="text-muted-foreground text-xs">(Ctrl/Cmd+Click for multiple)</span>
+							<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="channelIds">
+								Channels <span className="text-muted-foreground text-[11px]">(Ctrl/Cmd+Click for multiple)</span>
 							</label>
 							<select
-								className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								defaultValue={params.channelIdsFilter || []}
 								id="channelIds"
 								multiple
@@ -346,55 +392,50 @@ function FilterForm({
 						</div>
 					) : (
 						<div className="space-y-2">
-							<label className="font-medium text-sm" htmlFor="channelId">
+							<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="channelId">
 								Channel ID <span className="text-muted-foreground">(optional)</span>
 							</label>
 							<input
-								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								defaultValue={params.channelFilter || ""}
 								id="channelId"
 								name="channelId"
-								placeholder="Enter channel ID..."
+								placeholder="channel_..."
 								type="text"
 							/>
 						</div>
 					)}
 				</div>
 
-				{/* Filter Options Row */}
 				<div className="flex flex-wrap items-center gap-6">
-					<div className="flex items-center space-x-2">
+					<label className="inline-flex items-center gap-2 text-sm" htmlFor="includeRemoved">
 						<input
-							className="h-4 w-4 rounded border-input ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="h-4 w-4 rounded border-border/60 text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							defaultChecked={params.includeRemoved}
 							id="includeRemoved"
 							name="includeRemoved"
 							type="checkbox"
 							value="true"
 						/>
-						<label className="text-sm leading-none" htmlFor="includeRemoved">
-							Include Removed Messages
-						</label>
-					</div>
-					<div className="flex items-center space-x-2">
+						<span>Include removed</span>
+					</label>
+					<label className="inline-flex items-center gap-2 text-sm" htmlFor="onlyRemoved">
 						<input
-							className="h-4 w-4 rounded border-input ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="h-4 w-4 rounded border-border/60 text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							defaultChecked={params.onlyRemoved}
 							id="onlyRemoved"
 							name="onlyRemoved"
 							type="checkbox"
 							value="true"
 						/>
-						<label className="text-sm leading-none" htmlFor="onlyRemoved">
-							Only Removed Messages
-						</label>
-					</div>
+						<span>Only removed</span>
+					</label>
 					<div className="space-y-2">
-						<label className="font-medium text-sm" htmlFor="limit">
-							Results Limit
+						<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="limit">
+							Results limit
 						</label>
 						<input
-							className="w-20 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="w-24 rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							defaultValue={params.limit}
 							id="limit"
 							max={100}
@@ -405,19 +446,18 @@ function FilterForm({
 					</div>
 				</div>
 
-				{/* Action Buttons */}
-				<div className="flex gap-3 pt-2">
+				<div className="flex flex-wrap gap-3">
 					<button
-						className="rounded-md bg-primary px-4 py-2 text-primary-foreground text-sm font-medium transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						className="rounded-2xl border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40"
 						type="submit"
 					>
-						Apply Filters
+						Apply filters
 					</button>
 					<a
-						className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						className="rounded-2xl border border-border/60 bg-muted/50 px-5 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
 						href="/moderation"
 					>
-						Clear All
+						Clear all
 					</a>
 				</div>
 			</form>
@@ -440,12 +480,19 @@ function MessagesList({
 }) {
 	return (
 		<section className="space-y-4">
-			<h2 className="font-semibold text-lg">Messages</h2>
-			<ModerationMessageList
-				badgeMap={badgeMap}
-				initialMessages={documents}
-				isAdmin={isAdmin}
-			/>
+			<div className="flex items-center justify-between">
+				<h2 className="text-lg font-semibold">Messages</h2>
+				<span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					{documents.length} result{documents.length === 1 ? "" : "s"}
+				</span>
+			</div>
+			<div className="rounded-3xl border border-border/60 bg-card/70 p-4 shadow-inner">
+				<ModerationMessageList
+					badgeMap={badgeMap}
+					initialMessages={documents}
+					isAdmin={isAdmin}
+				/>
+			</div>
 			<Pagination nextCursor={nextCursor} params={params} />
 		</section>
 	);
@@ -462,8 +509,8 @@ function Pagination({
 		return null;
 	}
 	return (
-		<div className="flex justify-center pt-4">
-			<form method="get">
+		<div className="flex justify-center pt-6">
+			<form className="inline-flex flex-wrap items-center justify-center gap-3 rounded-3xl border border-border/60 bg-card/70 px-6 py-4 shadow-sm" method="get">
 				<input name="cursor" type="hidden" value={nextCursor} />
 				<input name="limit" type="hidden" value={params.limit} />
 				{params.includeRemoved && (
@@ -491,10 +538,10 @@ function Pagination({
 					<input name="q" type="hidden" value={params.textFilter} />
 				)}
 				<button 
-					className="rounded-md border border-input bg-background px-6 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" 
+					className="rounded-2xl border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40" 
 					type="submit"
 				>
-					Load More Messages
+					Load more messages
 				</button>
 			</form>
 		</div>
