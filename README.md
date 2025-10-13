@@ -189,7 +189,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - Issue reporting templates
 
 ## 📄 License
-Licensed under the GNU General Public License v2.
+Licensed under the GNU General Public License (GPL) v3.
 You can find the License here: [License](./LICENSE)
 
 ## 🙏 Acknowledgments
