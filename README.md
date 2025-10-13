@@ -189,8 +189,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - Issue reporting templates
 
 ## 📄 License
-
-[Add your license here]
+Licensed under the GNU General Public License v2 [License](./LICENSE)
 
 ## 🙏 Acknowledgments
 
