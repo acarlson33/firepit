@@ -27,4 +27,4 @@ jobs:
         env:
             NEXT_TELEMETRY_DISABLED: 1
             APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
-            APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID}}
+            APPWRITE_PROJECT: ${{ secrets.APPWRITE_PROJECT_ID}}
