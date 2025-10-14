@@ -4,7 +4,7 @@
  * Creates database, collections, string attributes, indexes, teams, and storage buckets if they do not exist.
  * Safe to re-run. Avoids console.* per project lint rules (writes directly to stdout/stderr).
  */
-import { Client, Databases, Storage, Teams } from "appwrite";
+import { Client, Databases, Storage, Teams } from "node-appwrite";
 
 // ---- Environment (DO NOT hardcode secrets) ----
 const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
@@ -168,6 +168,47 @@ async function ensureBooleanAttribute(
 }
 
 type IndexType = "key" | "fulltext"; // subset used
+async function waitForAttribute(
+	collection: string,
+	key: string,
+	maxAttempts = 10,
+	delayMs = 1000,
+): Promise<void> {
+	for (let i = 0; i < maxAttempts; i++) {
+		try {
+			const attr = await tryVariants([
+				() => dbAny.getAttribute(DB_ID, collection, key),
+				() =>
+					dbAny.getAttribute?.({
+						databaseId: DB_ID,
+						collectionId: collection,
+						key,
+					}),
+			]);
+			// Check if attribute is available (status should be 'available')
+			const status = String((attr as any).status);
+			if (status === "available") {
+				info(`[setup] attribute ${collection}.${key} is available`);
+				return;
+			}
+			info(
+				`[setup] waiting for ${collection}.${key} (status: ${status}, attempt ${i + 1}/${maxAttempts})`,
+			);
+		} catch (e) {
+			// Attribute doesn't exist yet, wait and retry
+			info(
+				`[setup] ${collection}.${key} not found yet (attempt ${i + 1}/${maxAttempts})`,
+			);
+		}
+		if (i < maxAttempts - 1) {
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
+	}
+	throw new Error(
+		`Attribute ${collection}.${key} did not become available after ${maxAttempts} attempts`,
+	);
+}
+
 async function ensureIndex(
 	collection: string,
 	name: string,
@@ -175,7 +216,7 @@ async function ensureIndex(
 	attributes: string[],
 ) {
 	try {
-		await tryVariants([
+		const existing = await tryVariants([
 			() => dbAny.getIndex(DB_ID, collection, name),
 			() =>
 				dbAny.getIndex?.({
@@ -184,28 +225,64 @@ async function ensureIndex(
 					key: name,
 				}),
 		]);
+		info(`[setup] index ${collection}.${name} already exists (status: ${String((existing as any).status)})`);
 	} catch {
-		try {
-			await tryVariants([
-				() => dbAny.createIndex(DB_ID, collection, name, type, attributes),
-				() =>
-					dbAny.createIndex?.({
-						databaseId: DB_ID,
-						collectionId: collection,
-						key: name,
-						type,
-						attributes,
-					}),
-			]);
-			info(`[setup] created index ${collection}.${name}`);
-		} catch (e) {
-			if (type === "fulltext") {
-				warn(
-					`skipping fulltext index ${collection}.${name}: ${(e as Error).message}`,
+		// Wait for all attributes to be available before creating index
+		for (const attr of attributes) {
+			await waitForAttribute(collection, attr);
+		}
+
+		// Retry index creation with backoff if attributes aren't ready
+		let lastError: Error | null = null;
+		for (let attempt = 0; attempt < 5; attempt++) {
+			if (attempt > 0) {
+				const delay = 2000 * attempt; // Progressive delay: 2s, 4s, 6s, 8s
+				info(
+					`[setup] retrying index ${collection}.${name} after ${delay}ms delay (attempt ${attempt + 1}/5)`,
 				);
-			} else {
+				await new Promise((resolve) => setTimeout(resolve, delay));
+			}
+
+			try {
+				await tryVariants([
+					() => dbAny.createIndex(DB_ID, collection, name, type, attributes),
+					() =>
+						dbAny.createIndex?.({
+							databaseId: DB_ID,
+							collectionId: collection,
+							key: name,
+							type,
+							attributes,
+						}),
+				]);
+				info(`[setup] created index ${collection}.${name}`);
+				return; // Success!
+			} catch (e) {
+				lastError = e as Error;
+				const errMsg = lastError.message || "";
+				// If it's an "attribute not available" error, retry
+				if (errMsg.includes("Attribute not available")) {
+					continue;
+				}
+				// For other errors, handle immediately
+				if (type === "fulltext") {
+					warn(
+						`skipping fulltext index ${collection}.${name}: ${lastError.message}`,
+					);
+					return;
+				}
+				// Re-throw other errors
 				throw e;
 			}
+		}
+
+		// All retries failed
+		if (type === "fulltext") {
+			warn(
+				`skipping fulltext index ${collection}.${name}: ${lastError?.message ?? "unknown error"}`,
+			);
+		} else {
+			throw lastError ?? new Error("Failed to create index after retries");
 		}
 	}
 }
@@ -215,17 +292,15 @@ async function setupServers() {
 	await ensureCollection("servers", "Servers");
 	await ensureStringAttribute("servers", "name", LEN_ID, true);
 	await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
-	await ensureStringAttribute("servers", "createdAt", LEN_TS, true);
-	await ensureIndex("servers", "idx_created_desc", "key", ["createdAt"]);
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 }
 
 async function setupChannels() {
 	await ensureCollection("channels", "Channels");
 	await ensureStringAttribute("channels", "serverId", LEN_ID, true);
 	await ensureStringAttribute("channels", "name", LEN_ID, true);
-	await ensureStringAttribute("channels", "createdAt", LEN_TS, true);
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("channels", "idx_serverId", "key", ["serverId"]);
-	await ensureIndex("channels", "idx_created_desc", "key", ["createdAt"]);
 }
 
 async function setupMessages() {
@@ -249,6 +324,12 @@ async function setupMessages() {
 	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
 	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
 	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
+	
+	// Compound indexes for common query patterns (Performance Optimization #1)
+	await ensureIndex("messages", "idx_channel_created", "key", ["channelId", "createdAt"]);
+	await ensureIndex("messages", "idx_server_created", "key", ["serverId", "createdAt"]);
+	await ensureIndex("messages", "idx_user_created", "key", ["userId", "createdAt"]);
+	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
 	} catch {
@@ -456,15 +537,25 @@ async function preflight() {
 async function run() {
 	await preflight();
 	await ensureDatabase();
+	info("[setup] Setting up servers...");
 	await setupServers();
+	info("[setup] Setting up channels...");
 	await setupChannels();
+	info("[setup] Setting up messages...");
 	await setupMessages();
+	info("[setup] Setting up audit...");
 	await setupAudit();
+	info("[setup] Setting up typing...");
 	await setupTyping();
+	info("[setup] Setting up memberships...");
 	await setupMemberships();
+	info("[setup] Setting up profiles...");
 	await setupProfiles();
+	info("[setup] Setting up statuses...");
 	await setupStatuses();
+	info("[setup] Setting up storage...");
 	await setupStorage();
+	info("[setup] Setting up teams...");
 	await ensureTeams();
 	info("Setup complete.");
 }

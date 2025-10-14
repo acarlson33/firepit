@@ -75,7 +75,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 	beforeEach(() => {
 		setupEnv();
 		clearTeamMemberships();
-		vi.resetModules();
+
 		// Clear role tag cache
 		const g = globalThis as any;
 		if (g.__roleTagCache) {
@@ -130,7 +130,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			(process.env as Record<string, string>).APPWRITE_ADMIN_USER_IDS =
 				"override-admin-1,override-admin-2";
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoles("override-admin-1");
@@ -143,7 +143,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			(process.env as Record<string, string>).APPWRITE_MODERATOR_USER_IDS =
 				"override-mod-1";
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoles("override-mod-1");
@@ -158,7 +158,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			delete (process.env as Record<string, string>)
 				.NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID;
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoles("user1");
@@ -234,7 +234,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 				});
 			setTeamMemberships("team-vip", ["vip-user"]);
 
-			vi.resetModules();
+
 			const { getUserRoleTags } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoleTags("vip-user");
@@ -248,7 +248,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			(process.env as Record<string, string>).NEXT_PUBLIC_ROLE_TEAM_MAP =
 				"invalid-json{";
 
-			vi.resetModules();
+
 			const { getUserRoleTags } = await import("../lib/appwrite-roles");
 
 			// Should not throw
@@ -264,7 +264,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			setTeamMemberships("team-admin", ["admin-user"]);
 			setTeamMemberships("team-custom-admin", ["admin-user"]);
 
-			vi.resetModules();
+
 			const { getUserRoleTags } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoleTags("admin-user");
@@ -351,7 +351,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			(process.env as Record<string, string>).APPWRITE_ADMIN_USER_IDS =
 				" user1 , user2 ,user3  ";
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			const result1 = await getUserRoles("user1");
@@ -367,7 +367,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			(process.env as Record<string, string>).APPWRITE_ADMIN_USER_IDS = "";
 			(process.env as Record<string, string>).APPWRITE_MODERATOR_USER_IDS = "";
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoles("user1");
@@ -397,7 +397,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 				},
 			}));
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			// Should not throw, returns false roles
@@ -417,7 +417,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			setTeamMemberships("team-gold", ["rich-user"]);
 			setTeamMemberships("team-silver", ["rich-user"]);
 
-			vi.resetModules();
+
 			const { getUserRoleTags } = await import("../lib/appwrite-roles");
 
 			const result = await getUserRoleTags("rich-user");
@@ -441,7 +441,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 			// Promote to moderator
 			clearTeamMemberships();
 			setTeamMemberships("team-mod", ["lifecycle-user"]);
-			vi.resetModules();
+
 			const { getUserRoles: getRoles2 } = await import("../lib/appwrite-roles");
 
 			result = await getRoles2("lifecycle-user");
@@ -452,7 +452,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 		it("should work without API key (browser mode)", async () => {
 			delete (process.env as Record<string, string>).APPWRITE_API_KEY;
 
-			vi.resetModules();
+
 			const { getUserRoles } = await import("../lib/appwrite-roles");
 
 			// Should still work, just using browser client

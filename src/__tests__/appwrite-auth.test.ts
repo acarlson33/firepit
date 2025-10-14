@@ -88,6 +88,7 @@ describe("appwrite-auth", () => {
     const first = await firstMod.getCurrentUser();
     expect(first?.$id).toBe("user-123");
     // Reconfigure core to return an Account with failing get
+
     vi.resetModules();
     vi.doMock("appwrite", async (orig) => {
       const base: any = (await orig()) as any;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { setupMockAppwrite } from "./__helpers__/mockAppwrite";
 
@@ -21,7 +21,7 @@ describe("audit + diagnostics", () => {
     (process.env as any).NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID = ""; // becomes null
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
-    vi.resetModules();
+
     const { recordAudit } = await import("../lib/appwrite-audit");
     // Should not throw
     await recordAudit("delete", "t1", "actor1");
@@ -76,7 +76,7 @@ describe("audit + diagnostics", () => {
     (process.env as any).NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID = "teamMod";
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
-    vi.resetModules();
+
     const auditMod = await import("../lib/appwrite-audit");
     await auditMod.recordAudit("delete", "target1", "actor1", {
       reason: "test",
@@ -127,7 +127,7 @@ describe("audit + diagnostics", () => {
     });
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
-    vi.resetModules();
+
     const { runAuthDiagnostics } = await import("../lib/appwrite-diagnostics");
     const rep = await runAuthDiagnostics();
     expect(rep.browserClientConfigured).toBe(true);

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { setUserStatus, updateLastSeen, setOffline } from "@/lib/appwrite-status";
 
 const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-const LAST_SEEN_INTERVAL = 30 * 1000; // 30 seconds
+const LAST_SEEN_INTERVAL = 60 * 1000; // 60 seconds (reduced from 30s to save API calls)
 
 type UseActivityTrackingProps = {
 	userId: string | null;
@@ -57,10 +57,10 @@ export function useActivityTracking({ userId, enabled = true }: UseActivityTrack
 			}, INACTIVITY_TIMEOUT);
 		}
 
-		// Listen to user activity events
-		const events = ["mousedown", "keydown", "scroll", "touchstart"];
+		// Listen to user activity events (reduced to most important ones)
+		const events = ["mousedown", "keydown"];
 		for (const event of events) {
-			window.addEventListener(event, handleActivity);
+			window.addEventListener(event, handleActivity, { passive: true });
 		}
 
 		// Start inactivity timer

@@ -143,6 +143,7 @@ describe("admin channel & global message listing", () => {
   });
   it("returns empty on underlying listDocuments error", async () => {
     // Force error by resetting modules and mocking core before re-importing admin module
+
     vi.resetModules();
     vi.doMock("../lib/appwrite-core", async () => {
       const actual = await import("../lib/appwrite-core");

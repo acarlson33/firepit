@@ -162,7 +162,7 @@ export default async function Home() {
 								{isAdmin ? "Instance wide control" : isModerator ? "Space Moderation" : "Chatting"}
 							</p>
 							<p className="text-xs">
-								Need a status change? Update it directly from the header at any time.
+								Need a status change? Reach out to an instance admin.
 							</p>
 						</div>
 					</div>

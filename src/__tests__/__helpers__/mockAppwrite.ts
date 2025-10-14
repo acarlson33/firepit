@@ -130,10 +130,27 @@ vi.mock("appwrite", () => {
     equal: (k: string, v: any) => `equal(${k},${v})`,
   };
 
+  class Storage {
+    getFile() {
+      return Promise.resolve({});
+    }
+    deleteFile() {
+      return Promise.resolve({});
+    }
+  }
+
+  class Teams {
+    list() {
+      return Promise.resolve({ teams: [] });
+    }
+  }
+
   const exported: any = {};
   exported.Client = Client;
   exported.Account = Account;
   exported.Databases = Databases;
+  exported.Storage = Storage;
+  exported.Teams = Teams;
   exported.Permission = Permission;
   exported.Role = Role;
   exported.ID = idUtil;

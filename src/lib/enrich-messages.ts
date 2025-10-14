@@ -3,6 +3,7 @@ import {
 	getAvatarUrl,
 } from "./appwrite-profiles";
 import type { Message } from "./types";
+import { apiCache, CACHE_TTL } from "./cache-utils";
 
 /**
  * Enriches messages with profile information (displayName, pronouns, avatarUrl)
@@ -50,19 +51,28 @@ export async function enrichMessagesWithProfiles(
 /**
  * Enriches a single message with profile information
  * Useful for realtime updates where we receive one message at a time
- * Uses client-side fetch to work in browser context
+ * Uses client-side fetch to work in browser context with caching
  */
 export async function enrichMessageWithProfile(
 	message: Message
 ): Promise<Message> {
 	try {
-		const response = await fetch(`/api/users/${message.userId}/profile`);
-		
-		if (!response.ok) {
+		// Use cache with deduplication to avoid redundant profile fetches
+		const profile = await apiCache.dedupe(
+			`profile:${message.userId}`,
+			async () => {
+				const response = await fetch(`/api/users/${message.userId}/profile`);
+				if (!response.ok) {
+					return null;
+				}
+				return response.json();
+			},
+			CACHE_TTL.PROFILES
+		);
+
+		if (!profile) {
 			return message;
 		}
-
-		const profile = await response.json();
 
 		return {
 			...message,

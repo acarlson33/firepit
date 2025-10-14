@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { MoreVertical, MessageSquare, Hash } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -11,13 +12,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { UserProfileModal } from "@/components/user-profile-modal";
 import type { Channel } from "@/lib/types";
 
-import { ServerBrowser } from "./components/ServerBrowser";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
-import { NewConversationDialog } from "./components/NewConversationDialog";
 import { useAuth } from "./hooks/useAuth";
 import { useChannels } from "./hooks/useChannels";
 import { useMessages } from "./hooks/useMessages";
@@ -25,6 +23,17 @@ import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useActivityTracking } from "./hooks/useActivityTracking";
+
+// Lazy load heavy components
+const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
+  ssr: false,
+});
+const UserProfileModal = dynamic(() => import("@/components/user-profile-modal").then((mod) => ({ default: mod.UserProfileModal })), {
+  ssr: false,
+});
+const NewConversationDialog = dynamic(() => import("./components/NewConversationDialog").then((mod) => ({ default: mod.NewConversationDialog })), {
+  ssr: false,
+});
 
 export default function ChatPage() {
   const { userId, userName } = useAuth();
@@ -95,8 +104,9 @@ export default function ChatPage() {
 
   // DM hooks
   const conversationsApi = useConversations(userId);
-  const selectedConversation = conversationsApi.conversations.find(
-    (c) => c.$id === selectedConversationId
+  const selectedConversation = useMemo(
+    () => conversationsApi.conversations.find((c) => c.$id === selectedConversationId),
+    [conversationsApi.conversations, selectedConversationId]
   );
   const receiverId = selectedConversation?.otherUser?.userId;
   
@@ -107,32 +117,35 @@ export default function ChatPage() {
   });
 
   // Handlers -----------------
-  function selectChannel(c: Channel) {
+  const selectChannel = useCallback((c: Channel) => {
     setSelectedChannel(c.$id);
     setViewMode("channels");
     setSelectedConversationId(null);
-  }
+  }, []);
 
-  function selectConversation(conversation: { $id: string }) {
+  const selectConversation = useCallback((conversation: { $id: string }) => {
     setSelectedConversationId(conversation.$id);
     setViewMode("dms");
     setSelectedChannel(null);
-  }
+  }, []);
 
-  function confirmDelete(messageId: string) {
+  const confirmDelete = useCallback((messageId: string) => {
     setDeleteConfirmId(messageId);
-  }
+  }, []);
 
-  async function handleDelete() {
+  const handleDelete = useCallback(async () => {
     if (!deleteConfirmId) {
       return;
     }
     await removeMessage(deleteConfirmId);
     setDeleteConfirmId(null);
-  }
+  }, [deleteConfirmId, removeMessage]);
 
   // Derived helpers
-  const showChat = Boolean(selectedChannel) || Boolean(selectedConversationId);
+  const showChat = useMemo(
+    () => Boolean(selectedChannel) || Boolean(selectedConversationId),
+    [selectedChannel, selectedConversationId]
+  );
 
   function renderServers() {
     return (

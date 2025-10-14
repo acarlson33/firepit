@@ -19,7 +19,7 @@ async function loadModule() {
 }
 
 function reloadModule() {
-	vi.resetModules();
+
 	getUserRoles = undefined as any;
 	getUserRoleTags = undefined as any;
 	return loadModule();

@@ -12,7 +12,10 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
-const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || undefined;
+// Read memberships collection ID at call time for testability
+function getMembershipsCollectionId(): string | undefined {
+  return getEnvConfig().collections.memberships || undefined;
+}
 const MAX_LIST_LIMIT = 500; // upper bound used for bulk listing
 const DEFAULT_SERVER_PAGE_SIZE = 25;
 const DEFAULT_CHANNEL_PAGE_SIZE = 50;
@@ -23,12 +26,12 @@ function getDatabases() {
   return getBrowserDatabases();
 }
 
-export async function listServers(limit = 100): Promise<Server[]> {
+export async function listServers(limit = 25): Promise<Server[]> {
   const res = await getDatabases().listDocuments({
     databaseId: DATABASE_ID,
     collectionId: SERVERS_COLLECTION_ID,
     // Use system attribute $createdAt for ordering to avoid schema attribute requirement
-    queries: [Query.limit(limit), Query.orderAsc("$createdAt")],
+    queries: [Query.limit(Math.min(limit, 100)), Query.orderAsc("$createdAt")],
   });
   return res.documents.map((doc) => {
     const d = doc as unknown as Record<string, unknown>;
@@ -86,7 +89,8 @@ export function createServer(name: string): Promise<Server> {
         permissions,
       });
       const s = serverDoc as unknown as Record<string, unknown>;
-      if (MEMBERSHIPS_COLLECTION_ID) {
+      const membershipsCollectionId = getMembershipsCollectionId();
+      if (membershipsCollectionId) {
         try {
           const membershipPerms = [
             Permission.read(Role.any()),
@@ -95,7 +99,7 @@ export function createServer(name: string): Promise<Server> {
           ];
           await getDatabases().createDocument({
             databaseId: DATABASE_ID,
-            collectionId: MEMBERSHIPS_COLLECTION_ID,
+            collectionId: membershipsCollectionId,
             documentId: ID.unique(),
             data: {
               serverId: String(s.$id),
@@ -208,12 +212,13 @@ export async function createChannel(
 export async function listMembershipsForUser(
   userId: string
 ): Promise<Membership[]> {
-  if (!MEMBERSHIPS_COLLECTION_ID) {
+  const membershipsCollectionId = getMembershipsCollectionId();
+  if (!membershipsCollectionId) {
     return [];
   }
   const res = await getDatabases().listDocuments({
     databaseId: DATABASE_ID,
-    collectionId: MEMBERSHIPS_COLLECTION_ID,
+    collectionId: membershipsCollectionId,
     queries: [Query.equal("userId", userId), Query.limit(MAX_LIST_LIMIT)],
   });
   return res.documents.map((doc) => {
@@ -232,7 +237,8 @@ export async function joinServer(
   serverId: string,
   userId: string
 ): Promise<Membership | null> {
-  if (!MEMBERSHIPS_COLLECTION_ID) {
+  const membershipsCollectionId = getMembershipsCollectionId();
+  if (!membershipsCollectionId) {
     return null;
   }
   const { Permission, Role } = await import("appwrite");
@@ -243,7 +249,7 @@ export async function joinServer(
   ];
   const res = await getDatabases().createDocument({
     databaseId: DATABASE_ID,
-    collectionId: MEMBERSHIPS_COLLECTION_ID,
+    collectionId: membershipsCollectionId,
     documentId: ID.unique(),
     data: { serverId, userId, role: "member" },
     permissions,

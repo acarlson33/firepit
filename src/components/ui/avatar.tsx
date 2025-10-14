@@ -27,6 +27,9 @@ export function Avatar({ src, alt, fallback, size = "md" }: AvatarProps) {
 					alt={alt}
 					className="h-full w-full object-cover"
 					height={size === "sm" ? 24 : size === "md" ? 32 : 48}
+					loading="lazy"
+					placeholder="blur"
+					blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
 					src={src}
 					width={size === "sm" ? 24 : size === "md" ? 32 : 48}
 					onError={() => setImageError(true)}

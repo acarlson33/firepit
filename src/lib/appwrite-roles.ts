@@ -18,14 +18,20 @@ const adminTeamId = env.teams.adminTeamId || undefined;
 const moderatorTeamId = env.teams.moderatorTeamId || undefined;
 
 // Optional explicit user ID overrides (comma separated) – useful for bootstrap/dev.
-const adminUserOverrides = (process.env.APPWRITE_ADMIN_USER_IDS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-const moderatorUserOverrides = (process.env.APPWRITE_MODERATOR_USER_IDS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// Parse these at call time so tests can override them
+function getAdminUserOverrides(): string[] {
+  return (process.env.APPWRITE_ADMIN_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function getModeratorUserOverrides(): string[] {
+  return (process.env.APPWRITE_MODERATOR_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 // Robust membership check with pagination; avoids false negatives for large teams.
 async function isMember(
@@ -86,6 +92,8 @@ export async function getUserRoles(userId: string | null): Promise<RoleInfo> {
     return { isAdmin: false, isModerator: false };
   }
   // Explicit overrides take precedence (useful before teams exist)
+  const adminUserOverrides = getAdminUserOverrides();
+  const moderatorUserOverrides = getModeratorUserOverrides();
   const overrideAdmin = adminUserOverrides.includes(userId);
   const overrideModerator =
     overrideAdmin || moderatorUserOverrides.includes(userId);
@@ -110,12 +118,19 @@ export async function getUserRoles(userId: string | null): Promise<RoleInfo> {
 
 let parsedTeamMap: Record<string, { label: string; color?: string }> | null =
   null;
+let lastTeamMapRaw: string | undefined = undefined;
+
 function loadTeamMap() {
-  if (parsedTeamMap) {
+  const raw = process.env.NEXT_PUBLIC_ROLE_TEAM_MAP;
+  
+  // Re-parse if environment changed or first time
+  if (parsedTeamMap !== null && raw === lastTeamMapRaw) {
     return parsedTeamMap;
   }
+  
+  lastTeamMapRaw = raw;
+  
   try {
-    const raw = process.env.NEXT_PUBLIC_ROLE_TEAM_MAP;
     if (raw) {
       parsedTeamMap = JSON.parse(raw) as Record<
         string,

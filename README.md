@@ -89,17 +89,17 @@ firepit/
 
 ## 🛠️ Available Scripts
 
-| Command             | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `bun dev`           | Start development server (with Turbopack)    |
-| `bun build`         | Build for production                         |
-| `bun start`         | Start production server                      |
-| `bun test`          | Run all tests with Vitest                    |
-| `bun test:coverage` | Run tests with coverage report               |
-| `bun lint`          | Check code with ESLint                       |
-| `bun lint:fix`      | Fix auto-fixable linting issues              |
-| `bun validate-env`  | Validate environment configuration           |
-| `bun setup`         | Initialize Appwrite database and collections |
+| Command                 | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `bun dev`               | Start development server (with Turbopack)    |
+| `bun build`             | Build for production                         |
+| `bun start`             | Start production server                      |
+| `bun run test`          | Run all tests with Vitest                    |
+| `bun run test:coverage` | Run tests with coverage report               |
+| `bun lint`              | Check code with ESLint                       |
+| `bun lint:fix`          | Fix auto-fixable linting issues              |
+| `bun validate-env`      | Validate environment configuration           |
+| `bun setup`             | Initialize Appwrite database and collections |
 
 ## 🔧 Configuration
 
@@ -143,13 +143,13 @@ This project maintains a comprehensive test suite with 100% pass rate:
 
 ```bash
 # Run all tests
-bun test
+bun run test
 
 # Run tests with coverage report
-bun test:coverage
+bun run test:coverage
 
 # Run tests in watch mode (during development)
-bun test --watch
+bun run test --watch
 ```
 
 Current test coverage: **22.36%** statements (growing)
@@ -189,6 +189,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - Issue reporting templates
 
 ## 📄 License
+
 Licensed under the GNU General Public License (GPL) v3.
 You can find the License here: [License](./LICENSE)
 

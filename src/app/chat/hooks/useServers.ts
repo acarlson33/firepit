@@ -8,6 +8,7 @@ import {
   joinServer,
 } from "@/lib/appwrite-servers";
 import type { Membership, Server } from "@/lib/types";
+import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 
 type UseServersOptions = {
   userId: string | null;
@@ -44,17 +45,26 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     (async () => {
       try {
         setInitialLoading(true);
-        const serverReq = fetch("/api/servers?limit=25")
-          .then((res) => res.json())
-          .then(
-            (data) =>
-              data as { servers: Server[]; nextCursor: string | null }
-          );
+        
+        // Use deduplication to prevent parallel requests
+        const serverReq = apiCache.dedupe(
+          `servers:initial:${userId}`,
+          () => fetch("/api/servers?limit=25")
+            .then((res) => res.json())
+            .then((data) => data as { servers: Server[]; nextCursor: string | null }),
+          CACHE_TTL.SERVERS
+        );
+        
         const membershipReq = membershipEnabled
-          ? fetch("/api/memberships")
-              .then((res) => res.json())
-              .then((data) => data.memberships as Membership[])
+          ? apiCache.dedupe(
+              `memberships:${userId}`,
+              () => fetch("/api/memberships")
+                .then((res) => res.json())
+                .then((data) => data.memberships as Membership[]),
+              CACHE_TTL.MEMBERSHIPS
+            )
           : Promise.resolve<Membership[]>([]);
+        
         const [{ servers: first, nextCursor }, mems] = await Promise.all([
           serverReq,
           membershipReq,
@@ -108,6 +118,10 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     const server = await createServer(name);
     setServers((prev) => [...prev, server]);
     setSelectedServer(server.$id);
+    // Invalidate cache
+    if (userId) {
+      apiCache.clear(`servers:initial:${userId}`);
+    }
     return server;
   }
 
@@ -122,6 +136,8 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       filterAllowedServers(prev, [...memberships, membership])
     );
     setSelectedServer(id);
+    // Invalidate cache
+    apiCache.clear(`memberships:${uid}`);
     return membership;
   }
 
@@ -130,6 +146,10 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     setServers((prev) => prev.filter((s) => s.$id !== serverId));
     if (selectedServer === serverId) {
       setSelectedServer(null);
+    }
+    // Invalidate cache
+    if (userId) {
+      apiCache.clear(`servers:initial:${userId}`);
     }
   }
 

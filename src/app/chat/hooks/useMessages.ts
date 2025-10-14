@@ -81,23 +81,17 @@ export function useMessages({
     if (!channelId) {
       return;
     }
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
     const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
     const collectionId =
       process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID;
-    const missing = [endpoint, project, databaseId, collectionId].some(
-      (v) => !v
-    );
+    const missing = [databaseId, collectionId].some((v) => !v);
     if (missing) {
       return;
     }
 
-    import("appwrite")
-      .then(({ Client }) => {
-        const c = new Client()
-          .setEndpoint(endpoint as string)
-          .setProject(project as string);
+    import("@/lib/realtime-pool")
+      .then(({ getSharedClient, trackSubscription }) => {
+        const c = getSharedClient();
         const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
 
         function parseBase(
@@ -170,7 +164,10 @@ export function useMessages({
           }
         );
 
+        const untrack = trackSubscription(messageChannel);
+
         return () => {
+          untrack();
           unsub();
         };
       })

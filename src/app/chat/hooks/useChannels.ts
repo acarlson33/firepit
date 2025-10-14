@@ -7,6 +7,7 @@ import {
   deleteChannel,
 } from "@/lib/appwrite-servers";
 import type { Channel, Server } from "@/lib/types";
+import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 
 type UseChannelsOptions = {
   selectedServer: string | null;
@@ -31,13 +32,19 @@ export function useChannels({
     }
     (async () => {
       try {
-        const response = await fetch(
-          `/api/channels?serverId=${selectedServer}&limit=50`
+        // Use SWR pattern for instant cached data (Performance Optimization #3)
+        const data = await apiCache.swr(
+          `channels:${selectedServer}:initial`,
+          () => fetch(`/api/channels?serverId=${selectedServer}&limit=50`)
+            .then((res) => res.json())
+            .then((d) => d as { channels: Channel[]; nextCursor: string | null }),
+          CACHE_TTL.CHANNELS,
+          // Update state when fresh data arrives
+          (freshData) => {
+            setChannels(freshData.channels);
+            setCursor(freshData.nextCursor);
+          }
         );
-        const data = (await response.json()) as {
-          channels: Channel[];
-          nextCursor: string | null;
-        };
         setChannels(data.channels);
         setCursor(data.nextCursor);
       } catch (err) {
@@ -86,6 +93,8 @@ export function useChannels({
     }
     const channel = await createChannel(selectedServer, name, userId);
     setChannels((prev) => [...prev, channel]);
+    // Invalidate cache
+    apiCache.clear(`channels:${selectedServer}:initial`);
     return channel;
   }
 
@@ -93,6 +102,10 @@ export function useChannels({
     // updated signature: deleteChannel(channelId)
     await deleteChannel(channel.$id);
     setChannels((prev) => prev.filter((c) => c.$id !== channel.$id));
+    // Invalidate cache
+    if (selectedServer) {
+      apiCache.clear(`channels:${selectedServer}:initial`);
+    }
   }
 
   const isOwner = useCallback(

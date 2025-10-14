@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // Hoisted regex patterns
 const limitRegex = /limit\((\d+)\)/;
@@ -109,7 +109,7 @@ describe("createServer fallback branches", () => {
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
     // Reset module registry for servers so it re-reads env
-    vi.resetModules();
+
     const mod = await import("../lib/appwrite-servers");
     const memberships = await mod.listMembershipsForUser("userNoMem");
     expect(memberships).toEqual([]);
