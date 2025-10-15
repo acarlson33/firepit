@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginAction, registerAction } from "./actions";
 
-function LoginForm() {
+function LoginFormContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const [email, setEmail] = useState("");
@@ -127,10 +127,14 @@ function LoginForm() {
 	);
 }
 
-export default function LoginPage() {
+function LoginForm() {
 	return (
 		<Suspense fallback={<div className="container mx-auto max-w-md px-4 py-8">Loading...</div>}>
-			<LoginForm />
+			<LoginFormContent />
 		</Suspense>
 	);
+}
+
+export default function LoginPage() {
+	return <LoginForm />;
 }
