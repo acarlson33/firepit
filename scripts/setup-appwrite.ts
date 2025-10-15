@@ -309,7 +309,6 @@ async function setupMessages() {
 		["userId", LEN_ID, true],
 		["userName", LEN_ID, false],
 		["text", LEN_TEXT, true],
-		["createdAt", LEN_TS, true],
 		["serverId", LEN_ID, false],
 		["channelId", LEN_ID, false],
 		["editedAt", LEN_TS, false],
@@ -319,16 +318,11 @@ async function setupMessages() {
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("messages", k, size, req);
 	}
-	await ensureIndex("messages", "idx_created_desc", "key", ["createdAt"]);
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("messages", "idx_userId", "key", ["userId"]);
 	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
 	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
 	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
-	
-	// Compound indexes for common query patterns (Performance Optimization #1)
-	await ensureIndex("messages", "idx_channel_created", "key", ["channelId", "createdAt"]);
-	await ensureIndex("messages", "idx_server_created", "key", ["serverId", "createdAt"]);
-	await ensureIndex("messages", "idx_user_created", "key", ["userId", "createdAt"]);
 	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
@@ -343,13 +337,12 @@ async function setupAudit() {
 		["action", LEN_ID, true],
 		["targetId", LEN_ID, true],
 		["actorId", LEN_ID, true],
-		["createdAt", LEN_TS, true],
 		["meta", LEN_TEXT, false],
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("audit", k, size, req);
 	}
-	await ensureIndex("audit", "idx_created_desc", "key", ["createdAt"]);
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("audit", "idx_action", "key", ["action"]);
 	await ensureIndex("audit", "idx_actor", "key", ["actorId"]);
 	await ensureIndex("audit", "idx_target", "key", ["targetId"]);
@@ -376,11 +369,11 @@ async function setupMemberships() {
 		["serverId", LEN_ID, true],
 		["userId", LEN_ID, true],
 		["role", LEN_ID, true],
-		["createdAt", LEN_TS, true],
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("memberships", k, size, req);
 	}
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("memberships", "idx_server", "key", ["serverId"]);
 	await ensureIndex("memberships", "idx_user", "key", ["userId"]);
 	await ensureIndex("memberships", "idx_server_user", "key", [
