@@ -176,13 +176,13 @@ describe("materializePermissions edge cases", () => {
 
 describe("createServer integration (mocked)", () => {
 	it("creates server document with provided name", async () => {
-		(process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+		(process.env as any).APPWRITE_ENDPOINT = "http://x";
+		(process.env as any).APPWRITE_PROJECT_ID = "p";
+		(process.env as any).APPWRITE_DATABASE_ID = "db";
+		(process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+		(process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
 			"channels";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID =
+		(process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID =
 			"memberships";
 		const core = await import("../lib/appwrite-core");
 		core.resetEnvCache();

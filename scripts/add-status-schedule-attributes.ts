@@ -4,8 +4,8 @@
  */
 import { Client, Databases } from "node-appwrite";
 
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+const endpoint = process.env.APPWRITE_ENDPOINT;
+const project = process.env.APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
 
 if (!endpoint || !project || !apiKey) {

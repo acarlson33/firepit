@@ -7,10 +7,10 @@ global.fetch = mockFetch as unknown as typeof fetch;
 
 // Mock environment variables
 beforeEach(() => {
-	process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-	process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
-	process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID = "main";
-	process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID = "statuses";
+	process.env.APPWRITE_ENDPOINT = "http://localhost";
+	process.env.APPWRITE_PROJECT_ID = "test-project";
+	process.env.APPWRITE_DATABASE_ID = "main";
+	process.env.APPWRITE_STATUSES_COLLECTION_ID = "statuses";
 	
 	// Clear mock documents
 	Object.keys(globalMockDocuments).forEach(key => delete globalMockDocuments[key]);

@@ -6,14 +6,14 @@
 import { Client, Databases } from "node-appwrite";
 
 const client = new Client()
-	.setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
-	.setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
+	.setEndpoint(process.env.APPWRITE_ENDPOINT || "")
+	.setProject(process.env.APPWRITE_PROJECT_ID || "")
 	.setKey(process.env.APPWRITE_API_KEY || "");
 
 const databases = new Databases(client);
 
-const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || "";
-const STATUSES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID || "";
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID || "";
+const STATUSES_COLLECTION_ID = process.env.APPWRITE_STATUSES_COLLECTION_ID || "";
 
 async function main() {
 	console.log("🔍 Checking statuses collection...\n");

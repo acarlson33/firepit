@@ -10,13 +10,13 @@ const paginationCursorRe = /cursorAfter\(([^)]+)\)/;
 // Utility to set minimal env each test and reset module cache
 function baseEnv() {
   const env = process.env as Record<string, string>;
-  env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-  env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "proj";
-  env.NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-  env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID = "messages";
-  env.NEXT_PUBLIC_APPWRITE_TYPING_COLLECTION_ID = "typing";
-  env.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID = "team_admin";
-  env.NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID = "team_mod";
+  env.APPWRITE_ENDPOINT = "http://localhost";
+  env.APPWRITE_PROJECT_ID = "proj";
+  env.APPWRITE_DATABASE_ID = "db";
+  env.APPWRITE_MESSAGES_COLLECTION_ID = "messages";
+  env.APPWRITE_TYPING_COLLECTION_ID = "typing";
+  env.APPWRITE_ADMIN_TEAM_ID = "team_admin";
+  env.APPWRITE_MODERATOR_TEAM_ID = "team_mod";
 }
 
 // Constants to avoid magic numbers in tests

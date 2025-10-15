@@ -51,11 +51,11 @@ vi.mock("appwrite", () => ({
 
 function setupEnv() {
 	const env = process.env as Record<string, string>;
-	env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-	env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
-	env.NEXT_PUBLIC_APPWRITE_DATABASE_ID = "test-db";
-	env.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID = "team-admin";
-	env.NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID = "team-mod";
+	env.APPWRITE_ENDPOINT = "http://localhost";
+	env.APPWRITE_PROJECT_ID = "test-project";
+	env.APPWRITE_DATABASE_ID = "test-db";
+	env.APPWRITE_ADMIN_TEAM_ID = "team-admin";
+	env.APPWRITE_MODERATOR_TEAM_ID = "team-mod";
 	env.APPWRITE_API_KEY = "test-api-key";
 }
 
@@ -154,9 +154,9 @@ describe("appwrite-roles - Extended Coverage", () => {
 
 		it("should handle empty team IDs gracefully", async () => {
 			delete (process.env as Record<string, string>)
-				.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID;
+				.APPWRITE_ADMIN_TEAM_ID;
 			delete (process.env as Record<string, string>)
-				.NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID;
+				.APPWRITE_MODERATOR_TEAM_ID;
 
 
 			const { getUserRoles } = await import("../lib/appwrite-roles");
@@ -228,7 +228,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 		});
 
 		it("should parse custom team map from environment", async () => {
-			(process.env as Record<string, string>).NEXT_PUBLIC_ROLE_TEAM_MAP =
+			(process.env as Record<string, string>).ROLE_TEAM_MAP =
 				JSON.stringify({
 					"team-vip": { label: "VIP", color: "bg-purple-600" },
 				});
@@ -245,7 +245,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 		});
 
 		it("should handle invalid JSON in team map gracefully", async () => {
-			(process.env as Record<string, string>).NEXT_PUBLIC_ROLE_TEAM_MAP =
+			(process.env as Record<string, string>).ROLE_TEAM_MAP =
 				"invalid-json{";
 
 
@@ -257,7 +257,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 		});
 
 		it("should not duplicate implicit tags", async () => {
-			(process.env as Record<string, string>).NEXT_PUBLIC_ROLE_TEAM_MAP =
+			(process.env as Record<string, string>).ROLE_TEAM_MAP =
 				JSON.stringify({
 					"team-custom-admin": { label: "Admin", color: "bg-blue-600" },
 				});
@@ -407,7 +407,7 @@ describe("appwrite-roles - Extended Coverage", () => {
 		});
 
 		it("should handle multiple custom teams", async () => {
-			(process.env as Record<string, string>).NEXT_PUBLIC_ROLE_TEAM_MAP =
+			(process.env as Record<string, string>).ROLE_TEAM_MAP =
 				JSON.stringify({
 					"team-gold": { label: "Gold", color: "bg-yellow-600" },
 					"team-silver": { label: "Silver", color: "bg-gray-400" },

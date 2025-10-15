@@ -8,8 +8,8 @@ import {
 
 // Setup environment before any imports
 const env = process.env as Record<string, string>;
-env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
+env.APPWRITE_ENDPOINT = "http://localhost";
+env.APPWRITE_PROJECT_ID = "test-project";
 env.APPWRITE_API_KEY = "test-api-key";
 
 vi.mock("../lib/appwrite-roles", () => ({ getUserRoles: vi.fn() }));

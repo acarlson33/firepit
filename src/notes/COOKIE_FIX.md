@@ -158,7 +158,7 @@ Set up custom domain in Appwrite Cloud:
 3. Point DNS CNAME to Appwrite
 4. Update `.env`:
    ```
-   NEXT_PUBLIC_APPWRITE_ENDPOINT=https://api.yourdomain.com/v1
+   APPWRITE_ENDPOINT=https://api.yourdomain.com/v1
    ```
 
 Benefits:

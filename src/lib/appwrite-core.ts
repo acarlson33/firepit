@@ -93,12 +93,10 @@ export function getEnvConfig(): EnvConfig {
     return cachedEnv;
   }
   const endpoint = firstDefined(
-    process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
     process.env.APPWRITE_ENDPOINT
   );
   const project = firstDefined(
-    process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
-    process.env.NEXT_PUBLIC_APPWRITE_PROJECT,
+    process.env.APPWRITE_PROJECT_ID,
     process.env.APPWRITE_PROJECT
   );
   if (!endpoint) {
@@ -109,72 +107,69 @@ export function getEnvConfig(): EnvConfig {
   }
   const databaseId =
     firstDefined(
-      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID,
       process.env.APPWRITE_DATABASE_ID,
       "main"
     ) || "main";
   const collections = {
     servers:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID,
+        process.env.APPWRITE_SERVERS_COLLECTION_ID,
         "servers"
       ) || "servers",
     channels:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID,
+        process.env.APPWRITE_CHANNELS_COLLECTION_ID,
         "channels"
       ) || "channels",
     messages:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID,
+        process.env.APPWRITE_MESSAGES_COLLECTION_ID,
         "messages"
       ) || "messages",
     audit:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID,
+        process.env.APPWRITE_AUDIT_COLLECTION_ID,
         "audit"
       ) || "audit",
     typing:
-      firstDefined(process.env.NEXT_PUBLIC_APPWRITE_TYPING_COLLECTION_ID) ||
+      firstDefined(process.env.APPWRITE_TYPING_COLLECTION_ID) ||
       null,
     memberships:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID
+        process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
       ) || null,
     profiles:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,
+        process.env.APPWRITE_PROFILES_COLLECTION_ID,
         "profiles"
       ) || "profiles",
     conversations:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_CONVERSATIONS_COLLECTION_ID
+        process.env.APPWRITE_CONVERSATIONS_COLLECTION_ID
       ) || null,
     directMessages:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_DIRECT_MESSAGES_COLLECTION_ID
+        process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID
       ) || null,
     statuses:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID
+        process.env.APPWRITE_STATUSES_COLLECTION_ID
       ) || null,
   };
   const buckets = {
     avatars:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_AVATARS_BUCKET_ID,
+        process.env.APPWRITE_AVATARS_BUCKET_ID,
         "avatars"
       ) || "avatars",
   };
   const teams = {
     adminTeamId:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID,
         process.env.APPWRITE_ADMIN_TEAM_ID
       ) || null,
     moderatorTeamId:
       firstDefined(
-        process.env.NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID,
         process.env.APPWRITE_MODERATOR_TEAM_ID
       ) || null,
   };

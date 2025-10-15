@@ -119,8 +119,8 @@ vi.mock("../lib/appwrite-core", async () => {
 
 describe("admin channel & global message listing", () => {
   it("lists channels with pagination & filters malformed", async () => {
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
     (process.env as any).APPWRITE_API_KEY = "k";
     const first = await listAllChannelsPage("s1", 2);
     expect(first.items.map((c) => c.$id)).toEqual(["ch3", "ch2"]);
@@ -134,8 +134,8 @@ describe("admin channel & global message listing", () => {
     expect(second.nextCursor).toBeNull();
   });
   it("lists global messages and applies limit/nextCursor logic", async () => {
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
     (process.env as any).APPWRITE_API_KEY = "k";
     const page = await listGlobalMessages({ limit: 3 });
     expect(page.items.map((m) => m.$id)).toEqual(["m3", "m2", "m1"]);
@@ -155,8 +155,8 @@ describe("admin channel & global message listing", () => {
         }),
       };
     });
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
     (process.env as any).APPWRITE_API_KEY = "k";
     const mod = await import("../lib/appwrite-admin");
     const res = await mod.listAllChannelsPage("s1", 2);

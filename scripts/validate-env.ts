@@ -75,7 +75,7 @@ function validateEndpoint(endpoint: string | undefined): {
 	if (!endpoint) {
 		return {
 			valid: false,
-			error: "NEXT_PUBLIC_APPWRITE_ENDPOINT is not set",
+			error: "APPWRITE_ENDPOINT is not set",
 		};
 	}
 
@@ -106,7 +106,7 @@ function validateProjectId(projectId: string | undefined): {
 	if (!projectId) {
 		return {
 			valid: false,
-			error: "NEXT_PUBLIC_APPWRITE_PROJECT_ID is not set",
+			error: "APPWRITE_PROJECT_ID is not set",
 		};
 	}
 
@@ -178,11 +178,11 @@ function validateRequiredVars(): ValidationResult {
 
 	// Check endpoint
 	const endpointResult = validateEndpoint(
-		process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
+		process.env.APPWRITE_ENDPOINT,
 	);
 	if (endpointResult.valid) {
 		print(
-			`✓ NEXT_PUBLIC_APPWRITE_ENDPOINT: ${process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT}`,
+			`✓ APPWRITE_ENDPOINT: ${process.env.APPWRITE_ENDPOINT}`,
 			"green",
 		);
 	} else {
@@ -193,11 +193,11 @@ function validateRequiredVars(): ValidationResult {
 
 	// Check project ID
 	const projectIdResult = validateProjectId(
-		process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
+		process.env.APPWRITE_PROJECT_ID,
 	);
 	if (projectIdResult.valid) {
 		print(
-			`✓ NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID}`,
+			`✓ APPWRITE_PROJECT_ID: ${process.env.APPWRITE_PROJECT_ID}`,
 			"green",
 		);
 	} else {
@@ -233,7 +233,7 @@ function validateOptionalVars(): ValidationResult {
 
 	// Database ID (has default)
 	const databaseId =
-		process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID ||
+		process.env.APPWRITE_DATABASE_ID ||
 		process.env.APPWRITE_DATABASE_ID ||
 		"main";
 	print(`✓ Database ID: ${databaseId} (using default: "main")`, "green");
@@ -292,8 +292,8 @@ async function testAppwriteConnection(): Promise<ValidationResult> {
 
 	printSection("Testing Appwrite Connection");
 
-	const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-	const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+	const endpoint = process.env.APPWRITE_ENDPOINT;
+	const projectId = process.env.APPWRITE_PROJECT_ID;
 	const apiKey = process.env.APPWRITE_API_KEY;
 
 	if (!endpoint || !projectId || !apiKey) {
@@ -319,7 +319,7 @@ async function testAppwriteConnection(): Promise<ValidationResult> {
 
 		// Check for main database
 		const databaseId =
-			process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID ||
+			process.env.APPWRITE_DATABASE_ID ||
 			process.env.APPWRITE_DATABASE_ID ||
 			"main";
 		const mainDb = response.databases.find((db) => db.$id === databaseId);
@@ -347,12 +347,12 @@ async function testAppwriteConnection(): Promise<ValidationResult> {
 					"red",
 				);
 				result.errors.push(
-					"Unable to connect to Appwrite. Check your NEXT_PUBLIC_APPWRITE_ENDPOINT and network connection.",
+					"Unable to connect to Appwrite. Check your APPWRITE_ENDPOINT and network connection.",
 				);
 			} else if (errorMessage.includes("project not found") || errorMessage.includes("invalid credentials")) {
 				print("✗ Authentication failed: Invalid project ID or API key", "red");
 				result.errors.push(
-					"Invalid NEXT_PUBLIC_APPWRITE_PROJECT_ID or APPWRITE_API_KEY. Verify these in Appwrite Console.",
+					"Invalid APPWRITE_PROJECT_ID or APPWRITE_API_KEY. Verify these in Appwrite Console.",
 				);
 			} else if (errorMessage.includes("missing scope") || errorMessage.includes("not authorized")) {
 				print(

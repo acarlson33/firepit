@@ -5,8 +5,8 @@ import { Account, Client } from "node-appwrite";
 export async function GET() {
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
-  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
-  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+  const projectId = process.env.APPWRITE_PROJECT_ID;
+  const endpoint = process.env.APPWRITE_ENDPOINT;
   const expectedCookieName = `a_session_${projectId}`;
   const sessionCookie = cookieStore.get(expectedCookieName);
 

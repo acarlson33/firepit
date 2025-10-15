@@ -33,17 +33,17 @@ function safeEnv(name: string) {
 }
 
 function makeBrowserClient(): Client | null {
-  if (!safeEnv("NEXT_PUBLIC_APPWRITE_ENDPOINT")) {
+  if (!safeEnv("APPWRITE_ENDPOINT")) {
     return null;
   }
   const projectId =
-    process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_APPWRITE_PROJECT;
+    process.env.APPWRITE_PROJECT_ID ||
+    process.env.APPWRITE_PROJECT;
   if (!projectId) {
     return null;
   }
   return new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT as string)
+    .setEndpoint(process.env.APPWRITE_ENDPOINT as string)
     .setProject(projectId);
 }
 

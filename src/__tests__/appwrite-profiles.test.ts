@@ -2,9 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // Mock environment variables
 beforeEach(() => {
-	process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-	process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
-	process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID = "main";
+	process.env.APPWRITE_ENDPOINT = "http://localhost";
+	process.env.APPWRITE_PROJECT_ID = "test-project";
+	process.env.APPWRITE_DATABASE_ID = "main";
 	process.env.APPWRITE_PROFILES_COLLECTION_ID = "profiles";
 	process.env.APPWRITE_AVATARS_BUCKET_ID = "avatars";
 	process.env.APPWRITE_API_KEY = "test-api-key";

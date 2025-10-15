@@ -46,7 +46,7 @@ Set up a custom domain pointing to your Appwrite instance so cookies can be same
 4. Wait for SSL certificate provisioning
 5. Update `.env`:
    ```bash
-   NEXT_PUBLIC_APPWRITE_ENDPOINT=https://api.yourdomain.com/v1
+   APPWRITE_ENDPOINT=https://api.yourdomain.com/v1
    ```
 
 **Why this works:**
@@ -86,8 +86,8 @@ import { redirect } from "next/navigation";
 import { Client, Account } from "appwrite";
 
 export async function loginAction(email: string, password: string) {
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
+const endpoint = process.env.APPWRITE_ENDPOINT!;
+const project = process.env.APPWRITE_PROJECT_ID!;
 
 // Create server-side client
 const client = new Client()
@@ -199,7 +199,7 @@ const allCookies = cookieStore.getAll();
 return NextResponse.json({
 cookies: allCookies,
 projectId: process.env.NEXT*PUBLIC_APPWRITE_PROJECT_ID,
-expectedCookieName: \`a_session*\${process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID}\`,
+expectedCookieName: \`a_session*\${process.env.APPWRITE_PROJECT_ID}\`,
 });
 }
 \`\`\`

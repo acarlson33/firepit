@@ -107,8 +107,8 @@ firepit/
 
 The application requires several environment variables. Copy `.env.local.example` to `.env.local` and configure:
 
-- `NEXT_PUBLIC_APPWRITE_ENDPOINT` - Your Appwrite API endpoint
-- `NEXT_PUBLIC_APPWRITE_PROJECT_ID` - Your Appwrite project ID
+- `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
+- `APPWRITE_PROJECT_ID` - Your Appwrite project ID
 - `APPWRITE_API_KEY` - Server-side API key with full permissions
 
 For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
@@ -131,7 +131,7 @@ For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 ### Common Issues
 
 - **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
-- **"Project not found"** - Verify your `NEXT_PUBLIC_APPWRITE_PROJECT_ID` matches your Appwrite Console
+- **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
 - **"Missing scope" errors** - Regenerate your API key with all required permissions
 - **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
 

@@ -82,8 +82,8 @@ export function ModerationMessageList({
 	useEffect(() => {
 		// Subscribe to real-time updates for the messages collection
 		const client = getBrowserClient();
-		const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
-		const messagesCollectionId = process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_MESSAGES;
+		const databaseId = process.env.APPWRITE_DATABASE_ID;
+		const messagesCollectionId = process.env.APPWRITE_COLLECTION_MESSAGES;
 
 		if (!databaseId || !messagesCollectionId) {
 			return;

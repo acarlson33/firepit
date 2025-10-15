@@ -188,7 +188,7 @@ Added `<ServerBrowser />` to the sidebar:
 
 **Memberships Enabled**:
 
-- Set `NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID` environment variable
+- Set `APPWRITE_MEMBERSHIPS_COLLECTION_ID` environment variable
 - Both features work automatically
 
 **Memberships Disabled**:

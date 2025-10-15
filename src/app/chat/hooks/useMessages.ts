@@ -81,9 +81,9 @@ export function useMessages({
     if (!channelId) {
       return;
     }
-    const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
+    const databaseId = process.env.APPWRITE_DATABASE_ID;
     const collectionId =
-      process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID;
+      process.env.APPWRITE_MESSAGES_COLLECTION_ID;
     const missing = [databaseId, collectionId].some((v) => !v);
     if (missing) {
       return;

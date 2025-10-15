@@ -104,10 +104,10 @@ Open `.env.local` and fill in your values:
 
 ```bash
 # === REQUIRED: Appwrite Connection ===
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
+APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
 # ☝️ Use your Appwrite Cloud region or self-hosted URL
 
-NEXT_PUBLIC_APPWRITE_PROJECT_ID=your-project-id-here
+APPWRITE_PROJECT_ID=your-project-id-here
 # ☝️ From Step 1A - find this in Appwrite Console
 
 APPWRITE_API_KEY=your-api-key-here
@@ -117,10 +117,10 @@ APPWRITE_API_KEY=your-api-key-here
 # Leave these with default values - setup script will create them
 # Only change if you have existing collections to use
 
-NEXT_PUBLIC_APPWRITE_DATABASE_ID=main
-NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID=servers
-NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID=channels
-NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID=messages
+APPWRITE_DATABASE_ID=main
+APPWRITE_SERVERS_COLLECTION_ID=servers
+APPWRITE_CHANNELS_COLLECTION_ID=channels
+APPWRITE_MESSAGES_COLLECTION_ID=messages
 # ... (more collections with defaults)
 
 # === OPTIONAL: Admin & Moderator Setup ===
@@ -184,7 +184,7 @@ bun run setup
 **Common Issues:**
 
 - **"Missing scopes"**: Your API key needs more permissions (see Step 1B)
-- **"Project not found"**: Double-check your `NEXT_PUBLIC_APPWRITE_PROJECT_ID`
+- **"Project not found"**: Double-check your `APPWRITE_PROJECT_ID`
 - **"Unauthorized"**: Verify your `APPWRITE_API_KEY` is correct
 
 ---
@@ -235,7 +235,7 @@ Visit [http://localhost:3000](http://localhost:3000)
 1. Push code to GitHub
 2. Import project in Vercel
 3. Add environment variables in Vercel dashboard:
-   - All `NEXT_PUBLIC_*` variables
+   - All `APPWRITE_*` variables
    - `APPWRITE_API_KEY` (mark as sensitive!)
 4. Deploy!
 
@@ -253,7 +253,7 @@ bun start
 
 - Set all variables from `.env.local` in your hosting environment
 - Use secrets management for `APPWRITE_API_KEY`
-- Ensure `NEXT_PUBLIC_APPWRITE_ENDPOINT` points to your production Appwrite
+- Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
 
 **Reverse Proxy Setup (Nginx):**
 
@@ -288,7 +288,7 @@ server {
 ls -la .env.local
 
 # Check values are set
-grep NEXT_PUBLIC_APPWRITE .env.local
+grep APPWRITE .env.local
 
 # Restart dev server
 bun dev
