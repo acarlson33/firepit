@@ -84,13 +84,18 @@ APPWRITE_API_KEY=your-api-key
 
 ## Deployment Considerations
 
-### Vercel/Netlify/Other Hosting
+### Vercel/Netlify/Appwrite/Other Hosting
 If you've set environment variables in your hosting platform's dashboard, you'll need to update them there as well:
 
 1. Go to your project settings
 2. Find the environment variables section
 3. Rename all `NEXT_PUBLIC_APPWRITE_*` variables to `APPWRITE_*`
 4. Redeploy your application
+
+**Note:** The Next.js configuration has been updated to automatically expose these environment variables at runtime. This means:
+- Environment variables are available to server-side code without requiring the `NEXT_PUBLIC_` prefix
+- Your configuration remains secure and is not exposed to the browser
+- Variables are automatically loaded in deployed environments (Vercel, Appwrite, etc.) when set in the platform's environment settings
 
 ### CI/CD Pipelines
 Update any environment variable references in:

@@ -279,10 +279,11 @@ server {
 
 ### "Appwrite endpoint not configured"
 
-**Cause:** Environment variables not loaded properly
+**Cause:** Environment variables not loaded properly, or not available at runtime in deployed environments
 
 **Fix:**
 
+**For local development:**
 ```bash
 # Verify .env.local exists
 ls -la .env.local
@@ -293,6 +294,19 @@ grep APPWRITE .env.local
 # Restart dev server
 bun dev
 ```
+
+**For deployed environments (Vercel, Appwrite, etc.):**
+
+Environment variables are now automatically exposed at runtime through the Next.js configuration. Ensure that:
+
+1. All required environment variables are set in your deployment platform's environment settings
+2. The variables include at minimum:
+   - `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
+   - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
+   - `APPWRITE_API_KEY` - Your server-side API key
+3. After setting environment variables, redeploy your application for changes to take effect
+
+The application will automatically load these variables at runtime without requiring the `NEXT_PUBLIC_` prefix, keeping your configuration secure and server-side only.
 
 ### "The current user is not authorized"
 
