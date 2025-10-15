@@ -18,6 +18,10 @@ export default [
 			"**/dev-dist/**",
 			"**/coverage/**",
 			"**/node_modules/**",
+			"**/__tests__/**",
+			"**/*.test.{ts,tsx}",
+			"**/*.spec.{ts,tsx}",
+			"vitest.config.ts",
 		],
 	},
 	js.configs.recommended,
@@ -121,22 +125,7 @@ export default [
 			"jsx-a11y/anchor-is-valid": "warn",
 		},
 	},
-	// Tests override
-	{
-		files: ["**/__tests__/**/*.{ts,tsx}"],
-		rules: {
-			"@typescript-eslint/restrict-template-expressions": [
-				"error",
-				{
-					allowAny: true,
-					allowBoolean: true,
-					allowNumber: true,
-					allowNullish: true,
-				},
-			],
-			"@typescript-eslint/no-explicit-any": "off",
-		},
-	},
+
 	// Ignore generated Next.js route types file triple-slash references (root after monorepo collapse)
 	{
 		files: ["next-env.d.ts"],
