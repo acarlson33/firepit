@@ -3,9 +3,9 @@ import { Query } from "appwrite";
 import type { UserStatus } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 
-const env = getEnvConfig();
-const DATABASE_ID = env.databaseId;
-const STATUSES_COLLECTION = env.collections.statuses;
+function getConfig() {
+	return getEnvConfig();
+}
 
 function getDatabases() {
 	return getBrowserDatabases();
@@ -21,6 +21,9 @@ export async function setUserStatus(
 	expiresAt?: string,
 	isManuallySet?: boolean,
 ): Promise<UserStatus> {
+	const env = getConfig();
+	const STATUSES_COLLECTION = env.collections.statuses;
+	
 	if (!STATUSES_COLLECTION) {
 		throw new Error("Statuses collection not configured");
 	}
@@ -64,6 +67,10 @@ export async function setUserStatus(
 export async function getUserStatus(
 	userId: string,
 ): Promise<UserStatus | null> {
+	const env = getConfig();
+	const DATABASE_ID = env.databaseId;
+	const STATUSES_COLLECTION = env.collections.statuses;
+	
 	if (!STATUSES_COLLECTION) {
 		return null;
 	}
@@ -101,6 +108,10 @@ export async function getUserStatus(
 export async function getUsersStatuses(
 	userIds: string[],
 ): Promise<Map<string, UserStatus>> {
+	const env = getConfig();
+	const DATABASE_ID = env.databaseId;
+	const STATUSES_COLLECTION = env.collections.statuses;
+	
 	if (!STATUSES_COLLECTION || userIds.length === 0) {
 		return new Map();
 	}
@@ -138,6 +149,9 @@ export async function getUsersStatuses(
  * Update last seen timestamp (via server API)
  */
 export async function updateLastSeen(userId: string): Promise<void> {
+	const env = getConfig();
+	const STATUSES_COLLECTION = env.collections.statuses;
+	
 	if (!STATUSES_COLLECTION) {
 		return;
 	}
