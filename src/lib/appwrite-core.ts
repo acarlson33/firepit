@@ -100,10 +100,14 @@ export function getEnvConfig(): EnvConfig {
     process.env.APPWRITE_PROJECT
   );
   if (!endpoint) {
-    throw new AppwriteIntegrationError("Appwrite endpoint not configured");
+    throw new AppwriteIntegrationError(
+      "Appwrite endpoint not configured. Please set APPWRITE_ENDPOINT in your .env.local file. See .env.local.example for reference."
+    );
   }
   if (!project) {
-    throw new AppwriteIntegrationError("Appwrite project not configured");
+    throw new AppwriteIntegrationError(
+      "Appwrite project not configured. Please set APPWRITE_PROJECT_ID in your .env.local file. See .env.local.example for reference."
+    );
   }
   const databaseId =
     firstDefined(
