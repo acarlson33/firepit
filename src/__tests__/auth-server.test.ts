@@ -2,8 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // Setup environment before any imports
 const env = process.env as Record<string, string>;
-env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
+env.APPWRITE_ENDPOINT = "http://localhost";
+env.APPWRITE_PROJECT_ID = "test-project";
 
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
@@ -74,14 +74,14 @@ describe("auth-server", () => {
 		clearMocks();
 		// Reset env vars
 		const env = process.env as Record<string, string>;
-		env.NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://localhost";
-		env.NEXT_PUBLIC_APPWRITE_PROJECT_ID = "test-project";
+		env.APPWRITE_ENDPOINT = "http://localhost";
+		env.APPWRITE_PROJECT_ID = "test-project";
 	});
 
 	describe("getServerSession", () => {
 		it("should return null when no endpoint configured", async () => {
 			delete (process.env as Record<string, string>)
-				.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+				.APPWRITE_ENDPOINT;
 
 			const { getServerSession } = await import("../lib/auth-server");
 
@@ -91,7 +91,7 @@ describe("auth-server", () => {
 
 		it("should return null when no project configured", async () => {
 			delete (process.env as Record<string, string>)
-				.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+				.APPWRITE_PROJECT_ID;
 
 			const { getServerSession } = await import("../lib/auth-server");
 

@@ -4,13 +4,13 @@ import { setupMockAppwrite } from "./__helpers__/mockAppwrite";
 
 // Utility to set minimal env
 function baseEnv() {
-  (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID = "channels";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID = "messages";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID = "audit";
+  (process.env as any).APPWRITE_ENDPOINT = "http://x";
+  (process.env as any).APPWRITE_PROJECT_ID = "p";
+  (process.env as any).APPWRITE_DATABASE_ID = "db";
+  (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+  (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID = "channels";
+  (process.env as any).APPWRITE_MESSAGES_COLLECTION_ID = "messages";
+  (process.env as any).APPWRITE_AUDIT_COLLECTION_ID = "audit";
 }
 
 describe("audit + diagnostics", () => {
@@ -18,7 +18,7 @@ describe("audit + diagnostics", () => {
     setupMockAppwrite({});
     baseEnv();
     // Remove audit collection
-    (process.env as any).NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID = ""; // becomes null
+    (process.env as any).APPWRITE_AUDIT_COLLECTION_ID = ""; // becomes null
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
 
@@ -72,8 +72,8 @@ describe("audit + diagnostics", () => {
       },
     });
     baseEnv();
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID = "teamAdmin";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID = "teamMod";
+    (process.env as any).APPWRITE_ADMIN_TEAM_ID = "teamAdmin";
+    (process.env as any).APPWRITE_MODERATOR_TEAM_ID = "teamMod";
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
 
@@ -97,8 +97,8 @@ describe("audit + diagnostics", () => {
 
   it("runAuthDiagnostics returns structured report without client when endpoint missing", async () => {
     // Clear env so makeBrowserClient returns null
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "";
+    (process.env as any).APPWRITE_ENDPOINT = "";
+    (process.env as any).APPWRITE_PROJECT_ID = "";
     const { runAuthDiagnostics } = await import("../lib/appwrite-diagnostics");
     const rep = await runAuthDiagnostics();
     expect(rep.browserClientConfigured).toBe(false);

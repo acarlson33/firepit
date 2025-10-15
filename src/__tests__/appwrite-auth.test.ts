@@ -53,8 +53,8 @@ vi.mock("appwrite", async (orig) => {
 
 // Minimal env required by core
 function setEnv() {
-  (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-  (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+  (process.env as any).APPWRITE_ENDPOINT = "http://x";
+  (process.env as any).APPWRITE_PROJECT_ID = "p";
 }
 
 describe("appwrite-auth", () => {

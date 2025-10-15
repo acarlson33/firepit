@@ -5,8 +5,8 @@
  */
 import { Client, Account } from "appwrite";
 
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "https://nyc.cloud.appwrite.io/v1";
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "68b230a0002245833242";
+const endpoint = process.env.APPWRITE_ENDPOINT || "https://nyc.cloud.appwrite.io/v1";
+const project = process.env.APPWRITE_PROJECT_ID || "68b230a0002245833242";
 
 // Get credentials from command line or use defaults
 const email = process.argv[2] || "test@example.com";

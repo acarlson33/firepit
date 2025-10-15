@@ -69,8 +69,8 @@ Your `.env` file should have:
 
 ```bash
 # Appwrite Configuration
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT_ID=68b230a0002245833242
+APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=68b230a0002245833242
 
 # API Key (required for SSR auth)
 APPWRITE_API_KEY=standard_c13399aefa...

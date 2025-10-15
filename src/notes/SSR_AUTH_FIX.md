@@ -91,8 +91,8 @@ Make sure your `.env` file has:
 APPWRITE_API_KEY=your_api_key_here
 
 # Also required
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT_ID=your_project_id
+APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=your_project_id
 ```
 
 ## How SSR Auth Works (Appwrite)

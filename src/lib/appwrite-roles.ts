@@ -121,7 +121,7 @@ let parsedTeamMap: Record<string, { label: string; color?: string }> | null =
 let lastTeamMapRaw: string | undefined = undefined;
 
 function loadTeamMap() {
-  const raw = process.env.NEXT_PUBLIC_ROLE_TEAM_MAP;
+  const raw = process.env.ROLE_TEAM_MAP;
   
   // Re-parse if environment changed or first time
   if (parsedTeamMap !== null && raw === lastTeamMapRaw) {

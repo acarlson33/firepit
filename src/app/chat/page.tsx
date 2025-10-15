@@ -41,7 +41,7 @@ export default function ChatPage() {
   // Auto track activity and update status
   useActivityTracking({ userId });
   const membershipEnabled = Boolean(
-    process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID
+    process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
   );
   const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);

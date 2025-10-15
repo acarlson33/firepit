@@ -41,8 +41,8 @@ Create a `.env.local` file in your project root (or copy from `.env.local.exampl
 
 ```bash
 # Your other environment variables...
-NEXT_PUBLIC_APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
-NEXT_PUBLIC_APPWRITE_PROJECT_ID=68b230a0002245833242
+APPWRITE_ENDPOINT=https://nyc.cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=68b230a0002245833242
 
 # Bootstrap admin access with your user ID
 APPWRITE_ADMIN_USER_IDS=67890abcdef12345

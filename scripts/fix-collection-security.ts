@@ -1,8 +1,8 @@
 // Script to enable documentSecurity on all collections
 import { Client, Databases } from "node-appwrite";
 
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+const endpoint = process.env.APPWRITE_ENDPOINT;
+const project = process.env.APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
 
 if (!endpoint || !project || !apiKey) {
@@ -19,12 +19,12 @@ const databases = new Databases(client);
 const DATABASE_ID = "main";
 
 const collections = [
-  { id: process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID, name: "messages" },
-  { id: process.env.NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID, name: "servers" },
-  { id: process.env.NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID, name: "channels" },
-  { id: process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID, name: "memberships" },
-  { id: process.env.NEXT_PUBLIC_APPWRITE_AUDIT_COLLECTION_ID, name: "audit" },
-  { id: process.env.NEXT_PUBLIC_APPWRITE_TYPING_COLLECTION_ID, name: "typing" },
+  { id: process.env.APPWRITE_MESSAGES_COLLECTION_ID, name: "messages" },
+  { id: process.env.APPWRITE_SERVERS_COLLECTION_ID, name: "servers" },
+  { id: process.env.APPWRITE_CHANNELS_COLLECTION_ID, name: "channels" },
+  { id: process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID, name: "memberships" },
+  { id: process.env.APPWRITE_AUDIT_COLLECTION_ID, name: "audit" },
+  { id: process.env.APPWRITE_TYPING_COLLECTION_ID, name: "typing" },
 ];
 
 async function main() {

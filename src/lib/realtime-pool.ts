@@ -13,8 +13,8 @@ const subscriptionRefs = new Map<string, number>();
  */
 export function getSharedClient(): Client {
   if (!sharedClient) {
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-    const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+    const endpoint = process.env.APPWRITE_ENDPOINT;
+    const project = process.env.APPWRITE_PROJECT_ID;
 
     if (!endpoint || !project) {
       throw new Error("Missing Appwrite configuration");

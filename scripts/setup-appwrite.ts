@@ -7,13 +7,13 @@
 import { Client, Databases, Storage, Teams } from "node-appwrite";
 
 // ---- Environment (DO NOT hardcode secrets) ----
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+const endpoint = process.env.APPWRITE_ENDPOINT;
 if (!endpoint) {
-	throw new Error("NEXT_PUBLIC_APPWRITE_ENDPOINT is required");
+	throw new Error("APPWRITE_ENDPOINT is required");
 }
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+const project = process.env.APPWRITE_PROJECT_ID;
 if (!project) {
-	throw new Error("NEXT_PUBLIC_APPWRITE_PROJECT_ID is required");
+	throw new Error("APPWRITE_PROJECT_ID is required");
 }
 const apiKey = process.env.APPWRITE_API_KEY;
 if (!apiKey) {

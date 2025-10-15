@@ -77,8 +77,8 @@ export async function loginAction(
   email: string,
   password: string
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
-  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+  const endpoint = process.env.APPWRITE_ENDPOINT;
+  const project = process.env.APPWRITE_PROJECT_ID;
   const apiKey = process.env.APPWRITE_API_KEY;
 
   if (!endpoint || !project) {
@@ -181,8 +181,8 @@ export async function registerAction(
   password: string,
   name: string
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
-  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+  const endpoint = process.env.APPWRITE_ENDPOINT;
+  const project = process.env.APPWRITE_PROJECT_ID;
 
   if (!endpoint || !project) {
     return { success: false, error: "Appwrite configuration missing" };
@@ -226,7 +226,7 @@ export async function registerAction(
  * Server-side logout action that clears the session cookie.
  */
 export async function logoutAction(): Promise<{ success: boolean }> {
-  const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+  const project = process.env.APPWRITE_PROJECT_ID;
 
   if (!project) {
     return { success: false };
@@ -234,7 +234,7 @@ export async function logoutAction(): Promise<{ success: boolean }> {
 
   try {
     // Delete the session from Appwrite (best effort)
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+    const endpoint = process.env.APPWRITE_ENDPOINT;
     if (endpoint) {
       const cookieStore = await cookies();
       const sessionCookie = cookieStore.get(`a_session_${project}`);

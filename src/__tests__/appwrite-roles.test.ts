@@ -10,8 +10,8 @@ let getUserRoles: typeof GetUserRolesFn;
 let getUserRoleTags: typeof GetUserRoleTagsFn;
 async function loadModule() {
 	if (!getUserRoles) {
-		(process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+		(process.env as any).APPWRITE_ENDPOINT = "http://x";
+		(process.env as any).APPWRITE_PROJECT_ID = "p";
 		const mod = await import("../lib/appwrite-roles");
 		getUserRoles = mod.getUserRoles;
 		getUserRoleTags = mod.getUserRoleTags;
@@ -70,10 +70,10 @@ describe("getUserRoles", () => {
 		// Environment variable keys must remain uppercase; local lint can be relaxed if necessary.
 
 		setEnv({
-			NEXT_PUBLIC_APPWRITE_ENDPOINT: "http://x",
-			NEXT_PUBLIC_APPWRITE_PROJECT_ID: "p",
-			NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID: "adminTeam",
-			NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID: "modTeam",
+			APPWRITE_ENDPOINT: "http://x",
+			APPWRITE_PROJECT_ID: "p",
+			APPWRITE_ADMIN_TEAM_ID: "adminTeam",
+			APPWRITE_MODERATOR_TEAM_ID: "modTeam",
 			APPWRITE_API_KEY: "key",
 		});
 	});
@@ -95,12 +95,12 @@ describe("getUserRoles", () => {
 describe("getUserRoleTags cache + implicit tags", () => {
 	beforeEach(() => {
 		setEnv({
-			NEXT_PUBLIC_APPWRITE_ENDPOINT: "http://x",
-			NEXT_PUBLIC_APPWRITE_PROJECT_ID: "p",
-			NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID: "adminTeam",
-			NEXT_PUBLIC_APPWRITE_MODERATOR_TEAM_ID: "modTeam",
+			APPWRITE_ENDPOINT: "http://x",
+			APPWRITE_PROJECT_ID: "p",
+			APPWRITE_ADMIN_TEAM_ID: "adminTeam",
+			APPWRITE_MODERATOR_TEAM_ID: "modTeam",
 			APPWRITE_API_KEY: "key",
-			NEXT_PUBLIC_ROLE_TEAM_MAP: JSON.stringify({
+			ROLE_TEAM_MAP: JSON.stringify({
 				custom1: { label: "VIP", color: "gold" },
 			}),
 		});
@@ -126,8 +126,8 @@ describe("getUserRoleTags cache + implicit tags", () => {
 		expect(labels).toContain("admin");
 		expect(labels).toContain("mod");
 	});
-	it("handles invalid NEXT_PUBLIC_ROLE_TEAM_MAP JSON gracefully", async () => {
-		(process.env as any).NEXT_PUBLIC_ROLE_TEAM_MAP = "not-json";
+	it("handles invalid ROLE_TEAM_MAP JSON gracefully", async () => {
+		(process.env as any).ROLE_TEAM_MAP = "not-json";
 		await loadModule();
 		const res = await getUserRoleTags(USER_ID);
 		expect(Array.isArray(res.tags)).toBe(true);
@@ -136,8 +136,8 @@ describe("getUserRoleTags cache + implicit tags", () => {
 
 describe("getUserRoleTags cache expiration", () => {
 	it("recomputes after cache TTL", async () => {
-		(process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-		(process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
+		(process.env as any).APPWRITE_ENDPOINT = "http://x";
+		(process.env as any).APPWRITE_PROJECT_ID = "p";
 		(process.env as any).APPWRITE_ADMIN_USER_IDS = USER_ID; // ensure admin
 		const mod = await import("../lib/appwrite-roles");
 		const first = await mod.getUserRoleTags(USER_ID);

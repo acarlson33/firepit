@@ -67,7 +67,7 @@ bun run dev
 
 1. **Server-side only**: API keys never leave your server
 2. **Environment variables**: Stored in `.env`, never in client code
-3. **Next.js protection**: Environment variables without `NEXT_PUBLIC_` prefix are server-only
+3. **Next.js protection**: Environment variables without `` prefix are server-only
 4. **Recommended by Appwrite**: This is the official SSR authentication pattern
 
 ### Password Security

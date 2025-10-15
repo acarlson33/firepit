@@ -16,7 +16,7 @@ export async function middleware(request: NextRequest) {
 	const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
 
 	// Get session cookie
-	const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+	const projectId = process.env.APPWRITE_PROJECT_ID;
 
 	if (!projectId) {
 		// Missing project config - allow through but log in production monitoring

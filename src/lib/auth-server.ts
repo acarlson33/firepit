@@ -8,8 +8,8 @@ import { getUserRoles } from "./appwrite-roles";
  * Returns null if no valid session exists.
  */
 export async function getServerSession() {
-	const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-	const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+	const endpoint = process.env.APPWRITE_ENDPOINT;
+	const project = process.env.APPWRITE_PROJECT_ID;
 
 	if (!(endpoint && project)) {
 		return null;

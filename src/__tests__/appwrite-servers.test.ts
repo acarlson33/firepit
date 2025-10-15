@@ -33,13 +33,13 @@ describe("createServer fallback branches", () => {
     });
 
     // Environment
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_DATABASE_ID = "db";
+    (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+    (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID =
+    (process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID =
       "memberships";
 
     const core = await import("../lib/appwrite-core");
@@ -77,13 +77,13 @@ describe("createServer fallback branches", () => {
     });
 
     // Environment
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_DATABASE_ID = "db";
+    (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+    (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID =
+    (process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID =
       "memberships";
 
     const core = await import("../lib/appwrite-core");
@@ -98,14 +98,14 @@ describe("createServer fallback branches", () => {
   });
   it("listMembershipsForUser returns empty + joinServer returns null when memberships disabled", async () => {
     setupMockAppwrite({ userId: "userNoMem" });
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_DATABASE_ID = "db";
+    (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+    (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
     // Ensure membership collection is omitted (empty string will be skipped by firstDefined -> null)
-    (process.env as any).NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID = "";
+    (process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID = "";
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
     // Reset module registry for servers so it re-reads env
@@ -149,11 +149,11 @@ describe("createServer fallback branches", () => {
         },
       },
     });
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_DATABASE_ID = "db";
+    (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+    (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
     const core2 = await import("../lib/appwrite-core");
     core2.resetEnvCache();
@@ -201,11 +201,11 @@ describe("createServer fallback branches", () => {
         },
       },
     });
-    (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT = "http://x";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID = "p";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_DATABASE_ID = "db";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_SERVERS_COLLECTION_ID = "servers";
-    (process.env as any).NEXT_PUBLIC_APPWRITE_CHANNELS_COLLECTION_ID =
+    (process.env as any).APPWRITE_ENDPOINT = "http://x";
+    (process.env as any).APPWRITE_PROJECT_ID = "p";
+    (process.env as any).APPWRITE_DATABASE_ID = "db";
+    (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
+    (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
     const core3 = await import("../lib/appwrite-core");
     core3.resetEnvCache();
