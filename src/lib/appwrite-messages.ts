@@ -166,6 +166,9 @@ export async function restoreMessage(messageId: string) {
   return res as unknown as Message;
 }
 
+// Track pending typing operations to prevent concurrent updates for the same key
+const pendingTypingOps = new Map<string, Promise<void>>();
+
 // Typing indicator: create/update ephemeral doc per user+channel; requires a dedicated collection (optional)
 export async function setTyping(
   userId: string,
@@ -177,48 +180,69 @@ export async function setTyping(
     return;
   }
   const key = `${userId}_${channelId}`;
-  try {
-    if (isTyping) {
-      // Emulate upsert: try update, fallback create.
-      const db = getDatabases();
-      const payload = {
-        userId,
-        userName,
-        channelId,
-        updatedAt: new Date().toISOString(),
-      };
-      try {
-        await db.updateDocument(
-          DATABASE_ID,
-          TYPING_COLLECTION_ID,
-          key,
-          payload
-        );
-      } catch {
+  
+  // If there's already a pending operation for this key, wait for it to complete
+  const existingOp = pendingTypingOps.get(key);
+  if (existingOp) {
+    await existingOp.catch(() => {
+      /* ignore errors from previous operation */
+    });
+  }
+  
+  // Create a new operation promise
+  const operation = (async () => {
+    try {
+      if (isTyping) {
+        // Emulate upsert: try update, fallback create.
+        const db = getDatabases();
+        const payload = {
+          userId,
+          userName,
+          channelId,
+          updatedAt: new Date().toISOString(),
+        };
         try {
-          const { Permission, Role } = await import("appwrite");
-          const typingPerms = [Permission.read(Role.any())];
-          await db.createDocument(
+          await db.updateDocument(
             DATABASE_ID,
             TYPING_COLLECTION_ID,
             key,
-            payload,
-            typingPerms
+            payload
           );
         } catch {
-          // swallow; ephemeral
+          try {
+            const { Permission, Role } = await import("appwrite");
+            const typingPerms = [Permission.read(Role.any())];
+            await db.createDocument(
+              DATABASE_ID,
+              TYPING_COLLECTION_ID,
+              key,
+              payload,
+              typingPerms
+            );
+          } catch {
+            // swallow; ephemeral
+          }
         }
+      } else {
+        await getDatabases().deleteDocument({
+          databaseId: DATABASE_ID,
+          collectionId: TYPING_COLLECTION_ID,
+          documentId: key,
+        });
       }
-    } else {
-      await getDatabases().deleteDocument({
-        databaseId: DATABASE_ID,
-        collectionId: TYPING_COLLECTION_ID,
-        documentId: key,
-      });
+    } catch {
+      // swallow; ephemeral
+    } finally {
+      // Clean up the pending operation
+      pendingTypingOps.delete(key);
     }
-  } catch {
-    // swallow; ephemeral
-  }
+  })();
+  
+  // Store the operation promise
+  pendingTypingOps.set(key, operation);
+  
+  // Wait for the operation to complete
+  await operation;
 }
 
 // Basic flood protection heuristic client-side

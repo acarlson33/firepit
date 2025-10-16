@@ -509,4 +509,46 @@ describe("appwrite-messages advanced flows", () => {
     expect(canSend()).toBe(true);
     vi.useRealTimers();
   });
+
+  it("setTyping handles concurrent calls without duplicate document creation errors", async () => {
+    const updateCalls: any[] = [];
+    const createCalls: any[] = [];
+    let createdDocumentExists = false;
+    setupMockAppwrite({
+      overrides: {
+        updateDocument: () => {
+          updateCalls.push({});
+          if (!createdDocumentExists) {
+            return Promise.reject(new Error("Document not found"));
+          }
+          return Promise.resolve({ $id: "key", userId: "u1", channelId: "c1" });
+        },
+        createDocument: (...args: any[]) => {
+          createCalls.push(args);
+          createdDocumentExists = true;
+          return Promise.resolve({
+            $id: args[2] || "key",
+            ...(args[3] || args[0]?.data),
+          });
+        },
+      },
+    });
+    const { setTyping } = await import("../lib/appwrite-messages");
+    
+    // Simulate concurrent calls to setTyping with the same key
+    const promises = [
+      setTyping("u1", "c1", "Alice", true),
+      setTyping("u1", "c1", "Alice", true),
+      setTyping("u1", "c1", "Alice", true),
+    ];
+    
+    // All should complete without throwing errors
+    await Promise.all(promises);
+    
+    // Should have tried to update 3 times (one for each call)
+    expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+    
+    // Should only create once (not 3 times) due to serialization
+    expect(createCalls.length).toBe(1);
+  });
 });
