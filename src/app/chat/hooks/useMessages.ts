@@ -123,11 +123,15 @@ export function useMessages({
           // Enrich message with profile data before adding to state
           const { enrichMessageWithProfile } = await import("@/lib/enrich-messages");
           const enriched = await enrichMessageWithProfile(base);
-          setMessages((prev) =>
-            [...prev, enriched].sort((a, b) =>
+          setMessages((prev) => {
+            // Check if message already exists to prevent duplicates
+            if (prev.some((m) => m.$id === enriched.$id)) {
+              return prev;
+            }
+            return [...prev, enriched].sort((a, b) =>
               a.$createdAt.localeCompare(b.$createdAt)
-            )
-          );
+            );
+          });
         }
         async function applyUpdate(base: Message) {
           // Enrich message with profile data before updating state
@@ -176,9 +180,12 @@ export function useMessages({
       });
   }, [channelId]);
 
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  });
+    if (messages.length > 0) {
+      listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+    }
+  }, [messages]);
 
   async function loadOlder() {
     if (!oldestCursor) {
