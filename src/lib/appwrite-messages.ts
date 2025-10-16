@@ -171,6 +171,34 @@ export async function restoreMessage(messageId: string) {
 // could result in duplicate document creation attempts and 400 errors
 const pendingTypingOps = new Map<string, Promise<void>>();
 
+// Generate a valid Appwrite document ID from userId and channelId
+// Must be <=36 chars, alphanumeric + underscore/hyphen, cannot start with underscore
+function generateTypingDocId(userId: string, channelId: string): string {
+  // Create a deterministic hash-like identifier
+  const combined = `${userId}-${channelId}`;
+  
+  // If combined string is short enough and valid, use it directly
+  if (combined.length <= 36 && !combined.startsWith("_")) {
+    return combined;
+  }
+  
+  // Otherwise, create a hash using crypto.subtle or a simple hash
+  // For Node.js/browser compatibility, use a simple deterministic approach
+  let hash = 0;
+  for (let i = 0; i < combined.length; i++) {
+    const chr = combined.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  
+  // Convert to base36 to keep it alphanumeric and ensure it doesn't start with underscore
+  const hashStr = Math.abs(hash).toString(36);
+  
+  // Prefix with 't' for 'typing' to ensure it doesn't start with underscore
+  // and to make it identifiable. Limit to 36 characters.
+  return `t${hashStr}`.slice(0, 36);
+}
+
 // Typing indicator: create/update ephemeral doc per user+channel; requires a dedicated collection (optional)
 // Uses a serialization pattern to prevent concurrent calls for the same user+channel from conflicting
 export async function setTyping(
@@ -182,7 +210,7 @@ export async function setTyping(
   if (!TYPING_COLLECTION_ID) {
     return;
   }
-  const key = `${userId}_${channelId}`;
+  const key = generateTypingDocId(userId, channelId);
   
   // If there's already a pending operation for this key, wait for it to complete
   const existingOp = pendingTypingOps.get(key);
