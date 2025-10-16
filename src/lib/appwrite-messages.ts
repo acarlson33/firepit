@@ -167,9 +167,12 @@ export async function restoreMessage(messageId: string) {
 }
 
 // Track pending typing operations to prevent concurrent updates for the same key
+// This prevents race conditions where multiple setTyping calls with the same key
+// could result in duplicate document creation attempts and 400 errors
 const pendingTypingOps = new Map<string, Promise<void>>();
 
 // Typing indicator: create/update ephemeral doc per user+channel; requires a dedicated collection (optional)
+// Uses a serialization pattern to prevent concurrent calls for the same user+channel from conflicting
 export async function setTyping(
   userId: string,
   channelId: string,
