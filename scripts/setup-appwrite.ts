@@ -167,6 +167,39 @@ async function ensureBooleanAttribute(
 	}
 }
 
+async function ensureStringArrayAttribute(
+	collection: string,
+	key: string,
+	size: number,
+	required: boolean,
+) {
+	try {
+		await tryVariants([
+			() => dbAny.getAttribute(DB_ID, collection, key),
+			() =>
+				dbAny.getAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+				}),
+		]);
+	} catch {
+		await tryVariants([
+			() => dbAny.createStringAttribute(DB_ID, collection, key, size, required, undefined, true),
+			() =>
+				dbAny.createStringAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+					size,
+					required,
+					array: true,
+				}),
+		]);
+		info(`[setup] added ${collection}.${key} (string array)`);
+	}
+}
+
 type IndexType = "key" | "fulltext"; // subset used
 async function waitForAttribute(
 	collection: string,
@@ -423,6 +456,34 @@ async function setupStatuses() {
 	await ensureIndex("statuses", "idx_status", "key", ["status"]);
 }
 
+async function setupConversations() {
+	await ensureCollection("conversations", "Conversations");
+	await ensureStringArrayAttribute("conversations", "participants", LEN_ID, true);
+	await ensureStringAttribute("conversations", "lastMessageAt", LEN_TS, false);
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
+	await ensureIndex("conversations", "idx_participants", "key", ["participants"]);
+}
+
+async function setupDirectMessages() {
+	await ensureCollection("direct_messages", "Direct Messages");
+	const fields: [string, number, boolean][] = [
+		["conversationId", LEN_ID, true],
+		["senderId", LEN_ID, true],
+		["receiverId", LEN_ID, true],
+		["text", LEN_TEXT, true],
+		["editedAt", LEN_TS, false],
+		["removedAt", LEN_TS, false],
+		["removedBy", LEN_ID, false],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("direct_messages", k, size, req);
+	}
+	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
+	await ensureIndex("direct_messages", "idx_conversationId", "key", ["conversationId"]);
+	await ensureIndex("direct_messages", "idx_senderId", "key", ["senderId"]);
+	await ensureIndex("direct_messages", "idx_receiverId", "key", ["receiverId"]);
+}
+
 async function ensureBucket(id: string, name: string) {
 	try {
 		await tryVariants([
@@ -546,6 +607,10 @@ async function run() {
 	await setupProfiles();
 	info("[setup] Setting up statuses...");
 	await setupStatuses();
+	info("[setup] Setting up conversations...");
+	await setupConversations();
+	info("[setup] Setting up direct messages...");
+	await setupDirectMessages();
 	info("[setup] Setting up storage...");
 	await setupStorage();
 	info("[setup] Setting up teams...");
