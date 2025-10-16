@@ -62,8 +62,8 @@ export type EnvConfig = {
     typing: string | null;
     memberships: string | null;
     profiles: string;
-    conversations: string | null;
-    directMessages: string | null;
+    conversations: string;
+    directMessages: string;
     statuses: string | null;
   };
   buckets: {
@@ -149,12 +149,14 @@ export function getEnvConfig(): EnvConfig {
       ) || "profiles",
     conversations:
       firstDefined(
-        process.env.APPWRITE_CONVERSATIONS_COLLECTION_ID
-      ) || null,
+        process.env.APPWRITE_CONVERSATIONS_COLLECTION_ID,
+        "conversations"
+      ) || "conversations",
     directMessages:
       firstDefined(
-        process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID
-      ) || null,
+        process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID,
+        "direct_messages"
+      ) || "direct_messages",
     statuses:
       firstDefined(
         process.env.APPWRITE_STATUSES_COLLECTION_ID
