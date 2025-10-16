@@ -72,10 +72,28 @@ export function useDirectMessages({
 				(response) => {
 					const payload = response.payload as Record<string, unknown>;
 					const msgConversationId = payload.conversationId;
+					const events = response.events as string[];
 
 					// Only update if message belongs to this conversation
 					if (msgConversationId === conversationId) {
-						void loadMessages();
+						const messageData = payload as unknown as DirectMessage;
+						
+						// Handle different event types to avoid full reload
+						if (events.some((e) => e.endsWith(".create"))) {
+							setMessages((prev) => {
+								// Check if message already exists to prevent duplicates
+								if (prev.some((m) => m.$id === messageData.$id)) {
+									return prev;
+								}
+								return [...prev, messageData];
+							});
+						} else if (events.some((e) => e.endsWith(".update"))) {
+							setMessages((prev) =>
+								prev.map((m) => (m.$id === messageData.$id ? messageData : m))
+							);
+						} else if (events.some((e) => e.endsWith(".delete"))) {
+							setMessages((prev) => prev.filter((m) => m.$id !== messageData.$id));
+						}
 					}
 				},
 			);
@@ -86,7 +104,7 @@ export function useDirectMessages({
 		}).catch(() => {
 			// Ignore subscription errors
 		});
-	}, [conversationId, loadMessages]);
+	}, [conversationId]);
 
 	const send = useCallback(
 		async (text: string) => {
