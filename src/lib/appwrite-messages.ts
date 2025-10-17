@@ -170,31 +170,27 @@ export async function restoreMessage(messageId: string) {
 function hashTypingKey(userId: string, channelId: string): string {
   // Use Node.js crypto to create a consistent hash that's exactly 36 characters
   // This ensures the document ID stays within Appwrite's limit
-  const crypto = typeof window === "undefined" 
-    ? require("crypto") 
-    : null;
+  const input = `${userId}_${channelId}`;
   
-  if (crypto) {
-    // Server-side: use crypto module
-    const input = `${userId}_${channelId}`;
-    return crypto.createHash("sha256").update(input).digest("hex").substring(0, 36);
-  } else {
-    // Client-side: use Web Crypto API
-    // For synchronous operation in browser, we'll use a simpler approach
-    // that's still deterministic but less secure (acceptable for ephemeral typing indicators)
-    const input = `${userId}_${channelId}`;
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      const char = input.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    // Convert to hex and pad/truncate to 36 chars
-    const hexHash = Math.abs(hash).toString(16).padStart(8, '0');
-    // Combine with a prefix to ensure uniqueness and pad to 36 chars
-    const combined = `typing_${userId.substring(0, 10)}_${channelId.substring(0, 10)}_${hexHash}`;
-    return combined.substring(0, 36);
+  // Simple hash function that works in both Node and browser
+  // Using a djb2-like hash algorithm for deterministic results
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = ((hash << 5) + hash) + char; // hash * 33 + char
   }
+  
+  // Convert to positive number and then to hex
+  const hashHex = (hash >>> 0).toString(16).padStart(8, '0');
+  
+  // Create a deterministic 36-character ID using parts of the input and the hash
+  // Format: typing_<userPrefix>_<channelPrefix>_<hash>
+  const userPrefix = userId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
+  const channelPrefix = channelId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
+  const combined = `typ_${userPrefix}_${channelPrefix}_${hashHex}`;
+  
+  // Ensure it's exactly 36 characters or less
+  return combined.padEnd(36, '0').substring(0, 36);
 }
 
 // Typing indicator: create/update ephemeral doc per user+channel; requires a dedicated collection (optional)
