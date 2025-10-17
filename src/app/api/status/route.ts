@@ -146,6 +146,8 @@ export async function GET(request: Request) {
 				return NextResponse.json({ statuses: [] });
 			}
 
+			// Note: Limited to 100 users per request for performance.
+			// For larger batches, consider pagination or multiple requests.
 			const existing = await databases.listDocuments(
 				DATABASE_ID,
 				STATUSES_COLLECTION,
