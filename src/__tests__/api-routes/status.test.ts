@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { POST, PATCH } from "../../app/api/status/route";
+import { GET, POST, PATCH, DELETE } from "../../app/api/status/route";
 
 // Mock node-appwrite for server-side
 vi.mock("node-appwrite", () => ({
@@ -16,6 +16,7 @@ const mockDatabases = {
 	listDocuments: vi.fn(),
 	createDocument: vi.fn(),
 	updateDocument: vi.fn(),
+	deleteDocument: vi.fn(),
 };
 
 // Mock dependencies
@@ -157,6 +158,140 @@ describe("Status API Routes", () => {
 			});
 
 			const response = await PATCH(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(400);
+			expect(data.error).toBe("userId is required");
+		});
+	});
+
+	describe("GET /api/status", () => {
+		it("should get a single user status", async () => {
+			mockDatabases.listDocuments.mockResolvedValue({
+				documents: [
+					{
+						$id: "status-1",
+						userId: "user-1",
+						status: "online",
+						customMessage: "Working",
+						lastSeenAt: new Date().toISOString(),
+					},
+				],
+			});
+
+			const request = new NextRequest("http://localhost/api/status?userId=user-1");
+
+			const response = await GET(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.userId).toBe("user-1");
+			expect(data.status).toBe("online");
+		});
+
+		it("should return null status if user has no status", async () => {
+			mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
+
+			const request = new NextRequest("http://localhost/api/status?userId=user-1");
+
+			const response = await GET(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.status).toBeNull();
+		});
+
+		it("should get multiple user statuses", async () => {
+			mockDatabases.listDocuments.mockResolvedValue({
+				documents: [
+					{
+						$id: "status-1",
+						userId: "user-1",
+						status: "online",
+					},
+					{
+						$id: "status-2",
+						userId: "user-2",
+						status: "away",
+					},
+				],
+			});
+
+			const request = new NextRequest("http://localhost/api/status?userIds=user-1,user-2");
+
+			const response = await GET(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.statuses).toHaveLength(2);
+			expect(data.statuses[0].userId).toBe("user-1");
+			expect(data.statuses[1].userId).toBe("user-2");
+		});
+
+		it("should return 400 if no userId or userIds parameter", async () => {
+			const request = new NextRequest("http://localhost/api/status");
+
+			const response = await GET(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(400);
+			expect(data.error).toBe("userId or userIds parameter is required");
+		});
+	});
+
+	describe("DELETE /api/status", () => {
+		it("should delete a user status", async () => {
+			mockDatabases.listDocuments.mockResolvedValue({
+				documents: [
+					{
+						$id: "status-1",
+						userId: "user-1",
+						status: "online",
+					},
+				],
+			});
+			mockDatabases.deleteDocument.mockResolvedValue({});
+
+			const request = new NextRequest("http://localhost/api/status", {
+				method: "DELETE",
+				body: JSON.stringify({ userId: "user-1" }),
+			});
+
+			const response = await DELETE(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.success).toBe(true);
+			expect(data.deletedId).toBe("status-1");
+			expect(mockDatabases.deleteDocument).toHaveBeenCalledWith(
+				"test-db",
+				"statuses-collection",
+				"status-1",
+			);
+		});
+
+		it("should return 404 if status not found", async () => {
+			mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
+
+			const request = new NextRequest("http://localhost/api/status", {
+				method: "DELETE",
+				body: JSON.stringify({ userId: "user-1" }),
+			});
+
+			const response = await DELETE(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(404);
+			expect(data.error).toBe("Status not found");
+		});
+
+		it("should return 400 if userId is missing", async () => {
+			const request = new NextRequest("http://localhost/api/status", {
+				method: "DELETE",
+				body: JSON.stringify({}),
+			});
+
+			const response = await DELETE(request);
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
