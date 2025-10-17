@@ -225,6 +225,38 @@ describe("appwrite-messages advanced flows", () => {
     await setTyping("u1", "c1", "Alice", true);
   });
 
+  it("setTyping generates document IDs that are 36 characters or less", async () => {
+    const createCalls: any[] = [];
+    const updateCalls: any[] = [];
+    setupMockAppwrite({
+      overrides: {
+        updateDocument: (...args: any[]) => {
+          updateCalls.push(args);
+          return Promise.reject(new Error("missing"));
+        },
+        createDocument: (...args: any[]) => {
+          createCalls.push(args);
+          return Promise.resolve({
+            $id: args[2] || "key",
+            ...(args[3] || args[0]?.data),
+          });
+        },
+      },
+    });
+    const { setTyping } = await import("../lib/appwrite-messages");
+    
+    // Test with very long user and channel IDs
+    const longUserId = "very-long-user-id-1234567890-1234567890-1234567890";
+    const longChannelId = "very-long-channel-id-1234567890-1234567890-1234567890";
+    
+    await setTyping(longUserId, longChannelId, "Alice", true);
+    
+    expect(createCalls.length).toBe(1);
+    const documentId = createCalls[0][2]; // Third argument is the document ID
+    expect(documentId).toBeDefined();
+    expect(documentId.length).toBeLessThanOrEqual(36);
+  });
+
   it("canSend enforces flood window and limit", async () => {
     // Need a fresh module instance to reset internal recent array
     setupMockAppwrite();
