@@ -166,6 +166,33 @@ export async function restoreMessage(messageId: string) {
   return res as unknown as Message;
 }
 
+// Helper function to create a deterministic, short document ID for typing status
+function hashTypingKey(userId: string, channelId: string): string {
+  // Use Node.js crypto to create a consistent hash that's exactly 36 characters
+  // This ensures the document ID stays within Appwrite's limit
+  const input = `${userId}_${channelId}`;
+  
+  // Simple hash function that works in both Node and browser
+  // Using a djb2-like hash algorithm for deterministic results
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = ((hash << 5) + hash) + char; // hash * 33 + char
+  }
+  
+  // Convert to positive number and then to hex
+  const hashHex = (hash >>> 0).toString(16).padStart(8, '0');
+  
+  // Create a deterministic 36-character ID using parts of the input and the hash
+  // Format: typing_<userPrefix>_<channelPrefix>_<hash>
+  const userPrefix = userId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
+  const channelPrefix = channelId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
+  const combined = `typ_${userPrefix}_${channelPrefix}_${hashHex}`;
+  
+  // Ensure it's exactly 36 characters or less
+  return combined.padEnd(36, '0').substring(0, 36);
+}
+
 // Typing indicator: create/update ephemeral doc per user+channel; requires a dedicated collection (optional)
 export async function setTyping(
   userId: string,
@@ -176,7 +203,8 @@ export async function setTyping(
   if (!TYPING_COLLECTION_ID) {
     return;
   }
-  const key = `${userId}_${channelId}`;
+  // Hash the key to ensure it's 36 characters or less (Appwrite document ID limit)
+  const key = hashTypingKey(userId, channelId);
   try {
     if (isTyping) {
       // Emulate upsert: try update, fallback create.
