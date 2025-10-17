@@ -107,6 +107,70 @@ export async function POST(request: Request) {
 }
 
 /**
+ * Get user status(es) (server-side)
+ */
+export async function GET(request: Request) {
+	try {
+		const { searchParams } = new URL(request.url);
+		const userId = searchParams.get("userId");
+		const userIds = searchParams.get("userIds");
+
+		if (!STATUSES_COLLECTION) {
+			return NextResponse.json(
+				{ error: "Statuses collection not configured" },
+				{ status: 500 },
+			);
+		}
+
+		const { databases } = getServerClient();
+
+		// Single user query
+		if (userId) {
+			const existing = await databases.listDocuments(
+				DATABASE_ID,
+				STATUSES_COLLECTION,
+				[Query.equal("userId", userId), Query.limit(1)],
+			);
+
+			if (existing.documents.length === 0) {
+				return NextResponse.json({ status: null });
+			}
+
+			return NextResponse.json(existing.documents[0]);
+		}
+
+		// Multiple users query
+		if (userIds) {
+			const userIdList = userIds.split(",").filter(Boolean);
+			if (userIdList.length === 0) {
+				return NextResponse.json({ statuses: [] });
+			}
+
+			// Note: Limited to 100 users per request for performance.
+			// For larger batches, consider pagination or multiple requests.
+			const existing = await databases.listDocuments(
+				DATABASE_ID,
+				STATUSES_COLLECTION,
+				[Query.equal("userId", userIdList), Query.limit(100)],
+			);
+
+			return NextResponse.json({ statuses: existing.documents });
+		}
+
+		return NextResponse.json(
+			{ error: "userId or userIds parameter is required" },
+			{ status: 400 },
+		);
+	} catch (error) {
+		console.error("Error in GET /api/status:", error);
+		return NextResponse.json(
+			{ error: "Failed to get user status", details: error instanceof Error ? error.message : String(error) },
+			{ status: 500 },
+		);
+	}
+}
+
+/**
  * Update last seen timestamp (server-side)
  */
 export async function PATCH(request: Request) {
@@ -153,6 +217,60 @@ export async function PATCH(request: Request) {
 	} catch (error) {
 		return NextResponse.json(
 			{ error: "Failed to update last seen" },
+			{ status: 500 },
+		);
+	}
+}
+
+/**
+ * Delete user status (server-side)
+ */
+export async function DELETE(request: Request) {
+	try {
+		const { userId } = await request.json();
+
+		if (!userId) {
+			return NextResponse.json(
+				{ error: "userId is required" },
+				{ status: 400 },
+			);
+		}
+
+		if (!STATUSES_COLLECTION) {
+			return NextResponse.json(
+				{ error: "Statuses collection not configured" },
+				{ status: 500 },
+			);
+		}
+
+		const { databases } = getServerClient();
+
+		// Find existing status document
+		const existing = await databases.listDocuments(
+			DATABASE_ID,
+			STATUSES_COLLECTION,
+			[Query.equal("userId", userId), Query.limit(1)],
+		);
+
+		if (existing.documents.length === 0) {
+			return NextResponse.json(
+				{ error: "Status not found" },
+				{ status: 404 },
+			);
+		}
+
+		const doc = existing.documents[0];
+		await databases.deleteDocument(
+			DATABASE_ID,
+			STATUSES_COLLECTION,
+			doc.$id,
+		);
+
+		return NextResponse.json({ success: true, deletedId: doc.$id });
+	} catch (error) {
+		console.error("Error in DELETE /api/status:", error);
+		return NextResponse.json(
+			{ error: "Failed to delete user status", details: error instanceof Error ? error.message : String(error) },
 			{ status: 500 },
 		);
 	}
