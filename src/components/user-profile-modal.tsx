@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getOrCreateConversation } from "@/lib/appwrite-dms";
+import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import { toast } from "sonner";
 
 type UserProfile = {

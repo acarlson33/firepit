@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getOrCreateConversation } from "@/lib/appwrite-dms";
+import { useAuth } from "@/contexts/auth-context";
+import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import { toast } from "sonner";
 
 type StartDMButtonProps = {
@@ -15,16 +16,16 @@ type StartDMButtonProps = {
 export function StartDMButton({ targetUserId, displayName }: StartDMButtonProps) {
 	const [loading, setLoading] = useState(false);
 	const router = useRouter();
+	const { userData } = useAuth();
 
 	async function handleStartDM() {
 		setLoading(true);
 		try {
-			// Get current user ID from /api/me
-			const meResponse = await fetch("/api/me");
-			if (!meResponse.ok) {
+			// Get current user ID from auth context
+			if (!userData?.userId) {
 				throw new Error("Not authenticated");
 			}
-			const { userId: currentUserId } = await meResponse.json();
+			const currentUserId = userData.userId;
 
 			// Don't allow DM to self
 			if (currentUserId === targetUserId) {

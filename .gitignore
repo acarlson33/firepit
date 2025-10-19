@@ -61,4 +61,4 @@ dev-dist
 
 .open-next
 
-src/notes/*
+src/summaries/**

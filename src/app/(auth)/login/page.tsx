@@ -7,11 +7,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/auth-context";
 import { loginAction, registerAction } from "./actions";
 
 function LoginFormContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
+	const { refreshUser } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [name, setName] = useState("");
@@ -28,9 +30,10 @@ function LoginFormContent() {
 			const result = await loginAction(email, password);
 			if (result.success) {
 				toast.success("Logged in");
+				// Refresh user data in context before navigating
+				await refreshUser();
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				router.push(destination as any);
-				router.refresh(); // Force server components to re-render with new session
 			} else {
 				toast.error(result.error);
 			}
@@ -53,9 +56,10 @@ function LoginFormContent() {
 			);
 			if (result.success) {
 				toast.success("Account created");
+				// Refresh user data in context before navigating
+				await refreshUser();
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				router.push(destination as any);
-				router.refresh();
 			} else {
 				toast.error(result.error);
 			}

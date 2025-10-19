@@ -16,7 +16,7 @@ import type { Channel } from "@/lib/types";
 
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
-import { useAuth } from "./hooks/useAuth";
+import { useAuth } from "@/contexts/auth-context";
 import { useChannels } from "./hooks/useChannels";
 import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
@@ -36,7 +36,9 @@ const NewConversationDialog = dynamic(() => import("./components/NewConversation
 });
 
 export default function ChatPage() {
-  const { userId, userName } = useAuth();
+  const { userData } = useAuth();
+  const userId = userData?.userId ?? null;
+  const userName = userData?.name ?? null;
   
   // Auto track activity and update status
   useActivityTracking({ userId });

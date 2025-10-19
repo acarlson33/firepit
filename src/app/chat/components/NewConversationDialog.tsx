@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getOrCreateConversation } from "@/lib/appwrite-dms";
+import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import type { Conversation } from "@/lib/types";
 
 type UserSearchResult = {

@@ -1,82 +1,19 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ModeToggle } from "./mode-toggle";
 import { StatusSelector } from "./status-selector";
 import { Button } from "./ui/button";
 
 import { logoutAction } from "@/app/(auth)/login/actions";
-import { getUserStatus, setUserStatus } from "@/lib/appwrite-status";
-import type { UserStatus } from "@/lib/types";
-
-type UserData = {
-  userId: string;
-  name: string;
-  email: string;
-  roles: {
-    isAdmin: boolean;
-    isModerator: boolean;
-  };
-};
+import { useAuth } from "@/contexts/auth-context";
 
 export default function Header() {
   const router = useRouter();
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { userData, userStatus, loading, setUserData, updateUserStatus } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
-
-  useEffect(() => {
-    // Fetch user data from server endpoint (SSR-compatible)
-    fetch("/api/me")
-      .then((res) => {
-        if (res.ok) {
-          return res.json();
-        }
-        throw new Error("Not authenticated");
-      })
-      .then((data) => {
-        setUserData(data);
-        // Fetch user status
-        if (data.userId) {
-          void getUserStatus(data.userId).then((status) => {
-            if (status) {
-              setUserStatusState(status);
-            }
-          });
-        }
-      })
-      .catch(() => {
-        setUserData(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, []);
-
-  async function handleStatusChange(
-    status: "online" | "away" | "busy" | "offline",
-    customMessage?: string,
-    expiresAt?: string,
-  ) {
-    if (!userData?.userId) {
-      return;
-    }
-    
-    try {
-      // isManuallySet=true because user explicitly changed status
-      await setUserStatus(userData.userId, status, customMessage, expiresAt, true);
-      const newStatus = await getUserStatus(userData.userId);
-      if (newStatus) {
-        setUserStatusState(newStatus);
-      }
-    } catch (err) {
-      console.error("Failed to change status:", err);
-      // Error handled silently in UI but logged to console
-    }
-  }
 
   const isAuthenticated = Boolean(userData);
   const roles = userData?.roles;
@@ -100,7 +37,6 @@ export default function Header() {
       await logoutAction();
       setUserData(null);
       router.push("/");
-      router.refresh();
     } catch {
       // Ignore errors, redirect anyway
       setUserData(null);
@@ -169,7 +105,7 @@ export default function Header() {
               <StatusSelector
                 currentMessage={userStatus?.customMessage}
                 currentStatus={userStatus?.status || "offline"}
-                onStatusChange={handleStatusChange}
+                onStatusChange={updateUserStatus}
               />
               <form onSubmit={handleLogout}>
                 <Button aria-label="Logout from your account" disabled={loggingOut} type="submit" variant="outline">

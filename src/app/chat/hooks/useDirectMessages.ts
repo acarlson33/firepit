@@ -7,7 +7,7 @@ import {
 	sendDirectMessage,
 	editDirectMessage,
 	deleteDirectMessage,
-} from "@/lib/appwrite-dms";
+} from "@/lib/appwrite-dms-client";
 import type { DirectMessage } from "@/lib/types";
 
 const env = getEnvConfig();

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { listConversations } from "@/lib/appwrite-dms";
+import { listConversations } from "@/lib/appwrite-dms-client";
 import type { Conversation } from "@/lib/types";
 
 const env = getEnvConfig();
