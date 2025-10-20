@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { MoreVertical, MessageSquare, Hash } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -57,6 +57,7 @@ export default function ChatPage() {
     displayName?: string;
     avatarUrl?: string;
   } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const openProfileModal = (
     profileUserId: string,
@@ -103,6 +104,11 @@ export default function ChatPage() {
     userIdSlice,
     maxTypingDisplay,
   } = messagesApi;
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // DM hooks
   const conversationsApi = useConversations(userId);
@@ -409,6 +415,7 @@ export default function ChatPage() {
               : "is typing..."}
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
     );
   }
