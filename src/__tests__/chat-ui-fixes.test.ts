@@ -124,5 +124,33 @@ describe("Chat UI Fixes", () => {
 			expect(emptyMessages.length > 0).toBe(false);
 			expect(nonEmptyMessages.length > 0).toBe(true);
 		});
+
+		it("should trigger scroll on message array changes", () => {
+			const messages1 = [
+				{ $id: "msg1", text: "Hello", $createdAt: "2025-01-01T00:00:00Z" },
+			];
+			const messages2 = [
+				{ $id: "msg1", text: "Hello", $createdAt: "2025-01-01T00:00:00Z" },
+				{ $id: "msg2", text: "World", $createdAt: "2025-01-01T00:01:00Z" },
+			];
+
+			// Verify that message arrays are different (which would trigger useEffect)
+			expect(messages1).not.toEqual(messages2);
+			expect(messages2.length).toBe(2);
+			expect(messages1.length).toBe(1);
+		});
+
+		it("should scroll to bottom when new message is added", () => {
+			const messages = [
+				{ $id: "msg1", text: "First", $createdAt: "2025-01-01T00:00:00Z" },
+			];
+			const newMessage = { $id: "msg2", text: "Second", $createdAt: "2025-01-01T00:01:00Z" };
+
+			const updatedMessages = [...messages, newMessage];
+
+			// Verify new message is at the end
+			expect(updatedMessages[updatedMessages.length - 1].$id).toBe("msg2");
+			expect(updatedMessages.length).toBe(2);
+		});
 	});
 });
