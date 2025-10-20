@@ -160,4 +160,53 @@ describe("Login Security", () => {
 			})
 		);
 	});
+
+	it("loginAction should handle errors gracefully without throwing", async () => {
+		// Clear previous mocks and simulate an error
+		vi.clearAllMocks();
+		
+		const { Account } = await import("node-appwrite");
+		vi.mocked(Account).mockImplementationOnce(() => ({
+			createEmailPasswordSession: vi.fn().mockRejectedValue(new Error("Invalid credentials")),
+		}) as never);
+
+		const { loginAction } = await import("@/app/(auth)/login/actions");
+
+		const formData = new FormData();
+		formData.set("email", "test@example.com");
+		formData.set("password", "wrongpassword");
+
+		const result = await loginAction(formData);
+
+		// Should return error response instead of throwing
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error).toContain("Invalid");
+		}
+	});
+
+	it("registerAction should handle errors gracefully without throwing", async () => {
+		// Clear previous mocks and simulate an error
+		vi.clearAllMocks();
+		
+		const { Account } = await import("node-appwrite");
+		vi.mocked(Account).mockImplementationOnce(() => ({
+			create: vi.fn().mockRejectedValue(new Error("User already exists")),
+		}) as never);
+
+		const { registerAction } = await import("@/app/(auth)/login/actions");
+
+		const formData = new FormData();
+		formData.set("email", "existing@example.com");
+		formData.set("password", "password123");
+		formData.set("name", "Test User");
+
+		const result = await registerAction(formData);
+
+		// Should return error response instead of throwing
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error).toContain("exists");
+		}
+	});
 });

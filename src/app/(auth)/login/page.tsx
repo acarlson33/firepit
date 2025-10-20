@@ -41,8 +41,10 @@ function LoginFormContent() {
 				toast.error(result.error);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Login failed";
+			// Enhanced error handling to prevent "unexpected response" errors
+			const message = err instanceof Error ? err.message : "An error occurred during login. Please try again.";
 			toast.error(message);
+			console.error("Login error:", err);
 		} finally {
 			setLoading(false);
 		}
@@ -67,9 +69,10 @@ function LoginFormContent() {
 				toast.error(result.error);
 			}
 		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Registration failed";
+			// Enhanced error handling to prevent "unexpected response" errors
+			const message = err instanceof Error ? err.message : "An error occurred during registration. Please try again.";
 			toast.error(message);
+			console.error("Registration error:", err);
 		} finally {
 			setLoading(false);
 		}

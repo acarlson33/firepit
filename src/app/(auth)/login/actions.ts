@@ -140,8 +140,9 @@ export async function loginAction(
     return { success: true, userId: session.userId };
   } catch (error) {
     // Provide helpful error messages for common issues
+    // Enhanced error handling to prevent "unexpected response" errors
     if (error instanceof Error) {
-      const message = error.message;
+      const message = error.message.toLowerCase();
       
       // API key permission issues
       if (message.includes("scope") || message.includes("permission")) {
@@ -152,7 +153,7 @@ export async function loginAction(
       }
       
       // Invalid credentials
-      if (message.includes("Invalid credentials") || message.includes("password")) {
+      if (message.includes("invalid credentials") || message.includes("wrong password")) {
         return {
           success: false,
           error: "Invalid email or password",
@@ -167,12 +168,29 @@ export async function loginAction(
         };
       }
       
+      // Rate limiting
+      if (message.includes("rate limit") || message.includes("too many")) {
+        return {
+          success: false,
+          error: "Too many login attempts. Please try again later.",
+        };
+      }
+      
+      // Network errors
+      if (message.includes("network") || message.includes("fetch")) {
+        return {
+          success: false,
+          error: "Network error. Please check your connection and try again.",
+        };
+      }
+      
       return {
         success: false,
-        error: message,
+        error: error.message,
       };
     }
     
+    // Handle non-Error objects
     return {
       success: false,
       error: "Login failed. Please try again.",
@@ -234,9 +252,43 @@ export async function registerAction(
     
     return loginResult;
   } catch (error) {
+    // Enhanced error handling for registration
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      
+      // User already exists
+      if (message.includes("user") && (message.includes("exists") || message.includes("already"))) {
+        return {
+          success: false,
+          error: "An account with this email already exists. Please login instead.",
+        };
+      }
+      
+      // Invalid email format
+      if (message.includes("email") && message.includes("invalid")) {
+        return {
+          success: false,
+          error: "Invalid email address format.",
+        };
+      }
+      
+      // Password requirements
+      if (message.includes("password") && (message.includes("short") || message.includes("weak"))) {
+        return {
+          success: false,
+          error: "Password must be at least 8 characters long.",
+        };
+      }
+      
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Registration failed",
+      error: "Registration failed. Please try again.",
     };
   }
 }
