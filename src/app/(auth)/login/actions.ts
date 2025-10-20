@@ -72,11 +72,19 @@ async function autoJoinSingleServer(userId: string): Promise<void> {
  * WHY: Browsers block cookies from Appwrite Cloud when accessing from localhost
  * due to SameSite/cross-origin policies. By creating the session server-side
  * and manually setting the cookie, we bypass this limitation.
+ * 
+ * SECURITY: Uses FormData to prevent credentials from being exposed in network logs.
+ * FormData is the recommended approach for server actions with sensitive data.
  */
 export async function loginAction(
-  email: string,
-  password: string
+  formData: FormData
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  if (!email || !password) {
+    return { success: false, error: "Email and password are required" };
+  }
   const endpoint = process.env.APPWRITE_ENDPOINT;
   const project = process.env.APPWRITE_PROJECT_ID;
   const apiKey = process.env.APPWRITE_API_KEY;
@@ -175,12 +183,20 @@ export async function loginAction(
 /**
  * Server-side registration + login action.
  * Automatically joins the user to the server if there's only one.
+ * 
+ * SECURITY: Uses FormData to prevent credentials from being exposed in network logs.
+ * FormData is the recommended approach for server actions with sensitive data.
  */
 export async function registerAction(
-  email: string,
-  password: string,
-  name: string
+  formData: FormData
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const name = formData.get("name") as string;
+
+  if (!email || !password) {
+    return { success: false, error: "Email and password are required" };
+  }
   const endpoint = process.env.APPWRITE_ENDPOINT;
   const project = process.env.APPWRITE_PROJECT_ID;
 
@@ -202,7 +218,10 @@ export async function registerAction(
     });
 
     // Immediately log in to create session
-    const loginResult = await loginAction(email, password);
+    const loginFormData = new FormData();
+    loginFormData.set("email", email);
+    loginFormData.set("password", password);
+    const loginResult = await loginAction(loginFormData);
     
     // If login succeeded and memberships are enabled, auto-join single server
     if (loginResult.success) {

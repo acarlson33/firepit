@@ -27,7 +27,10 @@ function LoginFormContent() {
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const result = await loginAction(email, password);
+			const formData = new FormData();
+			formData.set("email", email);
+			formData.set("password", password);
+			const result = await loginAction(formData);
 			if (result.success) {
 				toast.success("Logged in");
 				// Refresh user data in context before navigating
@@ -49,11 +52,11 @@ function LoginFormContent() {
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const result = await registerAction(
-				email,
-				password,
-				name || email.split("@")[0]
-			);
+			const formData = new FormData();
+			formData.set("email", email);
+			formData.set("password", password);
+			formData.set("name", name || email.split("@")[0]);
+			const result = await registerAction(formData);
 			if (result.success) {
 				toast.success("Account created");
 				// Refresh user data in context before navigating
