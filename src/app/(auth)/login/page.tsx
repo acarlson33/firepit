@@ -27,7 +27,10 @@ function LoginFormContent() {
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const result = await loginAction(email, password);
+			const formData = new FormData();
+			formData.set("email", email);
+			formData.set("password", password);
+			const result = await loginAction(formData);
 			if (result.success) {
 				toast.success("Logged in");
 				// Refresh user data in context before navigating
@@ -38,8 +41,10 @@ function LoginFormContent() {
 				toast.error(result.error);
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Login failed";
+			// Enhanced error handling to prevent "unexpected response" errors
+			const message = err instanceof Error ? err.message : "An error occurred during login. Please try again.";
 			toast.error(message);
+			console.error("Login error:", err);
 		} finally {
 			setLoading(false);
 		}
@@ -49,11 +54,11 @@ function LoginFormContent() {
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const result = await registerAction(
-				email,
-				password,
-				name || email.split("@")[0]
-			);
+			const formData = new FormData();
+			formData.set("email", email);
+			formData.set("password", password);
+			formData.set("name", name || email.split("@")[0]);
+			const result = await registerAction(formData);
 			if (result.success) {
 				toast.success("Account created");
 				// Refresh user data in context before navigating
@@ -64,9 +69,10 @@ function LoginFormContent() {
 				toast.error(result.error);
 			}
 		} catch (err) {
-			const message =
-				err instanceof Error ? err.message : "Registration failed";
+			// Enhanced error handling to prevent "unexpected response" errors
+			const message = err instanceof Error ? err.message : "An error occurred during registration. Please try again.";
 			toast.error(message);
+			console.error("Registration error:", err);
 		} finally {
 			setLoading(false);
 		}

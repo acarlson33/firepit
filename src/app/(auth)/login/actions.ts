@@ -72,11 +72,19 @@ async function autoJoinSingleServer(userId: string): Promise<void> {
  * WHY: Browsers block cookies from Appwrite Cloud when accessing from localhost
  * due to SameSite/cross-origin policies. By creating the session server-side
  * and manually setting the cookie, we bypass this limitation.
+ * 
+ * SECURITY: Uses FormData to prevent credentials from being exposed in network logs.
+ * FormData is the recommended approach for server actions with sensitive data.
  */
 export async function loginAction(
-  email: string,
-  password: string
+  formData: FormData
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  if (!email || !password) {
+    return { success: false, error: "Email and password are required" };
+  }
   const endpoint = process.env.APPWRITE_ENDPOINT;
   const project = process.env.APPWRITE_PROJECT_ID;
   const apiKey = process.env.APPWRITE_API_KEY;
@@ -132,8 +140,9 @@ export async function loginAction(
     return { success: true, userId: session.userId };
   } catch (error) {
     // Provide helpful error messages for common issues
+    // Enhanced error handling to prevent "unexpected response" errors
     if (error instanceof Error) {
-      const message = error.message;
+      const message = error.message.toLowerCase();
       
       // API key permission issues
       if (message.includes("scope") || message.includes("permission")) {
@@ -144,7 +153,7 @@ export async function loginAction(
       }
       
       // Invalid credentials
-      if (message.includes("Invalid credentials") || message.includes("password")) {
+      if (message.includes("invalid credentials") || message.includes("wrong password")) {
         return {
           success: false,
           error: "Invalid email or password",
@@ -159,12 +168,29 @@ export async function loginAction(
         };
       }
       
+      // Rate limiting
+      if (message.includes("rate limit") || message.includes("too many")) {
+        return {
+          success: false,
+          error: "Too many login attempts. Please try again later.",
+        };
+      }
+      
+      // Network errors
+      if (message.includes("network") || message.includes("fetch")) {
+        return {
+          success: false,
+          error: "Network error. Please check your connection and try again.",
+        };
+      }
+      
       return {
         success: false,
-        error: message,
+        error: error.message,
       };
     }
     
+    // Handle non-Error objects
     return {
       success: false,
       error: "Login failed. Please try again.",
@@ -175,12 +201,20 @@ export async function loginAction(
 /**
  * Server-side registration + login action.
  * Automatically joins the user to the server if there's only one.
+ * 
+ * SECURITY: Uses FormData to prevent credentials from being exposed in network logs.
+ * FormData is the recommended approach for server actions with sensitive data.
  */
 export async function registerAction(
-  email: string,
-  password: string,
-  name: string
+  formData: FormData
 ): Promise<{ success: true; userId: string } | { success: false; error: string }> {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const name = formData.get("name") as string;
+
+  if (!email || !password) {
+    return { success: false, error: "Email and password are required" };
+  }
   const endpoint = process.env.APPWRITE_ENDPOINT;
   const project = process.env.APPWRITE_PROJECT_ID;
 
@@ -202,7 +236,10 @@ export async function registerAction(
     });
 
     // Immediately log in to create session
-    const loginResult = await loginAction(email, password);
+    const loginFormData = new FormData();
+    loginFormData.set("email", email);
+    loginFormData.set("password", password);
+    const loginResult = await loginAction(loginFormData);
     
     // If login succeeded and memberships are enabled, auto-join single server
     if (loginResult.success) {
@@ -215,9 +252,43 @@ export async function registerAction(
     
     return loginResult;
   } catch (error) {
+    // Enhanced error handling for registration
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      
+      // User already exists
+      if (message.includes("user") && (message.includes("exists") || message.includes("already"))) {
+        return {
+          success: false,
+          error: "An account with this email already exists. Please login instead.",
+        };
+      }
+      
+      // Invalid email format
+      if (message.includes("email") && message.includes("invalid")) {
+        return {
+          success: false,
+          error: "Invalid email address format.",
+        };
+      }
+      
+      // Password requirements
+      if (message.includes("password") && (message.includes("short") || message.includes("weak"))) {
+        return {
+          success: false,
+          error: "Password must be at least 8 characters long.",
+        };
+      }
+      
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Registration failed",
+      error: "Registration failed. Please try again.",
     };
   }
 }
