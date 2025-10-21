@@ -155,7 +155,7 @@ export function ModerationMessageList({
 								</div>
 
 								{/* Message Text */}
-								<p className="break-words text-sm leading-relaxed">{m.text}</p>
+								<p className="wrap-break-word text-sm leading-relaxed">{m.text}</p>
 
 								{/* Author and Metadata */}
 								<div className="flex flex-wrap items-center gap-2 text-xs">

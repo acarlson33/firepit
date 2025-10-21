@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { Permission, Role } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -78,25 +79,33 @@ export async function POST(request: NextRequest) {
 			channelId,
 		};
 
+		// Permissions: anyone can read (to see typing indicators), only creator can update/delete
+		const permissions = [
+			Permission.read(Role.any()),
+			Permission.update(Role.user(userId)),
+			Permission.delete(Role.user(userId)),
+		];
+
 		// Emulate upsert: try update, fallback create.
 		try {
 			const result = await databases.updateDocument(
 				env.databaseId,
 				typingCollectionId,
 				key,
-				payload
+				payload,
+				permissions
 			);
 
 			return NextResponse.json({ success: true, document: result });
 		} catch {
 			try {
 				// Document doesn't exist, create it
-				// Use server admin client - no need for explicit permissions
 				const result = await databases.createDocument(
 					env.databaseId,
 					typingCollectionId,
 					key,
-					payload
+					payload,
+					permissions
 				);
 
 				return NextResponse.json({ success: true, document: result });

@@ -123,6 +123,7 @@ export default [
 			"react/jsx-boolean-value": ["error", "never"],
 			"react/jsx-key": "error",
 			"jsx-a11y/anchor-is-valid": "warn",
+            "suggestCanonicalClasses": "off"
 		},
 	},
 

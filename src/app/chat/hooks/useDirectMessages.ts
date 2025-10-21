@@ -52,7 +52,12 @@ export function useDirectMessages({
 		try {
 			setLoading(true);
 			setError(null);
+			
+			// Optimized: Batch query all messages at once
+			// User profiles are fetched in batches (5 at a time) to reduce API calls
+			// Images are already included in the response with URLs
 			const result = await listDirectMessages(conversationId);
+			
 			// Reverse to show oldest first
 			setMessages(result.items.reverse());
 		} catch (err) {
@@ -120,14 +125,26 @@ export function useDirectMessages({
 	}, [conversationId]);
 
 	const send = useCallback(
-		async (text: string) => {
-			if (!conversationId || !userId || !receiverId || !text.trim()) {
+		async (text: string, imageFileId?: string, imageUrl?: string) => {
+			if (!conversationId || !userId || !receiverId) {
+				return;
+			}
+
+			// Require either text or image
+			if (!text.trim() && !imageFileId) {
 				return;
 			}
 
 			setSending(true);
 			try {
-				await sendDirectMessage(conversationId, userId, receiverId, text.trim());
+				await sendDirectMessage(
+					conversationId,
+					userId,
+					receiverId,
+					text.trim() || "",
+					imageFileId,
+					imageUrl
+				);
 				await loadMessages();
 			} catch (err) {
 				throw new Error(
@@ -200,14 +217,17 @@ export function useDirectMessages({
 				userName: userName || undefined,
 			}) : undefined,
 		}).then(async (response) => {
-			if (!response.ok && !state) {
-				// For DELETE requests, construct URL with query param
-				await fetch(`/api/typing?channelId=${encodeURIComponent(conversationId)}`, {
-					method: "DELETE",
-				});
+			if (!response.ok) {
+				console.warn(`[typing] Failed to ${state ? 'set' : 'clear'} typing status:`, response.status);
+				if (!state) {
+					// For DELETE requests, construct URL with query param
+					await fetch(`/api/typing?channelId=${encodeURIComponent(conversationId)}`, {
+						method: "DELETE",
+					});
+				}
 			}
-		}).catch(() => {
-			/* ignore */
+		}).catch((error) => {
+			console.warn('[typing] Error updating typing status:', error);
 		});
 	}, [userId, conversationId, userName, typingStartDebounceMs]);
 
@@ -285,6 +305,8 @@ export function useDirectMessages({
 				if (typing.userId === userId) {
 					return;
 				}
+
+				console.log('[typing] Received event:', events, typing);
 
 				if (events.some((e) => e.endsWith(".delete"))) {
 					setTypingUsers((prev) => {

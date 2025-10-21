@@ -336,7 +336,7 @@ export default function ChatPage() {
                   )}
                 </div>
                 <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                  <div className="max-w-full flex-1 break-words rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
+                  <div className="max-w-full flex-1 wrap-break-word rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
                     {removed ? (
                       <span className="italic opacity-70">Message removed</span>
                     ) : (

@@ -75,6 +75,8 @@ export type DirectMessage = {
   senderId: string;
   receiverId: string;
   text: string;
+  imageFileId?: string;
+  imageUrl?: string;
   $createdAt: string;
   editedAt?: string;
   removedAt?: string;
@@ -94,4 +96,20 @@ export type UserStatus = {
   expiresAt?: string; // ISO 8601 timestamp when custom status should expire
   isManuallySet?: boolean; // True if user explicitly set this status (not auto-generated)
   $updatedAt?: string;
+};
+
+export type UserProfileData = {
+  userId: string;
+  displayName?: string;
+  avatarUrl?: string;
+  bio?: string;
+  pronouns?: string;
+  location?: string;
+  website?: string;
+  avatarFileId?: string;
+  status?: {
+    status: "online" | "away" | "busy" | "offline";
+    customMessage?: string;
+    lastSeenAt: string;
+  };
 };

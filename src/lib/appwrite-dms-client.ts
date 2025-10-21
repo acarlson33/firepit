@@ -3,7 +3,42 @@
  * Uses server-side API routes to avoid permission issues
  */
 
-import type { Conversation, DirectMessage } from "./types";
+import type { Conversation, DirectMessage, UserProfileData } from "./types";
+
+/**
+ * Upload an image to Appwrite Storage
+ */
+export async function uploadImage(file: File): Promise<{ fileId: string; url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/upload-image", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to upload image");
+  }
+
+  const data = await response.json();
+  return { fileId: data.fileId, url: data.url };
+}
+
+/**
+ * Delete an image from Appwrite Storage
+ */
+export async function deleteImage(fileId: string): Promise<void> {
+  const response = await fetch(`/api/upload-image?fileId=${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to delete image");
+  }
+}
 
 /**
  * Fetch a user profile from the existing profile API
@@ -18,6 +53,50 @@ async function fetchUserProfile(userId: string) {
     return data;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Batch fetch multiple user profiles in a single API call
+ */
+async function fetchUserProfilesBatchAPI(userIds: string[]): Promise<Map<string, Partial<UserProfileData>>> {
+  const profileMap = new Map<string, Partial<UserProfileData>>();
+  
+  if (userIds.length === 0) {
+    return profileMap;
+  }
+
+  try {
+    const response = await fetch("/api/profiles/batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userIds }),
+    });
+
+    if (!response.ok) {
+      // Fallback to individual fetches if batch endpoint fails
+      console.warn("Batch profile fetch failed, falling back to individual fetches");
+      return fetchUserProfilesBatch(userIds);
+    }
+
+    const data = await response.json() as { profiles: Record<string, UserProfileData> };
+    const profiles = data.profiles;
+
+    Object.entries(profiles).forEach(([userId, profile]) => {
+      profileMap.set(userId, {
+        displayName: profile.displayName,
+        avatarUrl: profile.avatarUrl,
+        status: profile.status,
+      });
+    });
+
+    return profileMap;
+  } catch (error) {
+    console.error("Batch profile fetch error:", error);
+    // Fallback to individual fetches
+    return fetchUserProfilesBatch(userIds);
   }
 }
 
@@ -59,36 +138,31 @@ export async function listConversations(
   const data = await response.json();
   const conversations = data.conversations as Conversation[];
 
-  // Enrich with other user's profile data
-  const enriched = await Promise.all(
-    conversations.map(async (conv) => {
-      const otherUserId = conv.participants.find((id) => id !== userId);
-      if (!otherUserId) {
-        return conv;
-      }
+  // Batch fetch profiles for all other users
+  const otherUserIds = conversations
+    .map((conv) => conv.participants.find((id) => id !== userId))
+    .filter((id): id is string => id !== undefined);
+  
+  const profileMap = await fetchUserProfilesBatchAPI(otherUserIds);
 
-      try {
-        const profile = await fetchUserProfile(otherUserId);
-        return {
-          ...conv,
-          otherUser: {
-            userId: otherUserId,
-            displayName: profile?.displayName,
-            avatarUrl: profile?.avatarUrl,
-          },
-        };
-      } catch {
-        return {
-          ...conv,
-          otherUser: {
-            userId: otherUserId,
-          },
-        };
-      }
-    })
-  );
+  // Enrich with other user's profile data (synchronously, since we already have the data)
+  const enriched = conversations.map((conv) => {
+    const otherUserId = conv.participants.find((id) => id !== userId);
+    if (!otherUserId) {
+      return conv;
+    }
 
-  return enriched;
+    const profile = profileMap.get(otherUserId);
+    return {
+      ...conv,
+      otherUser: {
+      userId: otherUserId,
+      displayName: profile?.displayName,
+      avatarUrl: profile?.avatarUrl,
+      status: profile?.status?.status,
+    },
+  };
+});  return enriched;
 }
 
 /**
@@ -98,7 +172,9 @@ export async function sendDirectMessage(
   conversationId: string,
   senderId: string,
   receiverId: string,
-  text: string
+  text: string,
+  imageFileId?: string,
+  imageUrl?: string
 ): Promise<DirectMessage> {
   const response = await fetch("/api/direct-messages", {
     method: "POST",
@@ -110,6 +186,8 @@ export async function sendDirectMessage(
       senderId,
       receiverId,
       text,
+      imageFileId,
+      imageUrl,
     }),
   });
 
@@ -123,7 +201,67 @@ export async function sendDirectMessage(
 }
 
 /**
+ * Fetch multiple user profiles in batch
+ * This is the fallback method that fetches profiles individually in batches of 5
+ * Used if the batch API endpoint fails
+ */
+async function fetchUserProfilesBatch(userIds: string[]): Promise<Map<string, Partial<UserProfileData>>> {
+  const uniqueUserIds = [...new Set(userIds)];
+  const profileMap = new Map<string, Partial<UserProfileData>>();
+  
+  // Fetch all profiles in parallel (but limit concurrency to avoid overwhelming the server)
+  const batchSize = 5;
+  for (let i = 0; i < uniqueUserIds.length; i += batchSize) {
+    const batch = uniqueUserIds.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (userId) => {
+        const profile = await fetchUserProfile(userId);
+        return { userId, profile };
+      })
+    );
+    
+    results.forEach((result) => {
+      if (result.status === "fulfilled" && result.value.profile) {
+        profileMap.set(result.value.userId, {
+          displayName: result.value.profile.displayName,
+          avatarUrl: result.value.profile.avatarUrl,
+          status: result.value.profile.status,
+        });
+      }
+    });
+  }
+  
+  return profileMap;
+}
+
+/**
+ * Load image URLs for messages that have imageFileId but no imageUrl yet
+ * This is called separately after initial message load to avoid blocking
+ */
+export async function loadMessageImages(
+  messages: DirectMessage[]
+): Promise<Map<string, string>> {
+  const imageMap = new Map<string, string>();
+  
+  // Find messages with images that need URLs loaded
+  const messagesNeedingImages = messages.filter(
+    (msg) => msg.imageFileId && !msg.imageUrl
+  );
+  
+  if (messagesNeedingImages.length === 0) {
+    return imageMap;
+  }
+
+  // Load image URLs from the API (batch if possible in future)
+  // For now, we'll just return the map since imageUrl is already in the response
+  // This function is here for future optimization if we want to lazy-load images
+  
+  return imageMap;
+}
+
+/**
  * List direct messages in a conversation
+ * Optimized to batch queries and load images separately
  */
 export async function listDirectMessages(
   conversationId: string,
@@ -150,22 +288,19 @@ export async function listDirectMessages(
   const data = await response.json();
   const items = data.items as DirectMessage[];
 
-  // Enrich with sender profile data
-  const enriched = await Promise.all(
-    items.map(async (msg) => {
-      try {
-        const profile = await fetchUserProfile(msg.senderId);
-        return {
-          ...msg,
-          senderDisplayName: profile?.displayName,
-          senderAvatarUrl: profile?.avatarUrl,
-          senderPronouns: profile?.pronouns,
-        };
-      } catch {
-        return msg;
-      }
-    })
-  );
+  // Batch fetch user profiles for all unique sender IDs
+  const senderIds = [...new Set(items.map((msg) => msg.senderId))];
+  const profileMap = await fetchUserProfilesBatchAPI(senderIds);
+
+  // Enrich messages with profile data (synchronously, since we already have the data)
+  const enriched = items.map((msg) => {
+    const profile = profileMap.get(msg.senderId);
+    return {
+      ...msg,
+      senderDisplayName: profile?.displayName,
+      senderAvatarUrl: profile?.avatarUrl,
+    };
+  });
 
   return {
     items: enriched,

@@ -196,6 +196,8 @@ export async function GET(request: NextRequest) {
         senderId: doc.senderId as string,
         receiverId: doc.receiverId as string,
         text: doc.text as string,
+        imageFileId: doc.imageFileId as string | undefined,
+        imageUrl: doc.imageUrl as string | undefined,
         $createdAt: doc.$createdAt,
         editedAt: (doc.editedAt as string | undefined),
         removedAt: (doc.removedAt as string | undefined),
@@ -223,7 +225,7 @@ export async function GET(request: NextRequest) {
  * POST /api/direct-messages
  * Send a new direct message
  * 
- * Body: { conversationId, senderId, receiverId, text }
+ * Body: { conversationId, senderId, receiverId, text, imageFileId?, imageUrl? }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -237,9 +239,11 @@ export async function POST(request: NextRequest) {
       senderId: string;
       receiverId: string;
       text: string;
+      imageFileId?: string;
+      imageUrl?: string;
     };
 
-    const { conversationId, senderId, receiverId, text } = body;
+    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl } = body;
 
     // Validate sender is the authenticated user
     if (senderId !== session.$id) {
@@ -249,7 +253,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!conversationId || !senderId || !receiverId || !text?.trim()) {
+    // Require either text or image
+    if (!conversationId || !senderId || !receiverId || (!text?.trim() && !imageFileId)) {
       return jsonResponse(
         { error: "Missing required fields" },
         { status: 400 }
@@ -272,16 +277,26 @@ export async function POST(request: NextRequest) {
       Permission.delete(Role.user(senderId)),
     ];
 
+    const messageData: Record<string, unknown> = {
+      conversationId,
+      senderId,
+      receiverId,
+      text: text || "",
+    };
+
+    // Add image fields if provided
+    if (imageFileId) {
+      messageData.imageFileId = imageFileId;
+    }
+    if (imageUrl) {
+      messageData.imageUrl = imageUrl;
+    }
+
     const message = await databases.createDocument(
       DATABASE_ID,
       DIRECT_MESSAGES_COLLECTION,
       ID.unique(),
-      {
-        conversationId,
-        senderId,
-        receiverId,
-        text: text.trim(),
-      },
+      messageData,
       permissions
     );
 
@@ -306,6 +321,8 @@ export async function POST(request: NextRequest) {
         senderId: message.senderId,
         receiverId: message.receiverId,
         text: message.text,
+        imageFileId: message.imageFileId,
+        imageUrl: message.imageUrl,
         $createdAt: message.$createdAt,
       },
     });

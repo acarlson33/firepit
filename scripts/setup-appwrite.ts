@@ -469,7 +469,9 @@ async function setupDirectMessages() {
 		["conversationId", LEN_ID, true],
 		["senderId", LEN_ID, true],
 		["receiverId", LEN_ID, true],
-		["text", LEN_TEXT, true],
+		["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
+		["imageFileId", LEN_ID, false],
+		["imageUrl", 2000, false], // URL can be long
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
 		["removedBy", LEN_ID, false],
@@ -483,7 +485,7 @@ async function setupDirectMessages() {
 	await ensureIndex("direct_messages", "idx_receiverId", "key", ["receiverId"]);
 }
 
-async function ensureBucket(id: string, name: string) {
+async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
 	try {
 		await tryVariants([
 			() => storageAny.getBucket(id),
@@ -498,7 +500,7 @@ async function ensureBucket(id: string, name: string) {
 					[], // permissions - we'll set file-level permissions
 					false, // fileSecurity (document-level perms)
 					true, // enabled
-					2097152, // max file size: 2MB
+					maxFileSize, // max file size
 					["jpg", "jpeg", "png", "gif", "webp"], // allowed extensions
 				),
 			() =>
@@ -508,7 +510,7 @@ async function ensureBucket(id: string, name: string) {
 					permissions: [],
 					fileSecurity: false,
 					enabled: true,
-					maximumFileSize: 2097152,
+					maximumFileSize: maxFileSize,
 					allowedFileExtensions: ["jpg", "jpeg", "png", "gif", "webp"],
 				}),
 		]);
@@ -517,7 +519,8 @@ async function ensureBucket(id: string, name: string) {
 }
 
 async function setupStorage() {
-	await ensureBucket("avatars", "User Avatars");
+	await ensureBucket("avatars", "User Avatars", 2097152); // 2MB for avatars
+	await ensureBucket("images", "Chat Images", 5242880); // 5MB for chat images
 }
 
 async function ensureTeams() {
@@ -590,6 +593,8 @@ async function preflight() {
 async function run() {
 	await preflight();
 	await ensureDatabase();
+	info("[setup] Setting up storage...");
+	await setupStorage();
 	info("[setup] Setting up servers...");
 	await setupServers();
 	info("[setup] Setting up channels...");
@@ -599,7 +604,12 @@ async function run() {
 	info("[setup] Setting up audit...");
 	await setupAudit();
 	info("[setup] Setting up typing...");
-	await setupTyping();
+	try {
+		await setupTyping();
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		err(`[setup] Failed to setup typing (non-fatal): ${message}`);
+	}
 	info("[setup] Setting up memberships...");
 	await setupMemberships();
 	info("[setup] Setting up profiles...");
@@ -610,8 +620,6 @@ async function run() {
 	await setupConversations();
 	info("[setup] Setting up direct messages...");
 	await setupDirectMessages();
-	info("[setup] Setting up storage...");
-	await setupStorage();
 	info("[setup] Setting up teams...");
 	await ensureTeams();
 	info("Setup complete.");

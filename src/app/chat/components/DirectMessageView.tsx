@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MoreVertical, Loader2, ArrowLeft, MessageSquare } from "lucide-react";
+import { MoreVertical, Loader2, ArrowLeft, MessageSquare, Image as ImageIcon, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,8 +13,10 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
+import { ImageViewer } from "@/components/image-viewer";
 import type { DirectMessage, Conversation } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
+import { uploadImage } from "@/lib/appwrite-dms-client";
 
 type DirectMessageViewProps = {
 	conversation: Conversation;
@@ -22,7 +24,7 @@ type DirectMessageViewProps = {
 	loading: boolean;
 	sending: boolean;
 	currentUserId: string;
-	onSend: (text: string) => Promise<void>;
+	onSend: (text: string, imageFileId?: string, imageUrl?: string) => Promise<void>;
 	onEdit: (messageId: string, newText: string) => Promise<void>;
 	onDelete: (messageId: string) => Promise<void>;
 	onBack?: () => void;
@@ -46,8 +48,13 @@ export function DirectMessageView({
 	const [text, setText] = useState("");
 	const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+	const [selectedImage, setSelectedImage] = useState<File | null>(null);
+	const [imagePreview, setImagePreview] = useState<string | null>(null);
+	const [uploadingImage, setUploadingImage] = useState(false);
+	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const otherUser = conversation.otherUser;
 	const displayName =
 		otherUser?.displayName || otherUser?.userId || "Unknown User";
@@ -59,19 +66,40 @@ export function DirectMessageView({
 
 	const handleSend = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!text.trim() || sending) {
+		if ((!text.trim() && !selectedImage) || sending) {
 			return;
 		}
 
 		const messageText = text;
+		let imageFileId: string | undefined;
+		let imageUrl: string | undefined;
+
+		// Upload image if selected
+		if (selectedImage) {
+			try {
+				setUploadingImage(true);
+				const result = await uploadImage(selectedImage);
+				imageFileId = result.fileId;
+				imageUrl = result.url;
+			} catch (error) {
+				console.error("Failed to upload image:", error);
+				setUploadingImage(false);
+				return;
+			} finally {
+				setUploadingImage(false);
+			}
+		}
+
 		setText("");
+		setSelectedImage(null);
+		setImagePreview(null);
 
 		try {
 			if (editingMessageId) {
 				await onEdit(editingMessageId, messageText);
 				setEditingMessageId(null);
 			} else {
-				await onSend(messageText);
+				await onSend(messageText, imageFileId, imageUrl);
 			}
 		} catch (error) {
 			// Re-set text on error so user can retry
@@ -87,6 +115,42 @@ export function DirectMessageView({
 	const cancelEdit = () => {
 		setEditingMessageId(null);
 		setText("");
+	};
+
+	const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) {
+			return;
+		}
+
+		// Validate file type
+		if (!file.type.startsWith("image/")) {
+			alert("Please select an image file");
+			return;
+		}
+
+		// Validate file size (5MB)
+		if (file.size > 5 * 1024 * 1024) {
+			alert("Image must be less than 5MB");
+			return;
+		}
+
+		setSelectedImage(file);
+
+		// Create preview
+		const reader = new FileReader();
+		reader.addEventListener("load", () => {
+			setImagePreview(reader.result as string);
+		});
+		reader.readAsDataURL(file);
+	};
+
+	const removeImage = () => {
+		setSelectedImage(null);
+		setImagePreview(null);
+		if (fileInputRef.current) {
+			fileInputRef.current.value = "";
+		}
 	};
 
 	const confirmDelete = (messageId: string) => {
@@ -206,14 +270,44 @@ export function DirectMessageView({
 										)}
 									</div>
 									<div className="flex items-start gap-2">
-										<div className="flex-1 break-words">
+										<div className="flex-1 wrap-break-word space-y-2">
+											{message.imageUrl && !removed && (
+												<div className="mt-1">
+													<img
+														alt="Uploaded image"
+														className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
+														onClick={() => {
+															if (message.imageUrl) {
+																setViewingImage({
+																	url: message.imageUrl,
+																	alt: `Image from ${msgDisplayName}`,
+																});
+															}
+														}}
+														onKeyDown={(e) => {
+															if (e.key === "Enter" || e.key === " ") {
+																e.preventDefault();
+																if (message.imageUrl) {
+																	setViewingImage({
+																		url: message.imageUrl,
+																		alt: `Image from ${msgDisplayName}`,
+																	});
+																}
+															}
+														}}
+														role="button"
+														src={message.imageUrl}
+														tabIndex={0}
+													/>
+												</div>
+											)}
 											{removed ? (
 												<span className="italic opacity-70">
 													Message removed
 												</span>
-											) : (
-												message.text
-											)}
+											) : message.text ? (
+												<p>{message.text}</p>
+											) : null}
 										</div>
 										{isMine && !removed && (
 											<DropdownMenu>
@@ -302,11 +396,46 @@ export function DirectMessageView({
 						</Button>
 					</div>
 				)}
+				{imagePreview && (
+					<div className="relative mb-2 inline-block">
+						<img
+							alt="Upload preview"
+							className="h-32 rounded-lg object-cover"
+							src={imagePreview}
+						/>
+						<Button
+							className="absolute -right-2 -top-2"
+							onClick={removeImage}
+							size="icon"
+							type="button"
+							variant="destructive"
+						>
+							<X className="size-4" />
+						</Button>
+					</div>
+				)}
 				<form className="flex items-start gap-2" onSubmit={handleSend}>
+					<input
+						accept="image/*"
+						className="hidden"
+						onChange={handleImageSelect}
+						ref={fileInputRef}
+						type="file"
+					/>
+					<Button
+						disabled={sending || uploadingImage || Boolean(editingMessageId)}
+						onClick={() => fileInputRef.current?.click()}
+						size="icon"
+						type="button"
+						variant="outline"
+						className="mt-1.5 shrink-0"
+					>
+						<ImageIcon className="size-4" />
+					</Button>
 					<Textarea
 						ref={textareaRef}
 						aria-label={editingMessageId ? "Edit message" : "Message"}
-						disabled={sending}
+						disabled={sending || uploadingImage}
 						onChange={(e) => {
 							const newText = e.target.value;
 							setText(newText);
@@ -328,11 +457,15 @@ export function DirectMessageView({
 							}
 						}}
 					/>
-					<Button disabled={sending || !text.trim()} type="submit" className="mt-1.5">
-						{sending ? (
+					<Button 
+						disabled={sending || uploadingImage || (!text.trim() && !selectedImage)} 
+						type="submit" 
+						className="mt-1.5 shrink-0"
+					>
+						{sending || uploadingImage ? (
 							<>
 								<Loader2 className="mr-2 size-4 animate-spin" />
-								Sending...
+								{uploadingImage ? "Uploading..." : "Sending..."}
 							</>
 						) : editingMessageId ? (
 							"Save"
@@ -342,6 +475,15 @@ export function DirectMessageView({
 					</Button>
 				</form>
 			</div>
+			{viewingImage && (
+				<ImageViewer
+					alt={viewingImage.alt}
+					onClose={() => {
+						setViewingImage(null);
+					}}
+					src={viewingImage.url}
+				/>
+			)}
 		</div>
 	);
 }
