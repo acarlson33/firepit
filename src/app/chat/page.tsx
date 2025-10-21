@@ -411,7 +411,7 @@ export default function ChatPage() {
               .slice(0, maxTypingDisplay)
               .map((t) => t.userName || t.userId.slice(0, userIdSlice))
               .join(", ")}{" "}
-            {Object.values(typingUsers).length > maxTypingDisplay
+            {Object.values(typingUsers).length > 1
               ? "are typing..."
               : "is typing..."}
           </div>
