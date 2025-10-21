@@ -181,80 +181,67 @@ describe("appwrite-messages advanced flows", () => {
     expect(out.map((m) => m.$id)).toEqual(["m1", "m2", "m3"]);
   });
 
-  it("setTyping performs update then create fallback when update fails", async () => {
-    const updateCalls: any[] = [];
-    const createCalls: any[] = [];
-    const deleteCalls: any[] = [];
-    setupMockAppwrite({
-      overrides: {
-        updateDocument: () => {
-          updateCalls.push({});
-          return Promise.reject(new Error("missing"));
-        },
-        createDocument: (...args: any[]) => {
-          createCalls.push(args);
-          return Promise.resolve({
-            $id: args[2] || "key",
-            ...(args[3] || args[0]?.data),
-          });
-        },
-        deleteDocument: () => {
-          deleteCalls.push({});
-          return Promise.resolve({});
-        },
-      },
+  it("setTyping calls the API route to set typing status", async () => {
+    const fetchCalls: any[] = [];
+    const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
+      fetchCalls.push({ url, options });
+      return {
+        ok: true,
+        json: async () => ({ success: true }),
+      };
     });
+    global.fetch = mockFetch;
+
     const { setTyping } = await import("../lib/appwrite-messages");
     await setTyping("u1", "c1", "Alice", true);
-    expect(updateCalls.length).toBe(1);
-    expect(createCalls.length).toBe(1);
-    // Disable typing triggers delete
+    
+    expect(fetchCalls.length).toBe(1);
+    expect(fetchCalls[0].url).toBe("/api/typing");
+    expect(fetchCalls[0].options.method).toBe("POST");
+    
+    // Disable typing triggers DELETE
     await setTyping("u1", "c1", "Alice", false);
-    expect(deleteCalls.length).toBe(1);
+    expect(fetchCalls.length).toBe(2);
+    expect(fetchCalls[1].url).toContain("/api/typing?channelId=");
+    expect(fetchCalls[1].options.method).toBe("DELETE");
   });
 
   it("setTyping swallows errors (outer try-catch) for ephemeral operations", async () => {
-    setupMockAppwrite({
-      overrides: {
-        updateDocument: () => Promise.reject(new Error("update fail")),
-        createDocument: () => Promise.reject(new Error("create fail")),
-      },
+    const mockFetch = vi.fn(async () => {
+      throw new Error("Network error");
     });
+    global.fetch = mockFetch;
+
     const { setTyping } = await import("../lib/appwrite-messages");
-    // Should not throw even though both update & create fail
+    // Should not throw even though fetch fails
     await setTyping("u1", "c1", "Alice", true);
+    expect(mockFetch).toHaveBeenCalled();
   });
 
-  it("setTyping generates document IDs that are 36 characters or less", async () => {
-    const createCalls: any[] = [];
-    const updateCalls: any[] = [];
-    setupMockAppwrite({
-      overrides: {
-        updateDocument: (...args: any[]) => {
-          updateCalls.push(args);
-          return Promise.reject(new Error("missing"));
-        },
-        createDocument: (...args: any[]) => {
-          createCalls.push(args);
-          return Promise.resolve({
-            $id: args[2] || "key",
-            ...(args[3] || args[0]?.data),
-          });
-        },
-      },
+  it("setTyping makes correct API calls with encoded channel IDs", async () => {
+    const fetchCalls: any[] = [];
+    const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
+      fetchCalls.push({ url, options });
+      return {
+        ok: true,
+        json: async () => ({ success: true }),
+      };
     });
+    global.fetch = mockFetch;
+
     const { setTyping } = await import("../lib/appwrite-messages");
     
-    // Test with very long user and channel IDs
-    const longUserId = "very-long-user-id-1234567890-1234567890-1234567890";
-    const longChannelId = "very-long-channel-id-1234567890-1234567890-1234567890";
+    // Test with channel ID that needs encoding
+    const channelId = "channel-id-with-special-chars!@#$%";
     
-    await setTyping(longUserId, longChannelId, "Alice", true);
+    await setTyping("user-123", channelId, "Alice", true);
     
-    expect(createCalls.length).toBe(1);
-    const documentId = createCalls[0][2]; // Third argument is the document ID
-    expect(documentId).toBeDefined();
-    expect(documentId.length).toBeLessThanOrEqual(36);
+    expect(fetchCalls.length).toBe(1);
+    expect(fetchCalls[0].url).toBe("/api/typing");
+    
+    // Verify the body contains the channelId
+    const body = JSON.parse(fetchCalls[0].options.body);
+    expect(body.channelId).toBe(channelId);
   });
 
   it("canSend enforces flood window and limit", async () => {
