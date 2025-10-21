@@ -122,6 +122,7 @@ export default function ChatPage() {
     conversationId: selectedConversationId || "",
     userId,
     receiverId: receiverId || "",
+    userName,
   });
 
   // Handlers -----------------
@@ -546,6 +547,8 @@ export default function ChatPage() {
               onEdit={dmApi.edit}
               onSend={dmApi.send}
               sending={dmApi.sending}
+              typingUsers={dmApi.typingUsers}
+              onTypingChange={dmApi.handleTypingChange}
             />
           ) : (
             <>

@@ -10,7 +10,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import type { DirectMessage, Conversation } from "@/lib/types";
@@ -25,6 +25,8 @@ type DirectMessageViewProps = {
 	onEdit: (messageId: string, newText: string) => Promise<void>;
 	onDelete: (messageId: string) => Promise<void>;
 	onBack?: () => void;
+	typingUsers?: Record<string, { userId: string; userName?: string; updatedAt: string }>;
+	onTypingChange?: (text: string) => void;
 };
 
 export function DirectMessageView({
@@ -37,11 +39,14 @@ export function DirectMessageView({
 	onEdit,
 	onDelete,
 	onBack,
+	typingUsers = {},
+	onTypingChange,
 }: DirectMessageViewProps) {
 	const [text, setText] = useState("");
 	const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const otherUser = conversation.otherUser;
 	const displayName =
 		otherUser?.displayName || otherUser?.userId || "Unknown User";
@@ -156,7 +161,8 @@ export function DirectMessageView({
 						</p>
 					</div>
 				) : (
-					messages.map((message) => {
+					<>
+						{messages.map((message) => {
 						const isMine = message.senderId === currentUserId;
 						const isEditing = editingMessageId === message.$id;
 						const isDeleting = deleteConfirmId === message.$id;
@@ -266,7 +272,19 @@ export function DirectMessageView({
 								</div>
 							</div>
 						);
-					})
+					})}
+					{Object.values(typingUsers).length > 0 && (
+						<div className="flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
+							<span className="inline-flex size-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
+							<span>
+								{Object.values(typingUsers)
+									.map((t) => t.userName || t.userId.slice(0, 6))
+									.join(", ")}{" "}
+								{Object.values(typingUsers).length > 1 ? "are" : "is"} typing...
+							</span>
+						</div>
+					)}
+				</>
 				)}
 				<div ref={messagesEndRef} />
 			</div>
@@ -283,13 +301,22 @@ export function DirectMessageView({
 						</Button>
 					</div>
 				)}
-				<form className="flex items-center gap-2" onSubmit={handleSend}>
-					<Input
+				<form className="flex items-start gap-2" onSubmit={handleSend}>
+					<Textarea
+						ref={textareaRef}
 						aria-label={editingMessageId ? "Edit message" : "Message"}
 						disabled={sending}
-						onChange={(e) => setText(e.target.value)}
+						onChange={(e) => {
+							const newText = e.target.value;
+							setText(newText);
+							if (onTypingChange) {
+								onTypingChange(newText);
+							}
+						}}
 						placeholder="Type a message..."
 						value={text}
+						className="max-h-32 min-h-[60px] resize-none overflow-y-auto"
+						rows={2}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && !e.shiftKey) {
 								e.preventDefault();
@@ -300,7 +327,7 @@ export function DirectMessageView({
 							}
 						}}
 					/>
-					<Button disabled={sending || !text.trim()} type="submit">
+					<Button disabled={sending || !text.trim()} type="submit" className="mt-1.5">
 						{sending ? (
 							<>
 								<Loader2 className="mr-2 size-4 animate-spin" />
