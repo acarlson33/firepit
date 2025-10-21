@@ -2,18 +2,15 @@ import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-// Protected route patterns
-const PROTECTED_ROUTES = ["/chat", "/admin", "/moderation"];
-const AUTH_ROUTES = ["/login", "/register"];
+// Public routes that don't require authentication
+const PUBLIC_ROUTES = ["/", "/login", "/register"];
 
 export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Check if route needs protection
-	const isProtectedRoute = PROTECTED_ROUTES.some((route) =>
-		pathname.startsWith(route),
-	);
-	const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
+	// Check if route is public (doesn't need authentication)
+	const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname === route);
+	const isAuthRoute = pathname === "/login" || pathname === "/register";
 
 	// Get session cookie
 	const projectId = process.env.APPWRITE_PROJECT_ID;
@@ -28,8 +25,9 @@ export async function middleware(request: NextRequest) {
 	const hasSession = Boolean(sessionCookie?.value);
 
 	// Redirect logic
-	if (isProtectedRoute && !hasSession) {
+	if (!isPublicRoute && !hasSession) {
 		// User trying to access protected route without session
+		// All routes except public ones require authentication
 		const loginUrl = new URL("/login", request.url);
 		loginUrl.searchParams.set("redirect", pathname);
 		return NextResponse.redirect(loginUrl);
