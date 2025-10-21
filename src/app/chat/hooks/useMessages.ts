@@ -8,7 +8,10 @@ import {
   setTyping,
 } from "@/lib/appwrite-messages";
 import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Message } from "@/lib/types";
+
+const env = getEnvConfig();
 
 type UseMessagesOptions = {
   channelId: string | null;
@@ -81,9 +84,8 @@ export function useMessages({
     if (!channelId) {
       return;
     }
-    const databaseId = process.env.APPWRITE_DATABASE_ID;
-    const collectionId =
-      process.env.APPWRITE_MESSAGES_COLLECTION_ID;
+    const databaseId = env.databaseId;
+    const collectionId = env.collections.messages;
     const missing = [databaseId, collectionId].some((v) => !v);
     if (missing) {
       return;
@@ -186,8 +188,8 @@ export function useMessages({
       setTypingUsers({});
       return;
     }
-    const databaseId = process.env.APPWRITE_DATABASE_ID;
-    const typingCollectionId = process.env.APPWRITE_TYPING_COLLECTION_ID;
+    const databaseId = env.databaseId;
+    const typingCollectionId = env.collections.typing;
     
     if (!databaseId || !typingCollectionId) {
       return;

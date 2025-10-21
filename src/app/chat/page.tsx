@@ -123,6 +123,7 @@ export default function ChatPage() {
     conversationId: selectedConversationId || "",
     userId,
     receiverId: receiverId || "",
+    userName,
   });
 
   // Handlers -----------------
@@ -411,7 +412,7 @@ export default function ChatPage() {
               .slice(0, maxTypingDisplay)
               .map((t) => t.userName || t.userId.slice(0, userIdSlice))
               .join(", ")}{" "}
-            {Object.values(typingUsers).length > maxTypingDisplay
+            {Object.values(typingUsers).length > 1
               ? "are typing..."
               : "is typing..."}
           </div>
@@ -547,6 +548,8 @@ export default function ChatPage() {
               onEdit={dmApi.edit}
               onSend={dmApi.send}
               sending={dmApi.sending}
+              typingUsers={dmApi.typingUsers}
+              onTypingChange={dmApi.handleTypingChange}
             />
           ) : (
             <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import {
 	listDirectMessages,
@@ -12,22 +12,35 @@ import type { DirectMessage } from "@/lib/types";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
+const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 
 type UseDirectMessagesProps = {
 	conversationId: string | null;
 	userId: string | null;
 	receiverId?: string;
+	userName?: string | null;
 };
 
 export function useDirectMessages({
 	conversationId,
 	userId,
 	receiverId,
+	userName,
 }: UseDirectMessagesProps) {
 	const [messages, setMessages] = useState<DirectMessage[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [sending, setSending] = useState(false);
+	const [typingUsers, setTypingUsers] = useState<
+		Record<string, { userId: string; userName?: string; updatedAt: string }>
+	>({});
+	const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
+	const lastTypingSentState = useRef<boolean>(false);
+	const lastTypingSentAt = useRef<number>(0);
+
+	const typingIdleMs = 2500;
+	const typingStartDebounceMs = 400;
 
 	const loadMessages = useCallback(async () => {
 		if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
@@ -163,6 +176,182 @@ export function useDirectMessages({
 		[userId, loadMessages],
 	);
 
+	// Typing indicator management
+	const sendTypingState = useCallback((state: boolean) => {
+		if (!userId || !conversationId) {
+			return;
+		}
+		const now = Date.now();
+		if (
+			state === lastTypingSentState.current &&
+			now - lastTypingSentAt.current < typingStartDebounceMs
+		) {
+			return;
+		}
+		lastTypingSentState.current = state;
+		lastTypingSentAt.current = now;
+		
+		// Use conversation ID as the channel ID for typing status
+		fetch("/api/typing", {
+			method: state ? "POST" : "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: state ? JSON.stringify({
+				channelId: conversationId,
+				userName: userName || undefined,
+			}) : undefined,
+		}).then(async (response) => {
+			if (!response.ok && !state) {
+				// For DELETE requests, construct URL with query param
+				await fetch(`/api/typing?channelId=${encodeURIComponent(conversationId)}`, {
+					method: "DELETE",
+				});
+			}
+		}).catch(() => {
+			/* ignore */
+		});
+	}, [userId, conversationId, userName, typingStartDebounceMs]);
+
+	const scheduleTypingStop = useCallback(() => {
+		if (typingTimeoutRef.current) {
+			clearTimeout(typingTimeoutRef.current);
+		}
+		typingTimeoutRef.current = setTimeout(() => {
+			sendTypingState(false);
+		}, typingIdleMs);
+	}, [sendTypingState, typingIdleMs]);
+
+	const scheduleTypingStart = useCallback(() => {
+		if (typingDebounceRef.current) {
+			clearTimeout(typingDebounceRef.current);
+		}
+		typingDebounceRef.current = setTimeout(() => {
+			sendTypingState(true);
+		}, typingStartDebounceMs);
+	}, [sendTypingState, typingStartDebounceMs]);
+
+	const handleTypingChange = useCallback((text: string) => {
+		if (!userId || !conversationId) {
+			return;
+		}
+		const isTyping = text.trim().length > 0;
+		if (isTyping) {
+			scheduleTypingStart();
+			scheduleTypingStop();
+		} else {
+			if (typingDebounceRef.current) {
+				clearTimeout(typingDebounceRef.current);
+			}
+			sendTypingState(false);
+			if (typingTimeoutRef.current) {
+				clearTimeout(typingTimeoutRef.current);
+			}
+		}
+	}, [userId, conversationId, scheduleTypingStart, scheduleTypingStop, sendTypingState]);
+
+	// Realtime subscription for typing indicators
+	useEffect(() => {
+		if (!conversationId || !TYPING_COLLECTION_ID) {
+			setTypingUsers({});
+			return;
+		}
+
+		const databaseId = env.databaseId;
+		
+		import("appwrite").then(({ Client }) => {
+			const client = new Client()
+				.setEndpoint(env.endpoint)
+				.setProject(env.project);
+
+			const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
+
+			const unsubscribe = client.subscribe(typingChannel, (response) => {
+				const payload = response.payload as Record<string, unknown>;
+				const events = response.events as string[];
+				
+				const typing = {
+					$id: String(payload.$id),
+					userId: String(payload.userId),
+					userName: payload.userName as string | undefined,
+					channelId: String(payload.channelId),
+					updatedAt: String(payload.$updatedAt || payload.updatedAt),
+				};
+
+				// Only process typing events for current conversation
+				if (typing.channelId !== conversationId) {
+					return;
+				}
+
+				// Ignore typing events from current user
+				if (typing.userId === userId) {
+					return;
+				}
+
+				if (events.some((e) => e.endsWith(".delete"))) {
+					setTypingUsers((prev) => {
+						const updated = { ...prev };
+						delete updated[typing.userId];
+						return updated;
+					});
+				} else if (
+					events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
+				) {
+					setTypingUsers((prev) => ({
+						...prev,
+						[typing.userId]: {
+							userId: typing.userId,
+							userName: typing.userName,
+							updatedAt: typing.updatedAt,
+						},
+					}));
+				}
+			});
+
+			return () => {
+				unsubscribe();
+			};
+		}).catch(() => {
+			// Ignore subscription errors
+		});
+	}, [conversationId, userId]);
+
+	// Cleanup stale typing indicators
+	useEffect(() => {
+		const interval = setInterval(() => {
+			const now = Date.now();
+			const staleThreshold = 5000;
+			
+			setTypingUsers((prev) => {
+				const updated = { ...prev };
+				let hasChanges = false;
+				
+				for (const [uid, typing] of Object.entries(updated)) {
+					const updatedTime = new Date(typing.updatedAt).getTime();
+					if (now - updatedTime > staleThreshold) {
+						delete updated[uid];
+						hasChanges = true;
+					}
+				}
+				
+				return hasChanges ? updated : prev;
+			});
+		}, 1000);
+		
+		return () => clearInterval(interval);
+	}, []);
+
+	// Cleanup typing status on unmount
+	useEffect(() => {
+		return () => {
+			if (typingTimeoutRef.current) {
+				clearTimeout(typingTimeoutRef.current);
+			}
+			if (typingDebounceRef.current) {
+				clearTimeout(typingDebounceRef.current);
+			}
+			sendTypingState(false);
+		};
+	}, [sendTypingState]);
+
 	return {
 		messages,
 		loading,
@@ -172,5 +361,7 @@ export function useDirectMessages({
 		edit,
 		deleteMsg,
 		refresh: loadMessages,
+		typingUsers,
+		handleTypingChange,
 	};
 }
