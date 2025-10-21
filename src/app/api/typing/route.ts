@@ -76,7 +76,6 @@ export async function POST(request: NextRequest) {
 			userId,
 			userName: userName || user.name,
 			channelId,
-			updatedAt: new Date().toISOString(),
 		};
 
 		// Emulate upsert: try update, fallback create.
