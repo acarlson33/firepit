@@ -92,3 +92,14 @@ export function getInitials(name: string): string {
   }
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
+
+/**
+ * Format date and time for message timestamps
+ * Shows date and time in a user-friendly format
+ */
+export function formatMessageTimestamp(dateString: string): string {
+  const date = new Date(dateString);
+  const dateStr = date.toLocaleDateString();
+  const timeStr = date.toLocaleTimeString();
+  return `${dateStr} ${timeStr}`;
+}

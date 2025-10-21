@@ -23,6 +23,7 @@ import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useActivityTracking } from "./hooks/useActivityTracking";
+import { formatMessageTimestamp } from "@/lib/utils";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -324,7 +325,7 @@ export default function ChatPage() {
                       ({m.pronouns})
                     </span>
                   )}
-                  <span>{new Date(m.$createdAt).toLocaleTimeString()}</span>
+                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
                   {m.editedAt && <span className="italic">(edited)</span>}
                   {removed && <span className="text-destructive">(removed)</span>}
                   {isEditing && (

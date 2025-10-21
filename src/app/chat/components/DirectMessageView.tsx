@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import type { DirectMessage, Conversation } from "@/lib/types";
+import { formatMessageTimestamp } from "@/lib/utils";
 
 type DirectMessageViewProps = {
 	conversation: Conversation;
@@ -186,7 +187,7 @@ export function DirectMessageView({
 											<span className="italic">({message.senderPronouns})</span>
 										)}
 										<span>
-											{new Date(message.$createdAt).toLocaleTimeString()}
+											{formatMessageTimestamp(message.$createdAt)}
 										</span>
 										{message.editedAt && <span className="italic">(edited)</span>}
 										{removed && (
