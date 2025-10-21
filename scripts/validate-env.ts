@@ -37,7 +37,6 @@ interface ValidationResult {
  */
 function print(message: string, color: keyof typeof colors = "reset"): void {
 	// Console output is intentional for this CLI script
-	// eslint-disable-next-line no-console
 	console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
@@ -46,7 +45,6 @@ function print(message: string, color: keyof typeof colors = "reset"): void {
  */
 function printSection(title: string): void {
 	// Console output is intentional for this CLI script
-	// eslint-disable-next-line no-console
 	console.log();
 	print(`${"=".repeat(60)}`, "cyan");
 	print(`  ${title}`, "bold");
