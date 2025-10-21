@@ -76,7 +76,7 @@ export function useMessages({
     });
   }, [channelId, pageSize]);
 
-  // realtime subscription
+  // realtime subscription for messages
   useEffect(() => {
     if (!channelId) {
       return;
@@ -180,12 +180,118 @@ export function useMessages({
       });
   }, [channelId]);
 
+  // realtime subscription for typing indicators
+  useEffect(() => {
+    if (!channelId) {
+      setTypingUsers({});
+      return;
+    }
+    const databaseId = process.env.APPWRITE_DATABASE_ID;
+    const typingCollectionId = process.env.APPWRITE_TYPING_COLLECTION_ID;
+    
+    if (!databaseId || !typingCollectionId) {
+      return;
+    }
+
+    import("@/lib/realtime-pool")
+      .then(({ getSharedClient, trackSubscription }) => {
+        const c = getSharedClient();
+        const typingChannel = `databases.${databaseId}.collections.${typingCollectionId}.documents`;
+
+        function parseTyping(
+          event: RealtimeResponseEvent<Record<string, unknown>>
+        ) {
+          const p = event.payload;
+          return {
+            $id: String(p.$id),
+            userId: String(p.userId),
+            userName: p.userName as string | undefined,
+            channelId: String(p.channelId),
+            updatedAt: String(p.updatedAt),
+          };
+        }
+
+        function handleTypingEvent(
+          event: RealtimeResponseEvent<Record<string, unknown>>
+        ) {
+          const typing = parseTyping(event);
+          
+          // Only process typing events for current channel
+          if (typing.channelId !== channelId) {
+            return;
+          }
+
+          // Ignore typing events from current user
+          if (typing.userId === userId) {
+            return;
+          }
+
+          if (event.events.some((e) => e.endsWith(".delete"))) {
+            // User stopped typing
+            setTypingUsers((prev) => {
+              const updated = { ...prev };
+              delete updated[typing.userId];
+              return updated;
+            });
+          } else if (
+            event.events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
+          ) {
+            // User is typing or updated their typing status
+            setTypingUsers((prev) => ({
+              ...prev,
+              [typing.userId]: {
+                userId: typing.userId,
+                userName: typing.userName,
+                updatedAt: typing.updatedAt,
+              },
+            }));
+          }
+        }
+
+        const unsub = c.subscribe(typingChannel, handleTypingEvent);
+        const untrack = trackSubscription(typingChannel);
+
+        return () => {
+          untrack();
+          unsub();
+        };
+      })
+      .catch(() => {
+        /* failed to set up typing realtime; ignore silently */
+      });
+  }, [channelId, userId]);
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messages.length > 0) {
       listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
     }
   }, [messages]);
+
+  // Cleanup stale typing indicators
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 5000; // Remove typing indicators older than 5 seconds
+      
+      setTypingUsers((prev) => {
+        const updated = { ...prev };
+        let hasChanges = false;
+        
+        for (const [uid, typing] of Object.entries(updated)) {
+          const updatedTime = new Date(typing.updatedAt).getTime();
+          if (now - updatedTime > staleThreshold) {
+            delete updated[uid];
+            hasChanges = true;
+          }
+        }
+        
+        return hasChanges ? updated : prev;
+      });
+    }, 1000); // Check every second
+    
+    return () => clearInterval(interval);
+  }, []);
 
   async function loadOlder() {
     if (!oldestCursor) {
