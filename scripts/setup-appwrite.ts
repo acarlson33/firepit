@@ -387,13 +387,12 @@ async function setupTyping() {
 		["userId", LEN_ID, true],
 		["userName", LEN_ID, false],
 		["channelId", LEN_ID, true],
-		["updatedAt", LEN_TS, true],
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("typing", k, size, req);
 	}
 	await ensureIndex("typing", "idx_channel", "key", ["channelId"]);
-	await ensureIndex("typing", "idx_updated", "key", ["updatedAt"]);
+	await ensureIndex("typing", "idx_updated", "key", ["$updatedAt"]);
 }
 
 async function setupMemberships() {

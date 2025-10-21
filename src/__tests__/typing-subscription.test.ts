@@ -72,7 +72,7 @@ describe("Typing Subscription", () => {
         userId: "user-456",
         userName: "Test User",
         channelId: "channel-789",
-        updatedAt: "2025-10-21T13:50:00.000Z",
+        $updatedAt: "2025-10-21T13:50:00.000Z",
       };
 
       const parsed = {
@@ -80,7 +80,7 @@ describe("Typing Subscription", () => {
         userId: String(mockPayload.userId),
         userName: mockPayload.userName as string | undefined,
         channelId: String(mockPayload.channelId),
-        updatedAt: String(mockPayload.updatedAt),
+        updatedAt: String((mockPayload as Record<string, unknown>).$updatedAt || (mockPayload as Record<string, unknown>).updatedAt),
       };
 
       expect(parsed.$id).toBe("typing-doc-123");
@@ -95,7 +95,7 @@ describe("Typing Subscription", () => {
         $id: "typing-doc-123",
         userId: "user-456",
         channelId: "channel-789",
-        updatedAt: "2025-10-21T13:50:00.000Z",
+        $updatedAt: "2025-10-21T13:50:00.000Z",
       };
 
       const parsed = {
@@ -103,7 +103,7 @@ describe("Typing Subscription", () => {
         userId: String(mockPayload.userId),
         userName: (mockPayload as Record<string, unknown>).userName as string | undefined,
         channelId: String(mockPayload.channelId),
-        updatedAt: String(mockPayload.updatedAt),
+        updatedAt: String((mockPayload as Record<string, unknown>).$updatedAt || (mockPayload as Record<string, unknown>).updatedAt),
       };
 
       expect(parsed.userName).toBeUndefined();

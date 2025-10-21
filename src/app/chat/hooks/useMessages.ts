@@ -207,7 +207,7 @@ export function useMessages({
             userId: String(p.userId),
             userName: p.userName as string | undefined,
             channelId: String(p.channelId),
-            updatedAt: String(p.updatedAt),
+            updatedAt: String(p.$updatedAt || p.updatedAt),
           };
         }
 
