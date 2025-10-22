@@ -11,17 +11,19 @@ This document describes the implementation of emoji and custom emoji support for
 - Supports emoji search and categories
 - Works in both server channels and direct messages
 
-### 2. Custom Emoji Upload
+### 2. Custom Emoji Upload and Sharing
 - Users can upload custom emojis with unique names
 - Maximum file size: 10MB
 - Supported formats: Standard image formats (jpg, png, gif, webp, etc.)
 - Custom emojis are stored in Appwrite Storage with proper permissions
-- Emojis are accessible to all users (read-only for non-owners)
+- Emojis are accessible to all users globally (shared across the platform)
+- Read-only access for all users; only uploader can delete their own emojis
 
 ### 3. Custom Emoji Management
 - Upload new custom emojis via the emoji picker interface
 - Name validation (alphanumeric, hyphens, and underscores only)
-- Custom emojis are cached locally for fast loading
+- Custom emojis are fetched from the server and shared across all users
+- Emojis are cached locally for offline access
 - Emojis use React Query for efficient caching and revalidation
 
 ### 4. Emoji Rendering
@@ -32,7 +34,8 @@ This document describes the implementation of emoji and custom emoji support for
 - Loading skeletons handled by the emoji picker component
 
 ### 5. Caching Strategy
-- Custom emojis are cached in localStorage for instant access
+- Custom emojis are fetched from the server on initial load
+- Server data is cached in localStorage for offline access
 - React Query provides automatic cache management
 - Stale time: 5 minutes (data considered fresh)
 - Cache time: 30 minutes (data kept in memory)
@@ -42,19 +45,28 @@ This document describes the implementation of emoji and custom emoji support for
 
 ### Files Created
 
-#### 1. API Route (`src/app/api/upload-emoji/route.ts`)
+#### 1. Upload API Route (`src/app/api/upload-emoji/route.ts`)
 Handles custom emoji upload and deletion:
 - **POST endpoint**: Upload a new custom emoji
   - Validates file type (images only)
   - Validates file size (max 10MB)
   - Validates emoji name format
-  - Stores file in Appwrite Storage
+  - Stores file in Appwrite Storage with emoji name as file name
   - Returns file ID, URL, and name
 - **DELETE endpoint**: Delete a custom emoji
   - Requires file ID
   - Only owner can delete
 
-#### 2. Emoji Picker Component (`src/components/emoji-picker.tsx`)
+#### 2. Custom Emojis API Route (`src/app/api/custom-emojis/route.ts`)
+Fetches all custom emojis using admin client:
+- **GET endpoint**: List all custom emojis
+  - Uses admin client to access Appwrite Storage
+  - Retrieves all files from the emojis bucket
+  - Extracts emoji names from file names
+  - Returns array of emoji objects
+  - Accessible to all users (read-only)
+
+#### 3. Emoji Picker Component (`src/components/emoji-picker.tsx`)
 Comprehensive emoji selection interface:
 - Dynamic import of emoji-picker-react for code splitting
 - Standard emoji grid with search
@@ -62,26 +74,27 @@ Comprehensive emoji selection interface:
 - Custom emoji grid display
 - Emoji insertion callback
 
-#### 3. Emoji Renderer Component (`src/components/emoji-renderer.tsx`)
+#### 4. Emoji Renderer Component (`src/components/emoji-renderer.tsx`)
 Renders text with custom emoji support:
 - Parses `:emoji-name:` syntax
 - Converts to emoji images
 - Falls back to text if emoji not found
 - Optimized with React.memo
 
-#### 4. Custom Emojis Hook (`src/hooks/useCustomEmojis.ts`)
+#### 5. Custom Emojis Hook (`src/hooks/useCustomEmojis.ts`)
 Manages custom emoji state and operations:
-- Fetches custom emojis from localStorage
+- Fetches custom emojis from server API endpoint
+- Uses localStorage as offline cache fallback
 - Uploads new custom emojis
 - Deletes custom emojis
 - React Query integration for caching
 - Loading states
 
-#### 5. Setup Script Update (`scripts/setup-appwrite.ts`)
+#### 6. Setup Script Update (`scripts/setup-appwrite.ts`)
 - Creates `emojis` bucket with 10MB size limit
 - Allows standard image formats
 
-#### 6. Component Updates
+#### 7. Component Updates
 - **Chat Page** (`src/app/chat/page.tsx`):
   - Integrated emoji picker button
   - Emoji renderer for messages
@@ -94,11 +107,13 @@ Manages custom emoji state and operations:
 ### Tests Added
 
 #### 1. API Route Tests (`src/__tests__/api-routes/upload-emoji.test.ts`)
-4 validation tests covering:
+6 validation tests covering:
 - Emoji name format validation
 - File size limit validation
 - Image file type validation
 - URL format generation
+- Emoji name extraction from file name
+- File name creation from emoji name and extension
 
 #### 2. Component Tests (`src/__tests__/components/emoji-renderer.test.tsx`)
 9 tests covering:
@@ -254,9 +269,9 @@ No database schema changes were required. Custom emojis are stored in Appwrite S
 ## Testing
 
 Test suite includes:
-- 4 validation tests for API route
+- 6 validation tests for API route (upload and fetching)
 - 9 component tests for emoji renderer
-- Total: 13 tests (all passing)
+- Total: 15 tests
 
 Run tests with:
 ```bash
@@ -266,10 +281,11 @@ npm test -- emoji
 ## Known Limitations
 
 - Maximum file size: 10MB (configurable in code)
-- Custom emoji names must be unique per user (not enforced globally)
+- Custom emoji names should be unique globally (not enforced, duplicate names may cause confusion)
 - No bulk upload support
 - No emoji editing capabilities
 - One emoji picker instance per component
+- Maximum 100 emojis fetched per request (pagination not implemented)
 
 ## Future Enhancements
 
@@ -298,6 +314,8 @@ For existing installations:
 - Check that `APPWRITE_EMOJIS_BUCKET_ID` is set
 - Verify the emojis bucket exists in Appwrite
 - Clear localStorage and refresh the page
+- Check browser console for API errors
+- Verify the `/api/custom-emojis` endpoint is accessible
 
 ### Upload Fails
 - Verify file is under 10MB
