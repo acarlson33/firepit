@@ -15,18 +15,23 @@ export async function register() {
 
     // Only initialize if both license key and app name are provided
     if (newrelicLicenseKey && newrelicAppName) {
-      // Dynamic import to avoid loading New Relic on Edge runtime
-      const newrelic = await import("newrelic");
-      
-      // New Relic is configured via environment variables:
-      // - NEW_RELIC_LICENSE_KEY: Your New Relic license key
-      // - NEW_RELIC_APP_NAME: Your application name in New Relic
-      // Additional configuration can be done via newrelic.config object if needed
-      
-      console.log(`[New Relic] Initialized for app: ${newrelicAppName}`);
-      
-      // Return the newrelic instance for potential use
-      return newrelic;
+      try {
+        // Dynamic import to avoid loading New Relic on Edge runtime
+        const newrelic = await import("newrelic");
+        
+        // New Relic is configured via environment variables:
+        // - NEW_RELIC_LICENSE_KEY: Your New Relic license key
+        // - NEW_RELIC_APP_NAME: Your application name in New Relic
+        // Additional configuration can be done via newrelic.config object if needed
+        
+        console.log(`[New Relic] Initialized for app: ${newrelicAppName}`);
+        
+        // Return the newrelic instance for potential use
+        return newrelic;
+      } catch (error) {
+        // If New Relic fails to initialize, log the error but don't crash the app
+        console.error("[New Relic] Failed to initialize:", error instanceof Error ? error.message : String(error));
+      }
     } else {
       // If credentials are missing, log a warning but don't fail
       if (!newrelicLicenseKey) {

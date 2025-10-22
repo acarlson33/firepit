@@ -42,6 +42,7 @@ const nextConfig: NextConfig = {
   },
 
   experimental: {
+    instrumentationHook: true,
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-dialog",
