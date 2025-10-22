@@ -9,6 +9,7 @@ The original idea was for an open source "extension" of sorts to discord, since 
 - **Server support** - support for servers like on discord
 - **Channel support** - support for channels like on discord
 - **User profiles and status support** - missing external integration, but support for in app statuses and profiles
+- **Emoji support** - Standard and custom emoji support with upload capabilities
 - **Moderation** - Instance wide moderation and administration
 - **Individual server moderation** - not currently supported, but will come in a later update with roles
 
@@ -18,6 +19,7 @@ The original idea was for an open source "extension" of sorts to discord, since 
 - **Server & Channels** - Discord-like server organization with multiple channels
 - **Direct Messages** - Private conversations between users
 - **User Status** - Online/offline presence with custom status messages
+- **Emoji Support** - Standard emoji picker and custom emoji upload (up to 10MB)
 - **Moderation Tools** - Soft delete, restore, and hard delete messages with full audit trails
 - **Role-Based Access** - Admin, moderator, and user roles with granular permissions
 - **User Profiles** - Customizable profiles with avatar support
@@ -26,7 +28,7 @@ The original idea was for an open source "extension" of sorts to discord, since 
 - **TailwindCSS** - Modern, responsive UI design
 - **shadcn/ui** - High-quality, accessible UI components
 - **PWA Ready** - Progressive Web App support for mobile installation
-- **Comprehensive Tests** - 221+ tests with 100% pass rate and growing coverage
+- **Comprehensive Tests** - 385+ tests with 100% pass rate and growing coverage
 
 ## 📋 Prerequisites
 
@@ -69,6 +71,8 @@ Open [http://localhost:3000](http://localhost:3000) to see your application.
 
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide with step-by-step instructions
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
+- **[EMOJI_FEATURE.md](./EMOJI_FEATURE.md)** - Emoji and custom emoji feature documentation
+- **[IMAGE_UPLOAD_FEATURE.md](./IMAGE_UPLOAD_FEATURE.md)** - Image upload feature documentation
 
 ## 🗂️ Project Structure
 
