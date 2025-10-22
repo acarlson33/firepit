@@ -121,7 +121,7 @@ describe("Messages API Routes", () => {
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
-			expect(data.error).toBe("text and channelId are required");
+			expect(data.error).toBe("text or imageFileId, and channelId are required");
 		});
 
 		it("should return 400 if channelId is missing", async () => {
@@ -141,7 +141,7 @@ describe("Messages API Routes", () => {
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
-			expect(data.error).toBe("text and channelId are required");
+			expect(data.error).toBe("text or imageFileId, and channelId are required");
 		});
 	});
 });
