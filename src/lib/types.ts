@@ -15,6 +15,8 @@ export type Message = {
   editedAt?: string;
   removedAt?: string;
   removedBy?: string;
+  imageFileId?: string;
+  imageUrl?: string;
   // Profile information (enriched from profiles collection)
   displayName?: string;
   pronouns?: string;

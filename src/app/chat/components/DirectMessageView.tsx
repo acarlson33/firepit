@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
+import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import type { DirectMessage, Conversation } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -273,7 +274,7 @@ export function DirectMessageView({
 										<div className="flex-1 wrap-break-word space-y-2">
 											{message.imageUrl && !removed && (
 												<div className="mt-1">
-													<img
+													<ImageWithSkeleton
 														alt="Uploaded image"
 														className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
 														onClick={() => {

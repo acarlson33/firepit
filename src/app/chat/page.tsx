@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { MoreVertical, MessageSquare, Hash } from "lucide-react";
+import { MoreVertical, MessageSquare, Hash, Image as ImageIcon, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,9 @@ import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useActivityTracking } from "./hooks/useActivityTracking";
 import { formatMessageTimestamp } from "@/lib/utils";
+import { uploadImage } from "@/lib/appwrite-dms-client";
+import { ImageViewer } from "@/components/image-viewer";
+import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -58,7 +61,12 @@ export default function ChatPage() {
     displayName?: string;
     avatarUrl?: string;
   } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const openProfileModal = (
     profileUserId: string,
@@ -150,6 +158,72 @@ export default function ChatPage() {
     await removeMessage(deleteConfirmId);
     setDeleteConfirmId(null);
   }, [deleteConfirmId, removeMessage]);
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be less than 5MB");
+      return;
+    }
+
+    setSelectedImage(file);
+
+    // Create preview
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      setImagePreview(reader.result as string);
+    });
+    reader.readAsDataURL(file);
+  }, []);
+
+  const removeImage = useCallback(() => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleSendWithImage = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    let imageFileId: string | undefined;
+    let imageUrl: string | undefined;
+
+    // Upload image if selected
+    if (selectedImage) {
+      try {
+        setUploadingImage(true);
+        const result = await uploadImage(selectedImage);
+        imageFileId = result.fileId;
+        imageUrl = result.url;
+      } catch (error) {
+        console.error("Failed to upload image:", error);
+        setUploadingImage(false);
+        return;
+      } finally {
+        setUploadingImage(false);
+      }
+    }
+
+    // Clear image state
+    setSelectedImage(null);
+    setImagePreview(null);
+
+    // Send message with image data
+    await send(e, imageFileId, imageUrl);
+  }, [selectedImage, send]);
 
   // Derived helpers
   const showChat = useMemo(
@@ -336,11 +410,50 @@ export default function ChatPage() {
                   )}
                 </div>
                 <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                  <div className="max-w-full flex-1 wrap-break-word rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
-                    {removed ? (
-                      <span className="italic opacity-70">Message removed</span>
-                    ) : (
-                      m.text
+                  <div className="max-w-full flex-1 wrap-break-word space-y-2">
+                    {m.imageUrl && !removed && (
+                      <div className="rounded-2xl bg-muted/40 p-2">
+                        <ImageWithSkeleton
+                          alt={`Image from ${displayName}`}
+                          className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
+                          onClick={() => {
+                            if (m.imageUrl) {
+                              setViewingImage({
+                                url: m.imageUrl,
+                                alt: `Image from ${displayName}`,
+                              });
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              if (m.imageUrl) {
+                                setViewingImage({
+                                  url: m.imageUrl,
+                                  alt: `Image from ${displayName}`,
+                                });
+                              }
+                            }
+                          }}
+                          role="button"
+                          src={m.imageUrl}
+                          tabIndex={0}
+                        />
+                      </div>
+                    )}
+                    {m.text && (
+                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
+                        {removed ? (
+                          <span className="italic opacity-70">Message removed</span>
+                        ) : (
+                          m.text
+                        )}
+                      </div>
+                    )}
+                    {!m.text && !m.imageUrl && removed && (
+                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
+                        <span className="italic opacity-70">Message removed</span>
+                      </div>
                     )}
                   </div>
                   {mine && !removed && (
@@ -608,23 +721,60 @@ export default function ChatPage() {
                     </div>
                   </div>
                 ) : (
-                  <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={send}>
-                    <Input
-                      aria-label="Message"
-                      disabled={!showChat}
-                      onChange={onChangeText}
-                      placeholder={showChat ? "Type a message" : "Select a channel"}
-                      value={text}
-                      className="flex-1 rounded-2xl border-border/60"
-                    />
-                    <Button
-                      className="rounded-2xl"
-                      disabled={!showChat}
-                      type="submit"
-                    >
-                      Send
-                    </Button>
-                  </form>
+                  <>
+                    {imagePreview && (
+                      <div className="relative inline-block">
+                        <img
+                          alt="Upload preview"
+                          className="h-32 rounded-lg object-cover"
+                          src={imagePreview}
+                        />
+                        <Button
+                          className="absolute -right-2 -top-2"
+                          onClick={removeImage}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      </div>
+                    )}
+                    <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSendWithImage}>
+                      <input
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageSelect}
+                        ref={fileInputRef}
+                        type="file"
+                      />
+                      <Button
+                        disabled={!showChat || uploadingImage || Boolean(editingMessageId)}
+                        onClick={() => fileInputRef.current?.click()}
+                        size="icon"
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                      >
+                        <ImageIcon className="size-4" />
+                      </Button>
+                      <Input
+                        aria-label="Message"
+                        disabled={!showChat || uploadingImage}
+                        onChange={onChangeText}
+                        placeholder={showChat ? "Type a message" : "Select a channel"}
+                        value={text}
+                        className="flex-1 rounded-2xl border-border/60"
+                      />
+                      <Button
+                        className="rounded-2xl shrink-0"
+                        disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage)}
+                        type="submit"
+                      >
+                        {uploadingImage ? "Uploading..." : "Send"}
+                      </Button>
+                    </form>
+                  </>
                 )}
               </div>
             </>
@@ -662,6 +812,17 @@ export default function ChatPage() {
           }}
           onOpenChange={setNewConversationOpen}
           open={newConversationOpen}
+        />
+      )}
+
+      {/* Image Viewer Modal */}
+      {viewingImage && (
+        <ImageViewer
+          alt={viewingImage.alt}
+          onClose={() => {
+            setViewingImage(null);
+          }}
+          src={viewingImage.url}
         />
       )}
     </div>
