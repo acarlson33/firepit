@@ -24,11 +24,11 @@ export async function POST(request: NextRequest) {
 
 		const env = getEnvConfig();
 		const body = await request.json();
-		const { text, channelId, serverId } = body;
+		const { text, channelId, serverId, imageFileId, imageUrl } = body;
 
-		if (!text || !channelId) {
+		if ((!text && !imageFileId) || !channelId) {
 			return NextResponse.json(
-				{ error: "text and channelId are required" },
+				{ error: "text or imageFileId, and channelId are required" },
 				{ status: 400 }
 			);
 		}
@@ -44,11 +44,27 @@ export async function POST(request: NextRequest) {
 
 		const { databases } = getServerClient();
 
+		const messageData: Record<string, unknown> = {
+			userId,
+			text: text || "",
+			userName,
+			channelId,
+			serverId,
+		};
+
+		// Add image fields if provided
+		if (imageFileId) {
+			messageData.imageFileId = imageFileId;
+		}
+		if (imageUrl) {
+			messageData.imageUrl = imageUrl;
+		}
+
 		const res = await databases.createDocument(
 			env.databaseId,
 			env.collections.messages,
 			ID.unique(),
-			{ userId, text, userName, channelId, serverId },
+			messageData,
 			permissions
 		);
 
@@ -63,6 +79,8 @@ export async function POST(request: NextRequest) {
 			removedAt: doc.removedAt as string | undefined,
 			removedBy: doc.removedBy as string | undefined,
 			serverId: doc.serverId as string | undefined,
+			imageFileId: doc.imageFileId as string | undefined,
+			imageUrl: doc.imageUrl as string | undefined,
 		};
 
 		return NextResponse.json({ message });
@@ -127,6 +145,8 @@ export async function PATCH(request: NextRequest) {
 			removedAt: doc.removedAt as string | undefined,
 			removedBy: doc.removedBy as string | undefined,
 			serverId: doc.serverId as string | undefined,
+			imageFileId: doc.imageFileId as string | undefined,
+			imageUrl: doc.imageUrl as string | undefined,
 		};
 
 		return NextResponse.json({ message });

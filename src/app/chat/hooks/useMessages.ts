@@ -110,6 +110,8 @@ export function useMessages({
             channelId: p.channelId as string | undefined,
             removedAt: p.removedAt as string | undefined,
             removedBy: p.removedBy as string | undefined,
+            imageFileId: p.imageFileId as string | undefined,
+            imageUrl: p.imageUrl as string | undefined,
           } as Message;
         }
         function includeMessage(base: { channelId?: string }) {
@@ -430,7 +432,7 @@ export function useMessages({
     }
   }
 
-  async function send(e: React.FormEvent) {
+  async function send(e: React.FormEvent, imageFileId?: string, imageUrl?: string) {
     e.preventDefault();
     if (!userId) {
       return;
@@ -439,7 +441,7 @@ export function useMessages({
       return;
     }
     const value = text.trim();
-    if (!value) {
+    if (!value && !imageFileId) {
       return;
     }
 
@@ -466,6 +468,8 @@ export function useMessages({
           text: value,
           channelId,
           serverId: serverId || undefined,
+          imageFileId,
+          imageUrl,
         }),
       });
 
