@@ -56,7 +56,7 @@ describe("Typing API Route", () => {
 			expect(data.error).toBe("Authentication required");
 		});
 
-		it("should require channelId", async () => {
+		it("should require channelId or conversationId", async () => {
 			const { getServerSession } = await import("@/lib/auth-server");
 			vi.mocked(getServerSession).mockResolvedValue({
 				$id: "user-123",
@@ -73,7 +73,7 @@ describe("Typing API Route", () => {
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
-			expect(data.error).toBe("channelId is required");
+			expect(data.error).toBe("channelId or conversationId is required");
 		});
 
 		it("should create typing status when document doesn't exist", async () => {
@@ -182,6 +182,44 @@ describe("Typing API Route", () => {
 			expect(response.status).toBe(503);
 			expect(data.error).toBe("Typing collection not configured");
 		});
+
+		it("should accept conversationId for DM typing status", async () => {
+			const { getServerSession } = await import("@/lib/auth-server");
+			const { getServerClient } = await import("@/lib/appwrite-server");
+
+			vi.mocked(getServerSession).mockResolvedValue({
+				$id: "user-123",
+				name: "Test User",
+				email: "test@example.com",
+			});
+
+			const mockUpdate = vi.fn().mockResolvedValue({ $id: "typing-doc-123" });
+
+			vi.mocked(getServerClient).mockReturnValue({
+				client: {} as never,
+				databases: {
+					createDocument: vi.fn(),
+					updateDocument: mockUpdate,
+					deleteDocument: vi.fn(),
+				} as never,
+				teams: {} as never,
+			});
+
+			const request = new NextRequest("http://localhost:3000/api/typing", {
+				method: "POST",
+				body: JSON.stringify({
+					conversationId: "dm-conv-456",
+					userName: "Test User",
+				}),
+			});
+
+			const response = await POST(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.success).toBe(true);
+			expect(mockUpdate).toHaveBeenCalled();
+		});
 	});
 
 	describe("DELETE /api/typing", () => {
@@ -203,7 +241,7 @@ describe("Typing API Route", () => {
 			expect(data.error).toBe("Authentication required");
 		});
 
-		it("should require channelId", async () => {
+		it("should require channelId or conversationId", async () => {
 			const { getServerSession } = await import("@/lib/auth-server");
 			vi.mocked(getServerSession).mockResolvedValue({
 				$id: "user-123",
@@ -219,7 +257,7 @@ describe("Typing API Route", () => {
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
-			expect(data.error).toBe("channelId is required");
+			expect(data.error).toBe("channelId or conversationId is required");
 		});
 
 		it("should delete typing status", async () => {
@@ -324,6 +362,43 @@ describe("Typing API Route", () => {
 
 			expect(response.status).toBe(503);
 			expect(data.error).toBe("Typing collection not configured");
+		});
+
+		it("should accept conversationId for DM typing status deletion", async () => {
+			const { getServerSession } = await import("@/lib/auth-server");
+			const { getServerClient } = await import("@/lib/appwrite-server");
+
+			vi.mocked(getServerSession).mockResolvedValue({
+				$id: "user-123",
+				name: "Test User",
+				email: "test@example.com",
+			});
+
+			const mockDelete = vi.fn().mockResolvedValue({});
+
+			vi.mocked(getServerClient).mockReturnValue({
+				client: {} as never,
+				databases: {
+					createDocument: vi.fn(),
+					updateDocument: vi.fn(),
+					deleteDocument: mockDelete,
+				} as never,
+				teams: {} as never,
+			});
+
+			const request = new NextRequest(
+				"http://localhost:3000/api/typing?conversationId=dm-conv-456",
+				{
+					method: "DELETE",
+				}
+			);
+
+			const response = await DELETE(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.success).toBe(true);
+			expect(mockDelete).toHaveBeenCalled();
 		});
 	});
 });

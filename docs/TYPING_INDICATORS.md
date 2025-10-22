@@ -2,26 +2,28 @@
 
 ## Overview
 
-Typing indicators show real-time feedback when users are actively composing messages in a channel. This feature uses Appwrite's realtime subscription system to broadcast typing status across all connected clients.
+Typing indicators show real-time feedback when users are actively composing messages in a channel or direct message (DM) conversation. This feature uses Appwrite's realtime subscription system to broadcast typing status across all connected clients.
 
 ## Architecture
 
 ### Components
 
-1. **Client-side typing detection** (`useMessages` hook)
+1. **Client-side typing detection** (`useMessages` and `useDirectMessages` hooks)
    - Monitors input field changes
    - Sends typing status to server
    - Debounces rapid typing events
+   - Supports both channels (channelId) and DMs (conversationId)
 
-2. **Realtime subscription** (`useMessages` hook)
+2. **Realtime subscription** (`useMessages` and `useDirectMessages` hooks)
    - Subscribes to typing collection events
    - Updates UI when other users start/stop typing
-   - Filters events by channel and user
+   - Filters events by channel/conversation and user
 
-3. **Server-side storage** (`appwrite-messages.ts`)
+3. **Server-side API** (`/api/typing` route)
    - Stores ephemeral typing documents
    - Uses deterministic document IDs for upsert pattern
    - Auto-cleanup through client-side timeout
+   - Accepts both channelId (channels) and conversationId (DMs)
 
 ### Data Flow
 
@@ -49,13 +51,15 @@ Display "User is typing..." indicator
 
 ```typescript
 {
-  $id: string;          // Deterministic: hashTypingKey(userId, channelId)
+  $id: string;          // Deterministic: hashTypingKey(userId, contextId)
   userId: string;       // User who is typing
   userName?: string;    // Display name of user
-  channelId: string;    // Channel where typing occurs
+  channelId: string;    // Channel ID (for channels) or conversation ID (for DMs)
   updatedAt: string;    // ISO timestamp of last update
 }
 ```
+
+**Note**: For backward compatibility, both channels and DMs store their context identifier in the `channelId` field. For channels, this is the actual channel ID. For DMs, this is the conversation ID.
 
 ### Permissions
 
@@ -70,7 +74,7 @@ Display "User is typing..." indicator
 - **Stop timeout**: 2500ms - Automatically sends "stopped" after idle period
 
 #### 2. Filtering
-- **Channel filtering**: Only shows typing users in current channel
+- **Context filtering**: Only shows typing users in current channel or DM conversation
 - **Self-filtering**: Doesn't show "You are typing" to yourself
 
 #### 3. Stale Cleanup
@@ -131,9 +135,19 @@ try {
 
 ### Unit Tests
 
-Location: `src/__tests__/typing-subscription.test.ts`
+**Typing API Tests**: `src/__tests__/api-routes/typing.test.ts`
+- POST endpoint authentication and validation
+- DELETE endpoint authentication and validation
+- channelId and conversationId parameter support
+- Error handling for missing typing collection
 
-Coverage includes:
+**DM Typing Tests**: `src/__tests__/dm-typing-indicators.test.ts`
+- DM typing subscription setup
+- Event parsing and filtering for conversations
+- State management for DM typing users
+- Stale indicator cleanup for DMs
+
+**Channel Typing Tests**: `src/__tests__/typing-subscription.test.ts`
 - Subscription setup and teardown
 - Event parsing and validation
 - State management (add, update, remove)
@@ -143,16 +157,25 @@ Coverage includes:
 
 Run tests:
 ```bash
-bun run test src/__tests__/typing-subscription.test.ts
+npm test src/__tests__/api-routes/typing.test.ts
+npm test src/__tests__/dm-typing-indicators.test.ts
+npm test src/__tests__/typing-subscription.test.ts
 ```
 
 ### Manual Testing
 
+#### Channels
 1. **Basic typing**: Type in a channel, verify indicator appears for other users
 2. **Stop typing**: Stop typing, verify indicator disappears after 2.5s
 3. **Channel switch**: Switch channels, verify indicators reset
 4. **Multiple users**: Have 3+ users type simultaneously, verify display limit
 5. **Stale cleanup**: Disconnect while typing, verify cleanup after 5s
+
+#### Direct Messages
+1. **DM typing**: Type in a DM conversation, verify indicator appears for the other user
+2. **DM stop typing**: Stop typing in a DM, verify indicator disappears after 2.5s
+3. **DM switch**: Switch between DM conversations, verify indicators reset
+4. **DM stale cleanup**: Disconnect while typing in a DM, verify cleanup after 5s
 
 ## Configuration
 
@@ -212,8 +235,22 @@ Potential improvements for future versions:
 
 ## Related Files
 
-- `/src/app/chat/hooks/useMessages.ts` - Main typing logic
-- `/src/lib/appwrite-messages.ts` - `setTyping()` function
+### Channel Typing
+- `/src/app/chat/hooks/useMessages.ts` - Channel typing logic
+- `/src/lib/appwrite-messages.ts` - `setTyping()` function for channels
+
+### DM Typing
+- `/src/app/chat/hooks/useDirectMessages.ts` - DM typing logic
+- `/src/app/chat/components/DirectMessageView.tsx` - DM UI with typing indicators
+
+### API and Infrastructure
+- `/src/app/api/typing/route.ts` - Typing status API (supports both channels and DMs)
 - `/src/lib/realtime-pool.ts` - Subscription pooling
-- `/src/__tests__/typing-subscription.test.ts` - Tests
+
+### Tests
+- `/src/__tests__/api-routes/typing.test.ts` - API route tests
+- `/src/__tests__/dm-typing-indicators.test.ts` - DM typing tests
+- `/src/__tests__/typing-subscription.test.ts` - Channel typing tests
+
+### Setup
 - `/scripts/setup-appwrite.ts` - Collection setup

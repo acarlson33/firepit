@@ -208,27 +208,33 @@ export function useDirectMessages({
 		lastTypingSentState.current = state;
 		lastTypingSentAt.current = now;
 		
-		// Use conversation ID as the channel ID for typing status
-		fetch("/api/typing", {
-			method: state ? "POST" : "DELETE",
-			headers: { "Content-Type": "application/json" },
-			body: state ? JSON.stringify({
-				channelId: conversationId,
-				userName: userName || undefined,
-			}) : undefined,
-		}).then(async (response) => {
-			if (!response.ok) {
-				console.warn(`[typing] Failed to ${state ? 'set' : 'clear'} typing status:`, response.status);
-				if (!state) {
-					// For DELETE requests, construct URL with query param
-					await fetch(`/api/typing?channelId=${encodeURIComponent(conversationId)}`, {
-						method: "DELETE",
-					});
+		// Use conversationId for DM typing status
+		if (state) {
+			fetch("/api/typing", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					conversationId,
+					userName: userName || undefined,
+				}),
+			}).then((response) => {
+				if (!response.ok) {
+					console.warn('[typing] Failed to set typing status:', response.status);
 				}
-			}
-		}).catch((error) => {
-			console.warn('[typing] Error updating typing status:', error);
-		});
+			}).catch((error) => {
+				console.warn('[typing] Error updating typing status:', error);
+			});
+		} else {
+			fetch(`/api/typing?conversationId=${encodeURIComponent(conversationId)}`, {
+				method: "DELETE",
+			}).then((response) => {
+				if (!response.ok) {
+					console.warn('[typing] Failed to clear typing status:', response.status);
+				}
+			}).catch((error) => {
+				console.warn('[typing] Error updating typing status:', error);
+			});
+		}
 	}, [userId, conversationId, userName, typingStartDebounceMs]);
 
 	const scheduleTypingStop = useCallback(() => {
