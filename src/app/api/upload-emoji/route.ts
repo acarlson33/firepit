@@ -82,9 +82,12 @@ export async function POST(request: NextRequest) {
     const { storage } = getServerClient();
 
     // Convert File to buffer and recreate as File for node-appwrite
+    // Use emoji name as file name to preserve the name in storage
     const arrayBuffer = await file.arrayBuffer();
     const blob = new Blob([arrayBuffer], { type: file.type });
-    const uploadFile = new File([blob], file.name, { type: file.type });
+    const fileExtension = file.name.split(".").pop() || "png";
+    const fileName = `${name}.${fileExtension}`;
+    const uploadFile = new File([blob], fileName, { type: file.type });
 
     // Upload to Appwrite Storage
     const uploadedFile = await storage.createFile(

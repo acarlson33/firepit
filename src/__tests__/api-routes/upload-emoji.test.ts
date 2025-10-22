@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-// Basic validation tests for emoji upload API
+// Basic validation tests for emoji upload API and custom emojis endpoint
 // Note: Full API route testing requires Next.js runtime environment
 describe("Upload Emoji API - Validation Logic", () => {
 	it("should validate emoji name format", () => {
@@ -55,5 +55,32 @@ describe("Upload Emoji API - Validation Logic", () => {
 		expect(generatedUrl).toContain(bucketId);
 		expect(generatedUrl).toContain(fileId);
 		expect(generatedUrl).toContain(projectId);
+	});
+
+	it("should extract emoji name from file name", () => {
+		const testCases = [
+			{ fileName: "party-parrot.png", expectedName: "party-parrot" },
+			{ fileName: "cool_cat.jpg", expectedName: "cool_cat" },
+			{ fileName: "smile123.gif", expectedName: "smile123" },
+			{ fileName: "emoji-1.webp", expectedName: "emoji-1" },
+		];
+
+		testCases.forEach(({ fileName, expectedName }) => {
+			const extractedName = fileName.replace(/\.[^.]+$/, "");
+			expect(extractedName).toBe(expectedName);
+		});
+	});
+
+	it("should create correct file name from emoji name and extension", () => {
+		const testCases = [
+			{ name: "party-parrot", extension: "png", expected: "party-parrot.png" },
+			{ name: "cool_cat", extension: "jpg", expected: "cool_cat.jpg" },
+			{ name: "smile123", extension: "gif", expected: "smile123.gif" },
+		];
+
+		testCases.forEach(({ name, extension, expected }) => {
+			const fileName = `${name}.${extension}`;
+			expect(fileName).toBe(expected);
+		});
 	});
 });
