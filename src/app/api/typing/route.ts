@@ -7,10 +7,11 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 
 // Helper function to create a deterministic, short document ID for typing status
-function hashTypingKey(userId: string, channelId: string): string {
+// Works for both channels and DM conversations by accepting any context ID
+function hashTypingKey(userId: string, contextId: string): string {
 	// Use Node.js crypto to create a consistent hash that's exactly 36 characters
 	// This ensures the document ID stays within Appwrite's limit
-	const input = `${userId}_${channelId}`;
+	const input = `${userId}_${contextId}`;
 
 	// Simple hash function that works in both Node and browser
 	// Using a djb2-like hash algorithm for deterministic results
@@ -24,10 +25,10 @@ function hashTypingKey(userId: string, channelId: string): string {
 	const hashHex = (hash >>> 0).toString(16).padStart(8, '0');
 
 	// Create a deterministic 36-character ID using parts of the input and the hash
-	// Format: typing_<userPrefix>_<channelPrefix>_<hash>
+	// Format: typing_<userPrefix>_<contextPrefix>_<hash>
 	const userPrefix = userId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
-	const channelPrefix = channelId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
-	const combined = `typ_${userPrefix}_${channelPrefix}_${hashHex}`;
+	const contextPrefix = contextId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, '');
+	const combined = `typ_${userPrefix}_${contextPrefix}_${hashHex}`;
 
 	// Ensure it's exactly 36 characters or less
 	return combined.padEnd(36, '0').substring(0, 36);
@@ -35,7 +36,7 @@ function hashTypingKey(userId: string, channelId: string): string {
 
 /**
  * POST /api/typing
- * Creates or updates typing status for a user in a channel
+ * Creates or updates typing status for a user in a channel or DM conversation
  */
 export async function POST(request: NextRequest) {
 	try {
@@ -59,24 +60,27 @@ export async function POST(request: NextRequest) {
 		}
 
 		const body = await request.json();
-		const { channelId, userName } = body;
+		const { channelId, conversationId, userName } = body;
 
-		if (!channelId) {
+		// Accept either channelId (for channels) or conversationId (for DMs)
+		const contextId = channelId || conversationId;
+
+		if (!contextId) {
 			return NextResponse.json(
-				{ error: "channelId is required" },
+				{ error: "channelId or conversationId is required" },
 				{ status: 400 }
 			);
 		}
 
 		const userId = user.$id;
-		const key = hashTypingKey(userId, channelId);
+		const key = hashTypingKey(userId, contextId);
 
 		const { databases } = getServerClient();
 
 		const payload = {
 			userId,
 			userName: userName || user.name,
-			channelId,
+			channelId: contextId, // Store as channelId for backward compatibility
 		};
 
 		// Permissions: anyone can read (to see typing indicators), only creator can update/delete
@@ -129,8 +133,8 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * DELETE /api/typing?channelId=CHANNEL_ID
- * Deletes typing status for the authenticated user in a channel
+ * DELETE /api/typing?channelId=CHANNEL_ID or /api/typing?conversationId=CONVERSATION_ID
+ * Deletes typing status for the authenticated user in a channel or DM conversation
  */
 export async function DELETE(request: NextRequest) {
 	try {
@@ -155,16 +159,20 @@ export async function DELETE(request: NextRequest) {
 
 		const { searchParams } = new URL(request.url);
 		const channelId = searchParams.get("channelId");
+		const conversationId = searchParams.get("conversationId");
 
-		if (!channelId) {
+		// Accept either channelId (for channels) or conversationId (for DMs)
+		const contextId = channelId || conversationId;
+
+		if (!contextId) {
 			return NextResponse.json(
-				{ error: "channelId is required" },
+				{ error: "channelId or conversationId is required" },
 				{ status: 400 }
 			);
 		}
 
 		const userId = user.$id;
-		const key = hashTypingKey(userId, channelId);
+		const key = hashTypingKey(userId, contextId);
 
 		const { databases } = getServerClient();
 
