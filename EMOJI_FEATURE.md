@@ -28,7 +28,10 @@ This document describes the implementation of emoji and custom emoji support for
 
 ### 4. Emoji Rendering
 - Custom emojis use `:emoji-name:` syntax
+- Standard emojis use `:emoji-name:` syntax (e.g., `:smile:`, `:heart:`, `:fire:`)
 - Automatic conversion of custom emoji syntax to emoji images
+- Automatic conversion of standard emoji shortcodes to Unicode emojis
+- Custom emojis are prioritized over standard emojis when names conflict
 - Custom emojis are sized to match standard emojis (20px × 20px)
 - Lazy loading for optimal performance
 - Loading skeletons handled by the emoji picker component
@@ -116,7 +119,7 @@ Manages custom emoji state and operations:
 - File name creation from emoji name and extension
 
 #### 2. Component Tests (`src/__tests__/components/emoji-renderer.test.tsx`)
-9 tests covering:
+13 tests covering:
 - Plain text rendering
 - Single custom emoji rendering
 - Multiple custom emoji rendering
@@ -125,6 +128,11 @@ Manages custom emoji state and operations:
 - CSS class validation
 - Lazy loading attributes
 - Empty emoji list handling
+- Standard emoji shortcode rendering
+- Multiple standard emojis
+- Priority of custom emojis over standard emojis
+- Mixed custom and standard emojis
+- Unknown shortcode handling
 
 ## Usage Guide
 
@@ -146,9 +154,30 @@ Manages custom emoji state and operations:
 
 #### Using Custom Emojis
 1. Type `:emoji-name:` in your message
-   - Example: `:party-parrot:`
-2. The text will automatically render as the custom emoji image
-3. Or use the emoji picker to select from available custom emojis
+   - For custom emojis: `:party-parrot:`
+   - For standard emojis: `:smile:`, `:heart:`, `:fire:`, `:+1:`
+2. The text will automatically render as emoji
+   - Custom emojis render as images
+   - Standard emojis render as Unicode characters (😄, ❤️, 🔥, 👍)
+3. Or use the emoji picker to select from available emojis
+
+**Note**: Custom emojis take priority over standard emojis when names match.
+
+#### Common Standard Emoji Shortcodes
+
+Here are some frequently used standard emoji shortcodes:
+
+| Shortcode | Emoji | Shortcode | Emoji |
+|-----------|-------|-----------|-------|
+| `:smile:` | 😄 | `:heart:` | ❤️ |
+| `:+1:` | 👍 | `:-1:` | 👎 |
+| `:fire:` | 🔥 | `:rocket:` | 🚀 |
+| `:star:` | ⭐ | `:tada:` | 🎉 |
+| `:wave:` | 👋 | `:eyes:` | 👀 |
+| `:joy:` | 😂 | `:sunglasses:` | 😎 |
+| `:heart_eyes:` | 😍 | | |
+
+For a complete list of supported emoji shortcodes, refer to the [node-emoji](https://github.com/omnidan/node-emoji) library documentation.
 
 ### For Developers
 
@@ -185,10 +214,32 @@ function MessageDisplay({ text }: { text: string }) {
 
   return (
     <div>
+      {/* Renders both custom and standard emojis */}
       <EmojiRenderer text={text} customEmojis={customEmojis} />
     </div>
   );
 }
+```
+
+**Examples:**
+```tsx
+// Standard emoji shortcodes
+<EmojiRenderer text="I :heart: coding :rocket:" />
+// Renders: I ❤️ coding 🚀
+
+// Custom emojis
+<EmojiRenderer 
+  text="Let's :party-parrot: celebrate!" 
+  customEmojis={[{ fileId: "1", url: "/emoji.png", name: "party-parrot" }]} 
+/>
+// Renders: Let's [custom image] celebrate!
+
+// Mixed emojis
+<EmojiRenderer 
+  text=":fire: This is :custom: and :+1:" 
+  customEmojis={[{ fileId: "2", url: "/custom.png", name: "custom" }]} 
+/>
+// Renders: 🔥 This is [custom image] and 👍
 ```
 
 #### Custom Emoji Data Structure
@@ -249,8 +300,9 @@ No database schema changes were required. Custom emojis are stored in Appwrite S
 
 ### Rendering
 - EmojiRenderer component uses React.memo
-- Efficient regex-based parsing
+- Efficient regex-based parsing for both custom and standard emojis
 - Minimal re-renders
+- Standard emojis render as lightweight Unicode characters (no image downloads)
 
 ## Accessibility
 
@@ -270,8 +322,8 @@ No database schema changes were required. Custom emojis are stored in Appwrite S
 
 Test suite includes:
 - 6 validation tests for API route (upload and fetching)
-- 9 component tests for emoji renderer
-- Total: 15 tests
+- 13 component tests for emoji renderer (including 5 tests for standard emoji support)
+- Total: 19 tests
 
 Run tests with:
 ```bash
@@ -282,6 +334,8 @@ npm test -- emoji
 
 - Maximum file size: 10MB (configurable in code)
 - Custom emoji names should be unique globally (not enforced, duplicate names may cause confusion)
+- Standard emoji shortcode support depends on node-emoji library (most common emojis supported)
+- Some emoji shortcodes may vary from other platforms (e.g., `:+1:` instead of `:thumbsup:`)
 - No bulk upload support
 - No emoji editing capabilities
 - One emoji picker instance per component
@@ -303,7 +357,7 @@ Potential improvements for future releases:
 ## Migration Notes
 
 For existing installations:
-1. Run `npm install` to get emoji-picker-react dependency
+1. Run `npm install` to get emoji-picker-react and node-emoji dependencies
 2. Set `APPWRITE_EMOJIS_BUCKET_ID=emojis` in your environment
 3. Run `npm run setup` to create the emojis bucket
 4. Restart your application

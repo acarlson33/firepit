@@ -132,4 +132,70 @@ describe("EmojiRenderer", () => {
 		expect(container.textContent).toBe("Hello :emoji:");
 		expect(screen.queryByRole("img")).toBeNull();
 	});
+
+	it("should render standard emoji from shortcode", () => {
+		const { container } = render(<EmojiRenderer text="Hello :smile: world" />);
+		// smile emoji shortcode should be converted to 😄
+		expect(container.textContent).toContain("😄");
+		expect(container.textContent).toContain("Hello");
+		expect(container.textContent).toContain("world");
+	});
+
+	it("should render multiple standard emojis", () => {
+		const { container } = render(<EmojiRenderer text=":heart: Love :+1:" />);
+		// heart emoji should be ❤️ and +1 should be 👍
+		expect(container.textContent).toContain("❤️");
+		expect(container.textContent).toContain("👍");
+		expect(container.textContent).toContain("Love");
+	});
+
+	it("should prioritize custom emojis over standard emojis", () => {
+		const customEmojis = [
+			{
+				fileId: "emoji-1",
+				url: "https://example.com/custom-smile.png",
+				name: "smile",
+			},
+		];
+
+		render(<EmojiRenderer text="Hello :smile: world" customEmojis={customEmojis} />);
+
+		// Should render custom emoji image, not standard Unicode emoji
+		const img = screen.getByRole("img");
+		expect(img).toBeDefined();
+		expect(img.getAttribute("src")).toBe("https://example.com/custom-smile.png");
+	});
+
+	it("should handle mixed custom and standard emojis", () => {
+		const customEmojis = [
+			{
+				fileId: "emoji-1",
+				url: "https://example.com/custom.png",
+				name: "custom",
+			},
+		];
+
+		const { container } = render(
+			<EmojiRenderer
+				text=":custom: Hello :heart: world"
+				customEmojis={customEmojis}
+			/>
+		);
+
+		// Custom emoji should be an image
+		const img = screen.getByRole("img");
+		expect(img.getAttribute("alt")).toBe(":custom:");
+
+		// Standard emoji should be Unicode
+		expect(container.textContent).toContain("❤️");
+	});
+
+	it("should keep unknown shortcodes as text", () => {
+		const { container } = render(
+			<EmojiRenderer text="Hello :unknown_emoji_xyz: world" />
+		);
+
+		// Unknown emoji should remain as text
+		expect(container.textContent).toBe("Hello :unknown_emoji_xyz: world");
+	});
 });
