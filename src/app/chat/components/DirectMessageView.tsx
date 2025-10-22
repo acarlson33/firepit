@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { MoreVertical, Loader2, ArrowLeft, MessageSquare, Image as ImageIcon, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
+import { EmojiPicker } from "@/components/emoji-picker";
+import { EmojiRenderer } from "@/components/emoji-renderer";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import type { DirectMessage, Conversation } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -59,6 +62,9 @@ export function DirectMessageView({
 	const otherUser = conversation.otherUser;
 	const displayName =
 		otherUser?.displayName || otherUser?.userId || "Unknown User";
+
+	// Custom emojis
+	const { customEmojis, uploadEmoji } = useCustomEmojis();
 
 	// Auto-scroll to bottom on new messages
 	useEffect(() => {
@@ -166,6 +172,10 @@ export function DirectMessageView({
 			// Error handled by parent
 		}
 	};
+
+	const handleEmojiSelect = useCallback((emoji: string) => {
+		setText((prev) => prev + emoji);
+	}, []);
 
 	return (
 		<div className="flex h-full flex-col">
@@ -307,7 +317,7 @@ export function DirectMessageView({
 													Message removed
 												</span>
 											) : message.text ? (
-												<p>{message.text}</p>
+												<p><EmojiRenderer text={message.text} customEmojis={customEmojis} /></p>
 											) : null}
 										</div>
 										{isMine && !removed && (
@@ -433,6 +443,11 @@ export function DirectMessageView({
 					>
 						<ImageIcon className="size-4" />
 					</Button>
+					<EmojiPicker
+						onEmojiSelect={handleEmojiSelect}
+						customEmojis={customEmojis}
+						onUploadCustomEmoji={uploadEmoji}
+					/>
 					<Textarea
 						ref={textareaRef}
 						aria-label={editingMessageId ? "Edit message" : "Message"}

@@ -27,6 +27,9 @@ import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { ImageViewer } from "@/components/image-viewer";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
+import { EmojiPicker } from "@/components/emoji-picker";
+import { EmojiRenderer } from "@/components/emoji-renderer";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -67,6 +70,9 @@ export default function ChatPage() {
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Custom emojis
+  const { customEmojis, uploadEmoji } = useCustomEmojis();
 
   const openProfileModal = (
     profileUserId: string,
@@ -224,6 +230,10 @@ export default function ChatPage() {
     // Send message with image data
     await send(e, imageFileId, imageUrl);
   }, [selectedImage, send]);
+
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    onChangeText({ target: { value: text + emoji } } as React.ChangeEvent<HTMLInputElement>);
+  }, [text, onChangeText]);
 
   // Derived helpers
   const showChat = useMemo(
@@ -446,7 +456,7 @@ export default function ChatPage() {
                         {removed ? (
                           <span className="italic opacity-70">Message removed</span>
                         ) : (
-                          m.text
+                          <EmojiRenderer text={m.text} customEmojis={customEmojis} />
                         )}
                       </div>
                     )}
@@ -758,6 +768,11 @@ export default function ChatPage() {
                       >
                         <ImageIcon className="size-4" />
                       </Button>
+                      <EmojiPicker
+                        onEmojiSelect={handleEmojiSelect}
+                        customEmojis={customEmojis}
+                        onUploadCustomEmoji={uploadEmoji}
+                      />
                       <Input
                         aria-label="Message"
                         disabled={!showChat || uploadingImage}
