@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import * as emoji from "node-emoji";
 
 type CustomEmoji = {
   fileId: string;
@@ -14,19 +15,15 @@ type EmojiRendererProps = {
 };
 
 /**
- * Renders text with custom emoji support.
- * Converts :emoji-name: syntax to custom emoji images.
+ * Renders text with custom emoji and standard emoji support.
+ * Converts :emoji-name: syntax to custom emoji images or standard Unicode emojis.
  */
 export const EmojiRenderer = memo(function EmojiRenderer({
   text,
   customEmojis = [],
 }: EmojiRendererProps) {
-  if (customEmojis.length === 0) {
-    return <span>{text}</span>;
-  }
-
-  // Match custom emoji syntax :emoji-name:
-  const emojiPattern = /:([a-zA-Z0-9_-]+):/g;
+  // Match emoji syntax :emoji-name:
+  const emojiPattern = /:([a-zA-Z0-9_+-]+):/g;
   const parts: Array<string | React.JSX.Element> = [];
   let lastIndex = 0;
   let match;
@@ -40,7 +37,7 @@ export const EmojiRenderer = memo(function EmojiRenderer({
       parts.push(text.slice(lastIndex, matchIndex));
     }
 
-    // Find matching custom emoji
+    // First, try to find matching custom emoji
     const customEmoji = customEmojis.find((e) => e.name === emojiName);
 
     if (customEmoji) {
@@ -56,8 +53,16 @@ export const EmojiRenderer = memo(function EmojiRenderer({
         />
       );
     } else {
-      // Not found, keep original text
-      parts.push(fullMatch);
+      // Try to convert to standard emoji using node-emoji
+      const standardEmoji = emoji.get(emojiName);
+      
+      if (standardEmoji && standardEmoji !== `:${emojiName}:`) {
+        // Found a standard emoji, render as Unicode character
+        parts.push(standardEmoji);
+      } else {
+        // Not found in either custom or standard, keep original text
+        parts.push(fullMatch);
+      }
     }
 
     lastIndex = matchIndex + fullMatch.length;
