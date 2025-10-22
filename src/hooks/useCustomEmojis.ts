@@ -9,7 +9,7 @@ type CustomEmoji = {
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
 
-// Helper to get emojis from localStorage
+// Helper to get emojis from localStorage (for offline cache)
 function getStoredEmojis(): CustomEmoji[] {
   if (typeof window === "undefined") {
     return [];
@@ -23,7 +23,7 @@ function getStoredEmojis(): CustomEmoji[] {
   }
 }
 
-// Helper to store emojis in localStorage
+// Helper to store emojis in localStorage (for offline cache)
 function storeEmojis(emojis: CustomEmoji[]): void {
   if (typeof window === "undefined") {
     return;
@@ -36,6 +36,24 @@ function storeEmojis(emojis: CustomEmoji[]): void {
   }
 }
 
+// Fetch emojis from the server
+async function fetchEmojisFromServer(): Promise<CustomEmoji[]> {
+  try {
+    const response = await fetch("/api/custom-emojis");
+    if (!response.ok) {
+      throw new Error("Failed to fetch emojis");
+    }
+    const emojis: CustomEmoji[] = await response.json();
+    // Cache in localStorage for offline access
+    storeEmojis(emojis);
+    return emojis;
+  } catch (error) {
+    console.error("Failed to fetch emojis from server:", error);
+    // Fallback to cached emojis
+    return getStoredEmojis();
+  }
+}
+
 /**
  * Hook for managing custom emojis with localStorage caching
  */
@@ -43,10 +61,10 @@ export function useCustomEmojis() {
   const [uploading, setUploading] = useState(false);
   const queryClient = useQueryClient();
 
-  // Use React Query for caching and automatic refetching
+  // Use React Query for caching and automatic refetching from server
   const { data: customEmojis = [], isLoading } = useQuery({
     queryKey: ["customEmojis"],
-    queryFn: getStoredEmojis,
+    queryFn: fetchEmojisFromServer,
     staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
     gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
   });
@@ -71,13 +89,9 @@ export function useCustomEmojis() {
           throw new Error(errorData.error || "Failed to upload emoji");
         }
 
-        const newEmoji: CustomEmoji = await response.json();
+        await response.json();
 
-        // Update cache with new emoji
-        const updatedEmojis = [...customEmojis, newEmoji];
-        storeEmojis(updatedEmojis);
-        
-        // Invalidate query to trigger refetch
+        // Invalidate query to trigger refetch from server
         await queryClient.invalidateQueries({ queryKey: ["customEmojis"] });
       } finally {
         setUploading(false);
@@ -98,11 +112,7 @@ export function useCustomEmojis() {
           throw new Error("Failed to delete emoji");
         }
 
-        // Update cache
-        const updatedEmojis = customEmojis.filter((e) => e.fileId !== fileId);
-        storeEmojis(updatedEmojis);
-        
-        // Invalidate query to trigger refetch
+        // Invalidate query to trigger refetch from server
         await queryClient.invalidateQueries({ queryKey: ["customEmojis"] });
       } catch (error) {
         console.error("Failed to delete emoji:", error);
