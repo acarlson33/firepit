@@ -68,6 +68,8 @@ export type EnvConfig = {
   };
   buckets: {
     avatars: string;
+    emojis: string;
+    images: string;
   };
   teams: {
     adminTeamId: string | null;
@@ -183,6 +185,18 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_AVATARS_BUCKET_ID,
         "avatars"
       ) || "avatars",
+    emojis:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_EMOJIS_BUCKET_ID,
+        process.env.APPWRITE_EMOJIS_BUCKET_ID,
+        "emojis"
+      ) || "emojis",
+    images:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_IMAGES_BUCKET_ID,
+        process.env.APPWRITE_IMAGES_BUCKET_ID,
+        "images"
+      ) || "images",
   };
   const teams = {
     adminTeamId:
