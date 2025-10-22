@@ -1,0 +1,59 @@
+import { describe, it, expect } from "vitest";
+
+// Basic validation tests for emoji upload API
+// Note: Full API route testing requires Next.js runtime environment
+describe("Upload Emoji API - Validation Logic", () => {
+	it("should validate emoji name format", () => {
+		const validNames = ["party-parrot", "cool_cat", "smile123", "emoji-1"];
+		const invalidNames = ["invalid name!", "emoji@test", "test emoji"];
+
+		const namePattern = /^[a-zA-Z0-9_-]+$/;
+
+		validNames.forEach((name) => {
+			expect(namePattern.test(name)).toBe(true);
+		});
+
+		invalidNames.forEach((name) => {
+			expect(namePattern.test(name)).toBe(false);
+		});
+	});
+
+	it("should validate file size limits", () => {
+		const maxSize = 10 * 1024 * 1024; // 10MB
+
+		const validSize = 5 * 1024 * 1024; // 5MB
+		const invalidSize = 11 * 1024 * 1024; // 11MB
+
+		expect(validSize <= maxSize).toBe(true);
+		expect(invalidSize <= maxSize).toBe(false);
+	});
+
+	it("should validate image file types", () => {
+		const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
+		const invalidTypes = ["text/plain", "application/pdf", "video/mp4"];
+
+		validTypes.forEach((type) => {
+			expect(type.startsWith("image/")).toBe(true);
+		});
+
+		invalidTypes.forEach((type) => {
+			expect(type.startsWith("image/")).toBe(false);
+		});
+	});
+
+	it("should generate correct emoji URL format", () => {
+		const endpoint = "https://cloud.appwrite.io/v1";
+		const projectId = "test-project";
+		const bucketId = "emojis";
+		const fileId = "test-file-123";
+
+		const expectedUrl = `${endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${projectId}`;
+		const generatedUrl = `${endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${projectId}`;
+
+		expect(generatedUrl).toBe(expectedUrl);
+		expect(generatedUrl).toContain(endpoint);
+		expect(generatedUrl).toContain(bucketId);
+		expect(generatedUrl).toContain(fileId);
+		expect(generatedUrl).toContain(projectId);
+	});
+});

@@ -521,6 +521,7 @@ async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
 async function setupStorage() {
 	await ensureBucket("avatars", "User Avatars", 2097152); // 2MB for avatars
 	await ensureBucket("images", "Chat Images", 5242880); // 5MB for chat images
+	await ensureBucket("emojis", "Custom Emojis", 10485760); // 10MB for custom emojis
 }
 
 async function ensureTeams() {
