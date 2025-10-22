@@ -31,6 +31,8 @@ const nextConfig: NextConfig = {
     APPWRITE_ADMIN_USER_IDS: process.env.APPWRITE_ADMIN_USER_IDS,
     APPWRITE_MODERATOR_USER_IDS: process.env.APPWRITE_MODERATOR_USER_IDS,
     SERVER_URL: process.env.SERVER_URL,
+    NEW_RELIC_LICENSE_KEY: process.env.NEW_RELIC_LICENSE_KEY,
+    NEW_RELIC_APP_NAME: process.env.NEW_RELIC_APP_NAME,
   },
 
   compiler: {
