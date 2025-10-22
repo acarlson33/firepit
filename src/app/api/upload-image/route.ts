@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
-
-const IMAGES_BUCKET_ID = process.env.APPWRITE_IMAGES_BUCKET_ID;
+import { getEnvConfig } from "@/lib/appwrite-core";
 
 // Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit) {
@@ -38,14 +37,8 @@ export async function POST(request: NextRequest) {
     }
     console.log("[upload-image] Session found:", session.$id);
 
-    if (!IMAGES_BUCKET_ID) {
-      console.error("[upload-image] IMAGES_BUCKET_ID not configured");
-      return jsonResponse(
-        { error: "Images bucket not configured" },
-        { status: 500 }
-      );
-    }
-    console.log("[upload-image] Bucket ID:", IMAGES_BUCKET_ID);
+    const env = getEnvConfig();
+    console.log("[upload-image] Bucket ID:", env.buckets.images);
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -83,7 +76,7 @@ export async function POST(request: NextRequest) {
     console.log("[upload-image] Uploading to Appwrite...");
     // Upload to Appwrite Storage
     const uploadedFile = await storage.createFile(
-      IMAGES_BUCKET_ID,
+      env.buckets.images,
       ID.unique(),
       uploadFile,
       [
@@ -95,9 +88,7 @@ export async function POST(request: NextRequest) {
     console.log("[upload-image] Upload successful, file ID:", uploadedFile.$id);
 
     // Generate URL for the image
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "";
-    const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "";
-    const imageUrl = `${endpoint}/storage/buckets/${IMAGES_BUCKET_ID}/files/${uploadedFile.$id}/view?project=${projectId}`;
+    const imageUrl = `${env.endpoint}/storage/buckets/${env.buckets.images}/files/${uploadedFile.$id}/view?project=${env.project}`;
 
     console.log("[upload-image] Image URL:", imageUrl);
     return jsonResponse({
@@ -126,12 +117,7 @@ export async function DELETE(request: NextRequest) {
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!IMAGES_BUCKET_ID) {
-      return jsonResponse(
-        { error: "Images bucket not configured" },
-        { status: 500 }
-      );
-    }
+    const env = getEnvConfig();
 
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get("fileId");
@@ -142,7 +128,7 @@ export async function DELETE(request: NextRequest) {
 
     const { storage } = getServerClient();
 
-    await storage.deleteFile(IMAGES_BUCKET_ID, fileId);
+    await storage.deleteFile(env.buckets.images, fileId);
 
     return jsonResponse({ success: true });
   } catch (error) {

@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
-
-const EMOJIS_BUCKET_ID = process.env.APPWRITE_EMOJIS_BUCKET_ID;
+import { getEnvConfig } from "@/lib/appwrite-core";
 
 // Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit) {
@@ -35,12 +34,7 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!EMOJIS_BUCKET_ID) {
-      return jsonResponse(
-        { error: "Emojis bucket not configured" },
-        { status: 500 }
-      );
-    }
+    const env = getEnvConfig();
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -91,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     // Upload to Appwrite Storage
     const uploadedFile = await storage.createFile(
-      EMOJIS_BUCKET_ID,
+      env.buckets.emojis,
       ID.unique(),
       uploadFile,
       [
@@ -102,9 +96,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Generate URL for the emoji
-    const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "";
-    const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "";
-    const emojiUrl = `${endpoint}/storage/buckets/${EMOJIS_BUCKET_ID}/files/${uploadedFile.$id}/view?project=${projectId}`;
+    const emojiUrl = `${env.endpoint}/storage/buckets/${env.buckets.emojis}/files/${uploadedFile.$id}/view?project=${env.project}`;
 
     return jsonResponse({
       fileId: uploadedFile.$id,
@@ -132,12 +124,7 @@ export async function DELETE(request: NextRequest) {
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!EMOJIS_BUCKET_ID) {
-      return jsonResponse(
-        { error: "Emojis bucket not configured" },
-        { status: 500 }
-      );
-    }
+    const env = getEnvConfig();
 
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get("fileId");
@@ -148,7 +135,7 @@ export async function DELETE(request: NextRequest) {
 
     const { storage } = getServerClient();
 
-    await storage.deleteFile(EMOJIS_BUCKET_ID, fileId);
+    await storage.deleteFile(env.buckets.emojis, fileId);
 
     return jsonResponse({ success: true });
   } catch (error) {
