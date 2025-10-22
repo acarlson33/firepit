@@ -57,6 +57,16 @@ const nextConfig: NextConfig = {
         hostname: "nyc.cloud.appwrite.io",
         pathname: "/v1/storage/buckets/avatars/files/**",
       },
+      {
+        protocol: "https",
+        hostname: "nyc.cloud.appwrite.io",
+        pathname: "/v1/storage/buckets/emojis/files/**",
+      },
+      {
+        protocol: "https",
+        hostname: "nyc.cloud.appwrite.io",
+        pathname: "/v1/storage/buckets/images/files/**",
+      },
     ],
     formats: ["image/avif", "image/webp"],
   },

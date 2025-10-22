@@ -218,6 +218,7 @@ export function EmojiPicker({
                           src={emoji.url}
                           alt={emoji.name}
                           className="size-6 object-contain"
+                          crossOrigin="anonymous"
                         />
                       </button>
                     ))}

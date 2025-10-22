@@ -50,6 +50,7 @@ export const EmojiRenderer = memo(function EmojiRenderer({
           title={`:${emojiName}:`}
           className="inline-block size-5 align-middle"
           loading="lazy"
+          crossOrigin="anonymous"
         />
       );
     } else {
