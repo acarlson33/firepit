@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Generate URL for the emoji
-    const emojiUrl = `${env.endpoint}/storage/buckets/${env.buckets.emojis}/files/${uploadedFile.$id}/view?project=${env.project}`;
+    const emojiUrl = `/api/emoji/${uploadedFile.$id}`;
 
     return jsonResponse({
       fileId: uploadedFile.$id,

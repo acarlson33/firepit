@@ -30,7 +30,7 @@ export async function GET() {
       
       return {
         fileId: file.$id,
-        url: `${env.endpoint}/storage/buckets/${env.buckets.emojis}/files/${file.$id}/view?project=${env.project}`,
+        url: `/api/emoji/${file.$id}`,
         name: emojiName,
       };
     });

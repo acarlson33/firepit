@@ -42,19 +42,14 @@ describe("Upload Emoji API - Validation Logic", () => {
 	});
 
 	it("should generate correct emoji URL format", () => {
-		const endpoint = "https://cloud.appwrite.io/v1";
-		const projectId = "test-project";
-		const bucketId = "emojis";
 		const fileId = "test-file-123";
 
-		const expectedUrl = `${endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${projectId}`;
-		const generatedUrl = `${endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${projectId}`;
+		const expectedUrl = `/api/emoji/${fileId}`;
+		const generatedUrl = `/api/emoji/${fileId}`;
 
 		expect(generatedUrl).toBe(expectedUrl);
-		expect(generatedUrl).toContain(endpoint);
-		expect(generatedUrl).toContain(bucketId);
+		expect(generatedUrl).toContain("/api/emoji/");
 		expect(generatedUrl).toContain(fileId);
-		expect(generatedUrl).toContain(projectId);
 	});
 
 	it("should extract emoji name from file name", () => {
