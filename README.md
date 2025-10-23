@@ -16,6 +16,7 @@ The original idea was for an open source "extension" of sorts to discord, since 
 ## Codebase Features
 
 - **Real-time Chat** - WebSocket-based messaging with typing indicators
+- **Message Replies** - Reply to specific messages to maintain conversation context
 - **Server & Channels** - Discord-like server organization with multiple channels
 - **Direct Messages** - Private conversations between users
 - **User Status** - Online/offline presence with custom status messages
@@ -28,7 +29,7 @@ The original idea was for an open source "extension" of sorts to discord, since 
 - **TailwindCSS** - Modern, responsive UI design
 - **shadcn/ui** - High-quality, accessible UI components
 - **PWA Ready** - Progressive Web App support for mobile installation
-- **Comprehensive Tests** - 385+ tests with 100% pass rate and growing coverage
+- **Comprehensive Tests** - 475+ tests with 100% pass rate and growing coverage
 
 ## 📋 Prerequisites
 
@@ -73,6 +74,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your application.
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
 - **[EMOJI_FEATURE.md](./EMOJI_FEATURE.md)** - Emoji and custom emoji feature documentation
 - **[IMAGE_UPLOAD_FEATURE.md](./IMAGE_UPLOAD_FEATURE.md)** - Image upload feature documentation
+- **[MESSAGE_REPLY_FEATURE.md](./MESSAGE_REPLY_FEATURE.md)** - Message reply feature documentation
 
 ## 🗂️ Project Structure
 
@@ -158,7 +160,7 @@ bun run test --watch
 
 Current test coverage: **22.36%** statements (growing)
 
-- 221+ tests passing
+- 475+ tests passing
 - Focus on security-critical modules (auth, roles, moderation)
 
 ## 📦 Deployment
