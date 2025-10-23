@@ -178,9 +178,9 @@ export function DirectMessageView({
 	}, []);
 
 	return (
-		<div className="flex h-full flex-col">
+		<div className="space-y-4">
 			{/* Header */}
-			<div className="flex items-center gap-3 border-border border-b bg-background p-3">
+			<div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
 				{onBack && (
 					<Button onClick={onBack} size="sm" variant="ghost">
 						<ArrowLeft className="size-4" />
@@ -213,7 +213,7 @@ export function DirectMessageView({
 			</div>
 
 			{/* Messages */}
-			<div className="flex-1 space-y-3 overflow-y-auto p-4">
+			<div className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner">
 				{loading ? (
 					<div className="space-y-3">
 						{Array.from({ length: 5 }).map((_, i) => (
@@ -396,10 +396,10 @@ export function DirectMessageView({
 			</div>
 
 			{/* Input */}
-			<div className="border-border border-t bg-background p-3">
+			<div className="space-y-3">
 				{editingMessageId && (
-					<div className="mb-2 flex items-center justify-between rounded-md bg-blue-50 px-3 py-2 dark:bg-blue-950/20">
-						<span className="text-blue-600 text-sm dark:text-blue-400">
+					<div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
+						<span className="text-blue-700 dark:text-blue-300">
 							Editing message
 						</span>
 						<Button onClick={cancelEdit} size="sm" variant="ghost">
@@ -425,7 +425,7 @@ export function DirectMessageView({
 						</Button>
 					</div>
 				)}
-				<form className="flex items-start gap-2" onSubmit={handleSend}>
+				<form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSend}>
 					<input
 						accept="image/*"
 						className="hidden"
@@ -439,7 +439,7 @@ export function DirectMessageView({
 						size="icon"
 						type="button"
 						variant="outline"
-						className="mt-1.5 shrink-0"
+						className="shrink-0"
 					>
 						<ImageIcon className="size-4" />
 					</Button>
@@ -461,7 +461,7 @@ export function DirectMessageView({
 						}}
 						placeholder="Type a message..."
 						value={text}
-						className="max-h-32 min-h-[60px] resize-none overflow-y-auto"
+						className="flex-1 max-h-32 min-h-[60px] resize-none overflow-y-auto rounded-2xl border-border/60"
 						rows={2}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && !e.shiftKey) {
@@ -476,7 +476,7 @@ export function DirectMessageView({
 					<Button 
 						disabled={sending || uploadingImage || (!text.trim() && !selectedImage)} 
 						type="submit" 
-						className="mt-1.5 shrink-0"
+						className="rounded-2xl shrink-0"
 					>
 						{sending || uploadingImage ? (
 							<>
