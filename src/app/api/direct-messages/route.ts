@@ -202,6 +202,7 @@ export async function GET(request: NextRequest) {
         editedAt: (doc.editedAt as string | undefined),
         removedAt: (doc.removedAt as string | undefined),
         removedBy: (doc.removedBy as string | undefined),
+        replyToId: (doc.replyToId as string | undefined),
       }));
 
       const last = items.at(-1);
@@ -241,9 +242,10 @@ export async function POST(request: NextRequest) {
       text: string;
       imageFileId?: string;
       imageUrl?: string;
+      replyToId?: string;
     };
 
-    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl } = body;
+    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, replyToId } = body;
 
     // Validate sender is the authenticated user
     if (senderId !== session.$id) {
@@ -291,6 +293,10 @@ export async function POST(request: NextRequest) {
     if (imageUrl) {
       messageData.imageUrl = imageUrl;
     }
+    // Add reply field if provided
+    if (replyToId) {
+      messageData.replyToId = replyToId;
+    }
 
     const message = await databases.createDocument(
       DATABASE_ID,
@@ -324,6 +330,7 @@ export async function POST(request: NextRequest) {
         imageFileId: message.imageFileId,
         imageUrl: message.imageUrl,
         $createdAt: message.$createdAt,
+        replyToId: message.replyToId,
       },
     });
   } catch (error) {

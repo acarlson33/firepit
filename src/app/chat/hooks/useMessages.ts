@@ -31,6 +31,7 @@ export function useMessages({
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [text, setText] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [typingUsers, setTypingUsers] = useState<
     Record<string, { userId: string; userName?: string; updatedAt: string }>
   >({});
@@ -112,6 +113,7 @@ export function useMessages({
             removedBy: p.removedBy as string | undefined,
             imageFileId: p.imageFileId as string | undefined,
             imageUrl: p.imageUrl as string | undefined,
+            replyToId: p.replyToId as string | undefined,
           } as Message;
         }
         function includeMessage(base: { channelId?: string }) {
@@ -125,13 +127,15 @@ export function useMessages({
         }
         async function applyCreate(base: Message) {
           // Enrich message with profile data before adding to state
-          const { enrichMessageWithProfile } = await import("@/lib/enrich-messages");
-          const enriched = await enrichMessageWithProfile(base);
+          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
+          const profileEnriched = await enrichMessageWithProfile(base);
           setMessages((prev) => {
             // Check if message already exists to prevent duplicates
-            if (prev.some((m) => m.$id === enriched.$id)) {
+            if (prev.some((m) => m.$id === profileEnriched.$id)) {
               return prev;
             }
+            // Enrich with reply context using existing messages
+            const enriched = enrichMessageWithReplyContext(profileEnriched, prev);
             return [...prev, enriched].sort((a, b) =>
               a.$createdAt.localeCompare(b.$createdAt)
             );
@@ -139,11 +143,13 @@ export function useMessages({
         }
         async function applyUpdate(base: Message) {
           // Enrich message with profile data before updating state
-          const { enrichMessageWithProfile } = await import("@/lib/enrich-messages");
-          const enriched = await enrichMessageWithProfile(base);
-          setMessages((prev) =>
-            prev.map((m) => (m.$id === enriched.$id ? { ...m, ...enriched } : m))
-          );
+          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
+          const profileEnriched = await enrichMessageWithProfile(base);
+          setMessages((prev) => {
+            // Enrich with reply context using existing messages
+            const enriched = enrichMessageWithReplyContext(profileEnriched, prev);
+            return prev.map((m) => (m.$id === enriched.$id ? { ...m, ...enriched } : m));
+          });
         }
         function applyDelete(base: Message) {
           setMessages((prev) => prev.filter((m) => m.$id !== base.$id));
@@ -332,6 +338,14 @@ export function useMessages({
     setEditingMessageId(null);
   }
 
+  function startReply(m: Message) {
+    setReplyingToMessage(m);
+  }
+
+  function cancelReply() {
+    setReplyingToMessage(null);
+  }
+
   async function applyEdit(target: Message) {
     try {
       const response = await fetch(`/api/messages?id=${target.$id}`, {
@@ -461,6 +475,8 @@ export function useMessages({
     }
     try {
       setText("");
+      const replyToId = replyingToMessage?.$id;
+      setReplyingToMessage(null);
       const response = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -470,6 +486,7 @@ export function useMessages({
           serverId: serverId || undefined,
           imageFileId,
           imageUrl,
+          replyToId,
         }),
       });
 
@@ -508,6 +525,7 @@ export function useMessages({
     hasMore,
     text,
     editingMessageId,
+    replyingToMessage,
     typingUsers,
     setTypingUsers,
     listRef,
@@ -515,6 +533,8 @@ export function useMessages({
     shouldShowLoadOlder,
     startEdit,
     cancelEdit,
+    startReply,
+    cancelReply,
     applyEdit,
     remove,
     onChangeText,

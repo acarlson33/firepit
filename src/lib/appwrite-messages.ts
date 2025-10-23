@@ -81,6 +81,7 @@ function coerceMessage(raw: unknown): Message | null {
     removedAt: typeof d.removedAt === "string" ? d.removedAt : undefined,
     removedBy: typeof d.removedBy === "string" ? d.removedBy : undefined,
     serverId: typeof d.serverId === "string" ? d.serverId : undefined,
+    replyToId: typeof d.replyToId === "string" ? d.replyToId : undefined,
   };
 }
 
@@ -90,10 +91,11 @@ type SendMessageInput = {
   userName?: string;
   channelId?: string;
   serverId?: string;
+  replyToId?: string;
 };
 
 export async function sendMessage(input: SendMessageInput): Promise<Message> {
-  const { userId, text, userName, channelId, serverId } = input;
+  const { userId, text, userName, channelId, serverId, replyToId } = input;
   // Import Permission and Role from appwrite for client SDK
   const { Permission, Role } = await import("appwrite");
   const permissions = [
@@ -105,7 +107,7 @@ export async function sendMessage(input: SendMessageInput): Promise<Message> {
     databaseId: DATABASE_ID,
     collectionId: COLLECTION_ID,
     documentId: ID.unique(),
-    data: { userId, text, userName, channelId, serverId },
+    data: { userId, text, userName, channelId, serverId, replyToId },
     permissions,
   });
   const doc = res as unknown as Record<string, unknown>;
@@ -119,6 +121,7 @@ export async function sendMessage(input: SendMessageInput): Promise<Message> {
     removedAt: doc.removedAt as string | undefined,
     removedBy: doc.removedBy as string | undefined,
     serverId: doc.serverId as string | undefined,
+    replyToId: doc.replyToId as string | undefined,
   };
 }
 

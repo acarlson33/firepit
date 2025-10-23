@@ -108,11 +108,14 @@ export default function ChatPage() {
     messages,
     text,
     editingMessageId,
+    replyingToMessage,
     typingUsers,
     loadOlder,
     shouldShowLoadOlder,
     startEdit,
     cancelEdit,
+    startReply,
+    cancelReply,
     applyEdit,
     remove: removeMessage,
     onChangeText,
@@ -420,6 +423,16 @@ export default function ChatPage() {
                     </span>
                   )}
                 </div>
+                {m.replyTo && (
+                  <div className="rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs">
+                    <div className="font-medium text-muted-foreground">
+                      Replying to {m.replyTo.displayName || m.replyTo.userName || "Unknown"}
+                    </div>
+                    <div className="line-clamp-1 text-muted-foreground/80">
+                      {m.replyTo.text}
+                    </div>
+                  </div>
+                )}
                 <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
                   <div className="max-w-full flex-1 wrap-break-word space-y-2">
                     {m.imageUrl && !removed && (
@@ -467,7 +480,7 @@ export default function ChatPage() {
                       </div>
                     )}
                   </div>
-                  {mine && !removed && (
+                  {!removed && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild disabled={isDeleting}>
                         <Button
@@ -481,25 +494,32 @@ export default function ChatPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startEdit(m)}>
-                          Edit
+                        <DropdownMenuItem onClick={() => startReply(m)}>
+                          Reply
                         </DropdownMenuItem>
-                        {isEditing && (
+                        {mine && (
                           <>
-                            <DropdownMenuItem onClick={() => applyEdit(m)}>
-                              Save Changes
+                            <DropdownMenuItem onClick={() => startEdit(m)}>
+                              Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={cancelEdit}>
-                              Cancel Edit
+                            {isEditing && (
+                              <>
+                                <DropdownMenuItem onClick={() => applyEdit(m)}>
+                                  Save Changes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={cancelEdit}>
+                                  Cancel Edit
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => confirmDelete(m.$id)}
+                            >
+                              Delete
                             </DropdownMenuItem>
                           </>
                         )}
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => confirmDelete(m.$id)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
@@ -684,6 +704,26 @@ export default function ChatPage() {
             <>
               {renderMessages()}
               <div className="space-y-3">
+                {replyingToMessage && (
+                  <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+                    <div className="flex-1">
+                      <div className="font-medium">
+                        Replying to {replyingToMessage.displayName || replyingToMessage.userName || "Unknown"}
+                      </div>
+                      <div className="line-clamp-1 text-xs text-muted-foreground">
+                        {replyingToMessage.text}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={cancelReply}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
                 {editingMessageId && (
                   <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
                     <span className="text-blue-700 dark:text-blue-300">
