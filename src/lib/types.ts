@@ -17,11 +17,18 @@ export type Message = {
   removedBy?: string;
   imageFileId?: string;
   imageUrl?: string;
+  replyToId?: string; // ID of the message this is replying to
   // Profile information (enriched from profiles collection)
   displayName?: string;
   pronouns?: string;
   avatarFileId?: string;
   avatarUrl?: string;
+  // Reply context (enriched from parent message)
+  replyTo?: {
+    text: string;
+    userName?: string;
+    displayName?: string;
+  };
 };
 
 export type Server = {
@@ -83,10 +90,16 @@ export type DirectMessage = {
   editedAt?: string;
   removedAt?: string;
   removedBy?: string;
+  replyToId?: string; // ID of the message this is replying to
   // Enriched profile data
   senderDisplayName?: string;
   senderAvatarUrl?: string;
   senderPronouns?: string;
+  // Reply context (enriched from parent message)
+  replyTo?: {
+    text: string;
+    senderDisplayName?: string;
+  };
 };
 
 export type UserStatus = {

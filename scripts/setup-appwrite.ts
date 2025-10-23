@@ -347,6 +347,7 @@ async function setupMessages() {
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
 		["removedBy", LEN_ID, false],
+		["replyToId", LEN_ID, false],
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("messages", k, size, req);
@@ -356,6 +357,7 @@ async function setupMessages() {
 	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
 	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
 	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
+	await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
 	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
@@ -475,6 +477,7 @@ async function setupDirectMessages() {
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
 		["removedBy", LEN_ID, false],
+		["replyToId", LEN_ID, false],
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("direct_messages", k, size, req);
@@ -483,6 +486,7 @@ async function setupDirectMessages() {
 	await ensureIndex("direct_messages", "idx_conversationId", "key", ["conversationId"]);
 	await ensureIndex("direct_messages", "idx_senderId", "key", ["senderId"]);
 	await ensureIndex("direct_messages", "idx_receiverId", "key", ["receiverId"]);
+	await ensureIndex("direct_messages", "idx_replyToId", "key", ["replyToId"]);
 }
 
 async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {

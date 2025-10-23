@@ -174,7 +174,8 @@ export async function sendDirectMessage(
   receiverId: string,
   text: string,
   imageFileId?: string,
-  imageUrl?: string
+  imageUrl?: string,
+  replyToId?: string
 ): Promise<DirectMessage> {
   const response = await fetch("/api/direct-messages", {
     method: "POST",
@@ -188,6 +189,7 @@ export async function sendDirectMessage(
       text,
       imageFileId,
       imageUrl,
+      replyToId,
     }),
   });
 
@@ -292,14 +294,31 @@ export async function listDirectMessages(
   const senderIds = [...new Set(items.map((msg) => msg.senderId))];
   const profileMap = await fetchUserProfilesBatchAPI(senderIds);
 
-  // Enrich messages with profile data (synchronously, since we already have the data)
+  // Build a message map for reply context lookup
+  const messagesById = new Map(items.map((m) => [m.$id, m]));
+
+  // Enrich messages with profile data and reply context
   const enriched = items.map((msg) => {
     const profile = profileMap.get(msg.senderId);
-    return {
+    const enrichedMsg: DirectMessage = {
       ...msg,
       senderDisplayName: profile?.displayName,
       senderAvatarUrl: profile?.avatarUrl,
     };
+
+    // Add reply context if this message is a reply
+    if (msg.replyToId) {
+      const parentMessage = messagesById.get(msg.replyToId);
+      if (parentMessage) {
+        const parentProfile = profileMap.get(parentMessage.senderId);
+        enrichedMsg.replyTo = {
+          text: parentMessage.text,
+          senderDisplayName: parentProfile?.displayName,
+        };
+      }
+    }
+
+    return enrichedMsg;
   });
 
   return {

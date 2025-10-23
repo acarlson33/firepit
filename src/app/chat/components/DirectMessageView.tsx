@@ -28,7 +28,7 @@ type DirectMessageViewProps = {
 	loading: boolean;
 	sending: boolean;
 	currentUserId: string;
-	onSend: (text: string, imageFileId?: string, imageUrl?: string) => Promise<void>;
+	onSend: (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string) => Promise<void>;
 	onEdit: (messageId: string, newText: string) => Promise<void>;
 	onDelete: (messageId: string) => Promise<void>;
 	onBack?: () => void;
@@ -51,6 +51,7 @@ export function DirectMessageView({
 }: DirectMessageViewProps) {
 	const [text, setText] = useState("");
 	const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+	const [replyingToMessage, setReplyingToMessage] = useState<DirectMessage | null>(null);
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 	const [selectedImage, setSelectedImage] = useState<File | null>(null);
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export function DirectMessageView({
 		}
 
 		const messageText = text;
+		const replyToId = replyingToMessage?.$id;
 		let imageFileId: string | undefined;
 		let imageUrl: string | undefined;
 
@@ -100,13 +102,14 @@ export function DirectMessageView({
 		setText("");
 		setSelectedImage(null);
 		setImagePreview(null);
+		setReplyingToMessage(null);
 
 		try {
 			if (editingMessageId) {
 				await onEdit(editingMessageId, messageText);
 				setEditingMessageId(null);
 			} else {
-				await onSend(messageText, imageFileId, imageUrl);
+				await onSend(messageText, imageFileId, imageUrl, replyToId);
 			}
 		} catch (error) {
 			// Re-set text on error so user can retry
@@ -117,11 +120,21 @@ export function DirectMessageView({
 	const startEdit = (message: DirectMessage) => {
 		setEditingMessageId(message.$id);
 		setText(message.text);
+		setReplyingToMessage(null);
 	};
 
 	const cancelEdit = () => {
 		setEditingMessageId(null);
 		setText("");
+	};
+
+	const startReply = (message: DirectMessage) => {
+		setReplyingToMessage(message);
+		setEditingMessageId(null);
+	};
+
+	const cancelReply = () => {
+		setReplyingToMessage(null);
 	};
 
 	const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,6 +293,16 @@ export function DirectMessageView({
 											</span>
 										)}
 									</div>
+									{message.replyTo && (
+										<div className="mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs">
+											<div className="font-medium text-muted-foreground">
+												Replying to {message.replyTo.senderDisplayName || "Unknown"}
+											</div>
+											<div className="line-clamp-1 text-muted-foreground/80">
+												{message.replyTo.text}
+											</div>
+										</div>
+									)}
 									<div className="flex items-start gap-2">
 										<div className="flex-1 wrap-break-word space-y-2">
 											{message.imageUrl && !removed && (
@@ -320,7 +343,7 @@ export function DirectMessageView({
 												<p><EmojiRenderer text={message.text} customEmojis={customEmojis} /></p>
 											) : null}
 										</div>
-										{isMine && !removed && (
+										{!removed && (
 											<DropdownMenu>
 												<DropdownMenuTrigger asChild disabled={isDeleting}>
 													<Button
@@ -334,22 +357,29 @@ export function DirectMessageView({
 													</Button>
 												</DropdownMenuTrigger>
 												<DropdownMenuContent align="end">
-													<DropdownMenuItem onClick={() => startEdit(message)}>
-														Edit
+													<DropdownMenuItem onClick={() => startReply(message)}>
+														Reply
 													</DropdownMenuItem>
-													{isEditing && (
+													{isMine && (
 														<>
-															<DropdownMenuItem onClick={cancelEdit}>
-																Cancel Edit
+															<DropdownMenuItem onClick={() => startEdit(message)}>
+																Edit
+															</DropdownMenuItem>
+															{isEditing && (
+																<>
+																	<DropdownMenuItem onClick={cancelEdit}>
+																		Cancel Edit
+																	</DropdownMenuItem>
+																</>
+															)}
+															<DropdownMenuItem
+																className="text-destructive"
+																onClick={() => confirmDelete(message.$id)}
+															>
+																Delete
 															</DropdownMenuItem>
 														</>
 													)}
-													<DropdownMenuItem
-														className="text-destructive"
-														onClick={() => confirmDelete(message.$id)}
-													>
-														Delete
-													</DropdownMenuItem>
 												</DropdownMenuContent>
 											</DropdownMenu>
 										)}
@@ -397,6 +427,21 @@ export function DirectMessageView({
 
 			{/* Input */}
 			<div className="space-y-3">
+				{replyingToMessage && (
+					<div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+						<div className="flex-1">
+							<div className="font-medium">
+								Replying to {replyingToMessage.senderDisplayName || "Unknown"}
+							</div>
+							<div className="line-clamp-1 text-xs text-muted-foreground">
+								{replyingToMessage.text}
+							</div>
+						</div>
+						<Button onClick={cancelReply} size="sm" variant="ghost">
+							Cancel
+						</Button>
+					</div>
+				)}
 				{editingMessageId && (
 					<div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
 						<span className="text-blue-700 dark:text-blue-300">

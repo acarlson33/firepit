@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
 		const env = getEnvConfig();
 		const body = await request.json();
-		const { text, channelId, serverId, imageFileId, imageUrl } = body;
+		const { text, channelId, serverId, imageFileId, imageUrl, replyToId } = body;
 
 		if ((!text && !imageFileId) || !channelId) {
 			return NextResponse.json(
@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
 		if (imageUrl) {
 			messageData.imageUrl = imageUrl;
 		}
+		// Add reply field if provided
+		if (replyToId) {
+			messageData.replyToId = replyToId;
+		}
 
 		const res = await databases.createDocument(
 			env.databaseId,
@@ -81,6 +85,7 @@ export async function POST(request: NextRequest) {
 			serverId: doc.serverId as string | undefined,
 			imageFileId: doc.imageFileId as string | undefined,
 			imageUrl: doc.imageUrl as string | undefined,
+			replyToId: doc.replyToId as string | undefined,
 		};
 
 		return NextResponse.json({ message });
@@ -147,6 +152,7 @@ export async function PATCH(request: NextRequest) {
 			serverId: doc.serverId as string | undefined,
 			imageFileId: doc.imageFileId as string | undefined,
 			imageUrl: doc.imageUrl as string | undefined,
+			replyToId: doc.replyToId as string | undefined,
 		};
 
 		return NextResponse.json({ message });

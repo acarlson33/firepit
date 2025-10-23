@@ -125,7 +125,7 @@ export function useDirectMessages({
 	}, [conversationId]);
 
 	const send = useCallback(
-		async (text: string, imageFileId?: string, imageUrl?: string) => {
+		async (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string) => {
 			if (!conversationId || !userId || !receiverId) {
 				return;
 			}
@@ -143,7 +143,8 @@ export function useDirectMessages({
 					receiverId,
 					text.trim() || "",
 					imageFileId,
-					imageUrl
+					imageUrl,
+					replyToId
 				);
 				await loadMessages();
 			} catch (err) {
