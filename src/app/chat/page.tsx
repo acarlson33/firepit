@@ -30,6 +30,7 @@ import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { EmojiRenderer } from "@/components/emoji-renderer";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { apiCache } from "@/lib/cache-utils";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -642,6 +643,11 @@ export default function ChatPage() {
                 userId={userId}
                 joinedServerIds={serversApi.servers.map((s) => s.$id)}
                 onServerJoined={() => {
+                  // Clear membership cache to ensure fresh data after reload
+                  if (userId) {
+                    apiCache.clear(`memberships:${userId}`);
+                    apiCache.clear(`servers:initial:${userId}`);
+                  }
                   // Reload the page to refresh server list
                   window.location.reload();
                 }}
