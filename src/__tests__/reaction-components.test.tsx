@@ -390,6 +390,65 @@ describe("Edge Cases", () => {
 		expect(button).toBeDisabled();
 	});
 
+	it("should render custom emoji reactions properly", () => {
+		const customEmojis = [
+			{
+				fileId: "file123",
+				url: "https://example.com/emoji1.png",
+				name: "party-parrot",
+			},
+		];
+
+		const reaction = {
+			emoji: ":party-parrot:",
+			userIds: ["user1"],
+			count: 1,
+		};
+
+		render(
+			<ReactionButton
+				reaction={reaction}
+				currentUserId="user2"
+				onToggle={vi.fn()}
+				customEmojis={customEmojis}
+			/>
+		);
+
+		const img = screen.getByRole("img");
+		expect(img).toHaveAttribute("src", "https://example.com/emoji1.png");
+		expect(img).toHaveAttribute("alt", ":party-parrot:");
+		expect(screen.getByText("1")).toBeInTheDocument();
+	});
+
+	it("should render fallback for unknown custom emoji", () => {
+		const customEmojis = [
+			{
+				fileId: "file123",
+				url: "https://example.com/emoji1.png",
+				name: "party-parrot",
+			},
+		];
+
+		const reaction = {
+			emoji: ":unknown-emoji:",
+			userIds: ["user1"],
+			count: 1,
+		};
+
+		render(
+			<ReactionButton
+				reaction={reaction}
+				currentUserId="user2"
+				onToggle={vi.fn()}
+				customEmojis={customEmojis}
+			/>
+		);
+
+		// Should show the raw emoji string if not found
+		expect(screen.getByText(":unknown-emoji:")).toBeInTheDocument();
+		expect(screen.getByText("1")).toBeInTheDocument();
+	});
+
 	it("should not error when rendering components", () => {
 		const reaction = {
 			emoji: "👍",

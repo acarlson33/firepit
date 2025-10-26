@@ -10,12 +10,20 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+type CustomEmoji = {
+	fileId: string;
+	url: string;
+	name: string;
+};
+
 type ReactionPickerProps = {
 	onSelectEmoji: (emoji: string) => Promise<void>;
 	disabled?: boolean;
+	customEmojis?: CustomEmoji[];
+	onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
 };
 
-export function ReactionPicker({ onSelectEmoji, disabled }: ReactionPickerProps) {
+export function ReactionPicker({ onSelectEmoji, disabled, customEmojis, onUploadCustomEmoji }: ReactionPickerProps) {
 	const [open, setOpen] = useState(false);
 	const [loading, setLoading] = useState(false);
 
@@ -51,6 +59,8 @@ export function ReactionPicker({ onSelectEmoji, disabled }: ReactionPickerProps)
 			>
 				<EmojiPicker
 					onEmojiSelect={(emoji) => void handleEmojiSelect(emoji)}
+					customEmojis={customEmojis}
+					onUploadCustomEmoji={onUploadCustomEmoji}
 				/>
 			</DropdownMenuContent>
 		</DropdownMenu>

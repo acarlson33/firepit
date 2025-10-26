@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 		}));
 
 		return NextResponse.json({ users });
-	} catch (error) {
+	} catch {
 		return NextResponse.json(
 			{ error: "Failed to search users" },
 			{ status: 500 },

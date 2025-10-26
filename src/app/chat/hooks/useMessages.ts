@@ -10,6 +10,7 @@ import {
 import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Message } from "@/lib/types";
+import { parseReactions } from "@/lib/reactions-utils";
 
 const env = getEnvConfig();
 
@@ -114,6 +115,7 @@ export function useMessages({
             imageFileId: p.imageFileId as string | undefined,
             imageUrl: p.imageUrl as string | undefined,
             replyToId: p.replyToId as string | undefined,
+            reactions: parseReactions(p.reactions as string | undefined),
           } as Message;
         }
         function includeMessage(base: { channelId?: string }) {

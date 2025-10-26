@@ -38,7 +38,7 @@ export function StartDMButton({ targetUserId, displayName }: StartDMButtonProps)
 			
 			// Navigate to chat page with DM view
 			router.push(`/chat?dm=${conversation.$id}`);
-		} catch (err) {
+		} catch {
 			toast.error("Failed to start conversation");
 		} finally {
 			setLoading(false);

@@ -24,7 +24,6 @@ import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
-import { useActivityTracking } from "./hooks/useActivityTracking";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { ImageViewer } from "@/components/image-viewer";
@@ -51,8 +50,8 @@ export default function ChatPage() {
   const userId = userData?.userId ?? null;
   const userName = userData?.name ?? null;
   
-  // Auto track activity and update status
-  useActivityTracking({ userId });
+  // Automatic status tracking removed to preserve manual status settings
+  // Users can manually set their status via the profile/settings UI
   const membershipEnabled = Boolean(
     process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
   );
@@ -73,6 +72,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Custom emojis
@@ -129,8 +129,11 @@ export default function ChatPage() {
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (messagesContainerRef.current) {
+      // Scroll the container, not the entire page
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages.length]); // Only scroll when message count changes, not on every update
 
   // DM hooks
   const conversationsApi = useConversations(userId);
@@ -370,6 +373,7 @@ export default function ChatPage() {
     }
     return (
       <div
+        ref={messagesContainerRef}
         aria-live="polite"
         className="h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
       >
@@ -540,6 +544,7 @@ export default function ChatPage() {
                         key={reaction.emoji}
                         currentUserId={userId}
                         reaction={reaction}
+                        customEmojis={customEmojis}
                         onToggle={async (emoji, isAdding) => {
                           try {
                             await toggleReaction(m.$id, emoji, isAdding, false);
@@ -555,6 +560,8 @@ export default function ChatPage() {
                   <div className="flex items-center gap-1 pt-1">
                     <ReactionPicker
                       disabled={!userId}
+                      customEmojis={customEmojis}
+                      onUploadCustomEmoji={uploadEmoji}
                       onSelectEmoji={async (emoji) => {
                         try {
                           await toggleReaction(m.$id, emoji, true, false);
@@ -821,6 +828,7 @@ export default function ChatPage() {
                   <>
                     {imagePreview && (
                       <div className="relative inline-block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           alt="Upload preview"
                           className="h-32 rounded-lg object-cover"

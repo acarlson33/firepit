@@ -13,15 +13,13 @@ export default function NotFound() {
 					<div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
 				</div>
 
-				{/* Message */}
-				<div className="mb-8 space-y-3">
-					<h2 className="font-semibold text-3xl">Page Not Found</h2>
-					<p className="mx-auto max-w-md text-muted-foreground">
-						The page you're looking for doesn't exist or has been moved.
-					</p>
-				</div>
-
-				{/* Action Buttons */}
+			{/* Message */}
+			<div className="mb-8 space-y-3">
+				<h2 className="font-semibold text-3xl">Page Not Found</h2>
+				<p className="mx-auto max-w-md text-muted-foreground">
+					The page you&apos;re looking for doesn&apos;t exist or has been moved.
+				</p>
+			</div>				{/* Action Buttons */}
 				<div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
 					<Button asChild size="lg">
 						<Link href="/">

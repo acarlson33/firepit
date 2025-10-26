@@ -27,7 +27,7 @@ export function ConfirmDialog({ state, onCancel, onConfirm }: Props) {
           Confirm {state.type === "server" ? "Server" : "Channel"} Deletion
         </h3>
         <p className="text-muted-foreground text-xs">
-          Delete {state.type} "{state.name || state.id}"? This action cannot be
+          Delete {state.type} &quot;{state.name || state.id}&quot;? This action cannot be
           undone.
         </p>
         <div className="flex justify-end gap-2">

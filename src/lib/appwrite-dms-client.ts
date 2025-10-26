@@ -4,6 +4,7 @@
  */
 
 import type { Conversation, DirectMessage, UserProfileData } from "./types";
+import { parseReactions } from "./reactions-utils";
 
 /**
  * Upload an image to Appwrite Storage
@@ -304,6 +305,8 @@ export async function listDirectMessages(
       ...msg,
       senderDisplayName: profile?.displayName,
       senderAvatarUrl: profile?.avatarUrl,
+      // Parse reactions if they're a JSON string
+      reactions: parseReactions(msg.reactions),
     };
 
     // Add reply context if this message is a reply

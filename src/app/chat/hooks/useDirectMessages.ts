@@ -9,6 +9,7 @@ import {
 	deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
 import type { DirectMessage } from "@/lib/types";
+import { parseReactions } from "@/lib/reactions-utils";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
@@ -94,7 +95,10 @@ export function useDirectMessages({
 
 					// Only update if message belongs to this conversation
 					if (msgConversationId === conversationId) {
-						const messageData = payload as unknown as DirectMessage;
+						const messageData = {
+							...(payload as unknown as DirectMessage),
+							reactions: parseReactions((payload as Record<string, unknown>).reactions as string | undefined),
+						};
 						
 						// Handle different event types to avoid full reload
 						if (events.some((e) => e.endsWith(".create"))) {

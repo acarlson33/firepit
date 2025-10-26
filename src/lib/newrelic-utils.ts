@@ -6,26 +6,26 @@
  */
 
 type NewRelicAgent = {
-  recordCustomEvent: (eventType: string, attributes: Record<string, unknown>) => void;
-  recordMetric: (name: string, value: number) => void;
-  incrementMetric: (name: string, value?: number) => void;
-  noticeError: (error: Error | string, customAttributes?: Record<string, unknown>) => void;
-  addCustomAttribute: (key: string, value: string | number | boolean) => void;
-  addCustomAttributes: (attributes: Record<string, string | number | boolean>) => void;
-  setTransactionName: (name: string) => void;
+  recordCustomEvent: (_eventType: string, _attributes: Record<string, unknown>) => void;
+  recordMetric: (_name: string, _value: number) => void;
+  incrementMetric: (_name: string, _value?: number) => void;
+  noticeError: (_error: Error | string, _customAttributes?: Record<string, unknown>) => void;
+  addCustomAttribute: (_key: string, _value: string | number | boolean) => void;
+  addCustomAttributes: (_attributes: Record<string, string | number | boolean>) => void;
+  setTransactionName: (_name: string) => void;
   getTransaction: () => Transaction | null;
-  startBackgroundTransaction: (name: string, group: string | null, handle: () => void) => void;
-  startWebTransaction: (url: string, handle: () => void) => void;
+  startBackgroundTransaction: (_name: string, _group: string | null, _handle: () => void) => void;
+  startWebTransaction: (_url: string, _handle: () => void) => void;
   endTransaction: () => void;
   getBrowserTimingHeader: () => string;
-  setLlmTokenCountCallback: (callback: (model: string, content: string) => number) => void;
+  setLlmTokenCountCallback: (_callback: (_model: string, _content: string) => number) => void;
 };
 
 type Transaction = {
   end: () => void;
   ignore: () => void;
-  acceptDistributedTraceHeaders: (transportType: string, headers: Record<string, string>) => void;
-  insertDistributedTraceHeaders: (headers: Record<string, string>) => void;
+  acceptDistributedTraceHeaders: (_transportType: string, _headers: Record<string, string>) => void;
+  insertDistributedTraceHeaders: (_headers: Record<string, string>) => void;
 };
 
 let newrelic: NewRelicAgent | null = null;
@@ -74,18 +74,20 @@ export function getNewRelicSync(): NewRelicAgent | null {
 /**
  * Log levels for structured logging
  */
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-}
+export const LogLevel = {
+  DEBUG: 'debug',
+  INFO: 'info',
+  WARN: 'warn',
+  ERROR: 'error',
+} as const;
+
+export type LogLevelType = typeof LogLevel[keyof typeof LogLevel];
 
 /**
- * Structured log entry
+ * Structured log entry (for internal use)
  */
-type LogEntry = {
-  level: LogLevel;
+type _LogEntry = {
+  level: LogLevelType;
   message: string;
   timestamp: string;
   attributes?: Record<string, unknown>;
@@ -95,12 +97,12 @@ type LogEntry = {
  * Log a message with New Relic
  * In production, this forwards to New Relic. In development, it also logs to console.
  */
-export function log(level: LogLevel, message: string, attributes?: Record<string, unknown>) {
+export function log(level: LogLevelType, message: string, attributes?: Record<string, unknown>) {
   // Console logging (development and as fallback)
   if (process.env.NODE_ENV !== 'production') {
     const consoleMethod = level === LogLevel.ERROR ? 'error' : 
                          level === LogLevel.WARN ? 'warn' : 'log';
-    console[consoleMethod](`[${level.toUpperCase()}]`, message, attributes || '');
+    console[consoleMethod](`[${String(level).toUpperCase()}]`, message, attributes || '');
   }
 
   // New Relic custom event

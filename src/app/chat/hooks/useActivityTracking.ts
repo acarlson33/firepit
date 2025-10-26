@@ -12,11 +12,18 @@ type UseActivityTrackingProps = {
 };
 
 /**
- * Hook to automatically track user activity and update status
- * - Sets status to "online" when active
- * - Sets status to "away" after 5 minutes of inactivity
- * - Updates lastSeen every 30 seconds
- * - Sets status to "offline" on unmount/logout
+ * Hook to track user activity and update status
+ * 
+ * NOTE: This hook is currently NOT in use to preserve manual status settings.
+ * Users can manually set their status via the profile/settings UI.
+ * 
+ * If enabled, this hook would:
+ * - Set status to "online" when active
+ * - Set status to "away" after 5 minutes of inactivity
+ * - Update lastSeen every 60 seconds
+ * - Set status to "offline" on unmount/logout
+ * 
+ * @deprecated Automatic status tracking disabled to preserve manual statuses
  */
 export function useActivityTracking({ userId, enabled = true }: UseActivityTrackingProps) {
 	const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);

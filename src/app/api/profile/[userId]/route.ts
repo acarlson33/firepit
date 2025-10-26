@@ -48,7 +48,7 @@ export async function GET(_request: Request, { params }: Props) {
 					}
 				: undefined,
 		});
-	} catch (error) {
+	} catch {
 		return NextResponse.json(
 			{ error: "Failed to fetch profile" },
 			{ status: 500 },

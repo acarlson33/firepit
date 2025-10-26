@@ -292,7 +292,7 @@ export async function PATCH(request: Request) {
 		}
 
 		return NextResponse.json({ success: true });
-	} catch (error) {
+	} catch {
 		return NextResponse.json(
 			{ error: "Failed to update last seen" },
 			{ status: 500 },

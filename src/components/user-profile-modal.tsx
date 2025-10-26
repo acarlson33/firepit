@@ -73,7 +73,7 @@ export function UserProfileModal({
 
 				const data = (await response.json()) as UserProfile;
 				setProfile(data);
-			} catch (err) {
+			} catch {
 				// Error already handled by setting error state
 				setError("Unable to load profile");
 			} finally {
@@ -104,7 +104,7 @@ export function UserProfileModal({
 			const conversation = await getOrCreateConversation(currentUserId, userId);
 			onStartDM(conversation.$id);
 			toast.success(`Started conversation with ${displayName}`);
-		} catch (err) {
+		} catch {
 			toast.error("Failed to start conversation");
 		} finally {
 			setStartingDM(false);

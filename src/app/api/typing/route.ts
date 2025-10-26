@@ -266,7 +266,7 @@ export async function DELETE(request: NextRequest) {
 			);
 
 			return NextResponse.json({ success: true });
-		} catch (error) {
+		} catch {
 			// Document might not exist, which is fine
 			return NextResponse.json({ success: true });
 		}

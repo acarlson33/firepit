@@ -31,12 +31,12 @@ type DirectMessageViewProps = {
 	loading: boolean;
 	sending: boolean;
 	currentUserId: string;
-	onSend: (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string) => Promise<void>;
-	onEdit: (messageId: string, newText: string) => Promise<void>;
-	onDelete: (messageId: string) => Promise<void>;
+	onSend: (_text: string, _imageFileId?: string, _imageUrl?: string, _replyToId?: string) => Promise<void>;
+	onEdit: (_messageId: string, _newText: string) => Promise<void>;
+	onDelete: (_messageId: string) => Promise<void>;
 	onBack?: () => void;
 	typingUsers?: Record<string, { userId: string; userName?: string; updatedAt: string }>;
-	onTypingChange?: (text: string) => void;
+	onTypingChange?: (_text: string) => void;
 };
 
 export function DirectMessageView({
@@ -61,6 +61,7 @@ export function DirectMessageView({
 	const [uploadingImage, setUploadingImage] = useState(false);
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const otherUser = conversation.otherUser;
@@ -72,8 +73,11 @@ export function DirectMessageView({
 
 	// Auto-scroll to bottom on new messages
 	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages]);
+		if (messagesContainerRef.current) {
+			// Scroll the container, not the entire page
+			messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+		}
+	}, [messages.length]); // Only scroll when message count changes, not on every update
 
 	const handleSend = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -103,24 +107,22 @@ export function DirectMessageView({
 		}
 
 		setText("");
-		setSelectedImage(null);
-		setImagePreview(null);
-		setReplyingToMessage(null);
+	setSelectedImage(null);
+	setImagePreview(null);
+	setReplyingToMessage(null);
 
-		try {
-			if (editingMessageId) {
-				await onEdit(editingMessageId, messageText);
-				setEditingMessageId(null);
-			} else {
-				await onSend(messageText, imageFileId, imageUrl, replyToId);
-			}
-		} catch (error) {
-			// Re-set text on error so user can retry
-			setText(messageText);
+	try {
+		if (editingMessageId) {
+			await onEdit(editingMessageId, messageText);
+			setEditingMessageId(null);
+		} else {
+			await onSend(messageText, imageFileId, imageUrl, replyToId);
 		}
-	};
-
-	const startEdit = (message: DirectMessage) => {
+	} catch {
+		// Re-set text on error so user can retry
+		setText(messageText);
+	}
+};	const startEdit = (message: DirectMessage) => {
 		setEditingMessageId(message.$id);
 		setText(message.text);
 		setReplyingToMessage(null);
@@ -229,7 +231,10 @@ export function DirectMessageView({
 			</div>
 
 			{/* Messages */}
-			<div className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner">
+			<div 
+				ref={messagesContainerRef}
+				className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+			>
 				{loading ? (
 					<div className="space-y-3">
 						{Array.from({ length: 5 }).map((_, i) => (
@@ -264,7 +269,7 @@ export function DirectMessageView({
 
 						return (
 							<div
-								className={`flex gap-3 ${
+								className={`group flex gap-3 ${
 									isEditing ? "rounded-lg bg-blue-50 p-2 ring-2 ring-blue-500/50 dark:bg-blue-950/20" : ""
 								}`}
 								key={message.$id}
@@ -394,6 +399,7 @@ export function DirectMessageView({
 													key={reaction.emoji}
 													currentUserId={currentUserId}
 													reaction={reaction}
+													customEmojis={customEmojis}
 													onToggle={async (emoji, isAdding) => {
 														try {
 															await toggleReaction(message.$id, emoji, isAdding, true);
@@ -408,6 +414,8 @@ export function DirectMessageView({
 									{!removed && (
 										<div className="mt-1 flex items-center gap-1">
 											<ReactionPicker
+												customEmojis={customEmojis}
+												onUploadCustomEmoji={uploadEmoji}
 												onSelectEmoji={async (emoji) => {
 													try {
 														await toggleReaction(message.$id, emoji, true, true);
@@ -488,6 +496,7 @@ export function DirectMessageView({
 				)}
 				{imagePreview && (
 					<div className="relative mb-2 inline-block">
+						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
 							alt="Upload preview"
 							className="h-32 rounded-lg object-cover"

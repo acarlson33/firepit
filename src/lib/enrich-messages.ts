@@ -4,6 +4,7 @@ import {
 } from "./appwrite-profiles";
 import type { Message } from "./types";
 import { apiCache, CACHE_TTL } from "./cache-utils";
+import { parseReactions } from "./reactions-utils";
 
 /**
  * Enriches messages with profile information (displayName, pronouns, avatarUrl)
@@ -39,6 +40,8 @@ export async function enrichMessagesWithProfiles(
 				avatarUrl: profile?.avatarFileId
 					? getAvatarUrl(profile.avatarFileId)
 					: undefined,
+				// Parse reactions if they're a JSON string
+				reactions: parseReactions(message.reactions),
 			};
 
 			// Add reply context if this message is a reply
@@ -56,7 +59,7 @@ export async function enrichMessagesWithProfiles(
 
 			return enriched;
 		});
-	} catch (error) {
+	} catch {
 		// If enrichment fails, return original messages
 		// This ensures chat still works even if profiles can't be loaded
 		return messages;
@@ -96,6 +99,8 @@ export async function enrichMessageWithProfile(
 			pronouns: profile.pronouns || undefined,
 			avatarFileId: profile.avatarFileId || undefined,
 			avatarUrl: profile.avatarUrl || undefined,
+			// Parse reactions if they're a JSON string
+			reactions: parseReactions(message.reactions),
 		};
 	} catch (error) {
 		// If enrichment fails, return original message
