@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
 
 import { getServerClient, getEnvConfig, perms } from "@/lib/appwrite-core";
+import {
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	addTransactionAttributes,
+	recordEvent,
+} from "@/lib/newrelic-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -11,17 +19,29 @@ const STATUSES_COLLECTION = env.collections.statuses;
  * Set or update user status (server-side)
  */
 export async function POST(request: Request) {
+	const startTime = Date.now();
+	
 	try {
+		setTransactionName("POST /api/status");
+		
 		const { userId, status, customMessage, expiresAt, isManuallySet } = await request.json();
 
 		if (!userId || !status) {
+			logger.warn("Invalid status request", { userId, status });
 			return NextResponse.json(
 				{ error: "userId and status are required" },
 				{ status: 400 },
 			);
 		}
+		
+		addTransactionAttributes({
+			userId,
+			status,
+			isManuallySet: !!isManuallySet,
+		});
 
 		if (!STATUSES_COLLECTION) {
+			logger.error("Statuses collection not configured");
 			return NextResponse.json(
 				{ error: "Statuses collection not configured" },
 				{ status: 500 },
@@ -32,10 +52,19 @@ export async function POST(request: Request) {
 		const now = new Date().toISOString();
 
 		// Try to find existing status document
+		const dbStartTime = Date.now();
 		const existing = await databases.listDocuments(
 			DATABASE_ID,
 			STATUSES_COLLECTION,
 			[Query.equal("userId", userId), Query.limit(1)],
+		);
+		
+		trackApiCall(
+			"/api/status",
+			"GET",
+			200,
+			Date.now() - dbStartTime,
+			{ operation: "listDocuments", collection: "statuses" }
 		);
 
 		// Check if status has expired
@@ -58,6 +87,7 @@ export async function POST(request: Request) {
 		if (existing.documents.length > 0 && shouldUpdate) {
 			// Update existing
 			const doc = existing.documents[0];
+			const updateStartTime = Date.now();
 			const updated = await databases.updateDocument(
 				DATABASE_ID,
 				STATUSES_COLLECTION,
@@ -71,16 +101,35 @@ export async function POST(request: Request) {
 				},
 				perms.serverOwner(userId),
 			);
+			
+			trackApiCall(
+				"/api/status",
+				"POST",
+				200,
+				Date.now() - updateStartTime,
+				{ operation: "updateDocument", action: "update" }
+			);
+			
+			recordEvent("StatusUpdate", {
+				userId,
+				status,
+				action: "updated",
+				isManuallySet: !!isManuallySet,
+			});
+			
+			logger.info("Status updated", { userId, status, duration: Date.now() - startTime });
 
 			return NextResponse.json(updated);
 		}
 
 		if (existing.documents.length > 0 && !shouldUpdate) {
+			logger.info("Status not updated - manual status still active", { userId });
 			// Return existing status without updating
 			return NextResponse.json(existing.documents[0]);
 		}
 
 		// Create new status document
+		const createStartTime = Date.now();
 		const created = await databases.createDocument(
 			DATABASE_ID,
 			STATUSES_COLLECTION,
@@ -95,10 +144,39 @@ export async function POST(request: Request) {
 			},
 			perms.serverOwner(userId),
 		);
+		
+		trackApiCall(
+			"/api/status",
+			"POST",
+			200,
+			Date.now() - createStartTime,
+			{ operation: "createDocument", action: "create" }
+		);
+		
+		recordEvent("StatusUpdate", {
+			userId,
+			status,
+			action: "created",
+			isManuallySet: !!isManuallySet,
+		});
+		
+		logger.info("Status created", { userId, status, duration: Date.now() - startTime });
 
 		return NextResponse.json(created);
 	} catch (error) {
-		console.error("Error in POST /api/status:", error);
+		recordError(
+			error instanceof Error ? error : new Error(String(error)),
+			{
+				context: "POST /api/status",
+				endpoint: "/api/status",
+			}
+		);
+		
+		logger.error("Failed to set status", {
+			error: error instanceof Error ? error.message : String(error),
+			duration: Date.now() - startTime,
+		});
+		
 		return NextResponse.json(
 			{ error: "Failed to set user status", details: error instanceof Error ? error.message : String(error) },
 			{ status: 500 },

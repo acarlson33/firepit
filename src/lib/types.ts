@@ -36,6 +36,7 @@ export type Server = {
   name: string;
   $createdAt: string;
   ownerId: string;
+  memberCount?: number;
 };
 
 export type Channel = {

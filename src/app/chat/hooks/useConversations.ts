@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
 import type { Conversation } from "@/lib/types";
+import { useStatusSubscription } from "./useStatusSubscription";
 
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
@@ -36,7 +37,43 @@ export function useConversations(userId: string | null) {
 		void loadConversations();
 	}, [loadConversations]);
 
-	// Real-time subscription
+	// Get all other user IDs from conversations
+	const otherUserIds = useMemo(() => {
+		return conversations
+			.map((conv) => conv.participants.find((id) => id !== userId))
+			.filter((id): id is string => id !== undefined);
+	}, [conversations, userId]);
+
+	// Subscribe to status updates for all other users
+	const { statuses } = useStatusSubscription(otherUserIds);
+
+	// Merge real-time status updates into conversations
+	const conversationsWithStatus = useMemo(() => {
+		return conversations.map((conv) => {
+			const otherUserId = conv.participants.find((id) => id !== userId);
+			if (!otherUserId) {
+				return conv;
+			}
+
+			const liveStatus = statuses.get(otherUserId);
+			
+			// If we have a live status update, use it
+			if (liveStatus) {
+				return {
+					...conv,
+					otherUser: {
+						...conv.otherUser,
+						userId: otherUserId,
+						status: liveStatus.status,
+					},
+				};
+			}
+
+			return conv;
+		});
+	}, [conversations, statuses, userId]);
+
+	// Real-time subscription to conversation changes
 	useEffect(() => {
 		if (!userId || !CONVERSATIONS_COLLECTION) {
 			return;
@@ -70,7 +107,7 @@ export function useConversations(userId: string | null) {
 	}, [userId, loadConversations]);
 
 	return {
-		conversations,
+		conversations: conversationsWithStatus,
 		loading,
 		error,
 		refresh: loadConversations,

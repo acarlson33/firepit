@@ -5,6 +5,14 @@ import { Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import {
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	addTransactionAttributes,
+	recordEvent,
+} from "@/lib/newrelic-utils";
 
 // Helper function to create a deterministic, short document ID for typing status
 // Works for both channels and DM conversations by accepting any context ID
@@ -39,10 +47,15 @@ function hashTypingKey(userId: string, contextId: string): string {
  * Creates or updates typing status for a user in a channel or DM conversation
  */
 export async function POST(request: NextRequest) {
+	const startTime = Date.now();
+	
 	try {
+		setTransactionName("POST /api/typing");
+		
 		// Verify user is authenticated
 		const user = await getServerSession();
 		if (!user) {
+			logger.warn("Unauthenticated typing status attempt");
 			return NextResponse.json(
 				{ error: "Authentication required" },
 				{ status: 401 }
@@ -53,6 +66,7 @@ export async function POST(request: NextRequest) {
 		const typingCollectionId = env.collections.typing;
 
 		if (!typingCollectionId) {
+			logger.error("Typing collection not configured");
 			return NextResponse.json(
 				{ error: "Typing collection not configured" },
 				{ status: 503 }
@@ -66,6 +80,7 @@ export async function POST(request: NextRequest) {
 		const contextId = channelId || conversationId;
 
 		if (!contextId) {
+			logger.warn("No context provided for typing status");
 			return NextResponse.json(
 				{ error: "channelId or conversationId is required" },
 				{ status: 400 }
@@ -74,6 +89,12 @@ export async function POST(request: NextRequest) {
 
 		const userId = user.$id;
 		const key = hashTypingKey(userId, contextId);
+		
+		addTransactionAttributes({
+			userId,
+			contextType: channelId ? "channel" : "conversation",
+			contextId,
+		});
 
 		const { databases } = getServerClient();
 
@@ -91,6 +112,7 @@ export async function POST(request: NextRequest) {
 		];
 
 		// Emulate upsert: try update, fallback create.
+		const dbStartTime = Date.now();
 		try {
 			const result = await databases.updateDocument(
 				env.databaseId,
@@ -99,6 +121,23 @@ export async function POST(request: NextRequest) {
 				payload,
 				permissions
 			);
+			
+			trackApiCall(
+				"/api/typing",
+				"POST",
+				200,
+				Date.now() - dbStartTime,
+				{ operation: "updateDocument", action: "upsert" }
+			);
+			
+			recordEvent("TypingStatus", {
+				userId,
+				contextId,
+				contextType: channelId ? "channel" : "conversation",
+				action: "updated",
+			});
+			
+			logger.info("Typing status updated", { userId, contextId });
 
 			return NextResponse.json({ success: true, document: result });
 		} catch {
@@ -111,9 +150,39 @@ export async function POST(request: NextRequest) {
 					payload,
 					permissions
 				);
+				
+				trackApiCall(
+					"/api/typing",
+					"POST",
+					200,
+					Date.now() - dbStartTime,
+					{ operation: "createDocument", action: "upsert" }
+				);
+				
+				recordEvent("TypingStatus", {
+					userId,
+					contextId,
+					contextType: channelId ? "channel" : "conversation",
+					action: "created",
+				});
+				
+				logger.info("Typing status created", { userId, contextId });
 
 				return NextResponse.json({ success: true, document: result });
 			} catch (error) {
+				recordError(
+					error instanceof Error ? error : new Error(String(error)),
+					{
+						context: "POST /api/typing - create fallback",
+						userId,
+						contextId,
+					}
+				);
+				
+				logger.error("Failed to create typing status", {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				
 				return NextResponse.json(
 					{
 						error: error instanceof Error ? error.message : "Failed to create typing status",
@@ -123,6 +192,19 @@ export async function POST(request: NextRequest) {
 			}
 		}
 	} catch (error) {
+		recordError(
+			error instanceof Error ? error : new Error(String(error)),
+			{
+				context: "POST /api/typing",
+				endpoint: "/api/typing",
+			}
+		);
+		
+		logger.error("Failed to set typing status", {
+			error: error instanceof Error ? error.message : String(error),
+			duration: Date.now() - startTime,
+		});
+		
 		return NextResponse.json(
 			{
 				error: error instanceof Error ? error.message : "Failed to set typing status",

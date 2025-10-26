@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
 				name: String(d.name),
 				$createdAt: String(d.$createdAt ?? ""),
 				ownerId: String(d.ownerId),
+				memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
 			} satisfies Server;
 		});
 

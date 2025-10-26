@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
+import {
+  logger,
+  recordError,
+  setTransactionName,
+  trackApiCall,
+  addTransactionAttributes,
+} from "@/lib/newrelic-utils";
 
 /**
  * POST /api/profiles/batch
@@ -10,11 +17,16 @@ import { getUserStatus } from "@/lib/appwrite-status";
  * Body: { userIds: string[] }
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
+    setTransactionName("POST /api/profiles/batch");
+    
     const body = await request.json() as { userIds: string[] };
     const { userIds } = body;
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
+      logger.warn("Invalid batch profile request", { userIds });
       return NextResponse.json(
         { error: "userIds array is required" },
         { status: 400 }
@@ -23,6 +35,7 @@ export async function POST(request: NextRequest) {
 
     // Limit batch size to prevent abuse
     if (userIds.length > 100) {
+      logger.warn("Batch size too large", { count: userIds.length });
       return NextResponse.json(
         { error: "Maximum 100 userIds per request" },
         { status: 400 }
@@ -31,8 +44,16 @@ export async function POST(request: NextRequest) {
 
     // Deduplicate user IDs
     const uniqueUserIds = [...new Set(userIds)];
+    
+    addTransactionAttributes({
+      requestedCount: userIds.length,
+      uniqueCount: uniqueUserIds.length,
+    });
+    
+    logger.info("Fetching batch profiles", { count: uniqueUserIds.length });
 
     // Fetch all profiles and statuses in parallel
+    const fetchStartTime = Date.now();
     const results = await Promise.allSettled(
       uniqueUserIds.map(async (userId) => {
         const [profile, status] = await Promise.all([
@@ -70,18 +91,53 @@ export async function POST(request: NextRequest) {
         };
       })
     );
+    
+    const fetchDuration = Date.now() - fetchStartTime;
 
     // Convert results to a map for easy lookup
-    const profilesMap: Record<string, any> = {};
+    const profilesMap: Record<string, unknown> = {};
+    let successCount = 0;
     results.forEach((result) => {
       if (result.status === "fulfilled" && result.value.profile) {
         profilesMap[result.value.userId] = result.value.profile;
+        successCount++;
       }
+    });
+    
+    trackApiCall(
+      "/api/profiles/batch",
+      "POST",
+      200,
+      fetchDuration,
+      {
+        operation: "batchFetchProfiles",
+        requestedCount: uniqueUserIds.length,
+        successCount,
+        failedCount: uniqueUserIds.length - successCount,
+      }
+    );
+    
+    logger.info("Batch profiles fetched", {
+      requested: uniqueUserIds.length,
+      succeeded: successCount,
+      failed: uniqueUserIds.length - successCount,
+      duration: Date.now() - startTime,
     });
 
     return NextResponse.json({ profiles: profilesMap });
   } catch (error) {
-    console.error("Batch profile fetch error:", error);
+    recordError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "POST /api/profiles/batch",
+        endpoint: "/api/profiles/batch",
+      }
+    );
+    
+    logger.error("Batch profile fetch error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
     return NextResponse.json(
       { error: "Failed to fetch profiles" },
       { status: 500 }

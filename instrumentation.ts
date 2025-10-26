@@ -17,14 +17,19 @@ export async function register() {
     if (newrelicLicenseKey && newrelicAppName) {
       try {
         // Dynamic import to avoid loading New Relic on Edge runtime
+        // New Relic will automatically load the newrelic.cjs config file
         const newrelic = await import("newrelic");
         
-        // New Relic is configured via environment variables:
-        // - NEW_RELIC_LICENSE_KEY: Your New Relic license key
-        // - NEW_RELIC_APP_NAME: Your application name in New Relic
-        // Additional configuration can be done via newrelic.config object if needed
-        
         console.log(`[New Relic] Initialized for app: ${newrelicAppName}`);
+        console.log(`[New Relic] Configuration loaded from newrelic.cjs`);
+        console.log(`[New Relic] Features enabled:`);
+        console.log(`  - Application Performance Monitoring (APM)`);
+        console.log(`  - Error Tracking`);
+        console.log(`  - Transaction Tracing`);
+        console.log(`  - Distributed Tracing`);
+        console.log(`  - Application Logging`);
+        console.log(`  - Custom Events and Metrics`);
+        console.log(`  - Browser Monitoring (RUM)`);
         
         // Return the newrelic instance for potential use
         return newrelic;

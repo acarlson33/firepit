@@ -1,8 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import type { UserStatus } from "@/lib/types";
 import { getUserStatus, setUserStatus as setUserStatusAPI } from "@/lib/appwrite-status";
+
+const env = getEnvConfig();
 
 type UserData = {
   userId: string;
@@ -64,6 +67,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void fetchUserData();
   }, [fetchUserData]);
+
+  // Subscribe to real-time status updates for this user
+  useEffect(() => {
+    if (!userData?.userId) {
+      return;
+    }
+
+    const statusesCollection = env.collections.statuses;
+    if (!statusesCollection) {
+      return;
+    }
+
+    // Import dynamically to avoid SSR issues
+    import("appwrite").then(({ Client }) => {
+      const client = new Client()
+        .setEndpoint(env.endpoint)
+        .setProject(env.project);
+
+      const unsubscribe = client.subscribe(
+        `databases.${env.databaseId}.collections.${statusesCollection}.documents`,
+        (response) => {
+          const payload = response.payload as Record<string, unknown>;
+          const statusUserId = payload.userId as string | undefined;
+
+          // Only update if this is our user's status
+          if (statusUserId === userData.userId) {
+            const updatedStatus: UserStatus = {
+              $id: String(payload.$id),
+              userId: String(payload.userId),
+              status: String(payload.status) as "online" | "away" | "busy" | "offline",
+              customMessage: payload.customMessage ? String(payload.customMessage) : undefined,
+              lastSeenAt: String(payload.lastSeenAt),
+              expiresAt: payload.expiresAt ? String(payload.expiresAt) : undefined,
+              isManuallySet: payload.isManuallySet ? Boolean(payload.isManuallySet) : undefined,
+              $updatedAt: payload.$updatedAt ? String(payload.$updatedAt) : undefined,
+            };
+            setUserStatusState(updatedStatus);
+          }
+        },
+      );
+
+      return () => {
+        unsubscribe();
+      };
+    }).catch(() => {
+      // Ignore subscription errors
+    });
+  }, [userData?.userId]);
 
   const updateUserStatus = useCallback(
     async (

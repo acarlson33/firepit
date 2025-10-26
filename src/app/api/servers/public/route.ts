@@ -23,6 +23,7 @@ export async function GET() {
 			$id: doc.$id,
 			name: String(doc.name),
 			ownerId: String(doc.ownerId),
+			memberCount: typeof doc.memberCount === 'number' ? doc.memberCount : undefined,
 		}));
 
 		return NextResponse.json({ servers });

@@ -4,6 +4,14 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import {
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	trackMessage,
+	addTransactionAttributes,
+} from "@/lib/newrelic-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -37,14 +45,23 @@ export async function OPTIONS() {
  * - Get/create conversation: ?type=conversation&userId1=xxx&userId2=xxx
  */
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
     const session = await getServerSession();
     if (!session?.$id) {
+      logger.warn("Unauthorized DM access attempt");
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams} = new URL(request.url);
     const type = searchParams.get("type");
+    
+    setTransactionName(`GET /api/direct-messages?type=${type || "unknown"}`);
+    addTransactionAttributes({ 
+      userId: session.$id, 
+      operationType: type || "unknown" 
+    });
 
     // List all conversations for current user
     if (type === "conversations") {
@@ -53,6 +70,7 @@ export async function GET(request: NextRequest) {
       }
 
       const { databases } = getServerClient();
+      const dbStartTime = Date.now();
       const response = await databases.listDocuments(
         DATABASE_ID,
         CONVERSATIONS_COLLECTION,
@@ -62,6 +80,14 @@ export async function GET(request: NextRequest) {
           Query.limit(100),
         ]
       );
+      
+      trackApiCall(
+        "/api/direct-messages",
+        "GET",
+        200,
+        Date.now() - dbStartTime,
+        { operation: "listConversations", count: response.documents.length }
+      );
 
       const conversations = response.documents.map((doc) => ({
         $id: doc.$id,
@@ -69,6 +95,11 @@ export async function GET(request: NextRequest) {
         lastMessageAt: doc.lastMessageAt as string | undefined,
         $createdAt: doc.$createdAt,
       }));
+      
+      logger.info("Listed conversations", { 
+        userId: session.$id, 
+        count: conversations.length 
+      });
 
       return jsonResponse({ conversations });
     }
@@ -214,7 +245,19 @@ export async function GET(request: NextRequest) {
 
     return jsonResponse({ error: "Invalid type parameter" }, { status: 400 });
   } catch (error) {
-    console.error("GET /api/direct-messages error:", error);
+    recordError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "GET /api/direct-messages",
+        endpoint: "/api/direct-messages",
+      }
+    );
+    
+    logger.error("DM GET error", {
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - startTime,
+    });
+    
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }
@@ -229,9 +272,14 @@ export async function GET(request: NextRequest) {
  * Body: { conversationId, senderId, receiverId, text, imageFileId?, imageUrl? }
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
+    setTransactionName("POST /api/direct-messages");
+    
     const session = await getServerSession();
     if (!session?.$id) {
+      logger.warn("Unauthorized DM send attempt");
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -246,6 +294,13 @@ export async function POST(request: NextRequest) {
     };
 
     const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, replyToId } = body;
+    
+    addTransactionAttributes({
+      userId: session.$id,
+      conversationId,
+      hasImage: !!imageFileId,
+      isReply: !!replyToId,
+    });
 
     // Validate sender is the authenticated user
     if (senderId !== session.$id) {
@@ -298,12 +353,21 @@ export async function POST(request: NextRequest) {
       messageData.replyToId = replyToId;
     }
 
+    const dbStartTime = Date.now();
     const message = await databases.createDocument(
       DATABASE_ID,
       DIRECT_MESSAGES_COLLECTION,
       ID.unique(),
       messageData,
       permissions
+    );
+    
+    trackApiCall(
+      "/api/direct-messages",
+      "POST",
+      200,
+      Date.now() - dbStartTime,
+      { operation: "createDocument", collection: "direct_messages" }
     );
 
     // Update conversation's lastMessageAt
@@ -319,6 +383,24 @@ export async function POST(request: NextRequest) {
     } catch {
       // Don't fail if conversation update fails
     }
+    
+    // Track DM sent event
+    trackMessage("sent", "dm", {
+      messageId: message.$id,
+      senderId,
+      receiverId,
+      conversationId,
+      hasImage: !!imageFileId,
+      isReply: !!replyToId,
+      textLength: text?.length || 0,
+    });
+    
+    logger.info("DM sent", {
+      messageId: message.$id,
+      senderId,
+      conversationId,
+      duration: Date.now() - startTime,
+    });
 
     return jsonResponse({
       message: {
@@ -334,7 +416,19 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("POST /api/direct-messages error:", error);
+    recordError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "POST /api/direct-messages",
+        endpoint: "/api/direct-messages",
+      }
+    );
+    
+    logger.error("DM POST error", {
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - startTime,
+    });
+    
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

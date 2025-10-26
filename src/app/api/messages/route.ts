@@ -6,16 +6,29 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import type { Message } from "@/lib/types";
+import {
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	trackMessage,
+	addTransactionAttributes,
+} from "@/lib/newrelic-utils";
 
 /**
  * POST /api/messages
  * Sends a message to a channel
  */
 export async function POST(request: NextRequest) {
+	const startTime = Date.now();
+	
 	try {
+		setTransactionName("POST /api/messages");
+		
 		// Verify user is authenticated
 		const user = await getServerSession();
 		if (!user) {
+			logger.warn("Unauthenticated message attempt");
 			return NextResponse.json(
 				{ error: "Authentication required" },
 				{ status: 401 }
@@ -35,6 +48,14 @@ export async function POST(request: NextRequest) {
 
 		const userId = user.$id;
 		const userName = user.name;
+		
+		addTransactionAttributes({
+			userId,
+			channelId,
+			serverId: serverId || "none",
+			hasImage: !!imageFileId,
+			isReply: !!replyToId,
+		});
 
 		// Create message permissions
 		const permissions = perms.message(userId, {
@@ -64,12 +85,22 @@ export async function POST(request: NextRequest) {
 			messageData.replyToId = replyToId;
 		}
 
+		const dbStartTime = Date.now();
 		const res = await databases.createDocument(
 			env.databaseId,
 			env.collections.messages,
 			ID.unique(),
 			messageData,
 			permissions
+		);
+		
+		// Track database operation
+		trackApiCall(
+			"/api/messages",
+			"POST",
+			200,
+			Date.now() - dbStartTime,
+			{ operation: "createDocument", collection: "messages" }
 		);
 
 		const doc = res as unknown as Record<string, unknown>;
@@ -87,9 +118,39 @@ export async function POST(request: NextRequest) {
 			imageUrl: doc.imageUrl as string | undefined,
 			replyToId: doc.replyToId as string | undefined,
 		};
+		
+		// Track message sent event
+		trackMessage("sent", "channel", {
+			messageId: message.$id,
+			userId,
+			channelId,
+			serverId: serverId || undefined,
+			hasImage: !!imageFileId,
+			isReply: !!replyToId,
+			textLength: text?.length || 0,
+		});
+		
+		logger.info("Message sent", {
+			messageId: message.$id,
+			userId,
+			channelId,
+			duration: Date.now() - startTime,
+		});
 
 		return NextResponse.json({ message });
 	} catch (error) {
+		recordError(
+			error instanceof Error ? error : new Error(String(error)),
+			{
+				context: "POST /api/messages",
+				endpoint: "/api/messages",
+			}
+		);
+		
+		logger.error("Failed to send message", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		
 		return NextResponse.json(
 			{
 				error: error instanceof Error ? error.message : "Failed to send message",

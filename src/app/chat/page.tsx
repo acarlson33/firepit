@@ -272,7 +272,13 @@ export default function ChatPage() {
                   variant={active ? "default" : "outline"}
                 >
                   <span className="truncate text-left font-medium">{s.name}</span>
-                  <span className="text-xs text-muted-foreground">ID {s.$id.slice(0, 4)}</span>
+                  <div className="flex items-center gap-2">
+                    {s.memberCount !== undefined && (
+                      <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                        {s.memberCount} {s.memberCount === 1 ? 'member' : 'members'}
+                      </span>
+                    )}
+                  </div>
                 </Button>
               </li>
             );
@@ -293,7 +299,7 @@ export default function ChatPage() {
         )}
         {serversApi.membershipEnabled && (
           <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <span>Memberships</span>
+            <span>Your Memberships</span>
             <span className="font-medium text-foreground">
               {serversApi.memberships.length}
             </span>

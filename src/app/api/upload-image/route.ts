@@ -4,6 +4,14 @@ import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import {
+  logger,
+  recordError,
+  setTransactionName,
+  trackApiCall,
+  addTransactionAttributes,
+  recordEvent,
+} from "@/lib/newrelic-utils";
 
 // Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit) {
@@ -28,29 +36,44 @@ export async function OPTIONS() {
  * Upload an image to Appwrite Storage
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
-    console.log("[upload-image] Starting upload...");
+    setTransactionName("POST /api/upload-image");
+    
+    logger.info("Starting image upload");
     const session = await getServerSession();
     if (!session?.$id) {
-      console.error("[upload-image] No session found");
+      logger.warn("Unauthorized upload attempt");
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
-    console.log("[upload-image] Session found:", session.$id);
+    logger.info("Session verified", { userId: session.$id });
+    
+    addTransactionAttributes({ userId: session.$id });
 
-    const env = getEnvConfig();
-    console.log("[upload-image] Bucket ID:", env.buckets.images);
+    const env = getEnvConfig() as {
+      endpoint: string;
+      buckets: { images: string };
+      project: string;
+    };
+    logger.info("Using bucket", { bucketId: env.buckets.images });
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
     if (!file) {
-      console.error("[upload-image] No file in formData");
+      logger.warn("No file in upload request");
       return jsonResponse({ error: "No file provided" }, { status: 400 });
     }
-    console.log("[upload-image] File received:", file.name, file.type, file.size);
+    logger.info("File received", { 
+      name: file.name, 
+      type: file.type, 
+      size: file.size 
+    });
 
     // Validate file type (images only)
     if (!file.type.startsWith("image/")) {
+      logger.warn("Invalid file type", { type: file.type });
       return jsonResponse(
         { error: "Only image files are allowed" },
         { status: 400 }
@@ -60,6 +83,7 @@ export async function POST(request: NextRequest) {
     // Validate file size (max 5MB)
     const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
+      logger.warn("File too large", { size: file.size, maxSize });
       return jsonResponse(
         { error: "File size must be less than 5MB" },
         { status: 400 }
@@ -73,7 +97,9 @@ export async function POST(request: NextRequest) {
     const blob = new Blob([arrayBuffer], { type: file.type });
     const uploadFile = new File([blob], file.name, { type: file.type });
 
-    console.log("[upload-image] Uploading to Appwrite...");
+    logger.info("Uploading to Appwrite storage");
+    const uploadStartTime = Date.now();
+    
     // Upload to Appwrite Storage
     const uploadedFile = await storage.createFile(
       env.buckets.images,
@@ -85,20 +111,59 @@ export async function POST(request: NextRequest) {
         Permission.delete(Role.user(session.$id)),
       ]
     );
-    console.log("[upload-image] Upload successful, file ID:", uploadedFile.$id);
+    
+    const uploadDuration = Date.now() - uploadStartTime;
+    trackApiCall(
+      "/api/upload-image",
+      "POST",
+      200,
+      uploadDuration,
+      { 
+        operation: "uploadFile",
+        fileSize: file.size,
+        fileType: file.type,
+      }
+    );
+    
+    logger.info("Upload successful", { 
+      fileId: uploadedFile.$id,
+      size: file.size,
+      duration: uploadDuration,
+    });
+    
+    // Track upload event
+    recordEvent("ImageUpload", {
+      fileId: uploadedFile.$id,
+      userId: session.$id,
+      fileSize: file.size,
+      fileType: file.type,
+      duration: uploadDuration,
+    });
 
     // Generate URL for the image
     const imageUrl = `${env.endpoint}/storage/buckets/${env.buckets.images}/files/${uploadedFile.$id}/view?project=${env.project}`;
 
-    console.log("[upload-image] Image URL:", imageUrl);
+    logger.info("Image URL generated", { url: imageUrl });
     return jsonResponse({
       fileId: uploadedFile.$id,
       url: imageUrl,
     });
   } catch (error) {
-    console.error("Error uploading image:", error);
+    recordError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "POST /api/upload-image",
+        endpoint: "/api/upload-image",
+        userId: request.headers.get("x-user-id"),
+      }
+    );
+    
+    logger.error("Image upload failed", {
+      error: error instanceof Error ? error.message : String(error),
+      duration: Date.now() - startTime,
+    });
+    
     const errorMessage = error instanceof Error ? error.message : "Failed to upload image";
-    console.error("Detailed error:", errorMessage);
     return jsonResponse(
       { error: errorMessage },
       { status: 500 }
@@ -111,11 +176,18 @@ export async function POST(request: NextRequest) {
  * Delete an image from Appwrite Storage
  */
 export async function DELETE(request: NextRequest) {
+  const startTime = Date.now();
+  
   try {
+    setTransactionName("DELETE /api/upload-image");
+    
     const session = await getServerSession();
     if (!session?.$id) {
+      logger.warn("Unauthorized delete attempt");
       return jsonResponse({ error: "Unauthorized" }, { status: 401 });
     }
+    
+    addTransactionAttributes({ userId: session.$id });
 
     const env = getEnvConfig();
 
@@ -123,16 +195,50 @@ export async function DELETE(request: NextRequest) {
     const fileId = searchParams.get("fileId");
 
     if (!fileId) {
+      logger.warn("No fileId provided for delete");
       return jsonResponse({ error: "No fileId provided" }, { status: 400 });
     }
+    
+    addTransactionAttributes({ fileId });
 
     const { storage } = getServerClient();
-
+    
+    const deleteStartTime = Date.now();
     await storage.deleteFile(env.buckets.images, fileId);
+    
+    trackApiCall(
+      "/api/upload-image",
+      "DELETE",
+      200,
+      Date.now() - deleteStartTime,
+      { operation: "deleteFile", fileId }
+    );
+    
+    recordEvent("ImageDelete", {
+      fileId,
+      userId: session.$id,
+    });
+    
+    logger.info("Image deleted", { 
+      fileId,
+      userId: session.$id,
+      duration: Date.now() - startTime,
+    });
 
     return jsonResponse({ success: true });
   } catch (error) {
-    console.error("Error deleting image:", error);
+    recordError(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        context: "DELETE /api/upload-image",
+        endpoint: "/api/upload-image",
+      }
+    );
+    
+    logger.error("Image delete failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
     return jsonResponse(
       { error: "Failed to delete image" },
       { status: 500 }

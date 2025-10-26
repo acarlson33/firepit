@@ -40,6 +40,7 @@ export async function listServers(limit = 25): Promise<Server[]> {
       name: String(d.name),
       $createdAt: String(d.$createdAt ?? ""),
       ownerId: String(d.ownerId),
+      memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
     } satisfies Server;
   });
 }
@@ -64,6 +65,7 @@ export async function listServersPage(
       name: String(d.name),
       $createdAt: String(d.$createdAt ?? ""),
       ownerId: String(d.ownerId),
+      memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
     } satisfies Server;
   });
   const last = items.at(-1);
@@ -85,7 +87,7 @@ export function createServer(name: string): Promise<Server> {
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,
         documentId: ID.unique(),
-        data: { name, ownerId },
+        data: { name, ownerId, memberCount: 1 },
         permissions,
       });
       const s = serverDoc as unknown as Record<string, unknown>;
@@ -122,6 +124,7 @@ export function createServer(name: string): Promise<Server> {
         name: String(s.name),
         $createdAt: String(s.$createdAt ?? ""),
         ownerId: String(s.ownerId),
+        memberCount: typeof s.memberCount === 'number' ? s.memberCount : 1,
       } satisfies Server;
     } catch (e) {
       throw normalizeError(e);

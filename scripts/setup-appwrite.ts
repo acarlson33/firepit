@@ -167,6 +167,42 @@ async function ensureBooleanAttribute(
 	}
 }
 
+async function ensureIntegerAttribute(
+	collection: string,
+	key: string,
+	required: boolean,
+	defaultValue?: number,
+	min?: number,
+	max?: number,
+) {
+	try {
+		await tryVariants([
+			() => dbAny.getAttribute(DB_ID, collection, key),
+			() =>
+				dbAny.getAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+				}),
+		]);
+	} catch {
+		await tryVariants([
+			() => dbAny.createIntegerAttribute(DB_ID, collection, key, required, min, max, defaultValue),
+			() =>
+				dbAny.createIntegerAttribute?.({
+					databaseId: DB_ID,
+					collectionId: collection,
+					key,
+					required,
+					min,
+					max,
+					default: defaultValue,
+				}),
+		]);
+		info(`[setup] added ${collection}.${key} (integer)`);
+	}
+}
+
 async function ensureStringArrayAttribute(
 	collection: string,
 	key: string,
@@ -325,6 +361,7 @@ async function setupServers() {
 	await ensureCollection("servers", "Servers");
 	await ensureStringAttribute("servers", "name", LEN_ID, true);
 	await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
+	await ensureIntegerAttribute("servers", "memberCount", false, 1, 0, 1000000);
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 }
 
