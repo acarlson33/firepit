@@ -78,7 +78,7 @@ export default [
 			"import/newline-after-import": "error",
 			"unused-imports/no-unused-imports": "error",
 			"unused-imports/no-unused-vars": [
-				"error",
+				"warn",
 				{
 					args: "after-used",
 					argsIgnorePattern: "^_",

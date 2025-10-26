@@ -18,9 +18,12 @@ import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { EmojiRenderer } from "@/components/emoji-renderer";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { ReactionButton } from "@/components/reaction-button";
+import { ReactionPicker } from "@/components/reaction-picker";
 import type { DirectMessage, Conversation } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
+import { toggleReaction } from "@/lib/reactions-client";
 
 type DirectMessageViewProps = {
 	conversation: Conversation;
@@ -384,6 +387,37 @@ export function DirectMessageView({
 											</DropdownMenu>
 										)}
 									</div>
+									{!removed && message.reactions && message.reactions.length > 0 && (
+										<div className="mt-1 flex flex-wrap gap-1">
+											{message.reactions.map((reaction) => (
+												<ReactionButton
+													key={reaction.emoji}
+													currentUserId={currentUserId}
+													reaction={reaction}
+													onToggle={async (emoji, isAdding) => {
+														try {
+															await toggleReaction(message.$id, emoji, isAdding, true);
+														} catch (error) {
+															console.error("Failed to toggle DM reaction:", error);
+														}
+													}}
+												/>
+											))}
+										</div>
+									)}
+									{!removed && (
+										<div className="mt-1 flex items-center gap-1">
+											<ReactionPicker
+												onSelectEmoji={async (emoji) => {
+													try {
+														await toggleReaction(message.$id, emoji, true, true);
+													} catch (error) {
+														console.error("Failed to add DM reaction:", error);
+													}
+												}}
+											/>
+										</div>
+									)}
 									{isDeleting && (
 										<div className="mt-2 flex items-center gap-2 rounded border border-destructive bg-destructive/10 p-2">
 											<span className="flex-1 text-sm">

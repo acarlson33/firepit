@@ -385,6 +385,9 @@ async function setupMessages() {
 		["removedAt", LEN_TS, false],
 		["removedBy", LEN_ID, false],
 		["replyToId", LEN_ID, false],
+		["imageFileId", LEN_ID, false],
+		["imageUrl", 2000, false],
+		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("messages", k, size, req);
@@ -505,25 +508,21 @@ async function setupConversations() {
 async function setupDirectMessages() {
 	await ensureCollection("direct_messages", "Direct Messages");
 	const fields: [string, number, boolean][] = [
-		["conversationId", LEN_ID, true],
 		["senderId", LEN_ID, true],
 		["receiverId", LEN_ID, true],
 		["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
-		["imageFileId", LEN_ID, false],
-		["imageUrl", 2000, false], // URL can be long
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
-		["removedBy", LEN_ID, false],
-		["replyToId", LEN_ID, false],
+		["imageFileId", LEN_ID, false],
+		["imageUrl", 2000, false],
+		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("direct_messages", k, size, req);
 	}
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("direct_messages", "idx_conversationId", "key", ["conversationId"]);
-	await ensureIndex("direct_messages", "idx_senderId", "key", ["senderId"]);
-	await ensureIndex("direct_messages", "idx_receiverId", "key", ["receiverId"]);
-	await ensureIndex("direct_messages", "idx_replyToId", "key", ["replyToId"]);
+	await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
+	await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
 }
 
 async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {

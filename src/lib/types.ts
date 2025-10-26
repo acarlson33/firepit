@@ -18,6 +18,11 @@ export type Message = {
   imageFileId?: string;
   imageUrl?: string;
   replyToId?: string; // ID of the message this is replying to
+  reactions?: Array<{
+    emoji: string; // Emoji character or custom emoji ID
+    userIds: string[]; // Array of user IDs who used this reaction
+    count: number; // Total count for this emoji
+  }>;
   // Profile information (enriched from profiles collection)
   displayName?: string;
   pronouns?: string;
@@ -92,6 +97,11 @@ export type DirectMessage = {
   removedAt?: string;
   removedBy?: string;
   replyToId?: string; // ID of the message this is replying to
+  reactions?: Array<{
+    emoji: string; // Emoji character or custom emoji ID
+    userIds: string[]; // Array of user IDs who used this reaction
+    count: number; // Total count for this emoji
+  }>;
   // Enriched profile data
   senderDisplayName?: string;
   senderAvatarUrl?: string;

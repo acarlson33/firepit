@@ -13,6 +13,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Channel } from "@/lib/types";
+import { ReactionButton } from "@/components/reaction-button";
+import { ReactionPicker } from "@/components/reaction-picker";
 
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -31,6 +33,7 @@ import { EmojiPicker } from "@/components/emoji-picker";
 import { EmojiRenderer } from "@/components/emoji-renderer";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
+import { toggleReaction } from "@/lib/reactions-client";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -530,6 +533,38 @@ export default function ChatPage() {
                     </DropdownMenu>
                   )}
                 </div>
+                {!removed && m.reactions && m.reactions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {m.reactions.map((reaction) => (
+                      <ReactionButton
+                        key={reaction.emoji}
+                        currentUserId={userId}
+                        reaction={reaction}
+                        onToggle={async (emoji, isAdding) => {
+                          try {
+                            await toggleReaction(m.$id, emoji, isAdding, false);
+                          } catch (error) {
+                            console.error("Failed to toggle reaction:", error);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {!removed && (
+                  <div className="flex items-center gap-1 pt-1">
+                    <ReactionPicker
+                      disabled={!userId}
+                      onSelectEmoji={async (emoji) => {
+                        try {
+                          await toggleReaction(m.$id, emoji, true, false);
+                        } catch (error) {
+                          console.error("Failed to add reaction:", error);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
                 {isDeleting && (
                   <div className="mt-2 flex items-center gap-2 rounded-2xl border border-destructive/60 bg-destructive/10 p-3 text-left text-sm">
                     <span className="flex-1 text-sm">Delete this message?</span>
