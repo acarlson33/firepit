@@ -6,7 +6,7 @@ This roadmap outlines the planned features and improvements for Firepit, priorit
 
 ## 🎯 High Priority Features (Core Functionality)
 
-### 1. Message Reactions 🎯 **[Q4 2025]**
+### 1. Message Reactions ✅ **[COMPLETED - Q4 2025]**
 
 **Goal:** Allow users to react to messages with emoji, similar to Discord/Slack.
 
@@ -44,52 +44,53 @@ reactions?: Array<{
 
 **Estimated Effort:** 2-3 weeks
 
+**Status:** ✅ Complete - Reactions implemented for both channel messages and DMs with custom emoji support.
+
 ---
 
-### 2. @Mentions for Users 🎯 **[Q4 2025]**
+### 2. @Mentions for Users ✅ **[COMPLETED - Q4 2025]**
 
-**Goal:** Enable @username mentions in messages with notifications.
+**Goal:** Enable @username mentions in messages with autocomplete and highlighting.
 
 **Technical Requirements:**
 
 -   Implement mention parsing in message text (detect `@username` pattern)
--   Add `mentions` array to Message type: `string[]` (user IDs)
+-   Add `mentions` array to Message type: `string[]` (usernames)
 -   Create mention autocomplete UI with user search
 -   Highlight mentioned users in message display
--   Generate notifications for mentioned users
--   Add "unread mentions" filter/indicator
+-   Store mentions in database for future notification system
 
 **Database Changes:**
 
 ```typescript
-// Add to Message type
-mentions?: string[];  // Array of mentioned user IDs
+// Add to Message and DirectMessage types
+mentions?: string[];  // Array of mentioned usernames
 
-// Add to UserProfileData or new Notifications collection
-unreadMentions?: number;
-lastMentionAt?: string;
+// Database: Added string array attribute to both collections
 ```
 
 **API Endpoints:**
 
--   `GET /api/users/search?q=username` - User autocomplete
--   `POST /api/notifications/mentions` - Track mention notifications
--   `GET /api/mentions/unread` - Get unread mentions count
+-   `GET /api/users/search?q=username` - User autocomplete (existing)
+-   `POST /api/messages` - Accepts mentions array (updated)
+-   `POST /api/direct-messages` - Accepts mentions array (updated)
 
 **UI Components:**
 
--   `MentionAutocomplete.tsx` - Dropdown for @mention suggestions
--   `MentionHighlight.tsx` - Styled mention display in messages
--   `MentionNotificationBadge.tsx` - Unread mentions indicator
+-   `MentionAutocomplete.tsx` - Dropdown for @mention suggestions ✅
+-   `MessageWithMentions.tsx` - Styled mention display in messages ✅
+-   `ChatInput.tsx` - Input with mention detection and autocomplete ✅
 
 **Implementation Notes:**
 
--   Parse mentions during message send
--   Trigger notifications for online/offline users
--   Support @here and @everyone for channel-wide mentions (with permissions)
--   Prevent mention spam with rate limiting
+-   Mentions parsed during message send using regex `/@([a-zA-Z][a-zA-Z0-9_-]*)/g`
+-   Autocomplete appears when typing @ followed by characters
+-   Keyboard navigation (Arrow keys, Enter, Escape) in autocomplete
+-   Current user's mentions highlighted differently
+-   Works in both channel messages and DMs
+-   Future: Notification system for mentioned users
 
-**Estimated Effort:** 3-4 weeks
+**Status:** ✅ Complete - Full @mention support implemented with autocomplete, highlighting, and database persistence. Notification system can be added as future enhancement.
 
 ---
 

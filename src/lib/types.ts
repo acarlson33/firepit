@@ -18,6 +18,7 @@ export type Message = {
   imageFileId?: string;
   imageUrl?: string;
   replyToId?: string; // ID of the message this is replying to
+  mentions?: string[]; // Array of mentioned user IDs
   reactions?: Array<{
     emoji: string; // Emoji character or custom emoji ID
     userIds: string[]; // Array of user IDs who used this reaction
@@ -97,6 +98,7 @@ export type DirectMessage = {
   removedAt?: string;
   removedBy?: string;
   replyToId?: string; // ID of the message this is replying to
+  mentions?: string[]; // Array of mentioned user IDs
   reactions?: Array<{
     emoji: string; // Emoji character or custom emoji ID
     userIds: string[]; // Array of user IDs who used this reaction

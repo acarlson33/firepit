@@ -15,6 +15,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Channel } from "@/lib/types";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
+import { ChatInput } from "@/components/chat-input";
+import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -29,7 +32,6 @@ import { uploadImage } from "@/lib/appwrite-dms-client";
 import { ImageViewer } from "@/components/image-viewer";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { EmojiPicker } from "@/components/emoji-picker";
-import { EmojiRenderer } from "@/components/emoji-renderer";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
@@ -483,7 +485,10 @@ export default function ChatPage() {
                         {removed ? (
                           <span className="italic opacity-70">Message removed</span>
                         ) : (
-                          <EmojiRenderer text={m.text} customEmojis={customEmojis} />
+                          <MessageWithMentions
+                            text={m.text}
+                            currentUserId={userId || ""}
+                          />
                         )}
                       </div>
                     )}
@@ -751,9 +756,12 @@ export default function ChatPage() {
           ) : (
             <>
               {renderMessages()}
-              <div className="space-y-3">
-                {replyingToMessage && (
-                  <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+              {/* Chat Input */}
+              {!selectedConversationId && (
+                <div className="space-y-3">
+                  <MentionHelpTooltip />
+                  {replyingToMessage && (
+                    <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
                     <div className="flex-1">
                       <div className="font-medium">
                         Replying to {replyingToMessage.displayName || replyingToMessage.userName || "Unknown"}
@@ -868,31 +876,38 @@ export default function ChatPage() {
                         customEmojis={customEmojis}
                         onUploadCustomEmoji={uploadEmoji}
                       />
-                      <Input
+                      <ChatInput
                         aria-label="Message"
                         disabled={!showChat || uploadingImage}
-                        onChange={onChangeText}
+                        onChange={(newValue) => {
+                          onChangeText({ target: { value: newValue } } as React.ChangeEvent<HTMLInputElement>);
+                        }}
                         placeholder={showChat ? "Type a message" : "Select a channel"}
                         value={text}
                         className="flex-1 rounded-2xl border-border/60"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleSendWithImage(e as unknown as React.FormEvent);
+                          }
+                        }}
                       />
                       <Button
                         className="rounded-2xl shrink-0"
                         disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage)}
                         type="submit"
                       >
-                        {uploadingImage ? "Uploading..." : "Send"}
-                      </Button>
-                    </form>
+                      {uploadingImage ? "Uploading..." : "Send"}
+                    </Button>
+                  </form>
                   </>
                 )}
               </div>
-            </>
+            )}
+          </>
           )}
         </div>
-      </div>
-
-      {/* User Profile Modal */}
+      </div>      {/* User Profile Modal */}
       {selectedProfile && (
         <UserProfileModal
           avatarUrl={selectedProfile.avatarUrl}

@@ -1,6 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   typedRoutes: true,
   reactStrictMode: true,
   poweredByHeader: false,
@@ -64,18 +63,11 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "nyc.cloud.appwrite.io",
-        pathname: "/v1/storage/buckets/images/files/**",
-      },
-    ],
-    formats: ["image/avif", "image/webp"],
-  },
-
-  turbopack: {
-    resolveAlias: {
-      // Optimize imports for better tree-shaking
-      "lucide-react": "lucide-react/dist/esm/lucide-react.js",
-    }
-  }
+      pathname: "/v1/storage/buckets/images/files/**",
+    },
+  ],
+  formats: ["image/avif", "image/webp"],
+},
 };
 
 export default nextConfig;

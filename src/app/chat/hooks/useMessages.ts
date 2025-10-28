@@ -11,6 +11,7 @@ import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
+import { extractMentionedUsernames } from "@/lib/mention-utils";
 
 const env = getEnvConfig();
 
@@ -116,6 +117,7 @@ export function useMessages({
             imageUrl: p.imageUrl as string | undefined,
             replyToId: p.replyToId as string | undefined,
             reactions: parseReactions(p.reactions as string | undefined),
+            mentions: Array.isArray(p.mentions) ? p.mentions as string[] : undefined,
           } as Message;
         }
         function includeMessage(base: { channelId?: string }) {
@@ -479,6 +481,10 @@ export function useMessages({
       setText("");
       const replyToId = replyingToMessage?.$id;
       setReplyingToMessage(null);
+      
+      // Parse mentions from text
+      const mentions = extractMentionedUsernames(value);
+      
       const response = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -489,6 +495,7 @@ export function useMessages({
           imageFileId,
           imageUrl,
           replyToId,
+          mentions: mentions.length > 0 ? mentions : undefined,
         }),
       });
 

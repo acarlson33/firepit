@@ -35,29 +35,28 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const env = getEnvConfig();
-		const body = await request.json();
-		const { text, channelId, serverId, imageFileId, imageUrl, replyToId } = body;
+	const env = getEnvConfig();
+	const body = await request.json();
+	const { text, channelId, serverId, imageFileId, imageUrl, replyToId, mentions } = body;
 
-		if ((!text && !imageFileId) || !channelId) {
-			return NextResponse.json(
-				{ error: "text or imageFileId, and channelId are required" },
-				{ status: 400 }
-			);
-		}
+	if ((!text && !imageFileId) || !channelId) {
+		return NextResponse.json(
+			{ error: "text or imageFileId, and channelId are required" },
+			{ status: 400 }
+		);
+	}
 
-		const userId = user.$id;
-		const userName = user.name;
-		
-		addTransactionAttributes({
-			userId,
-			channelId,
-			serverId: serverId || "none",
-			hasImage: !!imageFileId,
-			isReply: !!replyToId,
-		});
-
-		// Create message permissions
+	const userId = user.$id;
+	const userName = user.name;
+	
+	addTransactionAttributes({
+		userId,
+		channelId,
+		serverId: serverId || "none",
+		hasImage: !!imageFileId,
+		isReply: !!replyToId,
+		hasMentions: mentions && mentions.length > 0,
+	});		// Create message permissions
 		const permissions = perms.message(userId, {
 			mod: env.teams.moderatorTeamId,
 			admin: env.teams.adminTeamId,
@@ -83,6 +82,10 @@ export async function POST(request: NextRequest) {
 		// Add reply field if provided
 		if (replyToId) {
 			messageData.replyToId = replyToId;
+		}
+		// Add mentions array if provided
+		if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+			messageData.mentions = mentions;
 		}
 
 		const dbStartTime = Date.now();
@@ -117,6 +120,7 @@ export async function POST(request: NextRequest) {
 			imageFileId: doc.imageFileId as string | undefined,
 			imageUrl: doc.imageUrl as string | undefined,
 			replyToId: doc.replyToId as string | undefined,
+			mentions: Array.isArray(doc.mentions) ? doc.mentions as string[] : undefined,
 		};
 		
 		// Track message sent event

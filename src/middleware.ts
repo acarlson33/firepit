@@ -1,11 +1,10 @@
-import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = ["/", "/login", "/register"];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
 	// Check if route is public (doesn't need authentication)
@@ -20,8 +19,7 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	const cookieStore = await cookies();
-	const sessionCookie = cookieStore.get(`a_session_${projectId}`);
+	const sessionCookie = request.cookies.get(`a_session_${projectId}`);
 	const hasSession = Boolean(sessionCookie?.value);
 
 	// Redirect logic

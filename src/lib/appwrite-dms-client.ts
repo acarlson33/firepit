@@ -5,6 +5,7 @@
 
 import type { Conversation, DirectMessage, UserProfileData } from "./types";
 import { parseReactions } from "./reactions-utils";
+import { extractMentionedUsernames } from "./mention-utils";
 
 /**
  * Upload an image to Appwrite Storage
@@ -178,6 +179,9 @@ export async function sendDirectMessage(
   imageUrl?: string,
   replyToId?: string
 ): Promise<DirectMessage> {
+  // Parse mentions from text
+  const mentions = extractMentionedUsernames(text);
+  
   const response = await fetch("/api/direct-messages", {
     method: "POST",
     headers: {
@@ -191,6 +195,7 @@ export async function sendDirectMessage(
       imageFileId,
       imageUrl,
       replyToId,
+      mentions: mentions.length > 0 ? mentions : undefined,
     }),
   });
 

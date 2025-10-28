@@ -10,16 +10,17 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { EmojiPicker } from "@/components/emoji-picker";
-import { EmojiRenderer } from "@/components/emoji-renderer";
+import { ChatInput } from "@/components/chat-input";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
+import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import type { DirectMessage, Conversation } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -62,7 +63,6 @@ export function DirectMessageView({
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
-	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const otherUser = conversation.otherUser;
 	const displayName =
@@ -343,13 +343,18 @@ export function DirectMessageView({
 													/>
 												</div>
 											)}
-											{removed ? (
-												<span className="italic opacity-70">
-													Message removed
-												</span>
-											) : message.text ? (
-												<p><EmojiRenderer text={message.text} customEmojis={customEmojis} /></p>
-											) : null}
+										{removed ? (
+											<span className="italic opacity-70">
+												Message removed
+											</span>
+										) : message.text ? (
+											<p>
+												<MessageWithMentions
+													text={message.text}
+													currentUserId={currentUserId}
+												/>
+											</p>
+										) : null}
 										</div>
 										{!removed && (
 											<DropdownMenu>
@@ -467,10 +472,11 @@ export function DirectMessageView({
 				<div ref={messagesEndRef} />
 			</div>
 
-			{/* Input */}
-			<div className="space-y-3">
-				{replyingToMessage && (
-					<div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+		{/* Input */}
+		<div className="space-y-3">
+			<MentionHelpTooltip />
+			{replyingToMessage && (
+				<div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
 						<div className="flex-1">
 							<div className="font-medium">
 								Replying to {replyingToMessage.senderDisplayName || "Unknown"}
@@ -536,25 +542,22 @@ export function DirectMessageView({
 						customEmojis={customEmojis}
 						onUploadCustomEmoji={uploadEmoji}
 					/>
-					<Textarea
-						ref={textareaRef}
+					<ChatInput
 						aria-label={editingMessageId ? "Edit message" : "Message"}
 						disabled={sending || uploadingImage}
-						onChange={(e) => {
-							const newText = e.target.value;
-							setText(newText);
+						onChange={(newValue) => {
+							setText(newValue);
 							if (onTypingChange) {
-								onTypingChange(newText);
+								onTypingChange(newValue);
 							}
 						}}
 						placeholder="Type a message..."
 						value={text}
-						className="flex-1 max-h-32 min-h-[60px] resize-none overflow-y-auto rounded-2xl border-border/60"
-						rows={2}
+						className="flex-1 rounded-2xl border-border/60"
 						onKeyDown={(e) => {
 							if (e.key === "Enter" && !e.shiftKey) {
 								e.preventDefault();
-								void handleSend(e);
+								void handleSend(e as unknown as React.FormEvent);
 							}
 							if (e.key === "Escape") {
 								cancelEdit();

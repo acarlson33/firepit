@@ -234,6 +234,7 @@ export async function GET(request: NextRequest) {
         removedAt: (doc.removedAt as string | undefined),
         removedBy: (doc.removedBy as string | undefined),
         replyToId: (doc.replyToId as string | undefined),
+        mentions: Array.isArray(doc.mentions) ? doc.mentions as string[] : undefined,
       }));
 
       const last = items.at(-1);
@@ -291,9 +292,10 @@ export async function POST(request: NextRequest) {
       imageFileId?: string;
       imageUrl?: string;
       replyToId?: string;
+      mentions?: string[];
     };
 
-    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, replyToId } = body;
+    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, replyToId, mentions } = body;
     
     addTransactionAttributes({
       userId: session.$id,
@@ -351,6 +353,10 @@ export async function POST(request: NextRequest) {
     // Add reply field if provided
     if (replyToId) {
       messageData.replyToId = replyToId;
+    }
+    // Add mentions array if provided
+    if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+      messageData.mentions = mentions;
     }
 
     const dbStartTime = Date.now();

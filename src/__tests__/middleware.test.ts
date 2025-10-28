@@ -5,18 +5,8 @@ import type { NextRequest } from "next/server";
 const env = process.env as Record<string, string>;
 env.APPWRITE_PROJECT_ID = "test-project";
 
-// Mock next/headers
-vi.mock("next/headers", () => ({
-	cookies: async () => {
-		const mockCookies = (globalThis as any).__mockCookies || {};
-		return {
-			get: (name: string) => mockCookies[name] || null,
-		};
-	},
-}));
-
-// Import proxy after mocks
-import { proxy } from "../proxy";
+// Import middleware after environment setup
+import { middleware } from "../middleware";
 
 function createMockRequest(pathname: string, searchParams?: Record<string, string>): NextRequest {
 	const url = new URL(`http://localhost${pathname}`);
@@ -25,9 +15,15 @@ function createMockRequest(pathname: string, searchParams?: Record<string, strin
 			url.searchParams.set(key, value);
 		});
 	}
+	
+	const mockCookies = (globalThis as any).__mockCookies || {};
+	
 	return {
 		nextUrl: url,
 		url: url.toString(),
+		cookies: {
+			get: (name: string) => mockCookies[name] || null,
+		},
 	} as NextRequest;
 }
 
@@ -41,7 +37,7 @@ function setMockSession(hasSession: boolean) {
 	}
 }
 
-describe("Proxy Middleware", () => {
+describe("Middleware", () => {
 	beforeEach(() => {
 		// Reset mock session before each test
 		(globalThis as any).__mockCookies = {};
@@ -51,7 +47,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to home page without authentication", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			// next() returns undefined, redirect returns Response
 			expect(response.headers.get("location")).toBeNull();
@@ -60,7 +56,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to login page without authentication", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/login");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -68,7 +64,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to register page without authentication", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/register");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -78,7 +74,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /chat to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/chat");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -88,7 +84,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /admin to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/admin");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -98,7 +94,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /moderation to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/moderation");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -108,7 +104,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /profile to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/profile");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -118,7 +114,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /settings to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/settings");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -128,7 +124,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from any other route to /login when not authenticated", async () => {
 			setMockSession(false);
 			const request = createMockRequest("/some-random-page");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/login");
@@ -140,7 +136,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /login to home when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/login");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("http://localhost/");
@@ -149,7 +145,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect from /register to home when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/register");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("http://localhost/");
@@ -158,7 +154,7 @@ describe("Proxy Middleware", () => {
 		it("should redirect to specified redirect path from /login when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/login", { redirect: "/chat" });
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			const location = response.headers.get("location");
 			expect(location).toContain("/chat");
@@ -169,7 +165,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to /chat when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/chat");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -177,7 +173,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to home page when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -185,7 +181,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to /admin when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/admin");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -193,7 +189,7 @@ describe("Proxy Middleware", () => {
 		it("should allow access to /profile when authenticated", async () => {
 			setMockSession(true);
 			const request = createMockRequest("/profile");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 		});
@@ -206,7 +202,7 @@ describe("Proxy Middleware", () => {
 			
 			setMockSession(false);
 			const request = createMockRequest("/chat");
-			const response = await proxy(request);
+			const response = await middleware(request);
 			
 			expect(response.headers.get("location")).toBeNull();
 			
