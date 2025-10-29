@@ -117,7 +117,6 @@ export default [{
         "react/prop-types": "off",
         "react/jsx-boolean-value": ["error", "never"],
         "react/jsx-key": "error",
-        "jsx-a11y/anchor-is-valid": "warn",
         "suggestCanonicalClasses": "off"
     },
 }, // Ignore generated Next.js route types file triple-slash references (root after monorepo collapse)
