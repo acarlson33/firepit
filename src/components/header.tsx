@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Search } from "lucide-react";
 
 import { ModeToggle } from "./mode-toggle";
 import { StatusSelector } from "./status-selector";
@@ -10,7 +11,11 @@ import { Button } from "./ui/button";
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { useAuth } from "@/contexts/auth-context";
 
-export default function Header() {
+type HeaderProps = {
+  onSearchClick?: () => void;
+};
+
+export default function Header({ onSearchClick }: HeaderProps) {
   const router = useRouter();
   const { userData, userStatus, loading, setUserData, updateUserStatus } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -65,6 +70,16 @@ export default function Header() {
           </div>
           <div className="flex items-center gap-3">
             <div className="h-9 w-24 animate-pulse rounded-full bg-muted" />
+            {onSearchClick && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Search messages"
+                disabled
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+            )}
             <ModeToggle />
           </div>
         </div>
@@ -116,6 +131,17 @@ export default function Header() {
           ) : (
             <Button asChild variant="outline">
               <Link href="/login">Login</Link>
+            </Button>
+          )}
+          {onSearchClick && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onSearchClick}
+              aria-label="Search messages"
+              title="Search messages (Ctrl+K)"
+            >
+              <Search className="h-5 w-5" />
             </Button>
           )}
           <ModeToggle />
