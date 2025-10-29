@@ -352,6 +352,7 @@ export function DirectMessageView({
 												<MessageWithMentions
 													text={message.text}
 													currentUserId={currentUserId}
+													customEmojis={customEmojis}
 												/>
 											</p>
 										) : null}

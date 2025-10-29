@@ -493,6 +493,7 @@ export default function ChatPage() {
                           <MessageWithMentions
                             text={m.text}
                             currentUserId={userId || ""}
+                            customEmojis={customEmojis}
                           />
                         )}
                       </div>

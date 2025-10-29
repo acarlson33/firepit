@@ -1,40 +1,51 @@
 "use client";
 
 import { parseMentions } from "@/lib/mention-utils";
+import { EmojiRenderer } from "@/components/emoji-renderer";
 import type { UserProfileData } from "@/lib/types";
+
+type CustomEmoji = {
+	fileId: string;
+	url: string;
+	name: string;
+};
 
 interface MessageWithMentionsProps {
 	text: string;
 	mentions?: string[]; // User IDs that were mentioned
 	users?: Map<string, UserProfileData>; // Map of userId -> user data for mentioned users
 	currentUserId?: string;
+	customEmojis?: CustomEmoji[];
 }
 
 /**
- * Render message text with highlighted @mentions
+ * Render message text with highlighted @mentions and custom/standard emojis
  */
 export function MessageWithMentions({
 	text,
 	mentions: _mentions = [],
 	users = new Map(),
 	currentUserId,
+	customEmojis = [],
 }: MessageWithMentionsProps) {
 	const mentionMatches = parseMentions(text);
 
 	if (mentionMatches.length === 0) {
-		return <span>{text}</span>;
+		return <EmojiRenderer text={text} customEmojis={customEmojis} />;
 	}
 
 	const parts: React.ReactNode[] = [];
 	let lastIndex = 0;
 
 	mentionMatches.forEach((match, index) => {
-		// Add text before mention
+		// Add text before mention (with emoji support)
 		if (match.startIndex > lastIndex) {
 			parts.push(
-				<span key={`text-${index}`}>
-					{text.substring(lastIndex, match.startIndex)}
-				</span>,
+				<EmojiRenderer
+					key={`text-${index}`}
+					text={text.substring(lastIndex, match.startIndex)}
+					customEmojis={customEmojis}
+				/>,
 			);
 		}
 
@@ -68,9 +79,15 @@ export function MessageWithMentions({
 		lastIndex = match.endIndex;
 	});
 
-	// Add remaining text after last mention
+	// Add remaining text after last mention (with emoji support)
 	if (lastIndex < text.length) {
-		parts.push(<span key="text-end">{text.substring(lastIndex)}</span>);
+		parts.push(
+			<EmojiRenderer
+				key="text-end"
+				text={text.substring(lastIndex)}
+				customEmojis={customEmojis}
+			/>,
+		);
 	}
 
 	return <span>{parts}</span>;
