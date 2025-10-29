@@ -74,6 +74,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
               <Button
                 variant="ghost"
                 size="icon"
+                onClick={onSearchClick}
                 aria-label="Search messages"
                 disabled
               >
