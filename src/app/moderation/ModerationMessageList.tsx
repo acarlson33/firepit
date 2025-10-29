@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { getBrowserClient } from "@/lib/appwrite-core";
+import { MessageWithMentions } from "@/components/message-with-mentions";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import {
 	actionHardDeleteBound,
 	actionRestoreBound,
@@ -78,6 +80,7 @@ export function ModerationMessageList({
 	isAdmin,
 }: Props) {
 	const [messages, setMessages] = useState(initialMessages);
+	const { customEmojis } = useCustomEmojis();
 
 	useEffect(() => {
 		// Subscribe to real-time updates for the messages collection
@@ -155,7 +158,15 @@ export function ModerationMessageList({
 								</div>
 
 								{/* Message Text */}
-								<p className="wrap-break-word text-sm leading-relaxed">{m.text}</p>
+								<p className="wrap-break-word text-sm leading-relaxed">
+									{m.text ? (
+										<MessageWithMentions
+											text={m.text}
+											currentUserId=""
+											customEmojis={customEmojis}
+										/>
+									) : null}
+								</p>
 
 								{/* Author and Metadata */}
 								<div className="flex flex-wrap items-center gap-2 text-xs">
