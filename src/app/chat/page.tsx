@@ -841,7 +841,6 @@ export default function ChatPage() {
                   <>
                     {imagePreview && (
                       <div className="relative inline-block">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           alt="Upload preview"
                           className="h-32 rounded-lg object-cover"

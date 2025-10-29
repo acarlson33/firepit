@@ -502,7 +502,6 @@ export function DirectMessageView({
 				)}
 				{imagePreview && (
 					<div className="relative mb-2 inline-block">
-						{/* eslint-disable-next-line @next/next/no-img-element */}
 						<img
 							alt="Upload preview"
 							className="h-32 rounded-lg object-cover"

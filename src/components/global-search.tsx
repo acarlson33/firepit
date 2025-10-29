@@ -69,7 +69,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 	useEffect(() => {
 		const timeoutId = setTimeout(() => {
 			if (query.trim().length >= 2) {
-				searchMessages(query);
+				void searchMessages(query);
 			} else {
 				setResults([]);
 			}

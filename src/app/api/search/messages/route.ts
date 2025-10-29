@@ -336,7 +336,8 @@ export async function GET(request: NextRequest) {
 		const userIds = new Set<string>();
 		for (const result of limitedResults) {
 			if (result.type === "channel") {
-				userIds.add(result.message.userId);
+				const message = result.message as Message;
+				userIds.add(message.userId);
 			} else {
 				const dm = result.message as DirectMessage;
 				userIds.add(dm.senderId);
