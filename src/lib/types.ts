@@ -4,6 +4,12 @@ export type User = {
   email: string;
 };
 
+export type CustomEmoji = {
+  fileId: string;
+  url: string;
+  name: string;
+};
+
 export type Message = {
   $id: string;
   userId: string;

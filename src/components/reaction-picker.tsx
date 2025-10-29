@@ -9,12 +9,7 @@ import {
 	DropdownMenuContent,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type CustomEmoji = {
-	fileId: string;
-	url: string;
-	name: string;
-};
+import type { CustomEmoji } from "@/lib/types";
 
 type ReactionPickerProps = {
 	onSelectEmoji: (emoji: string) => Promise<void>;

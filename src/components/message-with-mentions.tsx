@@ -2,13 +2,7 @@
 
 import { parseMentions } from "@/lib/mention-utils";
 import { EmojiRenderer } from "@/components/emoji-renderer";
-import type { UserProfileData } from "@/lib/types";
-
-type CustomEmoji = {
-	fileId: string;
-	url: string;
-	name: string;
-};
+import type { UserProfileData, CustomEmoji } from "@/lib/types";
 
 interface MessageWithMentionsProps {
 	text: string;

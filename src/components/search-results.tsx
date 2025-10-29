@@ -3,13 +3,7 @@
 import { formatDistanceToNow } from "date-fns";
 import { Hash, MessageSquare, Image as ImageIcon } from "lucide-react";
 import { MessageWithMentions } from "@/components/message-with-mentions";
-import type { Message, DirectMessage } from "@/lib/types";
-
-type CustomEmoji = {
-	fileId: string;
-	url: string;
-	name: string;
-};
+import type { Message, DirectMessage, CustomEmoji } from "@/lib/types";
 
 type SearchResult = {
 	type: "channel" | "dm";

@@ -3,12 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-type CustomEmoji = {
-	fileId: string;
-	url: string;
-	name: string;
-};
+import type { CustomEmoji } from "@/lib/types";
 
 type Reaction = {
 	emoji: string;

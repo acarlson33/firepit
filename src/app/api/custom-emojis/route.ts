@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
-
-type CustomEmoji = {
-  fileId: string;
-  url: string;
-  name: string;
-};
+import type { CustomEmoji } from "@/lib/types";
 
 /**
  * GET /api/custom-emojis

@@ -2,12 +2,7 @@
 
 import { memo } from "react";
 import * as emoji from "node-emoji";
-
-type CustomEmoji = {
-  fileId: string;
-  url: string;
-  name: string;
-};
+import type { CustomEmoji } from "@/lib/types";
 
 type EmojiRendererProps = {
   text: string;
