@@ -523,6 +523,7 @@ async function setupDirectMessages() {
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
 	await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
+	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
 }
 
 async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
