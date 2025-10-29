@@ -2,7 +2,8 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { Hash, MessageSquare, Image as ImageIcon } from "lucide-react";
-import type { Message, DirectMessage } from "@/lib/types";
+import { MessageWithMentions } from "@/components/message-with-mentions";
+import type { Message, DirectMessage, CustomEmoji } from "@/lib/types";
 
 type SearchResult = {
 	type: "channel" | "dm";
@@ -12,6 +13,7 @@ type SearchResult = {
 type SearchResultsProps = {
 	results: SearchResult[];
 	onClose: () => void;
+	customEmojis?: CustomEmoji[];
 };
 
 function formatTimestamp(timestamp: string): string {
@@ -64,7 +66,7 @@ function UserAvatar({
 	);
 }
 
-export function SearchResults({ results, onClose }: SearchResultsProps) {
+export function SearchResults({ results, onClose, customEmojis = [] }: SearchResultsProps) {
 	const handleResultClick = (result: SearchResult) => {
 		if (result.type === "channel") {
 			const message = result.message as Message;
@@ -140,7 +142,11 @@ export function SearchResults({ results, onClose }: SearchResultsProps) {
 							</div>
 
 							<p className="mt-1 text-muted-foreground text-sm">
-								{truncateText(message.text)}
+								<MessageWithMentions
+									text={truncateText(message.text)}
+									currentUserId=""
+									customEmojis={customEmojis}
+								/>
 							</p>
 
 							{message.editedAt && (

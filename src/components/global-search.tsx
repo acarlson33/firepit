@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SearchResults } from "./search-results";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import type { Message, DirectMessage } from "@/lib/types";
 
 type SearchResult = {
@@ -27,6 +28,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 	const [results, setResults] = useState<SearchResult[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const { customEmojis } = useCustomEmojis();
 
 	const searchMessages = useCallback(async (searchQuery: string) => {
 		if (searchQuery.trim().length < 2) {
@@ -159,7 +161,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
 					)}
 
 					{!isLoading && !error && results.length > 0 && (
-						<SearchResults results={results} onClose={() => onOpenChange(false)} />
+						<SearchResults results={results} onClose={() => onOpenChange(false)} customEmojis={customEmojis} />
 					)}
 
 					{!query && !isLoading && !error && (

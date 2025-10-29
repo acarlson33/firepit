@@ -1,11 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-
-type CustomEmoji = {
-  fileId: string;
-  url: string;
-  name: string;
-};
+import type { CustomEmoji } from "@/lib/types";
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
 

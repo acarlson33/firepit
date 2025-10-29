@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { CustomEmoji } from "@/lib/types";
 
 // Dynamically import emoji picker to reduce initial bundle size
 const Picker = dynamic(
@@ -20,12 +21,6 @@ const Picker = dynamic(
     loading: () => <div className="flex items-center justify-center p-4"><Loader2 className="size-6 animate-spin" /></div>,
   }
 );
-
-type CustomEmoji = {
-  fileId: string;
-  url: string;
-  name: string;
-};
 
 type EmojiPickerProps = {
   onEmojiSelect: (emoji: string) => void;
