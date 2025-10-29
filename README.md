@@ -1,6 +1,6 @@
 # firepit
 
-> warning: missing important features. This is currently in early alpha testing, expect bugs and issues to arise. Not recommended for production or enterprise use.
+> warning: missing important features. This is currently in mid-to-late alpha testing, expect bugs and issues to arise. Not recommended for production or enterprise use.
 
 The original idea was for an open source "extension" of sorts to discord, since then it has been scrapped and then re-made to be it's own project. Functions like a discord clone with some added features.
 
