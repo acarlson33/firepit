@@ -4,6 +4,7 @@ import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import {
 	logger,
 	recordError,
@@ -107,6 +108,12 @@ function validateFileType(mimeType: string, size: number): { valid: boolean; cat
 /**
  * POST /api/upload-file
  * Upload a file to Appwrite Storage (supports various file types)
+ * 
+ * Security features:
+ * - Rate limiting: 10 uploads per 5 minutes per user
+ * - File type validation against whitelist
+ * - File size validation per category
+ * - Authentication required
  */
 export async function POST(request: NextRequest) {
 	const startTime = Date.now();
@@ -123,6 +130,38 @@ export async function POST(request: NextRequest) {
 		logger.info("Session verified", { userId: session.$id });
 
 		addTransactionAttributes({ userId: session.$id });
+
+		// Rate limiting: 10 uploads per 5 minutes
+		const rateLimitResult = checkRateLimit(`upload:${session.$id}`, {
+			maxRequests: 10,
+			windowMs: 5 * 60 * 1000, // 5 minutes
+		});
+
+		if (!rateLimitResult.allowed) {
+			logger.warn("Rate limit exceeded", { 
+				userId: session.$id, 
+				retryAfter: rateLimitResult.retryAfter 
+			});
+			return jsonResponse(
+				{ 
+					error: "Too many upload requests. Please try again later.",
+					retryAfter: rateLimitResult.retryAfter,
+				},
+				{ 
+					status: 429,
+					headers: {
+						"Retry-After": String(rateLimitResult.retryAfter || 60),
+						"X-RateLimit-Limit": "10",
+						"X-RateLimit-Remaining": String(rateLimitResult.remaining),
+						"X-RateLimit-Reset": String(rateLimitResult.resetAt),
+					},
+				}
+			);
+		}
+
+		logger.info("Rate limit check passed", { 
+			remaining: rateLimitResult.remaining 
+		});
 
 		const env = getEnvConfig() as {
 			endpoint: string;

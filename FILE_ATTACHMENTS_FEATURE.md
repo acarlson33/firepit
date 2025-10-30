@@ -145,6 +145,61 @@ import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 <FileAttachmentDisplay attachment={fileAttachment} />
 ```
 
+### FileUploadButton
+
+Button component for uploading files with progress indication.
+
+```tsx
+import { FileUploadButton } from "@/components/file-upload-button";
+
+<FileUploadButton
+  onFileSelect={(attachment) => {
+    // Handle file upload
+    console.log('File uploaded:', attachment);
+  }}
+  disabled={false}
+/>
+```
+
+### FilePreview
+
+Preview component for displaying selected file before sending.
+
+```tsx
+import { FilePreview } from "@/components/file-upload-button";
+
+<FilePreview
+  attachment={fileAttachment}
+  onRemove={() => {
+    // Remove file from selection
+  }}
+/>
+```
+
+### FileDropZone
+
+Drag-and-drop zone wrapper for file uploads.
+
+```tsx
+import { FileDropZone } from "@/components/file-drop-zone";
+
+<FileDropZone
+  onFileDrop={(file) => {
+    // Handle dropped file
+    void uploadFile(file);
+  }}
+  disabled={false}
+>
+  <div>Drag files here or click to upload</div>
+</FileDropZone>
+```
+
+**Features:**
+- Visual feedback when dragging files over the zone
+- Prevents default browser drag behavior
+- Supports file type filtering via `accept` prop
+- Automatically handles first file in multi-file drops
+
 ## Utility Functions
 
 ### getFileCategory
@@ -220,6 +275,18 @@ All file uploads are validated server-side for:
 1. **Authentication**: User must be logged in
 2. **File Type**: MIME type must be in allowed list
 3. **File Size**: Must not exceed category-specific limits
+4. **Rate Limiting**: Maximum 10 uploads per 5 minutes per user
+
+### Rate Limiting
+
+To prevent abuse, the API enforces rate limits:
+- **Limit**: 10 uploads per 5-minute window per user
+- **Response**: HTTP 429 (Too Many Requests) when limit exceeded
+- **Headers**: 
+  - `Retry-After`: Seconds until next request allowed
+  - `X-RateLimit-Limit`: Maximum requests in window
+  - `X-RateLimit-Remaining`: Remaining requests in current window
+  - `X-RateLimit-Reset`: Unix timestamp when window resets
 
 ### Permissions
 
@@ -233,6 +300,7 @@ Files are created with:
 - MIME types are validated server-side
 - File extensions are restricted at the bucket level
 - File sizes are enforced per category
+- Rate limiting prevents upload flooding
 
 ## Usage Example
 
@@ -307,6 +375,45 @@ function MessageItem({ message }: { message: Message }) {
 }
 ```
 
+### Using Drag and Drop
+
+```tsx
+import { FileDropZone } from "@/components/file-drop-zone";
+import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
+import { useState } from "react";
+
+function ChatInput() {
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
+
+  const handleFileDrop = async (file: File) => {
+    // Upload dropped file
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('/api/upload-file', {
+      method: 'POST',
+      body: formData,
+    });
+    const result = await response.json();
+    setAttachment(result);
+  };
+
+  return (
+    <FileDropZone onFileDrop={handleFileDrop}>
+      <div className="chat-input">
+        <input type="text" placeholder="Type a message..." />
+        <FileUploadButton onFileSelect={setAttachment} />
+        {attachment && (
+          <FilePreview
+            attachment={attachment}
+            onRemove={() => setAttachment(null)}
+          />
+        )}
+      </div>
+    </FileDropZone>
+  );
+}
+```
+
 ## Testing
 
 ### Running Tests
@@ -328,10 +435,24 @@ The feature includes comprehensive tests for:
 - ✅ File type validation
 - ✅ File size validation
 - ✅ Authentication checks
+- ✅ Rate limiting logic
 - ✅ Error handling
 - ✅ File icon component
 - ✅ File category detection
 - ✅ File size formatting
+
+## Recent Enhancements
+
+### Security Features
+- ✅ **Rate Limiting**: Prevents upload flooding (10 uploads per 5 minutes per user)
+- ✅ **Rate Limit Headers**: Provides clear feedback when limits are exceeded
+- ✅ **In-Memory Store**: Fast rate limit checks with automatic cleanup
+
+### UI Integration
+- ✅ **File Upload Button**: One-click file selection with progress indication
+- ✅ **File Preview**: Preview selected files before sending
+- ✅ **Drag & Drop Zone**: Intuitive drag-and-drop interface with visual feedback
+- ✅ **File Icons**: Smart icon selection based on file type
 
 ## Future Enhancements
 
@@ -341,10 +462,10 @@ Potential improvements for future iterations:
 2. **Chunked Uploads**: Support large files with resumable uploads
 3. **Video Thumbnails**: Generate thumbnails for video files
 4. **PDF Preview**: Inline PDF viewer component
-5. **Drag & Drop**: Drag and drop file upload UI
-6. **Multiple Files**: Support uploading multiple files at once
-7. **File Compression**: Automatic compression for large files
-8. **CDN Integration**: Serve files through CDN for better performance
+5. **Multiple Files**: Support uploading multiple files at once
+6. **File Compression**: Automatic compression for large files
+7. **CDN Integration**: Serve files through CDN for better performance
+8. **Redis Rate Limiting**: Distributed rate limiting for multi-server deployments
 
 ## Troubleshooting
 
@@ -353,8 +474,16 @@ Potential improvements for future iterations:
 1. Check user is authenticated
 2. Verify file type is supported
 3. Confirm file size is within limits
-4. Check Appwrite bucket configuration
-5. Review API endpoint logs
+4. Check if rate limit is exceeded (look for 429 response)
+5. Check Appwrite bucket configuration
+6. Review API endpoint logs
+
+### Rate Limit Exceeded (429 Error)
+
+1. Wait for the time specified in `Retry-After` header
+2. Check `X-RateLimit-Reset` header for exact reset timestamp
+3. Reduce upload frequency (max 10 per 5 minutes)
+4. Implement client-side rate limit tracking
 
 ### Files Not Displaying
 
