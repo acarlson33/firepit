@@ -158,3 +158,65 @@ export type UserProfileData = {
     lastSeenAt: string;
   };
 };
+
+export type Permission =
+  | "readMessages"
+  | "sendMessages"
+  | "manageMessages"
+  | "manageChannels"
+  | "manageRoles"
+  | "manageServer"
+  | "mentionEveryone"
+  | "administrator";
+
+export type Role = {
+  $id: string;
+  serverId: string;
+  name: string;
+  color: string; // Hex color code like "#5865F2"
+  position: number; // Higher number = higher in hierarchy
+  // Permission flags
+  readMessages: boolean;
+  sendMessages: boolean;
+  manageMessages: boolean;
+  manageChannels: boolean;
+  manageRoles: boolean;
+  manageServer: boolean;
+  mentionEveryone: boolean;
+  administrator: boolean;
+  // Other properties
+  mentionable: boolean;
+  memberCount?: number;
+  $createdAt?: string;
+};
+
+export type RoleAssignment = {
+  $id: string;
+  userId: string;
+  serverId: string;
+  roleIds: string[]; // Array of role IDs assigned to this user
+  $createdAt?: string;
+};
+
+export type ChannelPermissionOverride = {
+  $id: string;
+  channelId: string;
+  roleId?: string; // If set, this override applies to a role
+  userId?: string; // If set, this override applies to a specific user
+  allow: Permission[]; // Permissions explicitly allowed
+  deny: Permission[]; // Permissions explicitly denied (takes precedence)
+  $createdAt?: string;
+};
+
+// Utility type for checking if user has specific permission
+export type PermissionCheck = {
+  userId: string;
+  serverId: string;
+  channelId?: string;
+  permission: Permission;
+};
+
+// Utility type for effective permissions after calculating hierarchy
+export type EffectivePermissions = {
+  [K in Permission]: boolean;
+};

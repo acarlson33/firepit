@@ -1,0 +1,90 @@
+import { NextResponse } from "next/server";
+import { Client, Databases, Query } from "node-appwrite";
+
+const endpoint = process.env.APPWRITE_ENDPOINT;
+const project = process.env.APPWRITE_PROJECT_ID;
+const apiKey = process.env.APPWRITE_API_KEY;
+const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
+const membershipsCollectionId = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID || "memberships";
+const profilesCollectionId = process.env.APPWRITE_PROFILES_COLLECTION_ID || "profiles";
+const roleAssignmentsCollectionId = "role_assignments";
+
+if (!endpoint || !project || !apiKey) {
+	throw new Error("Missing Appwrite configuration");
+}
+
+const client = new Client().setEndpoint(endpoint).setProject(project);
+if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "function") {
+	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
+}
+const databases = new Databases(client);
+
+type RouteContext = {
+	params: Promise<{ serverId: string }>;
+};
+
+export async function GET(
+	request: Request,
+	context: RouteContext
+) {
+	try {
+		const { serverId } = await context.params;
+
+		// Get all memberships for this server
+		const memberships = await databases.listDocuments(
+			databaseId,
+			membershipsCollectionId,
+			[Query.equal("serverId", serverId), Query.limit(100)]
+		);
+
+		// Get role assignments for this server
+		const roleAssignments = await databases.listDocuments(
+			databaseId,
+			roleAssignmentsCollectionId,
+			[Query.equal("serverId", serverId), Query.limit(100)]
+		);
+
+		// Create a map of userId to roleIds
+		const roleMap = new Map<string, string[]>();
+		for (const assignment of roleAssignments.documents) {
+			roleMap.set(assignment.userId as string, (assignment.roleIds as string[]) || []);
+		}
+
+		// Enrich memberships with profile data and roles
+		const members = await Promise.all(
+			memberships.documents.map(async (membership) => {
+				const userId = membership.userId as string;
+				try {
+					const profiles = await databases.listDocuments(
+						databaseId,
+						profilesCollectionId,
+						[Query.equal("userId", userId), Query.limit(1)]
+					);
+
+					const profile = profiles.documents[0];
+
+					return {
+						userId,
+						userName: profile?.userId,
+						displayName: profile?.displayName,
+						avatarUrl: profile?.avatarUrl,
+						roleIds: roleMap.get(userId) || [],
+					};
+				} catch {
+					return {
+						userId,
+						roleIds: roleMap.get(userId) || [],
+					};
+				}
+			})
+		);
+
+		return NextResponse.json({ members });
+	} catch (error) {
+		console.error("Failed to list server members:", error);
+		return NextResponse.json(
+			{ error: "Failed to list server members" },
+			{ status: 500 }
+		);
+	}
+}

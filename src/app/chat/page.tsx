@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { MoreVertical, MessageSquare, Hash, Image as ImageIcon, X } from "lucide-react";
+import { MoreVertical, MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +46,15 @@ const UserProfileModal = dynamic(() => import("@/components/user-profile-modal")
 const NewConversationDialog = dynamic(() => import("./components/NewConversationDialog").then((mod) => ({ default: mod.NewConversationDialog })), {
   ssr: false,
 });
+const RoleSettingsDialog = dynamic(() => import("@/components/role-settings-dialog").then((mod) => ({ default: mod.RoleSettingsDialog })), {
+  ssr: false,
+});
+const ChannelPermissionsEditor = dynamic(() => import("@/components/channel-permissions-editor").then((mod) => ({ default: mod.ChannelPermissionsEditor })), {
+  ssr: false,
+});
+const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel").then((mod) => ({ default: mod.ServerAdminPanel })), {
+  ssr: false,
+});
 
 export default function ChatPage() {
   const { userData } = useAuth();
@@ -63,6 +72,9 @@ export default function ChatPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [newConversationOpen, setNewConversationOpen] = useState(false);
+  const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
+  const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<{
     userId: string;
     userName?: string;
@@ -254,13 +266,38 @@ export default function ChatPage() {
   );
 
   function renderServers() {
+    const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
+    const isOwner = selectedServerData?.ownerId === userId;
+
     return (
       <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold tracking-tight">Servers</h2>
-          <span className="text-xs text-muted-foreground">
-            {serversApi.servers.length} total
-          </span>
+          <div className="flex items-center gap-2">
+            {serversApi.selectedServer && isOwner && (
+              <>
+                <Button
+                  onClick={() => setAdminPanelOpen(true)}
+                  size="sm"
+                  variant="ghost"
+                  title="Admin Panel"
+                >
+                  <Shield className="h-4 w-4" />
+                </Button>
+                <Button
+                  onClick={() => setRoleSettingsOpen(true)}
+                  size="sm"
+                  variant="ghost"
+                  title="Server Settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {serversApi.servers.length} total
+            </span>
+          </div>
         </div>
         <ul className="space-y-2">
           {serversApi.servers.map((s) => {
@@ -756,6 +793,29 @@ export default function ChatPage() {
             />
           ) : (
             <>
+              {/* Channel Header */}
+              {selectedChannel && (
+                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-semibold">
+                      {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+                    </h2>
+                  </div>
+                  {serversApi.selectedServer && 
+                   serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                    <Button
+                      onClick={() => setChannelPermissionsOpen(true)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span className="ml-2">Channel Permissions</span>
+                    </Button>
+                  )}
+                </div>
+              )}
               {renderMessages()}
               {/* Chat Input */}
               {!selectedConversationId && (
@@ -948,6 +1008,39 @@ export default function ChatPage() {
             setViewingImage(null);
           }}
           src={viewingImage.url}
+        />
+      )}
+
+      {/* Role Settings Dialog */}
+      {serversApi.selectedServer && (
+        <RoleSettingsDialog
+          open={roleSettingsOpen}
+          onOpenChange={setRoleSettingsOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+
+      {/* Channel Permissions Editor */}
+      {selectedChannel && serversApi.selectedServer && (
+        <ChannelPermissionsEditor
+          open={channelPermissionsOpen}
+          onOpenChange={setChannelPermissionsOpen}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+          serverId={serversApi.selectedServer}
+        />
+      )}
+
+      {/* Server Admin Panel */}
+      {serversApi.selectedServer && (
+        <ServerAdminPanel
+          open={adminPanelOpen}
+          onOpenChange={setAdminPanelOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
         />
       )}
     </div>
