@@ -526,7 +526,12 @@ async function setupDirectMessages() {
 	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
 }
 
-async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
+async function ensureBucket(
+	id: string,
+	name: string,
+	maxFileSize = 2097152,
+	allowedExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
+) {
 	try {
 		await tryVariants([
 			() => storageAny.getBucket(id),
@@ -542,7 +547,7 @@ async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
 					false, // fileSecurity (document-level perms)
 					true, // enabled
 					maxFileSize, // max file size
-					["jpg", "jpeg", "png", "gif", "webp"], // allowed extensions
+					allowedExtensions, // allowed extensions
 				),
 			() =>
 				storageAny.createBucket?.({
@@ -552,7 +557,7 @@ async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
 					fileSecurity: false,
 					enabled: true,
 					maximumFileSize: maxFileSize,
-					allowedFileExtensions: ["jpg", "jpeg", "png", "gif", "webp"],
+					allowedFileExtensions: allowedExtensions,
 				}),
 		]);
 		info(`[setup] created bucket '${id}'`);
@@ -560,9 +565,29 @@ async function ensureBucket(id: string, name: string, maxFileSize = 2097152) {
 }
 
 async function setupStorage() {
-	await ensureBucket("avatars", "User Avatars", 2097152); // 2MB for avatars
-	await ensureBucket("images", "Chat Images", 5242880); // 5MB for chat images
-	await ensureBucket("emojis", "Custom Emojis", 10485760); // 10MB for custom emojis
+	await ensureBucket("avatars", "User Avatars", 2097152, ["jpg", "jpeg", "png", "gif", "webp"]); // 2MB for avatars
+	await ensureBucket("images", "Chat Images", 5242880, ["jpg", "jpeg", "png", "gif", "webp"]); // 5MB for chat images
+	await ensureBucket("emojis", "Custom Emojis", 10485760, ["jpg", "jpeg", "png", "gif", "webp"]); // 10MB for custom emojis
+	// Files bucket for various file types (documents, videos, audio, archives, code)
+	await ensureBucket(
+		"files",
+		"File Attachments",
+		52428800, // 50MB max
+		[
+			// Documents
+			"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt",
+			// Videos
+			"mp4", "webm", "mov", "avi", "mkv",
+			// Audio
+			"mp3", "wav", "ogg", "m4a", "flac",
+			// Archives
+			"zip", "rar", "7z", "tar", "gz",
+			// Code files
+			"js", "ts", "jsx", "tsx", "py", "java", "c", "cpp", "h", "css", "html", "json", "xml", "yaml", "yml", "md",
+			// Other common formats
+			"csv", "svg", "ico",
+		]
+	);
 }
 
 async function ensureTeams() {
