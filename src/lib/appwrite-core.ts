@@ -70,6 +70,7 @@ export type EnvConfig = {
     avatars: string;
     emojis: string;
     images: string;
+    files: string;
   };
   teams: {
     adminTeamId: string | null;
@@ -197,6 +198,12 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_IMAGES_BUCKET_ID,
         "images"
       ) || "images",
+    files:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_FILES_BUCKET_ID,
+        process.env.APPWRITE_FILES_BUCKET_ID,
+        "files"
+      ) || "files",
   };
   const teams = {
     adminTeamId:

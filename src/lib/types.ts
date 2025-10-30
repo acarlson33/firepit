@@ -10,6 +10,15 @@ export type CustomEmoji = {
   name: string;
 };
 
+export type FileAttachment = {
+  fileId: string;
+  fileName: string;
+  fileSize: number; // Bytes
+  fileType: string; // MIME type
+  fileUrl: string;
+  thumbnailUrl?: string; // For videos
+};
+
 export type Message = {
   $id: string;
   userId: string;
@@ -23,6 +32,7 @@ export type Message = {
   removedBy?: string;
   imageFileId?: string;
   imageUrl?: string;
+  attachments?: FileAttachment[]; // File attachments beyond images
   replyToId?: string; // ID of the message this is replying to
   mentions?: string[]; // Array of mentioned user IDs
   reactions?: Array<{
@@ -99,6 +109,7 @@ export type DirectMessage = {
   text: string;
   imageFileId?: string;
   imageUrl?: string;
+  attachments?: FileAttachment[]; // File attachments beyond images
   $createdAt: string;
   editedAt?: string;
   removedAt?: string;
