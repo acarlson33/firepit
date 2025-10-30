@@ -35,8 +35,6 @@ import { EmojiPicker } from "@/components/emoji-picker";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
-import { GlobalSearch } from "@/components/global-search";
-import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -81,9 +79,6 @@ export default function ChatPage() {
 
   // Custom emojis
   const { customEmojis, uploadEmoji } = useCustomEmojis();
-
-  // Global search
-  const globalSearch = useGlobalSearch();
 
   const openProfileModal = (
     profileUserId: string,
@@ -955,9 +950,6 @@ export default function ChatPage() {
           src={viewingImage.url}
         />
       )}
-
-      {/* Global Search Modal */}
-      <GlobalSearch open={globalSearch.isOpen} onOpenChange={globalSearch.setIsOpen} />
     </div>
   );
 }
