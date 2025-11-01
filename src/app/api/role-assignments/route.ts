@@ -6,6 +6,7 @@ const project = process.env.APPWRITE_PROJECT_ID;
 const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
 const roleAssignmentsCollectionId = "role_assignments";
+const rolesCollectionId = "roles";
 const membershipsCollectionId = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID || "memberships";
 const profilesCollectionId = process.env.APPWRITE_PROFILES_COLLECTION_ID || "profiles";
 
@@ -18,6 +19,33 @@ if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "f
 	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
 }
 const databases = new Databases(client);
+
+// Helper function to update role member count
+async function updateRoleMemberCount(roleId: string, serverId: string): Promise<void> {
+	try {
+		// Count members with this role
+		const assignments = await databases.listDocuments(
+			databaseId,
+			roleAssignmentsCollectionId,
+			[Query.equal("serverId", serverId), Query.limit(1000)]
+		);
+
+		const memberCount = assignments.documents.filter((doc) =>
+			(doc.roleIds as string[]).includes(roleId)
+		).length;
+
+		// Update role document
+		await databases.updateDocument(
+			databaseId,
+			rolesCollectionId,
+			roleId,
+			{ memberCount }
+		);
+	} catch (error) {
+		console.error("Failed to update role member count:", error);
+		// Don't throw - this is a non-critical update
+	}
+}
 
 // GET: List role assignments
 export async function GET(request: NextRequest) {
@@ -166,6 +194,9 @@ export async function POST(request: NextRequest) {
 				{ roleIds: [...currentRoleIds, roleId] }
 			);
 
+			// Update role member count
+			await updateRoleMemberCount(roleId, serverId);
+
 			return NextResponse.json({ assignment: updatedAssignment });
 		}
 
@@ -180,6 +211,9 @@ export async function POST(request: NextRequest) {
 				roleIds: [roleId],
 			}
 		);
+
+		// Update role member count
+		await updateRoleMemberCount(roleId, serverId);
 
 		return NextResponse.json({ assignment }, { status: 201 });
 	} catch (error) {
@@ -251,6 +285,9 @@ export async function DELETE(request: NextRequest) {
 				{ roleIds: updatedRoleIds }
 			);
 		}
+
+		// Update role member count
+		await updateRoleMemberCount(roleId, serverId);
 
 		return NextResponse.json({ success: true });
 	} catch (error) {

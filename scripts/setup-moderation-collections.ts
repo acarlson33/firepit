@@ -226,7 +226,7 @@ async function main() {
     const bannedUsersId = await createBannedUsersCollection();
     const mutedUsersId = await createMutedUsersCollection();
     
-    console.log("\n" + "=".repeat(60));
+    console.log(`\n${"=".repeat(60)}`);
     console.log("✅ All moderation collections created successfully!");
     console.log("=".repeat(60));
     console.log("\n📝 Add these to your .env.local file:\n");
@@ -239,4 +239,4 @@ async function main() {
   }
 }
 
-main();
+void main();

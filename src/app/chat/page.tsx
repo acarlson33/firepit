@@ -18,6 +18,9 @@ import { ReactionPicker } from "@/components/reaction-picker";
 import { ChatInput } from "@/components/chat-input";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
+import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
+import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import type { FileAttachment } from "@/lib/types";
 
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -85,6 +88,7 @@ export default function ChatPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -251,13 +255,27 @@ export default function ChatPage() {
     setSelectedImage(null);
     setImagePreview(null);
 
-    // Send message with image data
-    await send(e, imageFileId, imageUrl);
-  }, [selectedImage, send]);
+    // Prepare attachments (file attachments already uploaded via FileUploadButton)
+    const attachmentsToSend = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+
+    // Clear file attachments state
+    setFileAttachments([]);
+
+    // Send message with image data and file attachments
+    await send(e, imageFileId, imageUrl, attachmentsToSend);
+  }, [selectedImage, fileAttachments, send]);
 
   const handleEmojiSelect = useCallback((emoji: string) => {
     onChangeText({ target: { value: text + emoji } } as React.ChangeEvent<HTMLInputElement>);
   }, [text, onChangeText]);
+
+  const handleFileAttachmentSelect = useCallback((attachment: FileAttachment) => {
+    setFileAttachments((prev) => [...prev, attachment]);
+  }, []);
+
+  const removeFileAttachment = useCallback((index: number) => {
+    setFileAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Derived helpers
   const showChat = useMemo(
@@ -517,6 +535,16 @@ export default function ChatPage() {
                         />
                       </div>
                     )}
+                    {m.attachments && m.attachments.length > 0 && !removed && (
+                      <div className="space-y-2">
+                        {m.attachments.map((attachment, idx) => (
+                          <FileAttachmentDisplay
+                            key={`${m.$id}-${attachment.fileId}-${idx}`}
+                            attachment={attachment}
+                          />
+                        ))}
+                      </div>
+                    )}
                     {m.text && (
                       <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
                         {removed ? (
@@ -530,7 +558,7 @@ export default function ChatPage() {
                         )}
                       </div>
                     )}
-                    {!m.text && !m.imageUrl && removed && (
+                    {!m.text && !m.imageUrl && !m.attachments?.length && removed && (
                       <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
                         <span className="italic opacity-70">Message removed</span>
                       </div>
@@ -913,6 +941,17 @@ export default function ChatPage() {
                         </Button>
                       </div>
                     )}
+                    {fileAttachments.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        {fileAttachments.map((attachment, index) => (
+                          <FilePreview
+                            key={`${attachment.fileId}-${index}`}
+                            attachment={attachment}
+                            onRemove={() => removeFileAttachment(index)}
+                          />
+                        ))}
+                      </div>
+                    )}
                     <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSendWithImage}>
                       <input
                         accept="image/*"
@@ -931,6 +970,11 @@ export default function ChatPage() {
                       >
                         <ImageIcon className="size-4" />
                       </Button>
+                      <FileUploadButton
+                        onFileSelect={handleFileAttachmentSelect}
+                        disabled={!showChat || uploadingImage || Boolean(editingMessageId)}
+                        className="shrink-0"
+                      />
                       <EmojiPicker
                         onEmojiSelect={handleEmojiSelect}
                         customEmojis={customEmojis}
@@ -954,7 +998,7 @@ export default function ChatPage() {
                       />
                       <Button
                         className="rounded-2xl shrink-0"
-                        disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage)}
+                        disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage && fileAttachments.length === 0)}
                         type="submit"
                       >
                       {uploadingImage ? "Uploading..." : "Send"}

@@ -34,7 +34,7 @@ async function main() {
 	}
 
 	const testServer = serversResponse.documents[0];
-	console.log(`✅ Found server: ${testServer.name} (ID: ${testServer.$id})\n`);
+	console.log(`✅ Found server: ${String(testServer.name)} (ID: ${testServer.$id})\n`);
 
 	// 2. List existing roles
 	console.log("📋 Checking existing roles...");
@@ -68,9 +68,9 @@ async function main() {
 		ID.unique(),
 		testRole
 	);
-	console.log(`✅ Created role: ${createdRole.name} (ID: ${createdRole.$id})`);
-	console.log(`   Color: ${createdRole.color}`);
-	console.log(`   Position: ${createdRole.position}`);
+	console.log(`✅ Created role: ${String(createdRole.name)} (ID: ${createdRole.$id})`);
+	console.log(`   Color: ${String(createdRole.color)}`);
+	console.log(`   Position: ${String(createdRole.position)}`);
 	console.log(`   Permissions:`, {
 		readMessages: createdRole.readMessages,
 		sendMessages: createdRole.sendMessages,
@@ -87,7 +87,7 @@ async function main() {
 		createdRole.$id,
 		{ position: 10 }
 	);
-	console.log(`✅ Updated role position to: ${updatedRole.position}\n`);
+	console.log(`✅ Updated role position to: ${String(updatedRole.position)}\n`);
 
 	// 5. List all roles for the server
 	console.log("📋 Listing all roles for server...");
@@ -97,7 +97,7 @@ async function main() {
 	]);
 	console.log(`✅ Found ${allRoles.documents.length} roles:`);
 	for (const role of allRoles.documents) {
-		console.log(`   - ${role.name} (pos: ${role.position}, color: ${role.color})`);
+		console.log(`   - ${String(role.name)} (pos: ${String(role.position)}, color: ${String(role.color)})`);
 	}
 	console.log("");
 
@@ -110,7 +110,7 @@ async function main() {
 	console.log("\n📝 Summary:");
 	console.log(`   - Database: ${databaseId}`);
 	console.log(`   - Collections: roles, role_assignments, channel_permission_overrides`);
-	console.log(`   - Test server: ${testServer.name}`);
+	console.log(`   - Test server: ${String(testServer.name)}`);
 	console.log(`   - Operations tested: CREATE, READ, UPDATE, DELETE`);
 	console.log("\n🎉 All operations successful!");
 }

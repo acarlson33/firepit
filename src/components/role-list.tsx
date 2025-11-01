@@ -26,7 +26,7 @@ type RoleListProperties = {
 
 export function RoleList({
 	roles,
-	serverId,
+	serverId: _serverId,
 	isOwner,
 	onEditRole,
 	onCreateRole,

@@ -2,20 +2,20 @@ import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query } from "node-appwrite";
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID!;
-const CHANNELS_COLLECTION_ID = process.env.APPWRITE_CHANNELS_COLLECTION_ID!;
-const MESSAGES_COLLECTION_ID = process.env.APPWRITE_MESSAGES_COLLECTION_ID!;
-const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID!;
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
+const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
+const CHANNELS_COLLECTION_ID = process.env.APPWRITE_CHANNELS_COLLECTION_ID ?? "";
+const MESSAGES_COLLECTION_ID = process.env.APPWRITE_MESSAGES_COLLECTION_ID ?? "";
+const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID ?? "";
 const BANNED_USERS_COLLECTION_ID = process.env.APPWRITE_BANNED_USERS_COLLECTION_ID;
 const MUTED_USERS_COLLECTION_ID = process.env.APPWRITE_MUTED_USERS_COLLECTION_ID;
 
 export async function GET(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const { serverId } = await params;
     const { databases } = getServerClient();
 
     // Get server info to verify it exists

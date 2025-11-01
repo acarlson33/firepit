@@ -1,0 +1,112 @@
+import { describe, it, expect } from "vitest";
+import { parseReactions } from "@/lib/reactions-utils";
+import type { Reaction } from "@/lib/reactions-utils";
+
+describe("Reactions Utils", () => {
+	describe("parseReactions", () => {
+		it("should return empty array for undefined input", () => {
+			const result = parseReactions(undefined);
+			expect(result).toEqual([]);
+		});
+
+		it("should return empty array for null input", () => {
+			const result = parseReactions(null as unknown as undefined);
+			expect(result).toEqual([]);
+		});
+
+		it("should parse valid JSON string", () => {
+			const reactions: Reaction[] = [
+				{ emoji: "👍", userIds: ["user1", "user2"], count: 2 },
+				{ emoji: "❤️", userIds: ["user3"], count: 1 },
+			];
+			const jsonString = JSON.stringify(reactions);
+			
+			const result = parseReactions(jsonString);
+			
+			expect(result).toHaveLength(2);
+			expect(result[0].emoji).toBe("👍");
+			expect(result[0].count).toBe(2);
+			expect(result[1].emoji).toBe("❤️");
+		});
+
+		it("should handle empty JSON array string", () => {
+			const result = parseReactions("[]");
+			expect(result).toEqual([]);
+		});
+
+		it("should return empty array for invalid JSON string", () => {
+			const result = parseReactions("invalid json");
+			expect(result).toEqual([]);
+		});
+
+		it("should return empty array for non-array JSON", () => {
+			const result = parseReactions('{"not": "array"}');
+			expect(result).toEqual([]);
+		});
+
+		it("should handle array input directly", () => {
+			const reactions: Reaction[] = [
+				{ emoji: "🔥", userIds: ["user1"], count: 1 },
+			];
+			
+			const result = parseReactions(reactions);
+			
+			expect(result).toEqual(reactions);
+			expect(result[0].emoji).toBe("🔥");
+		});
+
+		it("should handle empty array input", () => {
+			const result = parseReactions([]);
+			expect(result).toEqual([]);
+		});
+
+		it("should preserve all reaction properties", () => {
+			const reactions: Reaction[] = [
+				{
+					emoji: "🎉",
+					userIds: ["user1", "user2", "user3"],
+					count: 3,
+				},
+			];
+			
+			const result = parseReactions(reactions);
+			
+			expect(result[0].emoji).toBe("🎉");
+			expect(result[0].userIds).toEqual(["user1", "user2", "user3"]);
+			expect(result[0].count).toBe(3);
+		});
+
+		it("should handle multiple reactions with same emoji", () => {
+			const jsonString = JSON.stringify([
+				{ emoji: "👍", userIds: ["user1"], count: 1 },
+				{ emoji: "👍", userIds: ["user2"], count: 1 },
+			]);
+			
+			const result = parseReactions(jsonString);
+			
+			expect(result).toHaveLength(2);
+			expect(result[0].emoji).toBe("👍");
+			expect(result[1].emoji).toBe("👍");
+		});
+
+		it("should handle reactions with empty userIds arrays", () => {
+			const reactions: Reaction[] = [
+				{ emoji: "😊", userIds: [], count: 0 },
+			];
+			
+			const result = parseReactions(reactions);
+			
+			expect(result[0].userIds).toEqual([]);
+			expect(result[0].count).toBe(0);
+		});
+
+		it("should handle malformed but parseable JSON", () => {
+			const jsonString = '[{"emoji":"😎","userIds":[],"count":0}]';
+			
+			const result = parseReactions(jsonString);
+			
+			expect(result).toHaveLength(1);
+			expect(result[0].emoji).toBe("😎");
+		});
+	});
+});

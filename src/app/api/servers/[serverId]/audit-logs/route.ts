@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query } from "node-appwrite";
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const AUDIT_COLLECTION_ID = process.env.APPWRITE_AUDIT_COLLECTION_ID!;
-const PROFILES_COLLECTION_ID = process.env.APPWRITE_PROFILES_COLLECTION_ID!;
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
+const AUDIT_COLLECTION_ID = process.env.APPWRITE_AUDIT_COLLECTION_ID ?? "";
+const PROFILES_COLLECTION_ID = process.env.APPWRITE_PROFILES_COLLECTION_ID ?? "";
 
 export async function GET(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const { serverId } = await params;
     const { searchParams } = new URL(request.url);
     const limit = Number.parseInt(searchParams.get("limit") || "50", 10);
 
@@ -38,8 +38,12 @@ export async function GET(
     // Enrich with profile data
     const userIds = new Set<string>();
     for (const log of auditLogs.documents) {
-      if (log.userId) userIds.add(log.userId);
-      if (log.targetUserId) userIds.add(log.targetUserId);
+      if (log.userId) {
+        userIds.add(log.userId);
+      }
+      if (log.targetUserId) {
+        userIds.add(log.targetUserId);
+      }
     }
 
     const profiles = new Map();

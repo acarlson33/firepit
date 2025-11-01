@@ -13,7 +13,7 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 
 const { databases } = getAdminClient();
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 
 async function main() {
   console.log("🔧 Setting up role permissions collections\n");

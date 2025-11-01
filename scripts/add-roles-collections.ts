@@ -341,7 +341,7 @@ async function main() {
 	info("[roles] ✅ All roles & permissions collections created successfully!");
 }
 
-main().catch((error) => {
+main().catch((error: Error) => {
 	process.stderr.write(`[roles] Error: ${error.message}\n`);
 	process.exit(1);
 });

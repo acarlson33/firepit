@@ -4,13 +4,81 @@ import {
   getBrowserDatabases,
   getEnvConfig,
 } from "./appwrite-core";
-import type { Message } from "./types";
+import type { Message, FileAttachment } from "./types";
 
 // Environment derived identifiers (centralized)
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const COLLECTION_ID = env.collections.messages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
+const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+
+/**
+ * Fetch attachments for multiple messages and enrich them
+ */
+async function enrichMessagesWithAttachments(
+  messages: Message[],
+  messageType: "channel" | "dm"
+): Promise<Message[]> {
+  if (!messages || messages.length === 0) {
+    return messages;
+  }
+
+  if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
+    return messages;
+  }
+
+  try {
+    // Get all message IDs
+    const messageIds = messages.map((m) => m.$id);
+
+    // Query attachments for all messages
+    const response = await getDatabases().listDocuments({
+      databaseId: DATABASE_ID,
+      collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+      queries: [
+        Query.equal("messageId", messageIds),
+        Query.equal("messageType", messageType),
+        Query.limit(1000), // High limit to get all attachments
+      ],
+    });
+
+    // Group attachments by messageId
+    const attachmentsByMessageId = new Map<string, FileAttachment[]>();
+    for (const doc of response.documents) {
+      const d = doc as Record<string, unknown>;
+      const messageId = String(d.messageId);
+      const attachment: FileAttachment = {
+        fileId: String(d.fileId),
+        fileName: String(d.fileName),
+        fileSize: Number(d.fileSize),
+        fileType: String(d.fileType),
+        fileUrl: String(d.fileUrl),
+        thumbnailUrl: d.thumbnailUrl ? String(d.thumbnailUrl) : undefined,
+      };
+
+      if (!attachmentsByMessageId.has(messageId)) {
+        attachmentsByMessageId.set(messageId, []);
+      }
+      const messageAttachments = attachmentsByMessageId.get(messageId);
+      if (messageAttachments) {
+        messageAttachments.push(attachment);
+      }
+    }
+
+    // Enrich messages with their attachments
+    return messages.map((message) => {
+      const attachments = attachmentsByMessageId.get(message.$id);
+      if (attachments && attachments.length > 0) {
+        return { ...message, attachments };
+      }
+      return message;
+    });
+  } catch {
+    // If attachment fetch fails, return messages without attachments
+    return messages;
+  }
+}
 
 export type ListOptions = {
   limit?: number;
@@ -30,9 +98,10 @@ export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
     collectionId: COLLECTION_ID,
     queries,
   });
-  return mapMessageDocs(
+  const messages = mapMessageDocs(
     (res as unknown as { documents?: unknown[] }).documents || []
   );
+  return enrichMessagesWithAttachments(messages, "channel");
 }
 
 function buildMessageListQueries(opts: ListOptions) {

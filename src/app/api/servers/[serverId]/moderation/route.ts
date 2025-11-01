@@ -4,9 +4,9 @@ import { Query, ID } from "node-appwrite";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID!;
-const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID!;
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
+const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
+const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID ?? "";
 
 // Collection IDs for banned/muted users (create these if they don't exist)
 const BANNED_USERS_COLLECTION_ID = process.env.APPWRITE_BANNED_USERS_COLLECTION_ID;
@@ -14,10 +14,10 @@ const MUTED_USERS_COLLECTION_ID = process.env.APPWRITE_MUTED_USERS_COLLECTION_ID
 
 export async function POST(
   request: Request,
-  { params }: { params: { serverId: string } }
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = params;
+    const { serverId } = await params;
     const body = await request.json();
     const { action, userId, reason } = body;
 
@@ -31,12 +31,11 @@ export async function POST(
     const { databases } = getServerClient();
 
     // Get current user (moderator)
-    let moderatorId: string;
     const session = await getServerSession();
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    moderatorId = session.$id;
+    const moderatorId = session.$id;
 
     // Verify server exists and moderator has permissions
     const server = await databases.getDocument(
@@ -131,7 +130,7 @@ export async function POST(
         }
         break;
 
-      case "kick":
+      case "kick": {
         // Remove from server memberships
         const membership = await databases.listDocuments(
           DATABASE_ID,
@@ -156,6 +155,7 @@ export async function POST(
           );
         }
         break;
+      }
 
       case "unban":
         if (BANNED_USERS_COLLECTION_ID) {
@@ -212,13 +212,13 @@ export async function POST(
 
     // Record audit log
     await recordAudit(
-      action,
+      action as string,
       userId,
       moderatorId,
       {
         serverId,
         reason,
-        details: `User ${action}ned from server`,
+        details: `User ${String(action)}ned from server`,
       }
     );
 

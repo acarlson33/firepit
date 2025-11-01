@@ -5,7 +5,7 @@ import { ID } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import type { Message } from "@/lib/types";
+import type { Message, FileAttachment } from "@/lib/types";
 import {
 	logger,
 	recordError,
@@ -14,6 +14,42 @@ import {
 	trackMessage,
 	addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+
+const MESSAGE_ATTACHMENTS_COLLECTION_ID = process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID || "message_attachments";
+
+// Helper function to create attachment records
+async function createAttachments(
+	messageId: string,
+	messageType: "channel" | "dm",
+	attachments: FileAttachment[]
+): Promise<void> {
+	if (!attachments || attachments.length === 0) {
+		return;
+	}
+
+	const env = getEnvConfig();
+	const { databases } = getServerClient();
+
+	await Promise.all(
+		attachments.map((attachment) =>
+			databases.createDocument(
+				env.databaseId,
+				MESSAGE_ATTACHMENTS_COLLECTION_ID,
+				ID.unique(),
+				{
+					messageId,
+					messageType,
+					fileId: attachment.fileId,
+					fileName: attachment.fileName,
+					fileSize: attachment.fileSize,
+					fileType: attachment.fileType,
+					fileUrl: attachment.fileUrl,
+					thumbnailUrl: attachment.thumbnailUrl || null,
+				}
+			)
+		)
+	);
+}
 
 /**
  * POST /api/messages
@@ -37,11 +73,11 @@ export async function POST(request: NextRequest) {
 
 	const env = getEnvConfig();
 	const body = await request.json();
-	const { text, channelId, serverId, imageFileId, imageUrl, replyToId, mentions } = body;
+	const { text, channelId, serverId, imageFileId, imageUrl, replyToId, mentions, attachments } = body;
 
-	if ((!text && !imageFileId) || !channelId) {
+	if ((!text && !imageFileId && (!attachments || attachments.length === 0)) || !channelId) {
 		return NextResponse.json(
-			{ error: "text or imageFileId, and channelId are required" },
+			{ error: "text, imageFileId, or attachments, and channelId are required" },
 			{ status: 400 }
 		);
 	}
@@ -54,6 +90,7 @@ export async function POST(request: NextRequest) {
 		channelId,
 		serverId: serverId || "none",
 		hasImage: !!imageFileId,
+		hasAttachments: attachments && attachments.length > 0,
 		isReply: !!replyToId,
 		hasMentions: mentions && mentions.length > 0,
 	});		// Create message permissions
@@ -106,6 +143,11 @@ export async function POST(request: NextRequest) {
 			{ operation: "createDocument", collection: "messages" }
 		);
 
+		// Create attachment records if provided
+		if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+			await createAttachments(String(res.$id), "channel", attachments as FileAttachment[]);
+		}
+
 		const doc = res as unknown as Record<string, unknown>;
 		const message: Message = {
 			$id: String(doc.$id),
@@ -130,6 +172,8 @@ export async function POST(request: NextRequest) {
 			channelId,
 			serverId: serverId || undefined,
 			hasImage: !!imageFileId,
+			hasAttachments: attachments && attachments.length > 0,
+			attachmentCount: attachments?.length || 0,
 			isReply: !!replyToId,
 			textLength: text?.length || 0,
 		});
@@ -138,8 +182,14 @@ export async function POST(request: NextRequest) {
 			messageId: message.$id,
 			userId,
 			channelId,
+			hasAttachments: attachments && attachments.length > 0,
 			duration: Date.now() - startTime,
 		});
+
+		// Add attachments to message object for response (they'll be fetched when listing messages)
+		if (attachments && attachments.length > 0) {
+			message.attachments = attachments as FileAttachment[];
+		}
 
 		return NextResponse.json({ message });
 	} catch (error) {

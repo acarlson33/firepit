@@ -1,4 +1,5 @@
 # Firepit Feature Audit Report
+
 **Date:** October 30, 2025  
 **Auditor:** GitHub Copilot  
 **Status:** 🔴 **CRITICAL ISSUE FOUND** - File Attachments Not Integrated
@@ -11,19 +12,19 @@ A comprehensive audit of all major features was conducted. While most features a
 
 ### Overall Status
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Message Reactions | ✅ **COMPLETE** | Fully implemented and working |
-| @Mentions | ✅ **COMPLETE** | Autocomplete, highlighting, storage |
-| Roles & Permissions | ✅ **COMPLETE** | Full RBAC system with UI |
-| Server Moderation | ✅ **COMPLETE** | Ban/mute/kick with audit logs |
-| Message Replies | ✅ **COMPLETE** | Thread view working |
-| Image Uploads | ✅ **COMPLETE** | Works in channels and DMs |
-| Custom Emojis | ✅ **COMPLETE** | Upload and use in messages |
-| Typing Indicators | ✅ **COMPLETE** | Real-time in channels and DMs |
-| Direct Messages | ✅ **COMPLETE** | Full DM system functional |
-| User Profiles | ✅ **COMPLETE** | Avatars, display names, statuses |
-| File Attachments | 🔴 **BROKEN** | **Infrastructure exists but not integrated** |
+| Feature             | Status          | Notes                                        |
+| ------------------- | --------------- | -------------------------------------------- |
+| Message Reactions   | ✅ **COMPLETE** | Fully implemented and working                |
+| @Mentions           | ✅ **COMPLETE** | Autocomplete, highlighting, storage          |
+| Roles & Permissions | ✅ **COMPLETE** | Full RBAC system with UI                     |
+| Server Moderation   | ✅ **COMPLETE** | Ban/mute/kick with audit logs                |
+| Message Replies     | ✅ **COMPLETE** | Thread view working                          |
+| Image Uploads       | ✅ **COMPLETE** | Works in channels and DMs                    |
+| Custom Emojis       | ✅ **COMPLETE** | Upload and use in messages                   |
+| Typing Indicators   | ✅ **COMPLETE** | Real-time in channels and DMs                |
+| Direct Messages     | ✅ **COMPLETE** | Full DM system functional                    |
+| User Profiles       | ✅ **COMPLETE** | Avatars, display names, statuses             |
+| File Attachments    | 🔴 **BROKEN**   | **Infrastructure exists but not integrated** |
 
 ---
 
@@ -44,71 +45,83 @@ The file attachments feature has all the infrastructure built but is **not integ
 ### Root Cause
 
 **Database Attribute Limit Reached:**
+
 ```
-AppwriteException: The maximum number or size of attributes 
+AppwriteException: The maximum number or size of attributes
 for this collection has been reached.
 ```
 
 The `messages` collection already has **13 attributes** and cannot add more:
-- userId, userName, text, serverId, channelId
-- editedAt, removedAt, removedBy
-- replyToId, imageFileId, imageUrl
-- reactions, mentions
+
+-   userId, userName, text, serverId, channelId
+-   editedAt, removedAt, removedBy
+-   replyToId, imageFileId, imageUrl
+-   reactions, mentions
 
 ### Impact
 
-- Users **cannot attach files** to messages (only images via separate field)
-- Documented feature in roadmap **appears complete but doesn't work**
-- FILE_ATTACHMENTS_FEATURE.md documentation describes non-functional feature
+-   Users **cannot attach files** to messages (only images via separate field)
+-   Documented feature in roadmap **appears complete but doesn't work**
+-   FILE_ATTACHMENTS_FEATURE.md documentation describes non-functional feature
 
 ### Solution Options
 
 #### Option 1: Create Separate `message_attachments` Collection (RECOMMENDED)
+
 **Pros:**
-- No attribute limit issues
-- Cleaner data model
-- Can attach unlimited files per message
-- Easy to query attachments separately
+
+-   No attribute limit issues
+-   Cleaner data model
+-   Can attach unlimited files per message
+-   Easy to query attachments separately
 
 **Cons:**
-- Requires JOIN-like queries (or multiple API calls)
-- Slightly more complex API logic
+
+-   Requires JOIN-like queries (or multiple API calls)
+-   Slightly more complex API logic
 
 **Implementation:**
+
 ```typescript
 // New collection schema
 type MessageAttachment = {
-  $id: string;
-  messageId: string;        // Foreign key
-  messageType: 'channel' | 'dm';
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  fileType: string;
-  fileUrl: string;
-  thumbnailUrl?: string;
-  $createdAt: string;
+    $id: string;
+    messageId: string; // Foreign key
+    messageType: "channel" | "dm";
+    fileId: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    fileUrl: string;
+    thumbnailUrl?: string;
+    $createdAt: string;
 };
 ```
 
 #### Option 2: Repurpose `imageUrl` Field for JSON
+
 **Pros:**
-- No new collection needed
-- Works within existing limits
+
+-   No new collection needed
+-   Works within existing limits
 
 **Cons:**
-- Hacky solution
-- Breaks semantic meaning of "imageUrl"
-- Size limit (2000 chars) may not fit multiple files
-- Backward compatibility issues
+
+-   Hacky solution
+-   Breaks semantic meaning of "imageUrl"
+-   Size limit (2000 chars) may not fit multiple files
+-   Backward compatibility issues
 
 #### Option 3: Remove Less Critical Attributes
+
 **Pros:**
-- Could free up space for `attachments`
+
+-   Could free up space for `attachments`
 
 **Cons:**
-- Would break existing features (reactions, mentions, etc.)
-- Not recommended
+
+-   Would break existing features (reactions, mentions, etc.)
+-   Not recommended
 
 ---
 
@@ -119,19 +132,22 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `reactions` attribute exists in both `messages` and `direct_messages`
-- Stores JSON array: `[{emoji, userIds[], count}]`
+
+-   `reactions` attribute exists in both `messages` and `direct_messages`
+-   Stores JSON array: `[{emoji, userIds[], count}]`
 
 **API:**
-- `POST /api/messages/[messageId]/reactions` - Add reaction
-- `DELETE /api/messages/[messageId]/reactions` - Remove reaction
-- Same endpoints for direct messages
+
+-   `POST /api/messages/[messageId]/reactions` - Add reaction
+-   `DELETE /api/messages/[messageId]/reactions` - Remove reaction
+-   Same endpoints for direct messages
 
 **UI:**
-- `ReactionButton` component renders existing reactions
-- `ReactionPicker` allows adding new reactions
-- Works with both standard and custom emojis
-- Real-time updates via Appwrite subscriptions
+
+-   `ReactionButton` component renders existing reactions
+-   `ReactionPicker` allows adding new reactions
+-   Works with both standard and custom emojis
+-   Real-time updates via Appwrite subscriptions
 
 **Test Results:** ✅ PASS
 
@@ -142,18 +158,21 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `mentions` attribute exists (string array) in both collections
-- Stores array of mentioned user IDs
+
+-   `mentions` attribute exists (string array) in both collections
+-   Stores array of mentioned user IDs
 
 **API:**
-- Accepts `mentions` array in POST requests
-- Stores mentions with messages
+
+-   Accepts `mentions` array in POST requests
+-   Stores mentions with messages
 
 **UI:**
-- `MentionAutocomplete` component shows suggestions when typing @
-- `MessageWithMentions` component highlights mentioned users
-- `ChatInput` component handles @ detection
-- Keyboard navigation (arrows, enter, escape)
+
+-   `MentionAutocomplete` component shows suggestions when typing @
+-   `MessageWithMentions` component highlights mentioned users
+-   `ChatInput` component handles @ detection
+-   Keyboard navigation (arrows, enter, escape)
 
 **Test Results:** ✅ PASS
 
@@ -164,27 +183,31 @@ type MessageAttachment = {
 **Status:** Production-ready
 
 **Database Collections:**
-- `roles` - 14 attributes including 8 permission booleans
-- `role_assignments` - User-to-role mappings
-- `channel_permission_overrides` - Channel-specific overrides
+
+-   `roles` - 14 attributes including 8 permission booleans
+-   `role_assignments` - User-to-role mappings
+-   `channel_permission_overrides` - Channel-specific overrides
 
 **API Endpoints:**
-- `/api/roles` - Full CRUD for roles
-- `/api/role-assignments` - Assign/remove roles
-- `/api/channel-permissions` - Override management
-- All endpoints have proper validation and permission checks
+
+-   `/api/roles` - Full CRUD for roles
+-   `/api/role-assignments` - Assign/remove roles
+-   `/api/channel-permissions` - Override management
+-   All endpoints have proper validation and permission checks
 
 **UI Components:**
-- `RoleSettingsDialog` - Main management interface
-- `RoleEditor` - Create/edit roles with permission toggles
-- `RoleList` - Display hierarchy
-- `RoleMemberList` - Manage role members
-- `ChannelPermissionsEditor` - Channel overrides
+
+-   `RoleSettingsDialog` - Main management interface
+-   `RoleEditor` - Create/edit roles with permission toggles
+-   `RoleList` - Display hierarchy
+-   `RoleMemberList` - Manage role members
+-   `ChannelPermissionsEditor` - Channel overrides
 
 **Permission System:**
-- 8 permission types implemented
-- Hierarchy calculation: Owner > Administrator > User Override > Role Override > Base
-- `lib/permissions.ts` with 8 utility functions
+
+-   8 permission types implemented
+-   Hierarchy calculation: Owner > Administrator > User Override > Role Override > Base
+-   `lib/permissions.ts` with 8 utility functions
 
 **Test Results:** ✅ PASS
 
@@ -195,25 +218,29 @@ type MessageAttachment = {
 **Status:** Production-ready
 
 **Database Collections:**
-- `banned_users` - Ban records with reason and timestamp
-- `muted_users` - Mute records with reason and timestamp
-- `audit` - Complete audit trail of all actions
+
+-   `banned_users` - Ban records with reason and timestamp
+-   `muted_users` - Mute records with reason and timestamp
+-   `audit` - Complete audit trail of all actions
 
 **API Endpoints:**
-- `POST /api/servers/[serverId]/moderation` - Ban/mute/kick/unban/unmute
-- `GET /api/servers/[serverId]/audit-logs` - Query audit history
-- `GET /api/servers/[serverId]/stats` - Live moderation stats
+
+-   `POST /api/servers/[serverId]/moderation` - Ban/mute/kick/unban/unmute
+-   `GET /api/servers/[serverId]/audit-logs` - Query audit history
+-   `GET /api/servers/[serverId]/stats` - Live moderation stats
 
 **UI Components:**
-- `ServerAdminPanel` - 4-tab interface (Overview, Members, Moderation, Audit)
-- Ban/mute/kick actions with reason prompts
-- Audit log viewer with profile enrichment
+
+-   `ServerAdminPanel` - 4-tab interface (Overview, Members, Moderation, Audit)
+-   Ban/mute/kick actions with reason prompts
+-   Audit log viewer with profile enrichment
 
 **Features:**
-- Automatic audit logging for all moderation actions
-- Profile enrichment (shows usernames, not just IDs)
-- Permission checks (only owners can moderate)
-- Live stats (member count, banned/muted counts)
+
+-   Automatic audit logging for all moderation actions
+-   Profile enrichment (shows usernames, not just IDs)
+-   Permission checks (only owners can moderate)
+-   Live stats (member count, banned/muted counts)
 
 **Test Results:** ✅ PASS
 
@@ -224,17 +251,20 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `replyToId` attribute exists in both message collections
-- Stores parent message ID
+
+-   `replyToId` attribute exists in both message collections
+-   Stores parent message ID
 
 **API:**
-- Accepts `replyToId` in POST requests
-- Returns reply context in message fetching
+
+-   Accepts `replyToId` in POST requests
+-   Returns reply context in message fetching
 
 **UI:**
-- Shows reply context above replied-to messages
-- Displays quoted content from parent message
-- Cancel reply button to remove reply context
+
+-   Shows reply context above replied-to messages
+-   Displays quoted content from parent message
+-   Cancel reply button to remove reply context
 
 **Test Results:** ✅ PASS
 
@@ -245,24 +275,28 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `imageFileId` and `imageUrl` attributes exist
-- Separate storage bucket `images` configured
+
+-   `imageFileId` and `imageUrl` attributes exist
+-   Separate storage bucket `images` configured
 
 **API:**
-- `POST /api/upload-image` - Upload image (max 5MB)
-- `DELETE /api/upload-image?fileId=xxx` - Delete image
-- Validation: file type, file size, authentication
+
+-   `POST /api/upload-image` - Upload image (max 5MB)
+-   `DELETE /api/upload-image?fileId=xxx` - Delete image
+-   Validation: file type, file size, authentication
 
 **UI:**
-- Image picker button in chat input
-- Image preview before sending
-- Remove image button
-- `ImageViewer` component for viewing full-size images
-- `ImageWithSkeleton` for lazy loading
+
+-   Image picker button in chat input
+-   Image preview before sending
+-   Remove image button
+-   `ImageViewer` component for viewing full-size images
+-   `ImageWithSkeleton` for lazy loading
 
 **Storage:**
-- Appwrite Storage bucket `images`
-- Proper permissions (read: any, update/delete: owner)
+
+-   Appwrite Storage bucket `images`
+-   Proper permissions (read: any, update/delete: owner)
 
 **Test Results:** ✅ PASS
 
@@ -273,19 +307,22 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `custom_emojis` collection exists
-- Stores emoji metadata: serverId, name, fileId, url
+
+-   `custom_emojis` collection exists
+-   Stores emoji metadata: serverId, name, fileId, url
 
 **API:**
-- `POST /api/upload-emoji` - Upload custom emoji
-- `GET /api/custom-emojis?serverId=xxx` - List server emojis
-- Validation: image type, max 500KB
+
+-   `POST /api/upload-emoji` - Upload custom emoji
+-   `GET /api/custom-emojis?serverId=xxx` - List server emojis
+-   Validation: image type, max 500KB
 
 **UI:**
-- `EmojiPicker` component includes custom emojis
-- Upload button in emoji picker
-- Custom emojis shown alongside standard emojis
-- Used in reactions and messages
+
+-   `EmojiPicker` component includes custom emojis
+-   Upload button in emoji picker
+-   Custom emojis shown alongside standard emojis
+-   Used in reactions and messages
 
 **Test Results:** ✅ PASS
 
@@ -296,18 +333,21 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `typing` collection with TTL-style cleanup
-- Stores userId, channelId/conversationId, timestamp
+
+-   `typing` collection with TTL-style cleanup
+-   Stores userId, channelId/conversationId, timestamp
 
 **API:**
-- Real-time subscriptions via Appwrite
-- Automatic cleanup of stale typing states
+
+-   Real-time subscriptions via Appwrite
+-   Automatic cleanup of stale typing states
 
 **UI:**
-- Shows "X is typing..." below chat input
-- Shows multiple typers: "X, Y, and Z are typing..."
-- Limits display to first 3 typers
-- Works in both channels and DMs
+
+-   Shows "X is typing..." below chat input
+-   Shows multiple typers: "X, Y, and Z are typing..."
+-   Limits display to first 3 typers
+-   Works in both channels and DMs
 
 **Test Results:** ✅ PASS
 
@@ -318,18 +358,21 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database Collections:**
-- `conversations` - DM conversation metadata
-- `direct_messages` - DM messages with all features
+
+-   `conversations` - DM conversation metadata
+-   `direct_messages` - DM messages with all features
 
 **API:**
-- Full CRUD for DMs with same features as channel messages
-- Conversation creation and management
-- Real-time updates
+
+-   Full CRUD for DMs with same features as channel messages
+-   Conversation creation and management
+-   Real-time updates
 
 **UI:**
-- `DirectMessageView` component
-- `ConversationList` component
-- All features work in DMs: reactions, mentions, replies, images, typing
+
+-   `DirectMessageView` component
+-   `ConversationList` component
+-   All features work in DMs: reactions, mentions, replies, images, typing
 
 **Test Results:** ✅ PASS
 
@@ -340,19 +383,22 @@ type MessageAttachment = {
 **Status:** Fully functional
 
 **Database:**
-- `profiles` collection with displayName, pronouns, bio, avatarFileId
-- `statuses` collection for online/away/busy/offline states
+
+-   `profiles` collection with displayName, pronouns, bio, avatarFileId
+-   `statuses` collection for online/away/busy/offline states
 
 **API:**
-- Profile CRUD operations
-- Avatar upload/removal
-- Status updates
+
+-   Profile CRUD operations
+-   Avatar upload/removal
+-   Status updates
 
 **UI:**
-- `UserProfileModal` shows full profile
-- Avatar uploads in settings
-- Display name and pronoun display
-- Status indicators (colored dots)
+
+-   `UserProfileModal` shows full profile
+-   Avatar uploads in settings
+-   Display name and pronoun display
+-   Status indicators (colored dots)
 
 **Test Results:** ✅ PASS
 
@@ -363,7 +409,7 @@ type MessageAttachment = {
 ### Collections Verified (16 total)
 
 1. ✅ `messages` - 13 attributes, 6 indexes
-2. ✅ `direct_messages` - 12 attributes, 4 indexes  
+2. ✅ `direct_messages` - 12 attributes, 4 indexes
 3. ✅ `channels` - 3 attributes, 2 indexes
 4. ✅ `servers` - 4 attributes, 1 index
 5. ✅ `memberships` - 3 attributes, 2 indexes
@@ -392,42 +438,47 @@ type MessageAttachment = {
 ## API Endpoint Coverage
 
 ### ✅ Messages API
-- `POST /api/messages` - Create message ✅
-- `PUT /api/messages/[id]` - Edit message ✅
-- `DELETE /api/messages/[id]` - Delete/remove message ✅
-- `POST /api/messages/[id]/reactions` - Add reaction ✅
-- `DELETE /api/messages/[id]/reactions` - Remove reaction ✅
+
+-   `POST /api/messages` - Create message ✅
+-   `PUT /api/messages/[id]` - Edit message ✅
+-   `DELETE /api/messages/[id]` - Delete/remove message ✅
+-   `POST /api/messages/[id]/reactions` - Add reaction ✅
+-   `DELETE /api/messages/[id]/reactions` - Remove reaction ✅
 
 ### ✅ Direct Messages API
-- `POST /api/direct-messages` - Create DM ✅
-- `PUT /api/direct-messages/[id]` - Edit DM ✅
-- `DELETE /api/direct-messages/[id]` - Delete DM ✅
-- `POST /api/direct-messages/[id]/reactions` - Add reaction ✅
-- `DELETE /api/direct-messages/[id]/reactions` - Remove reaction ✅
+
+-   `POST /api/direct-messages` - Create DM ✅
+-   `PUT /api/direct-messages/[id]` - Edit DM ✅
+-   `DELETE /api/direct-messages/[id]` - Delete DM ✅
+-   `POST /api/direct-messages/[id]/reactions` - Add reaction ✅
+-   `DELETE /api/direct-messages/[id]/reactions` - Remove reaction ✅
 
 ### ✅ Upload APIs
-- `POST /api/upload-image` - Upload image ✅
-- `DELETE /api/upload-image?fileId=xxx` - Delete image ✅
-- `POST /api/upload-emoji` - Upload custom emoji ✅
-- `POST /api/upload-file` - Upload file ✅ (BUT NOT INTEGRATED)
-- `DELETE /api/upload-file?fileId=xxx` - Delete file ✅ (BUT NOT USED)
+
+-   `POST /api/upload-image` - Upload image ✅
+-   `DELETE /api/upload-image?fileId=xxx` - Delete image ✅
+-   `POST /api/upload-emoji` - Upload custom emoji ✅
+-   `POST /api/upload-file` - Upload file ✅ (BUT NOT INTEGRATED)
+-   `DELETE /api/upload-file?fileId=xxx` - Delete file ✅ (BUT NOT USED)
 
 ### ✅ Roles & Permissions APIs
-- `GET /api/roles?serverId=xxx` - List roles ✅
-- `POST /api/roles` - Create role ✅
-- `PUT /api/roles/[id]` - Update role ✅
-- `DELETE /api/roles/[id]` - Delete role ✅
-- `POST /api/role-assignments` - Assign role ✅
-- `DELETE /api/role-assignments` - Remove role ✅
-- `POST /api/channel-permissions` - Create override ✅
-- `PUT /api/channel-permissions/[id]` - Update override ✅
-- `DELETE /api/channel-permissions/[id]` - Delete override ✅
+
+-   `GET /api/roles?serverId=xxx` - List roles ✅
+-   `POST /api/roles` - Create role ✅
+-   `PUT /api/roles/[id]` - Update role ✅
+-   `DELETE /api/roles/[id]` - Delete role ✅
+-   `POST /api/role-assignments` - Assign role ✅
+-   `DELETE /api/role-assignments` - Remove role ✅
+-   `POST /api/channel-permissions` - Create override ✅
+-   `PUT /api/channel-permissions/[id]` - Update override ✅
+-   `DELETE /api/channel-permissions/[id]` - Delete override ✅
 
 ### ✅ Moderation APIs
-- `POST /api/servers/[serverId]/moderation` - Moderate actions ✅
-- `GET /api/servers/[serverId]/audit-logs` - Query audit ✅
-- `GET /api/servers/[serverId]/stats` - Get stats ✅
-- `GET /api/servers/[serverId]/members` - List members ✅
+
+-   `POST /api/servers/[serverId]/moderation` - Moderate actions ✅
+-   `GET /api/servers/[serverId]/audit-logs` - Query audit ✅
+-   `GET /api/servers/[serverId]/stats` - Get stats ✅
+-   `GET /api/servers/[serverId]/members` - List members ✅
 
 ---
 
@@ -473,14 +524,14 @@ type MessageAttachment = {
 
 ### Test Files Verified
 
-- ✅ `appwrite-messages.test.ts` - Message CRUD tests
-- ✅ `appwrite-dms.test.ts` - Direct message tests
-- ✅ `message-reactions.test.ts` - Reaction functionality
-- ✅ `message-reply.test.ts` - Reply functionality
-- ✅ `upload-file.test.ts` - File upload API (tests exist but feature not integrated)
-- ✅ `upload-emoji.test.ts` - Custom emoji upload
-- ✅ `appwrite-roles.test.ts` - Roles system
-- ✅ `appwrite-auth.test.ts` - Authentication
+-   ✅ `appwrite-messages.test.ts` - Message CRUD tests
+-   ✅ `appwrite-dms.test.ts` - Direct message tests
+-   ✅ `message-reactions.test.ts` - Reaction functionality
+-   ✅ `message-reply.test.ts` - Reply functionality
+-   ✅ `upload-file.test.ts` - File upload API (tests exist but feature not integrated)
+-   ✅ `upload-emoji.test.ts` - Custom emoji upload
+-   ✅ `appwrite-roles.test.ts` - Roles system
+-   ✅ `appwrite-auth.test.ts` - Authentication
 
 **Overall Test Coverage:** Good for implemented features
 
@@ -497,16 +548,16 @@ type MessageAttachment = {
 ```typescript
 // 1. Create new collection
 type MessageAttachment = {
-  $id: string;
-  messageId: string;
-  messageType: 'channel' | 'dm';
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  fileType: string;
-  fileUrl: string;
-  thumbnailUrl?: string;
-  $createdAt: string;
+    $id: string;
+    messageId: string;
+    messageType: "channel" | "dm";
+    fileId: string;
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+    fileUrl: string;
+    thumbnailUrl?: string;
+    $createdAt: string;
 };
 
 // 2. Update API endpoints
@@ -528,9 +579,10 @@ type MessageAttachment = {
 ### 📝 Update Documentation (Priority 2)
 
 **Files to update:**
-- `FILE_ATTACHMENTS_FEATURE.md` - Mark as "Infrastructure Complete, Integration Pending"
-- `ROADMAP.md` - Change file attachments from 🎯 to 🚧 IN PROGRESS
-- `docs/IMPLEMENTATION_COMPLETE.md` - Remove file attachments from "complete" list
+
+-   `FILE_ATTACHMENTS_FEATURE.md` - Mark as "Infrastructure Complete, Integration Pending"
+-   `ROADMAP.md` - Change file attachments from 🎯 to 🚧 IN PROGRESS
+-   `docs/IMPLEMENTATION_COMPLETE.md` - Remove file attachments from "complete" list
 
 ### ✅ Other Recommendations (Priority 3)
 
@@ -546,10 +598,10 @@ type MessageAttachment = {
 
 ### Summary
 
-- **10 of 11** major features are fully functional and production-ready
-- **1 feature (File Attachments)** has infrastructure but is not integrated
-- Root cause: Database attribute limit prevents adding `attachments` column
-- Solution: Create separate `message_attachments` collection
+-   **10 of 11** major features are fully functional and production-ready
+-   **1 feature (File Attachments)** has infrastructure but is not integrated
+-   Root cause: Database attribute limit prevents adding `attachments` column
+-   Solution: Create separate `message_attachments` collection
 
 ### Action Items
 
@@ -560,9 +612,9 @@ type MessageAttachment = {
 
 ### Risk Assessment
 
-- **Current Risk:** Medium - Feature appears complete but doesn't work
-- **User Impact:** Users cannot attach non-image files to messages
-- **Mitigation:** Clear documentation + rapid fix implementation
+-   **Current Risk:** Medium - Feature appears complete but doesn't work
+-   **User Impact:** Users cannot attach non-image files to messages
+-   **Mitigation:** Clear documentation + rapid fix implementation
 
 ---
 

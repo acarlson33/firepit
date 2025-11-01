@@ -157,14 +157,14 @@ describe("Messages API Routes - Image Upload", () => {
 				}),
 			});
 
-			const response = await POST(request);
-			const data = await response.json();
+		const response = await POST(request);
+		const data = await response.json();
 
-			expect(response.status).toBe(400);
-			expect(data.error).toBe("text or imageFileId, and channelId are required");
-		});
+		expect(response.status).toBe(400);
+		expect(data.error).toBe("text, imageFileId, or attachments, and channelId are required");
+	});
 
-		it("should accept message with text but no image", async () => {
+	it("should accept message with text but no image", async () => {
 			mockGetServerSession.mockResolvedValue({
 				$id: "user-1",
 				name: "Test User",

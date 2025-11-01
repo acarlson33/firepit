@@ -450,7 +450,7 @@ export function useMessages({
     }
   }
 
-  async function send(e: React.FormEvent, imageFileId?: string, imageUrl?: string) {
+  async function send(e: React.FormEvent, imageFileId?: string, imageUrl?: string, attachments?: unknown[]) {
     e.preventDefault();
     if (!userId) {
       return;
@@ -459,7 +459,7 @@ export function useMessages({
       return;
     }
     const value = text.trim();
-    if (!value && !imageFileId) {
+    if (!value && !imageFileId && (!attachments || attachments.length === 0)) {
       return;
     }
 
@@ -494,6 +494,7 @@ export function useMessages({
           serverId: serverId || undefined,
           imageFileId,
           imageUrl,
+          attachments: attachments && attachments.length > 0 ? attachments : undefined,
           replyToId,
           mentions: mentions.length > 0 ? mentions : undefined,
         }),

@@ -14,9 +14,7 @@ import {
 import {
 	Card,
 	CardContent,
-	CardDescription,
 	CardHeader,
-	CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,7 +42,6 @@ export function ChannelPermissionsEditor({
 	const [overrides, setOverrides] = useState<ChannelPermissionOverride[]>([]);
 	const [roles, setRoles] = useState<Role[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [editingOverride, setEditingOverride] = useState<ChannelPermissionOverride | null>(null);
 	const [showCreateDialog, setShowCreateDialog] = useState(false);
 	const [createType, setCreateType] = useState<OverrideType>("role");
 	const [selectedRoleId, setSelectedRoleId] = useState<string>("");

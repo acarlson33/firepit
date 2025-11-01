@@ -102,7 +102,7 @@ export function ServerAdminPanel({
       const response = await fetch(`/api/servers/${serverId}/members`);
       if (response.ok) {
         const data = await response.json();
-        setMembers(data);
+        setMembers(data.members || []);
       }
     } catch (error) {
       console.error("Failed to load members:", error);
@@ -126,14 +126,16 @@ export function ServerAdminPanel({
 
   useEffect(() => {
     if (open) {
-      loadServerStats();
-      loadMembers();
-      loadAuditLogs();
+      void loadServerStats();
+      void loadMembers();
+      void loadAuditLogs();
     }
   }, [open, loadServerStats, loadMembers, loadAuditLogs]);
 
   const handleModerationAction = async () => {
-    if (!selectedMember || !moderationAction) return;
+    if (!selectedMember || !moderationAction) {
+      return;
+    }
 
     try {
       const response = await fetch(`/api/servers/${serverId}/moderation`, {
@@ -151,8 +153,8 @@ export function ServerAdminPanel({
         setModerationDialogOpen(false);
         setSelectedMember(null);
         setModerationReason("");
-        loadMembers();
-        loadAuditLogs();
+        void loadMembers();
+        void loadAuditLogs();
       } else {
         const error = await response.json();
         toast.error(error.error || "Failed to perform moderation action");
@@ -170,7 +172,9 @@ export function ServerAdminPanel({
   };
 
   const filteredMembers = members.filter((m) => {
-    if (!searchQuery) return true;
+    if (!searchQuery) {
+      return true;
+    }
     const query = searchQuery.toLowerCase();
     return (
       m.displayName?.toLowerCase().includes(query) ||

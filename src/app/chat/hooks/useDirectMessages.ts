@@ -129,13 +129,13 @@ export function useDirectMessages({
 	}, [conversationId]);
 
 	const send = useCallback(
-		async (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string) => {
+		async (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string, attachments?: unknown[]) => {
 			if (!conversationId || !userId || !receiverId) {
 				return;
 			}
 
-			// Require either text or image
-			if (!text.trim() && !imageFileId) {
+			// Require either text, image, or attachments
+			if (!text.trim() && !imageFileId && (!attachments || attachments.length === 0)) {
 				return;
 			}
 
@@ -148,7 +148,8 @@ export function useDirectMessages({
 					text.trim() || "",
 					imageFileId,
 					imageUrl,
-					replyToId
+					replyToId,
+					attachments
 				);
 				await loadMessages();
 			} catch (err) {

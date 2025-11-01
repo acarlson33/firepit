@@ -21,7 +21,9 @@ import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
-import type { DirectMessage, Conversation } from "@/lib/types";
+import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
+import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
@@ -32,7 +34,7 @@ type DirectMessageViewProps = {
 	loading: boolean;
 	sending: boolean;
 	currentUserId: string;
-	onSend: (_text: string, _imageFileId?: string, _imageUrl?: string, _replyToId?: string) => Promise<void>;
+	onSend: (_text: string, _imageFileId?: string, _imageUrl?: string, _replyToId?: string, _attachments?: unknown[]) => Promise<void>;
 	onEdit: (_messageId: string, _newText: string) => Promise<void>;
 	onDelete: (_messageId: string) => Promise<void>;
 	onBack?: () => void;
@@ -61,6 +63,7 @@ export function DirectMessageView({
 	const [imagePreview, setImagePreview] = useState<string | null>(null);
 	const [uploadingImage, setUploadingImage] = useState(false);
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
+	const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,7 +84,7 @@ export function DirectMessageView({
 
 	const handleSend = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if ((!text.trim() && !selectedImage) || sending) {
+		if ((!text.trim() && !selectedImage && fileAttachments.length === 0) || sending) {
 			return;
 		}
 
@@ -106,23 +109,27 @@ export function DirectMessageView({
 			}
 		}
 
-		setText("");
-	setSelectedImage(null);
-	setImagePreview(null);
-	setReplyingToMessage(null);
+		// Prepare attachments
+		const attachmentsToSend = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
 
-	try {
-		if (editingMessageId) {
-			await onEdit(editingMessageId, messageText);
-			setEditingMessageId(null);
-		} else {
-			await onSend(messageText, imageFileId, imageUrl, replyToId);
+		setText("");
+		setSelectedImage(null);
+		setImagePreview(null);
+		setReplyingToMessage(null);
+		setFileAttachments([]);
+
+		try {
+			if (editingMessageId) {
+				await onEdit(editingMessageId, messageText);
+				setEditingMessageId(null);
+			} else {
+				await onSend(messageText, imageFileId, imageUrl, replyToId, attachmentsToSend);
+			}
+		} catch {
+			// Re-set text on error so user can retry
+			setText(messageText);
 		}
-	} catch {
-		// Re-set text on error so user can retry
-		setText(messageText);
-	}
-};	const startEdit = (message: DirectMessage) => {
+	};	const startEdit = (message: DirectMessage) => {
 		setEditingMessageId(message.$id);
 		setText(message.text);
 		setReplyingToMessage(null);
@@ -193,6 +200,14 @@ export function DirectMessageView({
 
 	const handleEmojiSelect = useCallback((emoji: string) => {
 		setText((prev) => prev + emoji);
+	}, []);
+
+	const handleFileAttachmentSelect = useCallback((attachment: FileAttachment) => {
+		setFileAttachments((prev) => [...prev, attachment]);
+	}, []);
+
+	const removeFileAttachment = useCallback((index: number) => {
+		setFileAttachments((prev) => prev.filter((_, i) => i !== index));
 	}, []);
 
 	return (
@@ -341,6 +356,16 @@ export function DirectMessageView({
 														src={message.imageUrl}
 														tabIndex={0}
 													/>
+												</div>
+											)}
+											{message.attachments && message.attachments.length > 0 && !removed && (
+												<div className="mt-1 space-y-2">
+													{message.attachments.map((attachment, idx) => (
+														<FileAttachmentDisplay
+															key={`${message.$id}-${attachment.fileId}-${idx}`}
+															attachment={attachment}
+														/>
+													))}
 												</div>
 											)}
 										{removed ? (
@@ -519,6 +544,17 @@ export function DirectMessageView({
 						</Button>
 					</div>
 				)}
+				{fileAttachments.length > 0 && (
+					<div className="flex flex-col gap-2 mb-2">
+						{fileAttachments.map((attachment, index) => (
+							<FilePreview
+								key={`${attachment.fileId}-${index}`}
+								attachment={attachment}
+								onRemove={() => removeFileAttachment(index)}
+							/>
+						))}
+					</div>
+				)}
 				<form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSend}>
 					<input
 						accept="image/*"
@@ -537,6 +573,11 @@ export function DirectMessageView({
 					>
 						<ImageIcon className="size-4" />
 					</Button>
+					<FileUploadButton
+						onFileSelect={handleFileAttachmentSelect}
+						disabled={sending || uploadingImage || Boolean(editingMessageId)}
+						className="shrink-0"
+					/>
 					<EmojiPicker
 						onEmojiSelect={handleEmojiSelect}
 						customEmojis={customEmojis}
@@ -565,7 +606,7 @@ export function DirectMessageView({
 						}}
 					/>
 					<Button 
-						disabled={sending || uploadingImage || (!text.trim() && !selectedImage)} 
+						disabled={sending || uploadingImage || (!text.trim() && !selectedImage && fileAttachments.length === 0)} 
 						type="submit" 
 						className="rounded-2xl shrink-0"
 					>

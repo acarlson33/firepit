@@ -360,7 +360,7 @@ Tests for the New Relic integration are located in:
 Run tests:
 
 ```bash
-bun test src/__tests__/instrumentation.test.ts
+bun run test src/__tests__/instrumentation.test.ts
 ```
 
 ## Resources

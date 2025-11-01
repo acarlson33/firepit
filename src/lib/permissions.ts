@@ -12,7 +12,6 @@
 import type {
 	Permission,
 	Role,
-	RoleAssignment,
 	ChannelPermissionOverride,
 	EffectivePermissions,
 } from "./types";

@@ -8,6 +8,7 @@ import {
 	calculateRoleHierarchy,
 	getEffectivePermissions,
 	canManageRole,
+	getHighestRole,
 } from "@/lib/permissions";
 import type { Role, ChannelPermissionOverride } from "@/lib/types";
 
@@ -291,5 +292,364 @@ describe("Role Management API", () => {
 
 		// Owner can manage all roles
 		expect(canManageRole(userRoles, targetRole, true)).toBe(true);
+	});
+});
+
+describe("Permission Edge Cases", () => {
+	it("should handle empty roles array in getEffectivePermissions", () => {
+		const permissions = getEffectivePermissions([], []);
+		expect(permissions.readMessages).toBe(false);
+		expect(permissions.sendMessages).toBe(false);
+		expect(permissions.administrator).toBe(false);
+	});
+
+	it("should handle empty overrides array", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 1,
+				readMessages: true,
+				sendMessages: true,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const permissions = getEffectivePermissions(roles, []);
+		expect(permissions.readMessages).toBe(true);
+		expect(permissions.sendMessages).toBe(true);
+	});
+
+	it("should return all permissions for server owner", () => {
+		const permissions = getEffectivePermissions([], [], true);
+		expect(permissions.readMessages).toBe(true);
+		expect(permissions.sendMessages).toBe(true);
+		expect(permissions.manageMessages).toBe(true);
+		expect(permissions.manageChannels).toBe(true);
+		expect(permissions.manageRoles).toBe(true);
+		expect(permissions.manageServer).toBe(true);
+		expect(permissions.mentionEveryone).toBe(true);
+		expect(permissions.administrator).toBe(true);
+	});
+
+	it("should handle role overrides with empty allow array", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 1,
+				readMessages: true,
+				sendMessages: true,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const overrides: ChannelPermissionOverride[] = [
+			{
+				$id: "override1",
+				channelId: "channel1",
+				roleId: "1",
+				userId: undefined,
+				allow: [],
+				deny: ["sendMessages"],
+			},
+		];
+
+		const permissions = getEffectivePermissions(roles, overrides);
+		expect(permissions.readMessages).toBe(true);
+		expect(permissions.sendMessages).toBe(false);
+	});
+
+	it("should handle role overrides with empty deny array", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 1,
+				readMessages: false,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const overrides: ChannelPermissionOverride[] = [
+			{
+				$id: "override1",
+				channelId: "channel1",
+				roleId: "1",
+				userId: undefined,
+				allow: ["readMessages", "sendMessages"],
+				deny: [],
+			},
+		];
+
+		const permissions = getEffectivePermissions(roles, overrides);
+		expect(permissions.readMessages).toBe(true);
+		expect(permissions.sendMessages).toBe(true);
+	});
+
+	it("should handle user override with empty userId string", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 1,
+				readMessages: true,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const overrides: ChannelPermissionOverride[] = [
+			{
+				$id: "override1",
+				channelId: "channel1",
+				roleId: undefined,
+				userId: "", // Empty userId should be treated as no override
+				allow: ["sendMessages"],
+				deny: [],
+			},
+		];
+
+		const permissions = getEffectivePermissions(roles, overrides);
+		expect(permissions.sendMessages).toBe(false); // Should not apply empty userId override
+	});
+
+	it("should handle role override with empty roleId string", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 1,
+				readMessages: true,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const overrides: ChannelPermissionOverride[] = [
+			{
+				$id: "override1",
+				channelId: "channel1",
+				roleId: "", // Empty roleId should be treated as no override
+				userId: undefined,
+				allow: ["sendMessages"],
+				deny: [],
+			},
+		];
+
+		const permissions = getEffectivePermissions(roles, overrides);
+		expect(permissions.sendMessages).toBe(false); // Should not apply empty roleId override
+	});
+
+	it("should return undefined for getHighestRole with empty array", () => {
+		const result = getHighestRole([]);
+		expect(result).toBeUndefined();
+	});
+
+	it("should return highest role from single role array", () => {
+		const roles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 5,
+				readMessages: false,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const result = getHighestRole(roles);
+		expect(result).toBeDefined();
+		expect(result?.name).toBe("Role1");
+	});
+
+	it("should return false for canManageRole when user has no roles", () => {
+		const targetRole: Role = {
+			$id: "1",
+			serverId: "s1",
+			name: "Role1",
+			color: "#000",
+			position: 5,
+			readMessages: false,
+			sendMessages: false,
+			manageMessages: false,
+			manageChannels: false,
+			manageRoles: false,
+			manageServer: false,
+			mentionEveryone: false,
+			administrator: false,
+			mentionable: false,
+		};
+
+		expect(canManageRole([], targetRole, false)).toBe(false);
+	});
+
+	it("should return false for canManageRole when user lacks manageRoles permission", () => {
+		const userRoles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Role1",
+				color: "#000",
+				position: 10,
+				readMessages: false,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false, // No manageRoles permission
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: false,
+				mentionable: false,
+			},
+		];
+
+		const targetRole: Role = {
+			$id: "2",
+			serverId: "s1",
+			name: "Role2",
+			color: "#111",
+			position: 5,
+			readMessages: false,
+			sendMessages: false,
+			manageMessages: false,
+			manageChannels: false,
+			manageRoles: false,
+			manageServer: false,
+			mentionEveryone: false,
+			administrator: false,
+			mentionable: false,
+		};
+
+		expect(canManageRole(userRoles, targetRole, false)).toBe(false);
+	});
+
+	it("should allow admin to manage non-admin roles", () => {
+		const userRoles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Admin",
+				color: "#f00",
+				position: 10,
+				readMessages: false,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: true,
+				mentionable: false,
+			},
+		];
+
+		const targetRole: Role = {
+			$id: "2",
+			serverId: "s1",
+			name: "Member",
+			color: "#000",
+			position: 5,
+			readMessages: false,
+			sendMessages: false,
+			manageMessages: false,
+			manageChannels: false,
+			manageRoles: false,
+			manageServer: false,
+			mentionEveryone: false,
+			administrator: false,
+			mentionable: false,
+		};
+
+		expect(canManageRole(userRoles, targetRole, false)).toBe(true);
+	});
+
+	it("should prevent admin from managing other admin roles", () => {
+		const userRoles: Role[] = [
+			{
+				$id: "1",
+				serverId: "s1",
+				name: "Admin",
+				color: "#f00",
+				position: 10,
+				readMessages: false,
+				sendMessages: false,
+				manageMessages: false,
+				manageChannels: false,
+				manageRoles: false,
+				manageServer: false,
+				mentionEveryone: false,
+				administrator: true,
+				mentionable: false,
+			},
+		];
+
+		const targetRole: Role = {
+			$id: "2",
+			serverId: "s1",
+			name: "OtherAdmin",
+			color: "#ff0",
+			position: 15,
+			readMessages: false,
+			sendMessages: false,
+			manageMessages: false,
+			manageChannels: false,
+			manageRoles: false,
+			manageServer: false,
+			mentionEveryone: false,
+			administrator: true,
+			mentionable: false,
+		};
+
+		expect(canManageRole(userRoles, targetRole, false)).toBe(false);
 	});
 });

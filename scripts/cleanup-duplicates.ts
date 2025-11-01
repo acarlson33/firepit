@@ -9,14 +9,14 @@ const client = new Client()
 const databases = new Databases(client);
 
 // Collections we want to KEEP (the new ones we just created)
-const keepCollections = [
+const _keepCollections = [
   "690150d60012de4140d7", // banned_users
   "690150d7001b42d0f38f", // muted_users
   "6901515b001869cf7406", // audit (new with better schema)
 ];
 
 // Collections to potentially DELETE (old duplicates)
-const checkForDeletion = [
+const _checkForDeletion = [
   { id: "audit", name: "Audit (old)", reason: "Using new audit collection with better schema" },
   { id: "69014be7001cc3293a15", name: "roles (new)", reason: "Old 'Roles' collection has more structure - might be in use" },
 ];
@@ -27,10 +27,13 @@ async function main() {
   const result = await databases.listCollections("main");
   
   // Find actual duplicates
-  const byName: Record<string, any[]> = {};
+  type CollectionInfo = { $id: string; name: string; attributes: unknown[]; indexes: unknown[] };
+  const byName: Record<string, CollectionInfo[]> = {};
   result.collections.forEach((c) => {
-    if (!byName[c.name.toLowerCase()]) byName[c.name.toLowerCase()] = [];
-    byName[c.name.toLowerCase()].push(c);
+    if (!byName[c.name.toLowerCase()]) {
+      byName[c.name.toLowerCase()] = [];
+    }
+    byName[c.name.toLowerCase()].push(c as CollectionInfo);
   });
 
   console.log("Collections with potential duplicates:\n");

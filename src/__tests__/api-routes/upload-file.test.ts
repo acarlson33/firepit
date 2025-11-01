@@ -135,11 +135,13 @@ describe("POST /api/upload-file", () => {
 		const response = await POST(request);
 		expect(response.status).toBe(400);
 
-		const data = await response.json();
-		expect(data.error).toBe("File type not supported");
-	});
+	const data = await response.json();
+	expect(data.error).toBe("File type not supported");
+});
 
-	it("should reject files that are too large", async () => {
+it(
+	"should reject files that are too large",
+	async () => {
 		mockGetServerSession.mockResolvedValue({ $id: "user123" });
 
 		const formData = new FormData();
@@ -157,9 +159,9 @@ describe("POST /api/upload-file", () => {
 
 		const data = await response.json();
 		expect(data.error).toContain("File size exceeds maximum");
-	});
-
-	it("should accept valid PDF files", async () => {
+	},
+	10000,
+);	it("should accept valid PDF files", async () => {
 		mockGetServerSession.mockResolvedValue({ $id: "user123" });
 		mockCreateFile.mockResolvedValue({
 			$id: "file123",

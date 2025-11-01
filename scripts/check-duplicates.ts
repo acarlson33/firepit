@@ -12,9 +12,11 @@ console.log("=== CHECKING FOR DUPLICATE COLLECTION NAMES ===\n");
 const result = await databases.listCollections("main");
 
 // Group collections by name
-const byName: Record<string, any[]> = {};
+const byName: Record<string, Array<{ $id: string; name: string; $createdAt: string }>> = {};
 result.collections.forEach((c) => {
-  if (!byName[c.name]) byName[c.name] = [];
+  if (!byName[c.name]) {
+    byName[c.name] = [];
+  }
   byName[c.name].push(c);
 });
 

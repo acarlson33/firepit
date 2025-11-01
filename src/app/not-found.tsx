@@ -7,13 +7,13 @@ export default function NotFound() {
 	return (
 		<div className="flex min-h-screen flex-col items-center justify-center px-4">
 			<div className="text-center">
-				{/* 404 Heading */}
-				<div className="mb-8 space-y-2">
-					<h1 className="font-bold text-9xl text-primary">404</h1>
-					<div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
-				</div>
+			{/* 404 Heading */}
+			<div className="mb-8 space-y-2">
+				<h1 className="font-bold text-9xl text-primary">404</h1>
+				<div className="h-1 w-full bg-linear-to-r from-transparent via-primary to-transparent" />
+			</div>
 
-			{/* Message */}
+		{/* Message */}
 			<div className="mb-8 space-y-3">
 				<h2 className="font-semibold text-3xl">Page Not Found</h2>
 				<p className="mx-auto max-w-md text-muted-foreground">

@@ -177,7 +177,8 @@ export async function sendDirectMessage(
   text: string,
   imageFileId?: string,
   imageUrl?: string,
-  replyToId?: string
+  replyToId?: string,
+  attachments?: unknown[]
 ): Promise<DirectMessage> {
   // Parse mentions from text
   const mentions = extractMentionedUsernames(text);
@@ -194,6 +195,7 @@ export async function sendDirectMessage(
       text,
       imageFileId,
       imageUrl,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
       replyToId,
       mentions: mentions.length > 0 ? mentions : undefined,
     }),

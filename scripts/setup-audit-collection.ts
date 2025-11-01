@@ -160,7 +160,7 @@ async function main() {
   try {
     const auditId = await createAuditCollection();
     
-    console.log("\n" + "=".repeat(60));
+    console.log(`\n${"=".repeat(60)}`);
     console.log("✅ Audit collection created successfully!");
     console.log("=".repeat(60));
     console.log("\n📝 Add this to your .env.local file:\n");
@@ -172,4 +172,4 @@ async function main() {
   }
 }
 
-main();
+void main();

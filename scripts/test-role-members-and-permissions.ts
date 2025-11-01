@@ -16,13 +16,13 @@ import { Query } from "node-appwrite";
 
 const databases = getAdminClient().databases;
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID!;
-const ROLES_COLLECTION_ID = process.env.APPWRITE_ROLES_COLLECTION_ID!;
-const ROLE_ASSIGNMENTS_COLLECTION_ID = process.env.APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID!;
-const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID = process.env.APPWRITE_CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID!;
-const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID!;
-const CHANNELS_COLLECTION_ID = process.env.APPWRITE_CHANNELS_COLLECTION_ID!;
-const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID!;
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
+const ROLES_COLLECTION_ID = process.env.APPWRITE_ROLES_COLLECTION_ID ?? "";
+const ROLE_ASSIGNMENTS_COLLECTION_ID = process.env.APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID ?? "";
+const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID = process.env.APPWRITE_CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID ?? "";
+const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
+const CHANNELS_COLLECTION_ID = process.env.APPWRITE_CHANNELS_COLLECTION_ID ?? "";
+const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID ?? "";
 
 interface Role {
   $id: string;
@@ -64,7 +64,7 @@ async function main() {
   }
   
   const serverId = servers.documents[0].$id;
-  const serverName = servers.documents[0].name;
+  const serverName = String(servers.documents[0].name);
   console.log(`   ✅ Found server: ${serverName} (${serverId})\n`);
 
   // Step 2: Find or create test roles
@@ -107,7 +107,7 @@ async function main() {
     throw new Error("No members found in server. Please join the server first.");
   }
   
-  const testUserId = memberships.documents[0].userId;
+  const testUserId = String(memberships.documents[0].userId);
   console.log(`   ✅ Found test member: ${testUserId}\n`);
 
   // Step 4: Test role assignment
@@ -153,7 +153,7 @@ async function main() {
     assignment = created as unknown as RoleAssignment;
     console.log(`   ✅ Created new role assignment (${assignment.$id})`);
   }
-  console.log(`   📋 User ${testUserId} has roles: ${assignment.roleIds.join(", ")}\n`);
+  console.log(`   📋 User ${String(testUserId)} has roles: ${assignment.roleIds.join(", ")}\n`);
 
   // Step 5: Find a test channel
   console.log("5️⃣ Finding test channel...");
@@ -167,7 +167,7 @@ async function main() {
   }
   
   const channelId = channels.documents[0].$id;
-  const channelName = channels.documents[0].name;
+  const channelName = String(channels.documents[0].name);
   console.log(`   ✅ Found channel: ${channelName} (${channelId})\n`);
 
   // Step 6: Test channel permission override for role
@@ -247,7 +247,7 @@ async function main() {
     CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
     [Query.equal("channelId", channelId)]
   );
-  console.log(`   ✅ Found ${allOverrides.documents.length} overrides for channel ${channelName}`);
+  console.log(`   ✅ Found ${allOverrides.documents.length} overrides for channel ${String(channelName)}`);
   for (const doc of allOverrides.documents) {
     const override = doc as unknown as ChannelPermissionOverride;
     const type = override.roleId ? "Role" : "User";
@@ -292,10 +292,10 @@ async function main() {
 
   console.log("\n✅ All tests completed successfully!\n");
   console.log("📝 Summary:");
-  console.log(`   - Server: ${serverName} (${serverId})`);
-  console.log(`   - Channel: ${channelName} (${channelId})`);
+  console.log(`   - Server: ${String(serverName)} (${serverId})`);
+  console.log(`   - Channel: ${String(channelName)} (${channelId})`);
   console.log(`   - Test Role: ${testRole.name} (${testRole.$id})`);
-  console.log(`   - Test User: ${testUserId}`);
+  console.log(`   - Test User: ${String(testUserId)}`);
   console.log(`   - Role Override ID: ${roleOverride.$id}`);
   console.log(`   - User Override ID: ${userOverride.$id}`);
   console.log("\n🎯 Next Steps:");
