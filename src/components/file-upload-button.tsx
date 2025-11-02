@@ -57,7 +57,9 @@ export function FileUploadButton({ onFileSelect, disabled, className }: FileUplo
 					fileInputRef.current.value = "";
 				}
 			} catch (error) {
-				console.error("File upload failed:", error);
+				if (process.env.NODE_ENV === "development") {
+					console.error("File upload failed:", error);
+				}
 				alert(error instanceof Error ? error.message : "Failed to upload file");
 				setUploadProgress(null);
 			} finally {

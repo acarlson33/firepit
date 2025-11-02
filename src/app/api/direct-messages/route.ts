@@ -603,7 +603,10 @@ export async function PATCH(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("PATCH /api/direct-messages error:", error);
+    if (process.env.NODE_ENV === 'development') {
+      // biome-ignore lint: development debugging
+      console.error("PATCH /api/direct-messages error:", error);
+    }
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }
@@ -668,7 +671,10 @@ export async function DELETE(request: NextRequest) {
 
     return jsonResponse({ success: true });
   } catch (error) {
-    console.error("DELETE /api/direct-messages error:", error);
+    if (process.env.NODE_ENV === 'development') {
+      // biome-ignore lint: development debugging
+      console.error("DELETE /api/direct-messages error:", error);
+    }
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

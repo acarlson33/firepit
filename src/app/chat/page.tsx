@@ -249,7 +249,9 @@ export default function ChatPage() {
         imageFileId = result.fileId;
         imageUrl = result.url;
       } catch (error) {
-        console.error("Failed to upload image:", error);
+        if (process.env.NODE_ENV === "development") {
+          console.error("Failed to upload image:", error);
+        }
         setUploadingImage(false);
         return;
       } finally {
@@ -457,7 +459,7 @@ export default function ChatPage() {
           try {
             await toggleReaction(messageId, emoji, true, false);
           } catch (error) {
-            console.error("Failed to toggle reaction:", error);
+            // Error already logged by reaction handler
           }
         }}
         setDeleteConfirmId={setDeleteConfirmId}

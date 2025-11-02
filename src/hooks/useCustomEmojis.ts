@@ -27,7 +27,10 @@ function storeEmojis(emojis: CustomEmoji[]): void {
   try {
     localStorage.setItem(EMOJIS_STORAGE_KEY, JSON.stringify(emojis));
   } catch (error) {
-    console.error("Failed to store emojis:", error);
+    if (process.env.NODE_ENV === 'development') {
+      // biome-ignore lint: development debugging
+      console.error("Failed to store emojis:", error);
+    }
   }
 }
 
@@ -43,7 +46,10 @@ async function fetchEmojisFromServer(): Promise<CustomEmoji[]> {
     storeEmojis(emojis);
     return emojis;
   } catch (error) {
-    console.error("Failed to fetch emojis from server:", error);
+    if (process.env.NODE_ENV === 'development') {
+      // biome-ignore lint: development debugging
+      console.error("Failed to fetch emojis from server:", error);
+    }
     // Fallback to cached emojis
     return getStoredEmojis();
   }
@@ -110,7 +116,10 @@ export function useCustomEmojis() {
         // Invalidate query to trigger refetch from server
         await queryClient.invalidateQueries({ queryKey: ["customEmojis"] });
       } catch (error) {
-        console.error("Failed to delete emoji:", error);
+        if (process.env.NODE_ENV === 'development') {
+          // biome-ignore lint: development debugging
+          console.error("Failed to delete emoji:", error);
+        }
         throw error;
       }
     },

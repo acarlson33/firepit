@@ -5,8 +5,17 @@ import { getServerSession } from "@/lib/auth-server";
 /**
  * GET /api/debug/auth
  * Debug endpoint to check authentication status
+ * Only available in development mode
  */
 export async function GET() {
+	// Only allow in development
+	if (process.env.NODE_ENV !== "development") {
+		return NextResponse.json(
+			{ error: "Debug endpoints not available in production" },
+			{ status: 404 }
+		);
+	}
+
 	try {
 		const user = await getServerSession();
 

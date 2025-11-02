@@ -2,7 +2,20 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { Account, Client } from "node-appwrite";
 
+/**
+ * GET /api/debug-cookies
+ * Debug endpoint to inspect cookies and session validation
+ * Only available in development mode
+ */
 export async function GET() {
+  // Only allow in development
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json(
+      { error: "Debug endpoints not available in production" },
+      { status: 404 }
+    );
+  }
+
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
   const projectId = process.env.APPWRITE_PROJECT_ID;

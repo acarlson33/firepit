@@ -38,6 +38,7 @@ describe("GET /api/debug-cookies", () => {
 		vi.clearAllMocks();
 		process.env = {
 			...originalEnv,
+			NODE_ENV: "development", // Set to development for debug endpoints
 			APPWRITE_PROJECT_ID: "test-project",
 			APPWRITE_ENDPOINT: "https://test.appwrite.io/v1",
 		};

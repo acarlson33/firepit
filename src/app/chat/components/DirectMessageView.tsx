@@ -109,7 +109,9 @@ export function DirectMessageView({
 				imageFileId = result.fileId;
 				imageUrl = result.url;
 			} catch (error) {
-				console.error("Failed to upload image:", error);
+				if (process.env.NODE_ENV === "development") {
+					console.error("Failed to upload image:", error);
+				}
 				setUploadingImage(false);
 				return;
 			} finally {
@@ -494,7 +496,9 @@ export function DirectMessageView({
 														try {
 															await toggleReaction(message.$id, emoji, isAdding, true);
 														} catch (error) {
-															console.error("Failed to toggle DM reaction:", error);
+															if (process.env.NODE_ENV === "development") {
+																console.error("Failed to toggle DM reaction:", error);
+															}
 														}
 													}}
 												/>
@@ -510,7 +514,9 @@ export function DirectMessageView({
 													try {
 														await toggleReaction(message.$id, emoji, true, true);
 													} catch (error) {
-														console.error("Failed to add DM reaction:", error);
+														if (process.env.NODE_ENV === "development") {
+															console.error("Failed to add DM reaction:", error);
+														}
 													}
 												}}
 											/>

@@ -143,7 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUserStatusState(newStatus);
         }
       } catch (err) {
-        console.error("Failed to change status:", err);
+        if (process.env.NODE_ENV === 'development') {
+          // biome-ignore lint: development debugging
+          console.error("Failed to change status:", err);
+        }
       }
     },
     [userData?.userId]

@@ -1,10 +1,15 @@
 "use server";
 
 import { requireAuth } from "@/lib/auth-server";
-import { redirect } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
 
 export default async function ProfileDebugPage() {
+	// Only allow in development
+	if (process.env.NODE_ENV !== "development") {
+		notFound();
+	}
+
 	const user = await requireAuth().catch(() => {
 		redirect("/login");
 	});

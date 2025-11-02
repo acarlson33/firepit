@@ -249,21 +249,29 @@ export function useDirectMessages({
 					userName: userName || undefined,
 				}),
 			}).then((response) => {
-				if (!response.ok) {
+				if (!response.ok && process.env.NODE_ENV === 'development') {
+					// biome-ignore lint: development debugging
 					console.warn('[typing] Failed to set typing status:', response.status);
 				}
 			}).catch((error) => {
-				console.warn('[typing] Error updating typing status:', error);
+				if (process.env.NODE_ENV === 'development') {
+					// biome-ignore lint: development debugging
+					console.warn('[typing] Error updating typing status:', error);
+				}
 			});
 		} else {
 			fetch(`/api/typing?conversationId=${encodeURIComponent(conversationId)}`, {
 				method: "DELETE",
 			}).then((response) => {
-				if (!response.ok) {
+				if (!response.ok && process.env.NODE_ENV === 'development') {
+					// biome-ignore lint: development debugging
 					console.warn('[typing] Failed to clear typing status:', response.status);
 				}
 			}).catch((error) => {
-				console.warn('[typing] Error updating typing status:', error);
+				if (process.env.NODE_ENV === 'development') {
+					// biome-ignore lint: development debugging
+					console.warn('[typing] Error updating typing status:', error);
+				}
 			});
 		}
 	}, [userId, conversationId, userName, typingStartDebounceMs]);
@@ -343,7 +351,10 @@ export function useDirectMessages({
 					return;
 				}
 
-				console.log('[typing] Received event:', events, typing);
+				if (process.env.NODE_ENV === 'development') {
+					// biome-ignore lint: development debugging
+					console.log('[typing] Received event:', events, typing);
+				}
 
 				// Use batched updates to reduce re-renders
 				if (events.some((e) => e.endsWith(".delete"))) {

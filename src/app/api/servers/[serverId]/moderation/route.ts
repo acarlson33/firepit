@@ -3,6 +3,7 @@ import { getServerClient } from "@/lib/appwrite-core";
 import { Query, ID } from "node-appwrite";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
+import { getUserRoles } from "@/lib/appwrite-roles";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
@@ -48,12 +49,16 @@ export async function POST(
       return NextResponse.json({ error: "Server not found" }, { status: 404 });
     }
 
-    // Check if moderator is owner
+    // Check permissions: owner or global admin/moderator
     const isOwner = server.ownerId === moderatorId;
-    if (!isOwner) {
-      // TODO: Check if user has admin/moderator role
+    const globalRoles = await getUserRoles(moderatorId);
+    const isGlobalModerator = globalRoles.isAdmin || globalRoles.isModerator;
+    
+    // For v1.0: Allow server owners and global moderators/admins
+    // Future enhancement: Check server-specific roles with manageServer permission
+    if (!isOwner && !isGlobalModerator) {
       return NextResponse.json(
-        { error: "Insufficient permissions" },
+        { error: "Insufficient permissions. You must be the server owner or a global moderator/admin." },
         { status: 403 }
       );
     }

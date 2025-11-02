@@ -89,7 +89,9 @@ export function FileDropZone({ onFileDrop, children, disabled, accept }: FileDro
 						acceptedTypes.includes("*/*");
 
 					if (!isAccepted) {
-						console.warn("File type not accepted:", file.type);
+						if (process.env.NODE_ENV === "development") {
+							console.warn("File type not accepted:", file.type);
+						}
 						return;
 					}
 				}

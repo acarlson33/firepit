@@ -1,8 +1,8 @@
 # firepit
 
-> warning: missing important features. This is currently in mid-to-late alpha testing, expect bugs and issues to arise. Not recommended for production or enterprise use.
+> **Version 1.0** - Production Ready 🎉
 
-The original idea was for an open source "extension" of sorts to discord, since then it has been scrapped and then re-made to be it's own project. Functions like a discord clone with some added features.
+A modern, open-source chat platform inspired by Discord, built with Next.js 15, Appwrite, and TypeScript. Features real-time messaging, server organization, role-based permissions, and comprehensive moderation tools.
 
 ## Features
 
@@ -29,7 +29,8 @@ The original idea was for an open source "extension" of sorts to discord, since 
 -   **TailwindCSS** - Modern, responsive UI design
 -   **shadcn/ui** - High-quality, accessible UI components
 -   **PWA Ready** - Progressive Web App support for mobile installation
--   **Comprehensive Tests** - 475+ tests with 100% pass rate and growing coverage
+-   **Comprehensive Tests** - 992 passing tests with extensive coverage
+-   **Production Ready** - Error boundaries, rate limiting, and security hardening
 
 ## 📋 Prerequisites
 
@@ -76,13 +77,73 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 
 ## 📚 Documentation
 
--   **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide with step-by-step instructions
--   **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
--   **[TURBOPACK_CONFIG.md](./TURBOPACK_CONFIG.md)** - Turbopack configuration and performance benefits
--   **[docs/PERFORMANCE.md](./docs/PERFORMANCE.md)** - Performance optimizations (99.3% improvement)
--   **[EMOJI_FEATURE.md](./EMOJI_FEATURE.md)** - Emoji and custom emoji feature documentation
--   **[IMAGE_UPLOAD_FEATURE.md](./IMAGE_UPLOAD_FEATURE.md)** - Image upload feature documentation
--   **[MESSAGE_REPLY_FEATURE.md](./MESSAGE_REPLY_FEATURE.md)** - Message reply feature documentation
+See the `/docs` folder for detailed guides:
+
+-   [Deployment Guide](./DEPLOYMENT.md) - Production deployment instructions
+-   [Performance Guide](./docs/PERFORMANCE.md) - Performance optimization details
+-   [Turbopack Configuration](./TURBOPACK_CONFIG.md) - Build tool configuration
+-   [Admin Guide](./docs/ADMIN_GUIDE.md) - Moderation and administration
+-   [Roles & Permissions](./docs/ROLES_AND_PERMISSIONS.md) - Permission system
+-   [New Relic Integration](./docs/NEW_RELIC.md) - APM and monitoring setup
+-   [Typing Indicators](./docs/TYPING_INDICATORS.md) - Real-time presence
+-   [Roadmap](./ROADMAP.md) - Planned features and timeline
+-   [Changelog](./CHANGELOG.md) - Version history and release notes
+
+## 🚀 Production Deployment
+
+Firepit is production-ready with:
+
+✅ **Security Hardening**
+
+-   Global error boundaries
+-   Rate limiting on uploads and API endpoints
+-   Secure session management
+-   Input validation and sanitization
+
+✅ **Performance Optimization**
+
+-   99.3%+ improvement in load times
+-   Response compression (60-70% bandwidth reduction)
+-   Virtual scrolling for large lists
+-   Optimized bundle size with code splitting
+
+✅ **Monitoring & Observability**
+
+-   New Relic APM integration
+-   Comprehensive error tracking
+-   Performance metrics
+-   Audit logging
+
+✅ **Testing & Quality**
+
+-   992 passing tests
+-   Comprehensive test coverage
+-   Automated CI/CD pipeline
+-   Strict ESLint configuration
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instructions.
+
+## ⚠️ Known Limitations
+
+Version 1.0 does not include:
+
+-   Server invite system (planned for v1.1)
+-   Message threading (planned for v1.2)
+-   Message pinning (planned for v1.2)
+-   Voice/video calls (not currently planned)
+-   Native mobile apps (PWA supported)
+
+See [ROADMAP.md](./ROADMAP.md) for the complete feature roadmap.
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for:
+
+-   Development workflow
+-   Code style guidelines
+-   Testing requirements
+-   Pull request process
+-   Issue reporting templates
 
 ## 🗂️ Project Structure
 

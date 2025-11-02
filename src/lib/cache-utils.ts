@@ -141,7 +141,9 @@ class SimpleCache {
             .catch((error: unknown) => {
               this.pendingRequests.delete(key);
               // Don't throw on background refresh failure
-              console.error(`SWR background refresh failed for key: ${key}`, error);
+              if (process.env.NODE_ENV === "development") {
+                console.error(`SWR background refresh failed for key: ${key}`, error);
+              }
               return entry.data;
             });
           
