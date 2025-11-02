@@ -183,7 +183,8 @@ describe("useMessages", () => {
 		});
 
 		it("should set hasMore when full page of messages is loaded", async () => {
-			const fullPage = Array.from({ length: 30 }, (_, i) => ({
+			// pageSize is now 15, so a full page should have 15 messages
+			const fullPage = Array.from({ length: 15 }, (_, i) => ({
 				...mockMessage1,
 				$id: `msg${i}`,
 			}));
@@ -409,7 +410,8 @@ describe("useMessages", () => {
 		});
 
 		it("should show load older button when hasMore is true", async () => {
-			const fullPage = Array.from({ length: 30 }, (_, i) => ({
+			// pageSize is now 15, so a full page should have 15 messages
+			const fullPage = Array.from({ length: 15 }, (_, i) => ({
 				...mockMessage1,
 				$id: `msg${i}`,
 			}));

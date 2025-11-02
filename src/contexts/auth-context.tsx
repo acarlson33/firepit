@@ -69,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUserData]);
 
   // Subscribe to real-time status updates for this user
+  // Defer subscription to avoid blocking initial render
   useEffect(() => {
     if (!userData?.userId) {
       return;
@@ -79,41 +80,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Import dynamically to avoid SSR issues
-    import("appwrite").then(({ Client }) => {
-      const client = new Client()
-        .setEndpoint(env.endpoint)
-        .setProject(env.project);
+    // Defer subscription setup to after initial render (3 second delay)
+    // This prevents real-time connections from blocking the critical render path
+    const timeoutId = setTimeout(() => {
+      // Import dynamically to avoid SSR issues
+      import("appwrite").then(({ Client }) => {
+        const client = new Client()
+          .setEndpoint(env.endpoint)
+          .setProject(env.project);
 
-      const unsubscribe = client.subscribe(
-        `databases.${env.databaseId}.collections.${statusesCollection}.documents`,
-        (response) => {
-          const payload = response.payload as Record<string, unknown>;
-          const statusUserId = payload.userId as string | undefined;
+        const unsubscribe = client.subscribe(
+          `databases.${env.databaseId}.collections.${statusesCollection}.documents`,
+          (response) => {
+            const payload = response.payload as Record<string, unknown>;
+            const statusUserId = payload.userId as string | undefined;
 
-          // Only update if this is our user's status
-          if (statusUserId === userData.userId) {
-            const updatedStatus: UserStatus = {
-              $id: String(payload.$id),
-              userId: String(payload.userId),
-              status: String(payload.status) as "online" | "away" | "busy" | "offline",
-              customMessage: payload.customMessage ? String(payload.customMessage) : undefined,
-              lastSeenAt: String(payload.lastSeenAt),
-              expiresAt: payload.expiresAt ? String(payload.expiresAt) : undefined,
-              isManuallySet: payload.isManuallySet ? Boolean(payload.isManuallySet) : undefined,
-              $updatedAt: payload.$updatedAt ? String(payload.$updatedAt) : undefined,
-            };
-            setUserStatusState(updatedStatus);
-          }
-        },
-      );
+            // Only update if this is our user's status
+            if (statusUserId === userData.userId) {
+              const updatedStatus: UserStatus = {
+                $id: String(payload.$id),
+                userId: String(payload.userId),
+                status: String(payload.status) as "online" | "away" | "busy" | "offline",
+                customMessage: payload.customMessage ? String(payload.customMessage) : undefined,
+                lastSeenAt: String(payload.lastSeenAt),
+                expiresAt: payload.expiresAt ? String(payload.expiresAt) : undefined,
+                isManuallySet: payload.isManuallySet ? Boolean(payload.isManuallySet) : undefined,
+                $updatedAt: payload.$updatedAt ? String(payload.$updatedAt) : undefined,
+              };
+              setUserStatusState(updatedStatus);
+            }
+          },
+        );
 
-      return () => {
-        unsubscribe();
-      };
-    }).catch(() => {
-      // Ignore subscription errors
-    });
+        return () => {
+          unsubscribe();
+        };
+      }).catch(() => {
+        // Ignore subscription errors
+      });
+    }, 3000); // Defer for 3 seconds to prioritize initial page load
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [userData?.userId]);
 
   const updateUserStatus = useCallback(

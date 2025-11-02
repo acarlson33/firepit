@@ -23,10 +23,14 @@ import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
-import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
+import { VirtualizedDMList } from "@/components/virtualized-dm-list";
+import type { DirectMessage, Conversation, FileAttachment, Message } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
+
+// Use virtual scrolling when message count exceeds this threshold
+const VIRTUALIZATION_THRESHOLD = 50;
 
 type DirectMessageViewProps = {
 	conversation: Conversation;
@@ -64,12 +68,16 @@ export function DirectMessageView({
 	const [uploadingImage, setUploadingImage] = useState(false);
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+	const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const otherUser = conversation.otherUser;
 	const displayName =
 		otherUser?.displayName || otherUser?.userId || "Unknown User";
+	
+	// Use virtual scrolling for large message lists (better performance)
+	const useVirtualScrolling = messages.length > VIRTUALIZATION_THRESHOLD;
 
 	// Custom emojis
 	const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -272,6 +280,57 @@ export function DirectMessageView({
 							Start the conversation! Send a message to begin chatting.
 						</p>
 					</div>
+				) : useVirtualScrolling ? (
+					<VirtualizedDMList
+						messages={messages}
+						userId={currentUserId}
+						userIdSlice={6}
+						editingMessageId={editingMessageId}
+						deleteConfirmId={deleteConfirmId}
+						setDeleteConfirmId={setDeleteConfirmId}
+						onStartEdit={(msg: Message) => {
+							// Convert back to DirectMessage format for edit handler
+							const dmMessage = messages.find(m => m.$id === msg.$id);
+							if (dmMessage) {
+								startEdit(dmMessage);
+							}
+						}}
+						onStartReply={(msg: Message) => {
+							// Convert back to DirectMessage format for reply handler
+							const dmMessage = messages.find(m => m.$id === msg.$id);
+							if (dmMessage) {
+								startReply(dmMessage);
+							}
+						}}
+						onRemove={(id: string) => {
+							void onDelete(id);
+							setDeleteConfirmId(null);
+						}}
+						onToggleReaction={async (messageId: string, emoji: string) => {
+							// Check if user already reacted with this emoji
+							const message = messages.find(m => m.$id === messageId);
+							const hasReacted = message?.reactions?.some(r => 
+								r.emoji === emoji && r.userIds.includes(currentUserId)
+							);
+							// Toggle based on current state
+							await toggleReaction(messageId, emoji, !hasReacted, true);
+						}}
+						onOpenProfileModal={(_userId: string, _userName?: string, _displayName?: string, _avatarUrl?: string) => {
+							// Profile modal handler - can be implemented later
+						}}
+						onOpenImageViewer={(imageUrl: string) => {
+							setViewingImage({
+								url: imageUrl,
+								alt: "Direct message image",
+							});
+						}}
+						onOpenReactionPicker={setReactionPickerId}
+						shouldShowLoadOlder={false}
+						onLoadOlder={() => {
+							// Load older messages handler - implement if pagination is added
+						}}
+						conversationId={conversation.$id}
+					/>
 				) : (
 					<>
 						{messages.map((message) => {

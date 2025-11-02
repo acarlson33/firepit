@@ -1,25 +1,14 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { MoreVertical, MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield } from "lucide-react";
-import { Avatar } from "@/components/ui/avatar";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Channel } from "@/lib/types";
-import { ReactionButton } from "@/components/reaction-button";
-import { ReactionPicker } from "@/components/reaction-picker";
 import { ChatInput } from "@/components/chat-input";
-import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
-import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import type { FileAttachment } from "@/lib/types";
 
 import { ConversationList } from "./components/ConversationList";
@@ -30,11 +19,7 @@ import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
-import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
-import { ImageViewer } from "@/components/image-viewer";
-import { ImageWithSkeleton } from "@/components/image-with-skeleton";
-import { EmojiPicker } from "@/components/emoji-picker";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
@@ -59,8 +44,28 @@ const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel")
   ssr: false,
 });
 
+// Lazy load interactive components that aren't always visible (Performance Optimization)
+const ReactionPicker = dynamic(() => import("@/components/reaction-picker").then((mod) => ({ default: mod.ReactionPicker })), {
+  ssr: false,
+  loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
+});
+const EmojiPicker = dynamic(() => import("@/components/emoji-picker").then((mod) => ({ default: mod.EmojiPicker })), {
+  ssr: false,
+  loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
+});
+const ImageViewer = dynamic(() => import("@/components/image-viewer").then((mod) => ({ default: mod.ImageViewer })), {
+  ssr: false,
+  loading: () => <div className="fixed inset-0 bg-black/80 flex items-center justify-center"><Skeleton className="h-3/4 w-3/4" /></div>,
+});
+
+// Lazy load virtual scrolling for better performance with large message lists
+const VirtualizedMessageList = dynamic(() => import("@/components/virtualized-message-list").then((mod) => ({ default: mod.VirtualizedMessageList })), {
+  ssr: false,
+  loading: () => <div className="h-[60vh] rounded-3xl border border-border/60 bg-background/70 p-4"><Skeleton className="h-full" /></div>,
+});
+
 export default function ChatPage() {
-  const { userData } = useAuth();
+  const { userData, loading: authLoading } = useAuth();
   const userId = userData?.userId ?? null;
   const userName = userData?.name ?? null;
   
@@ -89,6 +94,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [openReactionPicker, setOpenReactionPicker] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -428,261 +434,39 @@ export default function ChatPage() {
         </div>
       );
     }
+    
+    // Use virtual scrolling for better performance with large message lists
     return (
-      <div
-        ref={messagesContainerRef}
-        aria-live="polite"
-        className="h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
-      >
-        {shouldShowLoadOlder() && (
-          <div className="mb-4 flex justify-center">
-            <Button
-              onClick={loadOlder}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Load older messages
-            </Button>
-          </div>
-        )}
-        {messages.map((m) => {
-          const mine = m.userId === userId;
-          const isEditing = editingMessageId === m.$id;
-          const removed = Boolean(m.removedAt);
-          const isDeleting = deleteConfirmId === m.$id;
-          const displayName = m.displayName || m.userName || m.userId.slice(0, userIdSlice);
-          return (
-            <div 
-              className={`group mb-4 flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
-                mine ? "ml-auto max-w-[85%] flex-row-reverse text-right" : "mr-auto max-w-[85%]"
-              } ${
-                isEditing ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30" : "hover:border-border/80"
-              }`} 
-              key={m.$id}
-            >
-              <button
-                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
-                onClick={() => openProfileModal(m.userId, m.userName, m.displayName, m.avatarUrl)}
-                type="button"
-              >
-                <Avatar
-                  alt={displayName}
-                  fallback={displayName}
-                  size="md"
-                  src={m.avatarUrl}
-                />
-              </button>
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
-                >
-                  <span className="font-medium text-foreground">
-                    {displayName}
-                  </span>
-                  {m.pronouns && (
-                    <span className="italic text-muted-foreground">
-                      ({m.pronouns})
-                    </span>
-                  )}
-                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
-                  {m.editedAt && <span className="italic">(edited)</span>}
-                  {removed && <span className="text-destructive">(removed)</span>}
-                  {isEditing && (
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      Editing...
-                    </span>
-                  )}
-                </div>
-                {m.replyTo && (
-                  <div className="rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs">
-                    <div className="font-medium text-muted-foreground">
-                      Replying to {m.replyTo.displayName || m.replyTo.userName || "Unknown"}
-                    </div>
-                    <div className="line-clamp-1 text-muted-foreground/80">
-                      {m.replyTo.text}
-                    </div>
-                  </div>
-                )}
-                <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                  <div className="max-w-full flex-1 wrap-break-word space-y-2">
-                    {m.imageUrl && !removed && (
-                      <div className="rounded-2xl bg-muted/40 p-2">
-                        <ImageWithSkeleton
-                          alt={`Image from ${displayName}`}
-                          className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
-                          onClick={() => {
-                            if (m.imageUrl) {
-                              setViewingImage({
-                                url: m.imageUrl,
-                                alt: `Image from ${displayName}`,
-                              });
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              if (m.imageUrl) {
-                                setViewingImage({
-                                  url: m.imageUrl,
-                                  alt: `Image from ${displayName}`,
-                                });
-                              }
-                            }
-                          }}
-                          role="button"
-                          src={m.imageUrl}
-                          tabIndex={0}
-                        />
-                      </div>
-                    )}
-                    {m.attachments && m.attachments.length > 0 && !removed && (
-                      <div className="space-y-2">
-                        {m.attachments.map((attachment, idx) => (
-                          <FileAttachmentDisplay
-                            key={`${m.$id}-${attachment.fileId}-${idx}`}
-                            attachment={attachment}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {m.text && (
-                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
-                        {removed ? (
-                          <span className="italic opacity-70">Message removed</span>
-                        ) : (
-                          <MessageWithMentions
-                            text={m.text}
-                            currentUserId={userId || ""}
-                            customEmojis={customEmojis}
-                          />
-                        )}
-                      </div>
-                    )}
-                    {!m.text && !m.imageUrl && !m.attachments?.length && removed && (
-                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
-                        <span className="italic opacity-70">Message removed</span>
-                      </div>
-                    )}
-                  </div>
-                  {!removed && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild disabled={isDeleting}>
-                        <Button
-                          aria-label="Message options"
-                          disabled={isDeleting}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startReply(m)}>
-                          Reply
-                        </DropdownMenuItem>
-                        {mine && (
-                          <>
-                            <DropdownMenuItem onClick={() => startEdit(m)}>
-                              Edit
-                            </DropdownMenuItem>
-                            {isEditing && (
-                              <>
-                                <DropdownMenuItem onClick={() => applyEdit(m)}>
-                                  Save Changes
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={cancelEdit}>
-                                  Cancel Edit
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => confirmDelete(m.$id)}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                {!removed && m.reactions && m.reactions.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {m.reactions.map((reaction) => (
-                      <ReactionButton
-                        key={reaction.emoji}
-                        currentUserId={userId}
-                        reaction={reaction}
-                        customEmojis={customEmojis}
-                        onToggle={async (emoji, isAdding) => {
-                          try {
-                            await toggleReaction(m.$id, emoji, isAdding, false);
-                          } catch (error) {
-                            console.error("Failed to toggle reaction:", error);
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-                {!removed && (
-                  <div className="flex items-center gap-1 pt-1">
-                    <ReactionPicker
-                      disabled={!userId}
-                      customEmojis={customEmojis}
-                      onUploadCustomEmoji={uploadEmoji}
-                      onSelectEmoji={async (emoji) => {
-                        try {
-                          await toggleReaction(m.$id, emoji, true, false);
-                        } catch (error) {
-                          console.error("Failed to add reaction:", error);
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-                {isDeleting && (
-                  <div className="mt-2 flex items-center gap-2 rounded-2xl border border-destructive/60 bg-destructive/10 p-3 text-left text-sm">
-                    <span className="flex-1 text-sm">Delete this message?</span>
-                    <Button
-                      onClick={handleDelete}
-                      size="sm"
-                      type="button"
-                      variant="destructive"
-                    >
-                      Delete
-                    </Button>
-                    <Button
-                      onClick={() => setDeleteConfirmId(null)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        {Object.values(typingUsers).length > 0 && (
-          <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
-            {Object.values(typingUsers)
-              .slice(0, maxTypingDisplay)
-              .map((t) => t.userName || t.userId.slice(0, userIdSlice))
-              .join(", ")}{" "}
-            {Object.values(typingUsers).length > 1
-              ? "are typing..."
-              : "is typing..."}
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      <VirtualizedMessageList
+        deleteConfirmId={deleteConfirmId}
+        editingMessageId={editingMessageId}
+        messages={messages}
+        onLoadOlder={loadOlder}
+        onOpenImageViewer={(imageUrl) => {
+          setViewingImage({
+            url: imageUrl,
+            alt: "Image",
+          });
+        }}
+        onOpenProfileModal={openProfileModal}
+        onOpenReactionPicker={setOpenReactionPicker}
+        onRemove={handleDelete}
+        onStartEdit={startEdit}
+        onStartReply={startReply}
+        onToggleReaction={async (messageId, emoji) => {
+          try {
+            await toggleReaction(messageId, emoji, true, false);
+          } catch (error) {
+            console.error("Failed to toggle reaction:", error);
+          }
+        }}
+        setDeleteConfirmId={setDeleteConfirmId}
+        shouldShowLoadOlder={shouldShowLoadOlder()}
+        userId={userId}
+        userIdSlice={userIdSlice}
+      />
     );
+
   }
 
   // Show loading skeleton during initial load

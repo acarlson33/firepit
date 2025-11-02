@@ -44,8 +44,78 @@ const nextConfig = {
       "lucide-react",
       "@radix-ui/react-dialog",
       "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-avatar",
+      "@radix-ui/react-select",
+      "@radix-ui/react-tooltip",
+      "@radix-ui/react-popover",
       "sonner",
-    ]
+      "date-fns",
+    ],
+    // Enable Server Actions for better data fetching
+    serverActions: {
+      bodySizeLimit: "2mb",
+    },
+    // Turbopack configuration for Next.js 15+ (successor to Webpack)
+    // Use with: next dev --turbo
+    turbo: {
+      // Rules for transforming/loading files
+      rules: {
+        // Optimize image loading
+        "*.svg": {
+          loaders: ["@svgr/webpack"],
+          as: "*.js",
+        },
+      },
+      // Module resolution options
+      resolveAlias: {
+        // Aliases are already handled by tsconfig paths
+        // This ensures Turbopack respects them
+        "@": "./src",
+      },
+      // Performance optimizations
+      memoryLimit: 8192, // 8GB memory limit for large projects
+    },
+  },
+
+  // Optimize webpack bundles
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  webpack: (config: any, { isServer }: { isServer: boolean }) => {
+    if (!isServer) {
+      // Split vendor chunks for better caching
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: "all",
+          cacheGroups: {
+            default: false,
+            vendors: false,
+            // Vendor chunk for react ecosystem
+            framework: {
+              name: "framework",
+              chunks: "all",
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+              priority: 40,
+              enforce: true,
+            },
+            // Chunk for UI libraries
+            lib: {
+              test: /[\\/]node_modules[\\/](@radix-ui|lucide-react)[\\/]/,
+              name: "lib",
+              priority: 30,
+              minChunks: 1,
+              reuseExistingChunk: true,
+            },
+            // Chunk for other common node_modules
+            commons: {
+              name: "commons",
+              minChunks: 2,
+              priority: 20,
+            },
+          },
+        },
+      };
+    }
+    return config;
   },
 
   images: {

@@ -38,6 +38,8 @@ export function ImageWithSkeleton({
         <img
           alt={alt}
           className={className}
+          loading="lazy"
+          decoding="async"
           onClick={onClick}
           onError={() => {
             setLoading(false);

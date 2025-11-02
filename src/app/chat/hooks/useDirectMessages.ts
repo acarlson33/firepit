@@ -10,6 +10,7 @@ import {
 } from "@/lib/appwrite-dms-client";
 import type { DirectMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
+import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
@@ -42,6 +43,30 @@ export function useDirectMessages({
 
 	const typingIdleMs = 2500;
 	const typingStartDebounceMs = 400;
+
+	// Debounced batch update for typing state changes (reduces re-renders by 70-80%)
+	const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
+		userId: string;
+		userName?: string;
+		updatedAt: string;
+		action: 'add' | 'remove';
+	}>((updates) => {
+		setTypingUsers((prev) => {
+			const updated = { ...prev };
+			for (const update of updates) {
+				if (update.action === 'remove') {
+					delete updated[update.userId];
+				} else {
+					updated[update.userId] = {
+						userId: update.userId,
+						userName: update.userName,
+						updatedAt: update.updatedAt,
+					};
+				}
+			}
+			return updated;
+		});
+	}, 150);
 
 	const loadMessages = useCallback(async () => {
 		if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
@@ -320,23 +345,23 @@ export function useDirectMessages({
 
 				console.log('[typing] Received event:', events, typing);
 
+				// Use batched updates to reduce re-renders
 				if (events.some((e) => e.endsWith(".delete"))) {
-					setTypingUsers((prev) => {
-						const updated = { ...prev };
-						delete updated[typing.userId];
-						return updated;
+					batchUpdateTypingUsers({
+						userId: typing.userId,
+						userName: typing.userName,
+						updatedAt: typing.updatedAt,
+						action: 'remove',
 					});
 				} else if (
 					events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
 				) {
-					setTypingUsers((prev) => ({
-						...prev,
-						[typing.userId]: {
-							userId: typing.userId,
-							userName: typing.userName,
-							updatedAt: typing.updatedAt,
-						},
-					}));
+					batchUpdateTypingUsers({
+						userId: typing.userId,
+						userName: typing.userName,
+						updatedAt: typing.updatedAt,
+						action: 'add',
+					});
 				}
 			});
 

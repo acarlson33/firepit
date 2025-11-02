@@ -711,7 +711,7 @@ describe("useServers", () => {
 	});
 
 	describe("Cache Management", () => {
-		it("should use dedupe for parallel requests", async () => {
+		it("should use swr for cached requests", async () => {
 			(global.fetch as ReturnType<typeof vi.fn>)
 				.mockResolvedValueOnce({
 					ok: true,
@@ -732,7 +732,7 @@ describe("useServers", () => {
 			);
 
 			await waitFor(() => {
-				expect(apiCache.dedupe).toHaveBeenCalledWith(
+				expect(apiCache.swr).toHaveBeenCalledWith(
 					`servers:initial:${mockUserId}`,
 					expect.any(Function),
 					expect.any(Number)
@@ -740,7 +740,7 @@ describe("useServers", () => {
 			});
 
 			await waitFor(() => {
-				expect(apiCache.dedupe).toHaveBeenCalledWith(
+				expect(apiCache.swr).toHaveBeenCalledWith(
 					`memberships:${mockUserId}`,
 					expect.any(Function),
 					expect.any(Number)

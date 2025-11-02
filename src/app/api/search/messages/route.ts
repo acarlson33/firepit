@@ -13,6 +13,7 @@ import {
 	setTransactionName,
 	trackApiCall,
 } from "@/lib/newrelic-utils";
+import { compressedResponse } from "@/lib/api-compression";
 
 type SearchResult = {
 	type: "channel" | "dm";
@@ -401,7 +402,7 @@ export async function GET(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
-		return NextResponse.json({ results: limitedResults });
+		return compressedResponse({ results: limitedResults });
 	} catch (error) {
 		recordError(
 			error instanceof Error ? error : new Error(String(error)),

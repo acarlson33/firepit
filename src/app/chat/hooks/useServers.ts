@@ -46,8 +46,8 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       try {
         setInitialLoading(true);
         
-        // Use deduplication to prevent parallel requests
-        const serverReq = apiCache.dedupe(
+        // Use SWR (stale-while-revalidate) to serve cached data instantly while revalidating
+        const serverReq = apiCache.swr(
           `servers:initial:${userId}`,
           () => fetch("/api/servers?limit=25")
             .then((res) => res.json())
@@ -56,7 +56,7 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
         );
         
         const membershipReq = membershipEnabled
-          ? apiCache.dedupe(
+          ? apiCache.swr(
               `memberships:${userId}`,
               () => fetch("/api/memberships")
                 .then((res) => res.json())

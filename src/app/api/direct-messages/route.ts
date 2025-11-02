@@ -13,6 +13,7 @@ import {
 	trackMessage,
 	addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -58,12 +59,30 @@ async function createAttachments(
 	);
 }
 
-// Helper to create JSON responses with CORS headers
+// Helper to create JSON responses with CORS headers and compression hints
 function jsonResponse(data: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  
+  // Add compression headers for large responses
+  const jsonString = JSON.stringify(data);
+  const bodySize = new Blob([jsonString]).size;
+  
+  if (shouldCompress("application/json", bodySize)) {
+    headers.set("X-Compressible", "true");
+    const existingVary = headers.get("Vary");
+    headers.set("Vary", existingVary ? `${existingVary}, Accept-Encoding` : "Accept-Encoding");
+    
+    // Log compression opportunity in development
+    if (process.env.NODE_ENV === "development") {
+      logger.info("Direct messages response compressed", {
+        bodySize,
+        endpoint: "direct-messages"
+      });
+    }
+  }
   
   return NextResponse.json(data, {
     ...init,

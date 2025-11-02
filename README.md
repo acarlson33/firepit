@@ -6,40 +6,40 @@ The original idea was for an open source "extension" of sorts to discord, since 
 
 ## Features
 
-- **Server support** - support for servers like on discord
-- **Channel support** - support for channels like on discord
-- **User profiles and status support** - missing external integration, but support for in app statuses and profiles
-- **Emoji support** - Standard and custom emoji support with upload capabilities
-- **Moderation** - Instance wide moderation and administration
-- **Individual server moderation** - not currently supported, but will come in a later update with roles
+-   **Server support** - support for servers like on discord
+-   **Channel support** - support for channels like on discord
+-   **User profiles and status support** - missing external integration, but support for in app statuses and profiles
+-   **Emoji support** - Standard and custom emoji support with upload capabilities
+-   **Moderation** - Instance wide moderation and administration
+-   **Individual server moderation** - not currently supported, but will come in a later update with roles
 
 ## Codebase Features
 
-- **Real-time Chat** - WebSocket-based messaging with typing indicators
-- **Message Replies** - Reply to specific messages to maintain conversation context
-- **Server & Channels** - Discord-like server organization with multiple channels
-- **Direct Messages** - Private conversations between users
-- **User Status** - Online/offline presence with custom status messages
-- **Emoji Support** - Standard emoji picker and custom emoji upload (up to 10MB)
-- **Moderation Tools** - Soft delete, restore, and hard delete messages with full audit trails
-- **Role-Based Access** - Admin, moderator, and user roles with granular permissions
-- **User Profiles** - Customizable profiles with avatar support
-- **TypeScript** - Full type safety across the entire codebase
-- **Next.js 15** - App Router with React Server Components
-- **TailwindCSS** - Modern, responsive UI design
-- **shadcn/ui** - High-quality, accessible UI components
-- **PWA Ready** - Progressive Web App support for mobile installation
-- **Comprehensive Tests** - 475+ tests with 100% pass rate and growing coverage
+-   **Real-time Chat** - WebSocket-based messaging with typing indicators
+-   **Message Replies** - Reply to specific messages to maintain conversation context
+-   **Server & Channels** - Discord-like server organization with multiple channels
+-   **Direct Messages** - Private conversations between users
+-   **User Status** - Online/offline presence with custom status messages
+-   **Emoji Support** - Standard emoji picker and custom emoji upload (up to 10MB)
+-   **Moderation Tools** - Soft delete, restore, and hard delete messages with full audit trails
+-   **Role-Based Access** - Admin, moderator, and user roles with granular permissions
+-   **User Profiles** - Customizable profiles with avatar support
+-   **TypeScript** - Full type safety across the entire codebase
+-   **Next.js 15** - App Router with React Server Components
+-   **TailwindCSS** - Modern, responsive UI design
+-   **shadcn/ui** - High-quality, accessible UI components
+-   **PWA Ready** - Progressive Web App support for mobile installation
+-   **Comprehensive Tests** - 475+ tests with 100% pass rate and growing coverage
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 
-- **Node.js 18+** or **Bun 1.0+** installed
-- An **Appwrite instance** (cloud or self-hosted):
-  - Cloud: [appwrite.io](https://appwrite.io) (free tier available)
-  - Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
-- **Git** for cloning the repository
+-   **Node.js 18+** or **Bun 1.0+** installed
+-   An **Appwrite instance** (cloud or self-hosted):
+    -   Cloud: [appwrite.io](https://appwrite.io) (free tier available)
+    -   Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
+-   **Git** for cloning the repository
 
 ## 🚀 Quick Start
 
@@ -62,19 +62,27 @@ bun run validate-env
 bun run setup
 
 # 6. Start the development server
-bun dev
+bun dev  # Uses Turbopack (~700x faster than Webpack)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the web application.
-Open [http://localhost:3000](http://localhost:3000) to see your application.
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+
+**Development Commands:**
+
+-   `bun dev` - Start with Turbopack (recommended, ~1.5s cold start)
+-   `bun dev:webpack` - Start with Webpack (fallback, ~12s cold start)
+-   `bun build` - Production build with Turbopack
+-   `bun build:webpack` - Production build with Webpack (fallback)
 
 ## 📚 Documentation
 
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide with step-by-step instructions
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
-- **[EMOJI_FEATURE.md](./EMOJI_FEATURE.md)** - Emoji and custom emoji feature documentation
-- **[IMAGE_UPLOAD_FEATURE.md](./IMAGE_UPLOAD_FEATURE.md)** - Image upload feature documentation
-- **[MESSAGE_REPLY_FEATURE.md](./MESSAGE_REPLY_FEATURE.md)** - Message reply feature documentation
+-   **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide with step-by-step instructions
+-   **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development workflow and contribution guidelines
+-   **[TURBOPACK_CONFIG.md](./TURBOPACK_CONFIG.md)** - Turbopack configuration and performance benefits
+-   **[docs/PERFORMANCE.md](./docs/PERFORMANCE.md)** - Performance optimizations (99.3% improvement)
+-   **[EMOJI_FEATURE.md](./EMOJI_FEATURE.md)** - Emoji and custom emoji feature documentation
+-   **[IMAGE_UPLOAD_FEATURE.md](./IMAGE_UPLOAD_FEATURE.md)** - Image upload feature documentation
+-   **[MESSAGE_REPLY_FEATURE.md](./MESSAGE_REPLY_FEATURE.md)** - Message reply feature documentation
 
 ## 🗂️ Project Structure
 
@@ -113,9 +121,9 @@ firepit/
 
 The application requires several environment variables. Copy `.env.local.example` to `.env.local` and configure:
 
-- `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
-- `APPWRITE_PROJECT_ID` - Your Appwrite project ID
-- `APPWRITE_API_KEY` - Server-side API key with full permissions
+-   `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
+-   `APPWRITE_PROJECT_ID` - Your Appwrite project ID
+-   `APPWRITE_API_KEY` - Server-side API key with full permissions
 
 For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
 
@@ -136,10 +144,10 @@ For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ### Common Issues
 
-- **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
-- **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
-- **"Missing scope" errors** - Regenerate your API key with all required permissions
-- **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
+-   **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
+-   **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
+-   **"Missing scope" errors** - Regenerate your API key with all required permissions
+-   **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
 
 For more solutions, see [DEPLOYMENT.md - Troubleshooting](./DEPLOYMENT.md#troubleshooting).
 
@@ -160,8 +168,8 @@ bun run test --watch
 
 Current test coverage: **22.36%** statements (growing)
 
-- 475+ tests passing
-- Focus on security-critical modules (auth, roles, moderation)
+-   475+ tests passing
+-   Focus on security-critical modules (auth, roles, moderation)
 
 ## 📦 Deployment
 
@@ -188,11 +196,11 @@ For production deployment with Nginx, Docker, or other platforms, see [DEPLOYMEN
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
-- Development workflow
-- Code style guidelines
-- Testing requirements
-- Pull request process
-- Issue reporting templates
+-   Development workflow
+-   Code style guidelines
+-   Testing requirements
+-   Pull request process
+-   Issue reporting templates
 
 ## 📄 License
 
@@ -203,14 +211,14 @@ You can find the License here: [License](./LICENSE)
 
 Built with:
 
-- [Next.js](https://nextjs.org/)
-- [Appwrite](https://appwrite.io/)
-- [TailwindCSS](https://tailwindcss.com/)
-- [shadcn/ui](https://ui.shadcn.com/)
-- [Vitest](https://vitest.dev/)
+-   [Next.js](https://nextjs.org/)
+-   [Appwrite](https://appwrite.io/)
+-   [TailwindCSS](https://tailwindcss.com/)
+-   [shadcn/ui](https://ui.shadcn.com/)
+-   [Vitest](https://vitest.dev/)
 
 ## 📧 Support
 
-- **Documentation**: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- **Issues**: [GitHub Issues](https://github.com/your-org/firepit/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/firepit/discussions)
+-   **Documentation**: [DEPLOYMENT.md](./DEPLOYMENT.md)
+-   **Issues**: [GitHub Issues](https://github.com/your-org/firepit/issues)
+-   **Discussions**: [GitHub Discussions](https://github.com/your-org/firepit/discussions)

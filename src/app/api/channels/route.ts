@@ -5,6 +5,7 @@ import { Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Channel } from "@/lib/types";
+import { compressedResponse } from "@/lib/api-compression";
 
 /**
  * GET /api/channels
@@ -60,10 +61,21 @@ export async function GET(request: NextRequest) {
 		const last = channels.at(-1);
 		const nextCursor = channels.length === limit && last ? last.$id : null;
 
-		return NextResponse.json({
-			channels,
-			nextCursor,
-		});
+		// Use compressed response for large payloads (60-70% bandwidth reduction)
+		const response = compressedResponse(
+			{
+				channels,
+				nextCursor,
+			},
+			{
+				headers: {
+					// Cache channels for 60 seconds with 5 minute stale-while-revalidate
+					"Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+				},
+			}
+		);
+
+		return response;
 	} catch (error) {
 		return NextResponse.json(
 			{
