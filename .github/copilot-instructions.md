@@ -317,7 +317,7 @@ Ultracite enforces strict type safety, accessibility standards, and consistent c
 -   Don't use focused tests.
 -   Make sure the assertion function, like expect, is placed inside an it() function call.
 -   Don't use disabled tests.
--   Don't use `bun test`, instead use the provided script command `bun run test`. This fixes most testing errors 90% of the time.
+-   Don't use `bun test`, instead use the provided script command `bun run test`.
 
 ## Example: Error Handling
 

@@ -1,6 +1,6 @@
 import { ID, Query, Permission, Role } from "appwrite";
 
-import type { Conversation, DirectMessage } from "./types";
+import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import { getUserProfile, getAvatarUrl } from "./appwrite-profiles";
 
@@ -8,9 +8,76 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
+const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 
 function getDatabases() {
 	return getBrowserDatabases();
+}
+
+/**
+ * Fetch attachments for direct messages and enrich them
+ */
+async function enrichDirectMessagesWithAttachments(
+	messages: DirectMessage[],
+): Promise<DirectMessage[]> {
+	if (!messages || messages.length === 0) {
+		return messages;
+	}
+
+	if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
+		return messages;
+	}
+
+	try {
+		// Get all message IDs
+		const messageIds = messages.map((m) => m.$id);
+
+		// Query attachments for all messages
+		const response = await getDatabases().listDocuments({
+			databaseId: DATABASE_ID,
+			collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+			queries: [
+				Query.equal("messageId", messageIds),
+				Query.equal("messageType", "dm"),
+				Query.limit(1000), // High limit to get all attachments
+			],
+		});
+
+		// Group attachments by messageId
+		const attachmentsByMessageId = new Map<string, FileAttachment[]>();
+		for (const doc of response.documents) {
+			const d = doc as Record<string, unknown>;
+			const messageId = String(d.messageId);
+			const attachment: FileAttachment = {
+				fileId: String(d.fileId),
+				fileName: String(d.fileName),
+				fileSize: Number(d.fileSize),
+				fileType: String(d.fileType),
+				fileUrl: String(d.fileUrl),
+				thumbnailUrl: d.thumbnailUrl ? String(d.thumbnailUrl) : undefined,
+			};
+
+			if (!attachmentsByMessageId.has(messageId)) {
+				attachmentsByMessageId.set(messageId, []);
+			}
+			const messageAttachments = attachmentsByMessageId.get(messageId);
+			if (messageAttachments) {
+				messageAttachments.push(attachment);
+			}
+		}
+
+		// Enrich messages with their attachments
+		return messages.map((message) => {
+			const attachments = attachmentsByMessageId.get(message.$id);
+			if (attachments && attachments.length > 0) {
+				return { ...message, attachments };
+			}
+			return message;
+		});
+	} catch {
+		// If attachment fetch fails, return messages without attachments
+		return messages;
+	}
 }
 
 /**
@@ -277,10 +344,13 @@ export async function listDirectMessages(
 			}),
 		);
 
-		const last = enriched.at(-1);
+		// Enrich with attachments
+		const enrichedWithAttachments = await enrichDirectMessagesWithAttachments(enriched);
+
+		const last = enrichedWithAttachments.at(-1);
 		return {
-			items: enriched,
-			nextCursor: enriched.length === limit && last ? last.$id : undefined,
+			items: enrichedWithAttachments,
+			nextCursor: enrichedWithAttachments.length === limit && last ? last.$id : undefined,
 		};
 	} catch {
 		return { items: [] };

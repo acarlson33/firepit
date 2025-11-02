@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CustomEmoji } from "@/lib/types";
@@ -25,9 +25,18 @@ export function ReactionButton({
 	customEmojis = [],
 }: ReactionButtonProps) {
 	const [loading, setLoading] = useState(false);
+	const isMountedRef = useRef(true);
+	
 	const hasReacted = currentUserId
 		? reaction.userIds.includes(currentUserId)
 		: false;
+
+	useEffect(() => {
+		// Track mounted state to prevent state updates after unmount
+		return () => {
+			isMountedRef.current = false;
+		};
+	}, []);
 
 	async function handleClick() {
 		if (!currentUserId || loading) {
@@ -38,7 +47,10 @@ export function ReactionButton({
 		try {
 			await onToggle(reaction.emoji, !hasReacted);
 		} finally {
-			setLoading(false);
+			// Only update state if component is still mounted
+			if (isMountedRef.current) {
+				setLoading(false);
+			}
 		}
 	}
 

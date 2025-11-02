@@ -1,23 +1,15 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { MoreVertical, MessageSquare, Hash, Image as ImageIcon, X } from "lucide-react";
-import { Avatar } from "@/components/ui/avatar";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Channel } from "@/lib/types";
-import { ReactionButton } from "@/components/reaction-button";
-import { ReactionPicker } from "@/components/reaction-picker";
 import { ChatInput } from "@/components/chat-input";
-import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
+import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
+import type { FileAttachment } from "@/lib/types";
 
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -27,11 +19,7 @@ import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
-import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
-import { ImageViewer } from "@/components/image-viewer";
-import { ImageWithSkeleton } from "@/components/image-with-skeleton";
-import { EmojiPicker } from "@/components/emoji-picker";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
@@ -46,9 +34,38 @@ const UserProfileModal = dynamic(() => import("@/components/user-profile-modal")
 const NewConversationDialog = dynamic(() => import("./components/NewConversationDialog").then((mod) => ({ default: mod.NewConversationDialog })), {
   ssr: false,
 });
+const RoleSettingsDialog = dynamic(() => import("@/components/role-settings-dialog").then((mod) => ({ default: mod.RoleSettingsDialog })), {
+  ssr: false,
+});
+const ChannelPermissionsEditor = dynamic(() => import("@/components/channel-permissions-editor").then((mod) => ({ default: mod.ChannelPermissionsEditor })), {
+  ssr: false,
+});
+const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel").then((mod) => ({ default: mod.ServerAdminPanel })), {
+  ssr: false,
+});
+
+// Lazy load interactive components that aren't always visible (Performance Optimization)
+const ReactionPicker = dynamic(() => import("@/components/reaction-picker").then((mod) => ({ default: mod.ReactionPicker })), {
+  ssr: false,
+  loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
+});
+const EmojiPicker = dynamic(() => import("@/components/emoji-picker").then((mod) => ({ default: mod.EmojiPicker })), {
+  ssr: false,
+  loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
+});
+const ImageViewer = dynamic(() => import("@/components/image-viewer").then((mod) => ({ default: mod.ImageViewer })), {
+  ssr: false,
+  loading: () => <div className="fixed inset-0 bg-black/80 flex items-center justify-center"><Skeleton className="h-3/4 w-3/4" /></div>,
+});
+
+// Lazy load virtual scrolling for better performance with large message lists
+const VirtualizedMessageList = dynamic(() => import("@/components/virtualized-message-list").then((mod) => ({ default: mod.VirtualizedMessageList })), {
+  ssr: false,
+  loading: () => <div className="h-[60vh] rounded-3xl border border-border/60 bg-background/70 p-4"><Skeleton className="h-full" /></div>,
+});
 
 export default function ChatPage() {
-  const { userData } = useAuth();
+  const { userData, loading: authLoading } = useAuth();
   const userId = userData?.userId ?? null;
   const userName = userData?.name ?? null;
   
@@ -63,6 +80,9 @@ export default function ChatPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [newConversationOpen, setNewConversationOpen] = useState(false);
+  const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
+  const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<{
     userId: string;
     userName?: string;
@@ -73,6 +93,8 @@ export default function ChatPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [openReactionPicker, setOpenReactionPicker] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,13 +261,27 @@ export default function ChatPage() {
     setSelectedImage(null);
     setImagePreview(null);
 
-    // Send message with image data
-    await send(e, imageFileId, imageUrl);
-  }, [selectedImage, send]);
+    // Prepare attachments (file attachments already uploaded via FileUploadButton)
+    const attachmentsToSend = fileAttachments.length > 0 ? [...fileAttachments] : undefined;
+
+    // Clear file attachments state
+    setFileAttachments([]);
+
+    // Send message with image data and file attachments
+    await send(e, imageFileId, imageUrl, attachmentsToSend);
+  }, [selectedImage, fileAttachments, send]);
 
   const handleEmojiSelect = useCallback((emoji: string) => {
     onChangeText({ target: { value: text + emoji } } as React.ChangeEvent<HTMLInputElement>);
   }, [text, onChangeText]);
+
+  const handleFileAttachmentSelect = useCallback((attachment: FileAttachment) => {
+    setFileAttachments((prev) => [...prev, attachment]);
+  }, []);
+
+  const removeFileAttachment = useCallback((index: number) => {
+    setFileAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Derived helpers
   const showChat = useMemo(
@@ -254,13 +290,38 @@ export default function ChatPage() {
   );
 
   function renderServers() {
+    const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
+    const isOwner = selectedServerData?.ownerId === userId;
+
     return (
       <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold tracking-tight">Servers</h2>
-          <span className="text-xs text-muted-foreground">
-            {serversApi.servers.length} total
-          </span>
+          <div className="flex items-center gap-2">
+            {serversApi.selectedServer && isOwner && (
+              <>
+                <Button
+                  onClick={() => setAdminPanelOpen(true)}
+                  size="sm"
+                  variant="ghost"
+                  title="Admin Panel"
+                >
+                  <Shield className="h-4 w-4" />
+                </Button>
+                <Button
+                  onClick={() => setRoleSettingsOpen(true)}
+                  size="sm"
+                  variant="ghost"
+                  title="Server Settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {serversApi.servers.length} total
+            </span>
+          </div>
         </div>
         <ul className="space-y-2">
           {serversApi.servers.map((s) => {
@@ -373,251 +434,39 @@ export default function ChatPage() {
         </div>
       );
     }
+    
+    // Use virtual scrolling for better performance with large message lists
     return (
-      <div
-        ref={messagesContainerRef}
-        aria-live="polite"
-        className="h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
-      >
-        {shouldShowLoadOlder() && (
-          <div className="mb-4 flex justify-center">
-            <Button
-              onClick={loadOlder}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Load older messages
-            </Button>
-          </div>
-        )}
-        {messages.map((m) => {
-          const mine = m.userId === userId;
-          const isEditing = editingMessageId === m.$id;
-          const removed = Boolean(m.removedAt);
-          const isDeleting = deleteConfirmId === m.$id;
-          const displayName = m.displayName || m.userName || m.userId.slice(0, userIdSlice);
-          return (
-            <div 
-              className={`group mb-4 flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
-                mine ? "ml-auto max-w-[85%] flex-row-reverse text-right" : "mr-auto max-w-[85%]"
-              } ${
-                isEditing ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30" : "hover:border-border/80"
-              }`} 
-              key={m.$id}
-            >
-              <button
-                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
-                onClick={() => openProfileModal(m.userId, m.userName, m.displayName, m.avatarUrl)}
-                type="button"
-              >
-                <Avatar
-                  alt={displayName}
-                  fallback={displayName}
-                  size="md"
-                  src={m.avatarUrl}
-                />
-              </button>
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
-                >
-                  <span className="font-medium text-foreground">
-                    {displayName}
-                  </span>
-                  {m.pronouns && (
-                    <span className="italic text-muted-foreground">
-                      ({m.pronouns})
-                    </span>
-                  )}
-                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
-                  {m.editedAt && <span className="italic">(edited)</span>}
-                  {removed && <span className="text-destructive">(removed)</span>}
-                  {isEditing && (
-                    <span className="font-medium text-blue-600 dark:text-blue-400">
-                      Editing...
-                    </span>
-                  )}
-                </div>
-                {m.replyTo && (
-                  <div className="rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs">
-                    <div className="font-medium text-muted-foreground">
-                      Replying to {m.replyTo.displayName || m.replyTo.userName || "Unknown"}
-                    </div>
-                    <div className="line-clamp-1 text-muted-foreground/80">
-                      {m.replyTo.text}
-                    </div>
-                  </div>
-                )}
-                <div className={`flex items-start gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                  <div className="max-w-full flex-1 wrap-break-word space-y-2">
-                    {m.imageUrl && !removed && (
-                      <div className="rounded-2xl bg-muted/40 p-2">
-                        <ImageWithSkeleton
-                          alt={`Image from ${displayName}`}
-                          className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
-                          onClick={() => {
-                            if (m.imageUrl) {
-                              setViewingImage({
-                                url: m.imageUrl,
-                                alt: `Image from ${displayName}`,
-                              });
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              if (m.imageUrl) {
-                                setViewingImage({
-                                  url: m.imageUrl,
-                                  alt: `Image from ${displayName}`,
-                                });
-                              }
-                            }
-                          }}
-                          role="button"
-                          src={m.imageUrl}
-                          tabIndex={0}
-                        />
-                      </div>
-                    )}
-                    {m.text && (
-                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
-                        {removed ? (
-                          <span className="italic opacity-70">Message removed</span>
-                        ) : (
-                          <MessageWithMentions
-                            text={m.text}
-                            currentUserId={userId || ""}
-                            customEmojis={customEmojis}
-                          />
-                        )}
-                      </div>
-                    )}
-                    {!m.text && !m.imageUrl && removed && (
-                      <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-foreground">
-                        <span className="italic opacity-70">Message removed</span>
-                      </div>
-                    )}
-                  </div>
-                  {!removed && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild disabled={isDeleting}>
-                        <Button
-                          aria-label="Message options"
-                          disabled={isDeleting}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startReply(m)}>
-                          Reply
-                        </DropdownMenuItem>
-                        {mine && (
-                          <>
-                            <DropdownMenuItem onClick={() => startEdit(m)}>
-                              Edit
-                            </DropdownMenuItem>
-                            {isEditing && (
-                              <>
-                                <DropdownMenuItem onClick={() => applyEdit(m)}>
-                                  Save Changes
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={cancelEdit}>
-                                  Cancel Edit
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => confirmDelete(m.$id)}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-                {!removed && m.reactions && m.reactions.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {m.reactions.map((reaction) => (
-                      <ReactionButton
-                        key={reaction.emoji}
-                        currentUserId={userId}
-                        reaction={reaction}
-                        customEmojis={customEmojis}
-                        onToggle={async (emoji, isAdding) => {
-                          try {
-                            await toggleReaction(m.$id, emoji, isAdding, false);
-                          } catch (error) {
-                            console.error("Failed to toggle reaction:", error);
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-                {!removed && (
-                  <div className="flex items-center gap-1 pt-1">
-                    <ReactionPicker
-                      disabled={!userId}
-                      customEmojis={customEmojis}
-                      onUploadCustomEmoji={uploadEmoji}
-                      onSelectEmoji={async (emoji) => {
-                        try {
-                          await toggleReaction(m.$id, emoji, true, false);
-                        } catch (error) {
-                          console.error("Failed to add reaction:", error);
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-                {isDeleting && (
-                  <div className="mt-2 flex items-center gap-2 rounded-2xl border border-destructive/60 bg-destructive/10 p-3 text-left text-sm">
-                    <span className="flex-1 text-sm">Delete this message?</span>
-                    <Button
-                      onClick={handleDelete}
-                      size="sm"
-                      type="button"
-                      variant="destructive"
-                    >
-                      Delete
-                    </Button>
-                    <Button
-                      onClick={() => setDeleteConfirmId(null)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        {Object.values(typingUsers).length > 0 && (
-          <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
-            {Object.values(typingUsers)
-              .slice(0, maxTypingDisplay)
-              .map((t) => t.userName || t.userId.slice(0, userIdSlice))
-              .join(", ")}{" "}
-            {Object.values(typingUsers).length > 1
-              ? "are typing..."
-              : "is typing..."}
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      <VirtualizedMessageList
+        deleteConfirmId={deleteConfirmId}
+        editingMessageId={editingMessageId}
+        messages={messages}
+        onLoadOlder={loadOlder}
+        onOpenImageViewer={(imageUrl) => {
+          setViewingImage({
+            url: imageUrl,
+            alt: "Image",
+          });
+        }}
+        onOpenProfileModal={openProfileModal}
+        onOpenReactionPicker={setOpenReactionPicker}
+        onRemove={handleDelete}
+        onStartEdit={startEdit}
+        onStartReply={startReply}
+        onToggleReaction={async (messageId, emoji) => {
+          try {
+            await toggleReaction(messageId, emoji, true, false);
+          } catch (error) {
+            console.error("Failed to toggle reaction:", error);
+          }
+        }}
+        setDeleteConfirmId={setDeleteConfirmId}
+        shouldShowLoadOlder={shouldShowLoadOlder()}
+        userId={userId}
+        userIdSlice={userIdSlice}
+      />
     );
+
   }
 
   // Show loading skeleton during initial load
@@ -756,6 +605,29 @@ export default function ChatPage() {
             />
           ) : (
             <>
+              {/* Channel Header */}
+              {selectedChannel && (
+                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-semibold">
+                      {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+                    </h2>
+                  </div>
+                  {serversApi.selectedServer && 
+                   serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                    <Button
+                      onClick={() => setChannelPermissionsOpen(true)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span className="ml-2">Channel Permissions</span>
+                    </Button>
+                  )}
+                </div>
+              )}
               {renderMessages()}
               {/* Chat Input */}
               {!selectedConversationId && (
@@ -853,6 +725,17 @@ export default function ChatPage() {
                         </Button>
                       </div>
                     )}
+                    {fileAttachments.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        {fileAttachments.map((attachment, index) => (
+                          <FilePreview
+                            key={`${attachment.fileId}-${index}`}
+                            attachment={attachment}
+                            onRemove={() => removeFileAttachment(index)}
+                          />
+                        ))}
+                      </div>
+                    )}
                     <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSendWithImage}>
                       <input
                         accept="image/*"
@@ -871,6 +754,11 @@ export default function ChatPage() {
                       >
                         <ImageIcon className="size-4" />
                       </Button>
+                      <FileUploadButton
+                        onFileSelect={handleFileAttachmentSelect}
+                        disabled={!showChat || uploadingImage || Boolean(editingMessageId)}
+                        className="shrink-0"
+                      />
                       <EmojiPicker
                         onEmojiSelect={handleEmojiSelect}
                         customEmojis={customEmojis}
@@ -894,7 +782,7 @@ export default function ChatPage() {
                       />
                       <Button
                         className="rounded-2xl shrink-0"
-                        disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage)}
+                        disabled={!showChat || uploadingImage || (!text.trim() && !selectedImage && fileAttachments.length === 0)}
                         type="submit"
                       >
                       {uploadingImage ? "Uploading..." : "Send"}
@@ -948,6 +836,39 @@ export default function ChatPage() {
             setViewingImage(null);
           }}
           src={viewingImage.url}
+        />
+      )}
+
+      {/* Role Settings Dialog */}
+      {serversApi.selectedServer && (
+        <RoleSettingsDialog
+          open={roleSettingsOpen}
+          onOpenChange={setRoleSettingsOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+
+      {/* Channel Permissions Editor */}
+      {selectedChannel && serversApi.selectedServer && (
+        <ChannelPermissionsEditor
+          open={channelPermissionsOpen}
+          onOpenChange={setChannelPermissionsOpen}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+          serverId={serversApi.selectedServer}
+        />
+      )}
+
+      {/* Server Admin Panel */}
+      {serversApi.selectedServer && (
+        <ServerAdminPanel
+          open={adminPanelOpen}
+          onOpenChange={setAdminPanelOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
         />
       )}
     </div>

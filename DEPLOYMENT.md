@@ -4,15 +4,15 @@ This guide walks you through deploying **Firepit** from scratch on a new instanc
 
 ## Table of Contents
 
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Detailed Setup](#detailed-setup)
-  - [1. Appwrite Setup](#1-appwrite-setup)
-  - [2. Environment Configuration](#2-environment-configuration)
-  - [3. Database Initialization](#3-database-initialization)
-  - [4. Initial Deployment](#4-initial-deployment)
-- [Production Deployment](#production-deployment)
-- [Troubleshooting](#troubleshooting)
+-   [Prerequisites](#prerequisites)
+-   [Quick Start](#quick-start)
+-   [Detailed Setup](#detailed-setup)
+    -   [1. Appwrite Setup](#1-appwrite-setup)
+    -   [2. Environment Configuration](#2-environment-configuration)
+    -   [3. Database Initialization](#3-database-initialization)
+    -   [4. Initial Deployment](#4-initial-deployment)
+-   [Production Deployment](#production-deployment)
+-   [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -20,11 +20,11 @@ This guide walks you through deploying **Firepit** from scratch on a new instanc
 
 Before you begin, ensure you have:
 
-- **Node.js** 18+ or **Bun** installed
-- **Appwrite** instance (cloud or self-hosted)
-  - Cloud: Sign up at [https://appwrite.io](https://appwrite.io)
-  - Self-hosted: Follow [Appwrite Installation](https://appwrite.io/docs/installation)
-- **Git** for cloning the repository
+-   **Node.js** 18+ or **Bun** installed
+-   **Appwrite** instance (cloud or self-hosted)
+    -   Cloud: Sign up at [https://appwrite.io](https://appwrite.io)
+    -   Self-hosted: Follow [Appwrite Installation](https://appwrite.io/docs/installation)
+-   **Git** for cloning the repository
 
 ---
 
@@ -72,11 +72,11 @@ The setup script needs an API key with full permissions:
 2. Click **"Create API Key"**
 3. Name: `Firepit Setup Key`
 4. **Scopes Required:**
-   - `databases.read` and `databases.write`
-   - `collections.read` and `collections.write`
-   - `attributes.read` and `attributes.write`
-   - `indexes.read` and `indexes.write`
-   - `teams.read` and `teams.write` (unless using `SKIP_TEAMS=true`)
+    - `databases.read` and `databases.write`
+    - `collections.read` and `collections.write`
+    - `attributes.read` and `attributes.write`
+    - `indexes.read` and `indexes.write`
+    - `teams.read` and `teams.write` (unless using `SKIP_TEAMS=true`)
 5. **Expiration:** Set to "Never" or a long duration
 6. Copy the API key immediately - you won't see it again!
 
@@ -84,8 +84,8 @@ The setup script needs an API key with full permissions:
 
 1. Go to **Auth → Settings**
 2. Enable your preferred auth methods:
-   - **Email/Password** (recommended for getting started)
-   - OAuth providers (GitHub, Google, etc.)
+    - **Email/Password** (recommended for getting started)
+    - OAuth providers (GitHub, Google, etc.)
 3. Set **Session Length** as desired (default: 365 days)
 
 ---
@@ -162,13 +162,13 @@ bun run setup
 
 **What this does:**
 
-- ✅ Creates `main` database (if it doesn't exist)
-- ✅ Creates all collections (servers, channels, messages, profiles, etc.)
-- ✅ Sets up attributes with proper types and sizes
-- ✅ Creates indexes for query performance
-- ✅ Configures storage buckets (avatars)
-- ✅ Creates admin and moderator teams
-- ✅ Validates API key permissions
+-   ✅ Creates `main` database (if it doesn't exist)
+-   ✅ Creates all collections (servers, channels, messages, profiles, etc.)
+-   ✅ Sets up attributes with proper types and sizes
+-   ✅ Creates indexes for query performance
+-   ✅ Configures storage buckets (avatars)
+-   ✅ Creates admin and moderator teams
+-   ✅ Validates API key permissions
 
 **Output:** You should see:
 
@@ -183,9 +183,9 @@ bun run setup
 
 **Common Issues:**
 
-- **"Missing scopes"**: Your API key needs more permissions (see Step 1B)
-- **"Project not found"**: Double-check your `APPWRITE_PROJECT_ID`
-- **"Unauthorized"**: Verify your `APPWRITE_API_KEY` is correct
+-   **"Missing scopes"**: Your API key needs more permissions (see Step 1B)
+-   **"Project not found"**: Double-check your `APPWRITE_PROJECT_ID`
+-   **"Unauthorized"**: Verify your `APPWRITE_API_KEY` is correct
 
 ---
 
@@ -212,9 +212,9 @@ Visit [http://localhost:3000](http://localhost:3000)
 1. Visit [http://localhost:3000/api/me](http://localhost:3000/api/me)
 2. Copy your `$id` from the JSON response
 3. Add it to `.env.local`:
-   ```bash
-   APPWRITE_ADMIN_USER_IDS=your-copied-user-id
-   ```
+    ```bash
+    APPWRITE_ADMIN_USER_IDS=your-copied-user-id
+    ```
 4. Restart the dev server
 5. Visit [http://localhost:3000/admin](http://localhost:3000/admin) to verify
 
@@ -235,8 +235,8 @@ Visit [http://localhost:3000](http://localhost:3000)
 1. Push code to GitHub
 2. Import project in Vercel
 3. Add environment variables in Vercel dashboard:
-   - All `APPWRITE_*` variables
-   - `APPWRITE_API_KEY` (mark as sensitive!)
+    - All `APPWRITE_*` variables
+    - `APPWRITE_API_KEY` (mark as sensitive!)
 4. Deploy!
 
 ### Self-Hosted Deployment
@@ -251,9 +251,9 @@ bun start
 
 **Environment Variables:**
 
-- Set all variables from `.env.local` in your hosting environment
-- Use secrets management for `APPWRITE_API_KEY`
-- Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
+-   Set all variables from `.env.local` in your hosting environment
+-   Use secrets management for `APPWRITE_API_KEY`
+-   Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
 
 **Reverse Proxy Setup (Nginx):**
 
@@ -284,6 +284,7 @@ server {
 **Fix:**
 
 **For local development:**
+
 ```bash
 # Verify .env.local exists
 ls -la .env.local
@@ -301,9 +302,9 @@ Environment variables are now automatically exposed at runtime through the Next.
 
 1. All required environment variables are set in your deployment platform's environment settings
 2. The variables include at minimum:
-   - `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
-   - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
-   - `APPWRITE_API_KEY` - Your server-side API key
+    - `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
+    - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
+    - `APPWRITE_API_KEY` - Your server-side API key
 3. After setting environment variables, redeploy your application for changes to take effect
 
 The application will automatically load these variables at runtime without requiring the `NEXT_PUBLIC_` prefix, keeping your configuration secure and server-side only.
@@ -372,19 +373,19 @@ lsof -ti:3000 | xargs kill -9
 
 ## Next Steps
 
-- 📖 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow
-- 🧪 Run tests with `bun test`
-- 🔍 Review [TEST_COVERAGE_30_40_REPORT.md](./TEST_COVERAGE_30_40_REPORT.md) for testing details
-- 🛠️ Customize UI in `src/components/`
-- 🔐 Review security settings in Appwrite Console
+-   📖 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow
+-   🧪 Run tests with `bun run test`
+-   🔍 Review [TEST_COVERAGE_30_40_REPORT.md](./TEST_COVERAGE_30_40_REPORT.md) for testing details
+-   🛠️ Customize UI in `src/components/`
+-   🔐 Review security settings in Appwrite Console
 
 ---
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/acarlson33/firepit/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
-- **Appwrite:** [Appwrite Discord](https://appwrite.io/discord)
+-   **Issues:** [GitHub Issues](https://github.com/acarlson33/firepit/issues)
+-   **Discussions:** [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
+-   **Appwrite:** [Appwrite Discord](https://appwrite.io/discord)
 
 ---
 

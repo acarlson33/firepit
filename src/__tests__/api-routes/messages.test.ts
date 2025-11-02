@@ -104,44 +104,44 @@ describe("Messages API Routes", () => {
 			expect(data.error).toBe("Authentication required");
 		});
 
-		it("should return 400 if text is missing", async () => {
-			mockGetServerSession.mockResolvedValue({
-				$id: "user-1",
-				name: "Test User",
-			});
-
-			const request = new NextRequest("http://localhost/api/messages", {
-				method: "POST",
-				body: JSON.stringify({
-					channelId: "channel-1",
-				}),
-			});
-
-			const response = await POST(request);
-			const data = await response.json();
-
-			expect(response.status).toBe(400);
-			expect(data.error).toBe("text or imageFileId, and channelId are required");
+	it("should return 400 if text is missing", async () => {
+		mockGetServerSession.mockResolvedValue({
+			$id: "user-1",
+			name: "Test User",
 		});
 
-		it("should return 400 if channelId is missing", async () => {
-			mockGetServerSession.mockResolvedValue({
-				$id: "user-1",
-				name: "Test User",
-			});
-
-			const request = new NextRequest("http://localhost/api/messages", {
-				method: "POST",
-				body: JSON.stringify({
-					text: "Hello",
-				}),
-			});
-
-			const response = await POST(request);
-			const data = await response.json();
-
-			expect(response.status).toBe(400);
-			expect(data.error).toBe("text or imageFileId, and channelId are required");
+		const request = new NextRequest("http://localhost/api/messages", {
+			method: "POST",
+			body: JSON.stringify({
+				channelId: "channel-1",
+			}),
 		});
+
+		const response = await POST(request);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.error).toBe("text, imageFileId, or attachments, and channelId are required");
 	});
+
+	it("should return 400 if channelId is missing", async () => {
+		mockGetServerSession.mockResolvedValue({
+			$id: "user-1",
+			name: "Test User",
+		});
+
+		const request = new NextRequest("http://localhost/api/messages", {
+			method: "POST",
+			body: JSON.stringify({
+				text: "Hello",
+			}),
+		});
+
+		const response = await POST(request);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.error).toBe("text, imageFileId, or attachments, and channelId are required");
+	});
+});
 });

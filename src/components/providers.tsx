@@ -15,6 +15,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         refetchOnWindowFocus: false,
         // Retry failed queries once
         retry: 1,
+        // Stale-while-revalidate: serve cached data instantly while fetching in background
+        staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+        gcTime: 10 * 60 * 1000, // Keep unused data in cache for 10 minutes (formerly cacheTime)
+        // Reduce initial load time by preventing automatic background refetches
+        refetchOnMount: false, // Don't refetch on mount, use stale data
       },
     },
   }));

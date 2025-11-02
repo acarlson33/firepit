@@ -30,7 +30,16 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json(emojis);
+    const response = NextResponse.json(emojis);
+
+    // Cache custom emojis for 5 minutes (rarely change)
+    // Allow stale data for 30 minutes while revalidating
+    response.headers.set(
+      "Cache-Control",
+      "public, s-maxage=300, stale-while-revalidate=1800"
+    );
+
+    return response;
   } catch (error) {
     console.error("Error fetching custom emojis:", error);
     return NextResponse.json(

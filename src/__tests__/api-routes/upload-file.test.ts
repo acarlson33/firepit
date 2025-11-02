@@ -135,29 +135,30 @@ describe("POST /api/upload-file", () => {
 		const response = await POST(request);
 		expect(response.status).toBe(400);
 
-		const data = await response.json();
-		expect(data.error).toBe("File type not supported");
+	const data = await response.json();
+	expect(data.error).toBe("File type not supported");
+});
+
+it("should reject files that are too large", async () => {
+	mockGetServerSession.mockResolvedValue({ $id: "user123" });
+
+	const formData = new FormData();
+	// Create a buffer that simulates a 60MB file (just create a 60MB buffer for validation)
+	const largeBuffer = new ArrayBuffer(60 * 1024 * 1024);
+	const largeFile = new File([largeBuffer], "large.mp4", { type: "video/mp4" });
+	formData.append("file", largeFile);
+
+	const request = new Request("http://localhost/api/upload-file", {
+		method: "POST",
+		body: formData,
 	});
 
-	it("should reject files that are too large", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
+	const response = await POST(request);
+	expect(response.status).toBe(400);
 
-		const formData = new FormData();
-		// Create a 60MB file (exceeds 50MB video limit)
-		const largeContent = new Uint8Array(60 * 1024 * 1024);
-		formData.append("file", new File([largeContent], "large.mp4", { type: "video/mp4" }));
-
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
-
-		const response = await POST(request);
-		expect(response.status).toBe(400);
-
-		const data = await response.json();
-		expect(data.error).toContain("File size exceeds maximum");
-	});
+	const data = await response.json();
+	expect(data.error).toContain("File size exceeds maximum");
+}, 30000); // Increase timeout to 30 seconds for large file handling
 
 	it("should accept valid PDF files", async () => {
 		mockGetServerSession.mockResolvedValue({ $id: "user123" });

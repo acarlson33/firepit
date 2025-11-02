@@ -9,6 +9,7 @@ import {
   trackApiCall,
   addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import { compressedResponse } from "@/lib/api-compression";
 
 /**
  * POST /api/profiles/batch
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
       duration: Date.now() - startTime,
     });
 
-    return NextResponse.json({ profiles: profilesMap });
+    return compressedResponse({ profiles: profilesMap });
   } catch (error) {
     recordError(
       error instanceof Error ? error : new Error(String(error)),

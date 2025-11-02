@@ -65,6 +65,7 @@ export type EnvConfig = {
     conversations: string;
     directMessages: string;
     statuses: string | null;
+    messageAttachments: string;
   };
   buckets: {
     avatars: string;
@@ -178,6 +179,12 @@ export function getEnvConfig(): EnvConfig {
         process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID,
         process.env.APPWRITE_STATUSES_COLLECTION_ID
       ) || null,
+    messageAttachments:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
+        process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
+        "message_attachments"
+      ) || "message_attachments",
   };
   const buckets = {
     avatars:

@@ -4,6 +4,7 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import type { FileAttachment } from "@/lib/types";
 import {
 	logger,
 	recordError,
@@ -12,18 +13,76 @@ import {
 	trackMessage,
 	addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
+const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 
-// Helper to create JSON responses with CORS headers
+/**
+ * Helper to create attachment records for a direct message
+ */
+async function createAttachments(
+	messageId: string,
+	attachments: FileAttachment[],
+): Promise<void> {
+	if (!attachments || attachments.length === 0) {
+		return;
+	}
+
+	if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
+		return;
+	}
+
+	const { databases } = getServerClient();
+
+	await Promise.all(
+		attachments.map((attachment) =>
+			databases.createDocument(
+				DATABASE_ID,
+				MESSAGE_ATTACHMENTS_COLLECTION_ID,
+				ID.unique(),
+				{
+					messageId,
+					messageType: "dm",
+					fileId: attachment.fileId,
+					fileName: attachment.fileName,
+					fileSize: attachment.fileSize,
+					fileType: attachment.fileType,
+					fileUrl: attachment.fileUrl,
+					thumbnailUrl: attachment.thumbnailUrl || null,
+				},
+			),
+		),
+	);
+}
+
+// Helper to create JSON responses with CORS headers and compression hints
 function jsonResponse(data: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  
+  // Add compression headers for large responses
+  const jsonString = JSON.stringify(data);
+  const bodySize = new Blob([jsonString]).size;
+  
+  if (shouldCompress("application/json", bodySize)) {
+    headers.set("X-Compressible", "true");
+    const existingVary = headers.get("Vary");
+    headers.set("Vary", existingVary ? `${existingVary}, Accept-Encoding` : "Accept-Encoding");
+    
+    // Log compression opportunity in development
+    if (process.env.NODE_ENV === "development") {
+      logger.info("Direct messages response compressed", {
+        bodySize,
+        endpoint: "direct-messages"
+      });
+    }
+  }
   
   return NextResponse.json(data, {
     ...init,
@@ -291,16 +350,19 @@ export async function POST(request: NextRequest) {
       text: string;
       imageFileId?: string;
       imageUrl?: string;
+      attachments?: unknown[];
       replyToId?: string;
       mentions?: string[];
     };
 
-    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, replyToId, mentions } = body;
+    const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, attachments, replyToId, mentions } = body;
     
     addTransactionAttributes({
       userId: session.$id,
       conversationId,
       hasImage: !!imageFileId,
+      hasAttachments: !!(attachments && attachments.length > 0),
+      attachmentCount: attachments?.length || 0,
       isReply: !!replyToId,
     });
 
@@ -312,8 +374,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Require either text or image
-    if (!conversationId || !senderId || !receiverId || (!text?.trim() && !imageFileId)) {
+    // Require either text, image, or attachments
+    if (!conversationId || !senderId || !receiverId || (!text?.trim() && !imageFileId && (!attachments || attachments.length === 0))) {
       return jsonResponse(
         { error: "Missing required fields" },
         { status: 400 }
@@ -376,6 +438,19 @@ export async function POST(request: NextRequest) {
       { operation: "createDocument", collection: "direct_messages" }
     );
 
+    // Create attachment records if any
+    if (attachments && attachments.length > 0) {
+      try {
+        await createAttachments(String(message.$id), attachments as FileAttachment[]);
+      } catch (attachmentError) {
+        logger.error("Failed to create attachments", {
+          messageId: message.$id,
+          error: attachmentError instanceof Error ? attachmentError.message : String(attachmentError),
+        });
+        // Continue even if attachment creation fails
+      }
+    }
+
     // Update conversation's lastMessageAt
     try {
       await databases.updateDocument(
@@ -397,6 +472,8 @@ export async function POST(request: NextRequest) {
       receiverId,
       conversationId,
       hasImage: !!imageFileId,
+      hasAttachments: !!(attachments && attachments.length > 0),
+      attachmentCount: attachments?.length || 0,
       isReply: !!replyToId,
       textLength: text?.length || 0,
     });
@@ -408,19 +485,24 @@ export async function POST(request: NextRequest) {
       duration: Date.now() - startTime,
     });
 
-    return jsonResponse({
-      message: {
-        $id: message.$id,
-        conversationId: message.conversationId,
-        senderId: message.senderId,
-        receiverId: message.receiverId,
-        text: message.text,
-        imageFileId: message.imageFileId,
-        imageUrl: message.imageUrl,
-        $createdAt: message.$createdAt,
-        replyToId: message.replyToId,
-      },
-    });
+    const responseMessage: Record<string, unknown> = {
+      $id: message.$id,
+      conversationId: message.conversationId,
+      senderId: message.senderId,
+      receiverId: message.receiverId,
+      text: message.text,
+      imageFileId: message.imageFileId,
+      imageUrl: message.imageUrl,
+      $createdAt: message.$createdAt,
+      replyToId: message.replyToId,
+    };
+
+    // Include attachments in response if any
+    if (attachments && attachments.length > 0) {
+      responseMessage.attachments = attachments as FileAttachment[];
+    }
+
+    return jsonResponse({ message: responseMessage });
   } catch (error) {
     recordError(
       error instanceof Error ? error : new Error(String(error)),
