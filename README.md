@@ -2,6 +2,8 @@
 
 > **Version 1.0** - Production Ready 🎉
 
+WARNING: There are known issues with the chat and dm page scrolling due to the virtuoso integration. We are actively working on fixing this bug.
+
 A modern, open-source chat platform inspired by Discord, built with Next.js 15, Appwrite, and TypeScript. Features real-time messaging, server organization, role-based permissions, and comprehensive moderation tools.
 
 ## Features

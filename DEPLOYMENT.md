@@ -375,7 +375,6 @@ lsof -ti:3000 | xargs kill -9
 
 -   📖 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow
 -   🧪 Run tests with `bun run test`
--   🔍 Review [TEST_COVERAGE_30_40_REPORT.md](./TEST_COVERAGE_30_40_REPORT.md) for testing details
 -   🛠️ Customize UI in `src/components/`
 -   🔐 Review security settings in Appwrite Console
 
