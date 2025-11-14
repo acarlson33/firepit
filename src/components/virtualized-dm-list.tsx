@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
-import type { DirectMessage, Message } from "@/lib/types";
+import type { DirectMessage, Message, CustomEmoji } from "@/lib/types";
 
 type VirtualizedDMListProps = {
 	messages: DirectMessage[];
@@ -22,7 +22,8 @@ type VirtualizedDMListProps = {
 		avatarUrl?: string,
 	) => void;
 	onOpenImageViewer: (imageUrl: string) => void;
-	onOpenReactionPicker: (messageId: string) => void;
+	customEmojis?: CustomEmoji[];
+	onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
 	shouldShowLoadOlder: boolean;
 	onLoadOlder: () => void;
 	conversationId: string;
@@ -53,7 +54,8 @@ export function VirtualizedDMList({
 	onToggleReaction,
 	onOpenProfileModal,
 	onOpenImageViewer,
-	onOpenReactionPicker,
+	customEmojis,
+	onUploadCustomEmoji,
 	shouldShowLoadOlder,
 	onLoadOlder,
 	conversationId,
@@ -97,21 +99,22 @@ export function VirtualizedDMList({
 
 	return (
 		<VirtualizedMessageList
-			messages={adaptedMessages}
-			userId={userId}
-			userIdSlice={userIdSlice}
-			editingMessageId={editingMessageId}
+			customEmojis={customEmojis}
 			deleteConfirmId={deleteConfirmId}
-			setDeleteConfirmId={setDeleteConfirmId}
+			editingMessageId={editingMessageId}
+			messages={adaptedMessages}
+			onLoadOlder={onLoadOlder}
+			onOpenImageViewer={onOpenImageViewer}
+			onOpenProfileModal={onOpenProfileModal}
+			onRemove={onRemove}
 			onStartEdit={onStartEdit}
 			onStartReply={onStartReply}
-			onRemove={onRemove}
 			onToggleReaction={onToggleReaction}
-			onOpenProfileModal={onOpenProfileModal}
-			onOpenImageViewer={onOpenImageViewer}
-			onOpenReactionPicker={onOpenReactionPicker}
+			onUploadCustomEmoji={onUploadCustomEmoji}
+			setDeleteConfirmId={setDeleteConfirmId}
 			shouldShowLoadOlder={shouldShowLoadOlder}
-			onLoadOlder={onLoadOlder}
+			userId={userId}
+			userIdSlice={userIdSlice}
 		/>
 	);
 }

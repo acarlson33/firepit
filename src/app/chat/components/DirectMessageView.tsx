@@ -68,7 +68,6 @@ export function DirectMessageView({
 	const [uploadingImage, setUploadingImage] = useState(false);
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
-	const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -326,7 +325,8 @@ export function DirectMessageView({
 								alt: "Direct message image",
 							});
 						}}
-						onOpenReactionPicker={setReactionPickerId}
+						customEmojis={customEmojis}
+						onUploadCustomEmoji={uploadEmoji}
 						shouldShowLoadOlder={false}
 						onLoadOlder={() => {
 							// Load older messages handler - implement if pagination is added

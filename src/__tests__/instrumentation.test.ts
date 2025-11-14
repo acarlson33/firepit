@@ -44,31 +44,31 @@ describe("instrumentation", () => {
     consoleLogSpy.mockRestore();
   });
 
-  it("should warn when license key is missing", async () => {
-    process.env.NEXT_RUNTIME = "nodejs";
-    process.env.NEW_RELIC_APP_NAME = "test-app-name";
-    // NEW_RELIC_LICENSE_KEY is intentionally not set
+	it("should warn when license key is missing", async () => {
+		process.env.NEXT_RUNTIME = "nodejs";
+		process.env.NEW_RELIC_APP_NAME = "test-app-name";
+		// NEW_RELIC_LICENSE_KEY is intentionally not set
+		delete process.env.NEW_RELIC_LICENSE_KEY;
 
-    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const { register } = await import("../../instrumentation");
-    await register();
+		const { register } = await import("../../instrumentation");
+		await register();
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      "[New Relic] NEW_RELIC_LICENSE_KEY not found - APM monitoring disabled"
-    );
+		expect(consoleWarnSpy).toHaveBeenCalledWith(
+			"[New Relic] NEW_RELIC_LICENSE_KEY not found - APM monitoring disabled"
+		);
 
-    consoleWarnSpy.mockRestore();
-  });
+		consoleWarnSpy.mockRestore();
+	});
 
-  it("should warn when app name is missing", async () => {
-    process.env.NEXT_RUNTIME = "nodejs";
-    process.env.NEW_RELIC_LICENSE_KEY = "test-license-key";
-    // NEW_RELIC_APP_NAME is intentionally not set
+	it("should warn when app name is missing", async () => {
+		process.env.NEXT_RUNTIME = "nodejs";
+		process.env.NEW_RELIC_LICENSE_KEY = "test-license-key";
+		// NEW_RELIC_APP_NAME is intentionally not set
+		delete process.env.NEW_RELIC_APP_NAME;
 
-    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const { register } = await import("../../instrumentation");
+		const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});    const { register } = await import("../../instrumentation");
     await register();
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -94,11 +94,13 @@ describe("instrumentation", () => {
     consoleLogSpy.mockRestore();
   });
 
-  it("should not initialize when both credentials are missing", async () => {
-    process.env.NEXT_RUNTIME = "nodejs";
-    // Both NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME are intentionally not set
+	it("should not initialize when both credentials are missing", async () => {
+		process.env.NEXT_RUNTIME = "nodejs";
+		// Both NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME are intentionally not set
+		delete process.env.NEW_RELIC_LICENSE_KEY;
+		delete process.env.NEW_RELIC_APP_NAME;
 
-    const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const { register } = await import("../../instrumentation");

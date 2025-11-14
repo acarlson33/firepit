@@ -139,6 +139,22 @@ function coerceMessage(raw: unknown): Message | null {
     return null;
   }
   const d = raw as Record<string, unknown> & { $id: string };
+  
+  // Handle reactions - can be string (JSON) or already parsed array from database
+  let reactions: Array<{emoji: string; userIds: string[]; count: number}> | undefined;
+  if (d.reactions) {
+    if (typeof d.reactions === "string") {
+      try {
+        const parsed = JSON.parse(d.reactions);
+        reactions = Array.isArray(parsed) ? parsed : undefined;
+      } catch {
+        reactions = undefined;
+      }
+    } else if (Array.isArray(d.reactions)) {
+      reactions = d.reactions as Array<{emoji: string; userIds: string[]; count: number}>;
+    }
+  }
+  
   return {
     $id: String(d.$id),
     userId: String(d.userId),
@@ -151,6 +167,10 @@ function coerceMessage(raw: unknown): Message | null {
     removedBy: typeof d.removedBy === "string" ? d.removedBy : undefined,
     serverId: typeof d.serverId === "string" ? d.serverId : undefined,
     replyToId: typeof d.replyToId === "string" ? d.replyToId : undefined,
+    reactions,
+    imageFileId: typeof d.imageFileId === "string" ? d.imageFileId : undefined,
+    imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,
+    mentions: Array.isArray(d.mentions) ? d.mentions as string[] : undefined,
   };
 }
 

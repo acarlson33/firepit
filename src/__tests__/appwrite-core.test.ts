@@ -122,6 +122,9 @@ describe("withRetry", () => {
 
 describe("withSession unauthorized flow", () => {
 	it("throws UnauthorizedError when account.get fails", async () => {
+		// Reset module caches to allow fresh import with new mock
+		vi.resetModules();
+		
 		vi.doMock("appwrite", () => {
 			class Client {
 				setEndpoint() {
@@ -133,7 +136,7 @@ describe("withSession unauthorized flow", () => {
 			}
 			class Account {
 				get() {
-					return Promise.reject(new Error("401"));
+					return Promise.reject(new Error("Request failed with status 401"));
 				}
 			}
 			const Permission = {
@@ -149,11 +152,12 @@ describe("withSession unauthorized flow", () => {
 			};
 			return { Client, Account, Permission, Role };
 		});
-		const { withSession: dynamicWithSession } = await import(
-			"../lib/appwrite-core"
-		);
+		const {
+			withSession: dynamicWithSession,
+			UnauthorizedError: DynamicUnauthorizedError,
+		} = await import("../lib/appwrite-core");
 		await expect(dynamicWithSession(async () => "nope")).rejects.toBeInstanceOf(
-			UnauthorizedError,
+			DynamicUnauthorizedError,
 		);
 	});
 });
@@ -176,6 +180,9 @@ describe("materializePermissions edge cases", () => {
 
 describe("createServer integration (mocked)", () => {
 	it("creates server document with provided name", async () => {
+		// Reset modules to allow fresh mocks
+		vi.resetModules();
+		
 		(process.env as any).APPWRITE_ENDPOINT = "http://x";
 		(process.env as any).APPWRITE_PROJECT_ID = "p";
 		(process.env as any).APPWRITE_DATABASE_ID = "db";
@@ -184,8 +191,7 @@ describe("createServer integration (mocked)", () => {
 			"channels";
 		(process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID =
 			"memberships";
-		const core = await import("../lib/appwrite-core");
-		core.resetEnvCache();
+		
 		// Remock appwrite with ID export prior to importing createServer implementation
 		vi.doMock("appwrite", () => {
 			class Client {
@@ -226,6 +232,9 @@ describe("createServer integration (mocked)", () => {
 				ID: { unique: () => "unique" },
 			};
 		});
+		
+		const core = await import("../lib/appwrite-core");
+		core.resetEnvCache();
 		const { createServer } = await import("../lib/appwrite-servers");
 		const server = await createServer("My Server");
 		// In this lightweight integration path our Databases mock doesn't echo back data fields.

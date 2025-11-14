@@ -303,10 +303,12 @@ describe("User Profiles", () => {
 
 			const url = getAvatarUrl("avatar123");
 
-			expect(url).toContain("http://localhost");
+			// Should contain the Appwrite endpoint (either localhost or production)
+			expect(url).toMatch(/https?:\/\/.+/);
 			expect(url).toContain("storage/buckets/avatars");
 			expect(url).toContain("avatar123");
-			expect(url).toContain("test-project");
+			// Project ID should be in the URL
+			expect(url).toMatch(/project=/);
 		});
 
 		it("should delete avatar file without throwing", async () => {

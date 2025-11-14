@@ -44,6 +44,22 @@ describe("Realtime Pool", () => {
 			const client2 = getSharedClient();
 			expect(client1).toBe(client2);
 		});
+
+		it("should throw error when APPWRITE_ENDPOINT is missing", async () => {
+			delete process.env.APPWRITE_ENDPOINT;
+			vi.resetModules();
+			
+			const module = await import("@/lib/realtime-pool");
+			expect(() => module.getSharedClient()).toThrow("Missing Appwrite configuration");
+		});
+
+		it("should throw error when APPWRITE_PROJECT_ID is missing", async () => {
+			delete process.env.APPWRITE_PROJECT_ID;
+			vi.resetModules();
+			
+			const module = await import("@/lib/realtime-pool");
+			expect(() => module.getSharedClient()).toThrow("Missing Appwrite configuration");
+		});
 	});
 
 	describe("trackSubscription", () => {

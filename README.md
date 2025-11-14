@@ -116,7 +116,7 @@ Firepit is production-ready with:
 
 ✅ **Testing & Quality**
 
--   992 passing tests
+-   1465 passing tests
 -   Comprehensive test coverage
 -   Automated CI/CD pipeline
 -   Strict ESLint configuration
@@ -227,10 +227,10 @@ bun run test:coverage
 bun run test --watch
 ```
 
-Current test coverage: **22.36%** statements (growing)
+Current test coverage: **40.24%** statements (growing)
 
--   475+ tests passing
--   Focus on security-critical modules (auth, roles, moderation)
+-   1400+ tests passing
+-   Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
 ## 📦 Deployment
 

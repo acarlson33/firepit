@@ -338,3 +338,9 @@ try {
     console.log(e);
 }
 ```
+
+## Misc. Best Practices
+
+-   Do not create redundant documentation files that duplicate existing content.
+-   Ensure all environment variables are correctly named and configured.
+-   Do not create unnecessary setup scripts if the setup can be automated or simplified.

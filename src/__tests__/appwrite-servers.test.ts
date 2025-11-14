@@ -97,6 +97,18 @@ describe("createServer fallback branches", () => {
     expect(collections).toContain("channels"); // attempted even though it failed
   });
   it("listMembershipsForUser returns empty + joinServer returns null when memberships disabled", async () => {
+    // Clear module cache first
+    const cache3 = (global as any).require?.cache || {};
+    for (const k of Object.keys(cache3)) {
+      if (k.includes("appwrite-servers") || k.includes("appwrite-core")) {
+        delete cache3[k];
+      }
+    }
+    
+    // Ensure membership collection is omitted by deleting ALL related env vars
+    delete (process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID;
+    delete (process.env as any).NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID;
+    
     setupMockAppwrite({ userId: "userNoMem" });
     (process.env as any).APPWRITE_ENDPOINT = "http://x";
     (process.env as any).APPWRITE_PROJECT_ID = "p";
@@ -104,8 +116,7 @@ describe("createServer fallback branches", () => {
     (process.env as any).APPWRITE_SERVERS_COLLECTION_ID = "servers";
     (process.env as any).APPWRITE_CHANNELS_COLLECTION_ID =
       "channels";
-    // Ensure membership collection is omitted (empty string will be skipped by firstDefined -> null)
-    (process.env as any).APPWRITE_MEMBERSHIPS_COLLECTION_ID = "";
+    
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
     // Reset module registry for servers so it re-reads env

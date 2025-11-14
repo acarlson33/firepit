@@ -108,5 +108,17 @@ describe("Reactions Utils", () => {
 			expect(result).toHaveLength(1);
 			expect(result[0].emoji).toBe("😎");
 		});
+
+		it("should return empty array for unexpected input types", () => {
+			// Force test with invalid type to cover fallback case
+			const result = parseReactions(42 as unknown as string);
+			expect(result).toEqual([]);
+		});
+
+		it("should return empty array for object input", () => {
+			// Force test with object to cover fallback case
+			const result = parseReactions({ not: "valid" } as unknown as Reaction[]);
+			expect(result).toEqual([]);
+		});
 	});
 });

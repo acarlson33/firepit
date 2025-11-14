@@ -86,6 +86,31 @@ describe("ReactionButton Component", () => {
 		});
 	});
 
+	it("should call onToggle with false when user removes their reaction", async () => {
+		const onToggle = vi.fn().mockResolvedValue(undefined);
+		const reaction = {
+			emoji: "❤️",
+			userIds: ["user1", "user2"],
+			count: 2,
+		};
+
+		render(
+			<ReactionButton
+				reaction={reaction}
+				currentUserId="user1"
+				onToggle={onToggle}
+			/>
+		);
+
+		const button = screen.getByRole("button");
+		fireEvent.click(button);
+
+		await waitFor(() => {
+			expect(onToggle).toHaveBeenCalledTimes(1);
+			expect(onToggle).toHaveBeenCalledWith("❤️", false);
+		});
+	});
+
 	it("should be disabled when no current user", () => {
 		const reaction = {
 			emoji: "👍",

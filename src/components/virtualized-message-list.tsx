@@ -1,10 +1,12 @@
 "use client";
 import { Virtuoso } from "react-virtuoso";
-import type { Message } from "@/lib/types";
+import type { Message, CustomEmoji } from "@/lib/types";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
+import { ReactionPicker } from "@/components/reaction-picker";
+import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { MessageSquare, Pencil, Trash2 } from "lucide-react";
 
@@ -18,10 +20,11 @@ type VirtualizedMessageListProps = {
   onStartEdit: (message: Message) => void;
   onStartReply: (message: Message) => void;
   onRemove: (id: string) => void;
-  onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  onToggleReaction: (messageId: string, emoji: string, isAdding: boolean) => Promise<void>;
   onOpenProfileModal: (userId: string, userName?: string, displayName?: string, avatarUrl?: string) => void;
   onOpenImageViewer: (imageUrl: string) => void;
-  onOpenReactionPicker: (messageId: string) => void;
+  customEmojis?: CustomEmoji[];
+  onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
   shouldShowLoadOlder: boolean;
   onLoadOlder: () => void;
 };
@@ -39,7 +42,8 @@ export function VirtualizedMessageList({
   onToggleReaction,
   onOpenProfileModal,
   onOpenImageViewer,
-  onOpenReactionPicker,
+  customEmojis,
+  onUploadCustomEmoji,
   shouldShowLoadOlder,
   onLoadOlder,
 }: VirtualizedMessageListProps) {
@@ -140,19 +144,26 @@ export function VirtualizedMessageList({
                 </div>
               )}
 
-              {m.reactions && Object.keys(m.reactions).length > 0 && (
+              {m.attachments && m.attachments.length > 0 && !removed && (
+                <div className="mt-2 space-y-2">
+                  {m.attachments.map((attachment, idx) => (
+                    <FileAttachmentDisplay
+                      key={`${m.$id}-${attachment.fileId}-${idx}`}
+                      attachment={attachment}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {m.reactions && m.reactions.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {Object.entries(m.reactions).map(([emoji, userIds]) => {
-                    const reaction = {
-                      emoji,
-                      userIds: Array.isArray(userIds) ? userIds : [],
-                      count: Array.isArray(userIds) ? userIds.length : 0,
-                    };
+                  {m.reactions.map((reaction) => {
                     return (
                       <ReactionButton
                         currentUserId={userId}
-                        key={`${m.$id}-${emoji}`}
-                        onToggle={(e) => onToggleReaction(m.$id, e)}
+                        customEmojis={customEmojis}
+                        key={`${m.$id}-${reaction.emoji}`}
+                        onToggle={(e, isAdding) => onToggleReaction(m.$id, e, isAdding)}
                         reaction={reaction}
                       />
                     );
@@ -162,14 +173,13 @@ export function VirtualizedMessageList({
 
               {!removed && (
                 <div className={`flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${mine ? "justify-end" : ""}`}>
-                  <Button
-                    onClick={() => onOpenReactionPicker(m.$id)}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    😀
-                  </Button>
+                  <ReactionPicker
+                    customEmojis={customEmojis}
+                    onUploadCustomEmoji={onUploadCustomEmoji}
+                    onSelectEmoji={async (emoji) => {
+                      await onToggleReaction(m.$id, emoji);
+                    }}
+                  />
                   <Button
                     onClick={() => onStartReply(m)}
                     size="sm"

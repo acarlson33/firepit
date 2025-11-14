@@ -64,6 +64,23 @@ describe("Appwrite Client Initialization", () => {
 			expect(result.userId).toBeDefined();
 		}
 	});
+
+	it("should handle error case in ensureBrowserSession", async () => {
+		// Mock ensureSession to return an error
+		vi.doMock("../lib/appwrite-core", () => ({
+			ensureSession: vi.fn().mockResolvedValue({ error: "Session expired" }),
+			getBrowserAccount: vi.fn(),
+			getBrowserClient: vi.fn(),
+		}));
+
+		// Re-import to get mocked version
+		vi.resetModules();
+		const { ensureBrowserSession } = await import("../lib/appwrite");
+		const result = await ensureBrowserSession();
+
+		expect(result).toEqual({ ok: false, error: "Session expired" });
+		vi.doUnmock("../lib/appwrite-core");
+	});
 });
 
 describe("Appwrite Config", () => {

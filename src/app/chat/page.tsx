@@ -1,16 +1,21 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
-import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield } from "lucide-react";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Channel } from "@/lib/types";
+import { Avatar } from "@/components/ui/avatar";
+import type { Channel, FileAttachment } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
-import type { FileAttachment } from "@/lib/types";
-
+import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import { ReactionButton } from "@/components/reaction-button";
+import { MessageWithMentions } from "@/components/message-with-mentions";
+import { formatMessageTimestamp } from "@/lib/utils";
+import { VirtualizedMessageList } from "@/components/virtualized-message-list";
+import { ReactionPicker } from "@/components/reaction-picker";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
@@ -45,10 +50,6 @@ const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel")
 });
 
 // Lazy load interactive components that aren't always visible (Performance Optimization)
-const ReactionPicker = dynamic(() => import("@/components/reaction-picker").then((mod) => ({ default: mod.ReactionPicker })), {
-  ssr: false,
-  loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
-});
 const EmojiPicker = dynamic(() => import("@/components/emoji-picker").then((mod) => ({ default: mod.EmojiPicker })), {
   ssr: false,
   loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
@@ -58,14 +59,10 @@ const ImageViewer = dynamic(() => import("@/components/image-viewer").then((mod)
   loading: () => <div className="fixed inset-0 bg-black/80 flex items-center justify-center"><Skeleton className="h-3/4 w-3/4" /></div>,
 });
 
-// Lazy load virtual scrolling for better performance with large message lists
-const VirtualizedMessageList = dynamic(() => import("@/components/virtualized-message-list").then((mod) => ({ default: mod.VirtualizedMessageList })), {
-  ssr: false,
-  loading: () => <div className="h-[60vh] rounded-3xl border border-border/60 bg-background/70 p-4"><Skeleton className="h-full" /></div>,
-});
+// Lazy load dialogs and modals only when needed
 
 export default function ChatPage() {
-  const { userData, loading: authLoading } = useAuth();
+  const { userData, loading: _authLoading } = useAuth();
   const userId = userData?.userId ?? null;
   const userName = userData?.name ?? null;
   
@@ -94,8 +91,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
-  const [openReactionPicker, setOpenReactionPicker] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const _messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,19 +132,19 @@ export default function ChatPage() {
     text,
     editingMessageId,
     replyingToMessage,
-    typingUsers,
+    typingUsers: _typingUsers,
     loadOlder,
     shouldShowLoadOlder,
     startEdit,
     cancelEdit,
     startReply,
     cancelReply,
-    applyEdit,
+    applyEdit: _applyEdit,
     remove: removeMessage,
     onChangeText,
     send,
     userIdSlice,
-    maxTypingDisplay,
+    maxTypingDisplay: _maxTypingDisplay,
   } = messagesApi;
 
   // Auto-scroll to bottom on new messages
@@ -187,7 +183,7 @@ export default function ChatPage() {
     setSelectedChannel(null);
   }, []);
 
-  const confirmDelete = useCallback((messageId: string) => {
+  const _confirmDelete = useCallback((messageId: string) => {
     setDeleteConfirmId(messageId);
   }, []);
 
@@ -437,38 +433,272 @@ export default function ChatPage() {
       );
     }
     
-    // Use virtual scrolling for better performance with large message lists
+    // Use virtual scrolling only for large message lists (50+ messages)
+    // This avoids scrolling issues with small lists
+    const useVirtualScrolling = messages.length >= 50;
+    
+    if (useVirtualScrolling) {
+      return (
+        <VirtualizedMessageList
+          customEmojis={customEmojis}
+          deleteConfirmId={deleteConfirmId}
+          editingMessageId={editingMessageId}
+          messages={messages}
+          onLoadOlder={loadOlder}
+          onOpenImageViewer={(imageUrl: string) => {
+            setViewingImage({
+              url: imageUrl,
+              alt: "Image",
+            });
+          }}
+          onOpenProfileModal={openProfileModal}
+          onRemove={handleDelete}
+          onStartEdit={startEdit}
+          onStartReply={startReply}
+          onToggleReaction={async (messageId: string, emoji: string, isAdding: boolean) => {
+            try {
+              await toggleReaction(messageId, emoji, isAdding, false);
+            } catch (error) {
+              // Error already logged by reaction handler
+            }
+          }}
+          onUploadCustomEmoji={uploadEmoji}
+          setDeleteConfirmId={setDeleteConfirmId}
+          shouldShowLoadOlder={shouldShowLoadOlder()}
+          userId={userId}
+          userIdSlice={userIdSlice}
+        />
+      );
+    }
+    
+    // Regular rendering for smaller lists
     return (
-      <VirtualizedMessageList
-        deleteConfirmId={deleteConfirmId}
-        editingMessageId={editingMessageId}
-        messages={messages}
-        onLoadOlder={loadOlder}
-        onOpenImageViewer={(imageUrl) => {
-          setViewingImage({
-            url: imageUrl,
-            alt: "Image",
-          });
-        }}
-        onOpenProfileModal={openProfileModal}
-        onOpenReactionPicker={setOpenReactionPicker}
-        onRemove={handleDelete}
-        onStartEdit={startEdit}
-        onStartReply={startReply}
-        onToggleReaction={async (messageId, emoji) => {
-          try {
-            await toggleReaction(messageId, emoji, true, false);
-          } catch (error) {
-            // Error already logged by reaction handler
-          }
-        }}
-        setDeleteConfirmId={setDeleteConfirmId}
-        shouldShowLoadOlder={shouldShowLoadOlder()}
-        userId={userId}
-        userIdSlice={userIdSlice}
-      />
-    );
+      <div
+        className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+        ref={messagesContainerRef}
+      >
+        {shouldShowLoadOlder() && (
+          <div className="flex justify-center pb-4">
+            <Button
+              onClick={loadOlder}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Load older messages
+            </Button>
+          </div>
+        )}
+        {messages.map((m) => {
+          const mine = m.userId === userId;
+          const isEditing = editingMessageId === m.$id;
+          const removed = Boolean(m.removedAt);
+          const isDeleting = deleteConfirmId === m.$id;
+          const displayName =
+            m.displayName || m.userName || m.userId.slice(0, userIdSlice);
 
+          return (
+            <div
+              className={`group flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
+                mine
+                  ? "ml-auto max-w-[85%] flex-row-reverse text-right"
+                  : "mr-auto max-w-[85%]"
+              } ${
+                isEditing
+                  ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
+                  : "hover:border-border/80"
+              }`}
+              key={m.$id}
+            >
+              <button
+                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
+                onClick={() =>
+                  openProfileModal(
+                    m.userId,
+                    m.userName,
+                    m.displayName,
+                    m.avatarUrl,
+                  )
+                }
+                type="button"
+              >
+                <Avatar
+                  alt={displayName}
+                  fallback={displayName}
+                  size="md"
+                  src={m.avatarUrl}
+                />
+              </button>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div
+                  className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
+                >
+                  <span className="font-medium text-foreground">
+                    {displayName}
+                  </span>
+                  {m.pronouns && (
+                    <span className="italic text-muted-foreground">
+                      ({m.pronouns})
+                    </span>
+                  )}
+                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
+                  {m.editedAt && <span className="italic">(edited)</span>}
+                  {removed && <span className="text-destructive">(removed)</span>}
+                </div>
+
+                {m.replyTo && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs">
+                    <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-foreground">
+                        {m.replyTo.displayName ||
+                          m.replyTo.userName ||
+                          "User"}
+                      </span>
+                      <span className="ml-1 text-muted-foreground">
+                        {m.replyTo.text?.length > 50
+                          ? `${m.replyTo.text.slice(0, 50)}...`
+                          : m.replyTo.text}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {!removed && (
+                  <div className="wrap-break-word text-sm">
+                    <MessageWithMentions text={m.text} />
+                  </div>
+                )}
+                {removed && m.removedBy && (
+                  <div className="text-xs italic text-muted-foreground">
+                    Removed by moderator
+                  </div>
+                )}
+
+                {m.imageUrl && !removed && (
+                  <div className="mt-2">
+                    <button
+                      className="overflow-hidden rounded-lg border border-border transition hover:opacity-90"
+                      onClick={() => {
+                        if (m.imageUrl) {
+                          setViewingImage({
+                            url: m.imageUrl,
+                            alt: "Attached image",
+                          });
+                        }
+                      }}
+                      type="button"
+                    >
+                      <img
+                        alt="Attached"
+                        className="max-h-64 w-auto"
+                        decoding="async"
+                        loading="lazy"
+                        src={m.imageUrl}
+                      />
+                    </button>
+                  </div>
+                )}
+
+                {m.attachments && m.attachments.length > 0 && !removed && (
+                  <div className="mt-2 space-y-2">
+                    {m.attachments.map((attachment, idx) => (
+                      <FileAttachmentDisplay
+                        key={`${m.$id}-${attachment.fileId}-${idx}`}
+                        attachment={attachment}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {m.reactions && m.reactions.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {m.reactions.map((reaction) => {
+                      return (
+                        <ReactionButton
+                          currentUserId={userId}
+                          customEmojis={customEmojis}
+                          key={`${m.$id}-${reaction.emoji}`}
+                          onToggle={async (e: string, isAdding: boolean) => {
+                            await toggleReaction(m.$id, e, isAdding, false);
+                          }}
+                          reaction={reaction}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!removed && (
+                  <div
+                    className={`flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
+                  >
+                    <ReactionPicker
+                      customEmojis={customEmojis}
+                      onSelectEmoji={async (emoji) => {
+                        await toggleReaction(m.$id, emoji, true, false);
+                      }}
+                      onUploadCustomEmoji={uploadEmoji}
+                    />
+                    <Button
+                      onClick={() => startReply(m)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </Button>
+                    {mine && (
+                      <>
+                        <Button
+                          onClick={() => startEdit(m)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {isDeleting ? (
+                          <>
+                            <Button
+                              onClick={() => {
+                                void handleDelete();
+                              }}
+                              size="sm"
+                              type="button"
+                              variant="destructive"
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              onClick={() => setDeleteConfirmId(null)}
+                              size="sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            onClick={() => setDeleteConfirmId(m.$id)}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
   // Show loading skeleton during initial load

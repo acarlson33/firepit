@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { config } from "dotenv";
+import path from "node:path";
+
+// Load environment variables from .env.local for testing
+config({ path: path.resolve(process.cwd(), ".env.local") });
 
 // happy-dom environment is configured in vitest.config.ts
 // No need to manually set up DOM globals - Vitest does this automatically
