@@ -24,6 +24,10 @@ jobs:
 
       - name: Run tests
         run: bun run test
+        env:
+            NEXT_TELEMETRY_DISABLED: 1
+            APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+            APPWRITE_PROJECT: ${{ secrets.APPWRITE_PROJECT_ID}}
 
       - name: Run linter
         run: bun run lint
