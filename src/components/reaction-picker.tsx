@@ -41,7 +41,7 @@ export function ReactionPicker({ onSelectEmoji, disabled, customEmojis, onUpload
 					title="Add reaction"
 					type="button"
 					variant="ghost"
-					className="h-7 w-7 rounded-full p-0 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted"
+					className="h-7 w-7 rounded-full p-0 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 hover:bg-muted"
 				>
 					<Smile className="h-4 w-4" />
 					<span className="sr-only">Add reaction</span>
