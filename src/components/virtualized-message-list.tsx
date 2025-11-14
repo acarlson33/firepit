@@ -177,7 +177,7 @@ export function VirtualizedMessageList({
                     customEmojis={customEmojis}
                     onUploadCustomEmoji={onUploadCustomEmoji}
                     onSelectEmoji={async (emoji) => {
-                      await onToggleReaction(m.$id, emoji);
+                      await onToggleReaction(m.$id, emoji, true);
                     }}
                   />
                   <Button

@@ -51,8 +51,8 @@ export default function RootLayout({
         <Providers>
           <div className="relative min-h-screen overflow-hidden">
             <div className="pointer-events-none fixed inset-0 -z-10">
-              <div className="absolute -top-24 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-sky-200/40 via-purple-200/40 to-transparent blur-3xl dark:from-sky-500/10 dark:via-purple-500/10" />
-              <div className="absolute bottom-0 right-[-10%] h-80 w-[28rem] rounded-full bg-gradient-to-tr from-emerald-200/40 via-teal-100/30 to-transparent blur-3xl dark:from-emerald-500/10 dark:via-teal-500/10" />
+              <div className="absolute -top-24 left-1/2 h-72 w-xl -translate-x-1/2 rounded-full bg-linear-to-br from-sky-200/40 via-purple-200/40 to-transparent blur-3xl dark:from-sky-500/10 dark:via-purple-500/10" />
+              <div className="absolute bottom-0 right-[-10%] h-80 w-md rounded-full bg-linear-to-tr from-emerald-200/40 via-teal-100/30 to-transparent blur-3xl dark:from-emerald-500/10 dark:via-teal-500/10" />
             </div>
             <div className="relative z-10 grid min-h-screen grid-rows-[auto_1fr]">
               <AppLayout>
