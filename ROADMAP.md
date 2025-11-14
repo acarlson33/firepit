@@ -1,6 +1,6 @@
 # Firepit Development Roadmap
 
-> Last Updated: January 14, 2026
+> Last Updated: November 14, 2025
 
 This roadmap outlines the planned features and improvements for Firepit, prioritized by impact and complexity.
 
@@ -94,7 +94,7 @@ mentions?: string[];  // Array of mentioned usernames
 
 ---
 
-### 3. Per-Server Roles & Permissions ✅ **[COMPLETED - Q1 2026]**
+### 3. Per-Server Roles & Permissions ✅ **[COMPLETED - Q4 2025]**
 
 **Goal:** Implement server-specific role hierarchies and channel permissions.
 
@@ -258,7 +258,7 @@ type InviteUsage = {
 
 ---
 
-### 5. Message Search ✅ **[COMPLETED - Q1 2026]**
+### 5. Message Search ✅ **[COMPLETED - Q4 2025]**
 
 **Goal:** Full-text search across all messages in channels and DMs.
 
@@ -320,7 +320,7 @@ type InviteUsage = {
 
 ---
 
-### 6. File Attachments (Beyond Images) ✅ **[COMPLETED - Q1 2026]**
+### 6. File Attachments (Beyond Images) ✅ **[COMPLETED - Q4 2025]**
 
 **Goal:** Support uploading and sharing various file types (PDFs, documents, videos, audio).
 
