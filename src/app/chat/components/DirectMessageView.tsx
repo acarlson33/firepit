@@ -1,15 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { MoreVertical, Loader2, ArrowLeft, MessageSquare, Image as ImageIcon, X } from "lucide-react";
+import { Loader2, ArrowLeft, MessageSquare, Pencil, Trash2, Image as ImageIcon, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
@@ -443,46 +437,6 @@ export function DirectMessageView({
 											</p>
 										) : null}
 										</div>
-										{!removed && (
-											<DropdownMenu>
-												<DropdownMenuTrigger asChild disabled={isDeleting}>
-													<Button
-														aria-label="Message options"
-														disabled={isDeleting}
-														size="sm"
-														type="button"
-														variant="ghost"
-													>
-														<MoreVertical className="h-4 w-4" />
-													</Button>
-												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
-													<DropdownMenuItem onClick={() => startReply(message)}>
-														Reply
-													</DropdownMenuItem>
-													{isMine && (
-														<>
-															<DropdownMenuItem onClick={() => startEdit(message)}>
-																Edit
-															</DropdownMenuItem>
-															{isEditing && (
-																<>
-																	<DropdownMenuItem onClick={cancelEdit}>
-																		Cancel Edit
-																	</DropdownMenuItem>
-																</>
-															)}
-															<DropdownMenuItem
-																className="text-destructive"
-																onClick={() => confirmDelete(message.$id)}
-															>
-																Delete
-															</DropdownMenuItem>
-														</>
-													)}
-												</DropdownMenuContent>
-											</DropdownMenu>
-										)}
 									</div>
 									{!removed && message.reactions && message.reactions.length > 0 && (
 										<div className="mt-1 flex flex-wrap gap-1">
@@ -506,7 +460,7 @@ export function DirectMessageView({
 										</div>
 									)}
 									{!removed && (
-										<div className="mt-1 flex items-center gap-1">
+										<div className={`mt-1 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMine ? "justify-end" : ""}`}>
 											<ReactionPicker
 												customEmojis={customEmojis}
 												onUploadCustomEmoji={uploadEmoji}
@@ -520,6 +474,57 @@ export function DirectMessageView({
 													}
 												}}
 											/>
+											<Button
+												onClick={() => startReply(message)}
+												size="sm"
+												type="button"
+												variant="ghost"
+											>
+												<MessageSquare className="h-4 w-4" />
+											</Button>
+											{isMine && (
+												<>
+													<Button
+														onClick={() => startEdit(message)}
+														size="sm"
+														type="button"
+														variant="ghost"
+													>
+														<Pencil className="h-4 w-4" />
+													</Button>
+												{isDeleting ? (
+													<>
+														<Button
+															onClick={() => {
+																void handleDelete(message.$id);
+															}}
+															size="sm"
+															type="button"
+															variant="destructive"
+														>
+															Confirm
+														</Button>
+															<Button
+																onClick={() => setDeleteConfirmId(null)}
+																size="sm"
+																type="button"
+																variant="ghost"
+															>
+																Cancel
+															</Button>
+														</>
+													) : (
+														<Button
+															onClick={() => confirmDelete(message.$id)}
+															size="sm"
+															type="button"
+															variant="ghost"
+														>
+															<Trash2 className="h-4 w-4" />
+														</Button>
+													)}
+												</>
+											)}
 										</div>
 									)}
 									{isDeleting && (
