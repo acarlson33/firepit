@@ -30,6 +30,13 @@ export const metadata: Metadata = {
   other: {
     "color-scheme": "light dark",
   },
+  // Add viewport meta for better mobile performance
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
 };
 
 export default function RootLayout({
