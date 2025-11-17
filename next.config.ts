@@ -67,8 +67,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "2mb",
     },
-    // Partial Prerendering for faster initial loads
-    ppr: 'incremental',
   },
 
   // Turbopack configuration for Next.js 15+ (successor to Webpack)
