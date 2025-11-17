@@ -49,6 +49,7 @@ const nextConfig = {
   },
 
   experimental: {
+    ppr: "incremental",
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-dialog",
