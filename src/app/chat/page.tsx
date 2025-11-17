@@ -29,6 +29,8 @@ import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
 
+const experimental_ppr = true;
+
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
   ssr: false,
