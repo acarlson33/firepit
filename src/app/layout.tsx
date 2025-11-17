@@ -11,6 +11,8 @@ const geistSans = Geist({
   subsets: ["latin"],
   display: "swap", // Prevent font blocking render
   preload: true, // Preload critical font
+  fallback: ["system-ui", "arial"], // System font fallback for faster initial render
+  adjustFontFallback: true, // Minimize layout shift
 });
 
 const geistMono = Geist_Mono({
@@ -18,6 +20,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "optional", // Non-critical font can be skipped if slow
   preload: false,
+  fallback: ["ui-monospace", "monospace"], // Monospace fallback
 });
 
 export const metadata: Metadata = {
@@ -26,6 +29,13 @@ export const metadata: Metadata = {
   // Enable modern performance features
   other: {
     "color-scheme": "light dark",
+  },
+  // Add viewport meta for better mobile performance
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
   },
 };
 
@@ -40,9 +50,6 @@ export default function RootLayout({
         {/* Preconnect to Appwrite to establish connections early */}
         <link rel="preconnect" href="https://nyc.cloud.appwrite.io" />
         <link rel="dns-prefetch" href="https://nyc.cloud.appwrite.io" />
-        
-        {/* Preload critical API requests to start fetching before JavaScript loads */}
-        <link rel="preload" href="/api/me" as="fetch" crossOrigin="anonymous" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}

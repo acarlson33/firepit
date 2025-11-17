@@ -80,10 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Defer subscription setup to after initial render (3 second delay)
+    // Defer subscription setup to after initial render (5 second delay)
     // This prevents real-time connections from blocking the critical render path
     const timeoutId = setTimeout(() => {
-      // Import dynamically to avoid SSR issues
+      // Import dynamically to avoid SSR issues and reduce initial bundle
       import("appwrite").then(({ Client }) => {
         const client = new Client()
           .setEndpoint(env.endpoint)
@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }).catch(() => {
         // Ignore subscription errors
       });
-    }, 3000); // Defer for 3 seconds to prioritize initial page load
+    }, 5000); // Defer for 5 seconds to prioritize initial page load
 
     return () => {
       clearTimeout(timeoutId);
