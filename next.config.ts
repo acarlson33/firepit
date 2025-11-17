@@ -66,7 +66,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "2mb",
     },
-    useLightningcss: true,
     cssChuncking: true,
     inlineCss: true,
   },
