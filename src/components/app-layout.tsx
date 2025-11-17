@@ -2,7 +2,10 @@
 
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import Header from "@/components/header";
-import { GlobalSearch } from "@/components/global-search";
+import { lazy, Suspense } from "react";
+
+// Lazy load GlobalSearch since it's only needed when user clicks search
+const GlobalSearch = lazy(() => import("@/components/global-search").then(mod => ({ default: mod.GlobalSearch })));
 
 type AppLayoutProps = {
   children: React.ReactNode;
@@ -20,7 +23,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           {children}
         </div>
       </main>
-      <GlobalSearch open={globalSearch.isOpen} onOpenChange={globalSearch.setIsOpen} />
+      {globalSearch.isOpen && (
+        <Suspense fallback={null}>
+          <GlobalSearch open={globalSearch.isOpen} onOpenChange={globalSearch.setIsOpen} />
+        </Suspense>
+      )}
     </>
   );
 }

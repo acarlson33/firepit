@@ -1,9 +1,19 @@
 /** @type {import('next').NextConfig} */
+
+// Bundle analyzer for analyzing bundle size
+// @ts-expect-error - Bundle analyzer types
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 const nextConfig = {
   typedRoutes: true,
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  
+  // Optimize production build
+  output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
 
   // Expose environment variables at runtime for deployed environments
   // These are server-side only and will not be exposed to the browser
@@ -50,31 +60,34 @@ const nextConfig = {
       "@radix-ui/react-popover",
       "sonner",
       "date-fns",
+      "emoji-picker-react",
+      "react-virtuoso",
     ],
     // Enable Server Actions for better data fetching
     serverActions: {
       bodySizeLimit: "2mb",
     },
-    // Turbopack configuration for Next.js 15+ (successor to Webpack)
-    // Use with: next dev --turbo
-    turbo: {
-      // Rules for transforming/loading files
-      rules: {
-        // Optimize image loading
-        "*.svg": {
-          loaders: ["@svgr/webpack"],
-          as: "*.js",
-        },
+  },
+
+  // Turbopack configuration for Next.js 15+ (successor to Webpack)
+  // Use with: next dev --turbo
+  turbopack: {
+    // Rules for transforming/loading files
+    rules: {
+      // Optimize image loading
+      "*.svg": {
+        loaders: ["@svgr/webpack"],
+        as: "*.js",
       },
-      // Module resolution options
-      resolveAlias: {
-        // Aliases are already handled by tsconfig paths
-        // This ensures Turbopack respects them
-        "@": "./src",
-      },
-      // Performance optimizations
-      memoryLimit: 8192, // 8GB memory limit for large projects
     },
+    // Module resolution options
+    resolveAlias: {
+      // Aliases are already handled by tsconfig paths
+      // This ensures Turbopack respects them
+      "@": "./src",
+    },
+    // Performance optimizations
+    memoryLimit: 8192, // 8GB memory limit for large projects
   },
 
   // Optimize webpack bundles
@@ -138,6 +151,30 @@ const nextConfig = {
   ],
   formats: ["image/avif", "image/webp"],
 },
+
+  // Add caching headers for static assets
+  async headers() {
+    return [
+      {
+        source: "/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
