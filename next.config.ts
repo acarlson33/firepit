@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 
 // Bundle analyzer for analyzing bundle size
-// @ts-expect-error - Bundle analyzer types
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
