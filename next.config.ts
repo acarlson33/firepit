@@ -67,7 +67,7 @@ const nextConfig = {
       bodySizeLimit: "2mb",
     },
     useLightningcss: true,
-    casChuncking: true,
+    cssChuncking: true,
     inlineCss: true,
   },
 
