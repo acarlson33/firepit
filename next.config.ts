@@ -71,6 +71,7 @@ const nextConfig = {
     },
     cssChunking: true,
     inlineCss: true,
+    useLightningcss: true,
   },
 
   // Turbopack configuration for Next.js 15+ (successor to Webpack)

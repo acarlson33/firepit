@@ -45,7 +45,7 @@ global.fetch = vi.fn((url: string | URL) => {
 });
 
 // Helper to render with QueryClientProvider
-function renderWithQueryClient(component: React.ReactElement) {
+function renderWithQueryClient(component: React.ReactElement<any>) {
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: {
@@ -87,11 +87,11 @@ describe("AppLayout", () => {
 		const searchButton = screen.getByLabelText("Search messages");
 		await userEvent.click(searchButton);
 
-		// Search dialog should be visible
-		expect(screen.getByText("Search Messages")).toBeInTheDocument();
+		// Wait for lazy-loaded dialog to appear
+		expect(await screen.findByRole("heading", { name: "Search Messages" })).toBeInTheDocument();
 	});
 
-	it("should handle keyboard shortcut Ctrl+K", async () => {
+	it("should open search dialog with Ctrl+K keyboard shortcut", async () => {
 		renderWithQueryClient(
 			<AppLayout>
 				<div>Test Content</div>
@@ -101,8 +101,8 @@ describe("AppLayout", () => {
 		// Trigger Ctrl+K
 		await userEvent.keyboard("{Control>}k{/Control}");
 
-		// Search dialog should be visible
-		expect(screen.getByText("Search Messages")).toBeInTheDocument();
+		// Wait for lazy-loaded dialog to appear
+		expect(await screen.findByRole("heading", { name: "Search Messages" })).toBeInTheDocument();
 	});
 
 	it("should close search dialog when onOpenChange is called with false", async () => {
@@ -116,12 +116,13 @@ describe("AppLayout", () => {
 		const searchButton = screen.getByLabelText("Search messages");
 		await userEvent.click(searchButton);
 
-		expect(screen.getByText("Search Messages")).toBeInTheDocument();
+		// Wait for lazy-loaded dialog to appear and check for search heading
+		expect(await screen.findByRole("heading", { name: "Search Messages" })).toBeInTheDocument();
 
 		// Close search by pressing Escape
 		await userEvent.keyboard("{Escape}");
 
 		// Search dialog should be closed
-		expect(screen.queryByText("Search Messages")).not.toBeInTheDocument();
+		expect(screen.queryByRole("heading", { name: "Search Messages" })).not.toBeInTheDocument();
 	});
 });

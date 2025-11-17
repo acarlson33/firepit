@@ -31,7 +31,7 @@ vi.mock("next-themes", () => ({
 }));
 
 // Helper to render with QueryClientProvider
-function renderWithQueryClient(component: React.ReactElement) {
+function renderWithQueryClient(component: React.ReactElement<any>) {
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: {
