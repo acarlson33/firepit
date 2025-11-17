@@ -37,13 +37,13 @@
     "emoji-picker-react": "^4.15.0",
     "lucide-react": "^0.545.0",
     "newrelic": "^13.6.1",
-    "next": "15.6.0-canary.57",
+    "next": "16.0.3",
     "next-themes": "^0.4.6",
     "node-appwrite": "^20.2.1",
     "node-emoji": "^2.2.0",
     "radix-ui": "^1.4.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "react-virtuoso": "^4.14.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
-    "@next/bundle-analyzer": "^16.0.3",
+    "@next/bundle-analyzer": "16.0.3",
     "@tailwindcss/postcss": "^4.1.16",
     "@tanstack/react-query-devtools": "^5.90.2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -61,15 +61,15 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^20.19.24",
-    "@types/react": "^18.3.26",
-    "@types/react-dom": "^18.3.7",
+    "@types/react": "19.2.5",
+    "@types/react-dom": "19.2.3",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^5.1.0",
     "@vitest/coverage-v8": "^3.2.4",
     "dotenv": "^17.2.3",
     "eslint": "^9.38.0",
-    "eslint-config-next": "^15.5.6",
+    "eslint-config-next": "16.0.3",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
@@ -83,5 +83,9 @@
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   },
-  "packageManager": "bun@1.3.0"
+  "packageManager": "bun@1.3.0",
+  "overrides": {
+    "@types/react": "19.2.5",
+    "@types/react-dom": "19.2.3"
+  }
 }

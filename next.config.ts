@@ -48,8 +48,10 @@ const nextConfig = {
     } : false,
   },
 
+  // Moved from experimental in Next.js 16
+  cacheComponents: true,
+
   experimental: {
-    cacheComponents: true,
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-dialog",
@@ -88,8 +90,6 @@ const nextConfig = {
       // This ensures Turbopack respects them
       "@": "./src",
     },
-    // Performance optimizations
-    memoryLimit: 8192, // 8GB memory limit for large projects
   },
 
   // Optimize webpack bundles
