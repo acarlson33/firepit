@@ -66,6 +66,9 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "2mb",
     },
+    useLightningcss: true,
+    casChuncking: true,
+    inlineCss: true,
   },
 
   // Turbopack configuration for Next.js 15+ (successor to Webpack)
