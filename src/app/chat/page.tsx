@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar } from "@/components/ui/avatar";
+import Loader from "@/components/loader";
 import type { Channel, FileAttachment } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
@@ -701,42 +702,11 @@ export default function ChatPage() {
     );
   }
 
-  // Show loading skeleton during initial load
+  // Show loader during initial load
   if (serversApi.initialLoading) {
     return (
-      <div className="mx-auto w-full max-w-7xl px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
-            <div className="flex gap-2">
-              <Skeleton className="h-10 flex-1 rounded-2xl" />
-              <Skeleton className="h-10 flex-1 rounded-2xl" />
-            </div>
-            <div className="space-y-4">
-              <Skeleton className="h-5 w-24" />
-              <div className="space-y-2">
-                <Skeleton className="h-9 rounded-2xl" />
-                <Skeleton className="h-9 rounded-2xl" />
-                <Skeleton className="h-9 rounded-2xl" />
-              </div>
-            </div>
-            <div className="space-y-4">
-              <Skeleton className="h-5 w-24" />
-              <div className="space-y-2">
-                <Skeleton className="h-9 rounded-2xl" />
-                <Skeleton className="h-9 rounded-2xl" />
-              </div>
-            </div>
-          </aside>
-          <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
-            <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-muted/20 text-muted-foreground">
-              Loading your workspace...
-            </div>
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-12 flex-1 rounded-2xl" />
-              <Skeleton className="h-12 w-24 rounded-2xl" />
-            </div>
-          </div>
-        </div>
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader />
       </div>
     );
   }
