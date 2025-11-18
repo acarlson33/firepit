@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "next dev ",
     "dev:webpack": "next dev --webpack",
-    "build": "next build",
-    "build:webpack": "next build --webpack",
+    "build": "bun run build:sw && next build",
+    "build:webpack": "bun run build:sw && next build --webpack",
+    "build:sw": "tsc --project src/sw.tsconfig.json",
     "build:analyze": "ANALYZE=true next build --webpack",
     "start": "next start",
     "test": "vitest run",

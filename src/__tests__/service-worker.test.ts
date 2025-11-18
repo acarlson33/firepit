@@ -19,6 +19,7 @@ describe("Service Worker", () => {
 			expect(swCode).toContain('CACHE_NAME = "firepit-v1"');
 			expect(swCode).toContain('API_CACHE_NAME = "firepit-api-v1"');
 			expect(swCode).toContain('STATIC_CACHE_NAME = "firepit-static-v1"');
+			expect(swCode).toContain('EMOJI_CACHE_NAME = "firepit-emoji-v1"');
 		});
 
 		it("should define static assets to cache", () => {
@@ -68,10 +69,48 @@ describe("Service Worker", () => {
 			expect(activateSection?.[0]).toContain("CACHE_NAME");
 			expect(activateSection?.[0]).toContain("API_CACHE_NAME");
 			expect(activateSection?.[0]).toContain("STATIC_CACHE_NAME");
+			expect(activateSection?.[0]).toContain("EMOJI_CACHE_NAME");
 		});
 
 		it("should call clients.claim on activate", () => {
 			expect(swCode).toContain("self.clients.claim()");
+		});
+	});
+
+	describe("Fetch Event - Emoji Requests", () => {
+		it("should handle emoji requests with cache-first strategy", () => {
+			expect(swCode).toContain('"/storage/buckets/emojis/files/"');
+		});
+
+		it("should use dedicated emoji cache", () => {
+			expect(swCode).toContain("EMOJI_CACHE_NAME");
+			expect(swCode).toContain("caches.open(EMOJI_CACHE_NAME)");
+		});
+
+		it("should return cached emojis immediately", () => {
+			const emojiSection = swCode.match(
+				/storage\/buckets\/emojis[\s\S]*?return;/
+			);
+			expect(emojiSection).toBeTruthy();
+			expect(emojiSection?.[0]).toContain("cache.match(request)");
+			expect(emojiSection?.[0]).toContain("if (cachedResponse)");
+			expect(emojiSection?.[0]).toContain("return cachedResponse");
+		});
+
+		it("should update emoji cache in background", () => {
+			const emojiSection = swCode.match(
+				/storage\/buckets\/emojis[\s\S]*?return;/
+			);
+			expect(emojiSection?.[0]).toContain("fetch(request)");
+			expect(emojiSection?.[0]).toContain("cache.put(request, response.clone())");
+		});
+
+		it("should cache emojis on first fetch", () => {
+			const emojiSection = swCode.match(
+				/storage\/buckets\/emojis[\s\S]*?return;/
+			);
+			// Should cache new emoji fetches
+			expect(emojiSection?.[0]).toContain("cache.put(request, response.clone())");
 		});
 	});
 
@@ -171,7 +210,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should handle sync-messages tag", () => {
-			expect(swCode).toContain('event.tag === "sync-messages"');
+			expect(swCode).toContain('.tag === "sync-messages"');
 		});
 
 		it("should define syncMessages function", () => {
@@ -185,17 +224,18 @@ describe("Service Worker", () => {
 		});
 
 		it("should check for push data", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
-			expect(pushSection?.[0]).toContain("if (!event.data)");
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
+			expect(pushSection?.[0]).toContain("if (!"); 
+			expect(pushSection?.[0]).toContain(".data)");
 			expect(pushSection?.[0]).toContain("return");
 		});
 
 		it("should parse push data as JSON", () => {
-			expect(swCode).toContain("event.data.json()");
+			expect(swCode).toContain(".data.json()");
 		});
 
 		it("should show notification with proper options", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
 			expect(pushSection?.[0]).toContain("showNotification");
 			expect(pushSection?.[0]).toContain("body:");
 			expect(pushSection?.[0]).toContain("icon:");
@@ -203,7 +243,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should use default URL if not provided in push data", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
 			expect(pushSection?.[0]).toContain('data.url || "/chat"');
 		});
 	});
@@ -215,22 +255,22 @@ describe("Service Worker", () => {
 
 		it("should close notification on click", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
 			);
-			expect(clickSection?.[0]).toContain("event.notification.close()");
+			expect(clickSection?.[0]).toContain(".notification.close()");
 		});
 
 		it("should open window to notification URL", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
 			);
 			expect(clickSection?.[0]).toContain("clients.openWindow");
-			expect(clickSection?.[0]).toContain("event.notification.data.url");
+			expect(clickSection?.[0]).toContain(".notification.data.url");
 		});
 
 		it("should use default URL if notification has no URL", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
 			);
 			expect(clickSection?.[0]).toContain('|| "/chat"');
 		});
@@ -262,23 +302,30 @@ describe("Service Worker", () => {
 	});
 
 	describe("Caching Strategies", () => {
-		it("should implement three different caching strategies", () => {
+		it("should implement multiple caching strategies", () => {
 			// Network-first for API
 			expect(swCode).toContain('pathname.startsWith("/api/")');
 			// Cache-first for static assets
 			expect(swCode).toContain('request.method === "GET"');
 			// Stale-while-revalidate for navigation
 			expect(swCode).toContain('request.mode === "navigate"');
+			// Cache-first for emojis
+			expect(swCode).toContain('"/storage/buckets/emojis/files/"');
 		});
 
 		it("should use separate cache for API responses", () => {
 			expect(swCode).toContain("API_CACHE_NAME");
 		});
 
+		it("should use separate cache for emoji responses", () => {
+			expect(swCode).toContain("EMOJI_CACHE_NAME");
+		});
+
 		it("should open correct cache for each strategy", () => {
 			expect(swCode).toContain("caches.open(API_CACHE_NAME)");
 			expect(swCode).toContain("caches.open(CACHE_NAME)");
 			expect(swCode).toContain("caches.open(STATIC_CACHE_NAME)");
+			expect(swCode).toContain("caches.open(EMOJI_CACHE_NAME)");
 		});
 	});
 
