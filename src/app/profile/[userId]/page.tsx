@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
+import { getCachedUserProfile, getCachedAvatarUrl } from "@/lib/cached-data";
 import { getUserRoleTags } from "@/lib/appwrite-roles";
 import {
 	Card,
@@ -20,8 +20,8 @@ type Props = {
 export default async function ProfilePage({ params }: Props) {
 	const { userId } = await params;
 
-	// Get user profile
-	const profile = await getUserProfile(userId);
+	// Get user profile (cached)
+	const profile = await getCachedUserProfile(userId);
 
 	if (!profile) {
 		notFound();
@@ -31,7 +31,7 @@ export default async function ProfilePage({ params }: Props) {
 	const roles = await getUserRoleTags(userId);
 
 	const avatarUrl = profile.avatarFileId
-		? getAvatarUrl(profile.avatarFileId)
+		? await getCachedAvatarUrl(profile.avatarFileId)
 		: null;
 
 	const roleLabel = roles.isAdmin

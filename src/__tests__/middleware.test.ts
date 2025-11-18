@@ -5,8 +5,8 @@ import type { NextRequest } from "next/server";
 const env = process.env as Record<string, string>;
 env.APPWRITE_PROJECT_ID = "test-project";
 
-// Import middleware after environment setup
-import { middleware } from "../middleware";
+// Import proxy (middleware renamed in Next.js 16) after environment setup
+import { proxy as middleware } from "../proxy";
 
 function createMockRequest(pathname: string, searchParams?: Record<string, string>): NextRequest {
 	const url = new URL(`http://localhost${pathname}`);

@@ -1,9 +1,11 @@
+"use cache";
+
 import Link from "next/link";
 import { Home, Search, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-export default function NotFound() {
+export default async function NotFound() {
 	return (
 		<div className="flex min-h-screen flex-col items-center justify-center px-4">
 			<div className="text-center">
