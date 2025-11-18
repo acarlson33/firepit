@@ -54,22 +54,25 @@ export default function Header({ onSearchClick }: HeaderProps) {
   // Show skeleton while loading initial auth state
   if (loading) {
     return (
-      <header role="banner" className="border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-lg font-semibold tracking-tight">
-              firepit
+      <header role="banner" className="min-h-[73px] border-b border-border/60 bg-background/80 backdrop-blur sm:min-h-[81px]">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold uppercase text-primary">
+                fp
+              </span>
+              <span className="hidden sm:inline">firepit</span>
             </Link>
-            <nav aria-label="Main navigation" className="hidden items-center gap-3 text-sm font-medium sm:flex">
+            <nav aria-label="Main navigation" className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground">
               {baseLinks.map((link) => (
-                <span className="rounded-full bg-muted/70 px-3 py-1 text-muted-foreground" key={link.to}>
+                <span className="rounded-full border border-transparent bg-muted/70 px-3 py-1 text-muted-foreground" key={link.to}>
                   {link.label}
                 </span>
               ))}
             </nav>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-24 animate-pulse rounded-full bg-muted" />
+          <div className="flex items-center gap-3 self-end sm:self-auto">
+            <div className="h-9 w-[168px] animate-pulse rounded-md bg-muted" />
             {onSearchClick && (
               <Button
                 variant="ghost"
@@ -89,7 +92,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
   }
 
   return (
-    <header role="banner" className="border-b border-border/60 bg-background/80 backdrop-blur">
+    <header role="banner" className="min-h-[73px] border-b border-border/60 bg-background/80 backdrop-blur sm:min-h-[81px]">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
@@ -110,7 +113,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
             ))}
           </nav>
         </div>
-        <div className="flex items-center gap-3 self-end sm:self-auto">
+        <div className="flex min-w-[168px] items-center gap-3 self-end sm:self-auto">
           {isAuthenticated && userData ? (
             <div className="flex items-center gap-3">
               {userData.name && (
