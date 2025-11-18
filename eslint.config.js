@@ -20,6 +20,7 @@ export default [{
         "**/*.test.{ts,tsx}",
         "**/*.spec.{ts,tsx}",
         "vitest.config.ts",
+        "**/public/sw.js", // Generated service worker
     ],
 }, js.configs.recommended, // (Global rule sets follow in subsequent objects)
 {
