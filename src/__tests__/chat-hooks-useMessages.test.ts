@@ -221,6 +221,70 @@ describe("useMessages", () => {
 				expect(result.current.hasMore).toBe(false);
 			});
 		});
+
+		it("should set loading to true when channel changes and false when complete", async () => {
+			(appwriteMessagesEnriched.getEnrichedMessages as ReturnType<typeof vi.fn>).mockImplementation(
+				() => new Promise((resolve) => setTimeout(() => resolve([mockMessage1]), 50))
+			);
+
+			const { result } = renderHook(() =>
+				useMessages({
+					channelId: mockChannelId,
+					userId: mockUserId,
+					userName: mockUserName,
+				}),
+			);
+
+			// Should be loading initially
+			expect(result.current.loading).toBe(true);
+
+			// Should be false after messages load
+			await waitFor(() => {
+				expect(result.current.loading).toBe(false);
+			});
+
+			// Should have messages
+			expect(result.current.messages).toEqual([mockMessage1]);
+		});
+
+		it("should clear messages and show loading when switching channels", async () => {
+			(appwriteMessagesEnriched.getEnrichedMessages as ReturnType<typeof vi.fn>)
+				.mockResolvedValueOnce([mockMessage1])
+				.mockImplementation(
+					() => new Promise((resolve) => setTimeout(() => resolve([mockMessage2]), 50))
+				);
+
+			const { result, rerender } = renderHook(
+				({ channelId }: { channelId: string | null }) =>
+					useMessages({
+						channelId,
+						userId: mockUserId,
+						userName: mockUserName,
+					}),
+				{
+					initialProps: { channelId: mockChannelId as string | null },
+				},
+			);
+
+			// Wait for initial messages to load
+			await waitFor(() => {
+				expect(result.current.messages).toEqual([mockMessage1]);
+				expect(result.current.loading).toBe(false);
+			});
+
+			// Switch to a new channel
+			rerender({ channelId: "channel456" });
+
+			// Messages should be cleared immediately and loading should be true
+			expect(result.current.messages).toEqual([]);
+			expect(result.current.loading).toBe(true);
+
+			// Wait for new messages to load
+			await waitFor(() => {
+				expect(result.current.loading).toBe(false);
+				expect(result.current.messages).toEqual([mockMessage2]);
+			});
+		});
 	});
 
 	describe("Text State", () => {

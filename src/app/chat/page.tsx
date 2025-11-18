@@ -130,6 +130,7 @@ export default function ChatPage() {
 
   const {
     messages,
+    loading: messagesLoading,
     text,
     editingMessageId,
     replyingToMessage,
@@ -430,6 +431,15 @@ export default function ChatPage() {
       return (
         <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
           Pick a channel or direct conversation to get started. Your messages will appear here.
+        </div>
+      );
+    }
+    
+    // Show loading spinner when switching channels
+    if (messagesLoading) {
+      return (
+        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-border/60 bg-background/70 p-10">
+          <Loader />
         </div>
       );
     }

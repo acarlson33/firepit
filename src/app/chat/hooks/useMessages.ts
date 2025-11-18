@@ -30,6 +30,7 @@ export function useMessages({
   userName,
 }: UseMessagesOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
   const [oldestCursor, setOldestCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [text, setText] = useState("");
@@ -83,8 +84,16 @@ export function useMessages({
       setMessages([]);
       setOldestCursor(null);
       setHasMore(false);
+      setLoading(false);
       return;
     }
+    
+    // Clear messages and show loading immediately when channel changes
+    setMessages([]);
+    setOldestCursor(null);
+    setHasMore(false);
+    setLoading(true);
+    
     (async () => {
       try {
         const initial = await getEnrichedMessages(
@@ -104,6 +113,8 @@ export function useMessages({
         toast.error(
           err instanceof Error ? err.message : "Failed to load messages"
         );
+      } finally {
+        setLoading(false);
       }
     })().catch(() => {
       /* error already surfaced via toast */
@@ -560,6 +571,7 @@ export function useMessages({
 
   return {
     messages,
+    loading,
     oldestCursor,
     hasMore,
     text,
