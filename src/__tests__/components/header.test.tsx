@@ -83,4 +83,14 @@ describe("Header", () => {
 		const searchButton = screen.getByLabelText("Search messages");
 		expect(searchButton).toHaveAttribute("title", "Search messages (Ctrl+K)");
 	});
+
+	it("should have consistent min-height classes to prevent CLS", () => {
+		// Render header in non-loading state
+		const { container } = renderWithQueryClient(<Header />);
+		const header = container.querySelector("header");
+		
+		// Check that header has min-height classes
+		expect(header).toHaveClass("min-h-[73px]");
+		expect(header).toHaveClass("sm:min-h-[81px]");
+	});
 });
