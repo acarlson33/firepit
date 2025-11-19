@@ -9,6 +9,17 @@ import { apiCache } from "@/lib/cache-utils";
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+// Mock version metadata via environment variable
+process.env.MOCK_VERSION_METADATA = JSON.stringify({
+	version: "1.0.0",
+	commitSha: "abc123def456",
+	commitShort: "abc123d",
+	buildTime: "2024-01-01T00:00:00Z",
+	isCanary: false,
+	latestTag: "v1.0.0",
+	branch: "main",
+});
+
 describe("Version API", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -33,13 +44,19 @@ describe("Version API", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(data).toEqual({
+		expect(data).toMatchObject({
 			currentVersion: "1.0.0",
 			latestVersion: "v1.1.0",
 			isOutdated: true,
 			releaseUrl: "https://github.com/acarlson33/firepit/releases/tag/v1.1.0",
 			publishedAt: "2024-01-01T00:00:00Z",
 		});
+		// Additional fields from build metadata
+		expect(data.commitSha).toBeDefined();
+		expect(data.commitShort).toBeDefined();
+		expect(data.buildTime).toBeDefined();
+		expect(data.isCanary).toBeDefined();
+		expect(data.branch).toBeDefined();
 	});
 
 	it("should return isOutdated false when current version is latest", async () => {
@@ -59,6 +76,7 @@ describe("Version API", () => {
 		expect(data.isOutdated).toBe(false);
 		expect(data.currentVersion).toBe("1.0.0");
 		expect(data.latestVersion).toBe("v1.0.0");
+		expect(data.commitSha).toBeDefined();
 	});
 
 	it("should handle GitHub API errors gracefully", async () => {
@@ -70,12 +88,13 @@ describe("Version API", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(data).toEqual({
+		expect(data).toMatchObject({
 			currentVersion: "1.0.0",
 			latestVersion: "unknown",
 			isOutdated: false,
 			error: "GitHub API error: 404",
 		});
+		expect(data.commitSha).toBeDefined();
 	});
 
 	it("should handle network errors gracefully", async () => {
@@ -84,12 +103,13 @@ describe("Version API", () => {
 		const response = await GET();
 		const data = await response.json();
 
-		expect(data).toEqual({
+		expect(data).toMatchObject({
 			currentVersion: "1.0.0",
 			latestVersion: "unknown",
 			isOutdated: false,
 			error: "Network error",
 		});
+		expect(data.commitSha).toBeDefined();
 	});
 
 	it("should use cached data on subsequent requests", async () => {
