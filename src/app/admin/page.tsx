@@ -8,6 +8,7 @@ import { requireAdmin } from "@/lib/auth-server";
 
 import { type BackfillResult, backfillServerIds } from "./actions";
 import { ServerManagement } from "./server-management";
+import { VersionCheck } from "./version-check";
 
 export default async function AdminPage(props: {
 	searchParams?: Promise<Record<string, string | string[]>>;
@@ -65,6 +66,8 @@ export default async function AdminPage(props: {
 					</div>
 				</div>
 			</section>
+
+			<VersionCheck />
 
 			<section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<StatCard icon={<Database className="h-5 w-5" />} label="Servers indexed" value={stats.servers} />
