@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 // Public routes that don't require authentication
-const PUBLIC_ROUTES = ["/", "/login", "/register"];
+const PUBLIC_ROUTES = ["/", "/login", "/register", "/manifest.webmanifest"];
 
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
