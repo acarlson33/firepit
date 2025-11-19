@@ -29,8 +29,8 @@ interface VersionInfo {
  */
 function isVersionOutdated(current: string, latest: string): boolean {
 	// Remove 'v' prefix if present
-	const cleanCurrent = current.replace(/^v/, "");
-	const cleanLatest = latest.replace(/^v/, "");
+	const cleanCurrent = current.replace(/^V/, "");
+	const cleanLatest = latest.replace(/^V/, "");
 
 	const currentParts = cleanCurrent.split(".").map(Number);
 	const latestParts = cleanLatest.split(".").map(Number);
