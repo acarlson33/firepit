@@ -74,6 +74,15 @@ export type InstanceSettings = {
   updatedAt: string;
 };
 
+export type FeatureFlag = {
+  $id: string;
+  key: string;
+  enabled: boolean;
+  description?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
 export type Membership = {
   $id: string;
   serverId: string;

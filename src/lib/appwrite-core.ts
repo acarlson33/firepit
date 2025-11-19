@@ -66,6 +66,7 @@ export type EnvConfig = {
     directMessages: string;
     statuses: string | null;
     messageAttachments: string;
+    featureFlags: string;
   };
   buckets: {
     avatars: string;
@@ -185,6 +186,12 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
         "message_attachments"
       ) || "message_attachments",
+    featureFlags:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_FEATURE_FLAGS_COLLECTION_ID,
+        process.env.APPWRITE_FEATURE_FLAGS_COLLECTION_ID,
+        "feature_flags"
+      ) || "feature_flags",
   };
   const buckets = {
     avatars:

@@ -5,6 +5,12 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getAppwriteIds } from "@/lib/appwrite-config";
 import { getUserRoles } from "@/lib/appwrite-roles";
 import { recordMetric, recordTiming } from "@/lib/monitoring";
+import {
+  getAllFeatureFlags,
+  setFeatureFlag,
+  type FeatureFlagKey,
+} from "@/lib/feature-flags";
+import type { FeatureFlag } from "@/lib/types";
 
 // Server actions run on the server; use server-side env variables first.
 const ids = getAppwriteIds();
@@ -113,4 +119,40 @@ export async function backfillServerIds(
   recordMetric("admin.backfill_server_ids.count", updated);
   recordTiming("admin.backfill_server_ids.ms", start, { updated });
   return { updated, scanned: docs.length, remaining };
+}
+
+/**
+ * Get all feature flags (admin only)
+ */
+export async function getFeatureFlagsAction(
+  userId: string
+): Promise<FeatureFlag[]> {
+  const roles = await getUserRoles(userId);
+  if (!roles.isAdmin) {
+    throw new Error("Forbidden");
+  }
+  
+  return getAllFeatureFlags();
+}
+
+/**
+ * Update a feature flag (admin only)
+ */
+export async function updateFeatureFlagAction(
+  userId: string,
+  key: FeatureFlagKey,
+  enabled: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const roles = await getUserRoles(userId);
+  if (!roles.isAdmin) {
+    return { success: false, error: "Forbidden" };
+  }
+
+  const success = await setFeatureFlag(key, enabled, userId);
+  
+  if (success) {
+    recordMetric("admin.feature_flag.updated", 1, { key, enabled });
+  }
+  
+  return { success, error: success ? undefined : "Failed to update feature flag" };
 }
