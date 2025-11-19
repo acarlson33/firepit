@@ -480,6 +480,21 @@ async function setupProfiles() {
 	}
 }
 
+async function setupFeatureFlags() {
+	await ensureCollection("feature_flags", "Feature Flags");
+	const fields: [string, number, boolean][] = [
+		["key", LEN_ID, true],
+		["description", 500, false],
+		["updatedAt", LEN_TS, false],
+		["updatedBy", LEN_ID, false],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("feature_flags", k, size, req);
+	}
+	await ensureBooleanAttribute("feature_flags", "enabled", true);
+	await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
+}
+
 async function setupStatuses() {
 	await ensureCollection("statuses", "Statuses");
 	const fields: [string, number, boolean][] = [
@@ -681,6 +696,8 @@ async function run() {
 	await setupMemberships();
 	info("[setup] Setting up profiles...");
 	await setupProfiles();
+	info("[setup] Setting up feature flags...");
+	await setupFeatureFlags();
 	info("[setup] Setting up statuses...");
 	await setupStatuses();
 	info("[setup] Setting up conversations...");

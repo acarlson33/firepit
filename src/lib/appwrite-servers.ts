@@ -73,9 +73,21 @@ export async function listServersPage(
   return { servers: items, nextCursor };
 }
 
-export function createServer(name: string): Promise<Server> {
+export function createServer(name: string, options?: { bypassFeatureCheck?: boolean }): Promise<Server> {
   return withSession(async ({ userId }) => {
     const ownerId = userId;
+    
+    // Check feature flag unless bypassed (e.g., for admin creation)
+    if (!options?.bypassFeatureCheck) {
+      const { getFeatureFlag, FEATURE_FLAGS } = await import("./feature-flags");
+      const allowUserServers = await getFeatureFlag(FEATURE_FLAGS.ALLOW_USER_SERVERS);
+      if (!allowUserServers) {
+        throw normalizeError(
+          new Error("Server creation is currently disabled. Contact an administrator.")
+        );
+      }
+    }
+    
     try {
       const { Permission, Role } = await import("appwrite");
       const permissions = [
