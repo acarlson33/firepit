@@ -6,6 +6,7 @@ import type { FeatureFlag } from "./types";
 // Known feature flag keys
 export const FEATURE_FLAGS = {
   ALLOW_USER_SERVERS: "allow_user_servers",
+  ENABLE_AUDIT_LOGGING: "enable_audit_logging",
 } as const;
 
 export type FeatureFlagKey = typeof FEATURE_FLAGS[keyof typeof FEATURE_FLAGS];
@@ -13,6 +14,7 @@ export type FeatureFlagKey = typeof FEATURE_FLAGS[keyof typeof FEATURE_FLAGS];
 // Default values for feature flags
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.ALLOW_USER_SERVERS]: false,
+  [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: true,
 };
 
 // Cache for feature flags to reduce database calls
@@ -145,6 +147,7 @@ export async function setFeatureFlag(
 function getFeatureFlagDescription(key: FeatureFlagKey): string {
   const descriptions: Record<FeatureFlagKey, string> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: "Allow members to create their own servers",
+    [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: "Enable audit logging for moderation actions",
   };
 
   return descriptions[key] || "";

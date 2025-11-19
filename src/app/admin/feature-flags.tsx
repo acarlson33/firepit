@@ -132,6 +132,7 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
 function getDefaultDescription(key: string): string {
   const descriptions: Record<string, string> = {
     allow_user_servers: "Allow members to create their own servers",
+    enable_audit_logging: "Enable audit logging for moderation actions",
   };
   return descriptions[key] || "";
 }

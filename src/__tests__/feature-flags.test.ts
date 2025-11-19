@@ -11,10 +11,15 @@ describe("Feature Flags", () => {
       expect(FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("allow_user_servers");
     });
 
+    it("should have ENABLE_AUDIT_LOGGING flag with correct key", () => {
+      expect(FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("enable_audit_logging");
+    });
+
     it("should have all required feature flags defined", () => {
       // Ensure the FEATURE_FLAGS object has the expected structure
       expect(FEATURE_FLAGS).toBeDefined();
       expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
+      expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
     });
   });
 
