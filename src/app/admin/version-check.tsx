@@ -10,6 +10,11 @@ interface VersionInfo {
 	releaseUrl?: string;
 	publishedAt?: string;
 	error?: string;
+	commitSha?: string;
+	commitShort?: string;
+	buildTime?: string;
+	isCanary?: boolean;
+	branch?: string;
 }
 
 export function VersionCheck() {
@@ -52,11 +57,21 @@ export function VersionCheck() {
 			<div className="overflow-hidden rounded-3xl border border-border/60 bg-card/60 p-6 shadow-lg">
 				<div className="flex items-center gap-3">
 					<AlertCircle className="h-5 w-5 text-muted-foreground" />
-					<div>
+					<div className="flex-1">
 						<p className="text-sm font-medium">Unable to check for updates</p>
 						<p className="text-xs text-muted-foreground mt-1">
 							Currently running version {versionInfo.currentVersion}
+							{versionInfo.isCanary && (
+								<span className="ml-2 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+									Canary
+								</span>
+							)}
 						</p>
+						{versionInfo.commitShort && versionInfo.commitShort !== "unknown" && (
+							<p className="text-xs text-muted-foreground mt-1">
+								Commit: {versionInfo.commitShort}
+							</p>
+						)}
 					</div>
 				</div>
 			</div>
@@ -105,11 +120,29 @@ export function VersionCheck() {
 		<div className="overflow-hidden rounded-3xl border border-border/60 bg-card/60 p-6 shadow-lg">
 			<div className="flex items-center gap-3">
 				<CheckCircle className="h-5 w-5 text-green-500" />
-				<div>
+				<div className="flex-1">
 					<p className="text-sm font-medium">You're up to date</p>
 					<p className="text-xs text-muted-foreground mt-1">
 						Running version {versionInfo.currentVersion}
+						{versionInfo.isCanary && (
+							<span className="ml-2 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+								Canary
+							</span>
+						)}
 					</p>
+					{versionInfo.commitShort && versionInfo.commitShort !== "unknown" && (
+						<p className="text-xs text-muted-foreground mt-1">
+							Commit: {versionInfo.commitShort}
+							{versionInfo.branch && versionInfo.branch !== "unknown" && (
+								<span className="ml-2">({versionInfo.branch})</span>
+							)}
+						</p>
+					)}
+					{versionInfo.buildTime && (
+						<p className="text-xs text-muted-foreground mt-1">
+							Built: {new Date(versionInfo.buildTime).toLocaleString()}
+						</p>
+					)}
 				</div>
 			</div>
 		</div>

@@ -62,3 +62,6 @@ dev-dist
 .open-next
 
 src/summaries/**
+
+# Generated files
+src/generated/**
