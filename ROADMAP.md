@@ -194,7 +194,7 @@ type ChannelPermissionOverride = {
 
 ---
 
-### 4. Server Invite System 🎯 **[Q1 2026]**
+### 4. Server Invite System 🎯 **[IN PROGRESS - Q1 2026]**
 
 **Goal:** Generate shareable invite links with expiration and usage limits.
 
