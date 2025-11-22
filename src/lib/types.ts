@@ -199,6 +199,27 @@ export type Role = {
   $createdAt?: string;
 };
 
+export type ServerInvite = {
+  $id: string;
+  serverId: string;
+  code: string; // Unique 8-10 char code
+  creatorId: string;
+  channelId?: string; // Default channel to show after joining
+  expiresAt?: string; // ISO timestamp or null for never
+  maxUses?: number; // null for unlimited
+  currentUses: number;
+  temporary: boolean; // Kick user if they go offline without role
+  $createdAt: string;
+};
+
+export type InviteUsage = {
+  $id: string;
+  inviteCode: string;
+  userId: string;
+  serverId: string;
+  joinedAt: string;
+};
+
 export type RoleAssignment = {
   $id: string;
   userId: string;

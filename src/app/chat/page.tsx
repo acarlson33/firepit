@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
+import { useSearchParams, useRouter } from "next/navigation";
 import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
+import { toast } from "sonner";
 
 // Lazy load heavy components
 const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
@@ -69,6 +71,8 @@ export default function ChatPage() {
   const { userData, loading: _authLoading } = useAuth();
   const userId = userData?.userId ?? null;
   const userName = userData?.name ?? null;
+  const searchParams = useSearchParams();
+  const router = useRouter();
   
   // Automatic status tracking removed to preserve manual status settings
   // Users can manually set their status via the profile/settings UI
@@ -132,6 +136,59 @@ export default function ChatPage() {
         });
     }
   }, [userId]);
+
+  // Auto-join server via invite code from query param
+  useEffect(() => {
+    const inviteCode = searchParams.get("invite");
+    if (inviteCode && userId) {
+      // Only auto-join once per code
+      const joinedKey = `invite_joined_${inviteCode}`;
+      if (sessionStorage.getItem(joinedKey)) {
+        // Clear the query param
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("invite");
+        router.replace(`/chat?${newParams.toString()}`);
+        return;
+      }
+
+      // Attempt to join via invite
+      fetch(`/api/invites/${inviteCode}/join`, {
+        method: "POST",
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            sessionStorage.setItem(joinedKey, "true");
+            toast.success("Successfully joined server via invite!");
+            
+            // Clear the query param
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete("invite");
+            router.replace(`/chat?${newParams.toString()}`);
+            
+            // Optionally select the server (if serversApi is available)
+            // This will be handled by the servers hook automatically
+          } else {
+            const error = await res.json();
+            toast.error(error.error || "Failed to join server");
+            
+            // Clear the query param on error too
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete("invite");
+            router.replace(`/chat?${newParams.toString()}`);
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to join via invite:", error);
+          toast.error("Failed to join server");
+          
+          // Clear the query param
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete("invite");
+          router.replace(`/chat?${newParams.toString()}`);
+        });
+    }
+  }, [searchParams, userId, router]);
 
   const serversApi = useServers({ userId, membershipEnabled });
   const channelsApi = useChannels({
