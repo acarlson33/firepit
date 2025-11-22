@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ReactionButton } from "../components/reaction-button";
-import { ReactionPicker } from "../components/reaction-picker";
+import { ReactionButton } from "../../components/reaction-button";
+import { ReactionPicker } from "../../components/reaction-picker";
 
 describe("ReactionButton Component", () => {
 	it("should render emoji and count", () => {

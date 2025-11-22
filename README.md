@@ -9,6 +9,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 15, 
 ## Features
 
 -   **Server support** - support for servers like on discord
+-   **Server Invite System** - Create, manage, and use invite links with expiration and usage limits
 -   **Channel support** - support for channels like on discord
 -   **User profiles and status support** - missing external integration, but support for in app statuses and profiles
 -   **Emoji support** - Standard and custom emoji support with upload capabilities
@@ -20,6 +21,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 15, 
 -   **Real-time Chat** - WebSocket-based messaging with typing indicators
 -   **Message Replies** - Reply to specific messages to maintain conversation context
 -   **Server & Channels** - Discord-like server organization with multiple channels
+-   **Server Invites** - Shareable invite links with expiration dates, usage limits, and revocation
 -   **Direct Messages** - Private conversations between users
 -   **User Status** - Online/offline presence with custom status messages
 -   **Emoji Support** - Standard emoji picker and custom emoji upload (up to 10MB)
@@ -31,14 +33,14 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 15, 
 -   **TailwindCSS** - Modern, responsive UI design
 -   **shadcn/ui** - High-quality, accessible UI components
 -   **PWA Ready** - Progressive Web App support for mobile installation
--   **Comprehensive Tests** - 992 passing tests with extensive coverage
+-   **Comprehensive Tests** - 1645 passing tests with extensive coverage
 -   **Production Ready** - Error boundaries, rate limiting, and security hardening
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 
--   **Node.js 18+** or **Bun 1.0+** installed
+-   **Node.js 18+** or **Bun 1.2+** installed
 -   An **Appwrite instance** (cloud or self-hosted):
     -   Cloud: [appwrite.io](https://appwrite.io) (free tier available)
     -   Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
@@ -124,7 +126,7 @@ Firepit is production-ready with:
 
 ✅ **Testing & Quality**
 
--   1465 passing tests
+-   1644 passing tests
 -   Comprehensive test coverage
 -   Automated CI/CD pipeline
 -   Strict ESLint configuration
@@ -133,9 +135,8 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instruct
 
 ## ⚠️ Known Limitations
 
-Version 1.0 does not include:
+Version 1.1 does not include:
 
--   Server invite system (planned for v1.1)
 -   Message threading (planned for v1.2)
 -   Message pinning (planned for v1.2)
 -   Voice/video calls (not currently planned)
@@ -235,9 +236,10 @@ bun run test:coverage
 bun run test --watch
 ```
 
-Current test coverage: **40.24%** statements (growing)
+Current test coverage: **40.18%** statements (growing)
 
--   1400+ tests passing
+-   1645 tests passing across 115 test suites
+-   Comprehensive API route testing (44 new tests for invite system)
 -   Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
 ## 📦 Deployment

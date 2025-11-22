@@ -5,7 +5,7 @@
  */
 
 import { execSync } from "child_process";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 interface VersionMetadata {
@@ -16,6 +16,19 @@ interface VersionMetadata {
 	isCanary: boolean;
 	latestTag: string | null;
 	branch: string;
+}
+
+/**
+ * Get version from package.json as fallback
+ */
+function getPackageVersion(): string {
+	try {
+		const packagePath = join(process.cwd(), "package.json");
+		const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+		return packageJson.version || "0.0.0";
+	} catch {
+		return "0.0.0";
+	}
 }
 
 /**
@@ -60,9 +73,15 @@ function generateVersionMetadata(): VersionMetadata {
 		version = `${latestTag}-canary.${commitShort}`;
 		isCanary = true;
 	} else {
-		// No tags found - use commit SHA
-		version = `0.0.0-canary.${commitShort}`;
-		isCanary = true;
+		// No tags found - fall back to package.json version
+		const packageVersion = getPackageVersion();
+		if (commitSha !== "unknown") {
+			version = `${packageVersion}-canary.${commitShort}`;
+		} else {
+			// Git is completely unavailable - use package.json version only
+			version = packageVersion;
+		}
+		isCanary = commitSha !== "unknown";
 	}
 
 	return {
