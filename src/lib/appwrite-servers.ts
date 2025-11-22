@@ -1,6 +1,7 @@
 import { ID, Query } from "appwrite";
 
 import {
+    AppwriteIntegrationError,
   getBrowserDatabases,
   getEnvConfig,
   normalizeError,
@@ -91,7 +92,7 @@ export function createServer(name: string, options?: { bypassFeatureCheck?: bool
         // In test environments or when feature flags aren't configured, allow creation
         // This ensures backward compatibility with existing tests
         const isConfigError = error instanceof Error && 
-          (error.message.includes("APPWRITE_API_KEY") || error.message.includes("not configured"));
+          error instanceof AppwriteIntegrationError;
         if (!isConfigError) {
           throw error;
         }

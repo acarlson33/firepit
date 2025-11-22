@@ -144,7 +144,7 @@ export async function setFeatureFlag(
 /**
  * Get description for a feature flag key
  */
-function getFeatureFlagDescription(key: FeatureFlagKey): string {
+export function getFeatureFlagDescription(key: FeatureFlagKey): string {
   const descriptions: Record<FeatureFlagKey, string> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: "Allow members to create their own servers",
     [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: "Enable audit logging for moderation actions",

@@ -153,6 +153,45 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     }
   }
 
+  async function refresh() {
+    if (!userId) {
+      return;
+    }
+    setLoading(true);
+    try {
+      // Clear cache and reload
+      apiCache.clear(`servers:initial:${userId}`);
+      if (membershipEnabled) {
+        apiCache.clear(`memberships:${userId}`);
+      }
+      
+      const serverReq = fetch("/api/servers?limit=25")
+        .then((res) => res.json())
+        .then((data) => data as { servers: Server[]; nextCursor: string | null });
+      
+      const membershipReq = membershipEnabled
+        ? fetch("/api/memberships")
+            .then((res) => res.json())
+            .then((data) => data.memberships as Membership[])
+        : Promise.resolve<Membership[]>([]);
+      
+      const [{ servers: first, nextCursor }, mems] = await Promise.all([
+        serverReq,
+        membershipReq,
+      ]);
+      
+      setCursor(nextCursor);
+      setMemberships(mems);
+      setServers(filterAllowedServers(first, mems));
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to refresh servers"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return {
     servers,
     memberships,
@@ -165,6 +204,7 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     create,
     join,
     remove,
+    refresh,
     membershipEnabled,
   };
 }

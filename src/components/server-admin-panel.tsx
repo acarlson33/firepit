@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Shield, Users, MessageSquare, Hash, Settings, Ban, UserX, AlertTriangle } from "lucide-react";
+import { Shield, Users, MessageSquare, Hash, Settings, Ban, UserX, AlertTriangle, Download, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 interface ServerAdminPanelProps {
@@ -69,6 +76,8 @@ export function ServerAdminPanel({
   const [activeTab, setActiveTab] = useState("overview");
   const [members, setMembers] = useState<MemberData[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [filteredAuditLogs, setFilteredAuditLogs] = useState<AuditLog[]>([]);
+  const [auditFilter, setAuditFilter] = useState<string>("all");
   const [stats, setStats] = useState<ServerStats>({
     totalMembers: 0,
     totalChannels: 0,
@@ -118,9 +127,42 @@ export function ServerAdminPanel({
       if (response.ok) {
         const data = await response.json();
         setAuditLogs(data);
+        setFilteredAuditLogs(data);
       }
     } catch (error) {
       console.error("Failed to load audit logs:", error);
+    }
+  }, [serverId]);
+
+  // Filter audit logs when filter changes
+  useEffect(() => {
+    if (auditFilter === "all") {
+      setFilteredAuditLogs(auditLogs);
+    } else {
+      setFilteredAuditLogs(auditLogs.filter(log => log.action === auditFilter));
+    }
+  }, [auditFilter, auditLogs]);
+
+  const exportAuditLogs = useCallback(async (format: "csv" | "json") => {
+    try {
+      const response = await fetch(`/api/servers/${serverId}/audit-logs/export?format=${format}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `audit-logs-${serverId}-${new Date().toISOString().split("T")[0]}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        toast.success(`Audit logs exported as ${format.toUpperCase()}`);
+      } else {
+        toast.error("Failed to export audit logs");
+      }
+    } catch (error) {
+      console.error("Failed to export audit logs:", error);
+      toast.error("Failed to export audit logs");
     }
   }, [serverId]);
 
@@ -421,21 +463,66 @@ export function ServerAdminPanel({
             </TabsContent>
 
             <TabsContent value="audit" className="space-y-4 m-0">
+              <Card className="p-4">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-2 flex-1">
+                    <Filter className="h-4 w-4 text-muted-foreground" />
+                    <Select value={auditFilter} onValueChange={setAuditFilter}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Filter by action" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Actions</SelectItem>
+                        <SelectItem value="ban">Ban</SelectItem>
+                        <SelectItem value="unban">Unban</SelectItem>
+                        <SelectItem value="mute">Mute</SelectItem>
+                        <SelectItem value="unmute">Unmute</SelectItem>
+                        <SelectItem value="kick">Kick</SelectItem>
+                        <SelectItem value="soft_delete">Soft Delete</SelectItem>
+                        <SelectItem value="restore">Restore</SelectItem>
+                        <SelectItem value="hard_delete">Hard Delete</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Badge variant="outline">{filteredAuditLogs.length} logs</Badge>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void exportAuditLogs("csv")}
+                      disabled={auditLogs.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Export CSV
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void exportAuditLogs("json")}
+                      disabled={auditLogs.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Export JSON
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+
               <div className="space-y-2">
-                {auditLogs.length === 0 ? (
+                {filteredAuditLogs.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No audit logs yet
+                    {auditLogs.length === 0 ? "No audit logs yet" : "No logs match the selected filter"}
                   </div>
                 ) : (
-                  auditLogs.map((log) => (
+                  filteredAuditLogs.map((log) => (
                     <Card key={log.$id} className="p-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant={
-                              log.action === "ban" ? "destructive" :
+                              log.action === "ban" || log.action === "hard_delete" ? "destructive" :
                               log.action === "mute" ? "outline" :
-                              log.action === "kick" ? "secondary" :
+                              log.action === "kick" || log.action === "soft_delete" ? "secondary" :
                               "default"
                             }>
                               {log.action}

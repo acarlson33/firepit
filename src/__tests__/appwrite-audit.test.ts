@@ -134,6 +134,15 @@ vi.mock("../lib/appwrite-admin", () => ({
 	}),
 }));
 
+// Mock feature flags
+vi.mock("../lib/feature-flags", () => ({
+	getFeatureFlag: vi.fn(async () => true),
+	FEATURE_FLAGS: {
+		ENABLE_AUDIT_LOGGING: "enable_audit_logging",
+		ALLOW_USER_SERVERS: "allow_user_servers",
+	},
+}));
+
 function setMockAuditDocs(docs: any[]) {
 	(globalThis as any).__mockAuditDocs = docs;
 }
@@ -195,6 +204,35 @@ describe("appwrite-audit", () => {
 
 			const docs = (globalThis as any).__mockAuditDocs;
 			expect(docs[0]).toHaveProperty("actorId", "actor-111");
+		});
+
+		it("should not record audit event when feature flag is disabled", async () => {
+			// Mock feature flag to return false
+			const { getFeatureFlag } = await import("../lib/feature-flags");
+			vi.mocked(getFeatureFlag).mockResolvedValueOnce(false);
+
+			const { recordAudit } = await import("../lib/appwrite-audit");
+			await recordAudit("user.login", "user-123", "actor-456");
+
+			const docs = (globalThis as any).__mockAuditDocs;
+			expect(docs).toHaveLength(0);
+		});
+
+		it("should record audit event when feature flag is enabled", async () => {
+			// Mock feature flag to return true (default behavior)
+			const { getFeatureFlag } = await import("../lib/feature-flags");
+			vi.mocked(getFeatureFlag).mockResolvedValueOnce(true);
+
+			const { recordAudit } = await import("../lib/appwrite-audit");
+			await recordAudit("user.login", "user-123", "actor-456");
+
+			const docs = (globalThis as any).__mockAuditDocs;
+			expect(docs).toHaveLength(1);
+			expect(docs[0]).toMatchObject({
+				action: "user.login",
+				targetId: "user-123",
+				actorId: "actor-456",
+			});
 		});
 	});
 

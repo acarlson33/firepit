@@ -748,6 +748,84 @@ type ServerKick = {
 
 ---
 
+### 13. User Server Creation with Feature Flags ✅ **[COMPLETED - Q1 2026]**
+
+**Goal:** Allow regular users to create their own servers when enabled by administrators through a feature flag system.
+
+**Technical Requirements:**
+
+-   Implement extensible feature flag system in database
+-   Create admin panel UI for managing feature flags
+-   Add `ALLOW_USER_SERVERS` feature flag (default: disabled)
+-   Build "Create Server" dialog for users
+-   Add API endpoint for server creation with feature flag check
+-   Integrate Create Server button into chat UI (conditional rendering)
+
+**Database Schema:**
+
+```typescript
+type FeatureFlag = {
+    $id: string;
+    key: string; // e.g., "allow_user_servers"
+    enabled: boolean;
+    description?: string;
+    updatedAt: string;
+    updatedBy: string; // Admin who last changed it
+};
+```
+
+**Feature Flag System:**
+
+-   Centralized feature flag management in `/src/lib/feature-flags.ts`
+-   Server-side checks prevent bypass attempts
+-   1-minute cache to reduce database calls
+-   Admin override: always allow admin server creation
+-   Test bypass: `bypassFeatureCheck: true` in tests
+
+**API Endpoints:**
+
+-   `GET /api/feature-flags/allow-user-servers` - Check if feature is enabled
+-   `POST /api/servers/create` - Create server (checks feature flag)
+-   Admin actions in `/src/app/admin/actions.ts` for flag management
+
+**UI Components:**
+
+-   `CreateServerDialog.tsx` - User-facing server creation dialog ✅
+-   `FeatureFlags.tsx` - Admin panel section for managing flags ✅
+-   Integration in `/src/app/chat/page.tsx` - Conditional Create Server button ✅
+
+**Server Creation Flow:**
+
+1. User clicks "+" button (only visible if feature enabled)
+2. Dialog opens with server name input
+3. API validates and creates server with:
+    - User as owner
+    - Automatic membership creation
+    - Default "general" channel
+    - Initial member count of 1
+4. Server list refreshes automatically
+
+**Permission Model:**
+
+-   Regular users: Can only create if `ALLOW_USER_SERVERS` is enabled
+-   Admins: Can always create servers (bypass feature flag)
+-   Tests: Use `bypassFeatureCheck: true` to avoid dependencies
+
+**Admin Controls:**
+
+-   Toggle feature flag via Admin Panel at `/admin`
+-   Changes take effect immediately for all users
+-   Feature state cached for 1 minute for performance
+
+**Documentation:**
+
+-   Complete guide in `/docs/USER_SERVER_CREATION.md`
+-   Includes setup, usage, and security details
+
+**Status:** ✅ Complete - Full feature flag system implemented with admin controls, user server creation dialog, and comprehensive error handling. Feature can be enabled/disabled dynamically by administrators.
+
+---
+
 ## 📅 Implementation Timeline
 
 ### Q4 2025 (Oct - Dec)

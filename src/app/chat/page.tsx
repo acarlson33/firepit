@@ -49,6 +49,9 @@ const ChannelPermissionsEditor = dynamic(() => import("@/components/channel-perm
 const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel").then((mod) => ({ default: mod.ServerAdminPanel })), {
   ssr: false,
 });
+const CreateServerDialog = dynamic(() => import("@/components/create-server-dialog").then((mod) => ({ default: mod.CreateServerDialog })), {
+  ssr: false,
+});
 
 // Lazy load interactive components that aren't always visible (Performance Optimization)
 const EmojiPicker = dynamic(() => import("@/components/emoji-picker").then((mod) => ({ default: mod.EmojiPicker })), {
@@ -81,6 +84,7 @@ export default function ChatPage() {
   const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
   const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [allowUserServers, setAllowUserServers] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<{
     userId: string;
     userName?: string;
@@ -113,6 +117,22 @@ export default function ChatPage() {
     });
     setProfileModalOpen(true);
   };
+  // Check if user server creation is enabled
+  useEffect(() => {
+    if (userId) {
+      fetch("/api/feature-flags/allow-user-servers")
+        .then((res) => res.json())
+        .then((data: { enabled: boolean }) => {
+          console.log("Feature flag allow-user-servers:", data.enabled);
+          setAllowUserServers(data.enabled);
+        })
+        .catch((error) => {
+          console.error("Failed to fetch feature flag:", error);
+          setAllowUserServers(false);
+        });
+    }
+  }, [userId]);
+
   const serversApi = useServers({ userId, membershipEnabled });
   const channelsApi = useChannels({
     selectedServer: serversApi.selectedServer,
@@ -316,6 +336,22 @@ export default function ChatPage() {
                 >
                   <Settings className="h-4 w-4" />
                 </Button>
+              </>
+            )}
+            {userId && (
+              <>
+                {allowUserServers ? (
+                  <CreateServerDialog
+                    onServerCreated={() => {
+                      // Reload servers after creation
+                      void serversApi.refresh();
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs text-muted-foreground" title="Server creation is disabled">
+                    {/* Feature disabled */}
+                  </span>
+                )}
               </>
             )}
             <span className="text-xs text-muted-foreground">

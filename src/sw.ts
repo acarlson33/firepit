@@ -3,8 +3,8 @@
 // Service Worker for offline support and aggressive caching
 // Provides instant repeat visits (~100ms) and offline capabilities
 
-// Type definitions for Service Worker global scope
-declare const self: ServiceWorkerGlobalScope;
+// Type assertion for Service Worker global scope
+const sw = self as unknown as ServiceWorkerGlobalScope;
 
 const CACHE_NAME = "firepit-v1";
 const API_CACHE_NAME = "firepit-api-v1";
@@ -20,17 +20,17 @@ const STATIC_ASSETS = [
 ];
 
 // Install event - cache static assets
-self.addEventListener("install", (event: ExtendableEvent) => {
+sw.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
     })
   );
-  void self.skipWaiting();
+  void sw.skipWaiting();
 });
 
   // Activate event - clean up old caches
-self.addEventListener("activate", (event: ExtendableEvent) => {
+sw.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -47,11 +47,11 @@ self.addEventListener("activate", (event: ExtendableEvent) => {
       );
     })
   );
-  void self.clients.claim();
+  void sw.clients.claim();
 });
 
 // Fetch event - implement stale-while-revalidate strategy
-self.addEventListener("fetch", (event: FetchEvent) => {
+sw.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -192,12 +192,12 @@ self.addEventListener("fetch", (event: FetchEvent) => {
 });
 
 // Background sync for offline message queue
-self.addEventListener("sync", ((event: Event) => {
+sw.addEventListener("sync", (event) => {
   const syncEvent = event as ExtendableEvent & { tag: string };
   if (syncEvent.tag === "sync-messages") {
     syncEvent.waitUntil(syncMessages());
   }
-}) as EventListener);
+});
 
 async function syncMessages(): Promise<void> {
   // Get pending messages from IndexedDB
@@ -207,18 +207,12 @@ async function syncMessages(): Promise<void> {
 }
 
 // Push notification support (future enhancement)
-self.addEventListener("push", ((event: Event) => {
-  const pushEvent = event as ExtendableEvent & {
-    data?: {
-      json: () => { title: string; body: string; url?: string };
-    };
-  };
-
-  if (!pushEvent.data) {
+sw.addEventListener("push", (event) => {
+  if (!event.data) {
     return;
   }
 
-  const data = pushEvent.data.json();
+  const data = event.data.json();
   const options: NotificationOptions = {
     body: data.body,
     icon: "/icon-192.png",
@@ -228,21 +222,12 @@ self.addEventListener("push", ((event: Event) => {
     },
   };
 
-  pushEvent.waitUntil(self.registration.showNotification(data.title, options));
-}) as EventListener);
+  event.waitUntil(sw.registration.showNotification(data.title, options));
+});
 
-self.addEventListener("notificationclick", ((event: Event) => {
-  const notifEvent = event as ExtendableEvent & {
-    notification: {
-      close: () => void;
-      data: { url?: string };
-    };
-  };
-  notifEvent.notification.close();
-  notifEvent.waitUntil(
-    self.clients.openWindow(notifEvent.notification.data.url || "/chat")
+sw.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    sw.clients.openWindow(event.notification.data.url || "/chat")
   );
-}) as EventListener);
-
-// Export empty object to mark as module
-export {};
+});

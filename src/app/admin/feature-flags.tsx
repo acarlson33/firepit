@@ -7,7 +7,7 @@ import { Settings } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { FeatureFlag } from "@/lib/types";
-import { FEATURE_FLAGS, type FeatureFlagKey } from "@/lib/feature-flags";
+import { FEATURE_FLAGS, getFeatureFlagDescription, type FeatureFlagKey } from "@/lib/feature-flags";
 
 import { getFeatureFlagsAction, updateFeatureFlagAction } from "./actions";
 
@@ -19,11 +19,7 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
-
-  useEffect(() => {
-    void loadFlags();
-  }, [userId]);
-
+  
   const loadFlags = async () => {
     try {
       const result = await getFeatureFlagsAction(userId);
@@ -35,6 +31,11 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadFlags();
+  }, [userId, loadFlags]);
+  
 
   const handleToggle = async (key: FeatureFlagKey, enabled: boolean) => {
     setUpdating(key);
@@ -95,7 +96,7 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
           const flag = flags.find((f) => f.key === key);
           const isEnabled = flag?.enabled ?? false;
           const isUpdating = updating === key;
-          const description = flag?.description || getDefaultDescription(key);
+          const description = flag?.description || getFeatureFlagDescription(key);
 
           return (
             <div
@@ -127,12 +128,4 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
       </div>
     </section>
   );
-}
-
-function getDefaultDescription(key: string): string {
-  const descriptions: Record<string, string> = {
-    allow_user_servers: "Allow members to create their own servers",
-    enable_audit_logging: "Enable audit logging for moderation actions",
-  };
-  return descriptions[key] || "";
 }
