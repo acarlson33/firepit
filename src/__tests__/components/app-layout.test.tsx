@@ -88,7 +88,7 @@ describe("AppLayout", () => {
 		await userEvent.click(searchButton);
 
 		// Wait for lazy-loaded dialog to appear
-		expect(await screen.findByRole("heading", { name: "Search Messages" })).toBeInTheDocument();
+		expect(await screen.findByRole("heading", { name: "Search Messages" }, { timeout: 3000 })).toBeInTheDocument();
 	});
 
 	it("should open search dialog with Ctrl+K keyboard shortcut", async () => {

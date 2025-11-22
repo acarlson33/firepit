@@ -40,6 +40,7 @@ export type ChannelListResult = {
 
 /**
  * Create a new server (Admin only)
+ * Admins can always create servers regardless of feature flags
  */
 export async function createServerAction(
 	name: string

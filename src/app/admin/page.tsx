@@ -9,6 +9,7 @@ import { requireAdmin } from "@/lib/auth-server";
 import { type BackfillResult, backfillServerIds } from "./actions";
 import { ServerManagement } from "./server-management";
 import { VersionCheck } from "./version-check";
+import { FeatureFlags } from "./feature-flags";
 
 export default async function AdminPage(props: {
 	searchParams?: Promise<Record<string, string | string[]>>;
@@ -74,6 +75,8 @@ export default async function AdminPage(props: {
 				<StatCard icon={<Hash className="h-5 w-5" />} label="Channels tracked" value={stats.channels} />
 				<StatCard icon={<MessageSquare className="h-5 w-5" />} label="Messages stored" value={stats.messages} />
 			</section>
+
+			<FeatureFlags userId={user.$id} />
 
 			<ServerManagement
 				isAdmin={roles.isAdmin}

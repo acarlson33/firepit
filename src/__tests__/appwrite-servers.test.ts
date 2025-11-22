@@ -45,7 +45,7 @@ describe("createServer fallback branches", () => {
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
     const { createServer } = await import("../lib/appwrite-servers");
-    const server = await createServer("Srv One");
+    const server = await createServer("Srv One", { bypassFeatureCheck: true });
     expect(server.name).toBe("Srv One");
     // Ensure membership attempt happened and then channel attempt despite failure
     const collections = created.map((c) => c.collection);
@@ -89,7 +89,7 @@ describe("createServer fallback branches", () => {
     const core = await import("../lib/appwrite-core");
     core.resetEnvCache();
     const { createServer } = await import("../lib/appwrite-servers");
-    const server = await createServer("Srv Two");
+    const server = await createServer("Srv Two", { bypassFeatureCheck: true });
     expect(server.name).toBe("Srv Two");
     const collections = created.map((c) => c.collection);
     expect(collections[0]).toBe("servers");

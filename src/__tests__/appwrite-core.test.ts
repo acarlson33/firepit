@@ -233,10 +233,10 @@ describe("createServer integration (mocked)", () => {
 			};
 		});
 		
-		const core = await import("../lib/appwrite-core");
-		core.resetEnvCache();
-		const { createServer } = await import("../lib/appwrite-servers");
-		const server = await createServer("My Server");
+	const core = await import("../lib/appwrite-core");
+	core.resetEnvCache();
+	const { createServer } = await import("../lib/appwrite-servers");
+	const server = await createServer("My Server", { bypassFeatureCheck: true });
 		// In this lightweight integration path our Databases mock doesn't echo back data fields.
 		// Assert structure and that we at least have an id; detailed field mapping covered elsewhere.
 		expect(server.$id).toBeDefined();

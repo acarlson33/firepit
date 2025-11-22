@@ -407,7 +407,7 @@ Position 0:  @everyone
 
 ### What Gets Logged
 
-**Moderation Actions:**
+**Server Moderation Actions:**
 
 -   Ban
 -   Unban
@@ -415,14 +415,20 @@ Position 0:  @everyone
 -   Unmute
 -   Kick
 
+**Message Moderation Actions:**
+
+-   Soft Delete (removable by moderators)
+-   Restore (undelete soft-deleted messages)
+-   Hard Delete (permanent removal by admins)
+
 **Information Captured:**
 
 -   Action type
 -   Moderator user ID
--   Target user ID
--   Server ID
+-   Target user/message ID
+-   Server ID (for server actions)
 -   Reason (if provided)
--   Additional details
+-   Additional metadata (timestamps, etc.)
 -   Timestamp (automatic)
 
 ### Viewing Audit Logs
@@ -432,19 +438,27 @@ Position 0:  @everyone
 **Shows:**
 
 -   Last 50 actions by default
--   Color-coded action badges
+-   Color-coded action badges (red=ban/hard delete, yellow=mute, gray=kick/soft delete, blue=unban/unmute/restore)
 -   Moderator and target names (not just IDs)
 -   Timestamps in local timezone
 -   Reason and details
 
-**Filtering:** (Coming soon)
+**Filtering:**
 
--   By action type
--   By moderator
--   By target user
--   By date range
+-   By action type (All, Ban, Unban, Mute, Unmute, Kick, Soft Delete, Restore, Hard Delete)
+-   Shows count of filtered results
+-   Real-time filter updates
+
+**Export Options:**
+
+-   CSV format - For spreadsheet analysis
+-   JSON format - For programmatic processing
+-   Filename includes server ID and date
+-   Up to 1000 logs per export
 
 ### Audit Log API
+
+**List Audit Logs:**
 
 ```typescript
 GET /api/servers/[serverId]/audit-logs?limit=50
@@ -464,6 +478,41 @@ Response:
   }
 ]
 ```
+
+**Export Audit Logs:**
+
+```typescript
+GET /api/servers/[serverId]/audit-logs/export?format=csv
+GET /api/servers/[serverId]/audit-logs/export?format=json
+
+// Exports up to 1000 logs with download headers
+// CSV includes all fields with proper escaping
+// JSON is formatted with 2-space indentation
+```
+
+### Feature Flag Control
+
+**Feature Flag:** `ENABLE_AUDIT_LOGGING`
+
+**Default:** `true` (enabled)
+
+**Behavior:**
+
+-   When **enabled**: All moderation actions are logged
+-   When **disabled**: No audit logs are created (saves database space)
+
+**How to Toggle:**
+
+1. Access Admin Panel (requires global admin role)
+2. Navigate to Feature Flags tab
+3. Toggle "Enable audit logging for moderation actions"
+4. Changes take effect immediately
+
+**Use Cases:**
+
+-   **Enable** for production servers requiring accountability
+-   **Disable** for testing/development to reduce noise
+-   **Disable** temporarily for privacy-sensitive operations
 
 ### Compliance & Record Keeping
 

@@ -5,6 +5,7 @@ import {
   getEnvConfig,
 } from "./appwrite-core";
 import { getAdminClient } from "./appwrite-admin";
+import { getFeatureFlag, FEATURE_FLAGS } from "./feature-flags";
 
 function getDatabases() {
   return getBrowserDatabases();
@@ -29,6 +30,12 @@ export async function recordAudit(
   actorId: string,
   meta?: Record<string, unknown>
 ) {
+  // Check if audit logging is enabled via feature flag
+  const auditEnabled = await getFeatureFlag(FEATURE_FLAGS.ENABLE_AUDIT_LOGGING);
+  if (!auditEnabled) {
+    return;
+  }
+
   if (!AUDIT_COLLECTION_ID) {
     return;
   }
