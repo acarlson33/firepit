@@ -495,6 +495,43 @@ async function setupFeatureFlags() {
 	await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
 }
 
+async function setupInvites() {
+	await ensureCollection("invites", "Server Invites");
+	const fields: [string, number, boolean][] = [
+		["serverId", LEN_ID, true],
+		["code", LEN_ID, true],
+		["creatorId", LEN_ID, true],
+		["channelId", LEN_ID, false],
+		["expiresAt", LEN_TS, false],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("invites", k, size, req);
+	}
+	await ensureIntegerAttribute("invites", "maxUses", false);
+	await ensureIntegerAttribute("invites", "currentUses", true);
+	await ensureBooleanAttribute("invites", "temporary", true);
+	// Indexes
+	await ensureIndex("invites", "idx_code", "unique", ["code"]);
+	await ensureIndex("invites", "idx_server", "key", ["serverId"]);
+	await ensureIndex("invites", "idx_creator", "key", ["creatorId"]);
+}
+
+async function setupInviteUsage() {
+	await ensureCollection("invite_usage", "Invite Usage");
+	const fields: [string, number, boolean][] = [
+		["inviteCode", LEN_ID, true],
+		["userId", LEN_ID, true],
+		["serverId", LEN_ID, true],
+		["joinedAt", LEN_TS, true],
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("invite_usage", k, size, req);
+	}
+	await ensureIndex("invite_usage", "idx_code", "key", ["inviteCode"]);
+	await ensureIndex("invite_usage", "idx_user", "key", ["userId"]);
+	await ensureIndex("invite_usage", "idx_server", "key", ["serverId"]);
+}
+
 async function setupStatuses() {
 	await ensureCollection("statuses", "Statuses");
 	const fields: [string, number, boolean][] = [
@@ -698,6 +735,10 @@ async function run() {
 	await setupProfiles();
 	info("[setup] Setting up feature flags...");
 	await setupFeatureFlags();
+	info("[setup] Setting up invites...");
+	await setupInvites();
+	info("[setup] Setting up invite usage...");
+	await setupInviteUsage();
 	info("[setup] Setting up statuses...");
 	await setupStatuses();
 	info("[setup] Setting up conversations...");

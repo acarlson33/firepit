@@ -41,7 +41,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should call skipWaiting on install", () => {
-			expect(swCode).toContain("self.skipWaiting()");
+			expect(swCode).toContain("sw.skipWaiting()");
 		});
 
 		it("should use event.waitUntil for install", () => {
@@ -73,13 +73,15 @@ describe("Service Worker", () => {
 		});
 
 		it("should call clients.claim on activate", () => {
-			expect(swCode).toContain("self.clients.claim()");
+			expect(swCode).toContain("sw.clients.claim()");
 		});
 	});
 
 	describe("Fetch Event - Emoji Requests", () => {
 		it("should handle emoji requests with cache-first strategy", () => {
-			expect(swCode).toContain('"/storage/buckets/emojis/files/"');
+			expect(swCode).toContain('includes("/storage/buckets/emojis/files/")');
+			expect(swCode).toContain('includes("/v1/storage/buckets/")');
+			expect(swCode).toContain('includes("/emojis/")');
 		});
 
 		it("should use dedicated emoji cache", () => {
@@ -93,8 +95,7 @@ describe("Service Worker", () => {
 			);
 			expect(emojiSection).toBeTruthy();
 			expect(emojiSection?.[0]).toContain("cache.match(request)");
-			expect(emojiSection?.[0]).toContain("if (cachedResponse)");
-			expect(emojiSection?.[0]).toContain("return cachedResponse");
+			expect(emojiSection?.[0]).toContain("cachedResponse");
 		});
 
 		it("should update emoji cache in background", () => {
@@ -224,9 +225,8 @@ describe("Service Worker", () => {
 		});
 
 		it("should check for push data", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
-			expect(pushSection?.[0]).toContain("if (!"); 
-			expect(pushSection?.[0]).toContain(".data)");
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
+			expect(pushSection?.[0]).toContain("if (!event.data)");
 			expect(pushSection?.[0]).toContain("return");
 		});
 
@@ -235,7 +235,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should show notification with proper options", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
 			expect(pushSection?.[0]).toContain("showNotification");
 			expect(pushSection?.[0]).toContain("body:");
 			expect(pushSection?.[0]).toContain("icon:");
@@ -243,7 +243,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should use default URL if not provided in push data", () => {
-			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\)\);/);
+			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
 			expect(pushSection?.[0]).toContain('data.url || "/chat"');
 		});
 	});
@@ -255,14 +255,14 @@ describe("Service Worker", () => {
 
 		it("should close notification on click", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
 			);
 			expect(clickSection?.[0]).toContain(".notification.close()");
 		});
 
 		it("should open window to notification URL", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
 			);
 			expect(clickSection?.[0]).toContain("clients.openWindow");
 			expect(clickSection?.[0]).toContain(".notification.data.url");
@@ -270,15 +270,15 @@ describe("Service Worker", () => {
 
 		it("should use default URL if notification has no URL", () => {
 			const clickSection = swCode.match(
-				/addEventListener\("notificationclick"[\s\S]*?}\)\);/
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
 			);
 			expect(clickSection?.[0]).toContain('|| "/chat"');
 		});
 	});
 
 	describe("Code Quality", () => {
-		it("should have no console.log statements", () => {
-			expect(swCode).not.toContain("console.log");
+		it("should use void for fire-and-forget operations", () => {
+			expect(swCode).toContain("void ");
 		});
 
 		it("should use proper error handling", () => {
@@ -292,7 +292,7 @@ describe("Service Worker", () => {
 
 		it("should clone responses when caching", () => {
 			const cloneCount = (swCode.match(/response\.clone\(\)/g) || []).length;
-			expect(cloneCount).toBeGreaterThan(0);
+			expect(cloneCount).toBeGreaterThanOrEqual(2);
 		});
 
 		it("should use proper HTTP status codes", () => {

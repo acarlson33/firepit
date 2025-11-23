@@ -119,6 +119,8 @@ tags:
       description: Role and permission management
     - name: Emojis
       description: Custom emoji management
+    - name: Invites
+      description: Server invitation management and usage
     - name: Uploads
       description: File and image upload operations
     - name: Search
@@ -521,6 +523,104 @@ components:
                 cursor:
                     type: string
                     description: Cursor for next page
+
+        Invite:
+            type: object
+            required:
+                - $id
+                - code
+                - serverId
+                - createdBy
+            properties:
+                $id:
+                    type: string
+                    description: Invite document ID
+                code:
+                    type: string
+                    description: Unique invite code (8 characters)
+                    example: "abc12345"
+                serverId:
+                    type: string
+                    description: Server ID this invite belongs to
+                channelId:
+                    type: string
+                    description: Optional channel ID to direct users to
+                    nullable: true
+                createdBy:
+                    type: string
+                    description: User ID who created the invite
+                expiresAt:
+                    type: string
+                    format: date-time
+                    description: Expiration timestamp (null = never expires)
+                    nullable: true
+                maxUses:
+                    type: integer
+                    description: Maximum number of uses (0 = unlimited)
+                    default: 0
+                uses:
+                    type: integer
+                    description: Current number of uses
+                    default: 0
+                temporary:
+                    type: boolean
+                    description: Whether members joining via this invite are temporary
+                    default: false
+                $createdAt:
+                    type: string
+                    format: date-time
+                    description: Invite creation timestamp
+                $updatedAt:
+                    type: string
+                    format: date-time
+                    description: Last update timestamp
+
+        InvitePreview:
+            type: object
+            required:
+                - code
+                - server
+            properties:
+                code:
+                    type: string
+                    description: Invite code
+                server:
+                    type: object
+                    required:
+                        - $id
+                        - name
+                    properties:
+                        $id:
+                            type: string
+                        name:
+                            type: string
+                        iconUrl:
+                            type: string
+                            format: uri
+                            nullable: true
+                        memberCount:
+                            type: integer
+                channel:
+                    type: object
+                    nullable: true
+                    properties:
+                        $id:
+                            type: string
+                        name:
+                            type: string
+                inviter:
+                    type: object
+                    properties:
+                        name:
+                            type: string
+                        avatarUrl:
+                            type: string
+                            format: uri
+                            nullable: true
+                expiresAt:
+                    type: string
+                    format: date-time
+                    nullable: true
 
     responses:
         Unauthorized:
@@ -1611,6 +1711,292 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "401":
                     $ref: "#/components/responses/Unauthorized"
+
+    /api/servers/{serverId}/invites:
+        post:
+            tags:
+                - Invites
+            summary: Create server invite
+            description: |
+                Creates a new invite link for a server. Requires server owner or admin role.
+
+                **Permissions**: Server owner or admin
+            operationId: createServerInvite
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  description: Server ID
+                  schema:
+                      type: string
+            requestBody:
+                required: false
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                channelId:
+                                    type: string
+                                    description: Optional channel to direct users to
+                                expiresAt:
+                                    type: string
+                                    format: date-time
+                                    description: Expiration timestamp (null = never expires)
+                                maxUses:
+                                    type: integer
+                                    description: Maximum uses (0 = unlimited)
+                                    default: 0
+                                temporary:
+                                    type: boolean
+                                    description: Mark members as temporary
+                                    default: false
+            responses:
+                "201":
+                    description: Invite created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Invite"
+                "400":
+                    description: Invalid request
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    $ref: "#/components/responses/Unauthorized"
+                "403":
+                    description: Insufficient permissions
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Server not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+        get:
+            tags:
+                - Invites
+            summary: List server invites
+            description: |
+                Lists all invites for a server. Requires server owner or admin role.
+
+                **Permissions**: Server owner or admin
+            operationId: listServerInvites
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  description: Server ID
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Invite list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    invites:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/Invite"
+                "401":
+                    $ref: "#/components/responses/Unauthorized"
+                "403":
+                    description: Insufficient permissions
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Server not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/invites/{code}:
+        get:
+            tags:
+                - Invites
+            summary: Get invite preview
+            description: |
+                Returns public information about an invite without requiring authentication.
+                Useful for displaying invite preview before joining.
+
+                **Public endpoint** - No authentication required
+            operationId: getInvitePreview
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  description: Invite code
+                  schema:
+                      type: string
+                      pattern: "^[a-zA-Z0-9]{8}$"
+            responses:
+                "200":
+                    description: Invite preview
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InvitePreview"
+                "404":
+                    description: Invite not found or expired
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+        delete:
+            tags:
+                - Invites
+            summary: Revoke invite
+            description: |
+                Revokes (deletes) an invite. Can be done by:
+                - Server owner
+                - Invite creator
+                - Global admin
+
+                **Permissions**: Server owner, invite creator, or global admin
+            operationId: revokeInvite
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  description: Invite code
+                  schema:
+                      type: string
+                      pattern: "^[a-zA-Z0-9]{8}$"
+            responses:
+                "200":
+                    description: Invite revoked
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        type: string
+                                        example: "Invite revoked successfully"
+                "401":
+                    $ref: "#/components/responses/Unauthorized"
+                "403":
+                    description: Insufficient permissions
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Invite not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/invites/{code}/join:
+        post:
+            tags:
+                - Invites
+            summary: Join server via invite
+            description: |
+                Uses an invite to join a server. Creates a membership and tracks invite usage.
+
+                **Validations**:
+                - Invite must exist and not be expired
+                - User must not already be a member
+                - Invite must not have reached max uses
+            operationId: joinServerViaInvite
+            parameters:
+                - name: code
+                  in: path
+                  required: true
+                  description: Invite code
+                  schema:
+                      type: string
+                      pattern: "^[a-zA-Z0-9]{8}$"
+            responses:
+                "200":
+                    description: Successfully joined server
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    serverId:
+                                        type: string
+                                        description: Server ID joined
+                                    message:
+                                        type: string
+                                        example: "Successfully joined server"
+                "400":
+                    description: Invalid invite (expired, max uses, already member)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                            examples:
+                                expired:
+                                    summary: Invite expired
+                                    value:
+                                        error: "This invite has expired"
+                                maxUses:
+                                    summary: Max uses reached
+                                    value:
+                                        error: "This invite has reached its maximum number of uses"
+                                alreadyMember:
+                                    summary: Already a member
+                                    value:
+                                        error: "You are already a member of this server"
+                "401":
+                    $ref: "#/components/responses/Unauthorized"
+                "404":
+                    description: Invite not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/feature-flags/allow-user-servers:
+        get:
+            tags:
+                - Servers
+            summary: Check server creation feature flag
+            description: |
+                Returns whether users are allowed to create their own servers.
+                Used to control server creation feature availability.
+
+                **Public endpoint** - No authentication required
+            operationId: getAllowUserServersFlag
+            responses:
+                "200":
+                    description: Feature flag status
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - enabled
+                                properties:
+                                    enabled:
+                                        type: boolean
+                                        description: Whether user server creation is enabled
+                            examples:
+                                enabled:
+                                    summary: Feature enabled
+                                    value:
+                                        enabled: true
+                                disabled:
+                                    summary: Feature disabled
+                                    value:
+                                        enabled: false
 
     /sw.js:
         get:

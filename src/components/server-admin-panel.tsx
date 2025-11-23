@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Shield, Users, MessageSquare, Hash, Settings, Ban, UserX, AlertTriangle, Download, Filter } from "lucide-react";
+import { Shield, Users, MessageSquare, Hash, Settings, Ban, UserX, AlertTriangle, Download, Filter, Link } from "lucide-react";
+import { InviteManagerDialog } from "@/app/chat/components/InviteManagerDialog";
+import { CreateInviteDialog } from "@/app/chat/components/CreateInviteDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -92,6 +94,8 @@ export function ServerAdminPanel({
   const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
   const [moderationAction, setModerationAction] = useState<"ban" | "mute" | "kick" | null>(null);
   const [moderationReason, setModerationReason] = useState("");
+  const [inviteManagerOpen, setInviteManagerOpen] = useState(false);
+  const [createInviteOpen, setCreateInviteOpen] = useState(false);
 
   const loadServerStats = useCallback(async () => {
     try {
@@ -239,7 +243,7 @@ export function ServerAdminPanel({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="overview">
               <Settings className="h-4 w-4 mr-2" />
               Overview
@@ -247,6 +251,10 @@ export function ServerAdminPanel({
             <TabsTrigger value="members">
               <Users className="h-4 w-4 mr-2" />
               Members
+            </TabsTrigger>
+            <TabsTrigger value="invites">
+              <Link className="h-4 w-4 mr-2" />
+              Invites
             </TabsTrigger>
             <TabsTrigger value="moderation">
               <Shield className="h-4 w-4 mr-2" />
@@ -416,6 +424,67 @@ export function ServerAdminPanel({
                   ))
                 )}
               </div>
+            </TabsContent>
+
+            <TabsContent value="invites" className="space-y-4 m-0">
+              <Card className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Link className="h-5 w-5" />
+                      Server Invites
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Create and manage invite links for this server
+                    </p>
+                  </div>
+                  <Button onClick={() => setCreateInviteOpen(true)}>
+                    Create Invite
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="p-4 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Invites allow you to share links that let others join your server. You can customize expiration times, usage limits, and more.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setInviteManagerOpen(true)}
+                      className="w-full"
+                    >
+                      <Link className="h-4 w-4 mr-2" />
+                      Manage All Invites
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-muted rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Quick Actions</p>
+                      <div className="space-y-2 mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCreateInviteOpen(true)}
+                          className="w-full"
+                        >
+                          Create Instant Invite
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-muted rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Features</p>
+                      <ul className="text-xs space-y-1 mt-2">
+                        <li>• Customizable expiration</li>
+                        <li>• Usage limits</li>
+                        <li>• Temporary membership</li>
+                        <li>• Usage tracking</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </Card>
             </TabsContent>
 
             <TabsContent value="moderation" className="space-y-4 m-0">
@@ -620,6 +689,26 @@ export function ServerAdminPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Invite Management Dialogs */}
+      <InviteManagerDialog
+        open={inviteManagerOpen}
+        onOpenChange={setInviteManagerOpen}
+        serverId={serverId}
+        onCreateInvite={() => {
+          setInviteManagerOpen(false);
+          setCreateInviteOpen(true);
+        }}
+      />
+
+      <CreateInviteDialog
+        open={createInviteOpen}
+        onOpenChange={setCreateInviteOpen}
+        serverId={serverId}
+        onInviteCreated={() => {
+          // Optionally reload invite list if manager is open
+        }}
+      />
     </Dialog>
   );
 }
