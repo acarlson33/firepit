@@ -1,31 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
+import { getAdminClient } from "@/lib/appwrite-admin";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 
-const endpoint = process.env.APPWRITE_ENDPOINT;
-const project = process.env.APPWRITE_PROJECT_ID;
-const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
+const env = getEnvConfig();
 const roleAssignmentsCollectionId = "role_assignments";
 const rolesCollectionId = "roles";
-const membershipsCollectionId = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID || "memberships";
-const profilesCollectionId = process.env.APPWRITE_PROFILES_COLLECTION_ID || "profiles";
-
-if (!endpoint || !project || !apiKey) {
-	throw new Error("Missing Appwrite configuration");
-}
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "function") {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
+const membershipsCollectionId = env.collections.memberships;
+const profilesCollectionId = env.collections.profiles;
 
 // Helper function to update role member count
-async function updateRoleMemberCount(roleId: string, serverId: string): Promise<void> {
+async function updateRoleMemberCount(
+	databases: ReturnType<typeof getAdminClient>["databases"],
+	roleId: string,
+	serverId: string
+): Promise<void> {
 	try {
 		// Count members with this role
 		const assignments = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			[Query.equal("serverId", serverId), Query.limit(1000)]
 		);
@@ -36,13 +30,16 @@ async function updateRoleMemberCount(roleId: string, serverId: string): Promise<
 
 		// Update role document
 		await databases.updateDocument(
-			databaseId,
+			env.databaseId,
 			rolesCollectionId,
 			roleId,
 			{ memberCount }
 		);
 	} catch (error) {
-		console.error("Failed to update role member count:", error);
+		logger.error("Failed to update role member count", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		// Don't throw - this is a non-critical update
 	}
 }
@@ -50,6 +47,7 @@ async function updateRoleMemberCount(roleId: string, serverId: string): Promise<
 // GET: List role assignments
 export async function GET(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const { searchParams } = new URL(request.url);
 		const serverId = searchParams.get("serverId");
 		const roleId = searchParams.get("roleId");
@@ -64,7 +62,7 @@ export async function GET(request: NextRequest) {
 		if (roleId) {
 			// Get members with a specific role
 			const assignments = await databases.listDocuments(
-				databaseId,
+				env.databaseId,
 				roleAssignmentsCollectionId,
 				queries
 			);
@@ -79,7 +77,7 @@ export async function GET(request: NextRequest) {
 				roleAssignments.map(async (assignment) => {
 					try {
 						const profile = await databases.listDocuments(
-							databaseId,
+							env.databaseId,
 							profilesCollectionId,
 							[Query.equal("userId", assignment.userId), Query.limit(1)]
 						);
@@ -106,7 +104,7 @@ export async function GET(request: NextRequest) {
 		if (userId) {
 			// Get roles for a specific user
 			const userAssignments = await databases.listDocuments(
-				databaseId,
+				env.databaseId,
 				roleAssignmentsCollectionId,
 				[...queries, Query.equal("userId", userId)]
 			);
@@ -118,14 +116,17 @@ export async function GET(request: NextRequest) {
 
 		// Get all assignments
 		const assignments = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			queries
 		);
 
 		return NextResponse.json({ assignments: assignments.documents });
 	} catch (error) {
-		console.error("Failed to list role assignments:", error);
+		logger.error("Failed to list role assignments", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to list role assignments" },
 			{ status: 500 }
@@ -136,6 +137,7 @@ export async function GET(request: NextRequest) {
 // POST: Assign role to user
 export async function POST(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const body = await request.json();
 		const { userId, serverId, roleId } = body;
 
@@ -147,8 +149,15 @@ export async function POST(request: NextRequest) {
 		}
 
 		// Check if user is a member of the server
+		if (!membershipsCollectionId) {
+			return NextResponse.json(
+				{ error: "Memberships collection not configured" },
+				{ status: 500 }
+			);
+		}
+
 		const memberships = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			membershipsCollectionId,
 			[
 				Query.equal("userId", userId),
@@ -166,7 +175,7 @@ export async function POST(request: NextRequest) {
 
 		// Check if assignment already exists
 		const existing = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			[
 				Query.equal("userId", userId),
@@ -188,21 +197,21 @@ export async function POST(request: NextRequest) {
 			}
 
 			const updatedAssignment = await databases.updateDocument(
-				databaseId,
+				env.databaseId,
 				roleAssignmentsCollectionId,
 				assignment.$id,
 				{ roleIds: [...currentRoleIds, roleId] }
 			);
 
 			// Update role member count
-			await updateRoleMemberCount(roleId, serverId);
+			await updateRoleMemberCount(databases, roleId, serverId);
 
 			return NextResponse.json({ assignment: updatedAssignment });
 		}
 
 		// Create new assignment
 		const assignment = await databases.createDocument(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			ID.unique(),
 			{
@@ -213,11 +222,14 @@ export async function POST(request: NextRequest) {
 		);
 
 		// Update role member count
-		await updateRoleMemberCount(roleId, serverId);
+		await updateRoleMemberCount(databases, roleId, serverId);
 
 		return NextResponse.json({ assignment }, { status: 201 });
 	} catch (error) {
-		console.error("Failed to assign role:", error);
+		logger.error("Failed to assign role", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to assign role" },
 			{ status: 500 }
@@ -228,6 +240,7 @@ export async function POST(request: NextRequest) {
 // DELETE: Remove role from user
 export async function DELETE(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const { searchParams } = new URL(request.url);
 		const userId = searchParams.get("userId");
 		const serverId = searchParams.get("serverId");
@@ -242,7 +255,7 @@ export async function DELETE(request: NextRequest) {
 
 		// Find the assignment
 		const assignments = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			[
 				Query.equal("userId", userId),
@@ -272,14 +285,14 @@ export async function DELETE(request: NextRequest) {
 		if (updatedRoleIds.length === 0) {
 			// Delete the assignment if no roles left
 			await databases.deleteDocument(
-				databaseId,
+				env.databaseId,
 				roleAssignmentsCollectionId,
 				assignment.$id
 			);
 		} else {
 			// Update with remaining roles
 			await databases.updateDocument(
-				databaseId,
+				env.databaseId,
 				roleAssignmentsCollectionId,
 				assignment.$id,
 				{ roleIds: updatedRoleIds }
@@ -287,11 +300,14 @@ export async function DELETE(request: NextRequest) {
 		}
 
 		// Update role member count
-		await updateRoleMemberCount(roleId, serverId);
+		await updateRoleMemberCount(databases, roleId, serverId);
 
 		return NextResponse.json({ success: true });
 	} catch (error) {
-		console.error("Failed to remove role:", error);
+		logger.error("Failed to remove role", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to remove role" },
 			{ status: 500 }

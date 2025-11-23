@@ -2,7 +2,7 @@ import { ID, Query, Permission, Role } from "appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
-import { getUserProfile, getAvatarUrl } from "./appwrite-profiles";
+import { getAvatarUrl, getProfilesByUserIds } from "./appwrite-profiles";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -183,36 +183,32 @@ export async function listConversations(
 			};
 		});
 
-		// Enrich with other user's profile data
-		const enriched = await Promise.all(
-			conversations.map(async (conv) => {
-				const otherUserId = conv.participants.find((id) => id !== userId);
-				if (!otherUserId) {
-					return conv;
-				}
+		// Batch fetch profiles for all "other" users
+		const otherUserIds = conversations
+			.map((conv) => conv.participants.find((id) => id !== userId))
+			.filter((id): id is string => id !== undefined);
 
-				try {
-					const profile = await getUserProfile(otherUserId);
-					return {
-						...conv,
-						otherUser: {
-							userId: otherUserId,
-							displayName: profile?.displayName,
-							avatarUrl: profile?.avatarFileId
-								? getAvatarUrl(profile.avatarFileId)
-								: undefined,
-						},
-					};
-				} catch {
-					return {
-						...conv,
-						otherUser: {
-							userId: otherUserId,
-						},
-					};
-				}
-			}),
-		);
+		const profilesMap = await getProfilesByUserIds(otherUserIds);
+
+		// Enrich with other user's profile data
+		const enriched = conversations.map((conv) => {
+			const otherUserId = conv.participants.find((id) => id !== userId);
+			if (!otherUserId) {
+				return conv;
+			}
+
+			const profile = profilesMap.get(otherUserId);
+			return {
+				...conv,
+				otherUser: {
+					userId: otherUserId,
+					displayName: profile?.displayName,
+					avatarUrl: profile?.avatarFileId
+						? getAvatarUrl(profile.avatarFileId)
+						: undefined,
+				},
+			};
+		});
 
 		return enriched;
 	} catch {
@@ -325,24 +321,22 @@ export async function listDirectMessages(
 			};
 		});
 
+		// Batch fetch profiles for all unique senders
+		const uniqueSenderIds = [...new Set(items.map((msg) => msg.senderId))];
+		const profilesMap = await getProfilesByUserIds(uniqueSenderIds);
+
 		// Enrich with sender profile data
-		const enriched = await Promise.all(
-			items.map(async (msg) => {
-				try {
-					const profile = await getUserProfile(msg.senderId);
-					return {
-						...msg,
-						senderDisplayName: profile?.displayName,
-						senderAvatarUrl: profile?.avatarFileId
-							? getAvatarUrl(profile.avatarFileId)
-							: undefined,
-						senderPronouns: profile?.pronouns,
-					};
-				} catch {
-					return msg;
-				}
-			}),
-		);
+		const enriched = items.map((msg) => {
+			const profile = profilesMap.get(msg.senderId);
+			return {
+				...msg,
+				senderDisplayName: profile?.displayName,
+				senderAvatarUrl: profile?.avatarFileId
+					? getAvatarUrl(profile.avatarFileId)
+					: undefined,
+				senderPronouns: profile?.pronouns,
+			};
+		});
 
 		// Enrich with attachments
 		const enrichedWithAttachments = await enrichDirectMessagesWithAttachments(enriched);

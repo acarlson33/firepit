@@ -1,23 +1,13 @@
 import { NextResponse } from "next/server";
-import { Client, Databases, Query } from "node-appwrite";
+import { Query } from "node-appwrite";
+import { getAdminClient } from "@/lib/appwrite-admin";
+import { logger } from "@/lib/newrelic-utils";
+import { getEnvConfig } from "@/lib/appwrite-core";
 
-const endpoint = process.env.APPWRITE_ENDPOINT;
-const project = process.env.APPWRITE_PROJECT_ID;
-const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
-const membershipsCollectionId = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID || "memberships";
-const profilesCollectionId = process.env.APPWRITE_PROFILES_COLLECTION_ID || "profiles";
+const env = getEnvConfig();
 const roleAssignmentsCollectionId = "role_assignments";
-
-if (!endpoint || !project || !apiKey) {
-	throw new Error("Missing Appwrite configuration");
-}
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "function") {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
+const membershipsCollectionId = env.collections.memberships;
+const profilesCollectionId = env.collections.profiles;
 
 type RouteContext = {
 	params: Promise<{ serverId: string }>;
@@ -28,18 +18,26 @@ export async function GET(
 	context: RouteContext
 ) {
 	try {
+		const { databases } = getAdminClient();
 		const { serverId } = await context.params;
+
+		if (!membershipsCollectionId) {
+			return NextResponse.json(
+				{ error: "Memberships collection not configured" },
+				{ status: 500 }
+			);
+		}
 
 		// Get all memberships for this server
 		const memberships = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			membershipsCollectionId,
 			[Query.equal("serverId", serverId), Query.limit(100)]
 		);
 
 		// Get role assignments for this server
 		const roleAssignments = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			roleAssignmentsCollectionId,
 			[Query.equal("serverId", serverId), Query.limit(100)]
 		);
@@ -50,38 +48,42 @@ export async function GET(
 			roleMap.set(assignment.userId as string, (assignment.roleIds as string[]) || []);
 		}
 
+		// Batch fetch all user profiles
+		const userIds = memberships.documents.map((m) => m.userId as string);
+		const profileQueries = userIds.length > 0
+			? [Query.equal("userId", userIds), Query.limit(userIds.length)]
+			: [];
+
+		const profilesResponse = userIds.length > 0
+			? await databases.listDocuments(env.databaseId, profilesCollectionId, profileQueries)
+			: { documents: [] };
+
+		// Create profile map for O(1) lookup
+		const profileMap = new Map();
+		for (const profile of profilesResponse.documents) {
+			profileMap.set(profile.userId, profile);
+		}
+
 		// Enrich memberships with profile data and roles
-		const members = await Promise.all(
-			memberships.documents.map(async (membership) => {
-				const userId = membership.userId as string;
-				try {
-					const profiles = await databases.listDocuments(
-						databaseId,
-						profilesCollectionId,
-						[Query.equal("userId", userId), Query.limit(1)]
-					);
+		const members = memberships.documents.map((membership) => {
+			const userId = membership.userId as string;
+			const profile = profileMap.get(userId);
 
-					const profile = profiles.documents[0];
-
-					return {
-						userId,
-						userName: profile?.userId,
-						displayName: profile?.displayName,
-						avatarUrl: profile?.avatarUrl,
-						roleIds: roleMap.get(userId) || [],
-					};
-				} catch {
-					return {
-						userId,
-						roleIds: roleMap.get(userId) || [],
-					};
-				}
-			})
-		);
+			return {
+				userId,
+				userName: profile?.userId,
+				displayName: profile?.displayName,
+				avatarUrl: profile?.avatarUrl,
+				roleIds: roleMap.get(userId) || [],
+			};
+		});
 
 		return NextResponse.json({ members });
 	} catch (error) {
-		console.error("Failed to list server members:", error);
+		logger.error("Failed to list server members", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to list server members" },
 			{ status: 500 }

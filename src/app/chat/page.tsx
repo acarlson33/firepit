@@ -157,7 +157,7 @@ export default function ChatPage() {
       })
         .then(async (res) => {
           if (res.ok) {
-            const data = await res.json();
+            await res.json(); // Parse response
             sessionStorage.setItem(joinedKey, "true");
             toast.success("Successfully joined server via invite!");
             

@@ -14,9 +14,18 @@ import {
 } from "@/lib/newrelic-utils";
 
 // Helper to create JSON responses with CORS headers
-function jsonResponse(data: unknown, init?: ResponseInit) {
+async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRequest) {
   const headers = new Headers(init?.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
+  
+  // Use secure CORS validation from api-middleware when request provided
+  if (request) {
+    const { setCorsHeaders } = await import("@/lib/api-middleware");
+    setCorsHeaders(request, headers);
+  } else {
+    // Fallback for backward compatibility
+    headers.set("Access-Control-Allow-Origin", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+  }
+  
   headers.set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   
@@ -27,7 +36,7 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 }
 
 // Handle preflight requests
-export async function OPTIONS() {
+export async function OPTIONS(_request: NextRequest) {
   return jsonResponse({});
 }
 

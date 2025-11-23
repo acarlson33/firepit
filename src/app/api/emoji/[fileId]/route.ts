@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 
 type RouteContext = {
   params: Promise<{ fileId: string }>;
@@ -12,7 +13,7 @@ type RouteContext = {
  * This avoids 401 errors from direct bucket access
  */
 export async function GET(
-  _request: Request,
+  _request: NextRequest,
   context: RouteContext
 ) {
   try {
@@ -38,15 +39,20 @@ export async function GET(
     const file = await storage.getFile(env.buckets.emojis, fileId);
     
     // Return the file with appropriate headers
+    const responseHeaders = new Headers({
+      "Content-Type": file.mimeType || "image/png",
+      "Cache-Control": "public, max-age=31536000, immutable",
+    });
+    
+    // Use secure CORS validation
+    const { setCorsHeaders } = await import("@/lib/api-middleware");
+    setCorsHeaders(_request, responseHeaders);
+    
     return new NextResponse(fileBuffer, {
-      headers: {
-        "Content-Type": file.mimeType || "image/png",
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: responseHeaders,
     });
   } catch (error) {
-    console.error("Error fetching emoji:", error);
+    logger.error("Error fetching emoji:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     return NextResponse.json(
       { error: "Failed to fetch emoji" },
       { status: 500 }

@@ -105,52 +105,58 @@ export function useDirectMessages({
 			return;
 		}
 
+		let unsubscribe: (() => void) | undefined;
+
 		// Import dynamically to avoid SSR issues
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+		import("appwrite")
+			.then(({ Client }) => {
+				const client = new Client()
+					.setEndpoint(env.endpoint)
+					.setProject(env.project);
 
-			const unsubscribe = client.subscribe(
-				`databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`,
-				(response) => {
-					const payload = response.payload as Record<string, unknown>;
-					const msgConversationId = payload.conversationId;
-					const events = response.events as string[];
+				unsubscribe = client.subscribe(
+					`databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`,
+					(response) => {
+						const payload = response.payload as Record<string, unknown>;
+						const msgConversationId = payload.conversationId;
+						const events = response.events as string[];
 
-					// Only update if message belongs to this conversation
-					if (msgConversationId === conversationId) {
-						const messageData = {
-							...(payload as unknown as DirectMessage),
-							reactions: parseReactions((payload as Record<string, unknown>).reactions as string | undefined),
-						};
-						
-						// Handle different event types to avoid full reload
-						if (events.some((e) => e.endsWith(".create"))) {
-							setMessages((prev) => {
-								// Check if message already exists to prevent duplicates
-								if (prev.some((m) => m.$id === messageData.$id)) {
-									return prev;
-								}
-								return [...prev, messageData];
-							});
-						} else if (events.some((e) => e.endsWith(".update"))) {
-							setMessages((prev) =>
-								prev.map((m) => (m.$id === messageData.$id ? messageData : m))
-							);
-						} else if (events.some((e) => e.endsWith(".delete"))) {
-							setMessages((prev) => prev.filter((m) => m.$id !== messageData.$id));
+						// Only update if message belongs to this conversation
+						if (msgConversationId === conversationId) {
+							const messageData = {
+								...(payload as unknown as DirectMessage),
+								reactions: parseReactions((payload as Record<string, unknown>).reactions as string | undefined),
+							};
+							
+							// Handle different event types to avoid full reload
+							if (events.some((e) => e.endsWith(".create"))) {
+								setMessages((prev) => {
+									// Check if message already exists to prevent duplicates
+									if (prev.some((m) => m.$id === messageData.$id)) {
+										return prev;
+									}
+									return [...prev, messageData];
+								});
+							} else if (events.some((e) => e.endsWith(".update"))) {
+								setMessages((prev) =>
+									prev.map((m) => (m.$id === messageData.$id ? messageData : m))
+								);
+							} else if (events.some((e) => e.endsWith(".delete"))) {
+								setMessages((prev) => prev.filter((m) => m.$id !== messageData.$id));
+							}
 						}
-					}
-				},
-			);
+					},
+				);
+			})
+			.catch(() => {
+				// Ignore subscription errors
+			});
 
-			return () => {
+		return () => {
+			if (unsubscribe) {
 				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
+			}
+		};
 	}, [conversationId]);
 
 	const send = useCallback(
@@ -321,68 +327,73 @@ export function useDirectMessages({
 		}
 
 		const databaseId = env.databaseId;
+		let unsubscribe: (() => void) | undefined;
 		
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+		import("appwrite")
+			.then(({ Client }) => {
+				const client = new Client()
+					.setEndpoint(env.endpoint)
+					.setProject(env.project);
 
-			const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
+				const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
 
-			const unsubscribe = client.subscribe(typingChannel, (response) => {
-				const payload = response.payload as Record<string, unknown>;
-				const events = response.events as string[];
-				
-				const typing = {
-					$id: String(payload.$id),
-					userId: String(payload.userId),
-					userName: payload.userName as string | undefined,
-					channelId: String(payload.channelId),
-					updatedAt: String(payload.$updatedAt || payload.updatedAt),
-				};
+				unsubscribe = client.subscribe(typingChannel, (response) => {
+					const payload = response.payload as Record<string, unknown>;
+					const events = response.events as string[];
+					
+					const typing = {
+						$id: String(payload.$id),
+						userId: String(payload.userId),
+						userName: payload.userName as string | undefined,
+						channelId: String(payload.channelId),
+						updatedAt: String(payload.$updatedAt || payload.updatedAt),
+					};
 
-				// Only process typing events for current conversation
-				if (typing.channelId !== conversationId) {
-					return;
-				}
+					// Only process typing events for current conversation
+					if (typing.channelId !== conversationId) {
+						return;
+					}
 
-				// Ignore typing events from current user
-				if (typing.userId === userId) {
-					return;
-				}
+					// Ignore typing events from current user
+					if (typing.userId === userId) {
+						return;
+					}
 
-				if (process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.log('[typing] Received event:', events, typing);
-				}
+					if (process.env.NODE_ENV === 'development') {
+						// biome-ignore lint: development debugging
+						console.log('[typing] Received event:', events, typing);
+					}
 
-				// Use batched updates to reduce re-renders
-				if (events.some((e) => e.endsWith(".delete"))) {
-					batchUpdateTypingUsers({
-						userId: typing.userId,
-						userName: typing.userName,
-						updatedAt: typing.updatedAt,
-						action: 'remove',
-					});
-				} else if (
-					events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
-				) {
-					batchUpdateTypingUsers({
-						userId: typing.userId,
-						userName: typing.userName,
-						updatedAt: typing.updatedAt,
-						action: 'add',
-					});
-				}
+					// Use batched updates to reduce re-renders
+					if (events.some((e) => e.endsWith(".delete"))) {
+						batchUpdateTypingUsers({
+							userId: typing.userId,
+							userName: typing.userName,
+							updatedAt: typing.updatedAt,
+							action: 'remove',
+						});
+					} else if (
+						events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
+					) {
+						batchUpdateTypingUsers({
+							userId: typing.userId,
+							userName: typing.userName,
+							updatedAt: typing.updatedAt,
+							action: 'add',
+						});
+					}
+				});
+			})
+			.catch(() => {
+				// Ignore subscription errors
 			});
 
-			return () => {
+		return () => {
+			if (unsubscribe) {
 				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
-	}, [conversationId, userId]);
+			}
+		};
+	}, [conversationId, userId, batchUpdateTypingUsers]);
 
 	// Cleanup stale typing indicators
 	useEffect(() => {

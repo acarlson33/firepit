@@ -14,6 +14,7 @@ import {
 	trackMessage,
 	addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import { messageSchema, validateBody } from "@/lib/validation";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID || "message_attachments";
 
@@ -75,9 +76,33 @@ export async function POST(request: NextRequest) {
 	const body = await request.json();
 	const { text, channelId, serverId, imageFileId, imageUrl, replyToId, mentions, attachments } = body;
 
+	// Check if at least one content field is provided
 	if ((!text && !imageFileId && (!attachments || attachments.length === 0)) || !channelId) {
 		return NextResponse.json(
 			{ error: "text, imageFileId, or attachments, and channelId are required" },
+			{ status: 400 }
+		);
+	}
+	
+	// Validate basic message structure (only if text is provided and not empty)
+	if (text && text.trim()) {
+		const validation = validateBody(messageSchema.partial().required({ channelId: true }), {
+			text: body.text,
+			channelId: body.channelId,
+			serverId: body.serverId,
+			replyTo: body.replyToId,
+		});
+		
+		if (!validation.success) {
+			logger.warn("Message validation failed", { error: validation.error, issues: validation.issues });
+			return NextResponse.json(
+				{ error: validation.error, issues: validation.issues },
+				{ status: 400 }
+			);
+		}
+	} else if (!channelId) {
+		return NextResponse.json(
+			{ error: "channelId is required" },
 			{ status: 400 }
 		);
 	}

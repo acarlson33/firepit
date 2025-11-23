@@ -79,31 +79,37 @@ export function useConversations(userId: string | null) {
 			return;
 		}
 
+		let unsubscribe: (() => void) | undefined;
+
 		// Import dynamically to avoid SSR issues
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+		import("appwrite")
+			.then(({ Client }) => {
+				const client = new Client()
+					.setEndpoint(env.endpoint)
+					.setProject(env.project);
 
-			const unsubscribe = client.subscribe(
-				`databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`,
-				(response) => {
-					const payload = response.payload as Record<string, unknown>;
-					const participants = payload.participants as string[] | undefined;
+				unsubscribe = client.subscribe(
+					`databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`,
+					(response) => {
+						const payload = response.payload as Record<string, unknown>;
+						const participants = payload.participants as string[] | undefined;
 
-					// Only update if this user is a participant
-					if (participants?.includes(userId)) {
-						void loadConversations();
-					}
-				},
-			);
+						// Only update if this user is a participant
+						if (participants?.includes(userId)) {
+							void loadConversations();
+						}
+					},
+				);
+			})
+			.catch(() => {
+				// Ignore subscription errors
+			});
 
-			return () => {
+		return () => {
+			if (unsubscribe) {
 				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
+			}
+		};
 	}, [userId, loadConversations]);
 
 	return {

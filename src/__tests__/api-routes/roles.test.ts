@@ -18,39 +18,55 @@ const { mockListDocuments, mockCreateDocument, mockUpdateDocument, mockDeleteDoc
 	mockDeleteDocument: vi.fn(),
 }));
 
-// Mock node-appwrite Client and Databases
-vi.mock("node-appwrite", () => {
-	const Client = vi.fn().mockImplementation(() => ({
-		setEndpoint: vi.fn().mockReturnThis(),
-		setProject: vi.fn().mockReturnThis(),
-		setKey: vi.fn().mockReturnThis(),
-	}));
-
-	const Databases = vi.fn().mockImplementation(() => ({
-		listDocuments: mockListDocuments,
-		createDocument: mockCreateDocument,
-		updateDocument: mockUpdateDocument,
-		deleteDocument: mockDeleteDocument,
-	}));
-
-	return {
-		Client,
-		Databases,
-		Query: {
-			equal: (field: string, value: string) => `equal(${field},${value})`,
-			orderDesc: (field: string) => `orderDesc(${field})`,
-			limit: (n: number) => `limit(${n})`,
+// Mock appwrite admin client
+vi.mock("@/lib/appwrite-admin", () => ({
+	getAdminClient: vi.fn(() => ({
+		databases: {
+			listDocuments: mockListDocuments,
+			createDocument: mockCreateDocument,
+			updateDocument: mockUpdateDocument,
+			deleteDocument: mockDeleteDocument,
 		},
-		ID: {
-			unique: () => "mock-role-id",
+	})),
+}));
+
+// Mock node-appwrite
+vi.mock("node-appwrite", () => ({
+	Query: {
+		equal: (field: string, value: string) => `equal(${field},${value})`,
+		orderDesc: (field: string) => `orderDesc(${field})`,
+		limit: (n: number) => `limit(${n})`,
+		cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+	},
+	ID: {
+		unique: () => "mock-role-id",
+	},
+}));
+
+// Mock appwrite core
+vi.mock("@/lib/appwrite-core", () => ({
+	getEnvConfig: vi.fn(() => ({
+		databaseId: "test-db",
+		teams: {
+			moderatorTeamId: "mod-team",
+			adminTeamId: "admin-team",
 		},
-	};
-});
+	})),
+}));
+
+// Mock New Relic utilities
+vi.mock("@/lib/newrelic-utils", () => ({
+	logger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+	},
+}));
 
 describe("Roles API", () => {
 	let GET: (request: NextRequest) => Promise<Response>;
 	let POST: (request: NextRequest) => Promise<Response>;
-	let PUT: (request: NextRequest) => Promise<Response>;
+	let PATCH: (request: NextRequest) => Promise<Response>;
 	let DELETE: (request: NextRequest) => Promise<Response>;
 
 	beforeEach(async () => {
@@ -60,7 +76,7 @@ describe("Roles API", () => {
 		const module = await import("../../app/api/roles/route");
 		GET = module.GET;
 		POST = module.POST;
-		PUT = module.PUT;
+		PATCH = module.PATCH;
 		DELETE = module.DELETE;
 	});
 
@@ -247,14 +263,14 @@ describe("Roles API", () => {
 		});
 	});
 
-	describe("PUT /api/roles", () => {
+	describe("PATCH /api/roles", () => {
 		it("should return 400 if roleId is missing", async () => {
 			const request = new NextRequest("http://localhost/api/roles", {
-				method: "PUT",
+				method: "PATCH",
 				body: JSON.stringify({ name: "Updated" }),
 			});
 
-			const response = await PUT(request);
+			const response = await PATCH(request);
 			const data = await response.json();
 
 			expect(response.status).toBe(400);
@@ -270,7 +286,7 @@ describe("Roles API", () => {
 			});
 
 			const request = new NextRequest("http://localhost/api/roles", {
-				method: "PUT",
+				method: "PATCH",
 				body: JSON.stringify({
 					$id: "role-1",
 					name: "Updated Role",
@@ -279,7 +295,7 @@ describe("Roles API", () => {
 				}),
 			});
 
-			const response = await PUT(request);
+			const response = await PATCH(request);
 			const data = await response.json();
 
 			expect(response.status).toBe(200);
@@ -303,14 +319,14 @@ describe("Roles API", () => {
 			});
 
 			const request = new NextRequest("http://localhost/api/roles", {
-				method: "PUT",
+				method: "PATCH",
 				body: JSON.stringify({
 					$id: "role-1",
 					manageMessages: true,
 				}),
 			});
 
-			const response = await PUT(request);
+			const response = await PATCH(request);
 			const data = await response.json();
 
 			expect(response.status).toBe(200);

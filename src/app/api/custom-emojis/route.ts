@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
+import { logger } from "@/lib/newrelic-utils";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { CustomEmoji } from "@/lib/types";
@@ -41,7 +42,7 @@ export async function GET() {
 
     return response;
   } catch (error) {
-    console.error("Error fetching custom emojis:", error);
+    logger.error("Error fetching custom emojis:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     return NextResponse.json(
       { error: "Failed to fetch custom emojis" },
       { status: 500 }

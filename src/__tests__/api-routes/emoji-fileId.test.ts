@@ -26,6 +26,12 @@ vi.mock("@/lib/appwrite-core", () => ({
 	})),
 }));
 
+vi.mock("@/lib/api-middleware", () => ({
+	setCorsHeaders: vi.fn((_request, headers) => {
+		headers.set("Access-Control-Allow-Origin", "*");
+	}),
+}));
+
 describe("GET /api/emoji/[fileId]", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -33,7 +39,8 @@ describe("GET /api/emoji/[fileId]", () => {
 
 	it("should return emoji file with correct headers", async () => {
 		const mockBuffer = Buffer.from("fake-image-data");
-		mockGetFileView.mockResolvedValue(mockBuffer);
+		// Mock getFileView to return a Uint8Array like real Appwrite SDK
+		mockGetFileView.mockResolvedValue(new Uint8Array(mockBuffer));
 		mockGetFile.mockResolvedValue({
 			mimeType: "image/png",
 		});
@@ -54,7 +61,7 @@ describe("GET /api/emoji/[fileId]", () => {
 
 	it("should call storage methods with correct bucket and fileId", async () => {
 		const mockBuffer = Buffer.from("fake-image-data");
-		mockGetFileView.mockResolvedValue(mockBuffer);
+		mockGetFileView.mockResolvedValue(new Uint8Array(mockBuffer));
 		mockGetFile.mockResolvedValue({
 			mimeType: "image/gif",
 		});
@@ -89,7 +96,7 @@ describe("GET /api/emoji/[fileId]", () => {
 
 	it("should handle different mime types", async () => {
 		const mockBuffer = Buffer.from("fake-image-data");
-		mockGetFileView.mockResolvedValue(mockBuffer);
+		mockGetFileView.mockResolvedValue(new Uint8Array(mockBuffer));
 		mockGetFile.mockResolvedValue({
 			mimeType: "image/gif",
 		});
@@ -105,7 +112,7 @@ describe("GET /api/emoji/[fileId]", () => {
 
 	it("should default to image/png when mimeType is missing", async () => {
 		const mockBuffer = Buffer.from("fake-image-data");
-		mockGetFileView.mockResolvedValue(mockBuffer);
+		mockGetFileView.mockResolvedValue(new Uint8Array(mockBuffer));
 		mockGetFile.mockResolvedValue({
 			mimeType: null,
 		});

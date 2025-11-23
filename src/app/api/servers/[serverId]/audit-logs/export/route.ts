@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/newrelic-utils";
 import { getServerSession } from "@/lib/auth-server";
 
 interface AuditLog {
@@ -90,7 +91,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Error exporting audit logs:", error);
+    logger.error("Error exporting audit logs:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     return NextResponse.json(
       { error: "Failed to export audit logs" },
       { status: 500 }

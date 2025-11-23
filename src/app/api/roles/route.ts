@@ -1,43 +1,51 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
+import { z } from "zod";
 import type { Role } from "@/lib/types";
+import { roleSchema, validateBody } from "@/lib/validation";
+import { logger } from "@/lib/newrelic-utils";
+import { getAdminClient } from "@/lib/appwrite-admin";
+import { getEnvConfig } from "@/lib/appwrite-core";
 
-const endpoint = process.env.APPWRITE_ENDPOINT;
-const project = process.env.APPWRITE_PROJECT_ID;
-const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
+const env = getEnvConfig();
 const rolesCollectionId = "roles";
 
-if (!endpoint || !project || !apiKey) {
-	throw new Error("Missing Appwrite configuration");
-}
-
-// Initialize Appwrite client
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "function") {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
-
-// GET: List roles for a server
+// GET: List roles for a server with pagination
 export async function GET(request: NextRequest) {
 	try {
 		const { searchParams } = new URL(request.url);
 		const serverId = searchParams.get("serverId");
+		const cursor = searchParams.get("cursor");
+		const limit = Math.min(Number.parseInt(searchParams.get("limit") || "50", 10), 100);
 
 		if (!serverId) {
 			return NextResponse.json({ error: "serverId is required" }, { status: 400 });
 		}
 
-		const response = await databases.listDocuments(databaseId, rolesCollectionId, [
+		const { databases } = getAdminClient();
+
+		const queries = [
 			Query.equal("serverId", serverId),
 			Query.orderDesc("position"),
-			Query.limit(100),
-		]);
+			Query.limit(limit + 1),
+		];
 
-		return NextResponse.json({ roles: response.documents });
+		if (cursor) {
+			queries.push(Query.cursorAfter(cursor));
+		}
+
+		const response = await databases.listDocuments(env.databaseId, rolesCollectionId, queries);
+
+		const hasMore = response.documents.length > limit;
+		const items = hasMore ? response.documents.slice(0, limit) : response.documents;
+		const nextCursor = hasMore ? items.at(-1)?.$id : undefined;
+
+		return NextResponse.json({ roles: items, nextCursor, hasMore });
 	} catch (error) {
-		console.error("Failed to list roles:", error);
+		logger.error("Failed to list roles", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to list roles" },
 			{ status: 500 }
@@ -48,7 +56,40 @@ export async function GET(request: NextRequest) {
 // POST: Create a new role
 export async function POST(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const body = await request.json();
+		
+		// Check required fields first with clear error messages
+		if (!body.serverId) {
+			return NextResponse.json(
+				{ error: "serverId is required" },
+				{ status: 400 }
+			);
+		}
+		
+		if (!body.name) {
+			return NextResponse.json(
+				{ error: "name is required" },
+				{ status: 400 }
+			);
+		}
+		
+		// Validate role data
+		const validation = validateBody(roleSchema.extend({ serverId: z.string().min(1) }), {
+			serverId: body.serverId,
+			name: body.name,
+			color: body.color,
+			position: body.position,
+			permissions: body.permissions,
+		});
+		
+		if (!validation.success) {
+			return NextResponse.json(
+				{ error: validation.error, issues: validation.issues },
+				{ status: 400 }
+			);
+		}
+		
 		const {
 			serverId,
 			name,
@@ -64,13 +105,6 @@ export async function POST(request: NextRequest) {
 			administrator,
 			mentionable,
 		} = body;
-
-		if (!serverId || !name) {
-			return NextResponse.json(
-				{ error: "serverId and name are required" },
-				{ status: 400 }
-			);
-		}
 
 		const roleData = {
 			serverId,
@@ -90,7 +124,7 @@ export async function POST(request: NextRequest) {
 		};
 
 		const role = await databases.createDocument(
-			databaseId,
+			env.databaseId,
 			rolesCollectionId,
 			ID.unique(),
 			roleData
@@ -98,7 +132,10 @@ export async function POST(request: NextRequest) {
 
 		return NextResponse.json({ role }, { status: 201 });
 	} catch (error) {
-		console.error("Failed to create role:", error);
+		logger.error("Failed to create role", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to create role" },
 			{ status: 500 }
@@ -106,9 +143,10 @@ export async function POST(request: NextRequest) {
 	}
 }
 
-// PUT: Update an existing role
-export async function PUT(request: NextRequest) {
+// PATCH: Update an existing role
+export async function PATCH(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const body = await request.json();
 		const {
 			$id,
@@ -169,7 +207,7 @@ export async function PUT(request: NextRequest) {
 		}
 
 		const role = await databases.updateDocument(
-			databaseId,
+			env.databaseId,
 			rolesCollectionId,
 			$id,
 			updateData
@@ -177,7 +215,10 @@ export async function PUT(request: NextRequest) {
 
 		return NextResponse.json({ role });
 	} catch (error) {
-		console.error("Failed to update role:", error);
+		logger.error("Failed to update role", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to update role" },
 			{ status: 500 }
@@ -185,9 +226,10 @@ export async function PUT(request: NextRequest) {
 	}
 }
 
-// DELETE: Delete a role
+// DELETE: Remove a role
 export async function DELETE(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const { searchParams } = new URL(request.url);
 		const roleId = searchParams.get("roleId");
 
@@ -195,11 +237,14 @@ export async function DELETE(request: NextRequest) {
 			return NextResponse.json({ error: "roleId is required" }, { status: 400 });
 		}
 
-		await databases.deleteDocument(databaseId, rolesCollectionId, roleId);
+		await databases.deleteDocument(env.databaseId, rolesCollectionId, roleId);
 
 		return NextResponse.json({ success: true });
 	} catch (error) {
-		console.error("Failed to delete role:", error);
+		logger.error("Failed to delete role", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to delete role" },
 			{ status: 500 }

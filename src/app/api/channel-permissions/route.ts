@@ -1,28 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 import type { Permission } from "@/lib/types";
+import { getAdminClient } from "@/lib/appwrite-admin";
+import { logger } from "@/lib/newrelic-utils";
+import { getEnvConfig } from "@/lib/appwrite-core";
 
-const endpoint = process.env.APPWRITE_ENDPOINT;
-const project = process.env.APPWRITE_PROJECT_ID;
-const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
+const env = getEnvConfig();
 const overridesCollectionId = "channel_permission_overrides";
 
-if (!endpoint || !project || !apiKey) {
-	throw new Error("Missing Appwrite configuration");
-}
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (typeof (client as unknown as { setKey?: (k: string) => void }).setKey === "function") {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
-
-// GET: List permission overrides for a channel
+// GET: List permission overrides for a channel with pagination
 export async function GET(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const { searchParams } = new URL(request.url);
 		const channelId = searchParams.get("channelId");
+		const cursor = searchParams.get("cursor");
+		const limit = Math.min(Number.parseInt(searchParams.get("limit") || "50", 10), 100);
 
 		if (!channelId) {
 			return NextResponse.json(
@@ -31,15 +24,31 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
+		const queries = [
+			Query.equal("channelId", channelId),
+			Query.limit(limit + 1),
+		];
+
+		if (cursor) {
+			queries.push(Query.cursorAfter(cursor));
+		}
+
 		const overrides = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			overridesCollectionId,
-			[Query.equal("channelId", channelId), Query.limit(100)]
+			queries
 		);
 
-		return NextResponse.json({ overrides: overrides.documents });
+		const hasMore = overrides.documents.length > limit;
+		const items = hasMore ? overrides.documents.slice(0, limit) : overrides.documents;
+		const nextCursor = hasMore ? items.at(-1)?.$id : undefined;
+
+		return NextResponse.json({ overrides: items, nextCursor, hasMore });
 	} catch (error) {
-		console.error("Failed to list channel permissions:", error);
+		logger.error("Failed to list channel permissions", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to list channel permissions" },
 			{ status: 500 }
@@ -50,6 +59,7 @@ export async function GET(request: NextRequest) {
 // POST: Create permission override
 export async function POST(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const body = await request.json();
 		const { channelId, roleId, userId, allow, deny } = body;
 
@@ -117,7 +127,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		const existing = await databases.listDocuments(
-			databaseId,
+			env.databaseId,
 			overridesCollectionId,
 			queries
 		);
@@ -145,7 +155,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		const override = await databases.createDocument(
-			databaseId,
+			env.databaseId,
 			overridesCollectionId,
 			ID.unique(),
 			overrideData
@@ -153,7 +163,10 @@ export async function POST(request: NextRequest) {
 
 		return NextResponse.json({ override }, { status: 201 });
 	} catch (error) {
-		console.error("Failed to create channel permission:", error);
+		logger.error("Failed to create channel permission", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to create channel permission" },
 			{ status: 500 }
@@ -164,6 +177,7 @@ export async function POST(request: NextRequest) {
 // PUT: Update permission override
 export async function PUT(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const body = await request.json();
 		const { overrideId, allow, deny } = body;
 
@@ -204,7 +218,7 @@ export async function PUT(request: NextRequest) {
 		}
 
 		const override = await databases.updateDocument(
-			databaseId,
+			env.databaseId,
 			overridesCollectionId,
 			overrideId,
 			{
@@ -215,7 +229,10 @@ export async function PUT(request: NextRequest) {
 
 		return NextResponse.json({ override });
 	} catch (error) {
-		console.error("Failed to update channel permission:", error);
+		logger.error("Failed to update channel permission", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to update channel permission" },
 			{ status: 500 }
@@ -223,9 +240,10 @@ export async function PUT(request: NextRequest) {
 	}
 }
 
-// DELETE: Delete permission override
+// DELETE: Remove permission override
 export async function DELETE(request: NextRequest) {
 	try {
+		const { databases } = getAdminClient();
 		const { searchParams } = new URL(request.url);
 		const overrideId = searchParams.get("overrideId");
 
@@ -236,11 +254,14 @@ export async function DELETE(request: NextRequest) {
 			);
 		}
 
-		await databases.deleteDocument(databaseId, overridesCollectionId, overrideId);
+		await databases.deleteDocument(env.databaseId, overridesCollectionId, overrideId);
 
 		return NextResponse.json({ success: true });
 	} catch (error) {
-		console.error("Failed to delete channel permission:", error);
+		logger.error("Failed to delete channel permission", {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		return NextResponse.json(
 			{ error: "Failed to delete channel permission" },
 			{ status: 500 }

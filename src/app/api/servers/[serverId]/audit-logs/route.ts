@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query } from "node-appwrite";
+import { logger } from "@/lib/newrelic-utils";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const AUDIT_COLLECTION_ID = process.env.APPWRITE_AUDIT_COLLECTION_ID ?? "";
@@ -82,7 +83,7 @@ export async function GET(
 
     return NextResponse.json(enrichedLogs);
   } catch (error) {
-    console.error("Error fetching audit logs:", error);
+    logger.error("Error fetching audit logs:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     return NextResponse.json(
       { error: "Failed to fetch audit logs" },
       { status: 500 }

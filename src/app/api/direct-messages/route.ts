@@ -14,6 +14,7 @@ import {
 	addTransactionAttributes,
 } from "@/lib/newrelic-utils";
 import { shouldCompress } from "@/lib/compression-utils";
+import { validateBody, directMessageSchema } from "@/lib/validation";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -60,9 +61,18 @@ async function createAttachments(
 }
 
 // Helper to create JSON responses with CORS headers and compression hints
-function jsonResponse(data: unknown, init?: ResponseInit) {
+async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRequest) {
   const headers = new Headers(init?.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
+  
+  // Use secure CORS validation from api-middleware when request provided
+  if (request) {
+    const { setCorsHeaders } = await import("@/lib/api-middleware");
+    setCorsHeaders(request, headers);
+  } else {
+    // Fallback for backward compatibility - will be removed after all calls updated
+    headers.set("Access-Control-Allow-Origin", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
+  }
+  
   headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   
@@ -91,8 +101,8 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 }
 
 // Handle preflight requests
-export async function OPTIONS() {
-  return jsonResponse({});
+export async function OPTIONS(request: NextRequest) {
+  return jsonResponse({}, undefined, request);
 }
 
 /**
@@ -211,8 +221,11 @@ export async function GET(request: NextRequest) {
             },
           });
         }
-      } catch {
+      } catch (error) {
         // Continue to create new conversation if not found
+        logger.debug("Conversation not found, will create new", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
 
       // Create new conversation
@@ -356,6 +369,21 @@ export async function POST(request: NextRequest) {
     };
 
     const { conversationId, senderId, receiverId, text, imageFileId, imageUrl, attachments, replyToId, mentions } = body;
+
+    // Validate direct message data
+    const validation = validateBody(directMessageSchema, {
+      text,
+      recipientId: receiverId,
+      replyTo: replyToId,
+    });
+    
+    if (!validation.success && text) {
+      logger.warn("Direct message validation failed", { error: validation.error, issues: validation.issues });
+      return jsonResponse(
+        { error: validation.error, issues: validation.issues },
+        { status: 400 }
+      );
+    }
     
     addTransactionAttributes({
       userId: session.$id,
@@ -605,7 +633,7 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       // biome-ignore lint: development debugging
-      console.error("PATCH /api/direct-messages error:", error);
+      logger.error("PATCH /api/direct-messages error:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     }
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },
@@ -673,7 +701,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       // biome-ignore lint: development debugging
-      console.error("DELETE /api/direct-messages error:", error);
+      logger.error("DELETE /api/direct-messages error:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     }
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal server error" },

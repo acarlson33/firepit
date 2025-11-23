@@ -63,46 +63,52 @@ export function useStatusSubscription(userIds: string[]) {
 			return;
 		}
 
+		let unsubscribe: (() => void) | undefined;
+
 		// Import dynamically to avoid SSR issues
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+		import("appwrite")
+			.then(({ Client }) => {
+				const client = new Client()
+					.setEndpoint(env.endpoint)
+					.setProject(env.project);
 
-			const unsubscribe = client.subscribe(
-				`databases.${env.databaseId}.collections.${STATUSES_COLLECTION}.documents`,
-				(response) => {
-					const payload = response.payload as Record<string, unknown>;
-					const userId = payload.userId as string | undefined;
+				unsubscribe = client.subscribe(
+					`databases.${env.databaseId}.collections.${STATUSES_COLLECTION}.documents`,
+					(response) => {
+						const payload = response.payload as Record<string, unknown>;
+						const userId = payload.userId as string | undefined;
 
-					// Only update if this status is for one of our tracked users
-					if (userId && userIds.includes(userId)) {
-						const status: UserStatus = {
-							$id: String(payload.$id),
-							userId: String(payload.userId),
-							status: String(payload.status) as "online" | "away" | "busy" | "offline",
-							customMessage: payload.customMessage ? String(payload.customMessage) : undefined,
-							lastSeenAt: String(payload.lastSeenAt),
-							expiresAt: payload.expiresAt ? String(payload.expiresAt) : undefined,
-							isManuallySet: payload.isManuallySet ? Boolean(payload.isManuallySet) : undefined,
-							$updatedAt: payload.$updatedAt ? String(payload.$updatedAt) : undefined,
-						};
+						// Only update if this status is for one of our tracked users
+						if (userId && userIds.includes(userId)) {
+							const status: UserStatus = {
+								$id: String(payload.$id),
+								userId: String(payload.userId),
+								status: String(payload.status) as "online" | "away" | "busy" | "offline",
+								customMessage: payload.customMessage ? String(payload.customMessage) : undefined,
+								lastSeenAt: String(payload.lastSeenAt),
+								expiresAt: payload.expiresAt ? String(payload.expiresAt) : undefined,
+								isManuallySet: payload.isManuallySet ? Boolean(payload.isManuallySet) : undefined,
+								$updatedAt: payload.$updatedAt ? String(payload.$updatedAt) : undefined,
+							};
 
-						setStatuses((prev) => {
-							const next = new Map(prev);
-							next.set(userId, status);
-							return next;
-						});
-					}
-				},
-			);
+							setStatuses((prev) => {
+								const next = new Map(prev);
+								next.set(userId, status);
+								return next;
+							});
+						}
+					},
+				);
+			})
+			.catch(() => {
+				// Ignore subscription errors
+			});
 
-			return () => {
+		return () => {
+			if (unsubscribe) {
 				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
+			}
+		};
 	}, [userIds.join(",")]); // Re-subscribe when user IDs change
 
 	return {

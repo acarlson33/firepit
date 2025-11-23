@@ -9,6 +9,12 @@ const MESSAGES_COLLECTION = "messages";
 
 type PageResult<T> = { items: T[]; nextCursor?: string | null };
 
+/**
+ * List all servers with pagination
+ * @param limit - Maximum number of servers to return
+ * @param cursor - Cursor for pagination (ID of last server from previous page)
+ * @returns Promise resolving to paginated server list with next cursor
+ */
 export async function listAllServersPage(
   limit: number,
   cursor?: string
@@ -50,6 +56,13 @@ export async function listAllServersPage(
   }
 }
 
+/**
+ * List all channels in a server with pagination
+ * @param serverId - ID of the server to get channels from
+ * @param limit - Maximum number of channels to return
+ * @param cursor - Cursor for pagination (ID of last channel from previous page)
+ * @returns Promise resolving to paginated channel list with next cursor
+ */
 export async function listAllChannelsPage(
   serverId: string,
   limit: number,
@@ -275,6 +288,11 @@ export function postFilterMessages<
   });
 }
 
+/**
+ * Get an admin-authenticated Appwrite client with database access
+ * @returns Appwrite client and database instances with admin permissions
+ * @throws Error if Appwrite configuration is missing
+ */
 export function getAdminClient() {
   const { client, databases, teams } = getServerClient();
   const storage = new Storage(client);
@@ -282,9 +300,15 @@ export function getAdminClient() {
 }
 
 // Admin moderation functions that bypass document permissions
+/**
+ * Soft delete a message (marks as deleted without removing from database)
+ * @param messageId - ID of the message to soft delete
+ * @param deletedBy - ID of the user performing the deletion
+ * @returns Promise that resolves when message is marked as deleted
+ */
 export async function adminSoftDeleteMessage(
   messageId: string,
-  moderatorId: string
+  deletedBy: string,
 ) {
   const { databases } = getAdminClient();
   const dbId = getEnvConfig().databaseId;
@@ -293,10 +317,15 @@ export async function adminSoftDeleteMessage(
     dbId,
     MESSAGES_COLLECTION,
     messageId,
-    { removedAt, removedBy: moderatorId }
+    { removedAt, removedBy: deletedBy }
   );
 }
 
+/**
+ * Restore a soft-deleted message
+ * @param messageId - ID of the message to restore
+ * @returns Promise that resolves when message is restored
+ */
 export async function adminRestoreMessage(messageId: string) {
   const { databases } = getAdminClient();
   const dbId = getEnvConfig().databaseId;
@@ -308,6 +337,11 @@ export async function adminRestoreMessage(messageId: string) {
   );
 }
 
+/**
+ * Permanently delete a message from the database
+ * @param messageId - ID of the message to permanently delete
+ * @returns Promise that resolves when message is deleted
+ */
 export async function adminDeleteMessage(messageId: string) {
   const { databases } = getAdminClient();
   const dbId = getEnvConfig().databaseId;
