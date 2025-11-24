@@ -236,7 +236,7 @@ async function ensureStringArrayAttribute(
 	}
 }
 
-type IndexType = "key" | "fulltext"; // subset used
+type IndexType = "key" | "fulltext" | "unique"; // subset used
 async function waitForAttribute(
 	collection: string,
 	key: string,
@@ -363,6 +363,8 @@ async function setupServers() {
 	await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
 	await ensureIntegerAttribute("servers", "memberCount", false, 1, 0, 1000000);
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
+	// Performance index: Query by owner
+	await ensureIndex("servers", "idx_owner", "key", ["ownerId"]);
 }
 
 async function setupChannels() {
@@ -398,6 +400,8 @@ async function setupMessages() {
 	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
 	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
 	await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
+	// Performance index: Query by channel and sort by creation time
+	await ensureIndex("messages", "idx_channel_created", "key", ["channelId", "$createdAt"]);
 	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
@@ -450,7 +454,8 @@ async function setupMemberships() {
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("memberships", "idx_server", "key", ["serverId"]);
 	await ensureIndex("memberships", "idx_user", "key", ["userId"]);
-	await ensureIndex("memberships", "idx_server_user", "key", [
+	// Unique constraint: Prevents duplicate memberships (one per server per user)
+	await ensureIndex("memberships", "idx_server_user", "unique", [
 		"serverId",
 		"userId",
 	]);
@@ -514,6 +519,8 @@ async function setupInvites() {
 	await ensureIndex("invites", "idx_code", "unique", ["code"]);
 	await ensureIndex("invites", "idx_server", "key", ["serverId"]);
 	await ensureIndex("invites", "idx_creator", "key", ["creatorId"]);
+	// Performance index: Improves lookup of active invites per server
+	await ensureIndex("invites", "idx_server_expires", "key", ["serverId", "expiresAt"]);
 }
 
 async function setupInviteUsage() {
@@ -530,6 +537,8 @@ async function setupInviteUsage() {
 	await ensureIndex("invite_usage", "idx_code", "key", ["inviteCode"]);
 	await ensureIndex("invite_usage", "idx_user", "key", ["userId"]);
 	await ensureIndex("invite_usage", "idx_server", "key", ["serverId"]);
+	// Performance index: Improves duplicate usage check
+	await ensureIndex("invite_usage", "idx_invite_user", "key", ["inviteCode", "userId"]);
 }
 
 async function setupStatuses() {
@@ -562,6 +571,7 @@ async function setupDirectMessages() {
 	const fields: [string, number, boolean][] = [
 		["senderId", LEN_ID, true],
 		["receiverId", LEN_ID, true],
+		["conversationId", LEN_ID, false], // Links to conversations collection for DM grouping
 		["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
@@ -576,6 +586,8 @@ async function setupDirectMessages() {
 	await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
 	await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
 	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
+	// Performance index: Query by conversation and sort by creation time
+	await ensureIndex("direct_messages", "idx_conversation_created", "key", ["conversationId", "$createdAt"]);
 }
 
 async function ensureBucket(
