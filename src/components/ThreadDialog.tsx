@@ -165,7 +165,7 @@ export function ThreadDialog({
 					className={`flex gap-3 p-3 ${isMine ? "justify-end" : ""}`}
 				>
 					{!isMine && (
-						<div className="flex-shrink-0">
+						<div className="shrink-0">
 							{avatarUrl ? (
 								<Image
 									src={avatarUrl}
@@ -195,7 +195,7 @@ export function ThreadDialog({
 									: "bg-muted"
 							}`}
 						>
-							<p className="whitespace-pre-wrap break-words text-sm">
+							<p className="whitespace-pre-wrap wrap-break-word text-sm">
 								{msg.text}
 							</p>
 						</div>
@@ -219,7 +219,7 @@ export function ThreadDialog({
 				{/* Parent message */}
 				<div className="border-b bg-muted/50 p-4">
 					<div className="flex gap-3">
-						<div className="flex-shrink-0">
+						<div className="shrink-0">
 							{getAvatarUrl(parentMessage) ? (
 								<Image
 									src={getAvatarUrl(parentMessage) || ""}
@@ -245,7 +245,7 @@ export function ThreadDialog({
 									})}
 								</span>
 							</div>
-							<p className="mt-1 whitespace-pre-wrap break-words text-sm">
+							<p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm">
 								{parentMessage.text}
 							</p>
 						</div>

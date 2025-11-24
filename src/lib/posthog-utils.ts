@@ -377,3 +377,20 @@ export class PerformanceTimer {
 export function startTimer(eventName: string, userId?: string): PerformanceTimer {
   return new PerformanceTimer(eventName, userId);
 }
+
+/**
+ * Track a message event (sent, edited, deleted)
+ */
+export function trackMessage(
+  type: 'sent' | 'edited' | 'deleted',
+  channelType: 'channel' | 'dm',
+  attributes?: Record<string, unknown>
+) {
+  recordEvent('Message', {
+    type,
+    channelType,
+    ...attributes,
+  });
+
+  incrementMetric(`Custom/Message/${type}/${channelType}`);
+}
