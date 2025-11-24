@@ -571,7 +571,7 @@ async function setupDirectMessages() {
 	const fields: [string, number, boolean][] = [
 		["senderId", LEN_ID, true],
 		["receiverId", LEN_ID, true],
-		["conversationId", LEN_ID, false], // Added for performance indexes
+		["conversationId", LEN_ID, false], // Links to conversations collection for DM grouping
 		["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
 		["editedAt", LEN_TS, false],
 		["removedAt", LEN_TS, false],
