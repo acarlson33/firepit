@@ -119,13 +119,17 @@ export function useDirectMessages({
 					(response) => {
 						const payload = response.payload as Record<string, unknown>;
 						const msgConversationId = payload.conversationId;
+						const msgThreadId = payload.threadId as string | undefined;
 						const events = response.events as string[];
 
 						// Only update if message belongs to this conversation
-						if (msgConversationId === conversationId) {
+						// Exclude thread replies - they should only appear in ThreadDialog
+						if (msgConversationId === conversationId && !msgThreadId) {
 							const messageData = {
 								...(payload as unknown as DirectMessage),
 								reactions: parseReactions((payload as Record<string, unknown>).reactions as string | undefined),
+								threadCount: typeof payload.threadCount === 'number' ? payload.threadCount : undefined,
+								lastThreadReplyAt: payload.lastThreadReplyAt as string | undefined,
 							};
 							
 							// Handle different event types to avoid full reload

@@ -40,6 +40,10 @@ export type Message = {
     userIds: string[]; // Array of user IDs who used this reaction
     count: number; // Total count for this emoji
   }>;
+  // Thread fields
+  threadId?: string; // Parent message ID if this is a thread reply
+  threadCount?: number; // Number of replies in this thread (only on parent messages)
+  lastThreadReplyAt?: string; // ISO timestamp of last thread reply (only on parent messages)
   // Profile information (enriched from profiles collection)
   displayName?: string;
   pronouns?: string;
@@ -50,6 +54,13 @@ export type Message = {
     text: string;
     userName?: string;
     displayName?: string;
+  };
+  // Thread preview (enriched from latest thread reply)
+  threadPreview?: {
+    userName?: string;
+    displayName?: string;
+    text: string;
+    timestamp: string;
   };
 };
 
@@ -130,6 +141,10 @@ export type DirectMessage = {
     userIds: string[]; // Array of user IDs who used this reaction
     count: number; // Total count for this emoji
   }>;
+  // Thread fields
+  threadId?: string; // Parent message ID if this is a thread reply
+  threadCount?: number; // Number of replies in this thread (only on parent messages)
+  lastThreadReplyAt?: string; // ISO timestamp of last thread reply (only on parent messages)
   // Enriched profile data
   senderDisplayName?: string;
   senderAvatarUrl?: string;
@@ -139,7 +154,13 @@ export type DirectMessage = {
     text: string;
     senderDisplayName?: string;
   };
-};
+  // Thread preview (enriched from latest thread reply)
+  threadPreview?: {
+    senderDisplayName?: string;
+    text: string;
+    timestamp: string;
+  };
+}
 
 export type UserStatus = {
   $id: string;

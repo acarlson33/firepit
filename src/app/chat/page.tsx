@@ -18,6 +18,8 @@ import { MessageWithMentions } from "@/components/message-with-mentions";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import { ReactionPicker } from "@/components/reaction-picker";
+import { ThreadIndicator } from "@/components/ThreadIndicator";
+import { ThreadDialog } from "@/components/ThreadDialog";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
@@ -100,6 +102,8 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [threadDialogOpen, setThreadDialogOpen] = useState(false);
+  const [selectedThreadMessage, setSelectedThreadMessage] = useState<typeof messages[0] | typeof dmApi.messages[0] | null>(null);
   const _messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -733,6 +737,17 @@ export default function ChatPage() {
                   </div>
                 )}
 
+                {/* Thread Indicator */}
+                {!removed && (
+                  <ThreadIndicator
+                    message={m}
+                    onClick={() => {
+                      setSelectedThreadMessage(m);
+                      setThreadDialogOpen(true);
+                    }}
+                  />
+                )}
+
                 {!removed && (
                   <div
                     className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
@@ -747,10 +762,24 @@ export default function ChatPage() {
                     <Button
                       onClick={() => startReply(m)}
                       size="sm"
+                      title="Reply"
                       type="button"
                       variant="ghost"
                     >
                       <MessageSquare className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setSelectedThreadMessage(m);
+                        setThreadDialogOpen(true);
+                      }}
+                      size="sm"
+                      title="Reply in thread"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      <span className="ml-1 text-xs">Thread</span>
                     </Button>
                     {mine && (
                       <>
@@ -1174,6 +1203,17 @@ export default function ChatPage() {
           serverId={serversApi.selectedServer}
           serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
           isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+
+      {/* Thread Dialog */}
+      {selectedThreadMessage && userId && (
+        <ThreadDialog
+          open={threadDialogOpen}
+          onOpenChange={setThreadDialogOpen}
+          parentMessage={selectedThreadMessage}
+          currentUserId={userId}
+          isDirectMessage={viewMode === "dms"}
         />
       )}
     </div>

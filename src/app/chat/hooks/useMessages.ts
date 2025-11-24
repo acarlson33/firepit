@@ -157,9 +157,16 @@ export function useMessages({
             replyToId: p.replyToId as string | undefined,
             reactions: parseReactions(p.reactions as string | undefined),
             mentions: Array.isArray(p.mentions) ? p.mentions as string[] : undefined,
+            threadId: p.threadId as string | undefined,
+            threadCount: typeof p.threadCount === 'number' ? p.threadCount : undefined,
+            lastThreadReplyAt: p.lastThreadReplyAt as string | undefined,
           } as Message;
         }
-        function includeMessage(base: { channelId?: string }) {
+        function includeMessage(base: { channelId?: string; threadId?: string }) {
+          // Exclude thread replies - they should only appear in ThreadDialog
+          if (base.threadId) {
+            return false;
+          }
           if (channelId && base.channelId !== channelId) {
             return false;
           }

@@ -390,10 +390,13 @@ async function setupMessages() {
 		["imageFileId", LEN_ID, false],
 		["imageUrl", 2000, false],
 		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+		["threadId", LEN_ID, false], // Parent message ID for thread replies
+		["lastThreadReplyAt", LEN_TS, false], // ISO timestamp of last thread reply
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("messages", k, size, req);
 	}
+	await ensureIntegerAttribute("messages", "threadCount", false, 0, 0, 100000);
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("messages", "idx_userId", "key", ["userId"]);
 	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
@@ -402,6 +405,8 @@ async function setupMessages() {
 	await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
 	// Performance index: Query by channel and sort by creation time
 	await ensureIndex("messages", "idx_channel_created", "key", ["channelId", "$createdAt"]);
+	// Thread index: Query by thread parent ID
+	await ensureIndex("messages", "idx_threadId", "key", ["threadId"]);
 	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
@@ -578,16 +583,21 @@ async function setupDirectMessages() {
 		["imageFileId", LEN_ID, false],
 		["imageUrl", 2000, false],
 		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+		["threadId", LEN_ID, false], // Parent message ID for thread replies
+		["lastThreadReplyAt", LEN_TS, false], // ISO timestamp of last thread reply
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("direct_messages", k, size, req);
 	}
+	await ensureIntegerAttribute("direct_messages", "threadCount", false, 0, 0, 100000);
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
 	await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
 	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
 	// Performance index: Query by conversation and sort by creation time
 	await ensureIndex("direct_messages", "idx_conversation_created", "key", ["conversationId", "$createdAt"]);
+	// Thread index: Query by thread parent ID
+	await ensureIndex("direct_messages", "idx_threadId", "key", ["threadId"]);
 }
 
 async function ensureBucket(

@@ -18,6 +18,8 @@ import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { VirtualizedDMList } from "@/components/virtualized-dm-list";
+import { ThreadIndicator } from "@/components/ThreadIndicator";
+import { ThreadDialog } from "@/components/ThreadDialog";
 import type { DirectMessage, Conversation, FileAttachment, Message } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -62,6 +64,8 @@ export function DirectMessageView({
 	const [uploadingImage, setUploadingImage] = useState(false);
 	const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
 	const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+	const [threadDialogOpen, setThreadDialogOpen] = useState(false);
+	const [selectedThreadMessage, setSelectedThreadMessage] = useState<DirectMessage | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -459,6 +463,17 @@ export function DirectMessageView({
 											))}
 										</div>
 									)}
+									{!removed && message.threadCount !== undefined && message.threadCount > 0 && (
+										<div className="mt-1">
+											<ThreadIndicator
+												message={message}
+												onClick={() => {
+													setSelectedThreadMessage(message);
+													setThreadDialogOpen(true);
+												}}
+											/>
+										</div>
+									)}
 									{!removed && (
 										<div className={`mt-1 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMine ? "justify-end" : ""}`}>
 											<ReactionPicker
@@ -479,8 +494,22 @@ export function DirectMessageView({
 												size="sm"
 												type="button"
 												variant="ghost"
+												title="Reply directly"
 											>
 												<MessageSquare className="h-4 w-4" />
+											</Button>
+											<Button
+												onClick={() => {
+													setSelectedThreadMessage(message);
+													setThreadDialogOpen(true);
+												}}
+												size="sm"
+												type="button"
+												variant="ghost"
+												title="Reply in thread"
+											>
+												<MessageSquare className="mr-1 h-4 w-4" />
+												Thread
 											</Button>
 											{isMine && (
 												<>
@@ -700,6 +729,20 @@ export function DirectMessageView({
 						setViewingImage(null);
 					}}
 					src={viewingImage.url}
+				/>
+			)}
+			{selectedThreadMessage && (
+				<ThreadDialog
+					open={threadDialogOpen}
+					onOpenChange={(open: boolean) => {
+						setThreadDialogOpen(open);
+						if (!open) {
+							setSelectedThreadMessage(null);
+						}
+					}}
+					parentMessage={selectedThreadMessage}
+					currentUserId={currentUserId}
+					isDirectMessage={true}
 				/>
 			)}
 		</div>
