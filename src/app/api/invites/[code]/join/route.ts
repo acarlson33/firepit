@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { useInvite } from "@/lib/appwrite-invites";
-import { logger, recordError } from "@/lib/newrelic-utils";
+import { logger, recordError } from "@/lib/posthog-utils";
 
 /**
  * POST /api/invites/[code]/join - Join a server via invite code

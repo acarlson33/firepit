@@ -13,11 +13,16 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log error to New Relic or monitoring service
+    // Log error to PostHog
     if (typeof window !== "undefined") {
-      const newrelic = (window as unknown as { newrelic?: { noticeError: (error: Error) => void } }).newrelic;
-      if (newrelic) {
-        newrelic.noticeError(error);
+      const posthog = (window as unknown as { posthog?: { capture: (event: string, properties?: Record<string, unknown>) => void } }).posthog;
+      if (posthog) {
+        posthog.capture('$exception', {
+          $exception_type: error.name,
+          $exception_message: error.message,
+          $exception_stack_trace: error.stack,
+          digest: error.digest,
+        });
       }
     }
   }, [error]);

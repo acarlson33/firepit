@@ -38,8 +38,6 @@ const nextConfig = {
     APPWRITE_ADMIN_USER_IDS: process.env.APPWRITE_ADMIN_USER_IDS,
     APPWRITE_MODERATOR_USER_IDS: process.env.APPWRITE_MODERATOR_USER_IDS,
     SERVER_URL: process.env.SERVER_URL,
-    NEW_RELIC_LICENSE_KEY: process.env.NEW_RELIC_LICENSE_KEY,
-    NEW_RELIC_APP_NAME: process.env.NEW_RELIC_APP_NAME,
   },
 
   compiler: {
@@ -149,11 +147,27 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "nyc.cloud.appwrite.io",
-      pathname: "/v1/storage/buckets/images/files/**",
-    },
-  ],
-  formats: ["image/avif", "image/webp"],
-},
+        pathname: "/v1/storage/buckets/images/files/**",
+      },
+    ],
+    formats: ["image/avif", "image/webp"],
+  },
+
+  // This is required to support PostHog trailing slash API requests
+  skipTrailingSlashRedirect: true,
+
+  async rewrites() {
+    return [
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://us.i.posthog.com/:path*",
+      },
+    ];
+  },
 
   // Add caching headers for static assets
   async headers() {

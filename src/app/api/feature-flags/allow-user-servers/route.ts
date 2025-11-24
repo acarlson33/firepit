@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 import { getFeatureFlag, FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export async function GET() {

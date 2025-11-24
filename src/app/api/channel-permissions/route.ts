@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Query, ID } from "node-appwrite";
 import type { Permission } from "@/lib/types";
 import { getAdminClient } from "@/lib/appwrite-admin";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
 const env = getEnvConfig();

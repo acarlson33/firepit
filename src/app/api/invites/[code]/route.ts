@@ -3,7 +3,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
 import { getInviteByCode, revokeInvite, getServerPreview } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-core";
-import { logger, recordError } from "@/lib/newrelic-utils";
+import { logger, recordError } from "@/lib/posthog-utils";
 
 const { databases } = getServerClient();
 const env = await import("@/lib/appwrite-core").then((m) => m.getEnvConfig());

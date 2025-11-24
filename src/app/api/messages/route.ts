@@ -13,7 +13,7 @@ import {
 	trackApiCall,
 	trackMessage,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { messageSchema, validateBody } from "@/lib/validation";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID || "message_attachments";

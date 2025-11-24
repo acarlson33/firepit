@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query, ID } from "node-appwrite";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";

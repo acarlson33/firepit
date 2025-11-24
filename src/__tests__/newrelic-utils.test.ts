@@ -8,7 +8,7 @@ import {
   recordEvent,
   trackDatabaseQuery,
   recordMetric,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 // Mock New Relic
 const mockNewRelic = {

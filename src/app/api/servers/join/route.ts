@@ -12,7 +12,7 @@ import {
 	trackApiCall,
 	addTransactionAttributes,
 	recordEvent,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 /**
  * POST /api/servers/join

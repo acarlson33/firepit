@@ -12,7 +12,7 @@ import {
 	setTransactionName,
 	trackApiCall,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { getProfilesByUserIds, getAvatarUrl } from "@/lib/appwrite-profiles";
 
 /**

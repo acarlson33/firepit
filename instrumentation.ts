@@ -2,49 +2,43 @@
  * Next.js Instrumentation Hook
  * 
  * This file is automatically loaded by Next.js on both server and edge runtimes.
- * It initializes New Relic APM for server-side monitoring.
+ * It initializes PostHog for server-side analytics and monitoring.
  * 
  * Documentation: https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  */
 
 export async function register() {
-  // Only initialize New Relic on the Node.js runtime (not Edge runtime)
+  // Only initialize PostHog on the Node.js runtime (not Edge runtime)
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const newrelicLicenseKey = process.env.NEW_RELIC_LICENSE_KEY;
-    const newrelicAppName = process.env.NEW_RELIC_APP_NAME;
+    const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
-    // Only initialize if both license key and app name are provided
-    if (newrelicLicenseKey && newrelicAppName) {
+    // Only initialize if PostHog key is provided
+    if (posthogKey) {
       try {
-        // Dynamic import to avoid loading New Relic on Edge runtime
-        // New Relic will automatically load the newrelic.cjs config file
-        const newrelic = await import("newrelic");
+        // Dynamic import to avoid loading PostHog on Edge runtime
+        const { initPostHog } = await import("./src/lib/posthog-utils");
         
-        console.log(`[New Relic] Initialized for app: ${newrelicAppName}`);
-        console.log(`[New Relic] Configuration loaded from newrelic.cjs`);
-        console.log(`[New Relic] Features enabled:`);
-        console.log(`  - Application Performance Monitoring (APM)`);
-        console.log(`  - Error Tracking`);
-        console.log(`  - Transaction Tracing`);
-        console.log(`  - Distributed Tracing`);
-        console.log(`  - Application Logging`);
-        console.log(`  - Custom Events and Metrics`);
-        console.log(`  - Browser Monitoring (RUM)`);
+        const posthog = initPostHog();
         
-        // Return the newrelic instance for potential use
-        return newrelic;
+        if (posthog) {
+          console.log(`[PostHog] Initialized successfully`);
+          console.log(`[PostHog] Features enabled:`);
+          console.log(`  - Product Analytics`);
+          console.log(`  - Error Tracking`);
+          console.log(`  - Session Recording`);
+          console.log(`  - Feature Flags`);
+          console.log(`  - A/B Testing`);
+          console.log(`  - Custom Events and Properties`);
+        }
+        
+        return posthog;
       } catch (error) {
-        // If New Relic fails to initialize, log the error but don't crash the app
-        console.error("[New Relic] Failed to initialize:", error instanceof Error ? error.message : String(error));
+        // If PostHog fails to initialize, log the error but don't crash the app
+        console.error("[PostHog] Failed to initialize:", error instanceof Error ? error.message : String(error));
       }
     } else {
       // If credentials are missing, log a warning but don't fail
-      if (!newrelicLicenseKey) {
-        console.warn("[New Relic] NEW_RELIC_LICENSE_KEY not found - APM monitoring disabled");
-      }
-      if (!newrelicAppName) {
-        console.warn("[New Relic] NEW_RELIC_APP_NAME not found - APM monitoring disabled");
-      }
+      console.warn("[PostHog] NEXT_PUBLIC_POSTHOG_KEY not found - analytics disabled");
     }
   }
 }

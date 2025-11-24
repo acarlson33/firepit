@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
 import { UnauthorizedError, ForbiddenError } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 
 /**
  * Session type returned by authentication

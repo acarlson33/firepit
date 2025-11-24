@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { CustomEmoji } from "@/lib/types";

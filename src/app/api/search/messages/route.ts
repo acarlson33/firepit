@@ -12,7 +12,7 @@ import {
 	recordError,
 	setTransactionName,
 	trackApiCall,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { compressedResponse } from "@/lib/api-compression";
 
 type SearchResult = {

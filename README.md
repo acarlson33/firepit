@@ -90,7 +90,8 @@ See the `/docs` folder for detailed guides:
 -   [Turbopack Configuration](./TURBOPACK_CONFIG.md) - Build tool configuration
 -   [Admin Guide](./docs/ADMIN_GUIDE.md) - Moderation and administration
 -   [Roles & Permissions](./docs/ROLES_AND_PERMISSIONS.md) - Permission system
--   [New Relic Integration](./docs/NEW_RELIC.md) - APM and monitoring setup
+-   [PostHog Integration](./docs/POSTHOG.md) - Analytics, feature flags, and monitoring
+-   [PostHog Migration](./docs/POSTHOG_MIGRATION.md) - Migration from New Relic
 -   [Typing Indicators](./docs/TYPING_INDICATORS.md) - Real-time presence
 -   [Roadmap](./ROADMAP.md) - Planned features and timeline
 -   [Changelog](./CHANGELOG.md) - Version history and release notes
@@ -119,7 +120,9 @@ Firepit is production-ready with:
 
 ✅ **Monitoring & Observability**
 
--   New Relic APM integration
+-   PostHog analytics and monitoring
+-   Session recording and replay
+-   Feature flags and A/B testing
 -   Comprehensive error tracking
 -   Performance metrics
 -   Audit logging

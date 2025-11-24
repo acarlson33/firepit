@@ -9,7 +9,7 @@ import {
 	trackApiCall,
 	addTransactionAttributes,
 	recordEvent,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;

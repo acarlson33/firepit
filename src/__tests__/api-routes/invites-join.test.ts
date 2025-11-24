@@ -6,7 +6,7 @@ import * as appwriteInvites from "@/lib/appwrite-invites";
 // Mock modules
 vi.mock("@/lib/auth-server");
 vi.mock("@/lib/appwrite-invites");
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: {
 		info: vi.fn(),
 		error: vi.fn(),

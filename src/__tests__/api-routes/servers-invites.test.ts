@@ -16,7 +16,7 @@ vi.mock("@/lib/appwrite-roles", () => ({
 	getUserRoles: vi.fn(),
 }));
 vi.mock("@/lib/appwrite-invites");
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 	recordError: vi.fn(),
 }));

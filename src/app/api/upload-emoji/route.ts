@@ -4,7 +4,7 @@ import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 
 // Helper to create JSON responses with CORS headers
 async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRequest) {

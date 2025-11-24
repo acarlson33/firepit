@@ -12,7 +12,7 @@ import {
 	trackApiCall,
 	addTransactionAttributes,
 	recordEvent,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 // Helper function to create a deterministic, short document ID for typing status
 // Works for both channels and DM conversations by accepting any context ID

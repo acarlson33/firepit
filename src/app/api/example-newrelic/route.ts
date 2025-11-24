@@ -18,7 +18,7 @@ import {
   trackApiCall,
   measureAsync,
   addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();

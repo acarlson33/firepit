@@ -12,7 +12,7 @@ import {
 	trackApiCall,
 	trackMessage,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { shouldCompress } from "@/lib/compression-utils";
 import { validateBody, directMessageSchema } from "@/lib/validation";
 

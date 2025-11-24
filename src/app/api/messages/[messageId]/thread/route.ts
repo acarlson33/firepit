@@ -12,7 +12,7 @@ import {
 	setTransactionName,
 	trackApiCall,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { enrichMessagesWithProfiles } from "@/lib/enrich-messages";
 
 type RouteContext = {

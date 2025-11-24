@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Query, ID } from "node-appwrite";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 
 const env = getEnvConfig();
 const roleAssignmentsCollectionId = "role_assignments";

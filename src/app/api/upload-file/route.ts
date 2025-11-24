@@ -12,7 +12,7 @@ import {
 	trackApiCall,
 	addTransactionAttributes,
 	recordEvent,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 // Helper to create JSON responses with CORS headers
 async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRequest) {

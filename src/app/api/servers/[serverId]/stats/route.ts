@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query } from "node-appwrite";
 import { withAuth } from "@/lib/api-middleware";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";

@@ -3,7 +3,7 @@ import { Query, ID } from "node-appwrite";
 import { z } from "zod";
 import type { Role } from "@/lib/types";
 import { roleSchema, validateBody } from "@/lib/validation";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 

@@ -8,7 +8,7 @@ import {
   setTransactionName,
   trackApiCall,
   addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import { compressedResponse } from "@/lib/api-compression";
 
 /**

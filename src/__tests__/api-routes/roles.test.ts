@@ -55,7 +55,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 // Mock New Relic utilities
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: {
 		info: vi.fn(),
 		warn: vi.fn(),

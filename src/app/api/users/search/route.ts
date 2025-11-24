@@ -5,7 +5,7 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { withAuth } from "@/lib/api-middleware";
-import { logger } from "@/lib/newrelic-utils";
+import { logger } from "@/lib/posthog-utils";
 
 async function handler(request: NextRequest) {
 	try {

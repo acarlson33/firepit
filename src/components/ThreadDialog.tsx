@@ -222,7 +222,7 @@ export function ThreadDialog({
 						<div className="flex-shrink-0">
 							{getAvatarUrl(parentMessage) ? (
 								<Image
-									src={getAvatarUrl(parentMessage)!}
+									src={getAvatarUrl(parentMessage) || ""}
 									alt={getDisplayName(parentMessage)}
 									width={40}
 									height={40}

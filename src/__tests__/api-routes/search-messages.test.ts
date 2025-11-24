@@ -53,7 +53,7 @@ vi.mock("@/lib/appwrite-profiles", () => ({
 	getAvatarUrl: vi.fn((fileId: string) => `http://localhost/avatar/${fileId}`),
 }));
 
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: {
 		warn: vi.fn(),
 		info: vi.fn(),

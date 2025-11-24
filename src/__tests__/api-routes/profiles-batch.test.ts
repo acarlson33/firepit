@@ -15,7 +15,7 @@ vi.mock("@/lib/appwrite-status", () => ({
 	getUserStatus: vi.fn(),
 }));
 
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: {
 		info: vi.fn(),
 		warn: vi.fn(),

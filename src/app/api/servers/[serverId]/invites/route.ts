@@ -3,7 +3,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
 import { createInvite, listServerInvites } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-core";
-import { logger, recordError } from "@/lib/newrelic-utils";
+import { logger, recordError } from "@/lib/posthog-utils";
 import { inviteCreateSchema, validateBody } from "@/lib/validation";
 
 const { databases } = getServerClient();

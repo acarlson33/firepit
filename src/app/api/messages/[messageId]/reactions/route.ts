@@ -11,7 +11,7 @@ import {
 	setTransactionName,
 	trackApiCall,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 type RouteContext = {
 	params: Promise<{

@@ -7,7 +7,7 @@ import {
 	setTransactionName,
 	trackApiCall,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 import type { UserStatus } from "@/lib/types";
 
 const env = getEnvConfig();

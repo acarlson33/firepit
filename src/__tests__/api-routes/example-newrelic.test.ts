@@ -6,7 +6,7 @@ import { GET } from "@/app/api/example-newrelic/route";
 import { NextRequest } from "next/server";
 
 // Mock newrelic-utils
-vi.mock("@/lib/newrelic-utils", () => ({
+vi.mock("@/lib/posthog-utils", () => ({
 	logger: {
 		info: vi.fn(),
 		error: vi.fn(),
@@ -25,7 +25,7 @@ import {
 	trackApiCall,
 	measureAsync,
 	addTransactionAttributes,
-} from "@/lib/newrelic-utils";
+} from "@/lib/posthog-utils";
 
 describe("GET /api/example-newrelic", () => {
 	beforeEach(() => {
