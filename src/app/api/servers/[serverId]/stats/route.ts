@@ -1,9 +1,6 @@
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query } from "node-appwrite";
-import { withAuth } from "@/lib/api-middleware";
-import { logger } from "@/lib/newrelic-utils";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
@@ -13,19 +10,12 @@ const MEMBERSHIPS_COLLECTION_ID = process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
 const BANNED_USERS_COLLECTION_ID = process.env.APPWRITE_BANNED_USERS_COLLECTION_ID;
 const MUTED_USERS_COLLECTION_ID = process.env.APPWRITE_MUTED_USERS_COLLECTION_ID;
 
-type SessionContext = Awaited<ReturnType<typeof import("@/lib/api-middleware").requireAuth>>;
-
-type RouteContext = {
-  params: Promise<{ serverId: string }>;
-};
-
-async function handler(
-  request: NextRequest,
-  session: SessionContext,
-  context: RouteContext
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ serverId: string }> }
 ) {
   try {
-    const { serverId } = await context.params;
+    const { serverId } = await params;
     const { databases } = getServerClient();
 
     // Get server info to verify it exists
@@ -107,13 +97,10 @@ async function handler(
       mutedUsers,
     });
   } catch (error) {
-    logger.error("Error fetching server stats:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    console.error("Error fetching server stats:", error);
     return NextResponse.json(
       { error: "Failed to fetch server stats" },
       { status: 500 }
     );
   }
 }
-
-// Export with authentication middleware
-export const GET = withAuth(handler);

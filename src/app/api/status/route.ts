@@ -240,7 +240,7 @@ export async function GET(request: Request) {
 			{ status: 400 },
 		);
 	} catch (error) {
-		logger.error("Error in GET /api/status:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+		console.error("Error in GET /api/status:", error);
 		return NextResponse.json(
 			{ error: "Failed to get user status", details: error instanceof Error ? error.message : String(error) },
 			{ status: 500 },
@@ -252,10 +252,8 @@ export async function GET(request: Request) {
  * Update last seen timestamp (server-side)
  */
 export async function PATCH(request: Request) {
-	let userId: string | undefined;
 	try {
-		const body = await request.json();
-		userId = body.userId;
+		const { userId } = await request.json();
 
 		if (!userId) {
 			return NextResponse.json(
@@ -294,12 +292,7 @@ export async function PATCH(request: Request) {
 		}
 
 		return NextResponse.json({ success: true });
-	} catch (error) {
-		logger.error("Status update failed", {
-			error: error instanceof Error ? error.message : String(error),
-			stack: error instanceof Error ? error.stack : undefined,
-			userId,
-		});
+	} catch {
 		return NextResponse.json(
 			{ error: "Failed to update last seen" },
 			{ status: 500 },
@@ -353,7 +346,7 @@ export async function DELETE(request: Request) {
 
 		return NextResponse.json({ success: true, deletedId: doc.$id });
 	} catch (error) {
-		logger.error("Error in DELETE /api/status:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+		console.error("Error in DELETE /api/status:", error);
 		return NextResponse.json(
 			{ error: "Failed to delete user status", details: error instanceof Error ? error.message : String(error) },
 			{ status: 500 },

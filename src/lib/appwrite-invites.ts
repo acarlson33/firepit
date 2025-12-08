@@ -28,16 +28,13 @@ export type ValidationResult = {
 
 /**
  * Generate a unique invite code with collision retry logic
- * Uses increasing code length to reduce collision probability under high load
  */
 async function generateUniqueCode(): Promise<string> {
   const maxAttempts = 5;
   const { databases } = getServerClient();
 
   for (let i = 0; i < maxAttempts; i++) {
-    // Increase code length after first collision to reduce probability
-    const codeLength = 10 + (i > 0 ? i * 2 : 0); // 10, 12, 14, 16, 18
-    const code = nanoid(codeLength);
+    const code = nanoid(10);
     
     try {
       // Check if code exists
@@ -50,13 +47,6 @@ async function generateUniqueCode(): Promise<string> {
       if (existing.documents.length === 0) {
         return code;
       }
-      
-      // Log collision for monitoring
-      console.warn("Invite code collision detected", {
-        code: `${code.substring(0, 4)  }...`, // Partial code for privacy
-        attempt: i + 1,
-        codeLength,
-      });
     } catch (error) {
       // Continue to next attempt if query fails
       console.error("Code uniqueness check failed:", error);
@@ -202,52 +192,19 @@ export async function useInvite(
     return { success: false, error: "Failed to join server" };
   }
 
-  // Increment invite usage count with optimistic locking retry
-  const maxRetries = 3;
-  let usageUpdated = false;
-  
-  for (let attempt = 0; attempt < maxRetries && !usageUpdated; attempt++) {
-    try {
-      // Re-fetch invite to get latest currentUses value
-      const currentInvite = await databases.getDocument(
-        DATABASE_ID,
-        INVITES_COLLECTION_ID,
-        invite.$id
-      );
-      
-      const newUses = (currentInvite.currentUses as number) + 1;
-      
-      // Check if we would exceed maxUses
-      if (currentInvite.maxUses !== null && currentInvite.maxUses !== undefined) {
-        if (newUses > (currentInvite.maxUses as number)) {
-          console.warn("Invite usage would exceed maxUses during concurrent join", {
-            inviteId: invite.$id,
-            currentUses: currentInvite.currentUses,
-            maxUses: currentInvite.maxUses,
-          });
-          // Don't fail - membership already created
-          break;
-        }
+  // Increment invite usage count
+  try {
+    await databases.updateDocument(
+      DATABASE_ID,
+      INVITES_COLLECTION_ID,
+      invite.$id,
+      {
+        currentUses: invite.currentUses + 1,
       }
-      
-      await databases.updateDocument(
-        DATABASE_ID,
-        INVITES_COLLECTION_ID,
-        invite.$id,
-        {
-          currentUses: newUses,
-        }
-      );
-      
-      usageUpdated = true;
-    } catch (error) {
-      if (attempt === maxRetries - 1) {
-        console.error("Failed to update invite usage count after retries:", error);
-      } else {
-        // Wait briefly before retry
-        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      }
-    }
+    );
+  } catch (error) {
+    console.error("Failed to update invite usage count:", error);
+    // Non-fatal - membership was created successfully
   }
 
   // Record invite usage
@@ -268,33 +225,24 @@ export async function useInvite(
     // Non-fatal - membership was created successfully
   }
 
-  // Increment server member count with retry logic
-  let memberCountUpdated = false;
-  
-  for (let attempt = 0; attempt < maxRetries && !memberCountUpdated; attempt++) {
-    try {
-      const server = await databases.getDocument(
-        DATABASE_ID,
-        SERVERS_COLLECTION_ID,
-        invite.serverId
-      );
-      
-      const currentCount = typeof server.memberCount === 'number' ? server.memberCount : 0;
-      await databases.updateDocument(
-        DATABASE_ID,
-        SERVERS_COLLECTION_ID,
-        invite.serverId,
-        { memberCount: currentCount + 1 }
-      );
-      
-      memberCountUpdated = true;
-    } catch (error) {
-      if (attempt === maxRetries - 1) {
-        console.error("Failed to update server member count after retries:", error);
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      }
-    }
+  // Increment server member count
+  try {
+    const server = await databases.getDocument(
+      DATABASE_ID,
+      SERVERS_COLLECTION_ID,
+      invite.serverId
+    );
+    
+    const currentCount = typeof server.memberCount === 'number' ? server.memberCount : 0;
+    await databases.updateDocument(
+      DATABASE_ID,
+      SERVERS_COLLECTION_ID,
+      invite.serverId,
+      { memberCount: currentCount + 1 }
+    );
+  } catch (error) {
+    console.error("Failed to update server member count:", error);
+    // Non-fatal
   }
 
   return { success: true, serverId: invite.serverId };

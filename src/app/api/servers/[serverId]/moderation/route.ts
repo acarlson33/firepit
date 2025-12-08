@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-core";
 import { Query, ID } from "node-appwrite";
-import { logger } from "@/lib/newrelic-utils";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
@@ -103,7 +102,7 @@ export async function POST(
               );
             }
           } catch (error) {
-            logger.error("Error removing membership:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+            console.error("Error removing membership:", error);
           }
         } else {
           return NextResponse.json(
@@ -235,7 +234,7 @@ export async function POST(
       result,
     });
   } catch (error) {
-    logger.error("Error performing moderation action:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    console.error("Error performing moderation action:", error);
     return NextResponse.json(
       { error: "Failed to perform moderation action" },
       { status: 500 }

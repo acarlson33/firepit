@@ -87,11 +87,6 @@ function selectTeamsClient(): Teams | ServerTeams {
   return getBrowserTeams();
 }
 
-/**
- * Get user's role information (admin, moderator status)
- * @param userId - ID of the user to check roles for
- * @returns Promise resolving to RoleInfo with isAdmin and isModerator flags
- */
 export async function getUserRoles(userId: string | null): Promise<RoleInfo> {
   if (!userId) {
     return { isAdmin: false, isModerator: false };

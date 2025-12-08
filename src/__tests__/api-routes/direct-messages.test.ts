@@ -45,10 +45,6 @@ vi.mock("@/lib/appwrite-core", () => ({
 			directMessages: "direct-messages-collection",
 			messageAttachments: "message-attachments-collection",
 		},
-		teams: {
-			adminTeamId: "admin-team",
-			moderatorTeamId: "mod-team",
-		},
 	})),
 	getServerClient: vi.fn(() => ({
 		databases: {
@@ -59,15 +55,6 @@ vi.mock("@/lib/appwrite-core", () => ({
 			getDocument: mockGetDocument,
 		},
 	})),
-	perms: {
-		directMessage: vi.fn(() => []),
-	},
-	UnauthorizedError: class UnauthorizedError extends Error {
-		constructor(message = "Unauthorized") {
-			super(message);
-			this.name = "UnauthorizedError";
-		}
-	},
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
@@ -85,11 +72,6 @@ vi.mock("@/lib/newrelic-utils", () => ({
 
 vi.mock("@/lib/compression-utils", () => ({
 	shouldCompress: vi.fn(() => false),
-}));
-
-vi.mock("@/lib/validation", () => ({
-	validateBody: vi.fn(() => ({ success: true })),
-	directMessageSchema: {},
 }));
 
 vi.mock("node-appwrite", () => ({
