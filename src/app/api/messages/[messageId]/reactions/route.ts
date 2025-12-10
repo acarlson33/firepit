@@ -66,8 +66,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 			messageId
 		)) as unknown as Message;
 
-		// Initialize reactions array if it doesn't exist
-		// Parse reactions from JSON string if needed
+		// Parse reactions from the message
+		// Handles both JSON string and array formats
 		let reactions: Array<{
 			emoji: string;
 			userIds: string[];
@@ -208,8 +208,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 			messageId
 		)) as unknown as Message;
 
-		// Initialize reactions array if it doesn't exist
-		// Parse reactions from JSON string if needed
+		// Parse reactions from the message
+		// Handles both JSON string and array formats
 		let reactions: Array<{
 			emoji: string;
 			userIds: string[];
