@@ -59,7 +59,7 @@ export default async function Home() {
 			<div className="mx-auto w-full max-w-6xl px-6 py-12">
 				<div className="grid gap-12">
 					<section className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur-sm">
-												<div className="absolute -right-10 top-10 hidden h-40 w-40 rounded-full bg-linear-to-br from-sky-200/70 via-purple-200/60 to-transparent blur-3xl dark:from-sky-500/20 dark:via-purple-500/20 lg:block" />
+						<div className="absolute -right-10 top-10 hidden h-40 w-40 rounded-full bg-gradient-to-br from-sky-200/70 via-purple-200/60 to-transparent blur-3xl dark:from-sky-500/20 dark:via-purple-500/20 lg:block" aria-hidden="true" />
 						<div className="space-y-6 text-center lg:text-left">
 							<span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
 								<Sparkles className="h-3.5 w-3.5 text-sky-500" />
@@ -101,7 +101,7 @@ export default async function Home() {
 								key={feature.title}
 								className="relative overflow-hidden border border-border/60 bg-card/70 shadow-lg backdrop-blur-sm transition-transform hover:-translate-y-1"
 							>
-								<div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-linear-to-r ${feature.accentClass}`} aria-hidden="true" />
+								<div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${feature.accentClass}`} aria-hidden="true" />
 								<CardHeader className="space-y-4">
 									<span className="inline-flex items-center justify-center rounded-xl bg-muted/70 p-3 text-primary">
 										<feature.icon className="h-5 w-5" />

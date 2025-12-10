@@ -19,8 +19,8 @@ const { mockListDocuments, mockCreateDocument, mockUpdateDocument, mockDeleteDoc
 }));
 
 // Mock dependencies
-vi.mock("@/lib/appwrite-admin", () => ({
-	getAdminClient: vi.fn(() => ({
+vi.mock("@/lib/appwrite-server", () => ({
+	getServerClient: vi.fn(() => ({
 		databases: {
 			listDocuments: mockListDocuments,
 			createDocument: mockCreateDocument,

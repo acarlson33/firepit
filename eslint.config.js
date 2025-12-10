@@ -21,7 +21,6 @@ export default [{
         "**/*.spec.{ts,tsx}",
         "vitest.config.ts",
         "**/public/sw.js", // Generated service worker
-        "**/scripts/**", // Scripts excluded from TSConfig
     ],
 }, js.configs.recommended, // (Global rule sets follow in subsequent objects)
 {

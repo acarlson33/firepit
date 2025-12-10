@@ -5,59 +5,41 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET, POST, PUT, DELETE } from "@/app/api/channel-permissions/route";
 import { NextRequest } from "next/server";
 
-// Create persistent mocks
-const { mockListDocuments, mockCreateDocument, mockUpdateDocument, mockDeleteDocument } = vi.hoisted(() => ({
-	mockListDocuments: vi.fn(),
-	mockCreateDocument: vi.fn(),
-	mockUpdateDocument: vi.fn(),
-	mockDeleteDocument: vi.fn(),
-}));
-
-// Mock appwrite admin
-vi.mock("@/lib/appwrite-admin", () => ({
-	getAdminClient: vi.fn(() => ({
-		databases: {
-			listDocuments: mockListDocuments,
-			createDocument: mockCreateDocument,
-			updateDocument: mockUpdateDocument,
-			deleteDocument: mockDeleteDocument,
-		},
-	})),
-}));
-
-// Mock appwrite core
-vi.mock("@/lib/appwrite-core", () => ({
-	getEnvConfig: vi.fn(() => ({
-		databaseId: "test-db",
-		collections: {
-			channelPermissions: "channel-permissions-collection",
-		},
-	})),
-}));
-
 // Mock node-appwrite
-vi.mock("node-appwrite", () => ({
-	Query: {
-		equal: vi.fn((field, value) => `equal(${field},${value})`),
-		limit: vi.fn((value) => `limit(${value})`),
-	},
-	ID: {
-		unique: vi.fn(() => "unique-id"),
-	},
-}));
+vi.mock("node-appwrite", () => {
+	const mockDatabases = {
+		listDocuments: vi.fn(),
+		createDocument: vi.fn(),
+		updateDocument: vi.fn(),
+		deleteDocument: vi.fn(),
+	};
 
-// Mock New Relic
-vi.mock("@/lib/newrelic-utils", () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+	return {
+		Client: vi.fn(() => ({
+			setEndpoint: vi.fn().mockReturnThis(),
+			setProject: vi.fn().mockReturnThis(),
+			setKey: vi.fn().mockReturnThis(),
+		})),
+		Databases: vi.fn(() => mockDatabases),
+		Query: {
+			equal: vi.fn((field, value) => `equal(${field},${value})`),
+			limit: vi.fn((value) => `limit(${value})`),
+		},
+		ID: {
+			unique: vi.fn(() => "unique-id"),
+		},
+	};
+});
+
+import { Databases } from "node-appwrite";
 
 describe("GET /api/channel-permissions", () => {
+	let mockListDocuments: any;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		const databases = new Databases({} as any);
+		mockListDocuments = databases.listDocuments as any;
 	});
 
 	it("should return 400 if channelId is missing", async () => {
@@ -118,8 +100,14 @@ describe("GET /api/channel-permissions", () => {
 });
 
 describe("POST /api/channel-permissions", () => {
+	let mockCreateDocument: any;
+	let mockListDocuments: any;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		const databases = new Databases({} as any);
+		mockCreateDocument = databases.createDocument as any;
+		mockListDocuments = databases.listDocuments as any;
 	});
 
 	it("should return 400 if channelId is missing", async () => {
@@ -247,8 +235,12 @@ describe("POST /api/channel-permissions", () => {
 });
 
 describe("PUT /api/channel-permissions", () => {
+	let mockUpdateDocument: any;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		const databases = new Databases({} as any);
+		mockUpdateDocument = databases.updateDocument as any;
 	});
 
 	it("should return 400 if overrideId is missing", async () => {
@@ -293,8 +285,12 @@ describe("PUT /api/channel-permissions", () => {
 });
 
 describe("DELETE /api/channel-permissions", () => {
+	let mockDeleteDocument: any;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+		const databases = new Databases({} as any);
+		mockDeleteDocument = databases.deleteDocument as any;
 	});
 
 	it("should return 400 if overrideId is missing", async () => {

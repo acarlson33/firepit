@@ -852,9 +852,9 @@ type FeatureFlag = {
 
 -   ✅ Per-Server Roles & Permissions (COMPLETED October 2025)
 -   ✅ User Kick/Ban/Timeout (COMPLETED October 2025 - moved from Q3)
--   ✅ Message Search (COMPLETED November 2025)
--   ✅ File Attachments (Beyond Images) (COMPLETED November 2025)
--   ✅ Server Invite System (COMPLETED November 2025)
+-   ✅ Message Search (COMPLETED January 2026)
+-   ✅ File Attachments (Beyond Images) (COMPLETED January 2026)
+-   ✅ Server Invite System (COMPLETED January 2026)
 
 ### Q2 2026 (Apr - Jun)
 
@@ -866,7 +866,7 @@ type FeatureFlag = {
 
 -   🎯 Friend System & Blocking
 -   🎯 Better Notification Controls
--   ✅ User Kick/Ban/Timeout (Completed early in Q4 2025)
+-   ✅ User Kick/Ban/Timeout (Completed early in Q1 2026)
 
 ---
 

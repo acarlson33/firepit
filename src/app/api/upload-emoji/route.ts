@@ -4,21 +4,11 @@ import { ID, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
 
 // Helper to create JSON responses with CORS headers
-async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRequest) {
+function jsonResponse(data: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
-  
-  // Use secure CORS validation from api-middleware when request provided
-  if (request) {
-    const { setCorsHeaders } = await import("@/lib/api-middleware");
-    setCorsHeaders(request, headers);
-  } else {
-    // Fallback for backward compatibility
-    headers.set("Access-Control-Allow-Origin", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
-  }
-  
+  headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   
@@ -29,8 +19,8 @@ async function jsonResponse(data: unknown, init?: ResponseInit, request?: NextRe
 }
 
 // Handle preflight requests
-export async function OPTIONS(request: NextRequest) {
-  return jsonResponse({}, undefined, request);
+export async function OPTIONS() {
+  return jsonResponse({});
 }
 
 /**
@@ -114,7 +104,7 @@ export async function POST(request: NextRequest) {
       name,
     });
   } catch (error) {
-    logger.error("Error uploading emoji:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    console.error("Error uploading emoji:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to upload emoji";
     return jsonResponse(
       { error: errorMessage },
@@ -149,7 +139,7 @@ export async function DELETE(request: NextRequest) {
 
     return jsonResponse({ success: true });
   } catch (error) {
-    logger.error("Error deleting emoji:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    console.error("Error deleting emoji:", error);
     return jsonResponse(
       { error: "Failed to delete emoji" },
       { status: 500 }

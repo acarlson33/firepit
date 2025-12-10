@@ -17,19 +17,6 @@ const mockDatabases = {
 	listDocuments: vi.fn(),
 };
 
-// Mock auth
-vi.mock("@/lib/auth-server", () => ({
-	getServerSession: vi.fn(() => Promise.resolve({ $id: "user-123" })),
-}));
-
-vi.mock("@/lib/api-middleware", async () => {
-	const actual = await vi.importActual("@/lib/api-middleware");
-	return {
-		...actual,
-		withAuth: (handler: any) => handler,
-	};
-});
-
 // Mock dependencies
 vi.mock("@/lib/appwrite-admin", () => ({
 	getAdminClient: vi.fn(() => ({
@@ -43,23 +30,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 		collections: {
 			profiles: "profiles-collection",
 		},
-		teams: {
-			adminTeamId: "admin-team-id",
-			moderatorTeamId: "moderator-team-id",
-		},
 	})),
-	UnauthorizedError: class UnauthorizedError extends Error {
-		constructor(message = "Unauthorized") {
-			super(message);
-			this.name = "UnauthorizedError";
-		}
-	},
-	ForbiddenError: class ForbiddenError extends Error {
-		constructor(message = "Forbidden") {
-			super(message);
-			this.name = "ForbiddenError";
-		}
-	},
 }));
 
 vi.mock("@/lib/appwrite-profiles", () => ({

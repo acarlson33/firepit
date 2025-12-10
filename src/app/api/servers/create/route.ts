@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { logger } from "@/lib/newrelic-utils";
 
 import { createServer } from "@/lib/appwrite-servers";
 import { getServerSession } from "@/lib/auth-server";
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
 			},
 		});
 	} catch (error) {
-		logger.error("Server creation error:", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+		console.error("Server creation error:", error);
 		
 		// Return user-friendly error message
 		const message =

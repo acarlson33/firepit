@@ -12,8 +12,6 @@ export function ServiceWorkerRegistration() {
       "serviceWorker" in navigator &&
       process.env.NODE_ENV === "production"
     ) {
-      let updateInterval: NodeJS.Timeout | undefined;
-
       // Register service worker
       navigator.serviceWorker
         .register("/sw.js")
@@ -24,7 +22,7 @@ export function ServiceWorkerRegistration() {
           );
 
           // Check for updates periodically
-          updateInterval = setInterval(
+          setInterval(
             () => {
               registration.update().catch(() => {
                 /* Ignore update errors */
@@ -38,19 +36,10 @@ export function ServiceWorkerRegistration() {
         });
 
       // Handle service worker updates
-      const handleControllerChange = () => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
         console.log("Service Worker updated, reloading page...");
         window.location.reload();
-      };
-
-      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
-
-      return () => {
-        if (updateInterval) {
-          clearInterval(updateInterval);
-        }
-        navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
-      };
+      });
     }
   }, []);
 

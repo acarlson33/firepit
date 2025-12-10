@@ -4,7 +4,6 @@ import { getUserRoles } from "@/lib/appwrite-roles";
 import { createInvite, listServerInvites } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-core";
 import { logger, recordError } from "@/lib/newrelic-utils";
-import { inviteCreateSchema, validateBody } from "@/lib/validation";
 
 const { databases } = getServerClient();
 const env = await import("@/lib/appwrite-core").then((m) => m.getEnvConfig());
@@ -30,25 +29,15 @@ export async function POST(
 
     // Get request body
     const body = await request.json();
-    
-    // Validate invite creation data
-    const validation = validateBody(inviteCreateSchema, {
-      serverId,
-      channelId: body.channelId,
-      maxUses: body.maxUses,
-      expiresAt: body.expiresAt,
-      temporary: body.temporary,
-    });
-    
-    if (!validation.success) {
-      logger.warn("Invite validation failed", { error: validation.error, issues: validation.issues });
+    const { channelId, expiresAt, maxUses, temporary } = body;
+
+    // Validate serverId
+    if (!serverId) {
       return NextResponse.json(
-        { error: validation.error, issues: validation.issues },
+        { error: "serverId is required" },
         { status: 400 }
       );
     }
-    
-    const { channelId, expiresAt, maxUses, temporary } = body;
 
     // Check if server exists and get owner
     let server;

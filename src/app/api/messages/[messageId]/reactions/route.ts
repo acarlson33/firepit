@@ -59,109 +59,75 @@ export async function POST(request: NextRequest, context: RouteContext) {
 		const env = getEnvConfig();
 		const { databases } = getServerClient();
 
-		// Retry logic for optimistic locking
-		const maxRetries = 3;
-		let updatedMessage: Message | null = null;
-		let finalReactions: Array<{
+		// Get the current message
+		const message = (await databases.getDocument(
+			env.databaseId,
+			env.collections.messages,
+			messageId
+		)) as unknown as Message;
+
+		// Parse reactions from the message
+		// Handles both JSON string and array formats
+		let reactions: Array<{
 			emoji: string;
 			userIds: string[];
 			count: number;
 		}> = [];
 		
-		for (let attempt = 0; attempt < maxRetries; attempt++) {
-			try {
-				// Get the current message (refetch on each retry for latest state)
-				const message = (await databases.getDocument(
-					env.databaseId,
-					env.collections.messages,
-					messageId
-				)) as unknown as Message;
-
-				// Initialize reactions array if it doesn't exist
-				// Parse reactions from JSON string if needed
-				let reactions: Array<{
+		if (message.reactions) {
+			if (typeof message.reactions === 'string') {
+				try {
+					reactions = JSON.parse(message.reactions);
+				} catch {
+					reactions = [];
+				}
+			} else if (Array.isArray(message.reactions)) {
+				reactions = message.reactions as Array<{
 					emoji: string;
 					userIds: string[];
 					count: number;
-				}> = [];
-				
-				if (message.reactions) {
-					if (typeof message.reactions === 'string') {
-						try {
-							reactions = JSON.parse(message.reactions);
-						} catch {
-							reactions = [];
-						}
-					} else if (Array.isArray(message.reactions)) {
-						reactions = message.reactions as Array<{
-							emoji: string;
-							userIds: string[];
-							count: number;
-						}>;
-					}
-				}
-
-				// Find existing reaction for this emoji
-				const existingReaction = reactions.find((r) => r.emoji === emoji);
-
-				if (existingReaction) {
-					// Check if user already reacted with this emoji
-					if (existingReaction.userIds.includes(user.$id)) {
-						logger.info("User already reacted with this emoji", {
-							messageId,
-							userId: user.$id,
-							emoji,
-						});
-						return NextResponse.json(
-							{ error: "You already reacted with this emoji" },
-							{ status: 400 }
-						);
-					}
-
-					// Add user to existing reaction
-					existingReaction.userIds.push(user.$id);
-					existingReaction.count = existingReaction.userIds.length;
-				} else {
-					// Create new reaction
-					reactions.push({
-						emoji,
-						userIds: [user.$id],
-						count: 1,
-					});
-				}
-
-				// Update the message with new reactions
-				updatedMessage = (await databases.updateDocument(
-					env.databaseId,
-					env.collections.messages,
-					messageId,
-					{
-						reactions: JSON.stringify(reactions),
-					}
-				)) as unknown as Message;
-				
-				finalReactions = reactions;
-				// Success - exit retry loop
-				break;
-			} catch (error) {
-				if (attempt === maxRetries - 1) {
-					// Final attempt failed - throw error
-					throw error;
-				}
-				
-				// Wait before retry with exponential backoff
-				logger.debug("Reaction update conflict, retrying", {
-					attempt: attempt + 1,
-					messageId,
-					userId: user.$id,
-				});
-				await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+				}>;
 			}
 		}
-		
-		if (!updatedMessage) {
-			throw new Error("Failed to update message reactions after retries");
+
+		// Find existing reaction for this emoji
+		const existingReaction = reactions.find((r) => r.emoji === emoji);
+
+		if (existingReaction) {
+			// Check if user already reacted with this emoji
+			if (existingReaction.userIds.includes(user.$id)) {
+				logger.info("User already reacted with this emoji", {
+					messageId,
+					userId: user.$id,
+					emoji,
+				});
+				return NextResponse.json(
+					{ error: "You already reacted with this emoji" },
+					{ status: 400 }
+				);
+			}
+
+			// Add user to existing reaction
+			existingReaction.userIds.push(user.$id);
+			existingReaction.count = existingReaction.userIds.length;
+		} else {
+			// Create new reaction
+			reactions.push({
+				emoji,
+				userIds: [user.$id],
+				count: 1,
+			});
 		}
+
+		// Update the message with new reactions
+		const updatedMessage = (await databases.updateDocument(
+			env.databaseId,
+			env.collections.messages,
+			messageId,
+			{
+				reactions: JSON.stringify(reactions),
+			}
+		)) as unknown as Message;
 
 		const duration = Date.now() - startTime;
 		trackApiCall("/api/messages/[messageId]/reactions", "POST", 200, duration);
@@ -170,7 +136,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 			messageId,
 			userId: user.$id,
 			emoji,
-			totalReactions: finalReactions.length,
+			totalReactions: reactions.length,
 		});
 
 		return NextResponse.json({
@@ -235,117 +201,85 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 		const env = getEnvConfig();
 		const { databases } = getServerClient();
 
-		// Retry logic for optimistic locking
-		const maxRetries = 3;
-		let updatedMessage: Message | null = null;
-		let finalReactions: Array<{
+		// Get the current message
+		const message = (await databases.getDocument(
+			env.databaseId,
+			env.collections.messages,
+			messageId
+		)) as unknown as Message;
+
+		// Parse reactions from the message
+		// Handles both JSON string and array formats
+		let reactions: Array<{
 			emoji: string;
 			userIds: string[];
 			count: number;
 		}> = [];
 		
-		for (let attempt = 0; attempt < maxRetries; attempt++) {
-			try {
-				// Get the current message (refetch on each retry)
-				const message = (await databases.getDocument(
-					env.databaseId,
-					env.collections.messages,
-					messageId
-				)) as unknown as Message;
-
-				// Initialize reactions array if it doesn't exist
-				// Parse reactions from JSON string if needed
-				let reactions: Array<{
+		if (message.reactions) {
+			if (typeof message.reactions === 'string') {
+				try {
+					reactions = JSON.parse(message.reactions);
+				} catch {
+					reactions = [];
+				}
+			} else if (Array.isArray(message.reactions)) {
+				reactions = message.reactions as Array<{
 					emoji: string;
 					userIds: string[];
 					count: number;
-				}> = [];
-				
-				if (message.reactions) {
-					if (typeof message.reactions === 'string') {
-						try {
-							reactions = JSON.parse(message.reactions);
-						} catch {
-							reactions = [];
-						}
-					} else if (Array.isArray(message.reactions)) {
-						reactions = message.reactions as Array<{
-							emoji: string;
-							userIds: string[];
-							count: number;
-						}>;
-					}
-				}
-
-				// Find existing reaction for this emoji
-				const existingReaction = reactions.find((r) => r.emoji === emoji);
-
-				if (!existingReaction) {
-					logger.info("Reaction not found", {
-						messageId,
-						userId: user.$id,
-						emoji,
-					});
-					return NextResponse.json(
-						{ error: "Reaction not found" },
-						{ status: 404 }
-					);
-				}
-
-				// Check if user has reacted with this emoji
-				if (!existingReaction.userIds.includes(user.$id)) {
-					logger.info("User has not reacted with this emoji", {
-						messageId,
-						userId: user.$id,
-						emoji,
-					});
-					return NextResponse.json(
-						{ error: "You have not reacted with this emoji" },
-						{ status: 400 }
-					);
-				}
-
-				// Remove user from reaction
-				existingReaction.userIds = existingReaction.userIds.filter(
-					(id) => id !== user.$id
-				);
-				existingReaction.count = existingReaction.userIds.length;
-
-				// If no users left, remove the entire reaction
-				if (existingReaction.count === 0) {
-					reactions = reactions.filter((r) => r.emoji !== emoji);
-				}
-
-				// Update the message with new reactions
-				updatedMessage = (await databases.updateDocument(
-					env.databaseId,
-					env.collections.messages,
-					messageId,
-					{
-						reactions: JSON.stringify(reactions),
-					}
-				)) as unknown as Message;
-				
-				finalReactions = reactions;
-				// Success - exit retry loop
-				break;
-			} catch (error) {
-				if (attempt === maxRetries - 1) {
-					throw error;
-				}
-				
-				logger.debug("Reaction removal conflict, retrying", {
-					attempt: attempt + 1,
-					messageId,
-					userId: user.$id,
-				});
-				await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+				}>;
 			}
 		}
-		
-		if (!updatedMessage) {
-			throw new Error("Failed to remove reaction after retries");
+
+		// Find existing reaction for this emoji
+		const existingReaction = reactions.find((r) => r.emoji === emoji);
+
+		if (!existingReaction) {
+			logger.info("Reaction not found", {
+				messageId,
+				userId: user.$id,
+				emoji,
+			});
+			return NextResponse.json(
+				{ error: "Reaction not found" },
+				{ status: 404 }
+			);
 		}
+
+		// Check if user has reacted with this emoji
+		if (!existingReaction.userIds.includes(user.$id)) {
+			logger.info("User has not reacted with this emoji", {
+				messageId,
+				userId: user.$id,
+				emoji,
+			});
+			return NextResponse.json(
+				{ error: "You have not reacted with this emoji" },
+				{ status: 400 }
+			);
+		}
+
+		// Remove user from reaction
+		existingReaction.userIds = existingReaction.userIds.filter(
+			(id) => id !== user.$id
+		);
+		existingReaction.count = existingReaction.userIds.length;
+
+		// If no users left, remove the entire reaction
+		if (existingReaction.count === 0) {
+			reactions = reactions.filter((r) => r.emoji !== emoji);
+		}
+
+		// Update the message with new reactions
+		const updatedMessage = (await databases.updateDocument(
+			env.databaseId,
+			env.collections.messages,
+			messageId,
+			{
+				reactions: JSON.stringify(reactions),
+			}
+		)) as unknown as Message;
 
 		const duration = Date.now() - startTime;
 		trackApiCall(
@@ -359,7 +293,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 			messageId,
 			userId: user.$id,
 			emoji,
-			totalReactions: finalReactions.length,
+			totalReactions: reactions.length,
 		});
 
 		return NextResponse.json({
