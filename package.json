@@ -55,6 +55,7 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
+    "babel-plugin-react-compiler": "^1.0.0",
     "@eslint/js": "^9.39.2",
     "@next/bundle-analyzer": "16.0.3",
     "@tailwindcss/postcss": "^4.1.18",
