@@ -32,7 +32,27 @@ var sw = self;
 sw.addEventListener("install", function(event) {
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME).then(function(cache) {
-      return cache.addAll(STATIC_ASSETS);
+      // Cache assets individually with error handling
+      // This prevents installation failure if some assets don't exist
+      return Promise.all(
+        STATIC_ASSETS.map(function(url) {
+          return fetch(url)
+            .then(function(response) {
+              // Only cache successful responses
+              if (response.ok) {
+                return cache.put(url, response);
+              }
+              // Log failed URLs but don't reject
+              console.warn("Service Worker: Failed to cache", url, response.status);
+              return Promise.resolve();
+            })
+            .catch(function(error) {
+              // Log errors but don't reject to allow installation to succeed
+              console.warn("Service Worker: Error caching", url, error.message);
+              return Promise.resolve();
+            });
+        })
+      );
     })
   );
   // Skip waiting to activate immediately
