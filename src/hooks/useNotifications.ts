@@ -186,7 +186,6 @@ export function useNotifications({
 										icon: notificationPayload.icon,
 										tag: `message-${String(payload.$id)}`,
 										data: notificationPayload.data,
-										userId: null,
 									});
 								}
 
