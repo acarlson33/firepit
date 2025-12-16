@@ -60,7 +60,7 @@ export function useNotifications({
 
 	// Show a desktop notification
 	const showDesktopNotification = useCallback(
-		(title: string, options?: NotificationOptions & { body?: string; icon?: string; tag?: string; data?: Record<string, unknown> }) => {
+		(title: string, options?: { body?: string; icon?: string; tag?: string; data?: Record<string, unknown> }) => {
 			if (notificationPermissionRef.current !== "granted") {
 				return null;
 			}
@@ -186,7 +186,6 @@ export function useNotifications({
 										icon: notificationPayload.icon,
 										tag: `message-${String(payload.$id)}`,
 										data: notificationPayload.data,
-										userId: null,
 									});
 								}
 
@@ -225,85 +224,89 @@ export function useNotifications({
 			return;
 		}
 
-		let unsubscribe: (() => void) | undefined;
+		let cleanup: (() => void) | undefined;
 
-		import("appwrite")
-			.then(({ Client }) => {
-				const client = new Client()
-					.setEndpoint(env.endpoint)
-					.setProject(env.project);
+		import("@/lib/realtime-pool")
+			.then(({ getSharedClient, trackSubscription }) => {
+				const client = getSharedClient();
+				const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
 
-				unsubscribe = client.subscribe(
-					`databases.${databaseId}.collections.${collectionId}.documents`,
-					(response) => {
-						const events = response.events as string[];
+				const handleMessage = (response: { events: string[]; payload: Record<string, unknown> }) => {
+					const events = response.events;
 
-						// Only handle create events
-						if (!events.some((e) => e.endsWith(".create"))) {
-							return;
-						}
+					// Only handle create events
+					if (!events.some((e) => e.endsWith(".create"))) {
+						return;
+					}
 
-						const payload = response.payload as Record<string, unknown>;
-						const msgConversationId = payload.conversationId as string;
-						const senderId = payload.senderId as string;
+					const payload = response.payload;
+					const msgConversationId = payload.conversationId as string;
+					const senderId = payload.senderId as string;
 
-						// Only process messages for the current conversation
-						if (msgConversationId !== conversationId) {
-							return;
-						}
+					// Only process messages for the current conversation
+					if (msgConversationId !== conversationId) {
+						return;
+					}
 
-						// Don't notify for own messages
-						if (senderId === userId) {
-							return;
-						}
+					// Don't notify for own messages
+					if (senderId === userId) {
+						return;
+					}
 
-						// Check if we should notify this user (async but fire-and-forget)
-						void (async () => {
-							try {
-								const { shouldNotifyUser, buildNotificationPayload } = await import(
-									"@/lib/notification-triggers"
-								);
+					// Check if we should notify this user (async but fire-and-forget)
+					void (async () => {
+						try {
+							const { shouldNotifyUser, buildNotificationPayload } = await import(
+								"@/lib/notification-triggers"
+							);
 
-								const result = await shouldNotifyUser({
-									senderId,
-									recipientId: userId,
+							const result = await shouldNotifyUser({
+								senderId,
+								recipientId: userId,
+								conversationId,
+							});
+
+							if (result.shouldNotify) {
+								const notificationPayload = buildNotificationPayload(result.type, {
+									senderName: (payload.senderName as string) ?? "Someone",
+									messageContent: (payload.content as string) ?? "",
 									conversationId,
 								});
 
-								if (result.shouldNotify) {
-									const notificationPayload = buildNotificationPayload(result.type, {
-										senderName: (payload.senderName as string) ?? "Someone",
-										messageContent: (payload.content as string) ?? "",
-										conversationId,
+								if (result.showDesktop) {
+									showDesktopNotification(notificationPayload.title, {
+										body: notificationPayload.body,
+										icon: notificationPayload.icon,
+										tag: `dm-${String(payload.$id)}`,
+										data: notificationPayload.data,
 									});
-
-									if (result.showDesktop) {
-										showDesktopNotification(notificationPayload.title, {
-											body: notificationPayload.body,
-											icon: notificationPayload.icon,
-											tag: `dm-${String(payload.$id)}`,
-											data: notificationPayload.data,
-											userId: null,
-										});
-									}
-
-									if (result.playSound) {
-										playNotificationSound();
-									}
 								}
-							} catch {
-								// Notification check failed, silently ignore
+
+								if (result.playSound) {
+									playNotificationSound();
+								}
 							}
-						})();
-					}
-				);
+						} catch {
+							// Notification check failed, silently ignore
+						}
+					})();
+				};
+
+				const unsubscribe = client.subscribe(messageChannel, handleMessage);
+				const trackCleanup = trackSubscription(messageChannel);
+
+				// Store combined cleanup function
+				cleanup = () => {
+					unsubscribe?.();
+					trackCleanup?.();
+				};
 			})
 			.catch(() => {
 				// Failed to set up realtime
 			});
 
 		return () => {
-			unsubscribe?.();
+			cleanup?.();
 		};
 	}, [userId, conversationId, showDesktopNotification, playNotificationSound]);
 
