@@ -37,7 +37,9 @@ describe("Service Worker", () => {
 
 		it("should cache static assets on install", () => {
 			expect(swCode).toContain("caches.open(STATIC_CACHE_NAME)");
-			expect(swCode).toContain("cache.addAll(STATIC_ASSETS)");
+			// Should iterate through STATIC_ASSETS with error handling
+			expect(swCode).toContain("STATIC_ASSETS.map");
+			expect(swCode).toContain("cache.put(url, response)");
 		});
 
 		it("should call skipWaiting on install", () => {
