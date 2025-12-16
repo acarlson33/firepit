@@ -137,8 +137,8 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instruct
 
 Version 1.1 does not include:
 
--   Message threading (planned for v1.2)
--   Message pinning (planned for v1.2)
+-   Message threading (planned for v1.3)
+-   Message pinning (planned for v1.3)
 -   Voice/video calls (not currently planned)
 -   Native mobile apps (PWA supported)
 
