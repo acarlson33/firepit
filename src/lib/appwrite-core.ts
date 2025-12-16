@@ -67,6 +67,7 @@ export type EnvConfig = {
     statuses: string | null;
     messageAttachments: string;
     featureFlags: string;
+    notificationSettings: string;
   };
   buckets: {
     avatars: string;
@@ -192,6 +193,12 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_FEATURE_FLAGS_COLLECTION_ID,
         "feature_flags"
       ) || "feature_flags",
+    notificationSettings:
+      firstDefined(
+        process.env.NEXT_PUBLIC_APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID,
+        process.env.APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID,
+        "notification_settings"
+      ) || "notification_settings",
   };
   const buckets = {
     avatars:

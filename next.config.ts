@@ -10,6 +10,7 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  reactCompiler: true,
   
   // Optimize production build
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,

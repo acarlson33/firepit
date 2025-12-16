@@ -21,6 +21,7 @@ import {
 	uploadAvatarAction,
 } from "./actions";
 import { AvatarUpload } from "./AvatarUpload";
+import { NotificationSettings } from "@/components/notification-settings";
 
 export default async function SettingsPage() {
 	const user = await requireAuth().catch(() => {
@@ -187,6 +188,18 @@ export default async function SettingsPage() {
 						</div>
 					</CardContent>
 				</Card>
+
+				<section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
+					<div className="space-y-3 mb-6">
+						<h2 className="text-2xl font-semibold tracking-tight">
+							Notification Preferences
+						</h2>
+						<p className="text-muted-foreground">
+							Manage how and when you receive notifications from firepit.
+						</p>
+					</div>
+					<NotificationSettings />
+				</section>
 			</div>
 		</div>
 	);

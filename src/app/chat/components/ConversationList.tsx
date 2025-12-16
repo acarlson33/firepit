@@ -1,10 +1,16 @@
 "use client";
 
-import { MessageSquare, Plus } from "lucide-react";
+import { MessageSquare, Plus, MoreVertical, BellOff } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Conversation } from "@/lib/types";
 
 type ConversationListProps = {
@@ -13,6 +19,7 @@ type ConversationListProps = {
 	selectedConversationId: string | null;
 	onSelectConversation: (conversation: Conversation) => void;
 	onNewConversation: () => void;
+	onMuteConversation?: (conversationId: string, conversationName: string) => void;
 };
 
 export function ConversationList({
@@ -21,6 +28,7 @@ export function ConversationList({
 	selectedConversationId,
 	onSelectConversation,
 	onNewConversation,
+	onMuteConversation,
 }: ConversationListProps) {
 	if (loading) {
 		return (
@@ -80,53 +88,80 @@ export function ConversationList({
 								otherUser?.displayName || otherUser?.userId || "Unknown User";
 
 							return (
-								<button
-									className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
-										isSelected
-											? "bg-accent"
-											: "hover:bg-accent/50"
-									}`}
+								<div
+									className="group relative flex items-center gap-1"
 									key={conversation.$id}
-									onClick={() => onSelectConversation(conversation)}
-									type="button"
 								>
-									<div className="relative">
-										<Avatar
-											alt={displayName}
-											fallback={displayName}
-											size="md"
-											src={otherUser?.avatarUrl}
-										/>
-										{otherUser?.status && (
-											<div className="absolute -bottom-0.5 -right-0.5">
-												<StatusIndicator
-													size="sm"
-													status={otherUser.status as "online" | "away" | "busy" | "offline"}
-												/>
-											</div>
-										)}
-									</div>
-									<div className="min-w-0 flex-1">
-										<div className="flex items-baseline justify-between gap-2">
-											<p className="truncate font-medium text-sm">
-												{displayName}
-											</p>
-											{conversation.lastMessageAt && (
-												<span className="text-muted-foreground text-xs">
-													{new Date(conversation.lastMessageAt).toLocaleTimeString(
-														[],
-														{ hour: "2-digit", minute: "2-digit" },
-													)}
-												</span>
+									<button
+										className={`flex flex-1 items-center gap-3 rounded-lg p-3 text-left transition-colors ${
+											isSelected
+												? "bg-accent"
+												: "hover:bg-accent/50"
+										}`}
+										onClick={() => onSelectConversation(conversation)}
+										type="button"
+									>
+										<div className="relative">
+											<Avatar
+												alt={displayName}
+												fallback={displayName}
+												size="md"
+												src={otherUser?.avatarUrl}
+											/>
+											{otherUser?.status && (
+												<div className="absolute -bottom-0.5 -right-0.5">
+													<StatusIndicator
+														size="sm"
+														status={otherUser.status as "online" | "away" | "busy" | "offline"}
+													/>
+												</div>
 											)}
 										</div>
-										{conversation.lastMessage && (
-											<p className="truncate text-muted-foreground text-xs">
-												{conversation.lastMessage.text}
-											</p>
-										)}
-									</div>
-								</button>
+										<div className="min-w-0 flex-1">
+											<div className="flex items-baseline justify-between gap-2">
+												<p className="truncate font-medium text-sm">
+													{displayName}
+												</p>
+												{conversation.lastMessageAt && (
+													<span className="text-muted-foreground text-xs">
+														{new Date(conversation.lastMessageAt).toLocaleTimeString(
+															[],
+															{ hour: "2-digit", minute: "2-digit" },
+														)}
+													</span>
+												)}
+											</div>
+											{conversation.lastMessage && (
+												<p className="truncate text-muted-foreground text-xs">
+													{conversation.lastMessage.text}
+												</p>
+											)}
+										</div>
+									</button>
+									{onMuteConversation && (
+										<DropdownMenu>
+											<DropdownMenuTrigger asChild>
+												<Button
+													className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+													size="icon"
+													type="button"
+													variant="ghost"
+												>
+													<MoreVertical className="h-4 w-4" />
+													<span className="sr-only">Conversation options</span>
+												</Button>
+											</DropdownMenuTrigger>
+											<DropdownMenuContent align="end">
+												<DropdownMenuItem
+													onClick={() => onMuteConversation(conversation.$id, displayName)}
+												>
+													<BellOff className="mr-2 h-4 w-4" />
+													Mute Conversation
+												</DropdownMenuItem>
+											</DropdownMenuContent>
+										</DropdownMenu>
+									)}
+								</div>
 							);
 						})}
 					</div>
