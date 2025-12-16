@@ -298,7 +298,7 @@ export function useNotifications({
 				// Store combined cleanup function
 				cleanup = () => {
 					unsubscribe?.();
-					trackCleanup();
+					trackCleanup?.();
 				};
 			})
 			.catch(() => {
