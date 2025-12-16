@@ -1,0 +1,28 @@
+name: Setup Appwrite
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  setup-appwrite:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.22'
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run Appwrite setup script
+        run: bun scripts/setup-appwrite.ts
+        env:
+          APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
