@@ -250,3 +250,76 @@ export type PermissionCheck = {
 export type EffectivePermissions = {
   [K in Permission]: boolean;
 };
+
+// ============ Notification System Types ============
+
+/**
+ * Notification level determines what messages trigger notifications
+ */
+export type NotificationLevel = "all" | "mentions" | "nothing";
+
+/**
+ * Mute duration options for temporary muting
+ */
+export type MuteDuration = "15m" | "1h" | "8h" | "24h" | "forever";
+
+/**
+ * Override settings for a specific server, channel, or conversation
+ */
+export type NotificationOverride = {
+  level: NotificationLevel;
+  mutedUntil?: string; // ISO timestamp, undefined means not muted or muted forever
+};
+
+/**
+ * User's notification preferences
+ */
+export type NotificationSettings = {
+  $id: string;
+  userId: string;
+
+  // Global settings
+  globalNotifications: NotificationLevel;
+  desktopNotifications: boolean;
+  pushNotifications: boolean;
+  notificationSound: boolean;
+  quietHoursStart?: string; // HH:mm format (24-hour)
+  quietHoursEnd?: string; // HH:mm format (24-hour)
+  quietHoursTimezone?: string; // IANA timezone (e.g., "America/New_York")
+
+  // Per-context overrides (stored as JSON strings in database)
+  serverOverrides?: Record<string, NotificationOverride>;
+  channelOverrides?: Record<string, NotificationOverride>;
+  conversationOverrides?: Record<string, NotificationOverride>;
+
+  $createdAt?: string;
+  $updatedAt?: string;
+};
+
+/**
+ * Payload for a notification event
+ */
+export type NotificationPayload = {
+  type: "message" | "mention" | "dm" | "thread_reply";
+  title: string;
+  body: string;
+  icon?: string;
+  badge?: string;
+  url: string; // Deep link to the message/channel
+  data?: {
+    messageId?: string;
+    channelId?: string;
+    serverId?: string;
+    conversationId?: string;
+    senderId?: string;
+  };
+};
+
+/**
+ * Result of checking if a user should be notified
+ */
+export type NotificationCheckResult = {
+  shouldNotify: boolean;
+  reason?: "muted" | "quiet_hours" | "level_mismatch" | "user_online" | "blocked";
+  effectiveLevel: NotificationLevel;
+};

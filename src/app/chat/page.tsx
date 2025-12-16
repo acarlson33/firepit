@@ -2,11 +2,17 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
-import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
 import type { Channel, FileAttachment } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
@@ -28,6 +34,7 @@ import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
@@ -52,6 +59,9 @@ const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel")
   ssr: false,
 });
 const CreateServerDialog = dynamic(() => import("@/components/create-server-dialog").then((mod) => ({ default: mod.CreateServerDialog })), {
+  ssr: false,
+});
+const MuteDialog = dynamic(() => import("@/components/mute-dialog").then((mod) => ({ default: mod.MuteDialog })), {
   ssr: false,
 });
 
@@ -100,9 +110,16 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [muteDialogState, setMuteDialogState] = useState<{
+    open: boolean;
+    type: "server" | "channel" | "conversation";
+    id: string;
+    name: string;
+  }>({ open: false, type: "channel", id: "", name: "" });
   const _messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isWindowFocused, setIsWindowFocused] = useState(true);
 
   // Custom emojis
   const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -157,7 +174,7 @@ export default function ChatPage() {
       })
         .then(async (res) => {
           if (res.ok) {
-            const data = await res.json();
+            await res.json(); // consume response
             sessionStorage.setItem(joinedKey, "true");
             toast.success("Successfully joined server via invite!");
             
@@ -248,6 +265,47 @@ export default function ChatPage() {
     receiverId: receiverId || "",
     userName,
   });
+
+  // Notifications - listens for incoming messages and triggers notifications
+  const { requestPermission: requestNotificationPermission } = useNotifications({
+    userId,
+    isWindowFocused,
+    channelId: selectedChannel,
+    serverId: serversApi.selectedServer,
+    conversationId: selectedConversationId,
+  });
+
+  // Track window focus for notification suppression
+  useEffect(() => {
+    const handleFocus = () => setIsWindowFocused(true);
+    const handleBlur = () => setIsWindowFocused(false);
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+
+    // Set initial focus state
+    setIsWindowFocused(document.hasFocus());
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  // Request notification permission on first interaction
+  useEffect(() => {
+    if (userId && typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        // Add a one-time click handler to request permission
+        const handleInteraction = () => {
+          void requestNotificationPermission();
+          document.removeEventListener("click", handleInteraction);
+        };
+        document.addEventListener("click", handleInteraction, { once: true });
+        return () => document.removeEventListener("click", handleInteraction);
+      }
+    }
+  }, [userId, requestNotificationPermission]);
 
   // Handlers -----------------
   const selectChannel = useCallback((c: Channel) => {
@@ -420,28 +478,56 @@ export default function ChatPage() {
           {serversApi.servers.map((s) => {
             const active = s.$id === serversApi.selectedServer;
             return (
-              <li key={s.$id}>
-                <Button
-                  aria-pressed={active}
-                  className={`w-full justify-between rounded-xl transition-colors ${
-                    active ? "" : "border border-border/60 bg-background"
-                  }`}
-                  onClick={() => {
-                    serversApi.setSelectedServer(s.$id);
-                    setSelectedChannel(null);
-                  }}
-                  type="button"
-                  variant={active ? "default" : "outline"}
-                >
-                  <span className="truncate text-left font-medium">{s.name}</span>
-                  <div className="flex items-center gap-2">
-                    {s.memberCount !== undefined && (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                        {s.memberCount} {s.memberCount === 1 ? 'member' : 'members'}
-                      </span>
-                    )}
-                  </div>
-                </Button>
+              <li key={s.$id} className="group relative">
+                <div className="flex items-center gap-1">
+                  <Button
+                    aria-pressed={active}
+                    className={`flex-1 justify-between rounded-xl transition-colors ${
+                      active ? "" : "border border-border/60 bg-background"
+                    }`}
+                    onClick={() => {
+                      serversApi.setSelectedServer(s.$id);
+                      setSelectedChannel(null);
+                    }}
+                    type="button"
+                    variant={active ? "default" : "outline"}
+                  >
+                    <span className="truncate text-left font-medium">{s.name}</span>
+                    <div className="flex items-center gap-2">
+                      {s.memberCount !== undefined && (
+                        <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                          {s.memberCount} {s.memberCount === 1 ? 'member' : 'members'}
+                        </span>
+                      )}
+                    </div>
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="h-9 w-9 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                        <span className="sr-only">Server options</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => setMuteDialogState({
+                          open: true,
+                          type: "server",
+                          id: s.$id,
+                          name: s.name,
+                        })}
+                      >
+                        <BellOff className="mr-2 h-4 w-4" />
+                        Mute Server
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </li>
             );
           })}
@@ -485,19 +571,47 @@ export default function ChatPage() {
           {channelsApi.channels.map((c) => {
             const active = c.$id === selectedChannel;
             return (
-              <li key={c.$id}>
-                <Button
-                  aria-pressed={active}
-                  className={`w-full justify-between rounded-xl transition-colors ${
-                    active ? "" : "border border-border/60 bg-background"
-                  }`}
-                  onClick={() => selectChannel(c)}
-                  type="button"
-                  variant={active ? "default" : "outline"}
-                >
-                  <span className="truncate text-left font-medium">{c.name}</span>
-                  <span className="text-xs text-muted-foreground">#{c.$id.slice(0, 4)}</span>
-                </Button>
+              <li key={c.$id} className="group relative">
+                <div className="flex items-center gap-1">
+                  <Button
+                    aria-pressed={active}
+                    className={`flex-1 justify-between rounded-xl transition-colors ${
+                      active ? "" : "border border-border/60 bg-background"
+                    }`}
+                    onClick={() => selectChannel(c)}
+                    type="button"
+                    variant={active ? "default" : "outline"}
+                  >
+                    <span className="truncate text-left font-medium">{c.name}</span>
+                    <span className="text-xs text-muted-foreground">#{c.$id.slice(0, 4)}</span>
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="h-9 w-9 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                        <span className="sr-only">Channel options</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => setMuteDialogState({
+                          open: true,
+                          type: "channel",
+                          id: c.$id,
+                          name: c.name,
+                        })}
+                      >
+                        <BellOff className="mr-2 h-4 w-4" />
+                        Mute Channel
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </li>
             );
           })}
@@ -886,6 +1000,14 @@ export default function ChatPage() {
               <ConversationList
                 conversations={conversationsApi.conversations}
                 loading={conversationsApi.loading}
+                onMuteConversation={(conversationId, conversationName) => {
+                  setMuteDialogState({
+                    open: true,
+                    type: "conversation",
+                    id: conversationId,
+                    name: conversationName,
+                  });
+                }}
                 onNewConversation={() => setNewConversationOpen(true)}
                 onSelectConversation={selectConversation}
                 selectedConversationId={selectedConversationId}
@@ -1176,6 +1298,15 @@ export default function ChatPage() {
           isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
         />
       )}
+
+      {/* Mute Dialog */}
+      <MuteDialog
+        open={muteDialogState.open}
+        onOpenChange={(open) => setMuteDialogState((prev) => ({ ...prev, open }))}
+        targetType={muteDialogState.type}
+        targetId={muteDialogState.id}
+        targetName={muteDialogState.name}
+      />
     </div>
   );
 }

@@ -6,9 +6,8 @@
   "scripts": {
     "dev": "next dev ",
     "dev:webpack": "next dev --webpack",
-    "build": "bun run generate-version && bun run build:sw && next build",
-    "build:webpack": "bun run generate-version && bun run build:sw && next build --webpack",
-    "build:sw": "tsc --project src/sw.tsconfig.json",
+    "build": "bun run generate-version && next build",
+    "build:webpack": "bun run generate-version && next build --webpack",
     "build:analyze": "ANALYZE=true next build --webpack",
     "generate-version": "bun scripts/generate-version.ts",
     "start": "next start",

@@ -175,7 +175,7 @@ bun build:webpack # Production build with Webpack
 **Problem:** No offline capabilities, assets refetch every visit, emoji images loaded from network every time
 **Solution:**
 
--   Converted service worker to TypeScript (`src/sw.ts`) with full type safety
+-   Plain JavaScript service worker (`public/sw.js`) for maximum browser compatibility
 -   Added dedicated emoji cache (`EMOJI_CACHE_NAME`) for custom emoji images
 -   Cache-first strategy for emoji requests from Appwrite storage:
     -   Returns cached emojis instantly (no network delay)
@@ -187,7 +187,7 @@ bun build:webpack # Production build with Webpack
 -   Background sync for offline message queue
 -   Created `ServiceWorkerRegistration` component
 -   Automatic updates check every hour
--   Build script (`build:sw`) compiles TypeScript service worker to `public/sw.js`
+-   Push notification support with action buttons
 -   **Impact:** ~100ms load time for repeat visits, instant emoji rendering, offline functionality, 90%+ bandwidth reduction
 
 ### 14. Debounced Batch Updates ✅

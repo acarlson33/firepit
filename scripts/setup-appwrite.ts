@@ -236,7 +236,7 @@ async function ensureStringArrayAttribute(
 	}
 }
 
-type IndexType = "key" | "fulltext"; // subset used
+type IndexType = "key" | "fulltext" | "unique"; // subset used
 async function waitForAttribute(
 	collection: string,
 	key: string,
@@ -578,6 +578,26 @@ async function setupDirectMessages() {
 	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
 }
 
+async function setupNotificationSettings() {
+	await ensureCollection("notification_settings", "Notification Settings");
+	const fields: [string, number, boolean][] = [
+		["userId", LEN_ID, true],
+		["globalNotifications", 32, true], // "all" | "mentions" | "nothing"
+		["quietHoursStart", 8, false], // HH:mm format
+		["quietHoursEnd", 8, false], // HH:mm format
+		["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
+		["channelOverrides", LEN_TEXT, false], // JSON string of Record<channelId, NotificationOverride>
+		["conversationOverrides", LEN_TEXT, false], // JSON string of Record<conversationId, NotificationOverride>
+	];
+	for (const [k, size, req] of fields) {
+		await ensureStringAttribute("notification_settings", k, size, req);
+	}
+	await ensureBooleanAttribute("notification_settings", "desktopNotifications", true);
+	await ensureBooleanAttribute("notification_settings", "pushNotifications", true);
+	await ensureBooleanAttribute("notification_settings", "notificationSound", true);
+	await ensureIndex("notification_settings", "idx_userId", "unique", ["userId"]);
+}
+
 async function ensureBucket(
 	id: string,
 	name: string,
@@ -745,6 +765,8 @@ async function run() {
 	await setupConversations();
 	info("[setup] Setting up direct messages...");
 	await setupDirectMessages();
+	info("[setup] Setting up notification settings...");
+	await setupNotificationSettings();
 	info("[setup] Setting up teams...");
 	await ensureTeams();
 	info("Setup complete.");

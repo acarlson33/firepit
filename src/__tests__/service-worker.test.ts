@@ -1,5 +1,5 @@
 /**
- * Tests for service worker (sw.js)
+ * Tests for service worker (public/sw.js)
  * Validates service worker structure, cache names, and logic patterns
  */
 import { describe, it, expect, beforeEach } from "vitest";
@@ -45,7 +45,9 @@ describe("Service Worker", () => {
 		});
 
 		it("should use event.waitUntil for install", () => {
-			const installMatch = swCode.match(/addEventListener\("install"[^}]+/);
+			const installMatch = swCode.match(
+				/addEventListener\("install"[\s\S]*?}\);/
+			);
 			expect(installMatch).toBeTruthy();
 			expect(installMatch?.[0]).toContain("event.waitUntil");
 		});
@@ -78,10 +80,11 @@ describe("Service Worker", () => {
 	});
 
 	describe("Fetch Event - Emoji Requests", () => {
-		it("should handle emoji requests with cache-first strategy", () => {
-			expect(swCode).toContain('includes("/storage/buckets/emojis/files/")');
-			expect(swCode).toContain('includes("/v1/storage/buckets/")');
-			expect(swCode).toContain('includes("/emojis/")');
+		it("should handle emoji requests with isEmojiRequest helper", () => {
+			expect(swCode).toContain("function isEmojiRequest(url)");
+			expect(swCode).toContain('"/storage/buckets/emojis/files/"');
+			expect(swCode).toContain('"/v1/storage/buckets/"');
+			expect(swCode).toContain('"/emojis/"');
 		});
 
 		it("should use dedicated emoji cache", () => {
@@ -89,9 +92,13 @@ describe("Service Worker", () => {
 			expect(swCode).toContain("caches.open(EMOJI_CACHE_NAME)");
 		});
 
+		it("should have handleEmojiRequest function", () => {
+			expect(swCode).toContain("function handleEmojiRequest(request)");
+		});
+
 		it("should return cached emojis immediately", () => {
 			const emojiSection = swCode.match(
-				/storage\/buckets\/emojis[\s\S]*?return;/
+				/function handleEmojiRequest[\s\S]*?^}/m
 			);
 			expect(emojiSection).toBeTruthy();
 			expect(emojiSection?.[0]).toContain("cache.match(request)");
@@ -100,17 +107,9 @@ describe("Service Worker", () => {
 
 		it("should update emoji cache in background", () => {
 			const emojiSection = swCode.match(
-				/storage\/buckets\/emojis[\s\S]*?return;/
+				/function handleEmojiRequest[\s\S]*?^}/m
 			);
 			expect(emojiSection?.[0]).toContain("fetch(request)");
-			expect(emojiSection?.[0]).toContain("cache.put(request, response.clone())");
-		});
-
-		it("should cache emojis on first fetch", () => {
-			const emojiSection = swCode.match(
-				/storage\/buckets\/emojis[\s\S]*?return;/
-			);
-			// Should cache new emoji fetches
 			expect(emojiSection?.[0]).toContain("cache.put(request, response.clone())");
 		});
 	});
@@ -124,9 +123,13 @@ describe("Service Worker", () => {
 			expect(swCode).toContain('pathname.startsWith("/api/")');
 		});
 
+		it("should have handleApiRequest function", () => {
+			expect(swCode).toContain("function handleApiRequest(request)");
+		});
+
 		it("should use network-first strategy for API", () => {
 			const apiFetchSection = swCode.match(
-				/pathname\.startsWith\("\/api\/"[\s\S]*?return;/
+				/function handleApiRequest[\s\S]*?^}/m
 			);
 			expect(apiFetchSection).toBeTruthy();
 			// Should fetch first, then fall back to cache
@@ -136,15 +139,17 @@ describe("Service Worker", () => {
 
 		it("should cache successful API responses", () => {
 			const apiFetchSection = swCode.match(
-				/pathname\.startsWith\("\/api\/"[\s\S]*?return;/
+				/function handleApiRequest[\s\S]*?^}/m
 			);
 			expect(apiFetchSection?.[0]).toContain("response.status === 200");
-			expect(apiFetchSection?.[0]).toContain("cache.put(request, response.clone())");
+			expect(apiFetchSection?.[0]).toContain(
+				"cache.put(request, response.clone())"
+			);
 		});
 
 		it("should return offline response when API fails with no cache", () => {
 			const apiFetchSection = swCode.match(
-				/pathname\.startsWith\("\/api\/"[\s\S]*?return;/
+				/function handleApiRequest[\s\S]*?^}/m
 			);
 			expect(apiFetchSection?.[0]).toContain('error: "Offline"');
 			expect(apiFetchSection?.[0]).toContain("offline: true");
@@ -153,6 +158,10 @@ describe("Service Worker", () => {
 	});
 
 	describe("Fetch Event - Static Assets", () => {
+		it("should have isStaticAsset helper function", () => {
+			expect(swCode).toContain("function isStaticAsset(pathname)");
+		});
+
 		it("should handle static asset extensions", () => {
 			expect(swCode).toContain('.endsWith(".js")');
 			expect(swCode).toContain('.endsWith(".css")');
@@ -162,9 +171,13 @@ describe("Service Worker", () => {
 			expect(swCode).toContain('.endsWith(".svg")');
 		});
 
+		it("should have handleStaticAsset function", () => {
+			expect(swCode).toContain("function handleStaticAsset(request)");
+		});
+
 		it("should use cache-first strategy for static assets", () => {
 			const staticSection = swCode.match(
-				/endsWith\("\.js"\)[\s\S]*?return;[\s\S]*?return;/
+				/function handleStaticAsset[\s\S]*?^}/m
 			);
 			expect(staticSection).toBeTruthy();
 			// Should check cache first
@@ -174,7 +187,7 @@ describe("Service Worker", () => {
 
 		it("should update cache in background for static assets", () => {
 			const staticSection = swCode.match(
-				/endsWith\("\.js"\)[\s\S]*?return;[\s\S]*?return;/
+				/function handleStaticAsset[\s\S]*?^}/m
 			);
 			// Should fetch in background to update cache
 			expect(staticSection?.[0]).toContain("fetch(request)");
@@ -187,9 +200,13 @@ describe("Service Worker", () => {
 			expect(swCode).toContain('request.mode === "navigate"');
 		});
 
+		it("should have handleNavigationRequest function", () => {
+			expect(swCode).toContain("function handleNavigationRequest(request)");
+		});
+
 		it("should use stale-while-revalidate for navigation", () => {
 			const navSection = swCode.match(
-				/request\.mode === "navigate"[\s\S]*?return;/
+				/function handleNavigationRequest[\s\S]*?^}/m
 			);
 			expect(navSection).toBeTruthy();
 			expect(navSection?.[0]).toContain("caches.match(request)");
@@ -199,7 +216,7 @@ describe("Service Worker", () => {
 
 		it("should cache navigation responses", () => {
 			const navSection = swCode.match(
-				/request\.mode === "navigate"[\s\S]*?return;/
+				/function handleNavigationRequest[\s\S]*?^}/m
 			);
 			expect(navSection?.[0]).toContain("cache.put(request, response.clone())");
 		});
@@ -215,7 +232,7 @@ describe("Service Worker", () => {
 		});
 
 		it("should define syncMessages function", () => {
-			expect(swCode).toContain("async function syncMessages()");
+			expect(swCode).toContain("function syncMessages()");
 		});
 	});
 
@@ -246,6 +263,11 @@ describe("Service Worker", () => {
 			const pushSection = swCode.match(/addEventListener\("push"[\s\S]*?}\);/);
 			expect(pushSection?.[0]).toContain('data.url || "/chat"');
 		});
+
+		it("should handle malformed push data gracefully", () => {
+			expect(swCode).toContain("try {");
+			expect(swCode).toContain("catch (e)");
+		});
 	});
 
 	describe("Notification Click", () => {
@@ -260,12 +282,18 @@ describe("Service Worker", () => {
 			expect(clickSection?.[0]).toContain(".notification.close()");
 		});
 
+		it("should handle dismiss action", () => {
+			const clickSection = swCode.match(
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
+			);
+			expect(clickSection?.[0]).toContain('event.action === "dismiss"');
+		});
+
 		it("should open window to notification URL", () => {
 			const clickSection = swCode.match(
 				/addEventListener\("notificationclick"[\s\S]*?}\);/
 			);
 			expect(clickSection?.[0]).toContain("clients.openWindow");
-			expect(clickSection?.[0]).toContain(".notification.data.url");
 		});
 
 		it("should use default URL if notification has no URL", () => {
@@ -274,13 +302,24 @@ describe("Service Worker", () => {
 			);
 			expect(clickSection?.[0]).toContain('|| "/chat"');
 		});
+
+		it("should build URLs for conversations", () => {
+			const clickSection = swCode.match(
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
+			);
+			expect(clickSection?.[0]).toContain('"/dm/"');
+		});
+
+		it("should build URLs for server channels", () => {
+			const clickSection = swCode.match(
+				/addEventListener\("notificationclick"[\s\S]*?}\);/
+			);
+			expect(clickSection?.[0]).toContain('"/servers/"');
+			expect(clickSection?.[0]).toContain('"/channels/"');
+		});
 	});
 
 	describe("Code Quality", () => {
-		it("should use void for fire-and-forget operations", () => {
-			expect(swCode).toContain("void ");
-		});
-
 		it("should use proper error handling", () => {
 			expect(swCode).toContain(".catch(");
 		});
@@ -341,8 +380,26 @@ describe("Service Worker", () => {
 		});
 
 		it("should fall back to cache when network fails", () => {
-			const catchCount = (swCode.match(/\.catch\(\(\) =>/g) || []).length;
+			const catchCount = (swCode.match(/\.catch\(function/g) || []).length;
 			expect(catchCount).toBeGreaterThan(0);
+		});
+	});
+
+	describe("Helper Functions", () => {
+		it("should have all required helper functions", () => {
+			expect(swCode).toContain("function isEmojiRequest(url)");
+			expect(swCode).toContain("function isStaticAsset(pathname)");
+			expect(swCode).toContain("function handleEmojiRequest(request)");
+			expect(swCode).toContain("function handleApiRequest(request)");
+			expect(swCode).toContain("function handleStaticAsset(request)");
+			expect(swCode).toContain("function handleNavigationRequest(request)");
+			expect(swCode).toContain("function syncMessages()");
+		});
+
+		it("should use var declarations for compatibility", () => {
+			// Should use var for top-level declarations for maximum compatibility
+			expect(swCode).toContain("var CACHE_NAME");
+			expect(swCode).toContain("var sw = self");
 		});
 	});
 });

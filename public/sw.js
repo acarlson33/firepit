@@ -1,188 +1,354 @@
-"use strict";
-/// <reference lib="webworker" />
-// Service Worker for offline support and aggressive caching
-// Provides instant repeat visits (~100ms) and offline capabilities
-// Type assertion for Service Worker global scope
-const sw = self;
-const CACHE_NAME = "firepit-v1";
-const API_CACHE_NAME = "firepit-api-v1";
-const STATIC_CACHE_NAME = "firepit-static-v1";
-const EMOJI_CACHE_NAME = "firepit-emoji-v1";
+/**
+ * Service Worker for Firepit Chat Application
+ * Provides offline support, aggressive caching, and push notifications
+ * 
+ * Caching Strategies:
+ * - Static assets: Cache-first with background revalidation
+ * - API requests: Network-first with cache fallback
+ * - Emoji assets: Cache-first with aggressive caching
+ * - Navigation: Stale-while-revalidate
+ */
+
+// Cache version names - update these to bust caches on deploy
+var CACHE_NAME = "firepit-v1";
+var API_CACHE_NAME = "firepit-api-v1";
+var STATIC_CACHE_NAME = "firepit-static-v1";
+var EMOJI_CACHE_NAME = "firepit-emoji-v1";
+
 // Assets to cache immediately on install
-const STATIC_ASSETS = [
-    "/",
-    "/chat",
-    "/favicon.ico",
-    "/manifest.json",
+var STATIC_ASSETS = [
+  "/",
+  "/chat",
+  "/favicon.ico",
+  "/manifest.json",
 ];
-// Install event - cache static assets
-sw.addEventListener("install", (event) => {
-    event.waitUntil(caches.open(STATIC_CACHE_NAME).then((cache) => {
-        return cache.addAll(STATIC_ASSETS);
-    }));
-    void sw.skipWaiting();
+
+// Reference to service worker scope
+var sw = self;
+
+// ============================================
+// INSTALL EVENT
+// ============================================
+sw.addEventListener("install", function(event) {
+  event.waitUntil(
+    caches.open(STATIC_CACHE_NAME).then(function(cache) {
+      return cache.addAll(STATIC_ASSETS);
+    })
+  );
+  // Skip waiting to activate immediately
+  sw.skipWaiting();
 });
-// Activate event - clean up old caches
-sw.addEventListener("activate", (event) => {
-    event.waitUntil(caches.keys().then((cacheNames) => {
-        return Promise.all(cacheNames
-            .filter((name) => {
-            return (name !== CACHE_NAME &&
-                name !== API_CACHE_NAME &&
-                name !== STATIC_CACHE_NAME &&
-                name !== EMOJI_CACHE_NAME);
-        })
-            .map((name) => caches.delete(name)));
-    }));
-    void sw.clients.claim();
+
+// ============================================
+// ACTIVATE EVENT
+// ============================================
+sw.addEventListener("activate", function(event) {
+  event.waitUntil(
+    caches.keys().then(function(cacheNames) {
+      return Promise.all(
+        cacheNames
+          .filter(function(name) {
+            // Delete old caches that don't match current versions
+            return (
+              name !== CACHE_NAME &&
+              name !== API_CACHE_NAME &&
+              name !== STATIC_CACHE_NAME &&
+              name !== EMOJI_CACHE_NAME
+            );
+          })
+          .map(function(name) {
+            return caches.delete(name);
+          })
+      );
+    })
+  );
+  // Take control of all clients immediately
+  sw.clients.claim();
 });
-// Fetch event - implement stale-while-revalidate strategy
-sw.addEventListener("fetch", (event) => {
-    const { request } = event;
-    const url = new URL(request.url);
-    // Handle emoji requests with aggressive caching
-    if (url.pathname.includes("/storage/buckets/emojis/files/") ||
-        url.pathname.includes("/v1/storage/buckets/") && url.pathname.includes("/emojis/")) {
-        event.respondWith(caches.open(EMOJI_CACHE_NAME).then((cache) => {
-            return cache.match(request).then((cachedResponse) => {
-                if (cachedResponse) {
-                    // Return cached emoji immediately
-                    // Update cache in background for freshness
-                    void fetch(request)
-                        .then((response) => {
-                        if (response.status === 200) {
-                            void cache.put(request, response.clone());
-                        }
-                    })
-                        .catch(() => {
-                        /* Ignore fetch errors in background update */
-                    });
-                    return cachedResponse;
-                }
-                // If not in cache, fetch from network and cache
-                return fetch(request).then((response) => {
-                    if (response.status === 200) {
-                        void cache.put(request, response.clone());
-                    }
-                    return response;
-                });
-            });
-        }));
-        return;
-    }
-    // Handle API requests with network-first + stale-while-revalidate
-    if (url.pathname.startsWith("/api/")) {
-        event.respondWith(caches.open(API_CACHE_NAME).then((cache) => {
-            return fetch(request)
-                .then((response) => {
-                // Cache successful responses
-                if (response.status === 200) {
-                    void cache.put(request, response.clone());
-                }
-                return response;
-            })
-                .catch(() => {
-                // If network fails, try cache
-                return cache.match(request).then((cachedResponse) => {
-                    if (cachedResponse) {
-                        return cachedResponse;
-                    }
-                    // Return offline response if no cache
-                    return new Response(JSON.stringify({ error: "Offline", offline: true }), {
-                        status: 503,
-                        headers: { "Content-Type": "application/json" },
-                    });
-                });
-            });
-        }));
-        return;
-    }
-    // Handle static assets with cache-first strategy
-    if (request.method === "GET" &&
-        (url.pathname.endsWith(".js") ||
-            url.pathname.endsWith(".css") ||
-            url.pathname.endsWith(".woff2") ||
-            url.pathname.endsWith(".png") ||
-            url.pathname.endsWith(".jpg") ||
-            url.pathname.endsWith(".svg"))) {
-        event.respondWith(caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-                // Return cached version immediately
-                // Update cache in background
-                void fetch(request)
-                    .then((response) => {
-                    if (response.status === 200) {
-                        void caches.open(CACHE_NAME).then((cache) => {
-                            void cache.put(request, response);
-                        });
-                    }
-                })
-                    .catch(() => {
-                    /* Ignore fetch errors in background update */
-                });
-                return cachedResponse;
-            }
-            // If not in cache, fetch from network
-            return fetch(request).then((response) => {
-                if (response.status === 200) {
-                    void caches.open(CACHE_NAME).then((cache) => {
-                        void cache.put(request, response.clone());
-                    });
-                }
-                return response;
-            });
-        }));
-        return;
-    }
-    // For navigation requests, use stale-while-revalidate
-    if (request.mode === "navigate") {
-        event.respondWith(caches.match(request).then((cachedResponse) => {
-            const fetchPromise = fetch(request).then((response) => {
-                if (response.status === 200) {
-                    void caches.open(CACHE_NAME).then((cache) => {
-                        void cache.put(request, response.clone());
-                    });
-                }
-                return response;
-            });
-            // Return cached version if available, otherwise wait for network
-            return cachedResponse || fetchPromise;
-        }));
-        return;
-    }
-    // Default: just fetch from network
-    event.respondWith(fetch(request));
+
+// ============================================
+// FETCH EVENT
+// ============================================
+sw.addEventListener("fetch", function(event) {
+  var request = event.request;
+  var url = new URL(request.url);
+
+  // Handle emoji requests with aggressive caching
+  if (isEmojiRequest(url)) {
+    event.respondWith(handleEmojiRequest(request));
+    return;
+  }
+
+  // Handle API requests with network-first strategy
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(handleApiRequest(request));
+    return;
+  }
+
+  // Handle static assets with cache-first strategy
+  if (request.method === "GET" && isStaticAsset(url.pathname)) {
+    event.respondWith(handleStaticAsset(request));
+    return;
+  }
+
+  // Handle navigation requests with stale-while-revalidate
+  if (request.mode === "navigate") {
+    event.respondWith(handleNavigationRequest(request));
+    return;
+  }
+
+  // Default: fetch from network
+  event.respondWith(fetch(request));
 });
-// Background sync for offline message queue
-sw.addEventListener("sync", (event) => {
-    const syncEvent = event;
-    if (syncEvent.tag === "sync-messages") {
-        syncEvent.waitUntil(syncMessages());
-    }
-});
-async function syncMessages() {
-    // Get pending messages from IndexedDB
-    // Send them when back online
-    // This would integrate with your message sending logic
-    return Promise.resolve();
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Check if URL is an emoji request
+ */
+function isEmojiRequest(url) {
+  return (
+    url.pathname.includes("/storage/buckets/emojis/files/") ||
+    (url.pathname.includes("/v1/storage/buckets/") && url.pathname.includes("/emojis/"))
+  );
 }
-// Push notification support (future enhancement)
-sw.addEventListener("push", (event) => {
-    if (!event.data) {
-        return;
+
+/**
+ * Check if pathname is a static asset
+ */
+function isStaticAsset(pathname) {
+  return (
+    pathname.endsWith(".js") ||
+    pathname.endsWith(".css") ||
+    pathname.endsWith(".woff2") ||
+    pathname.endsWith(".png") ||
+    pathname.endsWith(".jpg") ||
+    pathname.endsWith(".svg") ||
+    pathname.endsWith(".ico") ||
+    pathname.endsWith(".webp")
+  );
+}
+
+/**
+ * Handle emoji requests with cache-first strategy
+ */
+function handleEmojiRequest(request) {
+  return caches.open(EMOJI_CACHE_NAME).then(function(cache) {
+    return cache.match(request).then(function(cachedResponse) {
+      if (cachedResponse) {
+        // Return cached emoji immediately, update in background
+        fetch(request)
+          .then(function(response) {
+            if (response.status === 200) {
+              cache.put(request, response.clone());
+            }
+          })
+          .catch(function() {
+            // Ignore background fetch errors
+          });
+        return cachedResponse;
+      }
+
+      // Not in cache, fetch and cache
+      return fetch(request).then(function(response) {
+        if (response.status === 200) {
+          cache.put(request, response.clone());
+        }
+        return response;
+      });
+    });
+  });
+}
+
+/**
+ * Handle API requests with network-first strategy
+ */
+function handleApiRequest(request) {
+  return caches.open(API_CACHE_NAME).then(function(cache) {
+    return fetch(request)
+      .then(function(response) {
+        // Cache successful responses
+        if (response.status === 200) {
+          cache.put(request, response.clone());
+        }
+        return response;
+      })
+      .catch(function() {
+        // Network failed, try cache
+        return cache.match(request).then(function(cachedResponse) {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Return offline response
+          return new Response(
+            JSON.stringify({ error: "Offline", offline: true }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        });
+      });
+  });
+}
+
+/**
+ * Handle static assets with cache-first strategy
+ */
+function handleStaticAsset(request) {
+  return caches.match(request).then(function(cachedResponse) {
+    if (cachedResponse) {
+      // Return cached, update in background
+      fetch(request)
+        .then(function(response) {
+          if (response.status === 200) {
+            caches.open(CACHE_NAME).then(function(cache) {
+              cache.put(request, response);
+            });
+          }
+        })
+        .catch(function() {
+          // Ignore background fetch errors
+        });
+      return cachedResponse;
     }
-    const data = event.data.json();
-    const options = {
-        body: data.body,
-        icon: "/icon-192.png",
-        badge: "/badge-72.png",
-        data: {
-            url: data.url || "/chat",
-        },
-    };
-    event.waitUntil(sw.registration.showNotification(data.title, options));
+
+    // Not cached, fetch and cache
+    return fetch(request).then(function(response) {
+      if (response.status === 200) {
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(request, response.clone());
+        });
+      }
+      return response;
+    });
+  });
+}
+
+/**
+ * Handle navigation requests with stale-while-revalidate
+ */
+function handleNavigationRequest(request) {
+  return caches.match(request).then(function(cachedResponse) {
+    var fetchPromise = fetch(request).then(function(response) {
+      if (response.status === 200) {
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(request, response.clone());
+        });
+      }
+      return response;
+    });
+
+    // Return cached if available, otherwise wait for network
+    return cachedResponse || fetchPromise;
+  });
+}
+
+// ============================================
+// BACKGROUND SYNC
+// ============================================
+sw.addEventListener("sync", function(event) {
+  if (event.tag === "sync-messages") {
+    event.waitUntil(syncMessages());
+  }
 });
-sw.addEventListener("notificationclick", (event) => {
-    event.notification.close();
-    event.waitUntil(sw.clients.openWindow(event.notification.data.url || "/chat"));
+
+/**
+ * Sync pending messages when back online
+ */
+function syncMessages() {
+  // Placeholder for future IndexedDB message queue sync
+  return Promise.resolve();
+}
+
+// ============================================
+// PUSH NOTIFICATIONS
+// ============================================
+sw.addEventListener("push", function(event) {
+  if (!event.data) {
+    return;
+  }
+
+  var data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    // Fallback for malformed push data
+    event.waitUntil(
+      sw.registration.showNotification("New Message", {
+        body: event.data.text(),
+        icon: "/favicon/favicon-192x192.png",
+      })
+    );
+    return;
+  }
+
+  var options = {
+    body: data.body || "",
+    icon: data.icon || "/favicon/favicon-192x192.png",
+    badge: data.badge || "/favicon/favicon-72x72.png",
+    tag: data.tag || "notification-" + Date.now(),
+    data: {
+      url: data.url || "/chat",
+      type: data.type,
+      messageId: data.data && data.data.messageId,
+      channelId: data.data && data.data.channelId,
+      serverId: data.data && data.data.serverId,
+      conversationId: data.data && data.data.conversationId,
+      senderId: data.data && data.data.senderId,
+    },
+    // Keep notification visible for mentions and DMs
+    requireInteraction: data.type === "mention" || data.type === "dm",
+    // Action buttons
+    actions: [
+      { action: "view", title: "View" },
+      { action: "dismiss", title: "Dismiss" },
+    ],
+  };
+
+  event.waitUntil(sw.registration.showNotification(data.title || "New Message", options));
+});
+
+// ============================================
+// NOTIFICATION CLICK
+// ============================================
+sw.addEventListener("notificationclick", function(event) {
+  event.notification.close();
+
+  var notificationData = event.notification.data || {};
+
+  // Handle dismiss action
+  if (event.action === "dismiss") {
+    return;
+  }
+
+  // Build target URL based on notification data
+  var targetUrl = notificationData.url || "/chat";
+
+  if (notificationData.conversationId) {
+    targetUrl = "/dm/" + notificationData.conversationId;
+  } else if (notificationData.serverId && notificationData.channelId) {
+    targetUrl = "/servers/" + notificationData.serverId + "/channels/" + notificationData.channelId;
+    if (notificationData.messageId) {
+      targetUrl += "?message=" + notificationData.messageId;
+    }
+  }
+
+  event.waitUntil(
+    sw.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function(clientList) {
+      // Try to focus an existing window
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url.includes(sw.location.origin) && "focus" in client) {
+          client.focus();
+          client.navigate(targetUrl);
+          return;
+        }
+      }
+      // No existing window, open a new one
+      return sw.clients.openWindow(targetUrl);
+    })
+  );
 });
