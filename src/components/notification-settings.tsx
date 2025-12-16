@@ -85,6 +85,17 @@ export function NotificationSettings({ onSettingsChange }: NotificationSettingsP
 	const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
 	const [quietHoursTimezone, setQuietHoursTimezone] = useState("UTC");
 
+	// Browser notification permission state
+	const [browserPermission, setBrowserPermission] = useState<NotificationPermission>("default");
+	const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+
+	// Check browser notification permission on mount
+	useEffect(() => {
+		if (typeof window !== "undefined" && "Notification" in window) {
+			setBrowserPermission(Notification.permission);
+		}
+	}, []);
+
 	// Fetch settings on mount
 	useEffect(() => {
 		const fetchSettings = async () => {
@@ -121,6 +132,34 @@ export function NotificationSettings({ onSettingsChange }: NotificationSettingsP
 
 		void fetchSettings();
 	}, []);
+
+	const requestBrowserPermission = useCallback(async () => {
+		if (typeof window === "undefined" || !("Notification" in window)) {
+			toast.error("Notifications are not supported by your browser");
+			return;
+		}
+
+		if (browserPermission === "denied") {
+			toast.error("Notifications are blocked. Please enable them in your browser settings.");
+			return;
+		}
+
+		setIsRequestingPermission(true);
+		try {
+			const permission = await Notification.requestPermission();
+			setBrowserPermission(permission);
+			
+			if (permission === "granted") {
+				toast.success("Notification permission granted!");
+			} else if (permission === "denied") {
+				toast.error("Notification permission denied. You can change this in your browser settings.");
+			}
+		} catch (error) {
+			toast.error("Failed to request notification permission");
+		} finally {
+			setIsRequestingPermission(false);
+		}
+	}, [browserPermission]);
 
 	const saveSettings = useCallback(async () => {
 		setIsSaving(true);
@@ -217,6 +256,63 @@ export function NotificationSettings({ onSettingsChange }: NotificationSettingsP
 							</div>
 						</button>
 					))}
+				</div>
+			</Card>
+
+			{/* Browser Notification Permission */}
+			<Card className="p-6">
+				<div className="flex items-center gap-3 mb-4">
+					<Bell className="h-5 w-5 text-primary" />
+					<h3 className="text-lg font-semibold">Browser Notifications</h3>
+				</div>
+				<p className="text-sm text-muted-foreground mb-4">
+					Control whether your browser can show desktop notifications.
+				</p>
+				<div className="space-y-4">
+					<div className="flex items-center justify-between rounded-md border p-4">
+						<div className="flex-1">
+							<p className="font-medium">Current Permission Status</p>
+							<p className="text-sm text-muted-foreground">
+								{browserPermission === "granted" && "✓ Granted - You will receive desktop notifications"}
+								{browserPermission === "denied" && "✗ Denied - Please enable in browser settings"}
+								{browserPermission === "default" && "⚠ Not set - Click to enable notifications"}
+							</p>
+						</div>
+						<div className="flex items-center gap-2">
+							{browserPermission === "granted" && (
+								<span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+									Enabled
+								</span>
+							)}
+							{browserPermission === "denied" && (
+								<span className="rounded-full bg-red-500/10 px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400">
+									Blocked
+								</span>
+							)}
+							{browserPermission === "default" && (
+								<span className="rounded-full bg-yellow-500/10 px-3 py-1 text-xs font-medium text-yellow-600 dark:text-yellow-400">
+									Not Set
+								</span>
+							)}
+						</div>
+					</div>
+					
+					{browserPermission !== "granted" && (
+						<div className="flex flex-col gap-2">
+							<Button
+								onClick={requestBrowserPermission}
+								disabled={isRequestingPermission || browserPermission === "denied"}
+								className="w-full"
+							>
+								{isRequestingPermission ? "Requesting..." : "Enable Browser Notifications"}
+							</Button>
+							{browserPermission === "denied" && (
+								<p className="text-xs text-muted-foreground">
+									Notifications are blocked. To enable them, click the icon in your browser&apos;s address bar and allow notifications for this site.
+								</p>
+							)}
+						</div>
+					)}
 				</div>
 			</Card>
 
