@@ -174,7 +174,7 @@ export default function ChatPage() {
       })
         .then(async (res) => {
           if (res.ok) {
-            await res.json(); // consume response
+            await res.json(); // intentionally unused: response data not needed
             sessionStorage.setItem(joinedKey, "true");
             toast.success("Successfully joined server via invite!");
             

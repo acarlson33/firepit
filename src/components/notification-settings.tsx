@@ -169,9 +169,9 @@ export function NotificationSettings({ onSettingsChange }: NotificationSettingsP
 				desktopNotifications: desktopEnabled,
 				pushNotifications: pushEnabled,
 				notificationSound: soundEnabled,
-				quietHoursStart: quietHoursEnabled ? quietHoursStart : null,
-				quietHoursEnd: quietHoursEnabled ? quietHoursEnd : null,
-				quietHoursTimezone: quietHoursEnabled ? quietHoursTimezone : null,
+				quietHoursStart: quietHoursEnabled ? quietHoursStart : undefined,
+				quietHoursEnd: quietHoursEnabled ? quietHoursEnd : undefined,
+				quietHoursTimezone: quietHoursEnabled ? quietHoursTimezone : undefined,
 			};
 
 			const response = await fetch("/api/notifications/settings", {

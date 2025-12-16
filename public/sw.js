@@ -341,9 +341,11 @@ sw.addEventListener("notificationclick", function(event) {
       // Try to focus an existing window
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
-        if (client.url.includes(sw.location.origin) && "focus" in client) {
+        if (new URL(client.url).origin === sw.location.origin && "focus" in client) {
           client.focus();
-          client.navigate(targetUrl);
+          if ("navigate" in client) {
+            client.navigate(targetUrl);
+          }
           return;
         }
       }
