@@ -20,7 +20,7 @@ var STATIC_ASSETS = [
   "/",
   "/chat",
   "/favicon.ico",
-  "/manifest.json",
+  "/manifest.webmanifest",
 ];
 
 // Reference to service worker scope
@@ -225,7 +225,7 @@ function handleStaticAsset(request) {
         .then(function(response) {
           if (response.status === 200) {
             caches.open(CACHE_NAME).then(function(cache) {
-              cache.put(request, response);
+              cache.put(request, response.clone());
             });
           }
         })
