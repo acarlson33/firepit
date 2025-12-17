@@ -20,7 +20,7 @@ var STATIC_ASSETS = [
   "/",
   "/chat",
   "/favicon.ico",
-  "/manifest.json",
+  "/manifest.webmanifest",
 ];
 
 // Reference to service worker scope
