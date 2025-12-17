@@ -161,7 +161,7 @@ function handleEmojiRequest(request) {
         // Return cached emoji immediately, update in background
         fetch(request)
           .then(function(response) {
-            if (response.status === 200) {
+            if (response.ok && response.status === 200) {
               cache.put(request, response.clone());
             }
           })
@@ -173,7 +173,7 @@ function handleEmojiRequest(request) {
 
       // Not in cache, fetch and cache
       return fetch(request).then(function(response) {
-        if (response.status === 200) {
+        if (response.ok && response.status === 200) {
           cache.put(request, response.clone());
         }
         return response;
@@ -190,7 +190,7 @@ function handleApiRequest(request) {
     return fetch(request)
       .then(function(response) {
         // Cache successful responses
-        if (response.status === 200) {
+        if (response.ok && response.status === 200) {
           cache.put(request, response.clone());
         }
         return response;
@@ -223,9 +223,9 @@ function handleStaticAsset(request) {
       // Return cached, update in background
       fetch(request)
         .then(function(response) {
-          if (response.status === 200) {
+          if (response.ok && response.status === 200) {
             caches.open(CACHE_NAME).then(function(cache) {
-              cache.put(request, response);
+              cache.put(request, response.clone());
             });
           }
         })
@@ -237,7 +237,7 @@ function handleStaticAsset(request) {
 
     // Not cached, fetch and cache
     return fetch(request).then(function(response) {
-      if (response.status === 200) {
+      if (response.ok && response.status === 200) {
         caches.open(CACHE_NAME).then(function(cache) {
           cache.put(request, response.clone());
         });
@@ -253,7 +253,7 @@ function handleStaticAsset(request) {
 function handleNavigationRequest(request) {
   return caches.match(request).then(function(cachedResponse) {
     var fetchPromise = fetch(request).then(function(response) {
-      if (response.status === 200) {
+      if (response.ok && response.status === 200) {
         caches.open(CACHE_NAME).then(function(cache) {
           cache.put(request, response.clone());
         });
