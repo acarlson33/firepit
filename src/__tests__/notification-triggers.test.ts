@@ -1,5 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { NotificationSettings } from "../lib/types";
+import {
+	extractMentionedUserIds,
+	isReplyToUser,
+	buildNotificationPayload,
+	shouldNotifyUser,
+} from "../lib/notification-triggers";
+import {
+	getOrCreateNotificationSettings,
+	getEffectiveNotificationLevel,
+	isInQuietHours,
+} from "../lib/notification-settings";
 
 // Mock the notification-settings module
 vi.mock("../lib/notification-settings", () => {
@@ -16,54 +27,42 @@ describe("Notification Triggers", () => {
 	});
 
 	describe("extractMentionedUserIds", () => {
-		it("should extract user IDs from mentions", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should extract user IDs from mentions", () => {
 			const messageContent = "Hey <@user123> and <@user456>, check this out!";
 			const result = extractMentionedUserIds(messageContent);
 
 			expect(result).toEqual(["user123", "user456"]);
 		});
 
-		it("should handle messages with no mentions", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should handle messages with no mentions", () => {
 			const messageContent = "Just a regular message";
 			const result = extractMentionedUserIds(messageContent);
 
 			expect(result).toEqual([]);
 		});
 
-		it("should handle single mention", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should handle single mention", () => {
 			const messageContent = "Hello <@user789>";
 			const result = extractMentionedUserIds(messageContent);
 
 			expect(result).toEqual(["user789"]);
 		});
 
-		it("should handle alphanumeric user IDs", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should handle alphanumeric user IDs", () => {
 			const messageContent = "<@abc123DEF456>";
 			const result = extractMentionedUserIds(messageContent);
 
 			expect(result).toEqual(["abc123DEF456"]);
 		});
 
-		it("should handle multiple mentions of same user", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should handle multiple mentions of same user", () => {
 			const messageContent = "<@user123> hey <@user123>";
 			const result = extractMentionedUserIds(messageContent);
 
 			expect(result).toEqual(["user123", "user123"]);
 		});
 
-		it("should not match malformed mentions", async () => {
-			const { extractMentionedUserIds } = await import("../lib/notification-triggers");
-
+		it("should not match malformed mentions", () => {
 			const messageContent = "@user123 or <@> or <@ user456>";
 			const result = extractMentionedUserIds(messageContent);
 
@@ -72,32 +71,24 @@ describe("Notification Triggers", () => {
 	});
 
 	describe("isReplyToUser", () => {
-		it("should return true when reply is to the user", async () => {
-			const { isReplyToUser } = await import("../lib/notification-triggers");
-
+		it("should return true when reply is to the user", () => {
 			const result = isReplyToUser("user-123", "user-123");
 			expect(result).toBe(true);
 		});
 
-		it("should return false when reply is to different user", async () => {
-			const { isReplyToUser } = await import("../lib/notification-triggers");
-
+		it("should return false when reply is to different user", () => {
 			const result = isReplyToUser("user-123", "user-456");
 			expect(result).toBe(false);
 		});
 
-		it("should return false when replyToAuthorId is undefined", async () => {
-			const { isReplyToUser } = await import("../lib/notification-triggers");
-
+		it("should return false when replyToAuthorId is undefined", () => {
 			const result = isReplyToUser(undefined, "user-123");
 			expect(result).toBe(false);
 		});
 	});
 
 	describe("buildNotificationPayload", () => {
-		it("should build payload for DM notification", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should build payload for DM notification", () => {
 			const result = buildNotificationPayload("dm", {
 				senderName: "Alice",
 				messageContent: "Hey there!",
@@ -111,9 +102,7 @@ describe("Notification Triggers", () => {
 			expect(result.data.conversationId).toBe("conv-123");
 		});
 
-		it("should build payload for mention notification", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should build payload for mention notification", () => {
 			const result = buildNotificationPayload("mention", {
 				senderName: "Bob",
 				messageContent: "Hey <@user123> check this",
@@ -130,9 +119,7 @@ describe("Notification Triggers", () => {
 			expect(result.url).toBe("/servers/server-456/channels/channel-123?message=msg-789");
 		});
 
-		it("should build payload for thread reply notification", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should build payload for thread reply notification", () => {
 			const result = buildNotificationPayload("thread_reply", {
 				senderName: "Charlie",
 				messageContent: "Good point!",
@@ -147,9 +134,7 @@ describe("Notification Triggers", () => {
 			expect(result.url).toBe("/servers/server-456/channels/channel-123");
 		});
 
-		it("should build payload for regular message notification", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should build payload for regular message notification", () => {
 			const result = buildNotificationPayload("message", {
 				senderName: "Diana",
 				messageContent: "Hello everyone",
@@ -164,9 +149,7 @@ describe("Notification Triggers", () => {
 			expect(result.body).toBe("Diana: Hello everyone");
 		});
 
-		it("should truncate long message content", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should truncate long message content", () => {
 			const longMessage = "a".repeat(150);
 			const result = buildNotificationPayload("dm", {
 				senderName: "Alice",
@@ -178,9 +161,7 @@ describe("Notification Triggers", () => {
 			expect(result.body).toBe("a".repeat(97) + "...");
 		});
 
-		it("should not truncate short messages", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should not truncate short messages", () => {
 			const shortMessage = "Short message";
 			const result = buildNotificationPayload("dm", {
 				senderName: "Alice",
@@ -191,9 +172,7 @@ describe("Notification Triggers", () => {
 			expect(result.body).toBe(shortMessage);
 		});
 
-		it("should include sender avatar URL when provided", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should include sender avatar URL when provided", () => {
 			const result = buildNotificationPayload("dm", {
 				senderName: "Alice",
 				senderAvatarUrl: "https://example.com/avatar.png",
@@ -204,9 +183,7 @@ describe("Notification Triggers", () => {
 			expect(result.icon).toBe("https://example.com/avatar.png");
 		});
 
-		it("should handle missing optional fields gracefully", async () => {
-			const { buildNotificationPayload } = await import("../lib/notification-triggers");
-
+		it("should handle missing optional fields gracefully", () => {
 			const result = buildNotificationPayload("mention", {
 				senderName: "Bob",
 				messageContent: "Test",
@@ -236,8 +213,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify when sender is recipient", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-
 			const result = await shouldNotifyUser({
 				senderId: "user-123",
 				recipientId: "user-123",
@@ -249,10 +224,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for DM when level is 'all'", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("all")
 			);
@@ -273,10 +244,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for mention when level is 'mentions'", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("mentions")
 			);
@@ -295,10 +262,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify for regular message when level is 'mentions'", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("mentions")
 			);
@@ -316,10 +279,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify when level is 'nothing'", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("nothing")
 			);
@@ -336,10 +295,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify during quiet hours", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("all")
 			);
@@ -356,10 +311,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for thread reply when level is 'mentions'", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("mentions")
 			);
@@ -378,10 +329,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should respect notification preferences in result", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue({
 				...createMockSettings("all"),
 				desktopNotifications: false,
@@ -404,10 +351,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should handle missing settings gracefully", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(null as never);
 
 			const result = await shouldNotifyUser({
@@ -421,10 +364,6 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should determine event type as 'message' for regular channel message", async () => {
-			const { shouldNotifyUser } = await import("../lib/notification-triggers");
-			const { getOrCreateNotificationSettings, getEffectiveNotificationLevel, isInQuietHours } =
-				await import("../lib/notification-settings");
-
 			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
 				createMockSettings("all")
 			);

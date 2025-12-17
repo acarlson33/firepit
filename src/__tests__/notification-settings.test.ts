@@ -1,5 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { NotificationSettings, NotificationLevel, NotificationOverride } from "../lib/types";
+import {
+	calculateMuteExpiration,
+	isMuteExpired,
+	getEffectiveNotificationLevel,
+	isInQuietHours,
+	getNotificationSettings,
+} from "../lib/notification-settings";
+import { getAdminClient } from "../lib/appwrite-admin";
 
 // Mock the appwrite-admin module
 vi.mock("../lib/appwrite-admin", () => {
@@ -37,17 +45,14 @@ describe("Notification Settings", () => {
 	});
 
 	describe("calculateMuteExpiration", () => {
-		it("should return undefined for 'forever' duration", async () => {
-			const { calculateMuteExpiration } = await import("../lib/notification-settings");
+		it("should return undefined for 'forever' duration", () => {
 			const result = calculateMuteExpiration("forever");
 			expect(result).toBeUndefined();
 		});
 
-		it("should calculate correct expiration for 15m", async () => {
-			const { calculateMuteExpiration } = await import("../lib/notification-settings");
+		it("should calculate correct expiration for 15m", () => {
 			const before = new Date();
 			const result = calculateMuteExpiration("15m");
-			const after = new Date();
 
 			expect(result).toBeDefined();
 			const expirationDate = new Date(result!);
@@ -59,8 +64,7 @@ describe("Notification Settings", () => {
 			expect(actualDiff).toBeLessThanOrEqual(expectedMs + 1000);
 		});
 
-		it("should calculate correct expiration for 1h", async () => {
-			const { calculateMuteExpiration } = await import("../lib/notification-settings");
+		it("should calculate correct expiration for 1h", () => {
 			const before = new Date();
 			const result = calculateMuteExpiration("1h");
 
@@ -73,8 +77,7 @@ describe("Notification Settings", () => {
 			expect(actualDiff).toBeLessThanOrEqual(expectedMs + 1000);
 		});
 
-		it("should calculate correct expiration for 8h", async () => {
-			const { calculateMuteExpiration } = await import("../lib/notification-settings");
+		it("should calculate correct expiration for 8h", () => {
 			const before = new Date();
 			const result = calculateMuteExpiration("8h");
 
@@ -87,8 +90,7 @@ describe("Notification Settings", () => {
 			expect(actualDiff).toBeLessThanOrEqual(expectedMs + 1000);
 		});
 
-		it("should calculate correct expiration for 24h", async () => {
-			const { calculateMuteExpiration } = await import("../lib/notification-settings");
+		it("should calculate correct expiration for 24h", () => {
 			const before = new Date();
 			const result = calculateMuteExpiration("24h");
 
@@ -103,28 +105,24 @@ describe("Notification Settings", () => {
 	});
 
 	describe("isMuteExpired", () => {
-		it("should return false for undefined (muted forever)", async () => {
-			const { isMuteExpired } = await import("../lib/notification-settings");
+		it("should return false for undefined (muted forever)", () => {
 			const result = isMuteExpired(undefined);
 			expect(result).toBe(false);
 		});
 
-		it("should return true for past date", async () => {
-			const { isMuteExpired } = await import("../lib/notification-settings");
+		it("should return true for past date", () => {
 			const pastDate = new Date(Date.now() - 1000 * 60 * 60).toISOString(); // 1 hour ago
 			const result = isMuteExpired(pastDate);
 			expect(result).toBe(true);
 		});
 
-		it("should return false for future date", async () => {
-			const { isMuteExpired } = await import("../lib/notification-settings");
+		it("should return false for future date", () => {
 			const futureDate = new Date(Date.now() + 1000 * 60 * 60).toISOString(); // 1 hour from now
 			const result = isMuteExpired(futureDate);
 			expect(result).toBe(false);
 		});
 
-		it("should return true for date that just passed", async () => {
-			const { isMuteExpired } = await import("../lib/notification-settings");
+		it("should return true for date that just passed", () => {
 			const justPassed = new Date(Date.now() - 1).toISOString();
 			const result = isMuteExpired(justPassed);
 			expect(result).toBe(true);
@@ -157,8 +155,7 @@ describe("Notification Settings", () => {
 				: {},
 		});
 
-		it("should return global level when no overrides exist", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should return global level when no overrides exist", () => {
 			const settings = createMockSettings("mentions");
 
 			const result = getEffectiveNotificationLevel(settings, {
@@ -169,8 +166,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("mentions");
 		});
 
-		it("should prioritize channel override over server override", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should prioritize channel override over server override", () => {
 			const settings = createMockSettings("all", {
 				server: { level: "mentions", mutedUntil: undefined },
 				channel: { level: "nothing", mutedUntil: undefined },
@@ -184,8 +180,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("nothing");
 		});
 
-		it("should prioritize channel override over global", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should prioritize channel override over global", () => {
 			const settings = createMockSettings("all", {
 				channel: { level: "mentions", mutedUntil: undefined },
 			});
@@ -197,8 +192,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("mentions");
 		});
 
-		it("should use server override when no channel override exists", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should use server override when no channel override exists", () => {
 			const settings = createMockSettings("all", {
 				server: { level: "mentions", mutedUntil: undefined },
 			});
@@ -211,8 +205,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("mentions");
 		});
 
-		it("should use conversation override for DMs", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should use conversation override for DMs", () => {
 			const settings = createMockSettings("all", {
 				conversation: { level: "nothing", mutedUntil: undefined },
 			});
@@ -224,8 +217,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("nothing");
 		});
 
-		it("should ignore expired overrides", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should ignore expired overrides", () => {
 			const pastDate = new Date(Date.now() - 1000 * 60 * 60).toISOString();
 			const settings = createMockSettings("all", {
 				channel: { level: "nothing", mutedUntil: pastDate },
@@ -238,8 +230,7 @@ describe("Notification Settings", () => {
 			expect(result).toBe("all"); // Should fall back to global
 		});
 
-		it("should respect non-expired overrides", async () => {
-			const { getEffectiveNotificationLevel } = await import("../lib/notification-settings");
+		it("should respect non-expired overrides", () => {
 			const futureDate = new Date(Date.now() + 1000 * 60 * 60).toISOString();
 			const settings = createMockSettings("all", {
 				channel: { level: "nothing", mutedUntil: futureDate },
@@ -271,36 +262,31 @@ describe("Notification Settings", () => {
 			conversationOverrides: {},
 		});
 
-		it("should return false when quiet hours are not set", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should return false when quiet hours are not set", () => {
 			const settings = createSettingsWithQuietHours(undefined, undefined);
 
 			const result = isInQuietHours(settings);
 			expect(result).toBe(false);
 		});
 
-		it("should return false when only start is set", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should return false when only start is set", () => {
 			const settings = createSettingsWithQuietHours("22:00", undefined);
 
 			const result = isInQuietHours(settings);
 			expect(result).toBe(false);
 		});
 
-		it("should return false when only end is set", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should return false when only end is set", () => {
 			const settings = createSettingsWithQuietHours(undefined, "08:00");
 
 			const result = isInQuietHours(settings);
 			expect(result).toBe(false);
 		});
 
-		it("should correctly detect time within normal range", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should correctly detect time within normal range", () => {
 			// Test at a specific time
 			const now = new Date();
 			const currentHour = now.getHours();
-			const currentMin = now.getMinutes();
 
 			// Create a range that includes current time
 			const startHour = currentHour - 1 < 0 ? 23 : currentHour - 1;
@@ -316,8 +302,7 @@ describe("Notification Settings", () => {
 			expect(typeof result).toBe("boolean");
 		});
 
-		it("should handle overnight quiet hours (e.g., 22:00 - 08:00)", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should handle overnight quiet hours (e.g., 22:00 - 08:00)", () => {
 			const settings = createSettingsWithQuietHours("22:00", "08:00");
 
 			// We can't test exact time without mocking Date, but we can verify the function runs
@@ -325,8 +310,7 @@ describe("Notification Settings", () => {
 			expect(typeof result).toBe("boolean");
 		});
 
-		it("should handle same start and end time", async () => {
-			const { isInQuietHours } = await import("../lib/notification-settings");
+		it("should handle same start and end time", () => {
 			const settings = createSettingsWithQuietHours("12:00", "12:00");
 
 			const result = isInQuietHours(settings);
@@ -336,7 +320,6 @@ describe("Notification Settings", () => {
 
 	describe("Database Operations (Mocked)", () => {
 		it("should call getOrCreateNotificationSettings successfully", async () => {
-			const { getAdminClient } = await import("../lib/appwrite-admin");
 			const mockClient = getAdminClient();
 
 			// Mock the database response
@@ -361,7 +344,6 @@ describe("Notification Settings", () => {
 				],
 			} as never);
 
-			const { getNotificationSettings } = await import("../lib/notification-settings");
 			const result = await getNotificationSettings("user-1");
 
 			expect(result).toBeDefined();
@@ -371,7 +353,6 @@ describe("Notification Settings", () => {
 		});
 
 		it("should return null when no settings exist", async () => {
-			const { getAdminClient } = await import("../lib/appwrite-admin");
 			const mockClient = getAdminClient();
 
 			vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
@@ -379,14 +360,12 @@ describe("Notification Settings", () => {
 				documents: [],
 			} as never);
 
-			const { getNotificationSettings } = await import("../lib/notification-settings");
 			const result = await getNotificationSettings("user-1");
 
 			expect(result).toBeNull();
 		});
 
 		it("should handle JSON parsing of overrides", async () => {
-			const { getAdminClient } = await import("../lib/appwrite-admin");
 			const mockClient = getAdminClient();
 
 			const serverOverrides = {
@@ -412,14 +391,12 @@ describe("Notification Settings", () => {
 				],
 			} as never);
 
-			const { getNotificationSettings } = await import("../lib/notification-settings");
 			const result = await getNotificationSettings("user-1");
 
 			expect(result?.serverOverrides).toEqual(serverOverrides);
 		});
 
 		it("should handle malformed JSON in overrides gracefully", async () => {
-			const { getAdminClient } = await import("../lib/appwrite-admin");
 			const mockClient = getAdminClient();
 
 			vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
@@ -441,7 +418,6 @@ describe("Notification Settings", () => {
 				],
 			} as never);
 
-			const { getNotificationSettings } = await import("../lib/notification-settings");
 			const result = await getNotificationSettings("user-1");
 
 			expect(result?.serverOverrides).toEqual({});
