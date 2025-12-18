@@ -26,7 +26,7 @@ describe("Service Worker", () => {
 			expect(swCode).toContain("STATIC_ASSETS");
 			expect(swCode).toContain('"/chat"');
 			expect(swCode).toContain('"/favicon.ico"');
-			expect(swCode).toContain('"/manifest.json"');
+			expect(swCode).toContain('"/manifest.webmanifest"');
 		});
 	});
 

@@ -287,6 +287,7 @@ export function ThreadPanel({
 						<Button
 							className="shrink-0"
 							disabled={!replyText.trim() || sending}
+							aria-label="Send reply"
 							onClick={() => void handleSendReply()}
 							size="icon"
 							type="button"
