@@ -51,6 +51,15 @@ export type Message = {
     userName?: string;
     displayName?: string;
   };
+  // Threading fields
+  threadId?: string; // Parent message ID if this is a thread reply
+  threadReplyCount?: number; // Count of replies (on parent message)
+  threadParticipants?: string[]; // User IDs who replied in thread (on parent)
+  lastThreadReplyAt?: string; // ISO timestamp of last thread reply (on parent)
+  // Pinning fields
+  isPinned?: boolean;
+  pinnedAt?: string; // ISO timestamp when pinned
+  pinnedBy?: string; // User ID who pinned it
 };
 
 export type Server = {
@@ -218,6 +227,15 @@ export type InviteUsage = {
   userId: string;
   serverId: string;
   joinedAt: string;
+};
+
+export type PinnedMessage = {
+  $id: string;
+  channelId: string;
+  messageId: string;
+  pinnedBy: string;
+  pinnedAt: string;
+  $createdAt: string;
 };
 
 export type RoleAssignment = {

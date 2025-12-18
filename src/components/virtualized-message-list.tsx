@@ -7,8 +7,9 @@ import { MessageWithMentions } from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import { ThreadIndicator } from "@/components/thread-indicator";
 import { formatMessageTimestamp } from "@/lib/utils";
-import { MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, MessageSquareMore, Pencil, Trash2, Pin } from "lucide-react";
 
 type VirtualizedMessageListProps = {
   messages: Message[];
@@ -27,6 +28,12 @@ type VirtualizedMessageListProps = {
   onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
   shouldShowLoadOlder: boolean;
   onLoadOlder: () => void;
+  // Threading props
+  onOpenThread?: (message: Message) => void;
+  // Pinning props
+  onPinMessage?: (messageId: string) => Promise<void>;
+  onUnpinMessage?: (messageId: string) => Promise<void>;
+  canManageMessages?: boolean;
 };
 
 export function VirtualizedMessageList({
@@ -46,6 +53,10 @@ export function VirtualizedMessageList({
   onUploadCustomEmoji,
   shouldShowLoadOlder,
   onLoadOlder,
+  onOpenThread,
+  onPinMessage,
+  onUnpinMessage,
+  canManageMessages = false,
 }: VirtualizedMessageListProps) {
   return (
     <Virtuoso
@@ -155,6 +166,23 @@ export function VirtualizedMessageList({
                 </div>
               )}
 
+              {/* Thread indicator - only show on non-thread messages with replies */}
+              {!m.threadId && m.threadReplyCount && m.threadReplyCount > 0 && onOpenThread && (
+                <ThreadIndicator
+                  replyCount={m.threadReplyCount}
+                  lastReplyAt={m.lastThreadReplyAt}
+                  onClick={() => onOpenThread(m)}
+                />
+              )}
+
+              {/* Pinned indicator */}
+              {m.isPinned && (
+                <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                  <Pin className="h-3 w-3" />
+                  <span>Pinned</span>
+                </div>
+              )}
+
               {m.reactions && m.reactions.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {m.reactions.map((reaction) => {
@@ -183,11 +211,52 @@ export function VirtualizedMessageList({
                   <Button
                     onClick={() => onStartReply(m)}
                     size="sm"
+                    title="Reply"
                     type="button"
                     variant="ghost"
                   >
                     <MessageSquare className="h-4 w-4" />
                   </Button>
+                  {/* Thread button - only show on non-thread messages */}
+                  {!m.threadId && onOpenThread && (
+                    <Button
+                      onClick={() => onOpenThread(m)}
+                      size="sm"
+                      title="Start or view thread"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MessageSquareMore className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {/* Pin/Unpin button - only show if user can manage messages */}
+                  {canManageMessages && (
+                    m.isPinned ? (
+                      onUnpinMessage && (
+                        <Button
+                          onClick={() => void onUnpinMessage(m.$id)}
+                          size="sm"
+                          title="Unpin message"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pin className="h-4 w-4 text-amber-600" />
+                        </Button>
+                      )
+                    ) : (
+                      onPinMessage && (
+                        <Button
+                          onClick={() => void onPinMessage(m.$id)}
+                          size="sm"
+                          title="Pin message"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pin className="h-4 w-4" />
+                        </Button>
+                      )
+                    )
+                  )}
                   {mine && (
                     <>
                       <Button

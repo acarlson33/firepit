@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
-import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical } from "lucide-react";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
-import type { Channel, FileAttachment } from "@/lib/types";
+import type { Channel, FileAttachment, Message } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
@@ -62,6 +62,12 @@ const CreateServerDialog = dynamic(() => import("@/components/create-server-dial
   ssr: false,
 });
 const MuteDialog = dynamic(() => import("@/components/mute-dialog").then((mod) => ({ default: mod.MuteDialog })), {
+  ssr: false,
+});
+const ThreadPanel = dynamic(() => import("@/components/thread-panel").then((mod) => ({ default: mod.ThreadPanel })), {
+  ssr: false,
+});
+const PinnedMessagesPanel = dynamic(() => import("@/components/pinned-messages-panel").then((mod) => ({ default: mod.PinnedMessagesPanel })), {
   ssr: false,
 });
 
@@ -116,6 +122,10 @@ export default function ChatPage() {
     id: string;
     name: string;
   }>({ open: false, type: "channel", id: "", name: "" });
+  // Threading and pinning state
+  const [activeThread, setActiveThread] = useState<Message | null>(null);
+  const [showPinnedPanel, setShowPinnedPanel] = useState(false);
+  const [canManageMessages, setCanManageMessages] = useState(false);
   const _messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -307,6 +317,38 @@ export default function ChatPage() {
     }
   }, [userId, requestNotificationPermission]);
 
+  // Check manageMessages permission when channel changes
+  useEffect(() => {
+    async function checkPermissions() {
+      if (!selectedChannel || !userId || !serversApi.selectedServer) {
+        setCanManageMessages(false);
+        return;
+      }
+
+      // Server owner always has permission
+      const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
+      if (selectedServerData?.ownerId === userId) {
+        setCanManageMessages(true);
+        return;
+      }
+
+      // Check via API
+      try {
+        const res = await fetch(`/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCanManageMessages(data.manageMessages ?? false);
+        } else {
+          setCanManageMessages(false);
+        }
+      } catch {
+        setCanManageMessages(false);
+      }
+    }
+
+    void checkPermissions();
+  }, [selectedChannel, userId, serversApi.selectedServer, serversApi.servers]);
+
   // Handlers -----------------
   const selectChannel = useCallback((c: Channel) => {
     setSelectedChannel(c.$id);
@@ -416,6 +458,48 @@ export default function ChatPage() {
 
   const removeFileAttachment = useCallback((index: number) => {
     setFileAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Thread handlers
+  const handleOpenThread = useCallback((message: Message) => {
+    setActiveThread(message);
+  }, []);
+
+  const handleCloseThread = useCallback(() => {
+    setActiveThread(null);
+  }, []);
+
+  // Pin handlers
+  const handlePinMessage = useCallback(async (messageId: string) => {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/pin`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to pin message");
+      } else {
+        toast.success("Message pinned");
+      }
+    } catch {
+      toast.error("Failed to pin message");
+    }
+  }, []);
+
+  const handleUnpinMessage = useCallback(async (messageId: string) => {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/pin`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to unpin message");
+      } else {
+        toast.success("Message unpinned");
+      }
+    } catch {
+      toast.error("Failed to unpin message");
+    }
   }, []);
 
   // Derived helpers
@@ -658,6 +742,7 @@ export default function ChatPage() {
     if (useVirtualScrolling) {
       return (
         <VirtualizedMessageList
+          canManageMessages={canManageMessages}
           customEmojis={customEmojis}
           deleteConfirmId={deleteConfirmId}
           editingMessageId={editingMessageId}
@@ -670,16 +755,19 @@ export default function ChatPage() {
             });
           }}
           onOpenProfileModal={openProfileModal}
+          onOpenThread={handleOpenThread}
+          onPinMessage={handlePinMessage}
           onRemove={handleDelete}
           onStartEdit={startEdit}
           onStartReply={startReply}
           onToggleReaction={async (messageId: string, emoji: string, isAdding: boolean) => {
             try {
               await toggleReaction(messageId, emoji, isAdding, false);
-            } catch (error) {
+            } catch {
               // Error already logged by reaction handler
             }
           }}
+          onUnpinMessage={handleUnpinMessage}
           onUploadCustomEmoji={uploadEmoji}
           setDeleteConfirmId={setDeleteConfirmId}
           shouldShowLoadOlder={shouldShowLoadOlder()}
@@ -1041,18 +1129,30 @@ export default function ChatPage() {
                       {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
                     </h2>
                   </div>
-                  {serversApi.selectedServer && 
-                   serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                  <div className="flex items-center gap-2">
                     <Button
-                      onClick={() => setChannelPermissionsOpen(true)}
+                      onClick={() => setShowPinnedPanel(true)}
                       size="sm"
+                      title="View pinned messages"
                       type="button"
                       variant="ghost"
                     >
-                      <Settings className="h-4 w-4" />
-                      <span className="ml-2">Channel Permissions</span>
+                      <Pin className="h-4 w-4" />
+                      <span className="ml-2 hidden sm:inline">Pins</span>
                     </Button>
-                  )}
+                    {serversApi.selectedServer && 
+                     serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                      <Button
+                        onClick={() => setChannelPermissionsOpen(true)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Settings className="h-4 w-4" />
+                        <span className="ml-2">Channel Permissions</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
               {renderMessages()}
@@ -1307,6 +1407,33 @@ export default function ChatPage() {
         targetId={muteDialogState.id}
         targetName={muteDialogState.name}
       />
+
+      {/* Thread Panel */}
+      {activeThread && userId && (
+        <ThreadPanel
+          customEmojis={customEmojis}
+          onOpenChange={(open) => {
+            if (!open) {
+              handleCloseThread();
+            }
+          }}
+          open={Boolean(activeThread)}
+          parentMessage={activeThread}
+          userId={userId}
+        />
+      )}
+
+      {/* Pinned Messages Panel */}
+      {selectedChannel && (
+        <PinnedMessagesPanel
+          canManageMessages={canManageMessages}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name}
+          onOpenChange={setShowPinnedPanel}
+          onUnpin={handleUnpinMessage}
+          open={showPinnedPanel}
+        />
+      )}
     </div>
   );
 }

@@ -388,16 +388,30 @@ async function setupMessages() {
 		["imageFileId", LEN_ID, false],
 		["imageUrl", 2000, false],
 		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+		// Threading fields
+		["threadId", LEN_ID, false], // Parent message ID if this is a thread reply
+		["threadParticipants", 2000, false], // JSON array of user IDs who replied
+		["lastThreadReplyAt", LEN_TS, false], // ISO timestamp of last thread reply
+		// Pinning fields
+		["pinnedAt", LEN_TS, false], // ISO timestamp when pinned
+		["pinnedBy", LEN_ID, false], // User ID who pinned it
 	];
 	for (const [k, size, req] of fields) {
 		await ensureStringAttribute("messages", k, size, req);
 	}
+	// Integer attributes
+	await ensureIntegerAttribute("messages", "threadReplyCount", false, 0, 0, 100000);
+	await ensureBooleanAttribute("messages", "isPinned", false);
 	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
 	await ensureIndex("messages", "idx_userId", "key", ["userId"]);
 	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
 	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
 	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
 	await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
+	// Threading indexes
+	await ensureIndex("messages", "idx_threadId", "key", ["threadId"]);
+	// Pinning index (compound for efficient channel pin queries)
+	await ensureIndex("messages", "idx_isPinned_channelId", "key", ["isPinned", "channelId"]);
 	
 	try {
 		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
