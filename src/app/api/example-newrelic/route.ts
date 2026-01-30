@@ -28,15 +28,31 @@ export async function GET(request: NextRequest) {
     setTransactionName("GET /api/example");
     
     // Add custom attributes to this transaction
+    // Accessing request.headers may throw during prerendering. Read it safely.
+    let userAgent = "unknown";
+    try {
+      userAgent = request.headers.get("user-agent") || "unknown";
+    } catch {
+      // In prerendering context, accessing headers can cause an early exit. Use fallback.
+      userAgent = "unknown";
+    }
+
     addTransactionAttributes({
       endpoint: "/api/example",
       method: "GET",
-      userAgent: request.headers.get("user-agent") || "unknown",
+      userAgent,
     });
     
-    // Log the request
+    // Log the request (access request.url safely in case prerendering blocks access)
+    let reqUrl = "unknown";
+    try {
+      reqUrl = request.url;
+    } catch {
+      reqUrl = "unknown";
+    }
+
     logger.info("Processing example API request", {
-      url: request.url,
+      url: reqUrl,
       method: "GET",
     });
     
