@@ -40,6 +40,7 @@ export function useDirectMessages({
 	const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
 	const lastTypingSentState = useRef<boolean>(false);
 	const lastTypingSentAt = useRef<number>(0);
+	const userProfileCache = useRef<Record<string, { displayName?: string; avatarUrl?: string; pronouns?: string }>>({});
 
 	const typingIdleMs = 2500;
 	const typingStartDebounceMs = 400;
@@ -177,29 +178,44 @@ export function useDirectMessages({
 					attachments
 				);
 				
-				// Fetch sender profile to enrich the message
-				try {
-					const profileResponse = await fetch(`/api/users/${userId}/profile`);
-					if (profileResponse.ok) {
-						const profile = await profileResponse.json();
-						message.senderDisplayName = profile.displayName;
-						message.senderAvatarUrl = profile.avatarUrl;
-						message.senderPronouns = profile.pronouns;
+				// Enrich with sender profile data (cached to avoid repeated fetches)
+				if (!userProfileCache.current[userId]) {
+					try {
+						const profileResponse = await fetch(`/api/users/${userId}/profile`);
+						if (profileResponse.ok) {
+							const profile = await profileResponse.json();
+							userProfileCache.current[userId] = {
+								displayName: profile.displayName,
+								avatarUrl: profile.avatarUrl,
+								pronouns: profile.pronouns,
+							};
+						}
+					} catch {
+						// If profile fetch fails, cache will remain empty
 					}
-				} catch {
-					// If profile fetch fails, just use the message without enrichment
+				}
+				
+				// Apply cached profile data
+				const profile = userProfileCache.current[userId];
+				if (profile) {
+					message.senderDisplayName = profile.displayName;
+					message.senderAvatarUrl = profile.avatarUrl;
+					message.senderPronouns = profile.pronouns;
 				}
 				
 				// Parse reactions if needed
 				message.reactions = parseReactions(message.reactions);
 				
-				// Optimistically add the message to local state
+				// Optimistically add the message to local state with sorting
 				setMessages((prev) => {
 					// Check if message already exists to prevent duplicates
 					if (prev.some((m) => m.$id === message.$id)) {
 						return prev;
 					}
-					return [...prev, message];
+					// Add and sort by creation time to maintain chronological order
+					return [...prev, message].sort((a, b) =>
+						a.$createdAt.localeCompare(b.$createdAt)
+					);
 				});
 			} catch (err) {
 				throw new Error(
