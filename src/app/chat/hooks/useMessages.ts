@@ -544,6 +544,27 @@ export function useMessages({
         const data = await response.json();
         throw new Error(data.error || "Failed to send message");
       }
+
+      // Optimistically add the message to local state
+      const data = await response.json();
+      if (data.message) {
+        const baseMessage = data.message as Message;
+        
+        // Enrich message with profile data and reply context
+        const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
+        const profileEnriched = await enrichMessageWithProfile(baseMessage);
+        const enriched = enrichMessageWithReplyContext(profileEnriched, messages);
+        
+        // Add to messages array, ensuring no duplicates
+        setMessages((prev) => {
+          if (prev.some((m) => m.$id === enriched.$id)) {
+            return prev;
+          }
+          return [...prev, enriched].sort((a, b) =>
+            a.$createdAt.localeCompare(b.$createdAt)
+          );
+        });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send");
     }
