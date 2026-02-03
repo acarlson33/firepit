@@ -181,7 +181,7 @@ export function useDirectMessages({
 				// Enrich with sender profile data (cached to avoid repeated fetches)
 				if (!userProfileCache.current[userId]) {
 					try {
-						const profileResponse = await fetch(`/api/users/${userId}/profile`);
+						const profileResponse = await fetch(`/api/users/${encodeURIComponent(userId)}/profile`);
 						if (profileResponse.ok) {
 							const profile = await profileResponse.json();
 							userProfileCache.current[userId] = {
@@ -195,25 +195,24 @@ export function useDirectMessages({
 					}
 				}
 				
-				// Apply cached profile data
+				// Create enriched message object (avoid mutating original)
 				const profile = userProfileCache.current[userId];
-				if (profile) {
-					message.senderDisplayName = profile.displayName;
-					message.senderAvatarUrl = profile.avatarUrl;
-					message.senderPronouns = profile.pronouns;
-				}
-				
-				// Parse reactions if needed
-				message.reactions = parseReactions(message.reactions);
+				const enrichedMessage: DirectMessage = {
+					...message,
+					senderDisplayName: profile?.displayName,
+					senderAvatarUrl: profile?.avatarUrl,
+					senderPronouns: profile?.pronouns,
+					reactions: parseReactions(message.reactions),
+				};
 				
 				// Optimistically add the message to local state with sorting
 				setMessages((prev) => {
 					// Check if message already exists to prevent duplicates
-					if (prev.some((m) => m.$id === message.$id)) {
+					if (prev.some((m) => m.$id === enrichedMessage.$id)) {
 						return prev;
 					}
 					// Add and sort by creation time to maintain chronological order
-					return [...prev, message].sort((a, b) =>
+					return [...prev, enrichedMessage].sort((a, b) =>
 						a.$createdAt.localeCompare(b.$createdAt)
 					);
 				});
