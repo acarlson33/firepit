@@ -166,7 +166,7 @@ export function useDirectMessages({
 
 			setSending(true);
 			try {
-				await sendDirectMessage(
+				const message = await sendDirectMessage(
 					conversationId,
 					userId,
 					receiverId,
@@ -176,7 +176,31 @@ export function useDirectMessages({
 					replyToId,
 					attachments
 				);
-				await loadMessages();
+				
+				// Fetch sender profile to enrich the message
+				try {
+					const profileResponse = await fetch(`/api/users/${userId}/profile`);
+					if (profileResponse.ok) {
+						const profile = await profileResponse.json();
+						message.senderDisplayName = profile.displayName;
+						message.senderAvatarUrl = profile.avatarUrl;
+						message.senderPronouns = profile.pronouns;
+					}
+				} catch {
+					// If profile fetch fails, just use the message without enrichment
+				}
+				
+				// Parse reactions if needed
+				message.reactions = parseReactions(message.reactions);
+				
+				// Optimistically add the message to local state
+				setMessages((prev) => {
+					// Check if message already exists to prevent duplicates
+					if (prev.some((m) => m.$id === message.$id)) {
+						return prev;
+					}
+					return [...prev, message];
+				});
 			} catch (err) {
 				throw new Error(
 					err instanceof Error ? err.message : "Failed to send message",
@@ -185,7 +209,7 @@ export function useDirectMessages({
 				setSending(false);
 			}
 		},
-		[conversationId, userId, receiverId, loadMessages],
+		[conversationId, userId, receiverId],
 	);
 
 	const edit = useCallback(
