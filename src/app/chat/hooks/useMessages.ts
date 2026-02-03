@@ -13,6 +13,7 @@ import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { extractMentionedUsernames } from "@/lib/mention-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
+import { enrichMessageWithProfile, enrichMessageWithReplyContext } from "@/lib/enrich-messages";
 
 const env = getEnvConfig();
 
@@ -170,7 +171,6 @@ export function useMessages({
         }
         async function applyCreate(base: Message) {
           // Enrich message with profile data before adding to state
-          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
           const profileEnriched = await enrichMessageWithProfile(base);
           setMessages((prev) => {
             // Check if message already exists to prevent duplicates
@@ -186,7 +186,6 @@ export function useMessages({
         }
         async function applyUpdate(base: Message) {
           // Enrich message with profile data before updating state
-          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
           const profileEnriched = await enrichMessageWithProfile(base);
           setMessages((prev) => {
             // Enrich with reply context using existing messages
@@ -543,6 +542,26 @@ export function useMessages({
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || "Failed to send message");
+      }
+
+      // Optimistically add the message to local state
+      const data = await response.json();
+      if (data.message) {
+        const baseMessage = data.message as Message;
+        
+        // Enrich message with profile data and reply context
+        const profileEnriched = await enrichMessageWithProfile(baseMessage);
+        const enriched = enrichMessageWithReplyContext(profileEnriched, messages);
+        
+        // Add to messages array, ensuring no duplicates
+        setMessages((prev) => {
+          if (prev.some((m) => m.$id === enriched.$id)) {
+            return prev;
+          }
+          return [...prev, enriched].sort((a, b) =>
+            a.$createdAt.localeCompare(b.$createdAt)
+          );
+        });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send");

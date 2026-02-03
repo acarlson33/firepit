@@ -40,6 +40,7 @@ export function useDirectMessages({
 	const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
 	const lastTypingSentState = useRef<boolean>(false);
 	const lastTypingSentAt = useRef<number>(0);
+	const userProfileCache = useRef<Record<string, { displayName?: string; avatarUrl?: string; pronouns?: string }>>({});
 
 	const typingIdleMs = 2500;
 	const typingStartDebounceMs = 400;
@@ -166,7 +167,7 @@ export function useDirectMessages({
 
 			setSending(true);
 			try {
-				await sendDirectMessage(
+				const message = await sendDirectMessage(
 					conversationId,
 					userId,
 					receiverId,
@@ -176,7 +177,52 @@ export function useDirectMessages({
 					replyToId,
 					attachments
 				);
-				await loadMessages();
+				
+				// Enrich with sender profile data (cached to avoid repeated fetches)
+				if (!userProfileCache.current[userId]) {
+					try {
+						const profileResponse = await fetch(`/api/users/${encodeURIComponent(userId)}/profile`);
+						if (profileResponse.ok) {
+							const profile = await profileResponse.json();
+							userProfileCache.current[userId] = {
+								displayName: profile.displayName,
+								avatarUrl: profile.avatarUrl,
+								pronouns: profile.pronouns,
+							};
+						} else if (process.env.NODE_ENV === 'development') {
+							// Log non-ok responses in development to aid debugging
+							console.warn(`Profile fetch failed for ${userId}: ${profileResponse.status}`);
+						}
+					} catch (error) {
+						// Log fetch errors in development
+						if (process.env.NODE_ENV === 'development') {
+							console.warn(`Profile fetch error for ${userId}:`, error);
+						}
+					}
+				}
+				
+				// Create enriched message object (avoid mutating original)
+				const profile = userProfileCache.current[userId];
+				const enrichedMessage: DirectMessage = {
+					...message,
+					senderDisplayName: profile?.displayName,
+					senderAvatarUrl: profile?.avatarUrl,
+					senderPronouns: profile?.pronouns,
+					// Parse reactions if present, otherwise use empty array
+					reactions: message.reactions ? parseReactions(message.reactions) : [],
+				};
+				
+				// Optimistically add the message to local state with sorting
+				setMessages((prev) => {
+					// Check if message already exists to prevent duplicates
+					if (prev.some((m) => m.$id === enrichedMessage.$id)) {
+						return prev;
+					}
+					// Add and sort by creation time to maintain chronological order
+					return [...prev, enrichedMessage].sort((a, b) =>
+						a.$createdAt.localeCompare(b.$createdAt)
+					);
+				});
 			} catch (err) {
 				throw new Error(
 					err instanceof Error ? err.message : "Failed to send message",
@@ -185,7 +231,7 @@ export function useDirectMessages({
 				setSending(false);
 			}
 		},
-		[conversationId, userId, receiverId, loadMessages],
+		[conversationId, userId, receiverId],
 	);
 
 	const edit = useCallback(
