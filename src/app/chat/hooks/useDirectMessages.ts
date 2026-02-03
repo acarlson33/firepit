@@ -189,9 +189,15 @@ export function useDirectMessages({
 								avatarUrl: profile.avatarUrl,
 								pronouns: profile.pronouns,
 							};
+						} else if (process.env.NODE_ENV === 'development') {
+							// Log non-ok responses in development to aid debugging
+							console.warn(`Profile fetch failed for ${userId}: ${profileResponse.status}`);
 						}
-					} catch {
-						// If profile fetch fails, cache will remain empty
+					} catch (error) {
+						// Log fetch errors in development
+						if (process.env.NODE_ENV === 'development') {
+							console.warn(`Profile fetch error for ${userId}:`, error);
+						}
 					}
 				}
 				
@@ -202,7 +208,8 @@ export function useDirectMessages({
 					senderDisplayName: profile?.displayName,
 					senderAvatarUrl: profile?.avatarUrl,
 					senderPronouns: profile?.pronouns,
-					reactions: parseReactions(message.reactions),
+					// Parse reactions if present, otherwise use empty array
+					reactions: message.reactions ? parseReactions(message.reactions) : [],
 				};
 				
 				// Optimistically add the message to local state with sorting
