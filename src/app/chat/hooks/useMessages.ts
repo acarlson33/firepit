@@ -13,6 +13,7 @@ import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { extractMentionedUsernames } from "@/lib/mention-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
+import { enrichMessageWithProfile, enrichMessageWithReplyContext } from "@/lib/enrich-messages";
 
 const env = getEnvConfig();
 
@@ -170,7 +171,6 @@ export function useMessages({
         }
         async function applyCreate(base: Message) {
           // Enrich message with profile data before adding to state
-          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
           const profileEnriched = await enrichMessageWithProfile(base);
           setMessages((prev) => {
             // Check if message already exists to prevent duplicates
@@ -186,7 +186,6 @@ export function useMessages({
         }
         async function applyUpdate(base: Message) {
           // Enrich message with profile data before updating state
-          const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
           const profileEnriched = await enrichMessageWithProfile(base);
           setMessages((prev) => {
             // Enrich with reply context using existing messages
@@ -551,7 +550,6 @@ export function useMessages({
         const baseMessage = data.message as Message;
         
         // Enrich message with profile data and reply context
-        const { enrichMessageWithProfile, enrichMessageWithReplyContext } = await import("@/lib/enrich-messages");
         const profileEnriched = await enrichMessageWithProfile(baseMessage);
         const enriched = enrichMessageWithReplyContext(profileEnriched, messages);
         
