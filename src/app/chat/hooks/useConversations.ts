@@ -10,106 +10,117 @@ const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 
 export function useConversations(userId: string | null) {
-	const [conversations, setConversations] = useState<Conversation[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-	const loadConversations = useCallback(async () => {
-		if (!userId || !CONVERSATIONS_COLLECTION) {
-			setConversations([]);
-			setLoading(false);
-			return;
-		}
+    const loadConversations = useCallback(async () => {
+        if (!userId || !CONVERSATIONS_COLLECTION) {
+            setConversations([]);
+            setLoading(false);
+            return;
+        }
 
-		try {
-			setLoading(true);
-			setError(null);
-			const convs = await listConversations(userId);
-			setConversations(convs);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load conversations");
-		} finally {
-			setLoading(false);
-		}
-	}, [userId]);
+        try {
+            setLoading(true);
+            setError(null);
+            const convs = await listConversations(userId);
+            setConversations(convs);
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to load conversations",
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [userId]);
 
-	useEffect(() => {
-		void loadConversations();
-	}, [loadConversations]);
+    useEffect(() => {
+        void loadConversations();
+    }, [loadConversations]);
 
-	// Get all other user IDs from conversations
-	const otherUserIds = useMemo(() => {
-		return conversations
-			.map((conv) => conv.participants.find((id) => id !== userId))
-			.filter((id): id is string => id !== undefined);
-	}, [conversations, userId]);
+    // Get all other user IDs from conversations
+    const otherUserIds = useMemo(() => {
+        return conversations
+            .map((conv) => conv.participants.find((id) => id !== userId))
+            .filter((id): id is string => id !== undefined);
+    }, [conversations, userId]);
 
-	// Subscribe to status updates for all other users
-	const { statuses } = useStatusSubscription(otherUserIds);
+    // Subscribe to status updates for all other users
+    const { statuses } = useStatusSubscription(otherUserIds);
 
-	// Merge real-time status updates into conversations
-	const conversationsWithStatus = useMemo(() => {
-		return conversations.map((conv) => {
-			const otherUserId = conv.participants.find((id) => id !== userId);
-			if (!otherUserId) {
-				return conv;
-			}
+    // Merge real-time status updates into conversations
+    const conversationsWithStatus = useMemo(() => {
+        return conversations.map((conv) => {
+            const otherUserId = conv.participants.find((id) => id !== userId);
+            if (!otherUserId) {
+                return conv;
+            }
 
-			const liveStatus = statuses.get(otherUserId);
-			
-			// If we have a live status update, use it
-			if (liveStatus) {
-				return {
-					...conv,
-					otherUser: {
-						...conv.otherUser,
-						userId: otherUserId,
-						status: liveStatus.status,
-					},
-				};
-			}
+            const liveStatus = statuses.get(otherUserId);
 
-			return conv;
-		});
-	}, [conversations, statuses, userId]);
+            // If we have a live status update, use it
+            if (liveStatus) {
+                const baseOtherUser = conv.otherUser ?? { userId: otherUserId };
+                return {
+                    ...conv,
+                    otherUser: {
+                        ...baseOtherUser,
+                        status: liveStatus.status,
+                    },
+                };
+            }
 
-	// Real-time subscription to conversation changes
-	useEffect(() => {
-		if (!userId || !CONVERSATIONS_COLLECTION) {
-			return;
-		}
+            return conv;
+        });
+    }, [conversations, statuses, userId]);
 
-		// Import dynamically to avoid SSR issues
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+    // Real-time subscription to conversation changes
+    useEffect(() => {
+        if (!userId || !CONVERSATIONS_COLLECTION) {
+            return;
+        }
 
-			const unsubscribe = client.subscribe(
-				`databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`,
-				(response) => {
-					const payload = response.payload as Record<string, unknown>;
-					const participants = payload.participants as string[] | undefined;
+        // Import dynamically to avoid SSR issues
+        import("appwrite")
+            .then(({ Client }) => {
+                const client = new Client()
+                    .setEndpoint(env.endpoint)
+                    .setProject(env.project);
 
-					// Only update if this user is a participant
-					if (participants?.includes(userId)) {
-						void loadConversations();
-					}
-				},
-			);
+                const unsubscribe = client.subscribe(
+                    `databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const participants = payload.participants as
+                            | string[]
+                            | undefined;
 
-			return () => {
-				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
-	}, [userId, loadConversations]);
+                        // Only update if this user is a participant
+                        if (participants?.includes(userId)) {
+                            void loadConversations();
+                        }
+                    },
+                );
 
-	return {
-		conversations: conversationsWithStatus,
-		loading,
-		error,
-		refresh: loadConversations,
-	};
+                return () => {
+                    unsubscribe();
+                };
+            })
+            .catch(() => {
+                // Ignore subscription errors
+            });
+    }, [userId, loadConversations]);
+
+    return {
+        conversations: conversationsWithStatus,
+        loading,
+        error,
+        refresh: loadConversations,
+    };
 }

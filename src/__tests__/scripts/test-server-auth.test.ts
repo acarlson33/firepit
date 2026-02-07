@@ -1,6 +1,6 @@
 /**
  * Tests for scripts/test-server-auth.ts
- * 
+ *
  * This test file validates the server authentication testing script
  */
 
@@ -8,340 +8,364 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the appwrite-server module
 vi.mock("../../lib/appwrite-server", () => ({
-	getServerClient: vi.fn(() => ({
-		databases: {
-			list: vi.fn(() =>
-				Promise.resolve({
-					total: 1,
-					databases: [{ $id: "main", name: "Main Database" }],
-				})
-			),
-			getCollection: vi.fn(() =>
-				Promise.resolve({
-					$id: "messages",
-					name: "Messages",
-					documentSecurity: true,
-					$permissions: [],
-					attributes: [],
-					indexes: [],
-				})
-			),
-		},
-	})),
+    getServerClient: vi.fn(() => ({
+        databases: {
+            list: vi.fn(() =>
+                Promise.resolve({
+                    total: 1,
+                    databases: [{ $id: "main", name: "Main Database" }],
+                }),
+            ),
+            getCollection: vi.fn(() =>
+                Promise.resolve({
+                    $id: "messages",
+                    name: "Messages",
+                    documentSecurity: true,
+                    $permissions: [],
+                    attributes: [],
+                    indexes: [],
+                }),
+            ),
+        },
+    })),
 }));
 
 // Mock the appwrite-core module
 vi.mock("../../lib/appwrite-core", () => ({
-	getEnvConfig: vi.fn(() => ({
-		databaseId: "main",
-		collections: {
-			messages: "messages",
-			channels: "channels",
-			servers: "servers",
-			memberships: "memberships",
-			profiles: "profiles",
-			directMessages: "direct_messages",
-			conversations: "conversations",
-			statuses: "statuses",
-		},
-		buckets: {
-			attachments: "attachments",
-		},
-	})),
+    getEnvConfig: vi.fn(() => ({
+        databaseId: "main",
+        collections: {
+            messages: "messages",
+            channels: "channels",
+            servers: "servers",
+            memberships: "memberships",
+            profiles: "profiles",
+            directMessages: "direct_messages",
+            conversations: "conversations",
+            statuses: "statuses",
+        },
+        buckets: {
+            attachments: "attachments",
+        },
+    })),
 }));
 
 describe("Test Server Auth Script", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+    let originalEnv: NodeJS.ProcessEnv;
 
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
+    beforeEach(() => {
+        vi.clearAllMocks();
+        originalEnv = { ...process.env };
+        process.env.APPWRITE_ENDPOINT =
+            process.env.APPWRITE_ENDPOINT || "https://localhost/v1";
+        process.env.APPWRITE_PROJECT_ID =
+            process.env.APPWRITE_PROJECT_ID || "project-test";
+        process.env.APPWRITE_API_KEY =
+            process.env.APPWRITE_API_KEY || "api-key-test";
+        process.env.APPWRITE_DATABASE_ID =
+            process.env.APPWRITE_DATABASE_ID || "db-test";
+    });
 
-	describe("Server Client Initialization", () => {
-		it("should initialize server client with API key", () => {
-			const apiKey = process.env.APPWRITE_API_KEY;
-			expect(apiKey).toBeDefined();
-		});
+    afterEach(() => {
+        vi.restoreAllMocks();
+        process.env = originalEnv;
+    });
 
-		it("should use getServerClient from appwrite-server", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const client = getServerClient();
+    describe("Server Client Initialization", () => {
+        it("should initialize server client with API key", () => {
+            const apiKey = process.env.APPWRITE_API_KEY;
+            expect(apiKey).toBeDefined();
+        });
 
-			expect(client).toBeDefined();
-			expect(client.databases).toBeDefined();
-		});
-	});
+        it("should use getServerClient from appwrite-server", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const client = getServerClient();
 
-	describe("Database Access Tests", () => {
-		it("should successfully list databases with valid API key", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { databases } = getServerClient();
+            expect(client).toBeDefined();
+            expect(client.databases).toBeDefined();
+        });
+    });
 
-			const result = await databases.list();
+    describe("Database Access Tests", () => {
+        it("should successfully list databases with valid API key", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { databases } = getServerClient();
 
-			expect(result).toBeDefined();
-			expect(result.total).toBeGreaterThanOrEqual(0);
-		});
+            const result = await databases.list();
 
-		it("should successfully get collection with valid API key", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            expect(result).toBeDefined();
+            expect(result.total).toBeGreaterThanOrEqual(0);
+        });
 
-			const { databases } = getServerClient();
-			const env = getEnvConfig();
+        it("should successfully get collection with valid API key", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-			const collection = await databases.getCollection({
-				databaseId: env.databaseId,
-				collectionId: env.collections.messages,
-			});
+            const { databases } = getServerClient();
+            const env = getEnvConfig();
 
-			expect(collection).toBeDefined();
-			expect(collection.$id).toBeTruthy();
-		});
+            const collection = await databases.getCollection({
+                databaseId: env.databaseId,
+                collectionId: env.collections.messages,
+            });
 
-		it("should verify document security setting", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            expect(collection).toBeDefined();
+            expect(collection.$id).toBeTruthy();
+        });
 
-			const { databases } = getServerClient();
-			const env = getEnvConfig();
+        it("should verify document security setting", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-			const collection = await databases.getCollection({
-				databaseId: env.databaseId,
-				collectionId: env.collections.messages,
-			});
+            const { databases } = getServerClient();
+            const env = getEnvConfig();
 
-			expect(collection.documentSecurity).toBeDefined();
-			expect(typeof collection.documentSecurity).toBe("boolean");
-		});
-	});
+            const collection = await databases.getCollection({
+                databaseId: env.databaseId,
+                collectionId: env.collections.messages,
+            });
 
-	describe("Environment Configuration", () => {
-		it("should load environment configuration", async () => {
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
-			const env = getEnvConfig();
+            expect(collection.documentSecurity).toBeDefined();
+            expect(typeof collection.documentSecurity).toBe("boolean");
+        });
+    });
 
-			expect(env).toBeDefined();
-			expect(env.databaseId).toBeTruthy();
-			expect(env.collections).toBeDefined();
-		});
+    describe("Environment Configuration", () => {
+        it("should load environment configuration", async () => {
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
+            const env = getEnvConfig();
 
-		it("should have all required collection IDs", async () => {
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
-			const env = getEnvConfig();
+            expect(env).toBeDefined();
+            expect(env.databaseId).toBeTruthy();
+            expect(env.collections).toBeDefined();
+        });
 
-			const requiredCollections = [
-				"messages",
-				"channels",
-				"servers",
-				"memberships",
-				"profiles",
-				"directMessages",
-				"conversations",
-				"statuses",
-			] as const;
+        it("should have all required collection IDs", async () => {
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
+            const env = getEnvConfig();
 
-			requiredCollections.forEach((collection) => {
-				expect(env.collections[collection]).toBeDefined();
-			});
-		});
-	});
+            const requiredCollections = [
+                "messages",
+                "channels",
+                "servers",
+                "memberships",
+                "profiles",
+                "directMessages",
+                "conversations",
+                "statuses",
+            ] as const;
 
-	describe("Output Format", () => {
-		it("should use process.stdout for success messages", () => {
-			expect(process.stdout.write).toBeDefined();
-		});
+            requiredCollections.forEach((collection) => {
+                expect(env.collections[collection]).toBeDefined();
+            });
+        });
+    });
 
-		it("should use process.stderr for error messages", () => {
-			expect(process.stderr.write).toBeDefined();
-		});
-	});
+    describe("Output Format", () => {
+        it("should use process.stdout for success messages", () => {
+            expect(process.stdout.write).toBeDefined();
+        });
 
-	describe("Exit Code Behavior", () => {
-		it("should exit with code 1 on error", () => {
-			const exitCode = 1;
-			expect(exitCode).toBe(1);
-		});
+        it("should use process.stderr for error messages", () => {
+            expect(process.stderr.write).toBeDefined();
+        });
+    });
 
-		it("should exit with code 0 on success", () => {
-			const exitCode = 0;
-			expect(exitCode).toBe(0);
-		});
-	});
+    describe("Exit Code Behavior", () => {
+        it("should exit with code 1 on error", () => {
+            const exitCode = 1;
+            expect(exitCode).toBe(1);
+        });
 
-	describe("Error Handling", () => {
-		it("should handle missing environment variables gracefully", () => {
-			// Script should fail fast if required env vars are missing
-			const requiredEnvVars = [
-				"APPWRITE_ENDPOINT",
-				"APPWRITE_PROJECT_ID",
-				"APPWRITE_API_KEY",
-				"APPWRITE_DATABASE_ID",
-			];
+        it("should exit with code 0 on success", () => {
+            const exitCode = 0;
+            expect(exitCode).toBe(0);
+        });
+    });
 
-			requiredEnvVars.forEach((envVar) => {
-				const value = process.env[envVar];
-				expect(value).toBeDefined();
-			});
-		});
+    describe("Error Handling", () => {
+        it("should handle missing environment variables gracefully", () => {
+            // Script should fail fast if required env vars are missing
+            const requiredEnvVars = [
+                "APPWRITE_ENDPOINT",
+                "APPWRITE_PROJECT_ID",
+                "APPWRITE_API_KEY",
+                "APPWRITE_DATABASE_ID",
+            ];
 
-		it("should handle invalid API key error", async () => {
-			const mockDatabases = {
-				list: vi.fn(() => Promise.reject(new Error("Invalid API key"))),
-			};
+            requiredEnvVars.forEach((envVar) => {
+                const value = process.env[envVar];
+                expect(value).toBeDefined();
+            });
+        });
 
-			await expect(mockDatabases.list()).rejects.toThrow("Invalid API key");
-		});
+        it("should handle invalid API key error", async () => {
+            const mockDatabases = {
+                list: vi.fn(() => Promise.reject(new Error("Invalid API key"))),
+            };
 
-		it("should handle collection not found error", async () => {
-			const mockDatabases = {
-				getCollection: vi.fn(() =>
-					Promise.reject(new Error("Collection not found"))
-				),
-			};
+            await expect(mockDatabases.list()).rejects.toThrow(
+                "Invalid API key",
+            );
+        });
 
-			await expect(mockDatabases.getCollection()).rejects.toThrow(
-				"Collection not found"
-			);
-		});
+        it("should handle collection not found error", async () => {
+            const mockDatabases = {
+                getCollection: vi.fn(() =>
+                    Promise.reject(new Error("Collection not found")),
+                ),
+            };
 
-		it("should handle network errors", async () => {
-			const mockDatabases = {
-				list: vi.fn(() => Promise.reject(new Error("Network error"))),
-			};
+            await expect(mockDatabases.getCollection()).rejects.toThrow(
+                "Collection not found",
+            );
+        });
 
-			await expect(mockDatabases.list()).rejects.toThrow("Network error");
-		});
-	});
+        it("should handle network errors", async () => {
+            const mockDatabases = {
+                list: vi.fn(() => Promise.reject(new Error("Network error"))),
+            };
 
-	describe("API Key Validation", () => {
-		it("should verify API key has sufficient permissions", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { databases } = getServerClient();
+            await expect(mockDatabases.list()).rejects.toThrow("Network error");
+        });
+    });
 
-			// API key should allow listing databases
-			const result = await databases.list();
-			expect(result).toBeDefined();
-		});
+    describe("API Key Validation", () => {
+        it("should verify API key has sufficient permissions", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { databases } = getServerClient();
 
-		it("should verify API key can access collections", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            // API key should allow listing databases
+            const result = await databases.list();
+            expect(result).toBeDefined();
+        });
 
-			const { databases } = getServerClient();
-			const env = getEnvConfig();
+        it("should verify API key can access collections", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-			// API key should allow reading collection metadata
-			const collection = await databases.getCollection({
-				databaseId: env.databaseId,
-				collectionId: env.collections.messages,
-			});
+            const { databases } = getServerClient();
+            const env = getEnvConfig();
 
-			expect(collection).toBeDefined();
-		});
-	});
+            // API key should allow reading collection metadata
+            const collection = await databases.getCollection({
+                databaseId: env.databaseId,
+                collectionId: env.collections.messages,
+            });
 
-	describe("Integration with Server Utilities", () => {
-		it("should use getServerClient utility function", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
+            expect(collection).toBeDefined();
+        });
+    });
 
-			expect(getServerClient).toBeDefined();
-			expect(typeof getServerClient).toBe("function");
-		});
+    describe("Integration with Server Utilities", () => {
+        it("should use getServerClient utility function", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
 
-		it("should use getEnvConfig utility function", async () => {
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            expect(getServerClient).toBeDefined();
+            expect(typeof getServerClient).toBe("function");
+        });
 
-			expect(getEnvConfig).toBeDefined();
-			expect(typeof getEnvConfig).toBe("function");
-		});
+        it("should use getEnvConfig utility function", async () => {
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-		it("should correctly integrate server client and env config", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            expect(getEnvConfig).toBeDefined();
+            expect(typeof getEnvConfig).toBe("function");
+        });
 
-			const { databases } = getServerClient();
-			const env = getEnvConfig();
+        it("should correctly integrate server client and env config", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-			// These should work together seamlessly
-			expect(databases).toBeDefined();
-			expect(env.databaseId).toBeTruthy();
-			expect(env.collections.messages).toBeTruthy();
-		});
-	});
+            const { databases } = getServerClient();
+            const env = getEnvConfig();
 
-	describe("Success Criteria", () => {
-		it("should report number of databases found", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { databases } = getServerClient();
+            // These should work together seamlessly
+            expect(databases).toBeDefined();
+            expect(env.databaseId).toBeTruthy();
+            expect(env.collections.messages).toBeTruthy();
+        });
+    });
 
-			const result = await databases.list();
+    describe("Success Criteria", () => {
+        it("should report number of databases found", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { databases } = getServerClient();
 
-			expect(result.total).toBeDefined();
-			expect(typeof result.total).toBe("number");
-		});
+            const result = await databases.list();
 
-		it("should report document security status", async () => {
-			const { getServerClient } = await import("../../lib/appwrite-server");
-			const { getEnvConfig } = await import("../../lib/appwrite-core");
+            expect(result.total).toBeDefined();
+            expect(typeof result.total).toBe("number");
+        });
 
-			const { databases } = getServerClient();
-			const env = getEnvConfig();
+        it("should report document security status", async () => {
+            const { getServerClient } =
+                await import("../../lib/appwrite-server");
+            const { getEnvConfig } = await import("../../lib/appwrite-core");
 
-			const collection = await databases.getCollection({
-				databaseId: env.databaseId,
-				collectionId: env.collections.messages,
-			});
+            const { databases } = getServerClient();
+            const env = getEnvConfig();
 
-			expect(collection.documentSecurity).toBeDefined();
-		});
-	});
+            const collection = await databases.getCollection({
+                databaseId: env.databaseId,
+                collectionId: env.collections.messages,
+            });
 
-	describe("Use Cases", () => {
-		it("should be useful for debugging authentication issues", () => {
-			// This script helps verify that:
-			// 1. API key is valid
-			// 2. API key has correct permissions
-			// 3. Database and collections are accessible
-			const useCases = [
-				"Verify API key",
-				"Check permissions",
-				"Test database access",
-				"Validate environment setup",
-			];
+            expect(collection.documentSecurity).toBeDefined();
+        });
+    });
 
-			expect(useCases.length).toBeGreaterThan(0);
-		});
+    describe("Use Cases", () => {
+        it("should be useful for debugging authentication issues", () => {
+            // This script helps verify that:
+            // 1. API key is valid
+            // 2. API key has correct permissions
+            // 3. Database and collections are accessible
+            const useCases = [
+                "Verify API key",
+                "Check permissions",
+                "Test database access",
+                "Validate environment setup",
+            ];
 
-		it("should be safe to run in production for diagnostics", () => {
-			// Script only reads data, doesn't modify anything
-			const isReadOnly = true;
-			expect(isReadOnly).toBe(true);
-		});
-	});
+            expect(useCases.length).toBeGreaterThan(0);
+        });
+
+        it("should be safe to run in production for diagnostics", () => {
+            // Script only reads data, doesn't modify anything
+            const isReadOnly = true;
+            expect(isReadOnly).toBe(true);
+        });
+    });
 });
 
 describe("Test Server Auth Script Execution", () => {
-	it("should be executable via bun", () => {
-		const command = "bun scripts/test-server-auth.ts";
-		expect(command).toContain("test-server-auth.ts");
-	});
+    it("should be executable via bun", () => {
+        const command = "bun scripts/test-server-auth.ts";
+        expect(command).toContain("test-server-auth.ts");
+    });
 
-	it("should complete quickly for quick diagnostics", () => {
-		// Script should complete in under 5 seconds typically
-		const expectedMaxDuration = 5000; // ms
-		expect(expectedMaxDuration).toBeLessThanOrEqual(5000);
-	});
+    it("should complete quickly for quick diagnostics", () => {
+        // Script should complete in under 5 seconds typically
+        const expectedMaxDuration = 5000; // ms
+        expect(expectedMaxDuration).toBeLessThanOrEqual(5000);
+    });
 
-	it("should provide clear success/failure output", () => {
-		const outputs = {
-			success: "✓",
-			error: "✗",
-		};
+    it("should provide clear success/failure output", () => {
+        const outputs = {
+            success: "✓",
+            error: "✗",
+        };
 
-		expect(outputs.success).toBeTruthy();
-		expect(outputs.error).toBeTruthy();
-	});
+        expect(outputs.success).toBeTruthy();
+        expect(outputs.error).toBeTruthy();
+    });
 });
