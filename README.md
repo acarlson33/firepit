@@ -135,10 +135,10 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instruct
 
 ## ⚠️ Known Limitations
 
-Version 1.1 does not include:
+Version 1.3 does not include:
 
--   Message threading (planned for v1.3)
--   Message pinning (planned for v1.3)
+-   Message threading (planned for v1.4)
+-   Message pinning (planned for v1.4)
 -   Voice/video calls (not currently planned)
 -   Native mobile apps (PWA supported)
 
