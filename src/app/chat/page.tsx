@@ -418,6 +418,39 @@ export default function ChatPage() {
     setFileAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) {
+      return;
+    }
+
+    // Look for image items in clipboard
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Validate file size (5MB)
+          if (file.size > 5 * 1024 * 1024) {
+            toast.error("Image must be less than 5MB");
+            return;
+          }
+
+          setSelectedImage(file);
+
+          // Create preview
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            setImagePreview(reader.result as string);
+          });
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  }, []);
+
   // Derived helpers
   const showChat = useMemo(
     () => Boolean(selectedChannel) || Boolean(selectedConversationId),
@@ -784,7 +817,7 @@ export default function ChatPage() {
 
                 {!removed && (
                   <div className="wrap-break-word text-sm">
-                    <MessageWithMentions text={m.text} />
+                    <MessageWithMentions text={m.text} customEmojis={customEmojis} />
                   </div>
                 )}
                 {removed && m.removedBy && (
@@ -931,7 +964,7 @@ export default function ChatPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8">
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+        <aside className="max-h-[calc(100vh-8rem)] space-y-6 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
           {/* View Mode Toggle */}
           <div className="rounded-2xl bg-muted/40 p-1">
             <div className="grid grid-cols-2 gap-1">
@@ -1163,7 +1196,7 @@ export default function ChatPage() {
                         ))}
                       </div>
                     )}
-                    <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSendWithImage}>
+                    <form className="flex flex-col gap-3 sm:flex-row sm:items-center" onSubmit={handleSendWithImage} onPaste={handlePaste}>
                       <input
                         accept="image/*"
                         className="hidden"

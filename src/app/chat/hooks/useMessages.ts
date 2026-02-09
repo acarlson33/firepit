@@ -45,6 +45,12 @@ export function useMessages({
   const lastTypingSentState = useRef<boolean>(false);
   const lastTypingSentAt = useRef<number>(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const currentChannelIdRef = useRef<string | null>(channelId);
+
+  // Update ref when channelId changes
+  useEffect(() => {
+    currentChannelIdRef.current = channelId;
+  }, [channelId]);
 
   // Reduced initial page size for faster first render (Performance Optimization)
   // Load more messages when scrolling up
@@ -161,10 +167,11 @@ export function useMessages({
           } as Message;
         }
         function includeMessage(base: { channelId?: string }) {
-          if (channelId && base.channelId !== channelId) {
+          const currentChannelId = currentChannelIdRef.current;
+          if (currentChannelId && base.channelId !== currentChannelId) {
             return false;
           }
-          if (!channelId && base.channelId) {
+          if (!currentChannelId && base.channelId) {
             return false;
           }
           return true;
