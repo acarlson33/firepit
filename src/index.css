@@ -196,3 +196,68 @@ body {
 		@apply bg-background text-foreground;
 	}
 }
+
+/* Custom scrollbar styles - optimized for performance */
+:root {
+	--scrollbar-thumb: oklch(0.556 0 0);
+	--scrollbar-thumb-hover: oklch(0.456 0 0);
+}
+
+.dark {
+	--scrollbar-thumb: oklch(0.269 0 0);
+	--scrollbar-thumb-hover: oklch(0.369 0 0);
+}
+
+/* Apply to body and common scrollable containers */
+body, 
+.overflow-auto,
+.overflow-scroll,
+.overflow-y-auto,
+.overflow-x-auto,
+.scrollable {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+body::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar,
+.overflow-scroll::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
+.scrollable::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+body::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-scroll::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track,
+.scrollable::-webkit-scrollbar-track {
+	background: transparent;
+	border-radius: 10px;
+}
+
+body::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb,
+.overflow-scroll::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb,
+.scrollable::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+	border-radius: 10px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+body::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover,
+.overflow-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover,
+.scrollable::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-thumb-hover);
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}

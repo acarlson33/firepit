@@ -152,10 +152,10 @@ export function ServerBrowser({
 						{servers.map((server) => (
 							<div
 								key={server.$id}
-								className="flex items-center justify-between rounded border p-3"
+								className="flex items-center justify-between rounded border p-3 gap-3"
 							>
-								<div className="flex-1">
-									<p className="font-medium">{server.name}</p>
+								<div className="flex-1 min-w-0 overflow-hidden">
+									<p className="font-medium truncate">{server.name}</p>
 									<div className="mt-1 flex items-center gap-2">
 										{server.memberCount !== undefined && (
 											<span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">

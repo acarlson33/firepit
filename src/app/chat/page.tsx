@@ -515,7 +515,7 @@ export default function ChatPage() {
                 <div className="flex items-center gap-1">
                   <Button
                     aria-pressed={active}
-                    className={`flex-1 justify-between rounded-xl transition-colors ${
+                    className={`flex-1 justify-between rounded-xl transition-colors min-w-0 overflow-hidden ${
                       active ? "" : "border border-border/60 bg-background"
                     }`}
                     onClick={() => {
@@ -526,7 +526,7 @@ export default function ChatPage() {
                     variant={active ? "default" : "outline"}
                   >
                     <span className="truncate text-left font-medium">{s.name}</span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       {s.memberCount !== undefined && (
                         <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
                           {s.memberCount} {s.memberCount === 1 ? 'member' : 'members'}
