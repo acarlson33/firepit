@@ -59,12 +59,12 @@ export type EnvConfig = {
         channels: string;
         messages: string;
         audit: string;
-        typing: string | null;
-        memberships: string | null;
+        typing: string;
+        memberships: string;
         profiles: string;
         conversations: string;
         directMessages: string;
-        statuses: string | null;
+        statuses: string;
         messageAttachments: string;
         featureFlags: string;
         notificationSettings: string;
@@ -154,12 +154,14 @@ export function getEnvConfig(): EnvConfig {
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_TYPING_COLLECTION_ID,
                 process.env.APPWRITE_TYPING_COLLECTION_ID,
-            ) || null,
+                "typing",
+            ) || "typing",
         memberships:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID,
                 process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
-            ) || null,
+                "memberships",
+            ) || "memberships",
         profiles:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,
@@ -182,7 +184,8 @@ export function getEnvConfig(): EnvConfig {
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_STATUSES_COLLECTION_ID,
                 process.env.APPWRITE_STATUSES_COLLECTION_ID,
-            ) || null,
+                "statuses",
+            ) || "statuses",
         messageAttachments:
             firstDefined(
                 process.env
@@ -283,9 +286,8 @@ export function getBrowserStorage(): Storage {
     return new Storage(getBrowserClient());
 }
 
-// Server client moved to appwrite-server.ts to use node-appwrite SDK
-// Re-export for backward compatibility
-export { getServerClient } from "./appwrite-server";
+// Server client is in appwrite-server.ts (uses node-appwrite SDK).
+// Import getServerClient from "./appwrite-server" directly in server-only code.
 
 // ---------- Session Helpers ----------
 export async function ensureSession(): Promise<

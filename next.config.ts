@@ -15,8 +15,11 @@ const nextConfig = {
     // Optimize production build
     output: process.env.NODE_ENV === "production" ? "standalone" : undefined,
 
-    // Expose environment variables at runtime for deployed environments
-    // These are server-side only and will not be exposed to the browser
+    // Map fallback env vars so NEXT_PUBLIC_* are always populated.
+    // IMPORTANT: The `env` key in next.config.ts inlines values into BOTH
+    // server and client bundles. Never put secrets (API keys, etc.) here.
+    // Server-only vars like APPWRITE_API_KEY must only be read via
+    // process.env at runtime in server code.
     env: {
         NEXT_PUBLIC_APPWRITE_ENDPOINT:
             process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ??
@@ -24,52 +27,16 @@ const nextConfig = {
         NEXT_PUBLIC_APPWRITE_PROJECT_ID:
             process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID ??
             process.env.APPWRITE_PROJECT_ID,
-        APPWRITE_ENDPOINT:
-            process.env.APPWRITE_ENDPOINT ??
-            process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
-        APPWRITE_PROJECT_ID:
-            process.env.APPWRITE_PROJECT_ID ??
-            process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
-        APPWRITE_PROJECT: process.env.APPWRITE_PROJECT,
-        APPWRITE_API_KEY: process.env.APPWRITE_API_KEY,
-        APPWRITE_DATABASE_ID: process.env.APPWRITE_DATABASE_ID,
-        APPWRITE_SERVERS_COLLECTION_ID:
-            process.env.APPWRITE_SERVERS_COLLECTION_ID,
-        APPWRITE_CHANNELS_COLLECTION_ID:
-            process.env.APPWRITE_CHANNELS_COLLECTION_ID,
-        APPWRITE_MESSAGES_COLLECTION_ID:
-            process.env.APPWRITE_MESSAGES_COLLECTION_ID,
-        APPWRITE_MEMBERSHIPS_COLLECTION_ID:
-            process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
-        APPWRITE_TYPING_COLLECTION_ID:
-            process.env.APPWRITE_TYPING_COLLECTION_ID,
-        APPWRITE_PROFILES_COLLECTION_ID:
-            process.env.APPWRITE_PROFILES_COLLECTION_ID,
-        APPWRITE_CONVERSATIONS_COLLECTION_ID:
-            process.env.APPWRITE_CONVERSATIONS_COLLECTION_ID,
-        APPWRITE_DIRECT_MESSAGES_COLLECTION_ID:
-            process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID,
-        APPWRITE_STATUSES_COLLECTION_ID:
-            process.env.APPWRITE_STATUSES_COLLECTION_ID,
-        APPWRITE_AUDIT_COLLECTION_ID: process.env.APPWRITE_AUDIT_COLLECTION_ID,
-        APPWRITE_AVATARS_BUCKET_ID: process.env.APPWRITE_AVATARS_BUCKET_ID,
-        APPWRITE_ADMIN_TEAM_ID: process.env.APPWRITE_ADMIN_TEAM_ID,
-        APPWRITE_MODERATOR_TEAM_ID: process.env.APPWRITE_MODERATOR_TEAM_ID,
-        APPWRITE_ADMIN_USER_IDS: process.env.APPWRITE_ADMIN_USER_IDS,
-        APPWRITE_MODERATOR_USER_IDS: process.env.APPWRITE_MODERATOR_USER_IDS,
-        SERVER_URL: process.env.SERVER_URL,
-        NEW_RELIC_LICENSE_KEY: process.env.NEW_RELIC_LICENSE_KEY,
-        NEW_RELIC_APP_NAME: process.env.NEW_RELIC_APP_NAME,
     },
 
-    compiler: {
+    /*compiler: {
         removeConsole:
             process.env.NODE_ENV === "production"
                 ? {
                       exclude: ["error", "warn"],
                   }
                 : false,
-    },
+    }, */
 
     // Moved from experimental in Next.js 16
     cacheComponents: true,
@@ -94,11 +61,10 @@ const nextConfig = {
         },
         cssChunking: true,
         inlineCss: true,
-        useLightningcss: true,
     },
 
     // Turbopack configuration for Next.js 15+ (successor to Webpack)
-    // Use with: next dev --turbo
+    // Use with: next dev
     turbopack: {
         // Rules for transforming/loading files
         rules: {

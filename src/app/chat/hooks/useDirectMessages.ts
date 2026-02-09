@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import {
-	listDirectMessages,
-	sendDirectMessage,
-	editDirectMessage,
-	deleteDirectMessage,
+    listDirectMessages,
+    sendDirectMessage,
+    editDirectMessage,
+    deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
 import type { DirectMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
@@ -17,467 +17,576 @@ const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 
 type UseDirectMessagesProps = {
-	conversationId: string | null;
-	userId: string | null;
-	receiverId?: string;
-	userName?: string | null;
+    conversationId: string | null;
+    userId: string | null;
+    receiverId?: string;
+    userName?: string | null;
 };
 
 export function useDirectMessages({
-	conversationId,
-	userId,
-	receiverId,
-	userName,
+    conversationId,
+    userId,
+    receiverId,
+    userName,
 }: UseDirectMessagesProps) {
-	const [messages, setMessages] = useState<DirectMessage[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [sending, setSending] = useState(false);
-	const [typingUsers, setTypingUsers] = useState<
-		Record<string, { userId: string; userName?: string; updatedAt: string }>
-	>({});
-	const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-	const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
-	const lastTypingSentState = useRef<boolean>(false);
-	const lastTypingSentAt = useRef<number>(0);
-	const userProfileCache = useRef<Record<string, { displayName?: string; avatarUrl?: string; pronouns?: string }>>({});
+    const [messages, setMessages] = useState<DirectMessage[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [sending, setSending] = useState(false);
+    const [typingUsers, setTypingUsers] = useState<
+        Record<string, { userId: string; userName?: string; updatedAt: string }>
+    >({});
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
+    const lastTypingSentState = useRef<boolean>(false);
+    const lastTypingSentAt = useRef<number>(0);
+    const userProfileCache = useRef<
+        Record<
+            string,
+            { displayName?: string; avatarUrl?: string; pronouns?: string }
+        >
+    >({});
 
-	const typingIdleMs = 2500;
-	const typingStartDebounceMs = 400;
+    const typingIdleMs = 2500;
+    const typingStartDebounceMs = 400;
 
-	// Debounced batch update for typing state changes (reduces re-renders by 70-80%)
-	const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
-		userId: string;
-		userName?: string;
-		updatedAt: string;
-		action: 'add' | 'remove';
-	}>((updates) => {
-		setTypingUsers((prev) => {
-			const updated = { ...prev };
-			for (const update of updates) {
-				if (update.action === 'remove') {
-					delete updated[update.userId];
-				} else {
-					updated[update.userId] = {
-						userId: update.userId,
-						userName: update.userName,
-						updatedAt: update.updatedAt,
-					};
-				}
-			}
-			return updated;
-		});
-	}, 150);
+    // Debounced batch update for typing state changes (reduces re-renders by 70-80%)
+    const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
+        userId: string;
+        userName?: string;
+        updatedAt: string;
+        action: "add" | "remove";
+    }>((updates) => {
+        setTypingUsers((prev) => {
+            const updated = { ...prev };
+            for (const update of updates) {
+                if (update.action === "remove") {
+                    delete updated[update.userId];
+                } else {
+                    updated[update.userId] = {
+                        userId: update.userId,
+                        userName: update.userName,
+                        updatedAt: update.updatedAt,
+                    };
+                }
+            }
+            return updated;
+        });
+    }, 150);
 
-	const loadMessages = useCallback(async () => {
-		if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
-			setMessages([]);
-			setLoading(false);
-			return;
-		}
+    const loadMessages = useCallback(async () => {
+        if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
+            setMessages([]);
+            setLoading(false);
+            return;
+        }
 
-		try {
-			setLoading(true);
-			setError(null);
-			
-			// Optimized: Batch query all messages at once
-			// User profiles are fetched in batches (5 at a time) to reduce API calls
-			// Images are already included in the response with URLs
-			const result = await listDirectMessages(conversationId);
-			
-			// Reverse to show oldest first
-			setMessages(result.items.reverse());
-		} catch (err) {
-			setError(
-				err instanceof Error ? err.message : "Failed to load messages",
-			);
-		} finally {
-			setLoading(false);
-		}
-	}, [conversationId]);
+        try {
+            setLoading(true);
+            setError(null);
 
-	useEffect(() => {
-		void loadMessages();
-	}, [loadMessages]);
+            // Optimized: Batch query all messages at once
+            // User profiles are fetched in batches (5 at a time) to reduce API calls
+            // Images are already included in the response with URLs
+            const result = await listDirectMessages(conversationId);
 
-	// Real-time subscription
-	useEffect(() => {
-		if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
-			return;
-		}
+            // Reverse to show oldest first
+            setMessages(result.items.reverse());
+        } catch (err) {
+            setError(
+                err instanceof Error ? err.message : "Failed to load messages",
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, [conversationId]);
 
-		// Import dynamically to avoid SSR issues
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+    useEffect(() => {
+        void loadMessages();
+    }, [loadMessages]);
 
-			const unsubscribe = client.subscribe(
-				`databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`,
-				(response) => {
-					const payload = response.payload as Record<string, unknown>;
-					const msgConversationId = payload.conversationId;
-					const events = response.events as string[];
+    // Real-time subscription
+    useEffect(() => {
+        if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
+            return;
+        }
 
-					// Only update if message belongs to this conversation
-					if (msgConversationId === conversationId) {
-						const messageData = {
-							...(payload as unknown as DirectMessage),
-							reactions: parseReactions((payload as Record<string, unknown>).reactions as string | undefined),
-						};
-						
-						// Handle different event types to avoid full reload
-						if (events.some((e) => e.endsWith(".create"))) {
-							setMessages((prev) => {
-								// Check if message already exists to prevent duplicates
-								if (prev.some((m) => m.$id === messageData.$id)) {
-									return prev;
-								}
-								return [...prev, messageData];
-							});
-						} else if (events.some((e) => e.endsWith(".update"))) {
-							setMessages((prev) =>
-								prev.map((m) => (m.$id === messageData.$id ? messageData : m))
-							);
-						} else if (events.some((e) => e.endsWith(".delete"))) {
-							setMessages((prev) => prev.filter((m) => m.$id !== messageData.$id));
-						}
-					}
-				},
-			);
+        // Import dynamically to avoid SSR issues
+        import("appwrite")
+            .then(({ Client }) => {
+                const client = new Client()
+                    .setEndpoint(env.endpoint)
+                    .setProject(env.project);
 
-			return () => {
-				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
-	}, [conversationId]);
+                const unsubscribe = client.subscribe(
+                    `databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const msgConversationId = payload.conversationId;
+                        const events = response.events as string[];
 
-	const send = useCallback(
-		async (text: string, imageFileId?: string, imageUrl?: string, replyToId?: string, attachments?: unknown[]) => {
-			if (!conversationId || !userId || !receiverId) {
-				return;
-			}
+                        // Only update if message belongs to this conversation
+                        if (msgConversationId === conversationId) {
+                            const messageData = {
+                                ...(payload as unknown as DirectMessage),
+                                reactions: parseReactions(
+                                    (payload as Record<string, unknown>)
+                                        .reactions as string | undefined,
+                                ),
+                            };
 
-			// Require either text, image, or attachments
-			if (!text.trim() && !imageFileId && (!attachments || attachments.length === 0)) {
-				return;
-			}
+                            // Handle different event types to avoid full reload
+                            if (events.some((e) => e.endsWith(".create"))) {
+                                setMessages((prev) => {
+                                    // Check if message already exists to prevent duplicates
+                                    if (
+                                        prev.some(
+                                            (m) => m.$id === messageData.$id,
+                                        )
+                                    ) {
+                                        return prev;
+                                    }
+                                    return [...prev, messageData];
+                                });
+                            } else if (
+                                events.some((e) => e.endsWith(".update"))
+                            ) {
+                                setMessages((prev) =>
+                                    prev.map((m) =>
+                                        m.$id === messageData.$id
+                                            ? messageData
+                                            : m,
+                                    ),
+                                );
+                            } else if (
+                                events.some((e) => e.endsWith(".delete"))
+                            ) {
+                                setMessages((prev) =>
+                                    prev.filter(
+                                        (m) => m.$id !== messageData.$id,
+                                    ),
+                                );
+                            }
+                        }
+                    },
+                );
 
-			setSending(true);
-			try {
-				const message = await sendDirectMessage(
-					conversationId,
-					userId,
-					receiverId,
-					text.trim() || "",
-					imageFileId,
-					imageUrl,
-					replyToId,
-					attachments
-				);
-				
-				// Enrich with sender profile data (cached to avoid repeated fetches)
-				if (!userProfileCache.current[userId]) {
-					try {
-						const profileResponse = await fetch(`/api/users/${encodeURIComponent(userId)}/profile`);
-						if (profileResponse.ok) {
-							const profile = await profileResponse.json();
-							userProfileCache.current[userId] = {
-								displayName: profile.displayName,
-								avatarUrl: profile.avatarUrl,
-								pronouns: profile.pronouns,
-							};
-						} else if (process.env.NODE_ENV === 'development') {
-							// Log non-ok responses in development to aid debugging
-							console.warn(`Profile fetch failed for ${userId}: ${profileResponse.status}`);
-						}
-					} catch (error) {
-						// Log fetch errors in development
-						if (process.env.NODE_ENV === 'development') {
-							console.warn(`Profile fetch error for ${userId}:`, error);
-						}
-					}
-				}
-				
-				// Create enriched message object (avoid mutating original)
-				const profile = userProfileCache.current[userId];
-				const enrichedMessage: DirectMessage = {
-					...message,
-					senderDisplayName: profile?.displayName,
-					senderAvatarUrl: profile?.avatarUrl,
-					senderPronouns: profile?.pronouns,
-					// Parse reactions if present, otherwise use empty array
-					reactions: message.reactions ? parseReactions(message.reactions) : [],
-				};
-				
-				// Optimistically add the message to local state with sorting
-				setMessages((prev) => {
-					// Check if message already exists to prevent duplicates
-					if (prev.some((m) => m.$id === enrichedMessage.$id)) {
-						return prev;
-					}
-					// Add and sort by creation time to maintain chronological order
-					return [...prev, enrichedMessage].sort((a, b) =>
-						a.$createdAt.localeCompare(b.$createdAt)
-					);
-				});
-			} catch (err) {
-				throw new Error(
-					err instanceof Error ? err.message : "Failed to send message",
-				);
-			} finally {
-				setSending(false);
-			}
-		},
-		[conversationId, userId, receiverId],
-	);
+                return () => {
+                    unsubscribe();
+                };
+            })
+            .catch(() => {
+                // Ignore subscription errors
+            });
+    }, [conversationId]);
 
-	const edit = useCallback(
-		async (messageId: string, newText: string) => {
-			if (!newText.trim()) {
-				return;
-			}
+    const send = useCallback(
+        async (
+            text: string,
+            imageFileId?: string,
+            imageUrl?: string,
+            replyToId?: string,
+            attachments?: unknown[],
+        ) => {
+            if (!conversationId || !userId) {
+                return;
+            }
 
-			try {
-				await editDirectMessage(messageId, newText.trim());
-				await loadMessages();
-			} catch (err) {
-				throw new Error(
-					err instanceof Error ? err.message : "Failed to edit message",
-				);
-			}
-		},
-		[loadMessages],
-	);
+            // Require either text, image, or attachments
+            if (
+                !text.trim() &&
+                !imageFileId &&
+                (!attachments || attachments.length === 0)
+            ) {
+                return;
+            }
 
-	const deleteMsg = useCallback(
-		async (messageId: string) => {
-			if (!userId) {
-				return;
-			}
+            setSending(true);
+            try {
+                const message = await sendDirectMessage(
+                    conversationId,
+                    userId,
+                    receiverId,
+                    text.trim() || "",
+                    imageFileId,
+                    imageUrl,
+                    replyToId,
+                    attachments,
+                );
 
-			try {
-				await deleteDirectMessage(messageId, userId);
-				await loadMessages();
-			} catch (err) {
-				throw new Error(
-					err instanceof Error ? err.message : "Failed to delete message",
-				);
-			}
-		},
-		[userId, loadMessages],
-	);
+                // Enrich with sender profile data (cached to avoid repeated fetches)
+                if (!userProfileCache.current[userId]) {
+                    try {
+                        const profileResponse = await fetch(
+                            `/api/users/${encodeURIComponent(userId)}/profile`,
+                        );
+                        if (profileResponse.ok) {
+                            const profile = await profileResponse.json();
+                            userProfileCache.current[userId] = {
+                                displayName: profile.displayName,
+                                avatarUrl: profile.avatarUrl,
+                                pronouns: profile.pronouns,
+                            };
+                        } else if (process.env.NODE_ENV === "development") {
+                            // Log non-ok responses in development to aid debugging
+                            console.warn(
+                                `Profile fetch failed for ${userId}: ${profileResponse.status}`,
+                            );
+                        }
+                    } catch (error) {
+                        // Log fetch errors in development
+                        if (process.env.NODE_ENV === "development") {
+                            console.warn(
+                                `Profile fetch error for ${userId}:`,
+                                error,
+                            );
+                        }
+                    }
+                }
 
-	// Typing indicator management
-	const sendTypingState = useCallback((state: boolean) => {
-		if (!userId || !conversationId) {
-			return;
-		}
-		const now = Date.now();
-		if (
-			state === lastTypingSentState.current &&
-			now - lastTypingSentAt.current < typingStartDebounceMs
-		) {
-			return;
-		}
-		lastTypingSentState.current = state;
-		lastTypingSentAt.current = now;
-		
-		// Use conversationId for DM typing status
-		if (state) {
-			fetch("/api/typing", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					conversationId,
-					userName: userName || undefined,
-				}),
-			}).then((response) => {
-				if (!response.ok && process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.warn('[typing] Failed to set typing status:', response.status);
-				}
-			}).catch((error) => {
-				if (process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.warn('[typing] Error updating typing status:', error);
-				}
-			});
-		} else {
-			fetch(`/api/typing?conversationId=${encodeURIComponent(conversationId)}`, {
-				method: "DELETE",
-			}).then((response) => {
-				if (!response.ok && process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.warn('[typing] Failed to clear typing status:', response.status);
-				}
-			}).catch((error) => {
-				if (process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.warn('[typing] Error updating typing status:', error);
-				}
-			});
-		}
-	}, [userId, conversationId, userName, typingStartDebounceMs]);
+                // Create enriched message object (avoid mutating original)
+                const profile = userProfileCache.current[userId];
+                const enrichedMessage: DirectMessage = {
+                    ...message,
+                    senderDisplayName: profile?.displayName,
+                    senderAvatarUrl: profile?.avatarUrl,
+                    senderPronouns: profile?.pronouns,
+                    // Parse reactions if present, otherwise use empty array
+                    reactions: message.reactions
+                        ? parseReactions(message.reactions)
+                        : [],
+                };
 
-	const scheduleTypingStop = useCallback(() => {
-		if (typingTimeoutRef.current) {
-			clearTimeout(typingTimeoutRef.current);
-		}
-		typingTimeoutRef.current = setTimeout(() => {
-			sendTypingState(false);
-		}, typingIdleMs);
-	}, [sendTypingState, typingIdleMs]);
+                // Optimistically add the message to local state with sorting
+                setMessages((prev) => {
+                    // Check if message already exists to prevent duplicates
+                    if (prev.some((m) => m.$id === enrichedMessage.$id)) {
+                        return prev;
+                    }
+                    // Add and sort by creation time to maintain chronological order
+                    return [...prev, enrichedMessage].sort((a, b) =>
+                        a.$createdAt.localeCompare(b.$createdAt),
+                    );
+                });
+            } catch (err) {
+                throw new Error(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to send message",
+                );
+            } finally {
+                setSending(false);
+            }
+        },
+        [conversationId, userId, receiverId],
+    );
 
-	const scheduleTypingStart = useCallback(() => {
-		if (typingDebounceRef.current) {
-			clearTimeout(typingDebounceRef.current);
-		}
-		typingDebounceRef.current = setTimeout(() => {
-			sendTypingState(true);
-		}, typingStartDebounceMs);
-	}, [sendTypingState, typingStartDebounceMs]);
+    const edit = useCallback(
+        async (messageId: string, newText: string) => {
+            if (!newText.trim()) {
+                return;
+            }
 
-	const handleTypingChange = useCallback((text: string) => {
-		if (!userId || !conversationId) {
-			return;
-		}
-		const isTyping = text.trim().length > 0;
-		if (isTyping) {
-			scheduleTypingStart();
-			scheduleTypingStop();
-		} else {
-			if (typingDebounceRef.current) {
-				clearTimeout(typingDebounceRef.current);
-			}
-			sendTypingState(false);
-			if (typingTimeoutRef.current) {
-				clearTimeout(typingTimeoutRef.current);
-			}
-		}
-	}, [userId, conversationId, scheduleTypingStart, scheduleTypingStop, sendTypingState]);
+            try {
+                await editDirectMessage(messageId, newText.trim());
+                await loadMessages();
+            } catch (err) {
+                throw new Error(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to edit message",
+                );
+            }
+        },
+        [loadMessages],
+    );
 
-	// Realtime subscription for typing indicators
-	useEffect(() => {
-		if (!conversationId || !TYPING_COLLECTION_ID) {
-			setTypingUsers({});
-			return;
-		}
+    const deleteMsg = useCallback(
+        async (messageId: string) => {
+            if (!userId) {
+                return;
+            }
 
-		const databaseId = env.databaseId;
-		
-		import("appwrite").then(({ Client }) => {
-			const client = new Client()
-				.setEndpoint(env.endpoint)
-				.setProject(env.project);
+            try {
+                await deleteDirectMessage(messageId, userId);
+                await loadMessages();
+            } catch (err) {
+                throw new Error(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to delete message",
+                );
+            }
+        },
+        [userId, loadMessages],
+    );
 
-			const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
+    // Typing indicator management
+    const sendTypingState = useCallback(
+        (state: boolean) => {
+            if (!userId || !conversationId) {
+                return;
+            }
+            const now = Date.now();
+            if (
+                state === lastTypingSentState.current &&
+                now - lastTypingSentAt.current < typingStartDebounceMs
+            ) {
+                return;
+            }
+            lastTypingSentState.current = state;
+            lastTypingSentAt.current = now;
 
-			const unsubscribe = client.subscribe(typingChannel, (response) => {
-				const payload = response.payload as Record<string, unknown>;
-				const events = response.events as string[];
-				
-				const typing = {
-					$id: String(payload.$id),
-					userId: String(payload.userId),
-					userName: payload.userName as string | undefined,
-					channelId: String(payload.channelId),
-					updatedAt: String(payload.$updatedAt || payload.updatedAt),
-				};
+            // Use conversationId for DM typing status
+            if (state) {
+                fetch("/api/typing", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        conversationId,
+                        userName: userName || undefined,
+                    }),
+                })
+                    .then((response) => {
+                        if (
+                            !response.ok &&
+                            process.env.NODE_ENV === "development"
+                        ) {
+                            // biome-ignore lint: development debugging
+                            console.warn(
+                                "[typing] Failed to set typing status:",
+                                response.status,
+                            );
+                        }
+                    })
+                    .catch((error) => {
+                        if (process.env.NODE_ENV === "development") {
+                            // biome-ignore lint: development debugging
+                            console.warn(
+                                "[typing] Error updating typing status:",
+                                error,
+                            );
+                        }
+                    });
+            } else {
+                fetch(
+                    `/api/typing?conversationId=${encodeURIComponent(conversationId)}`,
+                    {
+                        method: "DELETE",
+                    },
+                )
+                    .then((response) => {
+                        if (
+                            !response.ok &&
+                            process.env.NODE_ENV === "development"
+                        ) {
+                            // biome-ignore lint: development debugging
+                            console.warn(
+                                "[typing] Failed to clear typing status:",
+                                response.status,
+                            );
+                        }
+                    })
+                    .catch((error) => {
+                        if (process.env.NODE_ENV === "development") {
+                            // biome-ignore lint: development debugging
+                            console.warn(
+                                "[typing] Error updating typing status:",
+                                error,
+                            );
+                        }
+                    });
+            }
+        },
+        [userId, conversationId, userName, typingStartDebounceMs],
+    );
 
-				// Only process typing events for current conversation
-				if (typing.channelId !== conversationId) {
-					return;
-				}
+    const scheduleTypingStop = useCallback(() => {
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => {
+            sendTypingState(false);
+        }, typingIdleMs);
+    }, [sendTypingState, typingIdleMs]);
 
-				// Ignore typing events from current user
-				if (typing.userId === userId) {
-					return;
-				}
+    const scheduleTypingStart = useCallback(() => {
+        if (typingDebounceRef.current) {
+            clearTimeout(typingDebounceRef.current);
+        }
+        typingDebounceRef.current = setTimeout(() => {
+            sendTypingState(true);
+        }, typingStartDebounceMs);
+    }, [sendTypingState, typingStartDebounceMs]);
 
-				if (process.env.NODE_ENV === 'development') {
-					// biome-ignore lint: development debugging
-					console.log('[typing] Received event:', events, typing);
-				}
+    const handleTypingChange = useCallback(
+        (text: string) => {
+            if (!userId || !conversationId) {
+                return;
+            }
+            const isTyping = text.trim().length > 0;
+            if (isTyping) {
+                scheduleTypingStart();
+                scheduleTypingStop();
+            } else {
+                if (typingDebounceRef.current) {
+                    clearTimeout(typingDebounceRef.current);
+                }
+                sendTypingState(false);
+                if (typingTimeoutRef.current) {
+                    clearTimeout(typingTimeoutRef.current);
+                }
+            }
+        },
+        [
+            userId,
+            conversationId,
+            scheduleTypingStart,
+            scheduleTypingStop,
+            sendTypingState,
+        ],
+    );
 
-				// Use batched updates to reduce re-renders
-				if (events.some((e) => e.endsWith(".delete"))) {
-					batchUpdateTypingUsers({
-						userId: typing.userId,
-						userName: typing.userName,
-						updatedAt: typing.updatedAt,
-						action: 'remove',
-					});
-				} else if (
-					events.some((e) => e.endsWith(".create") || e.endsWith(".update"))
-				) {
-					batchUpdateTypingUsers({
-						userId: typing.userId,
-						userName: typing.userName,
-						updatedAt: typing.updatedAt,
-						action: 'add',
-					});
-				}
-			});
+    // Realtime subscription for typing indicators
+    useEffect(() => {
+        if (!conversationId || !TYPING_COLLECTION_ID) {
+            setTypingUsers({});
+            return;
+        }
 
-			return () => {
-				unsubscribe();
-			};
-		}).catch(() => {
-			// Ignore subscription errors
-		});
-	}, [conversationId, userId]);
+        const databaseId = env.databaseId;
 
-	// Cleanup stale typing indicators
-	useEffect(() => {
-		const interval = setInterval(() => {
-			const now = Date.now();
-			const staleThreshold = 5000;
-			
-			setTypingUsers((prev) => {
-				const updated = { ...prev };
-				let hasChanges = false;
-				
-				for (const [uid, typing] of Object.entries(updated)) {
-					const updatedTime = new Date(typing.updatedAt).getTime();
-					if (now - updatedTime > staleThreshold) {
-						delete updated[uid];
-						hasChanges = true;
-					}
-				}
-				
-				return hasChanges ? updated : prev;
-			});
-		}, 1000);
-		
-		return () => clearInterval(interval);
-	}, []);
+        import("appwrite")
+            .then(({ Client }) => {
+                const client = new Client()
+                    .setEndpoint(env.endpoint)
+                    .setProject(env.project);
 
-	// Cleanup typing status on unmount
-	useEffect(() => {
-		return () => {
-			if (typingTimeoutRef.current) {
-				clearTimeout(typingTimeoutRef.current);
-			}
-			if (typingDebounceRef.current) {
-				clearTimeout(typingDebounceRef.current);
-			}
-			sendTypingState(false);
-		};
-	}, [sendTypingState]);
+                const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
 
-	return {
-		messages,
-		loading,
-		error,
-		sending,
-		send,
-		edit,
-		deleteMsg,
-		refresh: loadMessages,
-		typingUsers,
-		handleTypingChange,
-	};
+                const unsubscribe = client.subscribe(
+                    typingChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const events = response.events as string[];
+
+                        const typing = {
+                            $id: String(payload.$id),
+                            userId: String(payload.userId),
+                            userName: payload.userName as string | undefined,
+                            channelId: String(payload.channelId),
+                            updatedAt: String(
+                                payload.$updatedAt || payload.updatedAt,
+                            ),
+                        };
+
+                        // Only process typing events for current conversation
+                        if (typing.channelId !== conversationId) {
+                            return;
+                        }
+
+                        // Ignore typing events from current user
+                        if (typing.userId === userId) {
+                            return;
+                        }
+
+                        if (process.env.NODE_ENV === "development") {
+                            // biome-ignore lint: development debugging
+                            console.log(
+                                "[typing] Received event:",
+                                events,
+                                typing,
+                            );
+                        }
+
+                        // Use batched updates to reduce re-renders
+                        if (events.some((e) => e.endsWith(".delete"))) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                action: "remove",
+                            });
+                        } else if (
+                            events.some(
+                                (e) =>
+                                    e.endsWith(".create") ||
+                                    e.endsWith(".update"),
+                            )
+                        ) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                action: "add",
+                            });
+                        }
+                    },
+                );
+
+                return () => {
+                    unsubscribe();
+                };
+            })
+            .catch(() => {
+                // Ignore subscription errors
+            });
+    }, [conversationId, userId]);
+
+    // Cleanup stale typing indicators
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const now = Date.now();
+            const staleThreshold = 5000;
+
+            setTypingUsers((prev) => {
+                const updated = { ...prev };
+                let hasChanges = false;
+
+                for (const [uid, typing] of Object.entries(updated)) {
+                    const updatedTime = new Date(typing.updatedAt).getTime();
+                    if (now - updatedTime > staleThreshold) {
+                        delete updated[uid];
+                        hasChanges = true;
+                    }
+                }
+
+                return hasChanges ? updated : prev;
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    // Cleanup typing status on unmount
+    useEffect(() => {
+        return () => {
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+            if (typingDebounceRef.current) {
+                clearTimeout(typingDebounceRef.current);
+            }
+            sendTypingState(false);
+        };
+    }, [sendTypingState]);
+
+    return {
+        messages,
+        loading,
+        error,
+        sending,
+        send,
+        edit,
+        deleteMsg,
+        refresh: loadMessages,
+        typingUsers,
+        handleTypingChange,
+    };
 }

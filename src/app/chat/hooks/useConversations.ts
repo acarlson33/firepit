@@ -44,6 +44,7 @@ export function useConversations(userId: string | null) {
     // Get all other user IDs from conversations
     const otherUserIds = useMemo(() => {
         return conversations
+            .filter((conv) => !conv.isGroup)
             .map((conv) => conv.participants.find((id) => id !== userId))
             .filter((id): id is string => id !== undefined);
     }, [conversations, userId]);
@@ -54,6 +55,10 @@ export function useConversations(userId: string | null) {
     // Merge real-time status updates into conversations
     const conversationsWithStatus = useMemo(() => {
         return conversations.map((conv) => {
+            if (conv.isGroup) {
+                return conv;
+            }
+
             const otherUserId = conv.participants.find((id) => id !== userId);
             if (!otherUserId) {
                 return conv;
@@ -61,7 +66,6 @@ export function useConversations(userId: string | null) {
 
             const liveStatus = statuses.get(otherUserId);
 
-            // If we have a live status update, use it
             if (liveStatus) {
                 const baseOtherUser = conv.otherUser ?? { userId: otherUserId };
                 return {

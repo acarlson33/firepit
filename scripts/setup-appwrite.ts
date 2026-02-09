@@ -4,20 +4,53 @@
  * Creates database, collections, string attributes, indexes, teams, and storage buckets if they do not exist.
  * Safe to re-run. Avoids console.* per project lint rules (writes directly to stdout/stderr).
  */
+import { config as loadDotenv } from "dotenv";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client, Databases, Storage, Teams } from "node-appwrite";
 
-// ---- Environment (DO NOT hardcode secrets) ----
-const endpoint = process.env.APPWRITE_ENDPOINT;
-if (!endpoint) {
-	throw new Error("APPWRITE_ENDPOINT is required");
+const envFiles = [".env", ".env.local"];
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const searchRoots = new Set([process.cwd(), scriptDir]);
+
+function findEnvPaths(): string[] {
+    const found: string[] = [];
+    for (const root of searchRoots) {
+        let current = path.resolve(root);
+        for (;;) {
+            for (const envFile of envFiles) {
+                const envPath = path.join(current, envFile);
+                if (existsSync(envPath)) {
+                    found.push(envPath);
+                }
+            }
+            const parent = path.dirname(current);
+            if (parent === current) {
+                break;
+            }
+            current = parent;
+        }
+    }
+    return found;
 }
-const project = process.env.APPWRITE_PROJECT_ID;
+
+for (const envPath of findEnvPaths()) {
+    loadDotenv({ path: envPath, override: true });
+}
+
+// ---- Environment (DO NOT hardcode secrets) ----
+const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+if (!endpoint) {
+    throw new Error("APPWRITE_ENDPOINT is required");
+}
+const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
 if (!project) {
-	throw new Error("APPWRITE_PROJECT_ID is required");
+    throw new Error("APPWRITE_PROJECT_ID is required");
 }
 const apiKey = process.env.APPWRITE_API_KEY;
 if (!apiKey) {
-	throw new Error("APPWRITE_API_KEY is required");
+    throw new Error("APPWRITE_API_KEY is required");
 }
 const skipTeams = /^(1|true|yes)$/i.test(process.env.SKIP_TEAMS ?? "");
 
@@ -30,10 +63,10 @@ const LEN_TEXT = 4000; // generous message / meta text length
 // ---- Client ----
 const client = new Client().setEndpoint(endpoint).setProject(project);
 if (
-	typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-	"function"
+    typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
+    "function"
 ) {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
+    (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
 }
 const databases = new Databases(client);
 const teams = new Teams(client);
@@ -44,735 +77,879 @@ const dbAny = databases as any;
 const storageAny = storage as any;
 
 async function tryVariants<T>(variants: Array<() => Promise<T>>): Promise<T> {
-	let lastErr: unknown;
-	for (const v of variants) {
-		try {
-			return await v();
-		} catch (e) {
-			lastErr = e;
-		}
-	}
-	throw lastErr as Error;
+    let lastErr: unknown;
+    for (const v of variants) {
+        try {
+            return await v();
+        } catch (e) {
+            lastErr = e;
+        }
+    }
+    throw lastErr as Error;
 }
 
 function info(msg: string) {
-	process.stdout.write(`${msg}\n`);
+    process.stdout.write(`${msg}\n`);
 }
 function warn(msg: string) {
-	process.stderr.write(`[warn] ${msg}\n`);
+    process.stderr.write(`[warn] ${msg}\n`);
 }
 function err(msg: string) {
-	process.stderr.write(`[error] ${msg}\n`);
+    process.stderr.write(`[error] ${msg}\n`);
 }
 
 // ---- Ensure primitives ----
 async function ensureDatabase() {
-	try {
-		await tryVariants([
-			() => dbAny.get(DB_ID),
-			() => dbAny.getDatabase?.(DB_ID),
-			() => dbAny.getDatabase?.({ databaseId: DB_ID }),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.create(DB_ID, "Main"),
-			() => dbAny.createDatabase?.(DB_ID, "Main"),
-			() => dbAny.createDatabase?.({ databaseId: DB_ID, name: "Main" }),
-		]);
-		info(`[setup] created database '${DB_ID}'`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.get(DB_ID),
+            () => dbAny.getDatabase?.(DB_ID),
+            () => dbAny.getDatabase?.({ databaseId: DB_ID }),
+        ]);
+    } catch {
+        await tryVariants([
+            () => dbAny.create(DB_ID, "Main"),
+            () => dbAny.createDatabase?.(DB_ID, "Main"),
+            () => dbAny.createDatabase?.({ databaseId: DB_ID, name: "Main" }),
+        ]);
+        info(`[setup] created database '${DB_ID}'`);
+    }
 }
 
 async function ensureCollection(id: string, name: string) {
-	try {
-		await tryVariants([
-			() => dbAny.getCollection(DB_ID, id),
-			() => dbAny.getCollection?.({ databaseId: DB_ID, collectionId: id }),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.createCollection(DB_ID, id, name, [], true),
-			() =>
-				dbAny.createCollection?.({
-					databaseId: DB_ID,
-					collectionId: id,
-					name,
-					permissions: [],
-					documentSecurity: true,
-				}),
-		]);
-		info(`[setup] created collection '${id}' with document-level security enabled`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.getCollection(DB_ID, id),
+            () =>
+                dbAny.getCollection?.({ databaseId: DB_ID, collectionId: id }),
+        ]);
+    } catch {
+        await tryVariants([
+            () => dbAny.createCollection(DB_ID, id, name, [], true),
+            () =>
+                dbAny.createCollection?.({
+                    databaseId: DB_ID,
+                    collectionId: id,
+                    name,
+                    permissions: [],
+                    documentSecurity: true,
+                }),
+        ]);
+        info(
+            `[setup] created collection '${id}' with document-level security enabled`,
+        );
+    }
 }
 
 async function ensureStringAttribute(
-	collection: string,
-	key: string,
-	size: number,
-	required: boolean,
+    collection: string,
+    key: string,
+    size: number,
+    required: boolean,
 ) {
-	try {
-		await tryVariants([
-			() => dbAny.getAttribute(DB_ID, collection, key),
-			() =>
-				dbAny.getAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-				}),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.createStringAttribute(DB_ID, collection, key, size, required),
-			() =>
-				dbAny.createStringAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-					size,
-					required,
-				}),
-		]);
-		info(`[setup] added ${collection}.${key}`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.getAttribute(DB_ID, collection, key),
+            () =>
+                dbAny.getAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                }),
+        ]);
+    } catch {
+        await tryVariants([
+            () =>
+                dbAny.createStringAttribute(
+                    DB_ID,
+                    collection,
+                    key,
+                    size,
+                    required,
+                ),
+            () =>
+                dbAny.createStringAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                    size,
+                    required,
+                }),
+        ]);
+        info(`[setup] added ${collection}.${key}`);
+    }
 }
 
 async function ensureBooleanAttribute(
-	collection: string,
-	key: string,
-	required: boolean,
+    collection: string,
+    key: string,
+    required: boolean,
 ) {
-	try {
-		await tryVariants([
-			() => dbAny.getAttribute(DB_ID, collection, key),
-			() =>
-				dbAny.getAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-				}),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.createBooleanAttribute(DB_ID, collection, key, required),
-			() =>
-				dbAny.createBooleanAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-					required,
-				}),
-		]);
-		info(`[setup] added ${collection}.${key} (boolean)`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.getAttribute(DB_ID, collection, key),
+            () =>
+                dbAny.getAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                }),
+        ]);
+    } catch {
+        await tryVariants([
+            () =>
+                dbAny.createBooleanAttribute(DB_ID, collection, key, required),
+            () =>
+                dbAny.createBooleanAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                    required,
+                }),
+        ]);
+        info(`[setup] added ${collection}.${key} (boolean)`);
+    }
 }
 
 async function ensureIntegerAttribute(
-	collection: string,
-	key: string,
-	required: boolean,
-	defaultValue?: number,
-	min?: number,
-	max?: number,
+    collection: string,
+    key: string,
+    required: boolean,
+    defaultValue?: number,
+    min?: number,
+    max?: number,
 ) {
-	try {
-		await tryVariants([
-			() => dbAny.getAttribute(DB_ID, collection, key),
-			() =>
-				dbAny.getAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-				}),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.createIntegerAttribute(DB_ID, collection, key, required, min, max, defaultValue),
-			() =>
-				dbAny.createIntegerAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-					required,
-					min,
-					max,
-					default: defaultValue,
-				}),
-		]);
-		info(`[setup] added ${collection}.${key} (integer)`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.getAttribute(DB_ID, collection, key),
+            () =>
+                dbAny.getAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                }),
+        ]);
+    } catch {
+        await tryVariants([
+            () =>
+                dbAny.createIntegerAttribute(
+                    DB_ID,
+                    collection,
+                    key,
+                    required,
+                    min,
+                    max,
+                    defaultValue,
+                ),
+            () =>
+                dbAny.createIntegerAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                    required,
+                    min,
+                    max,
+                    default: defaultValue,
+                }),
+        ]);
+        info(`[setup] added ${collection}.${key} (integer)`);
+    }
 }
 
 async function ensureStringArrayAttribute(
-	collection: string,
-	key: string,
-	size: number,
-	required: boolean,
+    collection: string,
+    key: string,
+    size: number,
+    required: boolean,
 ) {
-	try {
-		await tryVariants([
-			() => dbAny.getAttribute(DB_ID, collection, key),
-			() =>
-				dbAny.getAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-				}),
-		]);
-	} catch {
-		await tryVariants([
-			() => dbAny.createStringAttribute(DB_ID, collection, key, size, required, undefined, true),
-			() =>
-				dbAny.createStringAttribute?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key,
-					size,
-					required,
-					array: true,
-				}),
-		]);
-		info(`[setup] added ${collection}.${key} (string array)`);
-	}
+    try {
+        await tryVariants([
+            () => dbAny.getAttribute(DB_ID, collection, key),
+            () =>
+                dbAny.getAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                }),
+        ]);
+    } catch {
+        await tryVariants([
+            () =>
+                dbAny.createStringAttribute(
+                    DB_ID,
+                    collection,
+                    key,
+                    size,
+                    required,
+                    undefined,
+                    true,
+                ),
+            () =>
+                dbAny.createStringAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key,
+                    size,
+                    required,
+                    array: true,
+                }),
+        ]);
+        info(`[setup] added ${collection}.${key} (string array)`);
+    }
 }
 
 type IndexType = "key" | "fulltext" | "unique"; // subset used
 async function waitForAttribute(
-	collection: string,
-	key: string,
-	maxAttempts = 10,
-	delayMs = 1000,
+    collection: string,
+    key: string,
+    maxAttempts = 10,
+    delayMs = 1000,
 ): Promise<void> {
-	for (let i = 0; i < maxAttempts; i++) {
-		try {
-			const attr = await tryVariants([
-				() => dbAny.getAttribute(DB_ID, collection, key),
-				() =>
-					dbAny.getAttribute?.({
-						databaseId: DB_ID,
-						collectionId: collection,
-						key,
-					}),
-			]);
-			// Check if attribute is available (status should be 'available')
-			const status = String((attr as any).status);
-			if (status === "available") {
-				info(`[setup] attribute ${collection}.${key} is available`);
-				return;
-			}
-			info(
-				`[setup] waiting for ${collection}.${key} (status: ${status}, attempt ${i + 1}/${maxAttempts})`,
-			);
-		} catch (e) {
-			// Attribute doesn't exist yet, wait and retry
-			info(
-				`[setup] ${collection}.${key} not found yet (attempt ${i + 1}/${maxAttempts})`,
-			);
-		}
-		if (i < maxAttempts - 1) {
-			await new Promise((resolve) => setTimeout(resolve, delayMs));
-		}
-	}
-	throw new Error(
-		`Attribute ${collection}.${key} did not become available after ${maxAttempts} attempts`,
-	);
+    for (let i = 0; i < maxAttempts; i++) {
+        try {
+            const attr = await tryVariants([
+                () => dbAny.getAttribute(DB_ID, collection, key),
+                () =>
+                    dbAny.getAttribute?.({
+                        databaseId: DB_ID,
+                        collectionId: collection,
+                        key,
+                    }),
+            ]);
+            // Check if attribute is available (status should be 'available')
+            const status = String((attr as any).status);
+            if (status === "available") {
+                info(`[setup] attribute ${collection}.${key} is available`);
+                return;
+            }
+            info(
+                `[setup] waiting for ${collection}.${key} (status: ${status}, attempt ${i + 1}/${maxAttempts})`,
+            );
+        } catch (e) {
+            // Attribute doesn't exist yet, wait and retry
+            info(
+                `[setup] ${collection}.${key} not found yet (attempt ${i + 1}/${maxAttempts})`,
+            );
+        }
+        if (i < maxAttempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+    throw new Error(
+        `Attribute ${collection}.${key} did not become available after ${maxAttempts} attempts`,
+    );
 }
 
 async function ensureIndex(
-	collection: string,
-	name: string,
-	type: IndexType,
-	attributes: string[],
+    collection: string,
+    name: string,
+    type: IndexType,
+    attributes: string[],
 ) {
-	try {
-		const existing = await tryVariants([
-			() => dbAny.getIndex(DB_ID, collection, name),
-			() =>
-				dbAny.getIndex?.({
-					databaseId: DB_ID,
-					collectionId: collection,
-					key: name,
-				}),
-		]);
-		info(`[setup] index ${collection}.${name} already exists (status: ${String((existing as any).status)})`);
-	} catch {
-		// Wait for all attributes to be available before creating index
-		for (const attr of attributes) {
-			await waitForAttribute(collection, attr);
-		}
+    try {
+        const existing = await tryVariants([
+            () => dbAny.getIndex(DB_ID, collection, name),
+            () =>
+                dbAny.getIndex?.({
+                    databaseId: DB_ID,
+                    collectionId: collection,
+                    key: name,
+                }),
+        ]);
+        info(
+            `[setup] index ${collection}.${name} already exists (status: ${String((existing as any).status)})`,
+        );
+    } catch {
+        // Wait for all attributes to be available before creating index
+        for (const attr of attributes) {
+            await waitForAttribute(collection, attr);
+        }
 
-		// Retry index creation with backoff if attributes aren't ready
-		let lastError: Error | null = null;
-		for (let attempt = 0; attempt < 5; attempt++) {
-			if (attempt > 0) {
-				const delay = 2000 * attempt; // Progressive delay: 2s, 4s, 6s, 8s
-				info(
-					`[setup] retrying index ${collection}.${name} after ${delay}ms delay (attempt ${attempt + 1}/5)`,
-				);
-				await new Promise((resolve) => setTimeout(resolve, delay));
-			}
+        // Retry index creation with backoff if attributes aren't ready
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            if (attempt > 0) {
+                const delay = 2000 * attempt; // Progressive delay: 2s, 4s, 6s, 8s
+                info(
+                    `[setup] retrying index ${collection}.${name} after ${delay}ms delay (attempt ${attempt + 1}/5)`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            }
 
-			try {
-				await tryVariants([
-					() => dbAny.createIndex(DB_ID, collection, name, type, attributes),
-					() =>
-						dbAny.createIndex?.({
-							databaseId: DB_ID,
-							collectionId: collection,
-							key: name,
-							type,
-							attributes,
-						}),
-				]);
-				info(`[setup] created index ${collection}.${name}`);
-				return; // Success!
-			} catch (e) {
-				lastError = e as Error;
-				const errMsg = lastError.message || "";
-				// If it's an "attribute not available" error, retry
-				if (errMsg.includes("Attribute not available")) {
-					continue;
-				}
-				// For other errors, handle immediately
-				if (type === "fulltext") {
-					warn(
-						`skipping fulltext index ${collection}.${name}: ${lastError.message}`,
-					);
-					return;
-				}
-				// Re-throw other errors
-				throw e;
-			}
-		}
+            try {
+                await tryVariants([
+                    () =>
+                        dbAny.createIndex(
+                            DB_ID,
+                            collection,
+                            name,
+                            type,
+                            attributes,
+                        ),
+                    () =>
+                        dbAny.createIndex?.({
+                            databaseId: DB_ID,
+                            collectionId: collection,
+                            key: name,
+                            type,
+                            attributes,
+                        }),
+                ]);
+                info(`[setup] created index ${collection}.${name}`);
+                return; // Success!
+            } catch (e) {
+                lastError = e as Error;
+                const errMsg = lastError.message || "";
+                // If it's an "attribute not available" error, retry
+                if (errMsg.includes("Attribute not available")) {
+                    continue;
+                }
+                // For other errors, handle immediately
+                if (type === "fulltext") {
+                    warn(
+                        `skipping fulltext index ${collection}.${name}: ${lastError.message}`,
+                    );
+                    return;
+                }
+                // Re-throw other errors
+                throw e;
+            }
+        }
 
-		// All retries failed
-		if (type === "fulltext") {
-			warn(
-				`skipping fulltext index ${collection}.${name}: ${lastError?.message ?? "unknown error"}`,
-			);
-		} else {
-			throw lastError ?? new Error("Failed to create index after retries");
-		}
-	}
+        // All retries failed
+        if (type === "fulltext") {
+            warn(
+                `skipping fulltext index ${collection}.${name}: ${lastError?.message ?? "unknown error"}`,
+            );
+        } else {
+            throw (
+                lastError ?? new Error("Failed to create index after retries")
+            );
+        }
+    }
 }
 
 // ---- Domain Specific Setup ----
 async function setupServers() {
-	await ensureCollection("servers", "Servers");
-	await ensureStringAttribute("servers", "name", LEN_ID, true);
-	await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
-	await ensureIntegerAttribute("servers", "memberCount", false, 1, 0, 1000000);
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureCollection("servers", "Servers");
+    await ensureStringAttribute("servers", "name", LEN_ID, true);
+    await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
+    await ensureIntegerAttribute(
+        "servers",
+        "memberCount",
+        false,
+        1,
+        0,
+        1000000,
+    );
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
 }
 
 async function setupChannels() {
-	await ensureCollection("channels", "Channels");
-	await ensureStringAttribute("channels", "serverId", LEN_ID, true);
-	await ensureStringAttribute("channels", "name", LEN_ID, true);
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("channels", "idx_serverId", "key", ["serverId"]);
+    await ensureCollection("channels", "Channels");
+    await ensureStringAttribute("channels", "serverId", LEN_ID, true);
+    await ensureStringAttribute("channels", "name", LEN_ID, true);
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("channels", "idx_serverId", "key", ["serverId"]);
 }
 
 async function setupMessages() {
-	await ensureCollection("messages", "Messages");
-	const fields: [string, number, boolean][] = [
-		["userId", LEN_ID, true],
-		["userName", LEN_ID, false],
-		["text", LEN_TEXT, true],
-		["serverId", LEN_ID, false],
-		["channelId", LEN_ID, false],
-		["editedAt", LEN_TS, false],
-		["removedAt", LEN_TS, false],
-		["removedBy", LEN_ID, false],
-		["replyToId", LEN_ID, false],
-		["imageFileId", LEN_ID, false],
-		["imageUrl", 2000, false],
-		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("messages", k, size, req);
-	}
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("messages", "idx_userId", "key", ["userId"]);
-	await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
-	await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
-	await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
-	await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
-	
-	try {
-		await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
-	} catch {
-		// optional
-	}
+    await ensureCollection("messages", "Messages");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["userName", LEN_ID, false],
+        ["text", LEN_TEXT, true],
+        ["serverId", LEN_ID, false],
+        ["channelId", LEN_ID, false],
+        ["editedAt", LEN_TS, false],
+        ["removedAt", LEN_TS, false],
+        ["removedBy", LEN_ID, false],
+        ["replyToId", LEN_ID, false],
+        ["imageFileId", LEN_ID, false],
+        ["imageUrl", 2000, false],
+        ["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("messages", k, size, req);
+    }
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("messages", "idx_userId", "key", ["userId"]);
+    await ensureIndex("messages", "idx_channelId", "key", ["channelId"]);
+    await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
+    await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
+    await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
+
+    try {
+        await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
+    } catch {
+        // optional
+    }
 }
 
 async function setupAudit() {
-	await ensureCollection("audit", "Audit");
-	const fields: [string, number, boolean][] = [
-		["action", LEN_ID, true],
-		["targetId", LEN_ID, true],
-		["actorId", LEN_ID, true],
-		["meta", LEN_TEXT, false],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("audit", k, size, req);
-	}
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("audit", "idx_action", "key", ["action"]);
-	await ensureIndex("audit", "idx_actor", "key", ["actorId"]);
-	await ensureIndex("audit", "idx_target", "key", ["targetId"]);
+    await ensureCollection("audit", "Audit");
+    const fields: [string, number, boolean][] = [
+        ["action", LEN_ID, true],
+        ["targetId", LEN_ID, true],
+        ["actorId", LEN_ID, true],
+        ["meta", LEN_TEXT, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("audit", k, size, req);
+    }
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("audit", "idx_action", "key", ["action"]);
+    await ensureIndex("audit", "idx_actor", "key", ["actorId"]);
+    await ensureIndex("audit", "idx_target", "key", ["targetId"]);
 }
 
 async function setupTyping() {
-	await ensureCollection("typing", "Typing");
-	const fields: [string, number, boolean][] = [
-		["userId", LEN_ID, true],
-		["userName", LEN_ID, false],
-		["channelId", LEN_ID, true],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("typing", k, size, req);
-	}
-	await ensureIndex("typing", "idx_channel", "key", ["channelId"]);
-	await ensureIndex("typing", "idx_updated", "key", ["$updatedAt"]);
+    await ensureCollection("typing", "Typing");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["userName", LEN_ID, false],
+        ["channelId", LEN_ID, true],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("typing", k, size, req);
+    }
+    await ensureIndex("typing", "idx_channel", "key", ["channelId"]);
+    await ensureIndex("typing", "idx_updated", "key", ["$updatedAt"]);
 }
 
 async function setupMemberships() {
-	await ensureCollection("memberships", "Memberships");
-	const fields: [string, number, boolean][] = [
-		["serverId", LEN_ID, true],
-		["userId", LEN_ID, true],
-		["role", LEN_ID, true],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("memberships", k, size, req);
-	}
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("memberships", "idx_server", "key", ["serverId"]);
-	await ensureIndex("memberships", "idx_user", "key", ["userId"]);
-	await ensureIndex("memberships", "idx_server_user", "key", [
-		"serverId",
-		"userId",
-	]);
+    await ensureCollection("memberships", "Memberships");
+    const fields: [string, number, boolean][] = [
+        ["serverId", LEN_ID, true],
+        ["userId", LEN_ID, true],
+        ["role", LEN_ID, true],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("memberships", k, size, req);
+    }
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("memberships", "idx_server", "key", ["serverId"]);
+    await ensureIndex("memberships", "idx_user", "key", ["userId"]);
+    await ensureIndex("memberships", "idx_server_user", "key", [
+        "serverId",
+        "userId",
+    ]);
 }
 
 async function setupProfiles() {
-	await ensureCollection("profiles", "Profiles");
-	const fields: [string, number, boolean][] = [
-		["userId", LEN_ID, true],
-		["displayName", 255, false],
-		["bio", 5000, false],
-		["pronouns", 100, false],
-		["avatarFileId", LEN_ID, false],
-		["location", 255, false],
-		["website", 500, false],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("profiles", k, size, req);
-	}
-	await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
-	try {
-		await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
-			"displayName",
-		]);
-	} catch {
-		// optional fulltext search
-	}
+    await ensureCollection("profiles", "Profiles");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["displayName", 255, false],
+        ["bio", 5000, false],
+        ["pronouns", 100, false],
+        ["avatarFileId", LEN_ID, false],
+        ["location", 255, false],
+        ["website", 500, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("profiles", k, size, req);
+    }
+    await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
+    try {
+        await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
+            "displayName",
+        ]);
+    } catch {
+        // optional fulltext search
+    }
 }
 
 async function setupFeatureFlags() {
-	await ensureCollection("feature_flags", "Feature Flags");
-	const fields: [string, number, boolean][] = [
-		["key", LEN_ID, true],
-		["description", 500, false],
-		["updatedAt", LEN_TS, false],
-		["updatedBy", LEN_ID, false],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("feature_flags", k, size, req);
-	}
-	await ensureBooleanAttribute("feature_flags", "enabled", true);
-	await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
+    await ensureCollection("feature_flags", "Feature Flags");
+    const fields: [string, number, boolean][] = [
+        ["key", LEN_ID, true],
+        ["description", 500, false],
+        ["updatedAt", LEN_TS, false],
+        ["updatedBy", LEN_ID, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("feature_flags", k, size, req);
+    }
+    await ensureBooleanAttribute("feature_flags", "enabled", true);
+    await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
 }
 
 async function setupInvites() {
-	await ensureCollection("invites", "Server Invites");
-	const fields: [string, number, boolean][] = [
-		["serverId", LEN_ID, true],
-		["code", LEN_ID, true],
-		["creatorId", LEN_ID, true],
-		["channelId", LEN_ID, false],
-		["expiresAt", LEN_TS, false],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("invites", k, size, req);
-	}
-	await ensureIntegerAttribute("invites", "maxUses", false);
-	await ensureIntegerAttribute("invites", "currentUses", true);
-	await ensureBooleanAttribute("invites", "temporary", true);
-	// Indexes
-	await ensureIndex("invites", "idx_code", "unique", ["code"]);
-	await ensureIndex("invites", "idx_server", "key", ["serverId"]);
-	await ensureIndex("invites", "idx_creator", "key", ["creatorId"]);
+    await ensureCollection("invites", "Server Invites");
+    const fields: [string, number, boolean][] = [
+        ["serverId", LEN_ID, true],
+        ["code", LEN_ID, true],
+        ["creatorId", LEN_ID, true],
+        ["channelId", LEN_ID, false],
+        ["expiresAt", LEN_TS, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("invites", k, size, req);
+    }
+    await ensureIntegerAttribute("invites", "maxUses", false);
+    await ensureIntegerAttribute("invites", "currentUses", true);
+    await ensureBooleanAttribute("invites", "temporary", true);
+    // Indexes
+    await ensureIndex("invites", "idx_code", "unique", ["code"]);
+    await ensureIndex("invites", "idx_server", "key", ["serverId"]);
+    await ensureIndex("invites", "idx_creator", "key", ["creatorId"]);
 }
 
 async function setupInviteUsage() {
-	await ensureCollection("invite_usage", "Invite Usage");
-	const fields: [string, number, boolean][] = [
-		["inviteCode", LEN_ID, true],
-		["userId", LEN_ID, true],
-		["serverId", LEN_ID, true],
-		["joinedAt", LEN_TS, true],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("invite_usage", k, size, req);
-	}
-	await ensureIndex("invite_usage", "idx_code", "key", ["inviteCode"]);
-	await ensureIndex("invite_usage", "idx_user", "key", ["userId"]);
-	await ensureIndex("invite_usage", "idx_server", "key", ["serverId"]);
+    await ensureCollection("invite_usage", "Invite Usage");
+    const fields: [string, number, boolean][] = [
+        ["inviteCode", LEN_ID, true],
+        ["userId", LEN_ID, true],
+        ["serverId", LEN_ID, true],
+        ["joinedAt", LEN_TS, true],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("invite_usage", k, size, req);
+    }
+    await ensureIndex("invite_usage", "idx_code", "key", ["inviteCode"]);
+    await ensureIndex("invite_usage", "idx_user", "key", ["userId"]);
+    await ensureIndex("invite_usage", "idx_server", "key", ["serverId"]);
 }
 
 async function setupStatuses() {
-	await ensureCollection("statuses", "Statuses");
-	const fields: [string, number, boolean][] = [
-		["userId", LEN_ID, true],
-		["status", 64, true],
-		["customMessage", LEN_TEXT, false],
-		["lastSeenAt", LEN_TS, true],
-		["expiresAt", LEN_TS, false],
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("statuses", k, size, req);
-	}
-	await ensureBooleanAttribute("statuses", "isManuallySet", false);
-	await ensureIndex("statuses", "idx_userId", "key", ["userId"]);
-	await ensureIndex("statuses", "idx_status", "key", ["status"]);
+    await ensureCollection("statuses", "Statuses");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["status", 64, true],
+        ["customMessage", LEN_TEXT, false],
+        ["lastSeenAt", LEN_TS, true],
+        ["expiresAt", LEN_TS, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("statuses", k, size, req);
+    }
+    await ensureBooleanAttribute("statuses", "isManuallySet", false);
+    await ensureIndex("statuses", "idx_userId", "key", ["userId"]);
+    await ensureIndex("statuses", "idx_status", "key", ["status"]);
 }
 
 async function setupConversations() {
-	await ensureCollection("conversations", "Conversations");
-	await ensureStringArrayAttribute("conversations", "participants", LEN_ID, true);
-	await ensureStringAttribute("conversations", "lastMessageAt", LEN_TS, false);
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("conversations", "idx_participants", "key", ["participants"]);
+    await ensureCollection("conversations", "Conversations");
+    await ensureStringArrayAttribute(
+        "conversations",
+        "participants",
+        LEN_ID,
+        true,
+    );
+    await ensureStringAttribute(
+        "conversations",
+        "lastMessageAt",
+        LEN_TS,
+        false,
+    );
+    await ensureBooleanAttribute("conversations", "isGroup", false);
+    await ensureStringAttribute("conversations", "name", LEN_ID, false);
+    await ensureStringAttribute("conversations", "avatarUrl", 2000, false);
+    await ensureStringAttribute("conversations", "createdBy", LEN_ID, false);
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("conversations", "idx_participants", "key", [
+        "participants",
+    ]);
 }
 
 async function setupDirectMessages() {
-	await ensureCollection("direct_messages", "Direct Messages");
-	const fields: [string, number, boolean][] = [
-		["senderId", LEN_ID, true],
-		["receiverId", LEN_ID, true],
-		["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
-		["editedAt", LEN_TS, false],
-		["removedAt", LEN_TS, false],
-		["imageFileId", LEN_ID, false],
-		["imageUrl", 2000, false],
-		["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("direct_messages", k, size, req);
-	}
-	// Note: Using system $createdAt attribute for ordering, no custom attribute needed
-	await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
-	await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
-	await ensureIndex("direct_messages", "idx_text_search", "fulltext", ["text"]);
+    await ensureCollection("direct_messages", "Direct Messages");
+    const fields: [string, number, boolean][] = [
+        ["conversationId", LEN_ID, true],
+        ["senderId", LEN_ID, true],
+        ["receiverId", LEN_ID, false],
+        ["text", LEN_TEXT, false], // Changed to false - text is optional if image is present
+        ["editedAt", LEN_TS, false],
+        ["removedAt", LEN_TS, false],
+        ["replyToId", LEN_ID, false],
+        ["imageFileId", LEN_ID, false],
+        ["imageUrl", 2000, false],
+        ["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("direct_messages", k, size, req);
+    }
+    await ensureStringArrayAttribute(
+        "direct_messages",
+        "mentions",
+        LEN_ID,
+        false,
+    );
+    // Note: Using system $createdAt attribute for ordering, no custom attribute needed
+    await ensureIndex("direct_messages", "idx_conversation", "key", [
+        "conversationId",
+    ]);
+    await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
+    await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
+    await ensureIndex("direct_messages", "idx_text_search", "fulltext", [
+        "text",
+    ]);
 }
 
 async function setupNotificationSettings() {
-	await ensureCollection("notification_settings", "Notification Settings");
-	const fields: [string, number, boolean][] = [
-		["userId", LEN_ID, true],
-		["globalNotifications", 32, true], // "all" | "mentions" | "nothing"
-		["quietHoursStart", 8, false], // HH:mm format
-		["quietHoursEnd", 8, false], // HH:mm format
-		["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
-		["channelOverrides", LEN_TEXT, false], // JSON string of Record<channelId, NotificationOverride>
-		["conversationOverrides", LEN_TEXT, false], // JSON string of Record<conversationId, NotificationOverride>
-	];
-	for (const [k, size, req] of fields) {
-		await ensureStringAttribute("notification_settings", k, size, req);
-	}
-	await ensureBooleanAttribute("notification_settings", "desktopNotifications", true);
-	await ensureBooleanAttribute("notification_settings", "pushNotifications", true);
-	await ensureBooleanAttribute("notification_settings", "notificationSound", true);
-	await ensureIndex("notification_settings", "idx_userId", "unique", ["userId"]);
+    await ensureCollection("notification_settings", "Notification Settings");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["globalNotifications", 32, true], // "all" | "mentions" | "nothing"
+        ["quietHoursStart", 8, false], // HH:mm format
+        ["quietHoursEnd", 8, false], // HH:mm format
+        ["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
+        ["channelOverrides", LEN_TEXT, false], // JSON string of Record<channelId, NotificationOverride>
+        ["conversationOverrides", LEN_TEXT, false], // JSON string of Record<conversationId, NotificationOverride>
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("notification_settings", k, size, req);
+    }
+    await ensureBooleanAttribute(
+        "notification_settings",
+        "desktopNotifications",
+        true,
+    );
+    await ensureBooleanAttribute(
+        "notification_settings",
+        "pushNotifications",
+        true,
+    );
+    await ensureBooleanAttribute(
+        "notification_settings",
+        "notificationSound",
+        true,
+    );
+    await ensureIndex("notification_settings", "idx_userId", "unique", [
+        "userId",
+    ]);
 }
 
 async function ensureBucket(
-	id: string,
-	name: string,
-	maxFileSize = 2097152,
-	allowedExtensions = ["jpg", "jpeg", "png", "gif", "webp"]
+    id: string,
+    name: string,
+    maxFileSize = 2097152,
+    allowedExtensions = ["jpg", "jpeg", "png", "gif", "webp"],
 ) {
-	try {
-		await tryVariants([
-			() => storageAny.getBucket(id),
-			() => storageAny.getBucket?.({ bucketId: id }),
-		]);
-	} catch {
-		await tryVariants([
-			() =>
-				storageAny.createBucket(
-					id,
-					name,
-					[], // permissions - we'll set file-level permissions
-					false, // fileSecurity (document-level perms)
-					true, // enabled
-					maxFileSize, // max file size
-					allowedExtensions, // allowed extensions
-				),
-			() =>
-				storageAny.createBucket?.({
-					bucketId: id,
-					name,
-					permissions: [],
-					fileSecurity: false,
-					enabled: true,
-					maximumFileSize: maxFileSize,
-					allowedFileExtensions: allowedExtensions,
-				}),
-		]);
-		info(`[setup] created bucket '${id}'`);
-	}
+    try {
+        await tryVariants([
+            () => storageAny.getBucket(id),
+            () => storageAny.getBucket?.({ bucketId: id }),
+        ]);
+    } catch {
+        await tryVariants([
+            () =>
+                storageAny.createBucket(
+                    id,
+                    name,
+                    [], // permissions - we'll set file-level permissions
+                    false, // fileSecurity (document-level perms)
+                    true, // enabled
+                    maxFileSize, // max file size
+                    allowedExtensions, // allowed extensions
+                ),
+            () =>
+                storageAny.createBucket?.({
+                    bucketId: id,
+                    name,
+                    permissions: [],
+                    fileSecurity: false,
+                    enabled: true,
+                    maximumFileSize: maxFileSize,
+                    allowedFileExtensions: allowedExtensions,
+                }),
+        ]);
+        info(`[setup] created bucket '${id}'`);
+    }
 }
 
 async function setupStorage() {
-	await ensureBucket("avatars", "User Avatars", 2097152, ["jpg", "jpeg", "png", "gif", "webp"]); // 2MB for avatars
-	await ensureBucket("images", "Chat Images", 5242880, ["jpg", "jpeg", "png", "gif", "webp"]); // 5MB for chat images
-	await ensureBucket("emojis", "Custom Emojis", 10485760, ["jpg", "jpeg", "png", "gif", "webp"]); // 10MB for custom emojis
-	// Files bucket for various file types (documents, videos, audio, archives, code)
-	await ensureBucket(
-		"files",
-		"File Attachments",
-		52428800, // 50MB max
-		[
-			// Documents
-			"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt",
-			// Videos
-			"mp4", "webm", "mov", "avi", "mkv",
-			// Audio
-			"mp3", "wav", "ogg", "m4a", "flac",
-			// Archives
-			"zip", "rar", "7z", "tar", "gz",
-			// Code files
-			"js", "ts", "jsx", "tsx", "py", "java", "c", "cpp", "h", "css", "html", "json", "xml", "yaml", "yml", "md",
-			// Other common formats
-			"csv", "svg", "ico",
-		]
-	);
+    await ensureBucket("avatars", "User Avatars", 2097152, [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+    ]); // 2MB for avatars
+    await ensureBucket("images", "Chat Images", 5242880, [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+    ]); // 5MB for chat images
+    await ensureBucket("emojis", "Custom Emojis", 10485760, [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+    ]); // 10MB for custom emojis
+    // Files bucket for various file types (documents, videos, audio, archives, code)
+    await ensureBucket(
+        "files",
+        "File Attachments",
+        52428800, // 50MB max
+        [
+            // Documents
+            "pdf",
+            "doc",
+            "docx",
+            "xls",
+            "xlsx",
+            "ppt",
+            "pptx",
+            "txt",
+            // Videos
+            "mp4",
+            "webm",
+            "mov",
+            "avi",
+            "mkv",
+            // Audio
+            "mp3",
+            "wav",
+            "ogg",
+            "m4a",
+            "flac",
+            // Archives
+            "zip",
+            "rar",
+            "7z",
+            "tar",
+            "gz",
+            // Code files
+            "js",
+            "ts",
+            "jsx",
+            "tsx",
+            "py",
+            "java",
+            "c",
+            "cpp",
+            "h",
+            "css",
+            "html",
+            "json",
+            "xml",
+            "yaml",
+            "yml",
+            "md",
+            // Other common formats
+            "csv",
+            "svg",
+            "ico",
+        ],
+    );
 }
 
 async function ensureTeams() {
-	if (skipTeams) {
-		info("[setup] skipping teams (SKIP_TEAMS set)");
-		return;
-	}
-	const defs: Array<{ id: string; label: string }> = [
-		{ id: "team_admins", label: "Admins" },
-		{ id: "team_mods", label: "Moderators" },
-	];
-	for (const { id, label } of defs) {
-		try {
-			await teams.get(id);
-			continue; // exists
-		} catch (e) {
-			const msg = (e as Error).message || "";
-			if (msg.includes("missing scopes") && msg.includes("teams.write")) {
-				warn(
-					`missing teams.write scope – cannot create ${id}; re-run with teams.write scope or set SKIP_TEAMS=1`,
-				);
-				continue;
-			}
-		}
-		try {
-			await teams.create(id, label);
-			info(`[setup] created team ${id}`);
-		} catch (ce) {
-			warn(`[setup] failed creating ${id}: ${(ce as Error).message}`);
-		}
-	}
+    if (skipTeams) {
+        info("[setup] skipping teams (SKIP_TEAMS set)");
+        return;
+    }
+    const defs: Array<{ id: string; label: string }> = [
+        { id: "team_admins", label: "Admins" },
+        { id: "team_mods", label: "Moderators" },
+    ];
+    for (const { id, label } of defs) {
+        try {
+            await teams.get(id);
+            continue; // exists
+        } catch (e) {
+            const msg = (e as Error).message || "";
+            if (msg.includes("missing scopes") && msg.includes("teams.write")) {
+                warn(
+                    `missing teams.write scope – cannot create ${id}; re-run with teams.write scope or set SKIP_TEAMS=1`,
+                );
+                continue;
+            }
+        }
+        try {
+            await teams.create(id, label);
+            info(`[setup] created team ${id}`);
+        } catch (ce) {
+            warn(`[setup] failed creating ${id}: ${(ce as Error).message}`);
+        }
+    }
 }
 
 // ---- Preflight scope diagnostics ----
 async function preflight() {
-	const failures: string[] = [];
-	// Databases read capability
-	try {
-		await tryVariants([
-			() => dbAny.get(DB_ID),
-			() => dbAny.getDatabase?.(DB_ID),
-			() => dbAny.getDatabase?.({ databaseId: DB_ID }),
-		]);
-	} catch (e) {
-		const msg = (e as Error).message || "";
-		if (msg.includes("missing scopes")) {
-			failures.push("databases.read");
-		}
-	}
-	// Teams read capability (optional if skipping teams)
-	if (!skipTeams) {
-		try {
-			await teams.list();
-		} catch (e) {
-			const msg = (e as Error).message || "";
-			if (msg.includes("missing scopes")) {
-				failures.push("teams.read");
-			}
-		}
-	}
-	if (failures.length) {
-		warn(
-			`Potential missing scopes detected: ${failures.join(", ")}. If this script fails later, create a new API key with: databases.read, databases.write, collections.read, collections.write, attributes.read, attributes.write, indexes.read, indexes.write${
-				skipTeams ? "" : ", teams.read, teams.write"
-			}.`,
-		);
-	}
+    const failures: string[] = [];
+    // Databases read capability
+    try {
+        await tryVariants([
+            () => dbAny.get(DB_ID),
+            () => dbAny.getDatabase?.(DB_ID),
+            () => dbAny.getDatabase?.({ databaseId: DB_ID }),
+        ]);
+    } catch (e) {
+        const msg = (e as Error).message || "";
+        if (msg.includes("missing scopes")) {
+            failures.push("databases.read");
+        }
+    }
+    // Teams read capability (optional if skipping teams)
+    if (!skipTeams) {
+        try {
+            await teams.list();
+        } catch (e) {
+            const msg = (e as Error).message || "";
+            if (msg.includes("missing scopes")) {
+                failures.push("teams.read");
+            }
+        }
+    }
+    if (failures.length) {
+        warn(
+            `Potential missing scopes detected: ${failures.join(", ")}. If this script fails later, create a new API key with: databases.read, databases.write, collections.read, collections.write, attributes.read, attributes.write, indexes.read, indexes.write${
+                skipTeams ? "" : ", teams.read, teams.write"
+            }.`,
+        );
+    }
 }
 
 async function run() {
-	await preflight();
-	await ensureDatabase();
-	info("[setup] Setting up storage...");
-	await setupStorage();
-	info("[setup] Setting up servers...");
-	await setupServers();
-	info("[setup] Setting up channels...");
-	await setupChannels();
-	info("[setup] Setting up messages...");
-	await setupMessages();
-	info("[setup] Setting up audit...");
-	await setupAudit();
-	info("[setup] Setting up typing...");
-	try {
-		await setupTyping();
-	} catch (e) {
-		const message = e instanceof Error ? e.message : String(e);
-		err(`[setup] Failed to setup typing (non-fatal): ${message}`);
-	}
-	info("[setup] Setting up memberships...");
-	await setupMemberships();
-	info("[setup] Setting up profiles...");
-	await setupProfiles();
-	info("[setup] Setting up feature flags...");
-	await setupFeatureFlags();
-	info("[setup] Setting up invites...");
-	await setupInvites();
-	info("[setup] Setting up invite usage...");
-	await setupInviteUsage();
-	info("[setup] Setting up statuses...");
-	await setupStatuses();
-	info("[setup] Setting up conversations...");
-	await setupConversations();
-	info("[setup] Setting up direct messages...");
-	await setupDirectMessages();
-	info("[setup] Setting up notification settings...");
-	await setupNotificationSettings();
-	info("[setup] Setting up teams...");
-	await ensureTeams();
-	info("Setup complete.");
+    await preflight();
+    await ensureDatabase();
+    info("[setup] Setting up storage...");
+    await setupStorage();
+    info("[setup] Setting up servers...");
+    await setupServers();
+    info("[setup] Setting up channels...");
+    await setupChannels();
+    info("[setup] Setting up messages...");
+    await setupMessages();
+    info("[setup] Setting up audit...");
+    await setupAudit();
+    info("[setup] Setting up typing...");
+    try {
+        await setupTyping();
+    } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        err(`[setup] Failed to setup typing (non-fatal): ${message}`);
+    }
+    info("[setup] Setting up memberships...");
+    await setupMemberships();
+    info("[setup] Setting up profiles...");
+    await setupProfiles();
+    info("[setup] Setting up feature flags...");
+    await setupFeatureFlags();
+    info("[setup] Setting up invites...");
+    await setupInvites();
+    info("[setup] Setting up invite usage...");
+    await setupInviteUsage();
+    info("[setup] Setting up statuses...");
+    await setupStatuses();
+    info("[setup] Setting up conversations...");
+    await setupConversations();
+    info("[setup] Setting up direct messages...");
+    await setupDirectMessages();
+    info("[setup] Setting up notification settings...");
+    await setupNotificationSettings();
+    info("[setup] Setting up teams...");
+    await ensureTeams();
+    info("Setup complete.");
 }
 
 run().catch((e) => {
-	err(String(e instanceof Error ? e.message : e));
-	process.exit(1);
+    err(String(e instanceof Error ? e.message : e));
+    process.exit(1);
 });

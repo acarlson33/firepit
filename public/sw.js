@@ -10,10 +10,11 @@
  */
 
 // Cache version names - update these to bust caches on deploy
-var CACHE_NAME = "firepit-v1";
-var API_CACHE_NAME = "firepit-api-v1";
-var STATIC_CACHE_NAME = "firepit-static-v1";
-var EMOJI_CACHE_NAME = "firepit-emoji-v1";
+// Bump cache versions to bust stale Next.js chunks when deploying new builds
+var CACHE_NAME = "firepit-v2";
+var API_CACHE_NAME = "firepit-api-v2";
+var STATIC_CACHE_NAME = "firepit-static-v2";
+var EMOJI_CACHE_NAME = "firepit-emoji-v2";
 
 // Assets to cache immediately on install
 var STATIC_ASSETS = [
@@ -149,6 +150,10 @@ function isEmojiRequest(url) {
  * Check if pathname is a static asset
  */
 function isStaticAsset(pathname) {
+    // Avoid caching Next.js build chunks; they change per deploy
+    if (pathname.startsWith("/_next/")) {
+        return false;
+    }
     return (
         pathname.endsWith(".js") ||
         pathname.endsWith(".css") ||

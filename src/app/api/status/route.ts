@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
 
-import { getServerClient, getEnvConfig, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import {
     logger,
     recordError,

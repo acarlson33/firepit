@@ -21,10 +21,13 @@ const mockDatabases = {
 };
 
 // Mock dependencies
-vi.mock("@/lib/appwrite-core", () => ({
+vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         databases: mockDatabases,
     })),
+}));
+
+vi.mock("@/lib/appwrite-core", () => ({
     getEnvConfig: vi.fn(() => ({
         databaseId: "test-db",
         collections: {

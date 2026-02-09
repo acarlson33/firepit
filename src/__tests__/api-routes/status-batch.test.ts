@@ -11,12 +11,15 @@ const { mockListDocuments } = vi.hoisted(() => ({
 }));
 
 // Mock dependencies
-vi.mock("@/lib/appwrite-core", () => ({
+vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         databases: {
             listDocuments: mockListDocuments,
         },
     })),
+}));
+
+vi.mock("@/lib/appwrite-core", () => ({
     getEnvConfig: vi.fn(() => ({
         databaseId: "test-db",
         collections: {
