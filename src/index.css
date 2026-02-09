@@ -208,33 +208,42 @@ body {
 	--scrollbar-thumb-hover: oklch(0.369 0 0);
 }
 
+/* Apply to body and common scrollable containers */
 body, 
-[class*="overflow-"], 
-[class*="scroll"],
+.overflow-auto,
+.overflow-scroll,
+.overflow-y-auto,
+.overflow-x-auto,
 .scrollable {
 	scrollbar-width: thin;
 	scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 body::-webkit-scrollbar,
-[class*="overflow-"]::-webkit-scrollbar,
-[class*="scroll"]::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar,
+.overflow-scroll::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar,
 .scrollable::-webkit-scrollbar {
 	width: 8px;
 	height: 8px;
 }
 
 body::-webkit-scrollbar-track,
-[class*="overflow-"]::-webkit-scrollbar-track,
-[class*="scroll"]::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-scroll::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track,
 .scrollable::-webkit-scrollbar-track {
 	background: transparent;
 	border-radius: 10px;
 }
 
 body::-webkit-scrollbar-thumb,
-[class*="overflow-"]::-webkit-scrollbar-thumb,
-[class*="scroll"]::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb,
+.overflow-scroll::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb,
 .scrollable::-webkit-scrollbar-thumb {
 	background: var(--scrollbar-thumb);
 	border-radius: 10px;
@@ -243,8 +252,10 @@ body::-webkit-scrollbar-thumb,
 }
 
 body::-webkit-scrollbar-thumb:hover,
-[class*="overflow-"]::-webkit-scrollbar-thumb:hover,
-[class*="scroll"]::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover,
+.overflow-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover,
 .scrollable::-webkit-scrollbar-thumb:hover {
 	background: var(--scrollbar-thumb-hover);
 	border: 2px solid transparent;
