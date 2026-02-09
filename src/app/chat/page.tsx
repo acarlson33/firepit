@@ -525,7 +525,7 @@ export default function ChatPage() {
                     type="button"
                     variant={active ? "default" : "outline"}
                   >
-                    <span className="truncate text-left font-medium min-w-0">{s.name}</span>
+                    <span className="truncate text-left font-medium">{s.name}</span>
                     <div className="flex items-center gap-2 shrink-0">
                       {s.memberCount !== undefined && (
                         <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
