@@ -113,7 +113,7 @@ export function VirtualizedMessageList({
 
               {!removed && (
                 <div className="wrap-break-word text-sm">
-                  <MessageWithMentions text={m.text} />
+                  <MessageWithMentions text={m.text} customEmojis={customEmojis} />
                 </div>
               )}
               {removed && m.removedBy && (
