@@ -27,6 +27,7 @@ type VirtualizedDMListProps = {
 	shouldShowLoadOlder: boolean;
 	onLoadOlder: () => void;
 	conversationId: string;
+	messageDensity?: "compact" | "cozy";
 };
 
 /**
@@ -59,6 +60,7 @@ export function VirtualizedDMList({
 	shouldShowLoadOlder,
 	onLoadOlder,
 	conversationId,
+	messageDensity = "compact",
 }: VirtualizedDMListProps) {
 	// Convert DirectMessage[] to Message[] format
 	const adaptedMessages = useMemo<Message[]>(() => {
@@ -103,6 +105,7 @@ export function VirtualizedDMList({
 			deleteConfirmId={deleteConfirmId}
 			editingMessageId={editingMessageId}
 			messages={adaptedMessages}
+			messageDensity={messageDensity}
 			onLoadOlder={onLoadOlder}
 			onOpenImageViewer={onOpenImageViewer}
 			onOpenProfileModal={onOpenProfileModal}

@@ -22,6 +22,7 @@ import {
 } from "./actions";
 import { AvatarUpload } from "./AvatarUpload";
 import { NotificationSettings } from "@/components/notification-settings";
+import { FlushCaches } from "./FlushCaches";
 
 export default async function SettingsPage() {
 	const user = await requireAuth().catch(() => {
@@ -199,6 +200,16 @@ export default async function SettingsPage() {
 						</p>
 					</div>
 					<NotificationSettings />
+				</section>
+
+				<section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
+					<div className="space-y-3 mb-6">
+						<h2 className="text-2xl font-semibold tracking-tight">Troubleshooting</h2>
+						<p className="text-muted-foreground">
+							Flush cached assets and unregister service workers if you are seeing stale data or notification issues.
+						</p>
+					</div>
+					<FlushCaches />
 				</section>
 			</div>
 		</div>

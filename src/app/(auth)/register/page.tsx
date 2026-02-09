@@ -6,34 +6,43 @@ import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
-import { loginAction } from "./actions";
+import { registerAction } from "../login/actions";
 
-function LoginFormContent() {
+function RegisterFormContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const { refreshUser } = useAuth();
+	const [name, setName] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const [confirmedAdult, setConfirmedAdult] = useState(false);
 	const [loading, setLoading] = useState(false);
 
 	const redirectPath = searchParams.get("redirect");
 	const destination =
 		redirectPath?.startsWith("/") === true ? redirectPath : "/chat";
 
-	async function onLogin(e: React.FormEvent) {
+	async function onRegister(e: React.FormEvent) {
 		e.preventDefault();
+
+		if (!confirmedAdult) {
+			toast.error("Please confirm you are 18 or older.");
+			return;
+		}
+
 		setLoading(true);
 		try {
 			const formData = new FormData();
 			formData.set("email", email);
 			formData.set("password", password);
-			const result = await loginAction(formData);
+			formData.set("name", name || email.split("@")[0]);
+			const result = await registerAction(formData);
 			if (result.success) {
-				toast.success("Logged in");
-				// Refresh user data in context before navigating
+				toast.success("Account created");
 				await refreshUser();
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				router.push(destination as any);
@@ -41,8 +50,7 @@ function LoginFormContent() {
 				toast.error(result.error);
 			}
 		} catch (err) {
-			// Enhanced error handling to prevent "unexpected response" errors
-			const message = err instanceof Error ? err.message : "An error occurred during login. Please try again.";
+			const message = err instanceof Error ? err.message : "An error occurred during registration. Please try again.";
 			toast.error(message);
 		} finally {
 			setLoading(false);
@@ -52,10 +60,22 @@ function LoginFormContent() {
 	return (
 		<div className="container mx-auto max-w-md px-4 py-8">
 			<div className="mb-6 space-y-2">
-				<h1 className="font-semibold text-2xl">Sign in to Firepit</h1>
-				<p className="text-muted-foreground">Access your chats and servers.</p>
+				<h1 className="font-semibold text-2xl">Create your account</h1>
+				<p className="text-muted-foreground">Start chatting with Firepit.</p>
 			</div>
-			<form className="grid gap-4" onSubmit={onLogin}>
+			<form className="grid gap-4" onSubmit={onRegister}>
+				<div className="grid gap-2">
+					<Label htmlFor="name">Name</Label>
+					<Input
+						autoComplete="name"
+						id="name"
+						name="name"
+						onChange={(e) => setName(e.target.value)}
+						placeholder="Your display name"
+						type="text"
+						value={name}
+					/>
+				</div>
 				<div className="grid gap-2">
 					<Label htmlFor="email">Email</Label>
 					<Input
@@ -72,7 +92,7 @@ function LoginFormContent() {
 				<div className="grid gap-2">
 					<Label htmlFor="password">Password</Label>
 					<Input
-						autoComplete="current-password"
+						autoComplete="new-password"
 						id="password"
 						name="password"
 						onChange={(e) => setPassword(e.target.value)}
@@ -81,25 +101,38 @@ function LoginFormContent() {
 						value={password}
 					/>
 				</div>
+				<div className="flex items-start gap-3 rounded-md border border-input p-3">
+					<Checkbox
+						checked={confirmedAdult}
+						id="confirmAge"
+						onCheckedChange={(value) => setConfirmedAdult(value === true)}
+					/>
+					<div className="space-y-1 leading-none">
+						<Label htmlFor="confirmAge">I agree I am 18+.</Label>
+						<p className="text-sm text-muted-foreground">
+							By creating an account, you confirm you are at least 18 years old.
+						</p>
+					</div>
+				</div>
 				<Button disabled={loading} type="submit">
-					{loading ? "Signing in..." : "Sign in"}
+					{loading ? "Creating..." : "Create account"}
 				</Button>
 			</form>
 			<p className="mt-6 text-sm text-muted-foreground">
-				Need an account? <Link className="text-primary underline" href="/register">Create one</Link>.
+				Already have an account? <Link className="text-primary underline" href="/login">Sign in</Link>.
 			</p>
 		</div>
 	);
 }
 
-function LoginForm() {
+function RegisterForm() {
 	return (
 		<Suspense fallback={<div className="container mx-auto max-w-md px-4 py-8">Loading...</div>}>
-			<LoginFormContent />
+			<RegisterFormContent />
 		</Suspense>
 	);
 }
 
-export default function LoginPage() {
-	return <LoginForm />;
+export default function RegisterPage() {
+	return <RegisterForm />;
 }

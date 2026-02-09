@@ -4,6 +4,7 @@ import { Account, Client, ID, Query } from "node-appwrite";
 import { cookies } from "next/headers";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { assignDefaultRoleServer } from "@/lib/default-role";
 
 /**
  * Automatically joins a user to the server if there's only one server on the instance.
@@ -63,6 +64,12 @@ async function autoJoinSingleServer(userId: string): Promise<void> {
             },
             membershipPerms,
         );
+
+        try {
+            await assignDefaultRoleServer(serverId, userId);
+        } catch {
+            // Non-critical: default role assignment is best-effort
+        }
     } catch {
         // Silently fail - non-critical feature
     }

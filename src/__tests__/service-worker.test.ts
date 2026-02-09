@@ -16,15 +16,14 @@ describe("Service Worker", () => {
 
     describe("Cache Configuration", () => {
         it("should define cache names", () => {
-            expect(swCode).toContain('CACHE_NAME = "firepit-v2"');
-            expect(swCode).toContain('API_CACHE_NAME = "firepit-api-v2"');
-            expect(swCode).toContain('STATIC_CACHE_NAME = "firepit-static-v2"');
-            expect(swCode).toContain('EMOJI_CACHE_NAME = "firepit-emoji-v2"');
+            expect(swCode).toContain('CACHE_NAME = "firepit-v3"');
+            expect(swCode).toContain('API_CACHE_NAME = "firepit-api-v3"');
+            expect(swCode).toContain('STATIC_CACHE_NAME = "firepit-static-v3"');
+            expect(swCode).toContain('EMOJI_CACHE_NAME = "firepit-emoji-v3"');
         });
 
         it("should define static assets to cache", () => {
             expect(swCode).toContain("STATIC_ASSETS");
-            expect(swCode).toContain('"/chat"');
             expect(swCode).toContain('"/favicon.ico"');
             expect(swCode).toContain('"/manifest.json"');
         });
@@ -131,30 +130,12 @@ describe("Service Worker", () => {
             expect(swCode).toContain("function handleApiRequest(request)");
         });
 
-        it("should use network-first strategy for API", () => {
+        it("should return offline response when API fails", () => {
             const apiFetchSection = swCode.match(
                 /function handleApiRequest[\s\S]*?^}/m,
             );
             expect(apiFetchSection).toBeTruthy();
-            // Should fetch first, then fall back to cache
             expect(apiFetchSection?.[0]).toContain("fetch(request)");
-            expect(apiFetchSection?.[0]).toContain("cache.match(request)");
-        });
-
-        it("should cache successful API responses", () => {
-            const apiFetchSection = swCode.match(
-                /function handleApiRequest[\s\S]*?^}/m,
-            );
-            expect(apiFetchSection?.[0]).toContain("response.status === 200");
-            expect(apiFetchSection?.[0]).toContain(
-                "cache.put(request, response.clone())",
-            );
-        });
-
-        it("should return offline response when API fails with no cache", () => {
-            const apiFetchSection = swCode.match(
-                /function handleApiRequest[\s\S]*?^}/m,
-            );
             expect(apiFetchSection?.[0]).toContain('error: "Offline"');
             expect(apiFetchSection?.[0]).toContain("offline: true");
             expect(apiFetchSection?.[0]).toContain("status: 503");
@@ -210,23 +191,13 @@ describe("Service Worker", () => {
             );
         });
 
-        it("should use stale-while-revalidate for navigation", () => {
+        it("should fall back with offline response when navigation fails", () => {
             const navSection = swCode.match(
                 /function handleNavigationRequest[\s\S]*?^}/m,
             );
             expect(navSection).toBeTruthy();
-            expect(navSection?.[0]).toContain("caches.match(request)");
             expect(navSection?.[0]).toContain("fetch(request)");
-            expect(navSection?.[0]).toContain("cachedResponse ||");
-        });
-
-        it("should cache navigation responses", () => {
-            const navSection = swCode.match(
-                /function handleNavigationRequest[\s\S]*?^}/m,
-            );
-            expect(navSection?.[0]).toContain(
-                "cache.put(request, response.clone())",
-            );
+            expect(navSection?.[0]).toContain("Offline");
         });
     });
 
@@ -362,14 +333,8 @@ describe("Service Worker", () => {
             expect(swCode).toContain('pathname.startsWith("/api/")');
             // Cache-first for static assets
             expect(swCode).toContain('request.method === "GET"');
-            // Stale-while-revalidate for navigation
-            expect(swCode).toContain('request.mode === "navigate"');
             // Cache-first for emojis
             expect(swCode).toContain('"/storage/buckets/emojis/files/"');
-        });
-
-        it("should use separate cache for API responses", () => {
-            expect(swCode).toContain("API_CACHE_NAME");
         });
 
         it("should use separate cache for emoji responses", () => {
@@ -377,7 +342,6 @@ describe("Service Worker", () => {
         });
 
         it("should open correct cache for each strategy", () => {
-            expect(swCode).toContain("caches.open(API_CACHE_NAME)");
             expect(swCode).toContain("caches.open(CACHE_NAME)");
             expect(swCode).toContain("caches.open(STATIC_CACHE_NAME)");
             expect(swCode).toContain("caches.open(EMOJI_CACHE_NAME)");
@@ -390,15 +354,18 @@ describe("Service Worker", () => {
             expect(swCode).toContain("offline: true");
         });
 
-        it("should cache responses for offline access", () => {
-            const putCount = (swCode.match(/cache\.put\(/g) || []).length;
-            expect(putCount).toBeGreaterThan(3);
+        it("should provide offline responses for navigation", () => {
+            const navSection = swCode.match(
+                /function handleNavigationRequest[\s\S]*?^}/m,
+            );
+            expect(navSection?.[0]).toContain("Offline");
         });
+    });
 
-        it("should fall back to cache when network fails", () => {
-            const catchCount = (swCode.match(/\.catch\(function/g) || [])
-                .length;
-            expect(catchCount).toBeGreaterThan(0);
+    describe("Push Subscription Change", () => {
+        it("should notify clients when subscription changes", () => {
+            expect(swCode).toContain("pushsubscriptionchange");
+            expect(swCode).toContain("PUSH_SUBSCRIPTION_CHANGE");
         });
     });
 

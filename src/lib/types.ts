@@ -189,6 +189,7 @@ export type Role = {
     name: string;
     color: string; // Hex color code like "#5865F2"
     position: number; // Higher number = higher in hierarchy
+    defaultOnJoin?: boolean;
     // Permission flags
     readMessages: boolean;
     sendMessages: boolean;

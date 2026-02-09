@@ -3,6 +3,7 @@ import {
   uploadImage,
   deleteImage,
   getOrCreateConversation,
+  createGroupConversation,
   listConversations,
   sendDirectMessage,
   listDirectMessages,
@@ -162,6 +163,57 @@ describe("appwrite-dms-client", () => {
       await expect(getOrCreateConversation("user1", "user2")).rejects.toThrow(
         "Conversation creation failed"
       );
+    });
+  });
+
+  describe("createGroupConversation", () => {
+    it("should create a group conversation with metadata", async () => {
+      const mockConversation = {
+        $id: "conv-group",
+        participants: ["a", "b", "c"],
+        isGroup: true,
+        name: "Test Group",
+        avatarUrl: "https://example.com/avatar.png",
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ conversation: mockConversation }),
+      });
+
+      const result = await createGroupConversation(["a", "b", "c"], {
+        name: "Test Group",
+        avatarUrl: "https://example.com/avatar.png",
+      });
+
+      expect(result).toEqual(mockConversation);
+      expect(mockFetch).toHaveBeenCalledWith("/api/direct-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "createConversation",
+          participants: ["a", "b", "c"],
+          name: "Test Group",
+          avatarUrl: "https://example.com/avatar.png",
+        }),
+      });
+    });
+
+    it("should throw when fewer than three participants provided", async () => {
+      await expect(
+        createGroupConversation(["a", "b"], { name: "Too small" }),
+      ).rejects.toThrow("Group conversations require at least 3 participants");
+    });
+
+    it("should surface backend errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: "Create failed" }),
+      });
+
+      await expect(
+        createGroupConversation(["x", "y", "z"]),
+      ).rejects.toThrow("Create failed");
     });
   });
 

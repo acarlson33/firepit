@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Client, Databases, Query, ID } from "node-appwrite";
 import type { Role } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { enforceSingleDefaultRole } from "@/lib/default-role";
 
 const env = getEnvConfig();
 const endpoint = env.endpoint;
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
             mentionEveryone,
             administrator,
             mentionable,
+            defaultOnJoin,
         } = body;
 
         if (!serverId || !name) {
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
             mentionEveryone: mentionEveryone ?? false,
             administrator: administrator ?? false,
             mentionable: mentionable ?? true,
+            defaultOnJoin: defaultOnJoin ?? false,
             memberCount: 0,
         };
 
@@ -107,6 +110,15 @@ export async function POST(request: NextRequest) {
             ID.unique(),
             roleData,
         );
+
+        if (roleData.defaultOnJoin) {
+            await enforceSingleDefaultRole(
+                databases,
+                databaseId,
+                serverId,
+                String(role.$id),
+            );
+        }
 
         return NextResponse.json({ role }, { status: 201 });
     } catch (error) {
@@ -136,6 +148,7 @@ export async function PUT(request: NextRequest) {
             mentionEveryone,
             administrator,
             mentionable,
+            defaultOnJoin,
         } = body;
 
         if (!$id) {
@@ -182,6 +195,9 @@ export async function PUT(request: NextRequest) {
         if (mentionable !== undefined) {
             updateData.mentionable = mentionable;
         }
+        if (defaultOnJoin !== undefined) {
+            updateData.defaultOnJoin = defaultOnJoin;
+        }
 
         const role = await databases.updateDocument(
             databaseId,
@@ -189,6 +205,10 @@ export async function PUT(request: NextRequest) {
             $id,
             updateData,
         );
+
+        if (defaultOnJoin) {
+            await enforceSingleDefaultRole(databases, databaseId, role.serverId, $id);
+        }
 
         return NextResponse.json({ role });
     } catch (error) {

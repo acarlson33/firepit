@@ -86,6 +86,11 @@ export function RoleList({
 								<div className="min-w-0 flex-1">
 									<div className="flex items-center gap-2">
 										<span className="font-medium text-sm">{role.name}</span>
+										{role.defaultOnJoin && (
+											<Badge variant="outline" className="text-xs">
+												Default on join
+											</Badge>
+										)}
 										{role.administrator && (
 											<Badge variant="destructive" className="text-xs">
 												Admin

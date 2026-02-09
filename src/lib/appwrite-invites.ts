@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
+import { assignDefaultRoleServer } from "./default-role";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -195,7 +196,7 @@ export async function useInvite(
             {
                 serverId: invite.serverId,
                 userId,
-                role: "member",
+                    role: "member",
             },
         );
     } catch (error) {
@@ -203,6 +204,11 @@ export async function useInvite(
         return { success: false, error: "Failed to join server" };
     }
 
+        try {
+            await assignDefaultRoleServer(invite.serverId, userId);
+        } catch {
+            // Non-fatal; proceed even if default role assignment fails
+        }
     // Increment invite usage count
     try {
         await databases.updateDocument(

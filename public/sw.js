@@ -4,22 +4,21 @@
  *
  * Caching Strategies:
  * - Static assets: Cache-first with background revalidation
- * - API requests: Network-first with cache fallback
- * - Emoji assets: Cache-first with aggressive caching
- * - Navigation: Stale-while-revalidate
+ * - API requests: Network-first with offline fallback (no caching)
+ * - Emoji assets: Cache-first with aggressive caching and size bound
+ * - Navigation: Network-first with offline fallback
  */
 
 // Cache version names - update these to bust caches on deploy
 // Bump cache versions to bust stale Next.js chunks when deploying new builds
-var CACHE_NAME = "firepit-v2";
-var API_CACHE_NAME = "firepit-api-v2";
-var STATIC_CACHE_NAME = "firepit-static-v2";
-var EMOJI_CACHE_NAME = "firepit-emoji-v2";
+var CACHE_NAME = "firepit-v3";
+var API_CACHE_NAME = "firepit-api-v3";
+var STATIC_CACHE_NAME = "firepit-static-v3";
+var EMOJI_CACHE_NAME = "firepit-emoji-v3";
+var EMOJI_CACHE_LIMIT = 200;
 
 // Assets to cache immediately on install
 var STATIC_ASSETS = [
-    "/",
-    "/chat",
     "/favicon.ico",
     "/manifest.json",
     "/manifest.webmanifest",
@@ -100,35 +99,40 @@ sw.addEventListener("activate", function (event) {
 // FETCH EVENT
 // ============================================
 sw.addEventListener("fetch", function (event) {
-    var request = event.request;
-    var url = new URL(request.url);
+    event.respondWith(
+        (async function () {
+            try {
+                var request = event.request;
+                var url = new URL(request.url);
 
-    // Handle emoji requests with aggressive caching
-    if (isEmojiRequest(url)) {
-        event.respondWith(handleEmojiRequest(request));
-        return;
-    }
+                // Handle emoji requests with aggressive caching
+                if (isEmojiRequest(url)) {
+                    return await handleEmojiRequest(request);
+                }
 
-    // Handle API requests with network-first strategy
-    if (url.pathname.startsWith("/api/")) {
-        event.respondWith(handleApiRequest(request));
-        return;
-    }
+                // Handle API requests with network-first strategy
+                if (url.pathname.startsWith("/api/")) {
+                    return await handleApiRequest(request);
+                }
 
-    // Handle static assets with cache-first strategy
-    if (request.method === "GET" && isStaticAsset(url.pathname)) {
-        event.respondWith(handleStaticAsset(request));
-        return;
-    }
+                // Handle static assets with cache-first strategy
+                if (request.method === "GET" && isStaticAsset(url.pathname)) {
+                    return await handleStaticAsset(request);
+                }
 
-    // Handle navigation requests with stale-while-revalidate
-    if (request.mode === "navigate") {
-        event.respondWith(handleNavigationRequest(request));
-        return;
-    }
+                // Handle navigation requests with stale-while-revalidate
+                if (request.mode === "navigate") {
+                    return await handleNavigationRequest(request);
+                }
 
-    // Default: fetch from network
-    event.respondWith(fetch(request));
+                // Default: fetch from network
+                return await fetch(request);
+            } catch (err) {
+                console.warn("Service Worker fetch handler error", err);
+                return fetch(event.request);
+            }
+        })(),
+    );
 });
 
 // ============================================
@@ -178,6 +182,7 @@ function handleEmojiRequest(request) {
                     .then(function (response) {
                         if (response.status === 200) {
                             cache.put(request, response.clone());
+                            enforceEmojiCacheLimit(cache);
                         }
                     })
                     .catch(function () {
@@ -190,6 +195,7 @@ function handleEmojiRequest(request) {
             return fetch(request).then(function (response) {
                 if (response.status === 200) {
                     cache.put(request, response.clone());
+                    enforceEmojiCacheLimit(cache);
                 }
                 return response;
             });
@@ -201,31 +207,18 @@ function handleEmojiRequest(request) {
  * Handle API requests with network-first strategy
  */
 function handleApiRequest(request) {
-    return caches.open(API_CACHE_NAME).then(function (cache) {
-        return fetch(request)
-            .then(function (response) {
-                // Cache successful responses
-                if (response.status === 200) {
-                    cache.put(request, response.clone());
-                }
-                return response;
-            })
-            .catch(function () {
-                // Network failed, try cache
-                return cache.match(request).then(function (cachedResponse) {
-                    if (cachedResponse) {
-                        return cachedResponse;
-                    }
-                    // Return offline response
-                    return new Response(
-                        JSON.stringify({ error: "Offline", offline: true }),
-                        {
-                            status: 503,
-                            headers: { "Content-Type": "application/json" },
-                        },
-                    );
-                });
-            });
+    if (request.method !== "GET") {
+        return fetch(request);
+    }
+
+    return fetch(request).catch(function () {
+        return new Response(
+            JSON.stringify({ error: "Offline", offline: true }),
+            {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+            },
+        );
     });
 }
 
@@ -263,21 +256,55 @@ function handleStaticAsset(request) {
 }
 
 /**
- * Handle navigation requests with stale-while-revalidate
+ * Handle navigation requests with network-first strategy
  */
 function handleNavigationRequest(request) {
-    return caches.match(request).then(function (cachedResponse) {
-        var fetchPromise = fetch(request).then(function (response) {
-            if (response.status === 200) {
-                caches.open(CACHE_NAME).then(function (cache) {
-                    cache.put(request, response.clone());
-                });
-            }
-            return response;
+    return fetch(request).catch(function () {
+        return new Response("Offline", {
+            status: 503,
+            headers: { "Content-Type": "text/plain" },
         });
+    });
+}
 
-        // Return cached if available, otherwise wait for network
-        return cachedResponse || fetchPromise;
+// ============================================
+// PUSH SUBSCRIPTION CHANGE
+// ============================================
+sw.addEventListener("pushsubscriptionchange", function (event) {
+    event.waitUntil(
+        notifyClientsSubscriptionChange().catch(function () {
+            // Ignore errors; clients will attempt to re-register when notified
+        }),
+    );
+});
+
+function notifyClientsSubscriptionChange() {
+    return sw.clients
+        .matchAll({ type: "window", includeUncontrolled: true })
+        .then(function (clientList) {
+            return Promise.all(
+                clientList.map(function (client) {
+                    return client.postMessage({
+                        type: "PUSH_SUBSCRIPTION_CHANGE",
+                    });
+                }),
+            );
+        });
+}
+
+function enforceEmojiCacheLimit(cache) {
+    return cache.keys().then(function (requests) {
+        if (requests.length <= EMOJI_CACHE_LIMIT) {
+            return;
+        }
+
+        var excess = requests.length - EMOJI_CACHE_LIMIT;
+        var deletions = requests
+            .slice(0, excess)
+            .map(function (request) {
+                return cache.delete(request);
+            });
+        return Promise.all(deletions);
     });
 }
 

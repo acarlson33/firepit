@@ -323,3 +323,55 @@ describe("Direct Messages - Data Enrichment", () => {
 		}
 	});
 });
+
+describe("Direct Messages - Group Conversations", () => {
+	it("should require at least three participants", async () => {
+		const { createGroupConversation } = await import(
+			"../lib/appwrite-dms"
+		);
+
+		await expect(
+			createGroupConversation(["user1", "user2"], { name: "Too small" }),
+		).rejects.toThrow("Group conversations require at least 3 participants");
+	});
+
+	it("should create group conversations with unique sorted participants", async () => {
+		const { createGroupConversation } = await import(
+			"../lib/appwrite-dms"
+		);
+
+		const conversation = await createGroupConversation(
+			["user3", "user2", "user2", "user1"],
+			{ name: "Group name", avatarUrl: "http://example.com/avatar.png" },
+		);
+
+		expect(conversation.isGroup).toBe(true);
+		expect(conversation.participantCount).toBe(3);
+		expect(conversation.participants).toEqual(["user1", "user2", "user3"]);
+		expect(conversation.name).toBe("Group name");
+		expect(conversation.avatarUrl).toBe("http://example.com/avatar.png");
+	});
+
+	it("should send messages to group conversations without a receiverId", async () => {
+		const { createGroupConversation, sendDirectMessage } = await import(
+			"../lib/appwrite-dms"
+		);
+
+		const conversation = await createGroupConversation(
+			["alpha", "beta", "gamma"],
+			{ name: "Group chat" },
+		);
+
+		const message = await sendDirectMessage(
+			conversation.$id,
+			"alpha",
+			undefined,
+			"Hello group",
+		);
+
+		expect(message.conversationId).toBe(conversation.$id);
+		expect(message.senderId).toBe("alpha");
+		expect(message.receiverId).toBeUndefined();
+		expect(message.text).toBe("Hello group");
+	});
+});

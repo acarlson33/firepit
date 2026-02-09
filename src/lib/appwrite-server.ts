@@ -19,6 +19,12 @@ export function getServerClient(): {
     const env = getEnvConfig();
     const apiKey = process.env.APPWRITE_API_KEY;
 
+    if (!env.project) {
+        throw new AppwriteIntegrationError(
+            "APPWRITE_PROJECT_ID not configured for server client",
+        );
+    }
+
     if (!apiKey) {
         throw new AppwriteIntegrationError(
             "APPWRITE_API_KEY not configured for server client",

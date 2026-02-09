@@ -406,12 +406,17 @@ export async function sendDirectMessage(
     }
 
     const doc = message as unknown as Record<string, unknown>;
+    const receiver =
+        doc.receiverId !== undefined && doc.receiverId !== null
+            ? String(doc.receiverId)
+            : undefined;
+
     return {
         $id: String(doc.$id),
         conversationId: String(doc.conversationId),
         senderId: String(doc.senderId),
-        receiverId: String(doc.receiverId),
-        text: String(doc.text),
+        receiverId: receiver,
+        text: String(doc.text ?? ""),
         $createdAt: String(doc.$createdAt),
         editedAt: doc.editedAt ? String(doc.editedAt) : undefined,
         removedAt: doc.removedAt ? String(doc.removedAt) : undefined,

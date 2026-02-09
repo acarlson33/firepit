@@ -37,6 +37,7 @@ type VirtualizedMessageListProps = {
     onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
     shouldShowLoadOlder: boolean;
     onLoadOlder: () => void;
+    messageDensity?: "compact" | "cozy";
 };
 
 export function VirtualizedMessageList({
@@ -56,7 +57,9 @@ export function VirtualizedMessageList({
     onUploadCustomEmoji,
     shouldShowLoadOlder,
     onLoadOlder,
+    messageDensity = "compact",
 }: VirtualizedMessageListProps) {
+    const isCompact = messageDensity === "compact";
     // Collect all display names from visible messages so mentions with spaces
     // (like "avery <3") can be highlighted even for old messages.
     const knownDisplayNames = useMemo(
@@ -72,7 +75,9 @@ export function VirtualizedMessageList({
 
     return (
         <Virtuoso
-            className="h-[60vh] rounded-3xl border border-border/60 bg-background/70 shadow-inner"
+            className={`h-[60vh] ${
+                isCompact ? "rounded-2xl p-3" : "rounded-3xl p-4"
+            } border border-border/60 bg-background/70 shadow-inner`}
             data={messages}
             followOutput="smooth"
             initialTopMostItemIndex={messages.length - 1}
@@ -88,7 +93,7 @@ export function VirtualizedMessageList({
 
                 return (
                     <div
-                        className={`group mb-4 mx-4 flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
+                        className={`group mx-4 flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
                             mine
                                 ? "ml-auto max-w-[85%] flex-row-reverse text-right"
                                 : "mr-auto max-w-[85%]"
@@ -96,7 +101,7 @@ export function VirtualizedMessageList({
                             isEditing
                                 ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
                                 : "hover:border-border/80"
-                        }`}
+                        } ${isCompact ? "mb-3 gap-2 p-2" : "mb-4 gap-3 p-3"}`}
                     >
                         <button
                             className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
@@ -119,7 +124,11 @@ export function VirtualizedMessageList({
                         </button>
                         <div className="min-w-0 flex-1 space-y-2">
                             <div
-                                className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
+                                className={`flex flex-wrap items-baseline gap-2 ${
+                                    mine ? "justify-end" : ""
+                                } text-muted-foreground ${
+                                    isCompact ? "text-[11px]" : "text-xs"
+                                }`}
                             >
                                 <span className="font-medium text-foreground">
                                     {displayName}
@@ -161,12 +170,20 @@ export function VirtualizedMessageList({
                             )}
 
                             {!removed && (
-                                <div className="wrap-break-word text-sm">
+                                <div
+                                    className={`wrap-break-word ${
+                                        isCompact ? "text-xs" : "text-sm"
+                                    }`}
+                                >
                                     <MessageWithMentions text={m.text} />
                                 </div>
                             )}
                             {removed && m.removedBy && (
-                                <div className="text-xs italic text-muted-foreground">
+                                <div
+                                    className={`${
+                                        isCompact ? "text-[11px]" : "text-xs"
+                                    } italic text-muted-foreground`}
+                                >
                                     Removed by moderator
                                 </div>
                             )}

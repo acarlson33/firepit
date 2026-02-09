@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
+import { getEnvConfig } from "@/lib/appwrite-core";
 
 /**
  * Diagnostic endpoint to see your user ID and current roles.
@@ -11,7 +13,14 @@ export async function GET() {
 	const user = await getServerSession();
 
 	if (!user) {
-		return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+		const env = getEnvConfig();
+		const cookieName = `a_session_${env.project}`;
+		const res = NextResponse.json(
+			{ error: "Not authenticated" },
+			{ status: 401 },
+		);
+		res.cookies.delete(cookieName);
+		return res;
 	}
 
 	const roles = await getUserRoles(user.$id);

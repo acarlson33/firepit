@@ -46,6 +46,7 @@ type DirectMessageViewProps = {
     loading: boolean;
     sending: boolean;
     currentUserId: string;
+    messageDensity?: "compact" | "cozy";
     onSend: (
         _text: string,
         _imageFileId?: string,
@@ -69,6 +70,7 @@ export function DirectMessageView({
     loading,
     sending,
     currentUserId,
+    messageDensity = "compact",
     onSend,
     onEdit,
     onDelete,
@@ -76,6 +78,7 @@ export function DirectMessageView({
     typingUsers = {},
     onTypingChange,
 }: DirectMessageViewProps) {
+    const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
     const [editingMessageId, setEditingMessageId] = useState<string | null>(
         null,
@@ -362,6 +365,7 @@ export function DirectMessageView({
                         editingMessageId={editingMessageId}
                         deleteConfirmId={deleteConfirmId}
                         setDeleteConfirmId={setDeleteConfirmId}
+                        messageDensity={messageDensity}
                         onStartEdit={(msg: Message) => {
                             // Convert back to DirectMessage format for edit handler
                             const dmMessage = messages.find(
@@ -439,11 +443,11 @@ export function DirectMessageView({
 
                             return (
                                 <div
-                                    className={`group flex gap-3 ${
+                                    className={`group flex ${
                                         isEditing
-                                            ? "rounded-lg bg-blue-50 p-2 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
+                                            ? "rounded-lg bg-blue-50 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
                                             : ""
-                                    }`}
+                                    } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
                                     key={message.$id}
                                 >
                                     <Avatar
@@ -453,7 +457,13 @@ export function DirectMessageView({
                                         src={message.senderAvatarUrl}
                                     />
                                     <div className="min-w-0 flex-1">
-                                        <div className="flex flex-wrap items-baseline gap-2 text-muted-foreground text-xs">
+                                        <div
+                                            className={`flex flex-wrap items-baseline gap-2 text-muted-foreground ${
+                                                compactMessages
+                                                    ? "text-[11px]"
+                                                    : "text-xs"
+                                            }`}
+                                        >
                                             <span className="font-medium text-foreground">
                                                 {msgDisplayName}
                                             </span>
@@ -484,7 +494,13 @@ export function DirectMessageView({
                                             )}
                                         </div>
                                         {message.replyTo && (
-                                            <div className="mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 px-3 py-1.5 text-xs">
+                                            <div
+                                                className={`mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 ${
+                                                    compactMessages
+                                                        ? "px-2 py-1 text-[11px]"
+                                                        : "px-3 py-1.5 text-xs"
+                                                }`}
+                                            >
                                                 <div className="font-medium text-muted-foreground">
                                                     Replying to{" "}
                                                     {message.replyTo
@@ -497,7 +513,13 @@ export function DirectMessageView({
                                             </div>
                                         )}
                                         <div className="flex items-start gap-2">
-                                            <div className="flex-1 wrap-break-word space-y-2">
+                                            <div
+                                                className={`flex-1 wrap-break-word ${
+                                                    compactMessages
+                                                        ? "space-y-1 text-xs"
+                                                        : "space-y-2 text-sm"
+                                                }`}
+                                            >
                                                 {message.imageUrl &&
                                                     !removed && (
                                                         <div className="mt-1">
@@ -571,7 +593,13 @@ export function DirectMessageView({
                                                         Message removed
                                                     </span>
                                                 ) : message.text ? (
-                                                    <p>
+                                                    <p
+                                                        className={
+                                                            compactMessages
+                                                                ? "text-xs"
+                                                                : "text-sm"
+                                                        }
+                                                    >
                                                         <MessageWithMentions
                                                             text={message.text}
                                                             mentions={

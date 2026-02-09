@@ -164,6 +164,9 @@ export default function ChatPage() {
     const membershipEnabled = Boolean(
         process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
     );
+    const [messageDensity, setMessageDensity] = useState<"compact" | "cozy">(
+        "compact",
+    );
     const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [selectedConversationId, setSelectedConversationId] = useState<
@@ -649,7 +652,7 @@ export default function ChatPage() {
                                 <div className="flex items-center gap-1">
                                     <Button
                                         aria-pressed={active}
-                                        className={`flex-1 justify-between rounded-xl transition-colors ${
+                                        className={`flex-1 justify-between rounded-xl transition-colors min-w-0 overflow-hidden ${
                                             active
                                                 ? ""
                                                 : "border border-border/60 bg-background"
@@ -664,7 +667,7 @@ export default function ChatPage() {
                                         <span className="truncate text-left font-medium">
                                             {s.name}
                                         </span>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 shrink-0">
                                             {s.memberCount !== undefined && (
                                                 <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
                                                     {s.memberCount}{" "}
@@ -822,6 +825,7 @@ export default function ChatPage() {
     }
 
     function renderMessages() {
+        const compactMessages = messageDensity === "compact";
         if (!showChat) {
             return (
                 <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
@@ -850,6 +854,7 @@ export default function ChatPage() {
                     customEmojis={customEmojis}
                     deleteConfirmId={deleteConfirmId}
                     editingMessageId={editingMessageId}
+                    messageDensity={messageDensity}
                     messages={messages}
                     onLoadOlder={loadOlder}
                     onOpenImageViewer={(imageUrl: string) => {
@@ -890,7 +895,9 @@ export default function ChatPage() {
         // Regular rendering for smaller lists
         return (
             <div
-                className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+                className={`h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
+                    compactMessages ? "space-y-2 p-3" : "space-y-3 p-4"
+                }`}
                 ref={messagesContainerRef}
             >
                 {shouldShowLoadOlder() && (
@@ -917,7 +924,7 @@ export default function ChatPage() {
 
                     return (
                         <div
-                            className={`group flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
+                            className={`group flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
                                 mine
                                     ? "ml-auto max-w-[85%] flex-row-reverse text-right"
                                     : "mr-auto max-w-[85%]"
@@ -925,7 +932,7 @@ export default function ChatPage() {
                                 isEditing
                                     ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
                                     : "hover:border-border/80"
-                            }`}
+                            } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
                             key={m.$id}
                         >
                             <button
@@ -949,7 +956,11 @@ export default function ChatPage() {
                             </button>
                             <div className="min-w-0 flex-1 space-y-2">
                                 <div
-                                    className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
+                                    className={`flex flex-wrap items-baseline gap-2 ${
+                                        mine ? "justify-end" : ""
+                                    } text-muted-foreground ${
+                                        compactMessages ? "text-[11px]" : "text-xs"
+                                    }`}
                                 >
                                     <span className="font-medium text-foreground">
                                         {displayName}
@@ -991,12 +1002,24 @@ export default function ChatPage() {
                                 )}
 
                                 {!removed && (
-                                    <div className="wrap-break-word text-sm">
+                                    <div
+                                        className={`wrap-break-word ${
+                                            compactMessages
+                                                ? "text-xs"
+                                                : "text-sm"
+                                        }`}
+                                    >
                                         <MessageWithMentions text={m.text} />
                                     </div>
                                 )}
                                 {removed && m.removedBy && (
-                                    <div className="text-xs italic text-muted-foreground">
+                                    <div
+                                        className={`italic text-muted-foreground ${
+                                            compactMessages
+                                                ? "text-[11px]"
+                                                : "text-xs"
+                                        }`}
+                                    >
                                         Removed by moderator
                                     </div>
                                 )}
@@ -1164,7 +1187,7 @@ export default function ChatPage() {
     return (
         <div className="mx-auto w-full max-w-7xl px-6 py-8">
             <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+                <aside className="max-h-[calc(100vh-8rem)] space-y-6 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
                     {/* View Mode Toggle */}
                     <div className="rounded-2xl bg-muted/40 p-1">
                         <div className="grid grid-cols-2 gap-1">
@@ -1271,6 +1294,7 @@ export default function ChatPage() {
                         <DirectMessageView
                             conversation={selectedConversation}
                             currentUserId={userId}
+                            messageDensity={messageDensity}
                             loading={dmApi.loading}
                             messages={dmApi.messages}
                             onDelete={dmApi.deleteMsg}
@@ -1318,6 +1342,37 @@ export default function ChatPage() {
                                         )}
                                 </div>
                             )}
+                            <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-muted-foreground">
+                                <span className="whitespace-nowrap">Message size</span>
+                                <div className="inline-flex rounded-xl border border-border/60 bg-muted/40 p-1">
+                                    <Button
+                                        aria-pressed={messageDensity === "compact"}
+                                        onClick={() => setMessageDensity("compact")}
+                                        size="sm"
+                                        type="button"
+                                        variant={
+                                            messageDensity === "compact"
+                                                ? "default"
+                                                : "ghost"
+                                        }
+                                    >
+                                        Compact
+                                    </Button>
+                                    <Button
+                                        aria-pressed={messageDensity === "cozy"}
+                                        onClick={() => setMessageDensity("cozy")}
+                                        size="sm"
+                                        type="button"
+                                        variant={
+                                            messageDensity === "cozy"
+                                                ? "default"
+                                                : "ghost"
+                                        }
+                                    >
+                                        Cozy
+                                    </Button>
+                                </div>
+                            </div>
                             {renderMessages()}
                             {/* Chat Input */}
                             {!selectedConversationId && (
