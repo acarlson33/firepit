@@ -3,6 +3,7 @@ import { ID, Query } from "node-appwrite";
 
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { compressedResponse } from "@/lib/api-compression";
 import {
     logger,
     recordError,
@@ -204,6 +205,13 @@ export async function GET(request: Request) {
         const userId = searchParams.get("userId");
         const userIds = searchParams.get("userIds");
 
+        const cacheHeaders = {
+            headers: {
+                "Cache-Control":
+                    "public, s-maxage=15, stale-while-revalidate=60",
+            },
+        } as const;
+
         if (!STATUSES_COLLECTION) {
             return NextResponse.json(
                 { error: "Statuses collection not configured" },
@@ -222,19 +230,19 @@ export async function GET(request: Request) {
             );
 
             if (existing.documents.length === 0) {
-                return NextResponse.json({ status: null });
+                return compressedResponse({ status: null }, cacheHeaders);
             }
 
             const { normalized } = normalizeStatus(existing.documents[0]);
 
-            return NextResponse.json(normalized);
+            return compressedResponse(normalized, cacheHeaders);
         }
 
         // Multiple users query
         if (userIds) {
             const userIdList = userIds.split(",").filter(Boolean);
             if (userIdList.length === 0) {
-                return NextResponse.json({ statuses: [] });
+                return compressedResponse({ statuses: [] }, cacheHeaders);
             }
 
             // Note: Limited to 100 users per request for performance.
@@ -249,7 +257,10 @@ export async function GET(request: Request) {
                 (doc) => normalizeStatus(doc).normalized,
             );
 
-            return NextResponse.json({ statuses: normalizedStatuses });
+            return compressedResponse(
+                { statuses: normalizedStatuses },
+                cacheHeaders,
+            );
         }
 
         return NextResponse.json(
@@ -257,7 +268,9 @@ export async function GET(request: Request) {
             { status: 400 },
         );
     } catch (error) {
-        console.error("Error in GET /api/status:", error);
+        logger.error("Error in GET /api/status", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             {
                 error: "Failed to get user status",
@@ -366,7 +379,9 @@ export async function DELETE(request: Request) {
 
         return NextResponse.json({ success: true, deletedId: doc.$id });
     } catch (error) {
-        console.error("Error in DELETE /api/status:", error);
+        logger.error("Error in DELETE /api/status", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             {
                 error: "Failed to delete user status",

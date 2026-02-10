@@ -53,6 +53,8 @@ export function useMessages({
     const lastTypingSentState = useRef<boolean>(false);
     const lastTypingSentAt = useRef<number>(0);
     const listRef = useRef<HTMLDivElement>(null);
+    const previousLengthRef = useRef<number>(messages.length);
+    const scrollBottomThreshold = 160; // px tolerance to consider user near bottom
     const currentChannelIdRef = useRef<string | null>(channelId);
 
     // Update ref when channelId changes
@@ -348,12 +350,27 @@ export function useMessages({
             });
     }, [channelId, userId]);
 
-    // Auto-scroll to bottom when messages change
+    // Auto-scroll only when user is already near the bottom to avoid snapping when loading older messages
     useEffect(() => {
-        if (messages.length > 0) {
-            listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+        const listEl = listRef.current;
+        if (!listEl) {
+            previousLengthRef.current = messages.length;
+            return;
         }
-    }, [messages]);
+
+        const prevLength = previousLengthRef.current;
+        const isAppending = messages.length > prevLength;
+
+        const distanceFromBottom =
+            listEl.scrollHeight - (listEl.scrollTop + listEl.clientHeight);
+        const isNearBottom = distanceFromBottom <= scrollBottomThreshold;
+
+        if (isAppending && isNearBottom) {
+            listEl.scrollTo({ top: listEl.scrollHeight });
+        }
+
+        previousLengthRef.current = messages.length;
+    }, [messages, scrollBottomThreshold]);
 
     // Cleanup stale typing indicators
     useEffect(() => {

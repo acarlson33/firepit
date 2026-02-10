@@ -46,7 +46,7 @@ import { useDirectMessages } from "./hooks/useDirectMessages";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { useNotifications } from "@/hooks/useNotifications";
-import { apiCache } from "@/lib/cache-utils";
+import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
 
@@ -223,23 +223,53 @@ export default function ChatPage() {
         });
         setProfileModalOpen(true);
     };
-    // Check if user server creation is enabled
+    // Check if user server creation is enabled (cached + abortable)
     useEffect(() => {
-        if (userId) {
-            fetch("/api/feature-flags/allow-user-servers")
-                .then((res) => res.json())
-                .then((data: { enabled: boolean }) => {
-                    console.log(
-                        "Feature flag allow-user-servers:",
-                        data.enabled,
-                    );
-                    setAllowUserServers(data.enabled);
-                })
-                .catch((error) => {
-                    console.error("Failed to fetch feature flag:", error);
-                    setAllowUserServers(false);
-                });
+        if (!userId) {
+            setAllowUserServers(false);
+            return;
         }
+
+        let cancelled = false;
+        const controller = new AbortController();
+        const cacheKey = "feature-flag:allow-user-servers";
+
+        apiCache
+            .dedupe(
+                cacheKey,
+                async () => {
+                    const res = await fetch(
+                        "/api/feature-flags/allow-user-servers",
+                        { signal: controller.signal },
+                    );
+
+                    if (!res.ok) {
+                        throw new Error("Failed to fetch feature flag");
+                    }
+
+                    return (await res.json()) as { enabled: boolean };
+                },
+                CACHE_TTL.SERVERS,
+            )
+            .then((data) => {
+                if (!cancelled) {
+                    setAllowUserServers(Boolean(data.enabled));
+                }
+            })
+            .catch((error: unknown) => {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+                setAllowUserServers(false);
+            });
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
     }, [userId]);
 
     // Auto-join server via invite code from query param
@@ -959,7 +989,9 @@ export default function ChatPage() {
                                     className={`flex flex-wrap items-baseline gap-2 ${
                                         mine ? "justify-end" : ""
                                     } text-muted-foreground ${
-                                        compactMessages ? "text-[11px]" : "text-xs"
+                                        compactMessages
+                                            ? "text-[11px]"
+                                            : "text-xs"
                                     }`}
                                 >
                                     <span className="font-medium text-foreground">
@@ -1343,11 +1375,17 @@ export default function ChatPage() {
                                 </div>
                             )}
                             <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-muted-foreground">
-                                <span className="whitespace-nowrap">Message size</span>
+                                <span className="whitespace-nowrap">
+                                    Message size
+                                </span>
                                 <div className="inline-flex rounded-xl border border-border/60 bg-muted/40 p-1">
                                     <Button
-                                        aria-pressed={messageDensity === "compact"}
-                                        onClick={() => setMessageDensity("compact")}
+                                        aria-pressed={
+                                            messageDensity === "compact"
+                                        }
+                                        onClick={() =>
+                                            setMessageDensity("compact")
+                                        }
                                         size="sm"
                                         type="button"
                                         variant={
@@ -1360,7 +1398,9 @@ export default function ChatPage() {
                                     </Button>
                                     <Button
                                         aria-pressed={messageDensity === "cozy"}
-                                        onClick={() => setMessageDensity("cozy")}
+                                        onClick={() =>
+                                            setMessageDensity("cozy")
+                                        }
                                         size="sm"
                                         type="button"
                                         variant={
