@@ -536,6 +536,53 @@ async function setupMemberships() {
     ]);
 }
 
+async function setupRoles() {
+    await ensureCollection("roles", "Roles");
+    const stringFields: [string, number, boolean][] = [
+        ["serverId", LEN_ID, true],
+        ["name", LEN_ID, true],
+        ["color", 16, true],
+    ];
+    for (const [key, size, required] of stringFields) {
+        await ensureStringAttribute("roles", key, size, required);
+    }
+    await ensureIntegerAttribute("roles", "position", true, 0);
+    await ensureIntegerAttribute("roles", "memberCount", false, 0, 0);
+
+    const permissionFlags = [
+        "readMessages",
+        "sendMessages",
+        "manageMessages",
+        "manageChannels",
+        "manageRoles",
+        "manageServer",
+        "mentionEveryone",
+        "administrator",
+        "mentionable",
+    ];
+    for (const flag of permissionFlags) {
+        await ensureBooleanAttribute("roles", flag, true);
+    }
+    await ensureBooleanAttribute("roles", "defaultOnJoin", false);
+
+    await ensureIndex("roles", "idx_serverId", "key", ["serverId"]);
+    await ensureIndex("roles", "idx_position", "key", ["position"]);
+}
+
+async function setupRoleAssignments() {
+    await ensureCollection("role_assignments", "Role Assignments");
+    await ensureStringAttribute("role_assignments", "userId", LEN_ID, true);
+    await ensureStringAttribute("role_assignments", "serverId", LEN_ID, true);
+    await ensureStringArrayAttribute("role_assignments", "roleIds", LEN_ID, true);
+
+    await ensureIndex("role_assignments", "idx_userId", "key", ["userId"]);
+    await ensureIndex("role_assignments", "idx_serverId", "key", ["serverId"]);
+    await ensureIndex("role_assignments", "idx_userId_serverId", "key", [
+        "userId",
+        "serverId",
+    ]);
+}
+
 async function setupProfiles() {
     await ensureCollection("profiles", "Profiles");
     const fields: [string, number, boolean][] = [
@@ -928,6 +975,10 @@ async function run() {
     }
     info("[setup] Setting up memberships...");
     await setupMemberships();
+    info("[setup] Setting up roles...");
+    await setupRoles();
+    info("[setup] Setting up role assignments...");
+    await setupRoleAssignments();
     info("[setup] Setting up profiles...");
     await setupProfiles();
     info("[setup] Setting up feature flags...");
