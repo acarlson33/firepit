@@ -142,7 +142,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     );
                 } catch (err) {
                     if (process.env.NODE_ENV !== "production") {
-                        // biome-ignore lint: development-only diagnostics
                         console.error("Status subscription failed:", err);
                     }
                 }
