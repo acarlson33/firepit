@@ -6,7 +6,17 @@ import {
 	getEffectiveNotificationLevel,
 	isInQuietHours,
 	getNotificationSettings,
+	getOrCreateNotificationSettings,
+	createNotificationSettings,
+	updateNotificationSettings,
+	muteServer,
+	unmuteServer,
+	muteChannel,
+	unmuteChannel,
+	muteConversation,
+	unmuteConversation,
 } from "../lib/notification-settings";
+import * as notificationSettingsModule from "../lib/notification-settings";
 import { getAdminClient } from "../lib/appwrite-admin";
 
 // Mock the appwrite-admin module
@@ -421,6 +431,225 @@ describe("Notification Settings", () => {
 			const result = await getNotificationSettings("user-1");
 
 			expect(result?.serverOverrides).toEqual({});
+		});
+
+		it("should create defaults when settings are missing", async () => {
+			const mockClient = getAdminClient();
+
+			vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
+				total: 0,
+				documents: [],
+			} as never);
+
+			vi.mocked(mockClient.databases.createDocument).mockResolvedValue({
+				$id: "settings-created",
+				userId: "user-1",
+				globalNotifications: "all",
+				desktopNotifications: true,
+				pushNotifications: true,
+				notificationSound: true,
+				quietHoursStart: null,
+				quietHoursEnd: null,
+				serverOverrides: "{}",
+				channelOverrides: "{}",
+				conversationOverrides: "{}",
+				$createdAt: new Date().toISOString(),
+				$updatedAt: new Date().toISOString(),
+			} as never);
+
+			const result = await getOrCreateNotificationSettings("user-1");
+
+			expect(mockClient.databases.createDocument).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				expect.any(String),
+				expect.objectContaining({ userId: "user-1", globalNotifications: "all" }),
+				["user:user-1"]
+			);
+			expect(result.userId).toBe("user-1");
+			expect(result.serverOverrides).toEqual({});
+		});
+
+		it("should create notification settings with provided overrides", async () => {
+			const mockClient = getAdminClient();
+
+			vi.mocked(mockClient.databases.createDocument).mockResolvedValue({
+				$id: "settings-created",
+				userId: "user-2",
+				globalNotifications: "mentions",
+				desktopNotifications: false,
+				pushNotifications: true,
+				notificationSound: false,
+				quietHoursStart: "22:00",
+				quietHoursEnd: "08:00",
+				serverOverrides: "{}",
+				channelOverrides: "{}",
+				conversationOverrides: "{}",
+			} as never);
+
+			const result = await createNotificationSettings("user-2", {
+				globalNotifications: "mentions",
+				desktopNotifications: false,
+				notificationSound: false,
+				quietHoursStart: "22:00",
+				quietHoursEnd: "08:00",
+			});
+
+			expect(mockClient.databases.createDocument).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				expect.any(String),
+				expect.objectContaining({
+					userId: "user-2",
+					globalNotifications: "mentions",
+					desktopNotifications: false,
+					notificationSound: false,
+					quietHoursStart: "22:00",
+					quietHoursEnd: "08:00",
+				}),
+				["user:user-2"]
+			);
+			expect(result.globalNotifications).toBe("mentions");
+			expect(result.notificationSound).toBe(false);
+		});
+
+		it("should update notification settings with only provided fields", async () => {
+			const mockClient = getAdminClient();
+			vi.mocked(mockClient.databases.updateDocument).mockResolvedValue({
+				$id: "settings-1",
+				userId: "user-1",
+				globalNotifications: "mentions",
+				desktopNotifications: false,
+				pushNotifications: true,
+				notificationSound: true,
+				quietHoursStart: "21:00",
+				quietHoursEnd: "07:00",
+				serverOverrides: "{}",
+				channelOverrides: "{}",
+				conversationOverrides: "{}",
+			} as never);
+
+			const result = await updateNotificationSettings("settings-1", {
+				globalNotifications: "mentions",
+				desktopNotifications: false,
+				quietHoursStart: "21:00",
+				quietHoursEnd: "07:00",
+			});
+
+			expect(mockClient.databases.updateDocument).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-1",
+				expect.objectContaining({
+					globalNotifications: "mentions",
+					desktopNotifications: false,
+					quietHoursStart: "21:00",
+					quietHoursEnd: "07:00",
+				})
+			);
+			expect(result.globalNotifications).toBe("mentions");
+		});
+
+		it("should mute and unmute server overrides", async () => {
+			const mockClient = getAdminClient();
+			const baseDoc = {
+				$id: "settings-1",
+				userId: "user-1",
+				globalNotifications: "all",
+				desktopNotifications: true,
+				pushNotifications: true,
+				notificationSound: true,
+				serverOverrides: "{}",
+				channelOverrides: "{}",
+				conversationOverrides: "{}",
+			};
+
+			vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
+				total: 1,
+				documents: [baseDoc],
+			} as never);
+
+			const updateSpy = vi.mocked(mockClient.databases.updateDocument);
+			updateSpy.mockImplementation(async (_db, _col, _id, data) => ({
+				...baseDoc,
+				...data,
+			}) as never);
+
+			await muteServer("user-1", "server-9", "1h", "mentions");
+
+			expect(updateSpy).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-1",
+				expect.objectContaining({ serverOverrides: expect.stringContaining("server-9") })
+			);
+
+			await unmuteServer("user-1", "server-9");
+
+			expect(updateSpy).toHaveBeenLastCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-1",
+				{ serverOverrides: "{}" }
+			);
+		});
+
+		it("should mute and unmute channel and conversation overrides", async () => {
+			const mockClient = getAdminClient();
+			const baseDoc = {
+				$id: "settings-2",
+				userId: "user-2",
+				globalNotifications: "all",
+				desktopNotifications: true,
+				pushNotifications: true,
+				notificationSound: true,
+				serverOverrides: "{}",
+				channelOverrides: "{}",
+				conversationOverrides: "{}",
+			};
+
+			vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
+				total: 1,
+				documents: [baseDoc],
+			} as never);
+
+			const updateSpy = vi.mocked(mockClient.databases.updateDocument);
+			updateSpy.mockImplementation(async (_db, _col, _id, data) => ({
+				...baseDoc,
+				...data,
+			}) as never);
+
+			await muteChannel("user-2", "channel-3", "15m", "nothing");
+			expect(updateSpy).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-2",
+				expect.objectContaining({ channelOverrides: expect.stringContaining("channel-3") })
+			);
+
+			await unmuteChannel("user-2", "channel-3");
+			expect(updateSpy).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-2",
+				{ channelOverrides: "{}" }
+			);
+
+			await muteConversation("user-2", "dm-4", "24h", "mentions");
+			expect(updateSpy).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-2",
+				expect.objectContaining({ conversationOverrides: expect.stringContaining("dm-4") })
+			);
+
+			await unmuteConversation("user-2", "dm-4");
+			expect(updateSpy).toHaveBeenCalledWith(
+				"test-db",
+				"notification-settings-collection",
+				"settings-2",
+				{ conversationOverrides: "{}" }
+			);
 		});
 	});
 });
