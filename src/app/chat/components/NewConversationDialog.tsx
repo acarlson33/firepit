@@ -146,6 +146,7 @@ export function NewConversationDialog({
             }
             return [...prev, user];
         });
+        // Clear the current search input and popover so it feels responsive after adding
         setSearchQuery("");
         setSearchResults([]);
         setError(null);

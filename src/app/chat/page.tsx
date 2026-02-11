@@ -362,6 +362,19 @@ export default function ChatPage() {
         setMentionedNames,
     } = messagesApi;
 
+    const typingUsersList = useMemo(
+        () => Object.values(_typingUsers ?? {}),
+        [_typingUsers],
+    );
+
+    const typingDisplayNames = useMemo(
+        () =>
+            typingUsersList
+                .slice(0, _maxTypingDisplay ?? typingUsersList.length)
+                .map((t) => t.userName || t.userId.slice(0, userIdSlice)),
+        [typingUsersList, _maxTypingDisplay, userIdSlice],
+    );
+
     // Collect all display names visible in the chat so mentions with spaces
     // (like "avery <3") can be highlighted even for old messages that don't
     // have the correct mentions array stored in the database.
@@ -1498,6 +1511,25 @@ export default function ChatPage() {
                                         </div>
                                     ) : (
                                         <>
+                                            {typingUsersList.length > 0 && (
+                                                <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="inline-flex size-2 animate-pulse rounded-full bg-primary"
+                                                    />
+                                                    <span>
+                                                        {typingDisplayNames.join(
+                                                            ", ",
+                                                        )}{" "}
+                                                        {typingUsersList.length >
+                                                        1
+                                                            ? "are"
+                                                            : "is"}{" "}
+                                                        typing...
+                                                    </span>
+                                                </div>
+                                            )}
+
                                             {imagePreview && (
                                                 <div className="relative inline-block">
                                                     <img
