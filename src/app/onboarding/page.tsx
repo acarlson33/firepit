@@ -8,6 +8,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/auth-context";
 import { completeOnboardingAction } from "./actions";
 
@@ -96,8 +97,7 @@ export default function OnboardingPage() {
 
 					<div className="space-y-2">
 						<Label htmlFor="bio">About You</Label>
-						<textarea
-							className="bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background flex min-h-[120px] w-full rounded-md border border-input px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						<Textarea
 							id="bio"
 							name="bio"
 							onChange={(e) => setBio(e.target.value)}
