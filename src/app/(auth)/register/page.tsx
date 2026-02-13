@@ -23,8 +23,9 @@ function RegisterFormContent() {
 	const [loading, setLoading] = useState(false);
 
 	const redirectPath = searchParams.get("redirect");
+	// Redirect new users to onboarding, unless a specific redirect is requested
 	const destination =
-		redirectPath?.startsWith("/") === true ? redirectPath : "/chat";
+		redirectPath?.startsWith("/") === true ? redirectPath : "/onboarding";
 
 	async function onRegister(e: React.FormEvent) {
 		e.preventDefault();
