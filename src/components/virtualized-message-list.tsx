@@ -1,5 +1,4 @@
 "use client";
-import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import type { Message, CustomEmoji } from "@/lib/types";
 import { Avatar } from "@/components/ui/avatar";
@@ -60,18 +59,6 @@ export function VirtualizedMessageList({
     messageDensity = "compact",
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
-    // Collect all display names from visible messages so mentions with spaces
-    // (like "avery <3") can be highlighted even for old messages.
-    const knownDisplayNames = useMemo(
-        () => [
-            ...new Set(
-                messages
-                    .map((m) => m.displayName)
-                    .filter((n): n is string => Boolean(n)),
-            ),
-        ],
-        [messages],
-    );
 
     return (
         <Virtuoso
