@@ -50,7 +50,7 @@ vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({ databases: databasesStub })),
 }));
 
-const modulePromise = import("@/lib/default-role");
+const modulePromise = import("../lib/default-role");
 
 describe("default-role", () => {
     beforeEach(() => {
@@ -92,12 +92,9 @@ describe("default-role", () => {
             "role-assignment-id",
             { serverId: "server-1", userId: "user-1", roleIds: ["role-1"] },
         );
-        expect(updateDocument).toHaveBeenCalledWith(
-            "main",
-            "roles",
-            "role-1",
-            { memberCount: 1 },
-        );
+        expect(updateDocument).toHaveBeenCalledWith("main", "roles", "role-1", {
+            memberCount: 1,
+        });
     });
 
     it("skips assignment when member already has the default role", async () => {
@@ -132,7 +129,12 @@ describe("default-role", () => {
         updateDocument.mockResolvedValue({});
 
         const { enforceSingleDefaultRole } = await modulePromise;
-        await enforceSingleDefaultRole(databasesStub, "main", "server-1", "keep");
+        await enforceSingleDefaultRole(
+            databasesStub,
+            "main",
+            "server-1",
+            "keep",
+        );
 
         expect(updateDocument).toHaveBeenCalledTimes(1);
         expect(updateDocument).toHaveBeenCalledWith("main", "roles", "remove", {

@@ -40,11 +40,11 @@ for (const envPath of findEnvPaths()) {
 }
 
 // ---- Environment (DO NOT hardcode secrets) ----
-const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
+const endpoint = process.env.APPWRITE_ENDPOINT;
 if (!endpoint) {
     throw new Error("APPWRITE_ENDPOINT is required");
 }
-const project = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
+const project = process.env.APPWRITE_PROJECT_ID;
 if (!project) {
     throw new Error("APPWRITE_PROJECT_ID is required");
 }
@@ -573,7 +573,12 @@ async function setupRoleAssignments() {
     await ensureCollection("role_assignments", "Role Assignments");
     await ensureStringAttribute("role_assignments", "userId", LEN_ID, true);
     await ensureStringAttribute("role_assignments", "serverId", LEN_ID, true);
-    await ensureStringArrayAttribute("role_assignments", "roleIds", LEN_ID, true);
+    await ensureStringArrayAttribute(
+        "role_assignments",
+        "roleIds",
+        LEN_ID,
+        true,
+    );
 
     await ensureIndex("role_assignments", "idx_userId", "key", ["userId"]);
     await ensureIndex("role_assignments", "idx_serverId", "key", ["serverId"]);
