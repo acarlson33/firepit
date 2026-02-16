@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
     MessageSquare,
+    Reply,
     Hash,
     Image as ImageIcon,
     X,
@@ -13,6 +14,7 @@ import {
     Trash2,
     BellOff,
     MoreVertical,
+    Pin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -205,6 +207,7 @@ export default function ChatPage() {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isWindowFocused, setIsWindowFocused] = useState(true);
+    const [threadReplyText, setThreadReplyText] = useState("");
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -374,6 +377,14 @@ export default function ChatPage() {
         send,
         userIdSlice,
         maxTypingDisplay: _maxTypingDisplay,
+        channelPins,
+        togglePin,
+        activeThreadParent,
+        threadMessages,
+        threadLoading,
+        openThread,
+        closeThread,
+        sendThreadReply,
         setMentionedNames: _setMentionedNames,
     } = messagesApi;
 
@@ -389,6 +400,15 @@ export default function ChatPage() {
                 .map((t) => t.userName || t.userId.slice(0, userIdSlice)),
         [typingUsersList, _maxTypingDisplay, userIdSlice],
     );
+
+    const pinnedMessageIds = useMemo(
+        () => channelPins.map((item) => item.message.$id),
+        [channelPins],
+    );
+
+    useEffect(() => {
+        setThreadReplyText("");
+    }, [activeThreadParent?.$id]);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -909,6 +929,12 @@ export default function ChatPage() {
                     }}
                     onOpenProfileModal={openProfileModal}
                     onRemove={handleDelete}
+                    onTogglePin={async (message) => {
+                        await togglePin(message);
+                    }}
+                    onOpenThread={async (message) => {
+                        await openThread(message);
+                    }}
                     onStartEdit={startEdit}
                     onStartReply={startReply}
                     onToggleReaction={async (
@@ -932,6 +958,7 @@ export default function ChatPage() {
                     shouldShowLoadOlder={shouldShowLoadOlder()}
                     userId={userId}
                     userIdSlice={userIdSlice}
+                    pinnedMessageIds={pinnedMessageIds}
                 />
             );
         }
@@ -961,6 +988,7 @@ export default function ChatPage() {
                     const isEditing = editingMessageId === m.$id;
                     const removed = Boolean(m.removedAt);
                     const isDeleting = deleteConfirmId === m.$id;
+                    const isPinned = pinnedMessageIds.includes(m.$id);
                     const displayName =
                         m.displayName ||
                         m.userName ||
@@ -1025,6 +1053,12 @@ export default function ChatPage() {
                                     {removed && (
                                         <span className="text-destructive">
                                             (removed)
+                                        </span>
+                                    )}
+                                    {isPinned && (
+                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                            <Pin className="h-3 w-3" />
+                                            Pinned
                                         </span>
                                     )}
                                 </div>
@@ -1141,6 +1175,23 @@ export default function ChatPage() {
                                     </div>
                                 )}
 
+                                {typeof m.threadMessageCount === "number" &&
+                                    m.threadMessageCount > 0 && (
+                                        <button
+                                            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                                            onClick={() => {
+                                                void openThread(m);
+                                            }}
+                                            type="button"
+                                        >
+                                            <MessageSquare className="h-3 w-3" />
+                                            {m.threadMessageCount}{" "}
+                                            {m.threadMessageCount === 1
+                                                ? "reply"
+                                                : "replies"}
+                                        </button>
+                                    )}
+
                                 {!removed && (
                                     <div
                                         className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
@@ -1158,12 +1209,36 @@ export default function ChatPage() {
                                             onUploadCustomEmoji={uploadEmoji}
                                         />
                                         <Button
+                                            aria-label="Reply"
                                             onClick={() => startReply(m)}
                                             size="sm"
                                             type="button"
                                             variant="ghost"
                                         >
+                                            <Reply className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            aria-label="Start thread"
+                                            onClick={() => {
+                                                void openThread(m);
+                                            }}
+                                            size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                        >
                                             <MessageSquare className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                void togglePin(m);
+                                            }}
+                                            size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <Pin
+                                                className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
+                                            />
                                         </Button>
                                         {mine && (
                                             <>
@@ -1354,6 +1429,16 @@ export default function ChatPage() {
                             sending={dmApi.sending}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
+                            pinnedMessageIds={dmApi.conversationPins.map(
+                                (entry) => entry.message.$id,
+                            )}
+                            onTogglePinMessage={dmApi.togglePin}
+                            onOpenThread={dmApi.openThread}
+                            activeThreadParent={dmApi.activeThreadParent}
+                            threadMessages={dmApi.threadMessages}
+                            threadLoading={dmApi.threadLoading}
+                            onCloseThread={dmApi.closeThread}
+                            onSendThreadReply={dmApi.sendThreadReply}
                         />
                     ) : (
                         <>
@@ -1432,251 +1517,413 @@ export default function ChatPage() {
                                     </Button>
                                 </div>
                             </div>
-                            {renderMessages()}
-                            {/* Chat Input */}
-                            {!selectedConversationId && (
-                                <div className="space-y-3">
-                                    <MentionHelpTooltip />
-                                    {replyingToMessage && (
-                                        <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                                            <div className="flex-1">
-                                                <div className="font-medium">
-                                                    Replying to{" "}
-                                                    {replyingToMessage.displayName ||
-                                                        replyingToMessage.userName ||
-                                                        "Unknown"}
-                                                </div>
-                                                <div className="line-clamp-1 text-xs text-muted-foreground">
-                                                    {replyingToMessage.text}
-                                                </div>
-                                            </div>
-                                            <Button
-                                                onClick={cancelReply}
-                                                size="sm"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                Cancel
-                                            </Button>
-                                        </div>
-                                    )}
-                                    {editingMessageId && (
-                                        <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
-                                            <span className="text-blue-700 dark:text-blue-300">
-                                                Editing message
-                                            </span>
-                                            <Button
-                                                onClick={cancelEdit}
-                                                size="sm"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                Cancel
-                                            </Button>
-                                        </div>
-                                    )}
-                                    {editingMessageId ? (
-                                        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                                            <Input
-                                                aria-label="Edit message"
-                                                className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
-                                                onChange={onChangeText}
-                                                placeholder="Edit your message..."
-                                                value={text}
-                                                onKeyDown={(e) => {
-                                                    if (
-                                                        e.key === "Enter" &&
-                                                        !e.shiftKey
-                                                    ) {
-                                                        e.preventDefault();
-                                                        void send(e);
-                                                    }
-                                                    if (e.key === "Escape") {
-                                                        cancelEdit();
-                                                    }
-                                                }}
-                                            />
-                                            <div className="flex gap-2">
-                                                <Button
-                                                    onClick={(e) => {
-                                                        void send(e);
-                                                    }}
-                                                    type="button"
-                                                    variant="default"
-                                                >
-                                                    Save
-                                                </Button>
-                                                <Button
-                                                    onClick={cancelEdit}
-                                                    type="button"
-                                                    variant="outline"
-                                                >
-                                                    Cancel
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {typingUsersList.length > 0 && (
-                                                <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                                                    <span
-                                                        aria-hidden="true"
-                                                        className="inline-flex size-2 animate-pulse rounded-full bg-primary"
-                                                    />
-                                                    <span>
-                                                        {typingDisplayNames.join(
-                                                            ", ",
-                                                        )}{" "}
-                                                        {typingUsersList.length >
-                                                        1
-                                                            ? "are"
-                                                            : "is"}{" "}
-                                                        typing...
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            {imagePreview && (
-                                                <div className="relative inline-block">
-                                                    <img
-                                                        alt="Upload preview"
-                                                        className="h-32 rounded-lg object-cover"
-                                                        src={imagePreview}
-                                                    />
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                                <div className="space-y-4">
+                                    {renderMessages()}
+                                    {/* Chat Input */}
+                                    {!selectedConversationId && (
+                                        <div className="space-y-3">
+                                            <MentionHelpTooltip />
+                                            {replyingToMessage && (
+                                                <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+                                                    <div className="flex-1">
+                                                        <div className="font-medium">
+                                                            Replying to{" "}
+                                                            {replyingToMessage.displayName ||
+                                                                replyingToMessage.userName ||
+                                                                "Unknown"}
+                                                        </div>
+                                                        <div className="line-clamp-1 text-xs text-muted-foreground">
+                                                            {
+                                                                replyingToMessage.text
+                                                            }
+                                                        </div>
+                                                    </div>
                                                     <Button
-                                                        className="absolute -right-2 -top-2"
-                                                        onClick={removeImage}
-                                                        size="icon"
+                                                        onClick={cancelReply}
+                                                        size="sm"
                                                         type="button"
-                                                        variant="destructive"
+                                                        variant="ghost"
                                                     >
-                                                        <X className="size-4" />
+                                                        Cancel
                                                     </Button>
                                                 </div>
                                             )}
-                                            {fileAttachments.length > 0 && (
-                                                <div className="flex flex-col gap-2">
-                                                    {fileAttachments.map(
-                                                        (attachment, index) => (
-                                                            <FilePreview
-                                                                key={`${attachment.fileId}-${index}`}
-                                                                attachment={
-                                                                    attachment
-                                                                }
-                                                                onRemove={() =>
-                                                                    removeFileAttachment(
-                                                                        index,
-                                                                    )
-                                                                }
-                                                            />
-                                                        ),
-                                                    )}
+                                            {editingMessageId && (
+                                                <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
+                                                    <span className="text-blue-700 dark:text-blue-300">
+                                                        Editing message
+                                                    </span>
+                                                    <Button
+                                                        onClick={cancelEdit}
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        Cancel
+                                                    </Button>
                                                 </div>
                                             )}
-                                            <form
-                                                className="flex flex-col gap-3 sm:flex-row sm:items-center"
-                                                onSubmit={handleSendWithImage}
-                                            >
-                                                <input
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                    onChange={handleImageSelect}
-                                                    ref={fileInputRef}
-                                                    type="file"
-                                                />
-                                                <Button
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        Boolean(
-                                                            editingMessageId,
-                                                        )
-                                                    }
-                                                    onClick={() =>
-                                                        fileInputRef.current?.click()
-                                                    }
-                                                    size="icon"
-                                                    type="button"
-                                                    variant="outline"
-                                                    className="shrink-0"
-                                                >
-                                                    <ImageIcon className="size-4" />
-                                                </Button>
-                                                <FileUploadButton
-                                                    onFileSelect={
-                                                        handleFileAttachmentSelect
-                                                    }
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        Boolean(
-                                                            editingMessageId,
-                                                        )
-                                                    }
-                                                    className="shrink-0"
-                                                />
-                                                <EmojiPicker
-                                                    onEmojiSelect={
-                                                        handleEmojiSelect
-                                                    }
-                                                    customEmojis={customEmojis}
-                                                    onUploadCustomEmoji={
-                                                        uploadEmoji
-                                                    }
-                                                />
-                                                <ChatInput
-                                                    aria-label="Message"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage
-                                                    }
-                                                    onChange={(newValue) => {
-                                                        onChangeText({
-                                                            target: {
-                                                                value: newValue,
-                                                            },
-                                                        } as React.ChangeEvent<HTMLInputElement>);
-                                                    }}
-                                                    placeholder={
-                                                        showChat
-                                                            ? "Type a message"
-                                                            : "Select a channel"
-                                                    }
-                                                    value={text}
-                                                    className="flex-1 rounded-2xl border-border/60"
-                                                    onKeyDown={(e) => {
-                                                        if (
-                                                            e.key === "Enter" &&
-                                                            !e.shiftKey
-                                                        ) {
-                                                            e.preventDefault();
-                                                            void handleSendWithImage(
-                                                                e as unknown as React.FormEvent,
-                                                            );
+                                            {editingMessageId ? (
+                                                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                                                    <Input
+                                                        aria-label="Edit message"
+                                                        className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
+                                                        onChange={onChangeText}
+                                                        placeholder="Edit your message..."
+                                                        value={text}
+                                                        onKeyDown={(e) => {
+                                                            if (
+                                                                e.key ===
+                                                                    "Enter" &&
+                                                                !e.shiftKey
+                                                            ) {
+                                                                e.preventDefault();
+                                                                void send(e);
+                                                            }
+                                                            if (
+                                                                e.key ===
+                                                                "Escape"
+                                                            ) {
+                                                                cancelEdit();
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="flex gap-2">
+                                                        <Button
+                                                            onClick={(e) => {
+                                                                void send(e);
+                                                            }}
+                                                            type="button"
+                                                            variant="default"
+                                                        >
+                                                            Save
+                                                        </Button>
+                                                        <Button
+                                                            onClick={cancelEdit}
+                                                            type="button"
+                                                            variant="outline"
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {typingUsersList.length >
+                                                        0 && (
+                                                        <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+                                                            <span
+                                                                aria-hidden="true"
+                                                                className="inline-flex size-2 animate-pulse rounded-full bg-primary"
+                                                            />
+                                                            <span>
+                                                                {typingDisplayNames.join(
+                                                                    ", ",
+                                                                )}{" "}
+                                                                {typingUsersList.length >
+                                                                1
+                                                                    ? "are"
+                                                                    : "is"}{" "}
+                                                                typing...
+                                                            </span>
+                                                        </div>
+                                                    )}
+
+                                                    {imagePreview && (
+                                                        <div className="relative inline-block">
+                                                            <img
+                                                                alt="Upload preview"
+                                                                className="h-32 rounded-lg object-cover"
+                                                                src={
+                                                                    imagePreview
+                                                                }
+                                                            />
+                                                            <Button
+                                                                className="absolute -right-2 -top-2"
+                                                                onClick={
+                                                                    removeImage
+                                                                }
+                                                                size="icon"
+                                                                type="button"
+                                                                variant="destructive"
+                                                            >
+                                                                <X className="size-4" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                    {fileAttachments.length >
+                                                        0 && (
+                                                        <div className="flex flex-col gap-2">
+                                                            {fileAttachments.map(
+                                                                (
+                                                                    attachment,
+                                                                    index,
+                                                                ) => (
+                                                                    <FilePreview
+                                                                        key={`${attachment.fileId}-${index}`}
+                                                                        attachment={
+                                                                            attachment
+                                                                        }
+                                                                        onRemove={() =>
+                                                                            removeFileAttachment(
+                                                                                index,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <form
+                                                        className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                                                        onSubmit={
+                                                            handleSendWithImage
                                                         }
-                                                    }}
-                                                />
-                                                <Button
-                                                    className="rounded-2xl shrink-0"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        (!text.trim() &&
-                                                            !selectedImage &&
-                                                            fileAttachments.length ===
-                                                                0)
-                                                    }
-                                                    type="submit"
-                                                >
-                                                    {uploadingImage
-                                                        ? "Uploading..."
-                                                        : "Send"}
-                                                </Button>
-                                            </form>
-                                        </>
+                                                    >
+                                                        <input
+                                                            accept="image/*"
+                                                            className="hidden"
+                                                            onChange={
+                                                                handleImageSelect
+                                                            }
+                                                            ref={fileInputRef}
+                                                            type="file"
+                                                        />
+                                                        <Button
+                                                            disabled={
+                                                                !showChat ||
+                                                                uploadingImage ||
+                                                                Boolean(
+                                                                    editingMessageId,
+                                                                )
+                                                            }
+                                                            onClick={() =>
+                                                                fileInputRef.current?.click()
+                                                            }
+                                                            size="icon"
+                                                            type="button"
+                                                            variant="outline"
+                                                            className="shrink-0"
+                                                        >
+                                                            <ImageIcon className="size-4" />
+                                                        </Button>
+                                                        <FileUploadButton
+                                                            onFileSelect={
+                                                                handleFileAttachmentSelect
+                                                            }
+                                                            disabled={
+                                                                !showChat ||
+                                                                uploadingImage ||
+                                                                Boolean(
+                                                                    editingMessageId,
+                                                                )
+                                                            }
+                                                            className="shrink-0"
+                                                        />
+                                                        <EmojiPicker
+                                                            onEmojiSelect={
+                                                                handleEmojiSelect
+                                                            }
+                                                            customEmojis={
+                                                                customEmojis
+                                                            }
+                                                            onUploadCustomEmoji={
+                                                                uploadEmoji
+                                                            }
+                                                        />
+                                                        <ChatInput
+                                                            aria-label="Message"
+                                                            disabled={
+                                                                !showChat ||
+                                                                uploadingImage
+                                                            }
+                                                            onChange={(
+                                                                newValue,
+                                                            ) => {
+                                                                onChangeText({
+                                                                    target: {
+                                                                        value: newValue,
+                                                                    },
+                                                                } as React.ChangeEvent<HTMLInputElement>);
+                                                            }}
+                                                            placeholder={
+                                                                showChat
+                                                                    ? "Type a message"
+                                                                    : "Select a channel"
+                                                            }
+                                                            value={text}
+                                                            className="flex-1 rounded-2xl border-border/60"
+                                                            onKeyDown={(e) => {
+                                                                if (
+                                                                    e.key ===
+                                                                        "Enter" &&
+                                                                    !e.shiftKey
+                                                                ) {
+                                                                    e.preventDefault();
+                                                                    void handleSendWithImage(
+                                                                        e as unknown as React.FormEvent,
+                                                                    );
+                                                                }
+                                                            }}
+                                                        />
+                                                        <Button
+                                                            className="rounded-2xl shrink-0"
+                                                            disabled={
+                                                                !showChat ||
+                                                                uploadingImage ||
+                                                                (!text.trim() &&
+                                                                    !selectedImage &&
+                                                                    fileAttachments.length ===
+                                                                        0)
+                                                            }
+                                                            type="submit"
+                                                        >
+                                                            {uploadingImage
+                                                                ? "Uploading..."
+                                                                : "Send"}
+                                                        </Button>
+                                                    </form>
+                                                </>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
-                            )}
+
+                                <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
+                                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                                        <div className="mb-2 flex items-center gap-2 font-medium text-sm text-foreground">
+                                            <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                            Pinned Messages
+                                        </div>
+                                        {selectedChannel &&
+                                        channelPins.length > 0 ? (
+                                            <div className="space-y-1">
+                                                {channelPins
+                                                    .slice(0, 10)
+                                                    .map((item) => (
+                                                        <button
+                                                            className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
+                                                            key={item.pin.$id}
+                                                            onClick={() => {
+                                                                void openThread(
+                                                                    item.message,
+                                                                );
+                                                            }}
+                                                            type="button"
+                                                        >
+                                                            {item.message
+                                                                .text ||
+                                                                "(attachment)"}
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground">
+                                                No pinned messages in this
+                                                channel.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                                        <div className="mb-2 flex items-center justify-between">
+                                            <h3 className="font-medium text-sm">
+                                                Thread
+                                            </h3>
+                                            {activeThreadParent && (
+                                                <Button
+                                                    onClick={closeThread}
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    Close
+                                                </Button>
+                                            )}
+                                        </div>
+
+                                        {!activeThreadParent ? (
+                                            <p className="text-xs text-muted-foreground">
+                                                Open a message thread to view
+                                                replies here.
+                                            </p>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                <p className="line-clamp-2 text-xs text-muted-foreground">
+                                                    {activeThreadParent.text ||
+                                                        "(attachment)"}
+                                                </p>
+                                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/60 p-2">
+                                                    {threadLoading ? (
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Loading thread...
+                                                        </p>
+                                                    ) : threadMessages.length ===
+                                                      0 ? (
+                                                        <p className="text-xs text-muted-foreground">
+                                                            No replies yet.
+                                                        </p>
+                                                    ) : (
+                                                        threadMessages.map(
+                                                            (threadMessage) => (
+                                                                <div
+                                                                    className="rounded-md bg-background/80 px-2 py-1.5"
+                                                                    key={
+                                                                        threadMessage.$id
+                                                                    }
+                                                                >
+                                                                    <div className="mb-1 text-[11px] text-muted-foreground">
+                                                                        {threadMessage.displayName ||
+                                                                            threadMessage.userName ||
+                                                                            threadMessage.userId.slice(
+                                                                                0,
+                                                                                userIdSlice,
+                                                                            )}
+                                                                    </div>
+                                                                    <div className="text-xs">
+                                                                        {threadMessage.text ||
+                                                                            "(attachment)"}
+                                                                    </div>
+                                                                </div>
+                                                            ),
+                                                        )
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Input
+                                                        onChange={(e) =>
+                                                            setThreadReplyText(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        placeholder="Reply in thread"
+                                                        value={threadReplyText}
+                                                    />
+                                                    <Button
+                                                        disabled={
+                                                            !threadReplyText.trim()
+                                                        }
+                                                        onClick={() => {
+                                                            const value =
+                                                                threadReplyText;
+                                                            setThreadReplyText(
+                                                                "",
+                                                            );
+                                                            void sendThreadReply(
+                                                                value,
+                                                            );
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        Reply
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </aside>
+                            </div>
                         </>
                     )}
                 </div>

@@ -299,6 +299,16 @@ async function ensureStringArrayAttribute(
 }
 
 type IndexType = "key" | "fulltext" | "unique"; // subset used
+
+function isAttributePropagationError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+        normalized.includes("attribute not available") ||
+        normalized.includes("requested attribute") ||
+        normalized.includes("not yet available")
+    );
+}
+
 async function waitForAttribute(
     collection: string,
     key: string,
@@ -401,7 +411,10 @@ async function ensureIndex(
                 lastError = e as Error;
                 const errMsg = lastError.message || "";
                 // If it's an "attribute not available" error, retry
-                if (errMsg.includes("Attribute not available")) {
+                if (isAttributePropagationError(errMsg)) {
+                    for (const attr of attributes) {
+                        await waitForAttribute(collection, attr);
+                    }
                     continue;
                 }
                 // For other errors, handle immediately
@@ -465,6 +478,8 @@ async function setupMessages() {
         ["removedAt", LEN_TS, false],
         ["removedBy", LEN_ID, false],
         ["replyToId", LEN_ID, false],
+        ["threadId", LEN_ID, false],
+        ["lastThreadReplyAt", LEN_TS, false],
         ["imageFileId", LEN_ID, false],
         ["imageUrl", 2000, false],
         ["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
@@ -478,6 +493,14 @@ async function setupMessages() {
     await ensureIndex("messages", "idx_serverId", "key", ["serverId"]);
     await ensureIndex("messages", "idx_removedAt", "key", ["removedAt"]);
     await ensureIndex("messages", "idx_replyToId", "key", ["replyToId"]);
+    await ensureIndex("messages", "idx_threadId", "key", ["threadId"]);
+    await ensureIntegerAttribute("messages", "threadMessageCount", false, 0);
+    await ensureStringArrayAttribute(
+        "messages",
+        "threadParticipants",
+        LEN_ID,
+        false,
+    );
 
     try {
         await ensureIndex("messages", "idx_text_search", "fulltext", ["text"]);
@@ -745,6 +768,8 @@ async function setupDirectMessages() {
         ["editedAt", LEN_TS, false],
         ["removedAt", LEN_TS, false],
         ["replyToId", LEN_ID, false],
+        ["threadId", LEN_ID, false],
+        ["lastThreadReplyAt", LEN_TS, false],
         ["imageFileId", LEN_ID, false],
         ["imageUrl", 2000, false],
         ["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
@@ -758,14 +783,61 @@ async function setupDirectMessages() {
         LEN_ID,
         false,
     );
+    await ensureIntegerAttribute(
+        "direct_messages",
+        "threadMessageCount",
+        false,
+        0,
+    );
+    await ensureStringArrayAttribute(
+        "direct_messages",
+        "threadParticipants",
+        LEN_ID,
+        false,
+    );
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
     await ensureIndex("direct_messages", "idx_conversation", "key", [
         "conversationId",
     ]);
     await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
     await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
+    await ensureIndex("direct_messages", "idx_threadId", "key", ["threadId"]);
     await ensureIndex("direct_messages", "idx_text_search", "fulltext", [
         "text",
+    ]);
+}
+
+async function setupPinnedMessages() {
+    await ensureCollection("pinned_messages", "Pinned Messages");
+    const fields: [string, number, boolean][] = [
+        ["messageId", LEN_ID, true],
+        ["contextType", 32, true],
+        ["contextId", LEN_ID, true],
+        ["pinnedBy", LEN_ID, true],
+        ["pinnedAt", LEN_TS, true],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("pinned_messages", k, size, req);
+    }
+
+    await ensureIndex("pinned_messages", "idx_context", "key", [
+        "contextType",
+        "contextId",
+    ]);
+    try {
+        await ensureIndex("pinned_messages", "idx_pinnedAt", "key", [
+            "pinnedAt",
+        ]);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warn(
+            `[setup] skipping pinned_messages.idx_pinnedAt due to backend propagation issue: ${message}`,
+        );
+    }
+    await ensureIndex("pinned_messages", "idx_context_message", "unique", [
+        "contextType",
+        "contextId",
+        "messageId",
     ]);
 }
 
@@ -1032,6 +1104,8 @@ async function run() {
     await setupConversations();
     info("[setup] Setting up direct messages...");
     await setupDirectMessages();
+    info("[setup] Setting up pinned messages...");
+    await setupPinnedMessages();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
     info("[setup] Setting up teams...");
