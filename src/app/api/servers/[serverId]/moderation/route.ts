@@ -8,16 +8,12 @@ import { logger } from "@/lib/newrelic-utils";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
-const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
-const MEMBERSHIPS_COLLECTION_ID =
-    process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID ?? "";
-
-// Collection IDs for banned/muted users (create these if they don't exist)
-const BANNED_USERS_COLLECTION_ID =
-    process.env.APPWRITE_BANNED_USERS_COLLECTION_ID;
-const MUTED_USERS_COLLECTION_ID =
-    process.env.APPWRITE_MUTED_USERS_COLLECTION_ID;
+const envConfig = getEnvConfig();
+const DATABASE_ID = envConfig.databaseId;
+const SERVERS_COLLECTION_ID = envConfig.collections.servers;
+const MEMBERSHIPS_COLLECTION_ID = envConfig.collections.memberships;
+const BANNED_USERS_COLLECTION_ID = envConfig.collections.bannedUsers;
+const MUTED_USERS_COLLECTION_ID = envConfig.collections.mutedUsers;
 
 export async function POST(
     request: Request,
@@ -63,10 +59,9 @@ export async function POST(
 
         // Check permissions: owner or global admin/moderator
         const isOwner = String(server.ownerId) === moderatorId;
-        const env = getEnvConfig();
         const serverAccess = await getServerPermissionsForUser(
             databases,
-            env,
+            envConfig,
             serverId,
             moderatorId,
         );

@@ -162,7 +162,12 @@ export function VirtualizedMessageList({
                                         isCompact ? "text-xs" : "text-sm"
                                     }`}
                                 >
-                                    <MessageWithMentions text={m.text} />
+                                    <MessageWithMentions
+                                        text={m.text}
+                                        mentions={m.mentions}
+                                        currentUserId={userId ?? undefined}
+                                        customEmojis={customEmojis}
+                                    />
                                 </div>
                             )}
                             {removed && m.removedBy && (

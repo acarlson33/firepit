@@ -6,42 +6,46 @@ import { useEffect } from "react";
  * Registers the service worker for offline support and caching
  */
 export function ServiceWorkerRegistration() {
-  useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      "serviceWorker" in navigator &&
-      process.env.NODE_ENV === "production"
-    ) {
-      // Register service worker
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((registration) => {
-          console.log(
-            "Service Worker registered with scope:",
-            registration.scope
-          );
+    useEffect(() => {
+        const enableInDev = process.env.NEXT_PUBLIC_ENABLE_SW_IN_DEV === "true";
+        const shouldRegister =
+            process.env.NODE_ENV === "production" || enableInDev;
 
-          // Check for updates periodically
-          setInterval(
-            () => {
-              registration.update().catch(() => {
-                /* Ignore update errors */
-              });
-            },
-            60 * 60 * 1000
-          ); // Check every hour
-        })
-        .catch((error) => {
-          console.error("Service Worker registration failed:", error);
-        });
+        if (
+            typeof window !== "undefined" &&
+            "serviceWorker" in navigator &&
+            shouldRegister
+        ) {
+            // Register service worker
+            navigator.serviceWorker
+                .register("/sw.js")
+                .then((registration) => {
+                    console.log(
+                        "Service Worker registered with scope:",
+                        registration.scope,
+                    );
 
-      // Handle service worker updates
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        console.log("Service Worker updated, reloading page...");
-        window.location.reload();
-      });
-    }
-  }, []);
+                    // Check for updates periodically
+                    setInterval(
+                        () => {
+                            registration.update().catch(() => {
+                                /* Ignore update errors */
+                            });
+                        },
+                        60 * 60 * 1000,
+                    ); // Check every hour
+                })
+                .catch((error) => {
+                    console.error("Service Worker registration failed:", error);
+                });
 
-  return null; // This component doesn't render anything
+            // Handle service worker updates
+            navigator.serviceWorker.addEventListener("controllerchange", () => {
+                console.log("Service Worker updated, reloading page...");
+                window.location.reload();
+            });
+        }
+    }, []);
+
+    return null; // This component doesn't render anything
 }

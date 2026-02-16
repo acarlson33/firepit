@@ -77,34 +77,79 @@ export async function GET(request: Request, context: RouteContext) {
             );
         }
 
-        // Enrich memberships with profile data and roles
-        const members = await Promise.all(
-            memberships.documents.map(async (membership) => {
-                const userId = membership.userId as string;
-                try {
-                    const profiles = await databases.listDocuments(
+        const members = [] as Array<{
+            userId: string;
+            userName?: string;
+            displayName?: string;
+            avatarUrl?: string;
+            roleIds: string[];
+        }>;
+
+        for (const membership of memberships.documents) {
+            const userId = membership.userId as string;
+            try {
+                const profiles = await databases.listDocuments(
+                    databaseId,
+                    profilesCollectionId,
+                    [Query.equal("userId", userId), Query.limit(1)],
+                );
+
+                const profile = profiles.documents[0];
+
+                if (!profile) {
+                    // User profile is gone (likely account deleted) — remove membership and any role assignments
+                    await databases.deleteDocument(
                         databaseId,
-                        profilesCollectionId,
-                        [Query.equal("userId", userId), Query.limit(1)],
+                        membershipsCollectionId,
+                        membership.$id,
                     );
 
-                    const profile = profiles.documents[0];
+                    const orphanAssignments = await databases.listDocuments(
+                        databaseId,
+                        roleAssignmentsCollectionId,
+                        [
+                            Query.equal("serverId", serverId),
+                            Query.equal("userId", userId),
+                            Query.limit(100),
+                        ],
+                    );
 
-                    return {
-                        userId,
-                        userName: profile?.userId,
-                        displayName: profile?.displayName,
-                        avatarUrl: profile?.avatarUrl,
-                        roleIds: roleMap.get(userId) || [],
-                    };
-                } catch {
-                    return {
-                        userId,
-                        roleIds: roleMap.get(userId) || [],
-                    };
+                    await Promise.all(
+                        orphanAssignments.documents.map((assignment) =>
+                            databases.deleteDocument(
+                                databaseId,
+                                roleAssignmentsCollectionId,
+                                assignment.$id,
+                            ),
+                        ),
+                    );
+
+                    logger.info(
+                        "Removed orphaned membership after user deletion",
+                        {
+                            serverId,
+                            userId,
+                        },
+                    );
+                    continue;
                 }
-            }),
-        );
+
+                members.push({
+                    userId,
+                    userName: profile.userId as string,
+                    displayName: profile.displayName as string | undefined,
+                    avatarUrl: profile.avatarUrl as string | undefined,
+                    roleIds: roleMap.get(userId) || [],
+                });
+            } catch (error) {
+                logger.error("Failed to enrich membership", {
+                    serverId,
+                    userId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
 
         return NextResponse.json({ members });
     } catch (error) {

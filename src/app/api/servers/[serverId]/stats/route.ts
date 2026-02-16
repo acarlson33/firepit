@@ -6,18 +6,14 @@ import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
-const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
-const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
-const CHANNELS_COLLECTION_ID =
-    process.env.APPWRITE_CHANNELS_COLLECTION_ID ?? "";
-const MESSAGES_COLLECTION_ID =
-    process.env.APPWRITE_MESSAGES_COLLECTION_ID ?? "";
-const MEMBERSHIPS_COLLECTION_ID =
-    process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID ?? "";
-const BANNED_USERS_COLLECTION_ID =
-    process.env.APPWRITE_BANNED_USERS_COLLECTION_ID;
-const MUTED_USERS_COLLECTION_ID =
-    process.env.APPWRITE_MUTED_USERS_COLLECTION_ID;
+const envConfig = getEnvConfig();
+const DATABASE_ID = envConfig.databaseId;
+const SERVERS_COLLECTION_ID = envConfig.collections.servers;
+const CHANNELS_COLLECTION_ID = envConfig.collections.channels;
+const MESSAGES_COLLECTION_ID = envConfig.collections.messages;
+const MEMBERSHIPS_COLLECTION_ID = envConfig.collections.memberships;
+const BANNED_USERS_COLLECTION_ID = envConfig.collections.bannedUsers;
+const MUTED_USERS_COLLECTION_ID = envConfig.collections.mutedUsers;
 
 export async function GET(
     request: Request,
@@ -26,7 +22,6 @@ export async function GET(
     try {
         const { serverId } = await params;
         const { databases } = getServerClient();
-        const env = getEnvConfig();
 
         const session = await getServerSession();
         if (!session?.$id) {
@@ -38,7 +33,7 @@ export async function GET(
 
         const access = await getServerPermissionsForUser(
             databases,
-            env,
+            envConfig,
             serverId,
             session.$id,
         );
@@ -122,14 +117,21 @@ export async function GET(
             mutedUsers = mutedResult.total;
         }
 
-        return NextResponse.json({
-            totalMembers,
-            totalChannels,
-            totalMessages,
-            recentMessages,
-            bannedUsers,
-            mutedUsers,
-        });
+        return NextResponse.json(
+            {
+                totalMembers,
+                totalChannels,
+                totalMessages,
+                recentMessages,
+                bannedUsers,
+                mutedUsers,
+            },
+            {
+                headers: {
+                    "Cache-Control": "no-store",
+                },
+            },
+        );
     } catch (error) {
         logger.error("Error fetching server stats", {
             error: error instanceof Error ? error.message : String(error),

@@ -61,6 +61,8 @@ export type EnvConfig = {
         audit: string;
         typing: string;
         memberships: string;
+        bannedUsers: string;
+        mutedUsers: string;
         profiles: string;
         conversations: string;
         directMessages: string;
@@ -162,6 +164,18 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
                 "memberships",
             ) || "memberships",
+        bannedUsers:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_BANNED_USERS_COLLECTION_ID,
+                process.env.APPWRITE_BANNED_USERS_COLLECTION_ID,
+                "banned_users",
+            ) || "banned_users",
+        mutedUsers:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_MUTED_USERS_COLLECTION_ID,
+                process.env.APPWRITE_MUTED_USERS_COLLECTION_ID,
+                "muted_users",
+            ) || "muted_users",
         profiles:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,

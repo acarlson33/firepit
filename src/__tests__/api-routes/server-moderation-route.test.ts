@@ -74,6 +74,8 @@ vi.mock("@/lib/appwrite-core", () => ({
             memberships: "memberships",
             roles: "roles",
             channels: "channels",
+            bannedUsers: "banned_users",
+            mutedUsers: "muted_users",
         },
     })),
 }));

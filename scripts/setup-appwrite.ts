@@ -536,6 +536,36 @@ async function setupMemberships() {
     ]);
 }
 
+async function setupBannedUsers() {
+    await ensureCollection("banned_users", "Banned Users");
+    await ensureStringAttribute("banned_users", "serverId", LEN_ID, true);
+    await ensureStringAttribute("banned_users", "userId", LEN_ID, true);
+    await ensureStringAttribute("banned_users", "bannedBy", LEN_ID, true);
+    await ensureStringAttribute("banned_users", "reason", LEN_TEXT, false);
+    await ensureStringAttribute("banned_users", "bannedAt", LEN_TS, true);
+    await ensureIndex("banned_users", "idx_server", "key", ["serverId"]);
+    await ensureIndex("banned_users", "idx_user", "key", ["userId"]);
+    await ensureIndex("banned_users", "idx_server_user", "unique", [
+        "serverId",
+        "userId",
+    ]);
+}
+
+async function setupMutedUsers() {
+    await ensureCollection("muted_users", "Muted Users");
+    await ensureStringAttribute("muted_users", "serverId", LEN_ID, true);
+    await ensureStringAttribute("muted_users", "userId", LEN_ID, true);
+    await ensureStringAttribute("muted_users", "mutedBy", LEN_ID, true);
+    await ensureStringAttribute("muted_users", "reason", LEN_TEXT, false);
+    await ensureStringAttribute("muted_users", "mutedAt", LEN_TS, true);
+    await ensureIndex("muted_users", "idx_server", "key", ["serverId"]);
+    await ensureIndex("muted_users", "idx_user", "key", ["userId"]);
+    await ensureIndex("muted_users", "idx_server_user", "unique", [
+        "serverId",
+        "userId",
+    ]);
+}
+
 async function setupRoles() {
     await ensureCollection("roles", "Roles");
     const stringFields: [string, number, boolean][] = [
@@ -980,6 +1010,10 @@ async function run() {
     }
     info("[setup] Setting up memberships...");
     await setupMemberships();
+    info("[setup] Setting up banned users...");
+    await setupBannedUsers();
+    info("[setup] Setting up muted users...");
+    await setupMutedUsers();
     info("[setup] Setting up roles...");
     await setupRoles();
     info("[setup] Setting up role assignments...");

@@ -11,18 +11,14 @@
 
 // Cache version names - update these to bust caches on deploy
 // Bump cache versions to bust stale Next.js chunks when deploying new builds
-var CACHE_NAME = "firepit-v3";
-var API_CACHE_NAME = "firepit-api-v3";
-var STATIC_CACHE_NAME = "firepit-static-v3";
-var EMOJI_CACHE_NAME = "firepit-emoji-v3";
+var CACHE_NAME = "firepit-v4";
+var API_CACHE_NAME = "firepit-api-v4";
+var STATIC_CACHE_NAME = "firepit-static-v4";
+var EMOJI_CACHE_NAME = "firepit-emoji-v4";
 var EMOJI_CACHE_LIMIT = 200;
 
 // Assets to cache immediately on install
-var STATIC_ASSETS = [
-    "/favicon.ico",
-    "/manifest.json",
-    "/manifest.webmanifest",
-];
+var STATIC_ASSETS = ["/favicon.ico", "/manifest.json", "/manifest.webmanifest"];
 
 // Reference to service worker scope
 var sw = self;
@@ -32,37 +28,43 @@ var sw = self;
 // ============================================
 sw.addEventListener("install", function (event) {
     event.waitUntil(
-        caches.open(STATIC_CACHE_NAME).then(function (cache) {
-            // Cache assets individually with error handling
-            // This prevents installation failure if some assets don't exist
-            return Promise.all(
-                STATIC_ASSETS.map(function (url) {
-                    return fetch(url)
-                        .then(function (response) {
-                            // Only cache successful responses
-                            if (response.ok) {
-                                return cache.put(url, response);
-                            }
-                            // Log failed URLs but don't reject
-                            console.warn(
-                                "Service Worker: Failed to cache",
-                                url,
-                                response.status,
-                            );
-                            return Promise.resolve();
-                        })
-                        .catch(function (error) {
-                            // Log errors but don't reject to allow installation to succeed
-                            console.warn(
-                                "Service Worker: Error caching",
-                                url,
-                                error.message,
-                            );
-                            return Promise.resolve();
-                        });
-                }),
-            );
-        }),
+        Promise.all([
+            // Pre-create named caches so they appear in DevTools immediately
+            caches.open(CACHE_NAME),
+            caches.open(API_CACHE_NAME),
+            caches.open(EMOJI_CACHE_NAME),
+            caches.open(STATIC_CACHE_NAME).then(function (cache) {
+                // Cache assets individually with error handling
+                // This prevents installation failure if some assets don't exist
+                return Promise.all(
+                    STATIC_ASSETS.map(function (url) {
+                        return fetch(url)
+                            .then(function (response) {
+                                // Only cache successful responses
+                                if (response.ok) {
+                                    return cache.put(url, response);
+                                }
+                                // Log failed URLs but don't reject
+                                console.warn(
+                                    "Service Worker: Failed to cache",
+                                    url,
+                                    response.status,
+                                );
+                                return Promise.resolve();
+                            })
+                            .catch(function (error) {
+                                // Log errors but don't reject to allow installation to succeed
+                                console.warn(
+                                    "Service Worker: Error caching",
+                                    url,
+                                    error.message,
+                                );
+                                return Promise.resolve();
+                            });
+                    }),
+                );
+            }),
+        ]),
     );
     // Skip waiting to activate immediately
     sw.skipWaiting();
@@ -144,6 +146,7 @@ sw.addEventListener("fetch", function (event) {
  */
 function isEmojiRequest(url) {
     return (
+        url.pathname.startsWith("/api/emoji/") ||
         url.pathname.includes("/storage/buckets/emojis/files/") ||
         (url.pathname.includes("/v1/storage/buckets/") &&
             url.pathname.includes("/emojis/"))
@@ -171,12 +174,26 @@ function isStaticAsset(pathname) {
 }
 
 /**
+ * APIs that must never be cached for security/session correctness
+ */
+function isSessionSensitiveApiPath(pathname) {
+    return (
+        pathname === "/api/me" ||
+        pathname === "/api/session" ||
+        pathname === "/api/login" ||
+        pathname === "/api/logout" ||
+        pathname === "/api/auth" ||
+        pathname.startsWith("/api/auth/")
+    );
+}
+
+/**
  * Handle emoji requests with cache-first strategy
  */
 function handleEmojiRequest(request) {
     return caches.open(EMOJI_CACHE_NAME).then(function (cache) {
         return cache.match(request).then(function (cachedResponse) {
-            if (cachedResponse) {
+            if (cachedResponse && cachedResponse.ok) {
                 // Return cached emoji immediately, update in background
                 fetch(request)
                     .then(function (response) {
@@ -191,14 +208,33 @@ function handleEmojiRequest(request) {
                 return cachedResponse;
             }
 
-            // Not in cache, fetch and cache
-            return fetch(request).then(function (response) {
-                if (response.status === 200) {
-                    cache.put(request, response.clone());
-                    enforceEmojiCacheLimit(cache);
-                }
-                return response;
-            });
+            // Not in cache (or cached response is bad), fetch and cache
+            return fetch(request)
+                .then(function (response) {
+                    if (response.status === 200) {
+                        cache.put(request, response.clone());
+                        enforceEmojiCacheLimit(cache);
+                    }
+
+                    if (
+                        response.status >= 500 &&
+                        cachedResponse &&
+                        cachedResponse.ok
+                    ) {
+                        return cachedResponse;
+                    }
+
+                    return response;
+                })
+                .catch(function () {
+                    if (cachedResponse && cachedResponse.ok) {
+                        return cachedResponse;
+                    }
+                    return new Response("Offline", {
+                        status: 503,
+                        headers: { "Content-Type": "text/plain" },
+                    });
+                });
         });
     });
 }
@@ -211,15 +247,57 @@ function handleApiRequest(request) {
         return fetch(request);
     }
 
-    return fetch(request).catch(function () {
-        return new Response(
-            JSON.stringify({ error: "Offline", offline: true }),
-            {
-                status: 503,
-                headers: { "Content-Type": "application/json" },
-            },
-        );
-    });
+    var url = new URL(request.url);
+
+    // Never cache session/auth-sensitive endpoints
+    if (isSessionSensitiveApiPath(url.pathname)) {
+        return fetch(request).catch(function () {
+            return new Response(
+                JSON.stringify({
+                    error: "Session Sensitive API Request(s) are not cached",
+                    offline: false,
+                }),
+                {
+                    status: 403,
+                    headers: { "Content-Type": "application/json" },
+                },
+            );
+        });
+    }
+
+    return fetch(request)
+        .then(function (response) {
+            if (response.status === 200) {
+                return caches.open(API_CACHE_NAME).then(function (cache) {
+                    return cache
+                        .put(request, response.clone())
+                        .then(function () {
+                            return response;
+                        });
+                });
+            }
+            return response;
+        })
+        .catch(function () {
+            return caches
+                .open(API_CACHE_NAME)
+                .then(function (cache) {
+                    return cache.match(request);
+                })
+                .then(function (cachedResponse) {
+                    if (cachedResponse) {
+                        return cachedResponse;
+                    }
+
+                    return new Response(
+                        JSON.stringify({ error: "Offline", offline: true }),
+                        {
+                            status: 503,
+                            headers: { "Content-Type": "application/json" },
+                        },
+                    );
+                });
+        });
 }
 
 /**
@@ -299,11 +377,9 @@ function enforceEmojiCacheLimit(cache) {
         }
 
         var excess = requests.length - EMOJI_CACHE_LIMIT;
-        var deletions = requests
-            .slice(0, excess)
-            .map(function (request) {
-                return cache.delete(request);
-            });
+        var deletions = requests.slice(0, excess).map(function (request) {
+            return cache.delete(request);
+        });
         return Promise.all(deletions);
     });
 }
