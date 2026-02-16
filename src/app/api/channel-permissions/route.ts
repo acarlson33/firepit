@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Client, Databases, Query, ID } from "node-appwrite";
 import type { Permission } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerSession } from "@/lib/auth-server";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const endpoint = env.endpoint;
@@ -23,6 +26,38 @@ if (
 }
 const databases = new Databases(client);
 
+async function requireManageChannelsAccessByServerId(serverId: string) {
+    const session = await getServerSession();
+    if (!session?.$id) {
+        return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+        );
+    }
+
+    const access = await getServerPermissionsForUser(
+        databases,
+        env,
+        serverId,
+        session.$id,
+    );
+
+    if (!access.isMember || !access.permissions.manageChannels) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return null;
+}
+
+async function requireManageChannelsAccessByChannelId(channelId: string) {
+    const channel = await databases.getDocument(
+        databaseId,
+        env.collections.channels,
+        channelId,
+    );
+    return requireManageChannelsAccessByServerId(String(channel.serverId));
+}
+
 // GET: List permission overrides for a channel
 export async function GET(request: NextRequest) {
     try {
@@ -36,6 +71,12 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        const authError =
+            await requireManageChannelsAccessByChannelId(channelId);
+        if (authError) {
+            return authError;
+        }
+
         const overrides = await databases.listDocuments(
             databaseId,
             overridesCollectionId,
@@ -44,7 +85,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ overrides: overrides.documents });
     } catch (error) {
-        console.error("Failed to list channel permissions:", error);
+        logger.error("Failed to list channel permissions", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to list channel permissions" },
             { status: 500 },
@@ -63,6 +106,12 @@ export async function POST(request: NextRequest) {
                 { error: "channelId is required" },
                 { status: 400 },
             );
+        }
+
+        const authError =
+            await requireManageChannelsAccessByChannelId(channelId);
+        if (authError) {
+            return authError;
         }
 
         if (!roleId && !userId) {
@@ -157,7 +206,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ override }, { status: 201 });
     } catch (error) {
-        console.error("Failed to create channel permission:", error);
+        logger.error("Failed to create channel permission", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to create channel permission" },
             { status: 500 },
@@ -176,6 +227,18 @@ export async function PUT(request: NextRequest) {
                 { error: "overrideId is required" },
                 { status: 400 },
             );
+        }
+
+        const existingOverride = await databases.getDocument(
+            databaseId,
+            overridesCollectionId,
+            overrideId,
+        );
+        const authError = await requireManageChannelsAccessByChannelId(
+            String(existingOverride.channelId),
+        );
+        if (authError) {
+            return authError;
         }
 
         // Validate permissions
@@ -219,7 +282,9 @@ export async function PUT(request: NextRequest) {
 
         return NextResponse.json({ override });
     } catch (error) {
-        console.error("Failed to update channel permission:", error);
+        logger.error("Failed to update channel permission", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to update channel permission" },
             { status: 500 },
@@ -240,6 +305,18 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
+        const existingOverride = await databases.getDocument(
+            databaseId,
+            overridesCollectionId,
+            overrideId,
+        );
+        const authError = await requireManageChannelsAccessByChannelId(
+            String(existingOverride.channelId),
+        );
+        if (authError) {
+            return authError;
+        }
+
         await databases.deleteDocument(
             databaseId,
             overridesCollectionId,
@@ -248,7 +325,9 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Failed to delete channel permission:", error);
+        logger.error("Failed to delete channel permission", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to delete channel permission" },
             { status: 500 },

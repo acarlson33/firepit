@@ -13,6 +13,10 @@ import {
     trackMessage,
     addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import {
+    MAX_MESSAGE_LENGTH,
+    MESSAGE_TOO_LONG_ERROR,
+} from "@/lib/message-constraints";
 import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
@@ -520,6 +524,16 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        if (text && text.length > MAX_MESSAGE_LENGTH) {
+            return jsonResponse(
+                {
+                    error: MESSAGE_TOO_LONG_ERROR,
+                    maxLength: MAX_MESSAGE_LENGTH,
+                },
+                { status: 400 },
+            );
+        }
+
         // Validate sender is the authenticated user
         if (senderId !== session.$id) {
             return jsonResponse(
@@ -765,6 +779,16 @@ export async function PATCH(request: NextRequest) {
             return jsonResponse({ error: "Text is required" }, { status: 400 });
         }
 
+        if (text.length > MAX_MESSAGE_LENGTH) {
+            return jsonResponse(
+                {
+                    error: MESSAGE_TOO_LONG_ERROR,
+                    maxLength: MAX_MESSAGE_LENGTH,
+                },
+                { status: 400 },
+            );
+        }
+
         if (!DIRECT_MESSAGES_COLLECTION) {
             return jsonResponse(
                 { error: "Direct messages not configured" },
@@ -811,10 +835,9 @@ export async function PATCH(request: NextRequest) {
             },
         });
     } catch (error) {
-        if (process.env.NODE_ENV === "development") {
-            // biome-ignore lint: development debugging
-            console.error("PATCH /api/direct-messages error:", error);
-        }
+        logger.error("PATCH /api/direct-messages error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return jsonResponse(
             {
                 error:
@@ -884,10 +907,9 @@ export async function DELETE(request: NextRequest) {
 
         return jsonResponse({ success: true });
     } catch (error) {
-        if (process.env.NODE_ENV === "development") {
-            // biome-ignore lint: development debugging
-            console.error("DELETE /api/direct-messages error:", error);
-        }
+        logger.error("DELETE /api/direct-messages error", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return jsonResponse(
             {
                 error:

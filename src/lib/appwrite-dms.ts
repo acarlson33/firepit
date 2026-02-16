@@ -9,11 +9,6 @@ const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 
-/** Build avatar URL without importing server-only appwrite-profiles module */
-function getAvatarUrl(fileId: string): string {
-    return `${env.endpoint}/storage/buckets/${env.buckets.avatars}/files/${fileId}/view?project=${env.project}`;
-}
-
 type ProfileData = {
     displayName?: string;
     avatarUrl?: string;

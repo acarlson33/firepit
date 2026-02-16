@@ -17,6 +17,10 @@ import {
     enrichMessageWithProfile,
     enrichMessageWithReplyContext,
 } from "@/lib/enrich-messages";
+import {
+    MAX_MESSAGE_LENGTH,
+    MESSAGE_TOO_LONG_ERROR,
+} from "@/lib/message-constraints";
 
 const env = getEnvConfig();
 
@@ -449,10 +453,16 @@ export function useMessages({
 
     async function applyEdit(target: Message) {
         try {
+            const trimmed = text.trim();
+            if (trimmed.length > MAX_MESSAGE_LENGTH) {
+                toast.error(MESSAGE_TOO_LONG_ERROR);
+                return;
+            }
+
             const response = await fetch(`/api/messages?id=${target.$id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text: text.trim() }),
+                body: JSON.stringify({ text: trimmed }),
             });
 
             if (!response.ok) {
@@ -561,6 +571,10 @@ export function useMessages({
             return;
         }
         const value = text.trim();
+        if (value.length > MAX_MESSAGE_LENGTH) {
+            toast.error(MESSAGE_TOO_LONG_ERROR);
+            return;
+        }
         if (
             !value &&
             !imageFileId &&

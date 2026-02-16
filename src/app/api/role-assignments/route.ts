@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Client, Databases, Query, ID } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerSession } from "@/lib/auth-server";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const endpoint = env.endpoint;
@@ -25,6 +28,29 @@ if (
 }
 const databases = new Databases(client);
 
+async function requireManageRolesAccess(serverId: string) {
+    const session = await getServerSession();
+    if (!session?.$id) {
+        return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+        );
+    }
+
+    const access = await getServerPermissionsForUser(
+        databases,
+        env,
+        serverId,
+        session.$id,
+    );
+
+    if (!access.isMember || !access.permissions.manageRoles) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return null;
+}
+
 // Helper function to update role member count
 async function updateRoleMemberCount(
     roleId: string,
@@ -47,7 +73,11 @@ async function updateRoleMemberCount(
             memberCount,
         });
     } catch (error) {
-        console.error("Failed to update role member count:", error);
+        logger.error("Failed to update role member count", {
+            roleId,
+            serverId,
+            error: error instanceof Error ? error.message : String(error),
+        });
         // Don't throw - this is a non-critical update
     }
 }
@@ -65,6 +95,11 @@ export async function GET(request: NextRequest) {
                 { error: "serverId is required" },
                 { status: 400 },
             );
+        }
+
+        const authError = await requireManageRolesAccess(serverId);
+        if (authError) {
+            return authError;
         }
 
         const queries = [Query.equal("serverId", serverId), Query.limit(100)];
@@ -136,7 +171,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ assignments: assignments.documents });
     } catch (error) {
-        console.error("Failed to list role assignments:", error);
+        logger.error("Failed to list role assignments", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to list role assignments" },
             { status: 500 },
@@ -155,6 +192,11 @@ export async function POST(request: NextRequest) {
                 { error: "userId, serverId, and roleId are required" },
                 { status: 400 },
             );
+        }
+
+        const authError = await requireManageRolesAccess(serverId);
+        if (authError) {
+            return authError;
         }
 
         // Check if user is a member of the server
@@ -228,7 +270,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ assignment }, { status: 201 });
     } catch (error) {
-        console.error("Failed to assign role:", error);
+        logger.error("Failed to assign role", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to assign role" },
             { status: 500 },
@@ -249,6 +293,11 @@ export async function DELETE(request: NextRequest) {
                 { error: "userId, serverId, and roleId are required" },
                 { status: 400 },
             );
+        }
+
+        const authError = await requireManageRolesAccess(serverId);
+        if (authError) {
+            return authError;
         }
 
         // Find the assignment
@@ -302,7 +351,9 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Failed to remove role:", error);
+        logger.error("Failed to remove role", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to remove role" },
             { status: 500 },

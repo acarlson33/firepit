@@ -331,10 +331,25 @@ export default function ChatPage() {
         userId,
         servers: serversApi.servers,
     });
+
+    const resolvedChannelId = useMemo(
+        () =>
+            channelsApi.channels.some(
+                (channel) => channel.$id === selectedChannel,
+            )
+                ? selectedChannel
+                : null,
+        [channelsApi.channels, selectedChannel],
+    );
+
+    useEffect(() => {
+        if (selectedChannel && !resolvedChannelId) {
+            setSelectedChannel(null);
+        }
+    }, [selectedChannel, resolvedChannelId]);
+
     const messagesApi = useMessages({
-        channelId:
-            channelsApi.channels.find((c) => c.$id === selectedChannel)?.$id ||
-            selectedChannel,
+        channelId: resolvedChannelId,
         serverId: serversApi.selectedServer,
         userId,
         userName,
@@ -359,7 +374,7 @@ export default function ChatPage() {
         send,
         userIdSlice,
         maxTypingDisplay: _maxTypingDisplay,
-        setMentionedNames,
+        setMentionedNames: _setMentionedNames,
     } = messagesApi;
 
     const typingUsersList = useMemo(
@@ -373,20 +388,6 @@ export default function ChatPage() {
                 .slice(0, _maxTypingDisplay ?? typingUsersList.length)
                 .map((t) => t.userName || t.userId.slice(0, userIdSlice)),
         [typingUsersList, _maxTypingDisplay, userIdSlice],
-    );
-
-    // Collect all display names visible in the chat so mentions with spaces
-    // (like "avery <3") can be highlighted even for old messages that don't
-    // have the correct mentions array stored in the database.
-    const knownDisplayNames = useMemo(
-        () => [
-            ...new Set(
-                messages
-                    .map((m) => m.displayName)
-                    .filter((n): n is string => Boolean(n)),
-            ),
-        ],
-        [messages],
     );
 
     // Auto-scroll to bottom on new messages
@@ -499,13 +500,13 @@ export default function ChatPage() {
 
             // Validate file type
             if (!file.type.startsWith("image/")) {
-                alert("Please select an image file");
+                toast.error("Please select an image file");
                 return;
             }
 
             // Validate file size (5MB)
             if (file.size > 5 * 1024 * 1024) {
-                alert("Image must be less than 5MB");
+                toast.error("Image must be less than 5MB");
                 return;
             }
 
@@ -591,7 +592,7 @@ export default function ChatPage() {
         setFileAttachments((prev) => prev.filter((_, i) => i !== index));
     }, []);
 
-    const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const _handlePaste = useCallback((e: React.ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) {
             return;

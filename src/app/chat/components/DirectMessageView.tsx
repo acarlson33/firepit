@@ -36,6 +36,7 @@ import type {
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
+import { toast } from "sonner";
 
 // Use virtual scrolling when message count exceeds this threshold
 const VIRTUALIZATION_THRESHOLD = 50;
@@ -227,13 +228,13 @@ export function DirectMessageView({
 
         // Validate file type
         if (!file.type.startsWith("image/")) {
-            alert("Please select an image file");
+            toast.error("Please select an image file");
             return;
         }
 
         // Validate file size (5MB)
         if (file.size > 5 * 1024 * 1024) {
-            alert("Image must be less than 5MB");
+            toast.error("Image must be less than 5MB");
             return;
         }
 

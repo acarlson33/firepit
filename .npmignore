@@ -1,0 +1,39 @@
+# Ignore development and build artifacts
+node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.bun
+bun.lockb
+
+# Build outputs
+.next
+out
+dist
+build
+coverage
+
+# Editor and tooling
+.vscode
+.idea
+.DS_Store
+*.swp
+*.swo
+
+# Repo metadata
+.git
+.github
+
+# Local env/config
+.env*
+!.env.example
+
+# Tests and fixtures
+__tests__
+**/__mocks__
+**/*.spec.*
+**/*.test.*
+
+# Docs and scripts not needed in package
+/docs
+/scripts

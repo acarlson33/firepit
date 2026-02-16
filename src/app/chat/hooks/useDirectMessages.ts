@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import {
     listDirectMessages,
@@ -11,6 +12,10 @@ import {
 import type { DirectMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
+import {
+    MAX_MESSAGE_LENGTH,
+    MESSAGE_TOO_LONG_ERROR,
+} from "@/lib/message-constraints";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
@@ -204,6 +209,11 @@ export function useDirectMessages({
                 return;
             }
 
+            if (text && text.length > MAX_MESSAGE_LENGTH) {
+                toast.error(MESSAGE_TOO_LONG_ERROR);
+                return;
+            }
+
             setSending(true);
             try {
                 const message = await sendDirectMessage(
@@ -272,11 +282,12 @@ export function useDirectMessages({
                     );
                 });
             } catch (err) {
-                throw new Error(
+                const msg =
                     err instanceof Error
                         ? err.message
-                        : "Failed to send message",
-                );
+                        : "Failed to send message";
+                toast.error(msg);
+                throw new Error(msg);
             } finally {
                 setSending(false);
             }
@@ -291,7 +302,13 @@ export function useDirectMessages({
             }
 
             try {
-                await editDirectMessage(messageId, newText.trim());
+                const trimmed = newText.trim();
+                if (trimmed.length > MAX_MESSAGE_LENGTH) {
+                    toast.error(MESSAGE_TOO_LONG_ERROR);
+                    return;
+                }
+
+                await editDirectMessage(messageId, trimmed);
                 await loadMessages();
             } catch (err) {
                 throw new Error(

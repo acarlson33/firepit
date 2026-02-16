@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { Client, Databases, Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerSession } from "@/lib/auth-server";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const endpoint = env.endpoint;
@@ -31,6 +34,25 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
     try {
         const { serverId } = await context.params;
+
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
+
+        if (!access.isMember || !access.permissions.manageRoles) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
         // Get all memberships for this server
         const memberships = await databases.listDocuments(
@@ -86,7 +108,9 @@ export async function GET(request: Request, context: RouteContext) {
 
         return NextResponse.json({ members });
     } catch (error) {
-        console.error("Failed to list server members:", error);
+        logger.error("Failed to list server members", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to list server members" },
             { status: 500 },

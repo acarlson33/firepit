@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getFeatureFlag, FEATURE_FLAGS } from "@/lib/feature-flags";
+import { logger } from "@/lib/newrelic-utils";
 
 export async function GET() {
     try {
@@ -7,7 +8,9 @@ export async function GET() {
 
         return NextResponse.json({ enabled });
     } catch (error) {
-        console.error("Failed to get feature flag:", error);
+        logger.error("Failed to get allow-user-servers feature flag", {
+            error: error instanceof Error ? error.message : String(error),
+        });
 
         // Default to false if there's an error
         return NextResponse.json({ enabled: false });
