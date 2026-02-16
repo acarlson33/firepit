@@ -1820,10 +1820,12 @@ export default function ChatPage() {
                                                                         "ring-amber-400",
                                                                     );
                                                                     window.setTimeout(() => {
-                                                                        target.classList.remove(
-                                                                            "ring-2",
-                                                                            "ring-amber-400",
-                                                                        );
+                                                                        if (document.getElementById(`message-${item.message.$id}`)) {
+                                                                            target.classList.remove(
+                                                                                "ring-2",
+                                                                                "ring-amber-400",
+                                                                            );
+                                                                        }
                                                                     }, 2000);
                                                                 }
                                                             }}

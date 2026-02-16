@@ -1174,10 +1174,12 @@ export function DirectMessageView({
                                                     "ring-amber-400",
                                                 );
                                                 window.setTimeout(() => {
-                                                    target.classList.remove(
-                                                        "ring-2",
-                                                        "ring-amber-400",
-                                                    );
+                                                    if (document.querySelector(`[data-message-id="${message.$id}"]`)) {
+                                                        target.classList.remove(
+                                                            "ring-2",
+                                                            "ring-amber-400",
+                                                        );
+                                                    }
                                                 }, 2000);
                                             }
                                         }}
