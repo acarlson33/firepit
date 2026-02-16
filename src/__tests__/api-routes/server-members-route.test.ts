@@ -113,7 +113,15 @@ describe("server members route", () => {
                     },
                 ],
             })
-            .mockResolvedValueOnce({ documents: [] });
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user-2",
+                        displayName: "User Two",
+                        avatarUrl: "two.png",
+                    },
+                ],
+            });
 
         const response = await GET(
             new NextRequest("http://localhost/api/servers/server-1/members"),

@@ -1,9 +1,6 @@
 import { ID, Query } from "appwrite";
 
-import {
-  getBrowserDatabases,
-  getEnvConfig,
-} from "./appwrite-core";
+import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
 
 // Environment derived identifiers (centralized)
@@ -17,279 +14,314 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
  * Fetch attachments for multiple messages and enrich them
  */
 async function enrichMessagesWithAttachments(
-  messages: Message[],
-  messageType: "channel" | "dm"
+    messages: Message[],
+    messageType: "channel" | "dm",
 ): Promise<Message[]> {
-  if (!messages || messages.length === 0) {
-    return messages;
-  }
-
-  if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
-    return messages;
-  }
-
-  try {
-    // Get all message IDs
-    const messageIds = messages.map((m) => m.$id);
-
-    // Query attachments for all messages
-    const response = await getDatabases().listDocuments({
-      databaseId: DATABASE_ID,
-      collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
-      queries: [
-        Query.equal("messageId", messageIds),
-        Query.equal("messageType", messageType),
-        Query.limit(1000), // High limit to get all attachments
-      ],
-    });
-
-    // Group attachments by messageId
-    const attachmentsByMessageId = new Map<string, FileAttachment[]>();
-    for (const doc of response.documents) {
-      const d = doc as Record<string, unknown>;
-      const messageId = String(d.messageId);
-      const attachment: FileAttachment = {
-        fileId: String(d.fileId),
-        fileName: String(d.fileName),
-        fileSize: Number(d.fileSize),
-        fileType: String(d.fileType),
-        fileUrl: String(d.fileUrl),
-        thumbnailUrl: d.thumbnailUrl ? String(d.thumbnailUrl) : undefined,
-      };
-
-      if (!attachmentsByMessageId.has(messageId)) {
-        attachmentsByMessageId.set(messageId, []);
-      }
-      const messageAttachments = attachmentsByMessageId.get(messageId);
-      if (messageAttachments) {
-        messageAttachments.push(attachment);
-      }
+    if (!messages || messages.length === 0) {
+        return messages;
     }
 
-    // Enrich messages with their attachments
-    return messages.map((message) => {
-      const attachments = attachmentsByMessageId.get(message.$id);
-      if (attachments && attachments.length > 0) {
-        return { ...message, attachments };
-      }
-      return message;
-    });
-  } catch {
-    // If attachment fetch fails, return messages without attachments
-    return messages;
-  }
+    if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
+        return messages;
+    }
+
+    try {
+        // Get all message IDs
+        const messageIds = messages.map((m) => m.$id);
+
+        // Query attachments for all messages
+        const response = await getDatabases().listDocuments({
+            databaseId: DATABASE_ID,
+            collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+            queries: [
+                Query.equal("messageId", messageIds),
+                Query.equal("messageType", messageType),
+                Query.limit(1000), // High limit to get all attachments
+            ],
+        });
+
+        // Group attachments by messageId
+        const attachmentsByMessageId = new Map<string, FileAttachment[]>();
+        for (const doc of response.documents) {
+            const d = doc as Record<string, unknown>;
+            const messageId = String(d.messageId);
+            const attachment: FileAttachment = {
+                fileId: String(d.fileId),
+                fileName: String(d.fileName),
+                fileSize: Number(d.fileSize),
+                fileType: String(d.fileType),
+                fileUrl: String(d.fileUrl),
+                thumbnailUrl: d.thumbnailUrl
+                    ? String(d.thumbnailUrl)
+                    : undefined,
+            };
+
+            if (!attachmentsByMessageId.has(messageId)) {
+                attachmentsByMessageId.set(messageId, []);
+            }
+            const messageAttachments = attachmentsByMessageId.get(messageId);
+            if (messageAttachments) {
+                messageAttachments.push(attachment);
+            }
+        }
+
+        // Enrich messages with their attachments
+        return messages.map((message) => {
+            const attachments = attachmentsByMessageId.get(message.$id);
+            if (attachments && attachments.length > 0) {
+                return { ...message, attachments };
+            }
+            return message;
+        });
+    } catch {
+        // If attachment fetch fails, return messages without attachments
+        return messages;
+    }
 }
 
 export type ListOptions = {
-  limit?: number;
-  cursorAfter?: string;
-  channelId?: string;
-  order?: "asc" | "desc";
+    limit?: number;
+    cursorAfter?: string;
+    channelId?: string;
+    order?: "asc" | "desc";
 };
 
 function getDatabases() {
-  return getBrowserDatabases();
+    return getBrowserDatabases();
 }
 
 export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
-  const queries = buildMessageListQueries(opts);
-  const res = await getDatabases().listDocuments({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    queries,
-  });
-  const messages = mapMessageDocs(
-    (res as unknown as { documents?: unknown[] }).documents || []
-  );
-  return enrichMessagesWithAttachments(messages, "channel");
+    const queries = buildMessageListQueries(opts);
+    const res = await getDatabases().listDocuments({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        queries,
+    });
+    const messages = mapMessageDocs(
+        (res as unknown as { documents?: unknown[] }).documents || [],
+    );
+    return enrichMessagesWithAttachments(messages, "channel");
 }
 
 function buildMessageListQueries(opts: ListOptions) {
-  const q: string[] = [];
-  if (opts.limit) {
-    q.push(Query.limit(opts.limit));
-  }
-  if (opts.cursorAfter) {
-    q.push(Query.cursorAfter(opts.cursorAfter));
-  }
-  if (opts.channelId) {
-    q.push(Query.equal("channelId", opts.channelId));
-  }
-  q.push(
-    opts.order === "desc"
-      ? Query.orderDesc("$createdAt")
-      : Query.orderAsc("$createdAt")
-  );
-  return q;
+    const q: string[] = [];
+    if (opts.limit) {
+        q.push(Query.limit(opts.limit));
+    }
+    if (opts.cursorAfter) {
+        q.push(Query.cursorAfter(opts.cursorAfter));
+    }
+    if (opts.channelId) {
+        q.push(Query.equal("channelId", opts.channelId));
+    }
+    q.push(
+        opts.order === "desc"
+            ? Query.orderDesc("$createdAt")
+            : Query.orderAsc("$createdAt"),
+    );
+    return q;
 }
 
 function mapMessageDocs(list: unknown[]): Message[] {
-  const out: Message[] = [];
-  for (const raw of list) {
-    const m = coerceMessage(raw);
-    if (m) {
-      out.push(m);
+    const out: Message[] = [];
+    for (const raw of list) {
+        const m = coerceMessage(raw);
+        if (m) {
+            out.push(m);
+        }
     }
-  }
-  return out;
+    return out;
 }
 
 function coerceMessage(raw: unknown): Message | null {
-  if (typeof raw !== "object" || !raw || !("$id" in raw)) {
-    return null;
-  }
-  const d = raw as Record<string, unknown> & { $id: string };
-  
-  // Handle reactions - can be string (JSON) or already parsed array from database
-  let reactions: Array<{emoji: string; userIds: string[]; count: number}> | undefined;
-  if (d.reactions) {
-    if (typeof d.reactions === "string") {
-      try {
-        const parsed = JSON.parse(d.reactions);
-        reactions = Array.isArray(parsed) ? parsed : undefined;
-      } catch {
-        reactions = undefined;
-      }
-    } else if (Array.isArray(d.reactions)) {
-      reactions = d.reactions as Array<{emoji: string; userIds: string[]; count: number}>;
+    if (typeof raw !== "object" || !raw || !("$id" in raw)) {
+        return null;
     }
-  }
-  
-  return {
-    $id: String(d.$id),
-    userId: String(d.userId),
-    userName: typeof d.userName === "string" ? d.userName : undefined,
-    text: String(d.text),
-    $createdAt: String(d.$createdAt ?? ""),
-    channelId: typeof d.channelId === "string" ? d.channelId : undefined,
-    editedAt: typeof d.editedAt === "string" ? d.editedAt : undefined,
-    removedAt: typeof d.removedAt === "string" ? d.removedAt : undefined,
-    removedBy: typeof d.removedBy === "string" ? d.removedBy : undefined,
-    serverId: typeof d.serverId === "string" ? d.serverId : undefined,
-    replyToId: typeof d.replyToId === "string" ? d.replyToId : undefined,
-    reactions,
-    imageFileId: typeof d.imageFileId === "string" ? d.imageFileId : undefined,
-    imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,
-    mentions: Array.isArray(d.mentions) ? d.mentions as string[] : undefined,
-  };
+    const d = raw as Record<string, unknown> & { $id: string };
+
+    // Handle reactions - can be string (JSON) or already parsed array from database
+    let reactions:
+        | Array<{ emoji: string; userIds: string[]; count: number }>
+        | undefined;
+    if (d.reactions) {
+        if (typeof d.reactions === "string") {
+            try {
+                const parsed = JSON.parse(d.reactions);
+                reactions = Array.isArray(parsed) ? parsed : undefined;
+            } catch {
+                reactions = undefined;
+            }
+        } else if (Array.isArray(d.reactions)) {
+            reactions = d.reactions as Array<{
+                emoji: string;
+                userIds: string[];
+                count: number;
+            }>;
+        }
+    }
+
+    return {
+        $id: String(d.$id),
+        userId: String(d.userId),
+        userName: typeof d.userName === "string" ? d.userName : undefined,
+        text: String(d.text),
+        $createdAt: String(d.$createdAt ?? ""),
+        channelId: typeof d.channelId === "string" ? d.channelId : undefined,
+        editedAt: typeof d.editedAt === "string" ? d.editedAt : undefined,
+        removedAt: typeof d.removedAt === "string" ? d.removedAt : undefined,
+        removedBy: typeof d.removedBy === "string" ? d.removedBy : undefined,
+        serverId: typeof d.serverId === "string" ? d.serverId : undefined,
+        replyToId: typeof d.replyToId === "string" ? d.replyToId : undefined,
+        threadId: typeof d.threadId === "string" ? d.threadId : undefined,
+        threadMessageCount:
+            typeof d.threadMessageCount === "number"
+                ? d.threadMessageCount
+                : undefined,
+        threadParticipants: Array.isArray(d.threadParticipants)
+            ? (d.threadParticipants as string[])
+            : undefined,
+        lastThreadReplyAt:
+            typeof d.lastThreadReplyAt === "string"
+                ? d.lastThreadReplyAt
+                : undefined,
+        reactions,
+        imageFileId:
+            typeof d.imageFileId === "string" ? d.imageFileId : undefined,
+        imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,
+        mentions: Array.isArray(d.mentions)
+            ? (d.mentions as string[])
+            : undefined,
+    };
 }
 
 type SendMessageInput = {
-  userId: string;
-  text: string;
-  userName?: string;
-  channelId?: string;
-  serverId?: string;
-  replyToId?: string;
+    userId: string;
+    text: string;
+    userName?: string;
+    channelId?: string;
+    serverId?: string;
+    replyToId?: string;
 };
 
 export async function sendMessage(input: SendMessageInput): Promise<Message> {
-  const { userId, text, userName, channelId, serverId, replyToId } = input;
-  // Import Permission and Role from appwrite for client SDK
-  const { Permission, Role } = await import("appwrite");
-  const permissions = [
-    Permission.read(Role.any()),
-    Permission.update(Role.user(userId)),
-    Permission.delete(Role.user(userId)),
-  ];
-  const res = await getDatabases().createDocument({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    documentId: ID.unique(),
-    data: { userId, text, userName, channelId, serverId, replyToId },
-    permissions,
-  });
-  const doc = res as unknown as Record<string, unknown>;
-  return {
-    $id: String(doc.$id),
-    userId: String(doc.userId),
-    userName: doc.userName as string | undefined,
-    text: String(doc.text),
-    $createdAt: String(doc.$createdAt ?? ""),
-    channelId: doc.channelId as string | undefined,
-    removedAt: doc.removedAt as string | undefined,
-    removedBy: doc.removedBy as string | undefined,
-    serverId: doc.serverId as string | undefined,
-    replyToId: doc.replyToId as string | undefined,
-  };
+    const { userId, text, userName, channelId, serverId, replyToId } = input;
+    // Import Permission and Role from appwrite for client SDK
+    const { Permission, Role } = await import("appwrite");
+    const permissions = [
+        Permission.read(Role.any()),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+    ];
+    const res = await getDatabases().createDocument({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        documentId: ID.unique(),
+        data: { userId, text, userName, channelId, serverId, replyToId },
+        permissions,
+    });
+    const doc = res as unknown as Record<string, unknown>;
+    return {
+        $id: String(doc.$id),
+        userId: String(doc.userId),
+        userName: doc.userName as string | undefined,
+        text: String(doc.text),
+        $createdAt: String(doc.$createdAt ?? ""),
+        channelId: doc.channelId as string | undefined,
+        removedAt: doc.removedAt as string | undefined,
+        removedBy: doc.removedBy as string | undefined,
+        serverId: doc.serverId as string | undefined,
+        replyToId: doc.replyToId as string | undefined,
+        threadId: doc.threadId as string | undefined,
+        threadMessageCount:
+            typeof doc.threadMessageCount === "number"
+                ? doc.threadMessageCount
+                : undefined,
+        threadParticipants: Array.isArray(doc.threadParticipants)
+            ? (doc.threadParticipants as string[])
+            : undefined,
+        lastThreadReplyAt: doc.lastThreadReplyAt as string | undefined,
+    };
 }
 
 export async function editMessage(messageId: string, text: string) {
-  const editedAt = new Date().toISOString();
-  const res = await getDatabases().updateDocument({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    documentId: messageId,
-    data: { text, editedAt },
-  });
-  return res as unknown as Message;
+    const editedAt = new Date().toISOString();
+    const res = await getDatabases().updateDocument({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        documentId: messageId,
+        data: { text, editedAt },
+    });
+    return res as unknown as Message;
 }
 
 export async function deleteMessage(messageId: string) {
-  await getDatabases().deleteDocument({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    documentId: messageId,
-  });
+    await getDatabases().deleteDocument({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        documentId: messageId,
+    });
 }
 
 // Soft delete (moderation) – marks message as removed but keeps for audit
 export async function softDeleteMessage(
-  messageId: string,
-  moderatorId: string
+    messageId: string,
+    moderatorId: string,
 ) {
-  const removedAt = new Date().toISOString();
-  const res = await getDatabases().updateDocument({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    documentId: messageId,
-    data: { removedAt, removedBy: moderatorId },
-  });
-  return res as unknown as Message;
+    const removedAt = new Date().toISOString();
+    const res = await getDatabases().updateDocument({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        documentId: messageId,
+        data: { removedAt, removedBy: moderatorId },
+    });
+    return res as unknown as Message;
 }
 
 export async function restoreMessage(messageId: string) {
-  const res = await getDatabases().updateDocument({
-    databaseId: DATABASE_ID,
-    collectionId: COLLECTION_ID,
-    documentId: messageId,
-    data: { removedAt: null, removedBy: null },
-  });
-  return res as unknown as Message;
+    const res = await getDatabases().updateDocument({
+        databaseId: DATABASE_ID,
+        collectionId: COLLECTION_ID,
+        documentId: messageId,
+        data: { removedAt: null, removedBy: null },
+    });
+    return res as unknown as Message;
 }
 
 // Typing indicator: create/update ephemeral doc per user+channel via API route
 // This now uses the server-side API to avoid permission issues
 export async function setTyping(
-  userId: string,
-  channelId: string,
-  userName: string | undefined,
-  isTyping: boolean
+    userId: string,
+    channelId: string,
+    userName: string | undefined,
+    isTyping: boolean,
 ) {
-  if (!TYPING_COLLECTION_ID) {
-    return;
-  }
-  
-  try {
-    if (isTyping) {
-      // Call the API route to create or update typing status
-      await fetch("/api/typing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          channelId,
-          userName,
-        }),
-      });
-    } else {
-      // Call the API route to delete typing status
-      await fetch(`/api/typing?channelId=${encodeURIComponent(channelId)}`, {
-        method: "DELETE",
-      });
+    if (!TYPING_COLLECTION_ID) {
+        return;
     }
-  } catch {
-    // swallow; ephemeral
-  }
+
+    try {
+        if (isTyping) {
+            // Call the API route to create or update typing status
+            await fetch("/api/typing", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    channelId,
+                    userName,
+                }),
+            });
+        } else {
+            // Call the API route to delete typing status
+            await fetch(
+                `/api/typing?channelId=${encodeURIComponent(channelId)}`,
+                {
+                    method: "DELETE",
+                },
+            );
+        }
+    } catch {
+        // swallow; ephemeral
+    }
 }
 
 // Basic flood protection heuristic client-side
@@ -297,29 +329,29 @@ const recent: string[] = [];
 const FLOOD_WINDOW_MS = 5000;
 const FLOOD_MAX_MESSAGES = 8;
 export function canSend() {
-  const now = Date.now();
-  const cutoff = now - FLOOD_WINDOW_MS;
-  while (recent.length && Number(recent[0]) < cutoff) {
-    recent.shift();
-  }
-  if (recent.length >= FLOOD_MAX_MESSAGES) {
-    return false;
-  }
-  recent.push(String(now));
-  return true;
+    const now = Date.now();
+    const cutoff = now - FLOOD_WINDOW_MS;
+    while (recent.length && Number(recent[0]) < cutoff) {
+        recent.shift();
+    }
+    if (recent.length >= FLOOD_MAX_MESSAGES) {
+        return false;
+    }
+    recent.push(String(now));
+    return true;
 }
 
 // Helper: fetch recent messages (returns ascending order for straightforward rendering)
 export async function listRecentMessages(
-  limit = 30,
-  cursorAfter?: string,
-  channelId?: string
+    limit = 30,
+    cursorAfter?: string,
+    channelId?: string,
 ) {
-  const page = await listMessages({
-    limit,
-    cursorAfter,
-    channelId,
-    order: "desc",
-  });
-  return page.reverse();
+    const page = await listMessages({
+        limit,
+        cursorAfter,
+        channelId,
+        order: "desc",
+    });
+    return page.reverse();
 }

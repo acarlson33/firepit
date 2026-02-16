@@ -68,6 +68,7 @@ export type EnvConfig = {
         directMessages: string;
         statuses: string;
         messageAttachments: string;
+        pinnedMessages: string;
         featureFlags: string;
         notificationSettings: string;
     };
@@ -207,6 +208,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID,
                 "message_attachments",
             ) || "message_attachments",
+        pinnedMessages:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_PINNED_MESSAGES_COLLECTION_ID,
+                process.env.APPWRITE_PINNED_MESSAGES_COLLECTION_ID,
+                "pinned_messages",
+            ) || "pinned_messages",
         featureFlags:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_FEATURE_FLAGS_COLLECTION_ID,

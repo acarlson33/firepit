@@ -1,6 +1,6 @@
 # Firepit Development Roadmap
 
-> Last Updated: February 14, 2026
+> Last Updated: February 16, 2026
 
 This roadmap outlines the planned features and improvements for Firepit, prioritized by impact and complexity.
 
@@ -408,17 +408,17 @@ attachments?: Array<{
 
 ## 📊 Medium Priority Features (UX Improvements)
 
-### 7. Message Threads 📊 **[Q2 2026]**
+### 7. Message Threads ✅ **[COMPLETED - Q1 2026]**
 
 **Goal:** Create threaded conversations from any message.
 
 **Technical Requirements:**
 
-- Add `threadId` reference to messages
-- Create thread view UI (side panel)
-- Show thread indicators on parent messages
-- Support notifications for thread replies
-- Display thread participant count
+- Add `threadId` reference to messages ✅
+- Create thread view UI (side panel) ✅
+- Show thread indicators on parent messages ✅
+- Support thread replies for both channels and DMs ✅
+- Display thread participant count ✅
 
 **Database Changes:**
 
@@ -432,32 +432,35 @@ lastThreadReplyAt?: string;
 
 **API Endpoints:**
 
-- `GET /api/messages/[messageId]/thread` - Get thread replies
-- `POST /api/messages/[messageId]/thread` - Reply to thread
-- Real-time: Subscribe to thread updates
+- `GET /api/messages/[messageId]/thread` - Get channel thread replies ✅
+- `POST /api/messages/[messageId]/thread` - Reply to channel thread ✅
+- `GET /api/direct-messages/[messageId]/thread` - Get DM thread replies ✅
+- `POST /api/direct-messages/[messageId]/thread` - Reply to DM thread ✅
 
 **UI Components:**
 
-- `ThreadPanel.tsx` - Side panel showing thread
-- `ThreadIndicator.tsx` - Badge on parent message showing reply count
-- `StartThreadButton.tsx` - Action to start thread
-- `ThreadNotification.tsx` - Thread reply notifications
+- Side panel showing thread in channel and DM views ✅
+- Thread indicators on parent messages showing reply counts ✅
+- Dedicated "Start thread" action on messages ✅
+- Thread replies separated from main timeline ✅
+
+**Status:** ✅ Complete - Threading is fully implemented for channels and DMs with dedicated APIs, side-panel thread UI, distinct start-thread actions, and thread replies excluded from the main conversation feed.
 
 **Estimated Effort:** 4-5 weeks
 
 ---
 
-### 8. Message Pinning 📊 **[Q2 2026]**
+### 8. Message Pinning ✅ **[COMPLETED - Q1 2026]**
 
 **Goal:** Pin important messages to the top of channels.
 
 **Technical Requirements:**
 
-- Add `pinned` collection or boolean flag on messages
-- Limit pinned messages per channel (e.g., 50 max)
-- Create pinned messages view
-- Require "Manage Messages" permission
-- Add pin/unpin notifications to channel
+- Add separate `pinned_messages` collection ✅
+- Limit pinned messages per context (50 max) ✅
+- Create pinned messages side panel view ✅
+- Require `manageMessages` permission for channel pin/unpin ✅
+- Support pin/unpin in both channels and DMs ✅
 
 **Database Changes:**
 
@@ -479,15 +482,20 @@ type PinnedMessage = {
 
 **API Endpoints:**
 
-- `POST /api/messages/[messageId]/pin` - Pin message
-- `DELETE /api/messages/[messageId]/pin` - Unpin message
-- `GET /api/channels/[channelId]/pins` - List pinned messages
+- `POST /api/messages/[messageId]/pin` - Pin channel message ✅
+- `DELETE /api/messages/[messageId]/pin` - Unpin channel message ✅
+- `GET /api/channels/[channelId]/pins` - List channel pinned messages ✅
+- `POST /api/direct-messages/[messageId]/pin` - Pin DM message ✅
+- `DELETE /api/direct-messages/[messageId]/pin` - Unpin DM message ✅
+- `GET /api/conversations/[conversationId]/pins` - List DM pinned messages ✅
 
 **UI Components:**
 
-- `PinnedMessagesPanel.tsx` - View all pinned messages
-- `PinButton.tsx` - Pin/unpin action in message menu
-- `PinnedBanner.tsx` - Show newest pinned message at top
+- Pinned messages panel in dedicated side area ✅
+- Pin/unpin action in message controls ✅
+- Pinned state indicators in message rows ✅
+
+**Status:** ✅ Complete - Pinning is implemented for channels and DMs with context-aware storage, permission enforcement for channel moderation, 50-item caps, and dedicated pinned-message side panel UI.
 
 **Estimated Effort:** 2-3 weeks
 

@@ -34,6 +34,10 @@ export type Message = {
     imageUrl?: string;
     attachments?: FileAttachment[]; // File attachments beyond images
     replyToId?: string; // ID of the message this is replying to
+    threadId?: string; // Parent message ID when this is a thread reply
+    threadMessageCount?: number; // Number of direct thread replies on parent message
+    threadParticipants?: string[]; // User IDs that have replied in the thread
+    lastThreadReplyAt?: string;
     mentions?: string[]; // Array of mentioned user IDs
     reactions?: Array<{
         emoji: string; // Emoji character or custom emoji ID
@@ -129,6 +133,10 @@ export type DirectMessage = {
     removedAt?: string;
     removedBy?: string;
     replyToId?: string; // ID of the message this is replying to
+    threadId?: string; // Parent message ID when this is a thread reply
+    threadMessageCount?: number; // Number of direct thread replies on parent message
+    threadParticipants?: string[]; // User IDs that have replied in the thread
+    lastThreadReplyAt?: string;
     mentions?: string[]; // Array of mentioned user IDs
     reactions?: Array<{
         emoji: string; // Emoji character or custom emoji ID
@@ -255,6 +263,15 @@ export type PermissionCheck = {
 // Utility type for effective permissions after calculating hierarchy
 export type EffectivePermissions = {
     [K in Permission]: boolean;
+};
+
+export type PinnedMessage = {
+    $id: string;
+    messageId: string;
+    contextType: "channel" | "conversation";
+    contextId: string;
+    pinnedBy: string;
+    pinnedAt: string;
 };
 
 // ============ Notification System Types ============

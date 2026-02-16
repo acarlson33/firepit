@@ -8,7 +8,7 @@ import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { formatMessageTimestamp } from "@/lib/utils";
-import { MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, Pencil, Pin, Reply, Trash2 } from "lucide-react";
 
 type VirtualizedMessageListProps = {
     messages: Message[];
@@ -20,6 +20,8 @@ type VirtualizedMessageListProps = {
     onStartEdit: (message: Message) => void;
     onStartReply: (message: Message) => void;
     onRemove: (id: string) => void;
+    onTogglePin?: (message: Message) => Promise<void>;
+    onOpenThread?: (message: Message) => Promise<void>;
     onToggleReaction: (
         messageId: string,
         emoji: string,
@@ -37,6 +39,7 @@ type VirtualizedMessageListProps = {
     shouldShowLoadOlder: boolean;
     onLoadOlder: () => void;
     messageDensity?: "compact" | "cozy";
+    pinnedMessageIds?: string[];
 };
 
 export function VirtualizedMessageList({
@@ -49,6 +52,8 @@ export function VirtualizedMessageList({
     onStartEdit,
     onStartReply,
     onRemove,
+    onTogglePin,
+    onOpenThread,
     onToggleReaction,
     onOpenProfileModal,
     onOpenImageViewer,
@@ -57,6 +62,7 @@ export function VirtualizedMessageList({
     shouldShowLoadOlder,
     onLoadOlder,
     messageDensity = "compact",
+    pinnedMessageIds,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
 
@@ -73,6 +79,9 @@ export function VirtualizedMessageList({
                 const isEditing = editingMessageId === m.$id;
                 const removed = Boolean(m.removedAt);
                 const isDeleting = deleteConfirmId === m.$id;
+                const isPinned =
+                    Array.isArray(pinnedMessageIds) &&
+                    pinnedMessageIds.includes(m.$id);
                 const displayName =
                     m.displayName ||
                     m.userName ||
@@ -80,6 +89,7 @@ export function VirtualizedMessageList({
 
                 return (
                     <div
+                        id={`message-${m.$id}`}
                         className={`group mx-4 flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
                             mine
                                 ? "ml-auto max-w-[85%] flex-row-reverse text-right"
@@ -134,6 +144,12 @@ export function VirtualizedMessageList({
                                 {removed && (
                                     <span className="text-destructive">
                                         (removed)
+                                    </span>
+                                )}
+                                {isPinned && (
+                                    <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                        <Pin className="h-3 w-3" />
+                                        Pinned
                                     </span>
                                 )}
                             </div>
@@ -239,6 +255,25 @@ export function VirtualizedMessageList({
                                 </div>
                             )}
 
+                            {typeof m.threadMessageCount === "number" &&
+                                m.threadMessageCount > 0 &&
+                                onOpenThread && (
+                                    <button
+                                        aria-label={`View thread with ${m.threadMessageCount} ${m.threadMessageCount === 1 ? "reply" : "replies"}`}
+                                        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                                        onClick={() => {
+                                            void onOpenThread(m);
+                                        }}
+                                        type="button"
+                                    >
+                                        <MessageSquare className="h-3 w-3" />
+                                        {m.threadMessageCount}{" "}
+                                        {m.threadMessageCount === 1
+                                            ? "reply"
+                                            : "replies"}
+                                    </button>
+                                )}
+
                             {!removed && (
                                 <div
                                     className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
@@ -257,13 +292,42 @@ export function VirtualizedMessageList({
                                         }}
                                     />
                                     <Button
+                                        aria-label="Reply"
                                         onClick={() => onStartReply(m)}
                                         size="sm"
                                         type="button"
                                         variant="ghost"
                                     >
-                                        <MessageSquare className="h-4 w-4" />
+                                        <Reply className="h-4 w-4" />
                                     </Button>
+                                    {onOpenThread && (
+                                        <Button
+                                            aria-label="Start thread"
+                                            onClick={() => {
+                                                void onOpenThread(m);
+                                            }}
+                                            size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <MessageSquare className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                    {onTogglePin && (
+                                        <Button
+                                            aria-label={isPinned ? "Unpin message" : "Pin message"}
+                                            onClick={() => {
+                                                void onTogglePin(m);
+                                            }}
+                                            size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <Pin
+                                                className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
+                                            />
+                                        </Button>
+                                    )}
                                     {mine && (
                                         <>
                                             <Button
