@@ -510,6 +510,7 @@ export function DirectMessageView({
 
                                     return (
                                         <div
+                                            data-message-id={message.$id}
                                             className={`group flex ${
                                                 isEditing
                                                     ? "rounded-lg bg-blue-50 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
@@ -845,6 +846,7 @@ export function DirectMessageView({
                                                         )}
                                                         {onTogglePinMessage && (
                                                             <Button
+                                                                aria-label={isPinned ? "Unpin message" : "Pin message"}
                                                                 onClick={() => {
                                                                     void onTogglePinMessage(
                                                                         message,
@@ -1159,8 +1161,24 @@ export function DirectMessageView({
                                         className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
                                         key={message.$id}
                                         onClick={() => {
-                                            if (onOpenThread) {
-                                                void onOpenThread(message);
+                                            const target = document.querySelector<HTMLElement>(
+                                                `[data-message-id="${message.$id}"]`,
+                                            );
+                                            if (target) {
+                                                target.scrollIntoView({
+                                                    behavior: "smooth",
+                                                    block: "center",
+                                                });
+                                                target.classList.add(
+                                                    "ring-2",
+                                                    "ring-amber-400",
+                                                );
+                                                window.setTimeout(() => {
+                                                    target.classList.remove(
+                                                        "ring-2",
+                                                        "ring-amber-400",
+                                                    );
+                                                }, 2000);
                                             }
                                         }}
                                         type="button"

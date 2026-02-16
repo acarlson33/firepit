@@ -1229,6 +1229,7 @@ export default function ChatPage() {
                                             <MessageSquare className="h-4 w-4" />
                                         </Button>
                                         <Button
+                                            aria-label={isPinned ? "Unpin message" : "Pin message"}
                                             onClick={() => {
                                                 void togglePin(m);
                                             }}
@@ -1806,9 +1807,25 @@ export default function ChatPage() {
                                                             className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
                                                             key={item.pin.$id}
                                                             onClick={() => {
-                                                                void openThread(
-                                                                    item.message,
+                                                                const target = document.getElementById(
+                                                                    `message-${item.message.$id}`,
                                                                 );
+                                                                if (target) {
+                                                                    target.scrollIntoView({
+                                                                        behavior: "smooth",
+                                                                        block: "center",
+                                                                    });
+                                                                    target.classList.add(
+                                                                        "ring-2",
+                                                                        "ring-amber-400",
+                                                                    );
+                                                                    window.setTimeout(() => {
+                                                                        target.classList.remove(
+                                                                            "ring-2",
+                                                                            "ring-amber-400",
+                                                                        );
+                                                                    }, 2000);
+                                                                }
                                                             }}
                                                             type="button"
                                                         >
@@ -1891,12 +1908,8 @@ export default function ChatPage() {
                                                     )}
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <Input
-                                                        onChange={(e) =>
-                                                            setThreadReplyText(
-                                                                e.target.value,
-                                                            )
-                                                        }
+                                                    <ChatInput
+                                                        onChange={setThreadReplyText}
                                                         placeholder="Reply in thread"
                                                         value={threadReplyText}
                                                     />
