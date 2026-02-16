@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { NextRequest } from "next/server";
 
 const { mockSession } = vi.hoisted(() => ({ mockSession: vi.fn() }));
@@ -68,7 +68,7 @@ describe("audit logs export route", () => {
 
     it("returns JSON export by default", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as vi.Mock).mockResolvedValue({
+        (global.fetch as unknown as Mock).mockResolvedValue({
             ok: true,
             json: async () => [
                 { timestamp: "t", action: "ban", moderatorId: "mod-1" },
@@ -116,7 +116,7 @@ describe("audit logs export route", () => {
 
     it("returns CSV when requested", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as vi.Mock).mockResolvedValue({
+        (global.fetch as unknown as Mock).mockResolvedValue({
             ok: true,
             json: async () => [
                 {
@@ -150,7 +150,7 @@ describe("audit logs export route", () => {
 
     it("returns 500 when upstream fetch fails", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
-        (global.fetch as unknown as vi.Mock).mockResolvedValue({ ok: false });
+        (global.fetch as unknown as Mock).mockResolvedValue({ ok: false });
 
         const { GET } = await loadRoute();
         const response = await GET(

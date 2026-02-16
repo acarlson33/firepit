@@ -206,35 +206,32 @@ export async function getChannelAccessForUser(
         [Query.equal("channelId", channelId), Query.limit(1000)],
     );
 
-    const applicableOverrides: ChannelPermissionOverride[] = overrides.documents
-        .map((doc) => {
-            const d = doc as Record<string, unknown>;
-            const roleId = typeof d.roleId === "string" ? d.roleId : "";
-            const overrideUserId = typeof d.userId === "string" ? d.userId : "";
+    const applicableOverrides: ChannelPermissionOverride[] = [];
+    for (const doc of overrides.documents) {
+        const d = doc as Record<string, unknown>;
+        const roleId = typeof d.roleId === "string" ? d.roleId : "";
+        const overrideUserId = typeof d.userId === "string" ? d.userId : "";
 
-            const appliesToUser = overrideUserId === userId;
-            const appliesToRole = roleId !== "" && roleIds.includes(roleId);
-            if (!appliesToUser && !appliesToRole) {
-                return null;
-            }
+        const appliesToUser = overrideUserId === userId;
+        const appliesToRole = roleId !== "" && roleIds.includes(roleId);
+        if (!appliesToUser && !appliesToRole) {
+            continue;
+        }
 
-            return {
-                $id: String(d.$id),
-                channelId,
-                roleId,
-                userId: overrideUserId,
-                allow: Array.isArray(d.allow)
-                    ? (d.allow as ChannelPermissionOverride["allow"])
-                    : [],
-                deny: Array.isArray(d.deny)
-                    ? (d.deny as ChannelPermissionOverride["deny"])
-                    : [],
-                $createdAt: String(d.$createdAt ?? ""),
-            } satisfies ChannelPermissionOverride;
-        })
-        .filter((override): override is ChannelPermissionOverride =>
-            Boolean(override),
-        );
+        applicableOverrides.push({
+            $id: String(d.$id),
+            channelId,
+            roleId,
+            userId: overrideUserId,
+            allow: Array.isArray(d.allow)
+                ? (d.allow as ChannelPermissionOverride["allow"])
+                : [],
+            deny: Array.isArray(d.deny)
+                ? (d.deny as ChannelPermissionOverride["deny"])
+                : [],
+            $createdAt: String(d.$createdAt ?? ""),
+        });
+    }
 
     const effective = getEffectivePermissions(
         roleIds.length > 0
