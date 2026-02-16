@@ -259,6 +259,7 @@ export function VirtualizedMessageList({
                                 m.threadMessageCount > 0 &&
                                 onOpenThread && (
                                     <button
+                                        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
                                         aria-label={`View thread with ${m.threadMessageCount} ${m.threadMessageCount === 1 ? "reply" : "replies"}`}
                                         className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                                         onClick={() => {
@@ -315,7 +316,11 @@ export function VirtualizedMessageList({
                                     )}
                                     {onTogglePin && (
                                         <Button
-                                            aria-label={isPinned ? "Unpin message" : "Pin message"}
+                                            aria-label={
+                                                isPinned
+                                                    ? "Unpin message"
+                                                    : "Pin message"
+                                            }
                                             onClick={() => {
                                                 void onTogglePin(m);
                                             }}
