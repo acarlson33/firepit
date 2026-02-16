@@ -1820,7 +1820,7 @@ export default function ChatPage() {
                                                                         "ring-amber-400",
                                                                     );
                                                                     window.setTimeout(() => {
-                                                                        if (document.getElementById(`message-${item.message.$id}`)) {
+                                                                        if (target.isConnected) {
                                                                             target.classList.remove(
                                                                                 "ring-2",
                                                                                 "ring-amber-400",

@@ -1174,7 +1174,7 @@ export function DirectMessageView({
                                                     "ring-amber-400",
                                                 );
                                                 window.setTimeout(() => {
-                                                    if (document.querySelector(`[data-message-id="${message.$id}"]`)) {
+                                                    if (target.isConnected) {
                                                         target.classList.remove(
                                                             "ring-2",
                                                             "ring-amber-400",
