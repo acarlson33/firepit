@@ -18,6 +18,7 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
+import { getChannelAccessForUser } from "@/lib/server-channel-access";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -132,6 +133,16 @@ export async function POST(request: NextRequest) {
         });
 
         const { databases } = getServerClient();
+
+        const access = await getChannelAccessForUser(
+            databases,
+            env,
+            String(channelId),
+            userId,
+        );
+        if (!access.isMember || !access.canSend) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
         const messageData: Record<string, unknown> = {
             userId,
@@ -293,6 +304,18 @@ export async function PATCH(request: NextRequest) {
 
         const { databases } = getServerClient();
 
+        const existing = await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        );
+        if (String(existing.userId) !== user.$id) {
+            return NextResponse.json(
+                { error: "You can only edit your own messages" },
+                { status: 403 },
+            );
+        }
+
         // Update the message with new text and editedAt timestamp
         const editedAt = new Date().toISOString();
         const res = await databases.updateDocument(
@@ -360,6 +383,18 @@ export async function DELETE(request: NextRequest) {
         }
 
         const { databases } = getServerClient();
+
+        const existing = await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        );
+        if (String(existing.userId) !== user.$id) {
+            return NextResponse.json(
+                { error: "You can only delete your own messages" },
+                { status: 403 },
+            );
+        }
 
         // Delete the message
         await databases.deleteDocument(

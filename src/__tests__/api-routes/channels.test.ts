@@ -5,308 +5,368 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "@/app/api/channels/route";
 import { NextRequest } from "next/server";
 
+const { mockGetServerSession, mockListDocuments, mockGetDocument } = vi.hoisted(
+    () => ({
+        mockGetServerSession: vi.fn(),
+        mockListDocuments: vi.fn(),
+        mockGetDocument: vi.fn(),
+    }),
+);
+
 // Mock dependencies
 vi.mock("@/lib/appwrite-server", () => ({
-	getServerClient: vi.fn(() => ({
-		databases: {
-			listDocuments: vi.fn(),
-		},
-	})),
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+            getDocument: mockGetDocument,
+        },
+    })),
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
-	getEnvConfig: vi.fn(() => ({
-		databaseId: "test-db",
-		collections: {
-			channels: "channels-collection",
-		},
-	})),
+    getEnvConfig: vi.fn(() => ({
+        databaseId: "test-db",
+        collections: {
+            servers: "servers-collection",
+            memberships: "memberships-collection",
+            channels: "channels-collection",
+        },
+    })),
 }));
 
-import { getServerClient } from "@/lib/appwrite-server";
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockGetServerSession,
+}));
 
 describe("GET /api/channels", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockGetServerSession.mockResolvedValue({
+            $id: "user-1",
+            name: "Test User",
+        });
+        mockGetDocument.mockResolvedValue({
+            $id: "server1",
+            ownerId: "user-1",
+        });
+        mockListDocuments.mockResolvedValue({ documents: [] });
+    });
 
-	it("should return 400 if serverId is missing", async () => {
-		const request = new NextRequest("http://localhost:3000/api/channels");
+    it("should return 401 when unauthenticated", async () => {
+        mockGetServerSession.mockResolvedValue(null);
 
-		const response = await GET(request);
-		const data = await response.json();
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		expect(response.status).toBe(400);
-		expect(data.error).toBe("serverId is required");
-	});
+        const response = await GET(request);
+        const data = await response.json();
 
-	it("should fetch channels for a given serverId", async () => {
-		const mockChannels = [
-			{
-				$id: "channel1",
-				serverId: "server1",
-				name: "general",
-				$createdAt: "2024-01-01T00:00:00.000Z",
-			},
-			{
-				$id: "channel2",
-				serverId: "server1",
-				name: "random",
-				$createdAt: "2024-01-02T00:00:00.000Z",
-			},
-		];
+        expect(response.status).toBe(401);
+        expect(data.error).toBe("Authentication required");
+    });
 
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: mockChannels,
-		});
+    it("should return 400 if serverId is missing", async () => {
+        const request = new NextRequest("http://localhost:3000/api/channels");
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const response = await GET(request);
+        const data = await response.json();
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+        expect(response.status).toBe(400);
+        expect(data.error).toBe("serverId is required");
+    });
 
-		const response = await GET(request);
-		const data = await response.json();
+    it("should fetch channels for a given serverId", async () => {
+        const mockChannels = [
+            {
+                $id: "channel1",
+                serverId: "server1",
+                name: "general",
+                $createdAt: "2024-01-01T00:00:00.000Z",
+            },
+            {
+                $id: "channel2",
+                serverId: "server1",
+                name: "random",
+                $createdAt: "2024-01-02T00:00:00.000Z",
+            },
+        ];
 
-		expect(response.status).toBe(200);
-		expect(data.channels).toHaveLength(2);
-		expect(data.channels[0].$id).toBe("channel1");
-		expect(data.channels[1].$id).toBe("channel2");
-		expect(data.nextCursor).toBeNull();
-	});
+        mockListDocuments.mockResolvedValue({
+            documents: mockChannels,
+        });
 
-	it("should apply default limit of 50", async () => {
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: [],
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const response = await GET(request);
+        const data = await response.json();
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+        expect(response.status).toBe(200);
+        expect(data.channels).toHaveLength(2);
+        expect(data.channels[0].$id).toBe("channel1");
+        expect(data.channels[1].$id).toBe("channel2");
+        expect(data.nextCursor).toBeNull();
+    });
 
-		await GET(request);
+    it("should return 403 for non-members who are not server owner", async () => {
+        mockGetDocument.mockResolvedValue({
+            $id: "server1",
+            ownerId: "owner-1",
+        });
 
-		expect(mockListDocuments).toHaveBeenCalledWith(
-			"test-db",
-			"channels-collection",
-			expect.arrayContaining([expect.stringContaining("limit")])
-		);
-	});
+        mockListDocuments
+            .mockResolvedValueOnce({ documents: [] })
+            .mockResolvedValue({ documents: [] });
 
-	it("should use custom limit if provided", async () => {
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: [],
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const response = await GET(request);
+        const data = await response.json();
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1&limit=10"
-		);
+        expect(response.status).toBe(403);
+        expect(data.error).toBe("Forbidden");
+    });
 
-		await GET(request);
+    it("should filter channels by readMessages permission", async () => {
+        mockGetDocument.mockResolvedValue({
+            $id: "server1",
+            ownerId: "owner-1",
+        });
 
-		expect(mockListDocuments).toHaveBeenCalledWith(
-			"test-db",
-			"channels-collection",
-			expect.arrayContaining([expect.stringContaining("limit")])
-		);
-	});
+        mockListDocuments
+            // membership lookup
+            .mockResolvedValueOnce({ documents: [{ $id: "m1" }] })
+            // channels lookup
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "channel1",
+                        serverId: "server1",
+                        name: "general",
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                    {
+                        $id: "channel2",
+                        serverId: "server1",
+                        name: "admin",
+                        $createdAt: "2024-01-02T00:00:00.000Z",
+                    },
+                ],
+            })
+            // role assignment lookup
+            .mockResolvedValueOnce({
+                documents: [{ roleIds: ["role-member"] }],
+            })
+            // roles lookup
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "role-member",
+                        serverId: "server1",
+                        name: "Member",
+                        position: 1,
+                        readMessages: false,
+                        sendMessages: true,
+                        manageMessages: false,
+                        manageChannels: false,
+                        manageRoles: false,
+                        manageServer: false,
+                        mentionEveryone: false,
+                        administrator: false,
+                        mentionable: true,
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                ],
+            })
+            // channel overrides lookup
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "ov1",
+                        channelId: "channel2",
+                        roleId: "role-member",
+                        allow: ["readMessages"],
+                        deny: [],
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                ],
+            });
 
-	it("should return nextCursor when results match limit", async () => {
-		const mockChannels = Array.from({ length: 10 }, (_, i) => ({
-			$id: `channel${i}`,
-			serverId: "server1",
-			name: `channel-${i}`,
-			$createdAt: `2024-01-01T00:00:${String(i).padStart(2, "0")}.000Z`,
-		}));
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: mockChannels,
-		});
+        const response = await GET(request);
+        const data = await response.json();
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        expect(response.status).toBe(200);
+        expect(data.channels).toHaveLength(1);
+        expect(data.channels[0].$id).toBe("channel2");
+    });
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1&limit=10"
-		);
+    it("should apply default limit of 50", async () => {
+        mockListDocuments.mockResolvedValue({ documents: [] });
 
-		const response = await GET(request);
-		const data = await response.json();
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		expect(response.status).toBe(200);
-		expect(data.channels).toHaveLength(10);
-		expect(data.nextCursor).toBe("channel9");
-	});
+        await GET(request);
 
-	it("should return null nextCursor when results are less than limit", async () => {
-		const mockChannels = [
-			{
-				$id: "channel1",
-				serverId: "server1",
-				name: "general",
-				$createdAt: "2024-01-01T00:00:00.000Z",
-			},
-		];
+        expect(mockListDocuments).toHaveBeenCalledWith(
+            "test-db",
+            "channels-collection",
+            expect.arrayContaining([expect.stringContaining("limit")]),
+        );
+    });
 
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: mockChannels,
-		});
+    it("should use custom limit if provided", async () => {
+        mockListDocuments.mockResolvedValue({ documents: [] });
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1&limit=10",
+        );
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1&limit=10"
-		);
+        await GET(request);
 
-		const response = await GET(request);
-		const data = await response.json();
+        expect(mockListDocuments).toHaveBeenCalledWith(
+            "test-db",
+            "channels-collection",
+            expect.arrayContaining([expect.stringContaining("limit")]),
+        );
+    });
 
-		expect(response.status).toBe(200);
-		expect(data.channels).toHaveLength(1);
-		expect(data.nextCursor).toBeNull();
-	});
+    it("should return nextCursor when results match limit", async () => {
+        const mockChannels = Array.from({ length: 10 }, (_, i) => ({
+            $id: `channel${i}`,
+            serverId: "server1",
+            name: `channel-${i}`,
+            $createdAt: `2024-01-01T00:00:${String(i).padStart(2, "0")}.000Z`,
+        }));
 
-	it("should use cursor for pagination", async () => {
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: [],
-		});
+        mockListDocuments.mockResolvedValue({ documents: mockChannels });
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1&limit=10",
+        );
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1&cursor=channel5"
-		);
+        const response = await GET(request);
+        const data = await response.json();
 
-		await GET(request);
+        expect(response.status).toBe(200);
+        expect(data.channels).toHaveLength(10);
+        expect(data.nextCursor).toBe("channel9");
+    });
 
-		expect(mockListDocuments).toHaveBeenCalledWith(
-			"test-db",
-			"channels-collection",
-			expect.arrayContaining([expect.stringContaining("cursorAfter")])
-		);
-	});
+    it("should return null nextCursor when results are less than limit", async () => {
+        const mockChannels = [
+            {
+                $id: "channel1",
+                serverId: "server1",
+                name: "general",
+                $createdAt: "2024-01-01T00:00:00.000Z",
+            },
+        ];
 
-	it("should handle database errors gracefully", async () => {
-		const mockListDocuments = vi
-			.fn()
-			.mockRejectedValue(new Error("Database connection failed"));
+        mockListDocuments.mockResolvedValue({ documents: mockChannels });
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1&limit=10",
+        );
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+        const response = await GET(request);
+        const data = await response.json();
 
-		const response = await GET(request);
-		const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data.channels).toHaveLength(1);
+        expect(data.nextCursor).toBeNull();
+    });
 
-		expect(response.status).toBe(500);
-		expect(data.error).toBe("Database connection failed");
-	});
+    it("should use cursor for pagination", async () => {
+        mockListDocuments.mockResolvedValue({ documents: [] });
 
-	it("should handle non-Error exceptions", async () => {
-		const mockListDocuments = vi.fn().mockRejectedValue("Unknown error");
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1&cursor=channel5",
+        );
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        await GET(request);
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+        expect(mockListDocuments).toHaveBeenCalledWith(
+            "test-db",
+            "channels-collection",
+            expect.arrayContaining([expect.stringContaining("cursorAfter")]),
+        );
+    });
 
-		const response = await GET(request);
-		const data = await response.json();
+    it("should handle database errors gracefully", async () => {
+        mockListDocuments.mockRejectedValue(
+            new Error("Database connection failed"),
+        );
 
-		expect(response.status).toBe(500);
-		expect(data.error).toBe("Failed to fetch channels");
-	});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-	it("should return empty array when no channels exist", async () => {
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: [],
-		});
+        const response = await GET(request);
+        const data = await response.json();
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        expect(response.status).toBe(500);
+        expect(data.error).toBe("Database connection failed");
+    });
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+    it("should handle non-Error exceptions", async () => {
+        mockListDocuments.mockRejectedValue("Unknown error");
 
-		const response = await GET(request);
-		const data = await response.json();
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		expect(response.status).toBe(200);
-		expect(data.channels).toEqual([]);
-		expect(data.nextCursor).toBeNull();
-	});
+        const response = await GET(request);
+        const data = await response.json();
 
-	it("should handle channels with missing $createdAt", async () => {
-		const mockChannels = [
-			{
-				$id: "channel1",
-				serverId: "server1",
-				name: "general",
-				// Missing $createdAt
-			},
-		];
+        expect(response.status).toBe(500);
+        expect(data.error).toBe("Failed to fetch channels");
+    });
 
-		const mockListDocuments = vi.fn().mockResolvedValue({
-			documents: mockChannels,
-		});
+    it("should return empty array when no channels exist", async () => {
+        mockListDocuments.mockResolvedValue({ documents: [] });
 
-		(getServerClient as ReturnType<typeof vi.fn>).mockReturnValue({
-			databases: {
-				listDocuments: mockListDocuments,
-			},
-		});
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
 
-		const request = new NextRequest(
-			"http://localhost:3000/api/channels?serverId=server1"
-		);
+        const response = await GET(request);
+        const data = await response.json();
 
-		const response = await GET(request);
-		const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data.channels).toEqual([]);
+        expect(data.nextCursor).toBeNull();
+    });
 
-		expect(response.status).toBe(200);
-		expect(data.channels[0].$createdAt).toBe("");
-	});
+    it("should handle channels with missing $createdAt", async () => {
+        const mockChannels = [
+            {
+                $id: "channel1",
+                serverId: "server1",
+                name: "general",
+                // Missing $createdAt
+            },
+        ];
+
+        mockListDocuments.mockResolvedValue({ documents: mockChannels });
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/channels?serverId=server1",
+        );
+
+        const response = await GET(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.channels[0].$createdAt).toBe("");
+    });
 });

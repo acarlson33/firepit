@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { Query } from "node-appwrite";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerSession } from "@/lib/auth-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const AUDIT_COLLECTION_ID = process.env.APPWRITE_AUDIT_COLLECTION_ID ?? "";
@@ -15,6 +19,27 @@ export async function GET(
         const { serverId } = await params;
         const { searchParams } = new URL(request.url);
         const limit = Number.parseInt(searchParams.get("limit") || "50", 10);
+        const { databases } = getServerClient();
+        const env = getEnvConfig();
+
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
+
+        if (!access.isMember || !access.permissions.manageServer) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
         if (!AUDIT_COLLECTION_ID) {
             return NextResponse.json(
@@ -22,8 +47,6 @@ export async function GET(
                 { status: 500 },
             );
         }
-
-        const { databases } = getServerClient();
 
         // Fetch audit logs for this server
         const auditLogs = await databases.listDocuments(
@@ -89,7 +112,9 @@ export async function GET(
 
         return NextResponse.json(enrichedLogs);
     } catch (error) {
-        console.error("Error fetching audit logs:", error);
+        logger.error("Error fetching audit logs", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to fetch audit logs" },
             { status: 500 },

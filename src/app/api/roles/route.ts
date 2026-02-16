@@ -3,6 +3,9 @@ import { Client, Databases, Query, ID } from "node-appwrite";
 import type { Role } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { enforceSingleDefaultRole } from "@/lib/default-role";
+import { getServerSession } from "@/lib/auth-server";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const endpoint = env.endpoint;
@@ -25,6 +28,29 @@ if (
 }
 const databases = new Databases(client);
 
+async function requireManageRolesAccess(serverId: string) {
+    const session = await getServerSession();
+    if (!session?.$id) {
+        return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+        );
+    }
+
+    const access = await getServerPermissionsForUser(
+        databases,
+        env,
+        serverId,
+        session.$id,
+    );
+
+    if (!access.isMember || !access.permissions.manageRoles) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return null;
+}
+
 // GET: List roles for a server
 export async function GET(request: NextRequest) {
     try {
@@ -36,6 +62,11 @@ export async function GET(request: NextRequest) {
                 { error: "serverId is required" },
                 { status: 400 },
             );
+        }
+
+        const authError = await requireManageRolesAccess(serverId);
+        if (authError) {
+            return authError;
         }
 
         const response = await databases.listDocuments(
@@ -50,7 +81,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ roles: response.documents });
     } catch (error) {
-        console.error("Failed to list roles:", error);
+        logger.error("Failed to list roles", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to list roles" },
             { status: 500 },
@@ -84,6 +117,11 @@ export async function POST(request: NextRequest) {
                 { error: "serverId and name are required" },
                 { status: 400 },
             );
+        }
+
+        const authError = await requireManageRolesAccess(serverId);
+        if (authError) {
+            return authError;
         }
 
         const roleData = {
@@ -122,7 +160,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ role }, { status: 201 });
     } catch (error) {
-        console.error("Failed to create role:", error);
+        logger.error("Failed to create role", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to create role" },
             { status: 500 },
@@ -156,6 +196,18 @@ export async function PUT(request: NextRequest) {
                 { error: "Role ID is required" },
                 { status: 400 },
             );
+        }
+
+        const existingRole = await databases.getDocument(
+            databaseId,
+            rolesCollectionId,
+            $id,
+        );
+        const authError = await requireManageRolesAccess(
+            String(existingRole.serverId),
+        );
+        if (authError) {
+            return authError;
         }
 
         const updateData: Partial<Role> = {};
@@ -207,12 +259,19 @@ export async function PUT(request: NextRequest) {
         );
 
         if (defaultOnJoin) {
-            await enforceSingleDefaultRole(databases, databaseId, role.serverId, $id);
+            await enforceSingleDefaultRole(
+                databases,
+                databaseId,
+                role.serverId,
+                $id,
+            );
         }
 
         return NextResponse.json({ role });
     } catch (error) {
-        console.error("Failed to update role:", error);
+        logger.error("Failed to update role", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to update role" },
             { status: 500 },
@@ -233,11 +292,25 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
+        const existingRole = await databases.getDocument(
+            databaseId,
+            rolesCollectionId,
+            roleId,
+        );
+        const authError = await requireManageRolesAccess(
+            String(existingRole.serverId),
+        );
+        if (authError) {
+            return authError;
+        }
+
         await databases.deleteDocument(databaseId, rolesCollectionId, roleId);
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Failed to delete role:", error);
+        logger.error("Failed to delete role", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to delete role" },
             { status: 500 },

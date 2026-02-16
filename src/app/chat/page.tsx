@@ -331,10 +331,25 @@ export default function ChatPage() {
         userId,
         servers: serversApi.servers,
     });
+
+    const resolvedChannelId = useMemo(
+        () =>
+            channelsApi.channels.some(
+                (channel) => channel.$id === selectedChannel,
+            )
+                ? selectedChannel
+                : null,
+        [channelsApi.channels, selectedChannel],
+    );
+
+    useEffect(() => {
+        if (selectedChannel && !resolvedChannelId) {
+            setSelectedChannel(null);
+        }
+    }, [selectedChannel, resolvedChannelId]);
+
     const messagesApi = useMessages({
-        channelId:
-            channelsApi.channels.find((c) => c.$id === selectedChannel)?.$id ||
-            selectedChannel,
+        channelId: resolvedChannelId,
         serverId: serversApi.selectedServer,
         userId,
         userName,

@@ -4,6 +4,9 @@ import { Query, ID } from "node-appwrite";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
+import { logger } from "@/lib/newrelic-utils";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
@@ -59,18 +62,42 @@ export async function POST(
         }
 
         // Check permissions: owner or global admin/moderator
-        const isOwner = server.ownerId === moderatorId;
+        const isOwner = String(server.ownerId) === moderatorId;
+        const env = getEnvConfig();
+        const serverAccess = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            moderatorId,
+        );
+        const hasServerModerationPermission =
+            serverAccess.isServerOwner ||
+            serverAccess.permissions.administrator ||
+            serverAccess.permissions.manageServer;
         const globalRoles = await getUserRoles(moderatorId);
         const isGlobalModerator =
             globalRoles.isAdmin || globalRoles.isModerator;
 
         // For v1.0: Allow server owners and global moderators/admins
-        // Future enhancement: Check server-specific roles with manageServer permission
-        if (!isOwner && !isGlobalModerator) {
+        if (!isOwner && !hasServerModerationPermission && !isGlobalModerator) {
             return NextResponse.json(
                 {
-                    error: "Insufficient permissions. You must be the server owner or a global moderator/admin.",
+                    error: "Insufficient permissions. You need manageServer, server ownership, or global moderator/admin rights.",
                 },
+                { status: 403 },
+            );
+        }
+
+        if (userId === moderatorId) {
+            return NextResponse.json(
+                { error: "You cannot moderate yourself" },
+                { status: 400 },
+            );
+        }
+
+        if (String(server.ownerId) === userId) {
+            return NextResponse.json(
+                { error: "Cannot moderate the server owner" },
                 { status: 403 },
             );
         }
@@ -114,7 +141,14 @@ export async function POST(
                             );
                         }
                     } catch (error) {
-                        console.error("Error removing membership:", error);
+                        logger.error("Error removing membership", {
+                            serverId,
+                            userId,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        });
                     }
                 } else {
                     return NextResponse.json(
@@ -126,6 +160,23 @@ export async function POST(
 
             case "mute":
                 if (MUTED_USERS_COLLECTION_ID) {
+                    const membership = await databases.listDocuments(
+                        DATABASE_ID,
+                        MEMBERSHIPS_COLLECTION_ID,
+                        [
+                            Query.equal("serverId", serverId),
+                            Query.equal("userId", userId),
+                            Query.limit(1),
+                        ],
+                    );
+
+                    if (membership.documents.length === 0) {
+                        return NextResponse.json(
+                            { error: "User is not a member of this server" },
+                            { status: 404 },
+                        );
+                    }
+
                     // Add to muted users collection
                     result = await databases.createDocument(
                         DATABASE_ID,
@@ -243,7 +294,9 @@ export async function POST(
             result,
         });
     } catch (error) {
-        console.error("Error performing moderation action:", error);
+        logger.error("Error performing moderation action", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to perform moderation action" },
             { status: 500 },

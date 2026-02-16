@@ -16,11 +16,23 @@ const {
     mockCreateDocument,
     mockUpdateDocument,
     mockDeleteDocument,
+    mockGetServerSession,
+    mockGetServerPermissionsForUser,
 } = vi.hoisted(() => ({
     mockListDocuments: vi.fn(),
     mockCreateDocument: vi.fn(),
     mockUpdateDocument: vi.fn(),
     mockDeleteDocument: vi.fn(),
+    mockGetServerSession: vi.fn(),
+    mockGetServerPermissionsForUser: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockGetServerSession,
+}));
+
+vi.mock("@/lib/server-channel-access", () => ({
+    getServerPermissionsForUser: mockGetServerPermissionsForUser,
 }));
 
 // Mock dependencies
@@ -78,6 +90,11 @@ describe("Role Assignments API", () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        mockGetServerSession.mockResolvedValue({ $id: "caller-1" });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageRoles: true },
+        });
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/role-assignments/route");
@@ -87,6 +104,33 @@ describe("Role Assignments API", () => {
     });
 
     describe("GET /api/role-assignments", () => {
+        it("should return 401 when unauthenticated", async () => {
+            mockGetServerSession.mockResolvedValue(null);
+
+            const url = new URL("http://localhost/api/role-assignments");
+            url.searchParams.set("serverId", "server-1");
+
+            const request = new NextRequest(url);
+            const response = await GET(request);
+
+            expect(response.status).toBe(401);
+        });
+
+        it("should return 403 when caller lacks manageRoles", async () => {
+            mockGetServerPermissionsForUser.mockResolvedValue({
+                isMember: true,
+                permissions: { manageRoles: false },
+            });
+
+            const url = new URL("http://localhost/api/role-assignments");
+            url.searchParams.set("serverId", "server-1");
+
+            const request = new NextRequest(url);
+            const response = await GET(request);
+
+            expect(response.status).toBe(403);
+        });
+
         it("should list members with a specific role", async () => {
             mockListDocuments
                 .mockResolvedValueOnce({

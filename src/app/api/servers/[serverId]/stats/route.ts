@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { Query } from "node-appwrite";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerSession } from "@/lib/auth-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "";
 const SERVERS_COLLECTION_ID = process.env.APPWRITE_SERVERS_COLLECTION_ID ?? "";
@@ -22,6 +26,26 @@ export async function GET(
     try {
         const { serverId } = await params;
         const { databases } = getServerClient();
+        const env = getEnvConfig();
+
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
+
+        if (!access.isMember || !access.permissions.manageServer) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
         // Get server info to verify it exists
         const server = await databases.getDocument(
@@ -107,7 +131,9 @@ export async function GET(
             mutedUsers,
         });
     } catch (error) {
-        console.error("Error fetching server stats:", error);
+        logger.error("Error fetching server stats", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to fetch server stats" },
             { status: 500 },

@@ -4,6 +4,21 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { NextRequest } from "next/server";
 
+const { mockGetServerSession, mockGetServerPermissionsForUser } = vi.hoisted(
+    () => ({
+        mockGetServerSession: vi.fn(),
+        mockGetServerPermissionsForUser: vi.fn(),
+    }),
+);
+
+vi.mock("@/lib/auth-server", () => ({
+    getServerSession: mockGetServerSession,
+}));
+
+vi.mock("@/lib/server-channel-access", () => ({
+    getServerPermissionsForUser: mockGetServerPermissionsForUser,
+}));
+
 // Mock node-appwrite
 vi.mock("node-appwrite", () => {
     const mockDatabases = {
@@ -11,6 +26,7 @@ vi.mock("node-appwrite", () => {
         createDocument: vi.fn(),
         updateDocument: vi.fn(),
         deleteDocument: vi.fn(),
+        getDocument: vi.fn(),
     };
 
     return {
@@ -59,12 +75,48 @@ beforeAll(async () => {
 
 describe("GET /api/channel-permissions", () => {
     let mockListDocuments: any;
+    let mockGetDocument: any;
 
     beforeEach(async () => {
         vi.clearAllMocks();
         ensureEnv();
+        mockGetServerSession.mockResolvedValue({ $id: "caller-1" });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageChannels: true },
+        });
         const databases = new Databases({} as any);
         mockListDocuments = databases.listDocuments as any;
+        mockGetDocument = databases.getDocument as any;
+        mockGetDocument.mockResolvedValue({
+            $id: "channel1",
+            serverId: "server-1",
+        });
+    });
+
+    it("should return 401 when unauthenticated", async () => {
+        mockGetServerSession.mockResolvedValue(null);
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/channel-permissions?channelId=channel1",
+        );
+
+        const response = await GET(request);
+        expect(response.status).toBe(401);
+    });
+
+    it("should return 403 when caller lacks manageChannels", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageChannels: false },
+        });
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/channel-permissions?channelId=channel1",
+        );
+
+        const response = await GET(request);
+        expect(response.status).toBe(403);
     });
 
     it("should return 400 if channelId is missing", async () => {
@@ -129,13 +181,24 @@ describe("GET /api/channel-permissions", () => {
 describe("POST /api/channel-permissions", () => {
     let mockCreateDocument: any;
     let mockListDocuments: any;
+    let mockGetDocument: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
+        mockGetServerSession.mockResolvedValue({ $id: "caller-1" });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageChannels: true },
+        });
         const databases = new Databases({} as any);
         mockCreateDocument = databases.createDocument as any;
         mockListDocuments = databases.listDocuments as any;
+        mockGetDocument = databases.getDocument as any;
+        mockGetDocument.mockResolvedValue({
+            $id: "channel1",
+            serverId: "server-1",
+        });
     });
 
     it("should return 400 if channelId is missing", async () => {
@@ -282,12 +345,28 @@ describe("POST /api/channel-permissions", () => {
 
 describe("PUT /api/channel-permissions", () => {
     let mockUpdateDocument: any;
+    let mockGetDocument: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
+        mockGetServerSession.mockResolvedValue({ $id: "caller-1" });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageChannels: true },
+        });
         const databases = new Databases({} as any);
         mockUpdateDocument = databases.updateDocument as any;
+        mockGetDocument = databases.getDocument as any;
+        mockGetDocument
+            .mockResolvedValueOnce({
+                $id: "override1",
+                channelId: "channel1",
+            })
+            .mockResolvedValueOnce({
+                $id: "channel1",
+                serverId: "server-1",
+            });
     });
 
     it("should return 400 if overrideId is missing", async () => {
@@ -339,12 +418,28 @@ describe("PUT /api/channel-permissions", () => {
 
 describe("DELETE /api/channel-permissions", () => {
     let mockDeleteDocument: any;
+    let mockGetDocument: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
+        mockGetServerSession.mockResolvedValue({ $id: "caller-1" });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            permissions: { manageChannels: true },
+        });
         const databases = new Databases({} as any);
         mockDeleteDocument = databases.deleteDocument as any;
+        mockGetDocument = databases.getDocument as any;
+        mockGetDocument
+            .mockResolvedValueOnce({
+                $id: "override1",
+                channelId: "channel1",
+            })
+            .mockResolvedValueOnce({
+                $id: "channel1",
+                serverId: "server-1",
+            });
     });
 
     it("should return 400 if overrideId is missing", async () => {
