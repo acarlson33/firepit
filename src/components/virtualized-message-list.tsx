@@ -89,6 +89,7 @@ export function VirtualizedMessageList({
 
                 return (
                     <div
+                        id={`message-${m.$id}`}
                         className={`group mx-4 flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
                             mine
                                 ? "ml-auto max-w-[85%] flex-row-reverse text-right"
@@ -258,6 +259,7 @@ export function VirtualizedMessageList({
                                 m.threadMessageCount > 0 &&
                                 onOpenThread && (
                                     <button
+                                        aria-label={`View thread with ${m.threadMessageCount} ${m.threadMessageCount === 1 ? "reply" : "replies"}`}
                                         className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                                         onClick={() => {
                                             void onOpenThread(m);
@@ -313,6 +315,7 @@ export function VirtualizedMessageList({
                                     )}
                                     {onTogglePin && (
                                         <Button
+                                            aria-label={isPinned ? "Unpin message" : "Pin message"}
                                             onClick={() => {
                                                 void onTogglePin(m);
                                             }}
