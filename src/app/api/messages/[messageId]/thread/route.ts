@@ -1,317 +1,296 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { ID, Query } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import type { FileAttachment, Message } from "@/lib/types";
-import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import type { Message } from "@/lib/types";
 import {
-    MAX_MESSAGE_LENGTH,
-    MESSAGE_TOO_LONG_ERROR,
-} from "@/lib/message-constraints";
-
-const MESSAGE_ATTACHMENTS_COLLECTION_ID =
-    process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
-    "message_attachments";
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	addTransactionAttributes,
+} from "@/lib/newrelic-utils";
 
 type RouteContext = {
-    params: Promise<{
-        messageId: string;
-    }>;
+	params: Promise<{
+		messageId: string;
+	}>;
 };
-
-async function createAttachments(
-    messageId: string,
-    attachments: FileAttachment[],
-): Promise<void> {
-    if (!attachments || attachments.length === 0) {
-        return;
-    }
-
-    const env = getEnvConfig();
-    const { databases } = getServerClient();
-
-    await Promise.all(
-        attachments.map((attachment) =>
-            databases.createDocument(
-                env.databaseId,
-                MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                ID.unique(),
-                {
-                    messageId,
-                    messageType: "channel",
-                    fileId: attachment.fileId,
-                    fileName: attachment.fileName,
-                    fileSize: attachment.fileSize,
-                    fileType: attachment.fileType,
-                    fileUrl: attachment.fileUrl,
-                    thumbnailUrl: attachment.thumbnailUrl || null,
-                },
-            ),
-        ),
-    );
-}
-
-function parseLimit(url: string): number {
-    const { searchParams } = new URL(url);
-    const raw = Number(searchParams.get("limit") || "50");
-    if (!Number.isFinite(raw) || raw < 1) {
-        return 50;
-    }
-    return Math.min(raw, 100);
-}
 
 /**
  * GET /api/messages/[messageId]/thread
- * Returns thread replies for a parent channel message.
+ * Get all replies in a thread (messages where threadId = messageId)
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-    try {
-        const user = await getServerSession();
-        if (!user) {
-            return NextResponse.json(
-                { error: "Authentication required" },
-                { status: 401 },
-            );
-        }
+	const startTime = Date.now();
 
-        const { messageId } = await context.params;
-        const env = getEnvConfig();
-        const { databases } = getServerClient();
-        const limit = parseLimit(request.url);
+	try {
+		setTransactionName("GET /api/messages/[messageId]/thread");
 
-        const parent = (await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        )) as unknown as Message;
+		// Verify user is authenticated
+		const user = await getServerSession();
+		if (!user) {
+			logger.warn("Unauthenticated thread fetch attempt");
+			return NextResponse.json(
+				{ error: "Authentication required" },
+				{ status: 401 }
+			);
+		}
 
-        if (!parent.channelId) {
-            return NextResponse.json(
-                { error: "Parent message has no channel context" },
-                { status: 400 },
-            );
-        }
+		const { messageId } = await context.params;
+		const url = new URL(request.url);
+		const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 100);
+		const cursor = url.searchParams.get("cursor");
 
-        const access = await getChannelAccessForUser(
-            databases,
-            env,
-            parent.channelId,
-            user.$id,
-        );
-        if (!access.isMember || !access.canRead) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
+		addTransactionAttributes({
+			messageId,
+			userId: user.$id,
+			limit,
+		});
 
-        const docs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.messages,
-            [
-                Query.equal("channelId", parent.channelId),
-                Query.equal("threadId", messageId),
-                Query.orderAsc("$createdAt"),
-                Query.limit(limit),
-            ],
-        );
+		const env = getEnvConfig();
+		const { databases } = getServerClient();
 
-        const items = docs.documents.map((doc) => {
-            const d = doc as unknown as Record<string, unknown>;
-            return {
-                $id: String(d.$id),
-                userId: String(d.userId),
-                userName: d.userName as string | undefined,
-                text: String(d.text || ""),
-                $createdAt: String(d.$createdAt || ""),
-                channelId: d.channelId as string | undefined,
-                serverId: d.serverId as string | undefined,
-                editedAt: d.editedAt as string | undefined,
-                removedAt: d.removedAt as string | undefined,
-                removedBy: d.removedBy as string | undefined,
-                imageFileId: d.imageFileId as string | undefined,
-                imageUrl: d.imageUrl as string | undefined,
-                replyToId: d.replyToId as string | undefined,
-                threadId: d.threadId as string | undefined,
-                mentions: Array.isArray(d.mentions)
-                    ? (d.mentions as string[])
-                    : undefined,
-            } satisfies Message;
-        });
+		// First, get the parent message to verify it exists
+		let parentMessage: Message;
+		try {
+			parentMessage = (await databases.getDocument(
+				env.databaseId,
+				env.collections.messages,
+				messageId
+			)) as unknown as Message;
+		} catch {
+			return NextResponse.json(
+				{ error: "Parent message not found" },
+				{ status: 404 }
+			);
+		}
 
-        return NextResponse.json({ items });
-    } catch (error) {
-        return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch thread",
-            },
-            { status: 500 },
-        );
-    }
+		// Build query for thread replies
+		const queries = [
+			Query.equal("threadId", messageId),
+			Query.orderAsc("$createdAt"),
+			Query.limit(limit),
+		];
+
+		if (cursor) {
+			queries.push(Query.cursorAfter(cursor));
+		}
+
+		// Fetch thread replies
+		const response = await databases.listDocuments(
+			env.databaseId,
+			env.collections.messages,
+			queries
+		);
+
+		const threadReplies = response.documents as unknown as Message[];
+
+		const duration = Date.now() - startTime;
+		trackApiCall("/api/messages/[messageId]/thread", "GET", 200, duration);
+
+		logger.info("Thread replies fetched successfully", {
+			messageId,
+			userId: user.$id,
+			replyCount: threadReplies.length,
+		});
+
+		return NextResponse.json({
+			parentMessage,
+			replies: threadReplies,
+			total: response.total,
+			hasMore: response.documents.length === limit,
+		});
+	} catch (error) {
+		const duration = Date.now() - startTime;
+		logger.error("Failed to fetch thread replies", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		recordError(error instanceof Error ? error : new Error(String(error)), {
+			endpoint: "/api/messages/[messageId]/thread",
+			method: "GET",
+		});
+		trackApiCall("/api/messages/[messageId]/thread", "GET", 500, duration);
+
+		return NextResponse.json(
+			{ error: "Failed to fetch thread replies" },
+			{ status: 500 }
+		);
+	}
 }
 
 /**
  * POST /api/messages/[messageId]/thread
- * Creates a thread reply for a parent channel message.
+ * Reply to a thread (create a message with threadId set to the parent message)
  */
 export async function POST(request: NextRequest, context: RouteContext) {
-    try {
-        const user = await getServerSession();
-        if (!user) {
-            return NextResponse.json(
-                { error: "Authentication required" },
-                { status: 401 },
-            );
-        }
+	const startTime = Date.now();
 
-        const body = await request.json();
-        const { text, imageFileId, imageUrl, mentions, attachments } = body as {
-            text?: string;
-            imageFileId?: string;
-            imageUrl?: string;
-            mentions?: string[];
-            attachments?: FileAttachment[];
-        };
+	try {
+		setTransactionName("POST /api/messages/[messageId]/thread");
 
-        if (
-            (!text || text.trim().length === 0) &&
-            !imageFileId &&
-            (!attachments || attachments.length === 0)
-        ) {
-            return NextResponse.json(
-                {
-                    error: "text, imageFileId, or attachments are required",
-                },
-                { status: 400 },
-            );
-        }
+		// Verify user is authenticated
+		const user = await getServerSession();
+		if (!user) {
+			logger.warn("Unauthenticated thread reply attempt");
+			return NextResponse.json(
+				{ error: "Authentication required" },
+				{ status: 401 }
+			);
+		}
 
-        if (text && text.length > MAX_MESSAGE_LENGTH) {
-            return NextResponse.json(
-                {
-                    error: MESSAGE_TOO_LONG_ERROR,
-                    maxLength: MAX_MESSAGE_LENGTH,
-                },
-                { status: 400 },
-            );
-        }
+		const { messageId } = await context.params;
+		const body = await request.json();
+		const { text, imageFileId, imageUrl, attachments, mentions } = body;
 
-        const { messageId } = await context.params;
-        const env = getEnvConfig();
-        const { databases } = getServerClient();
+		if (!text && !imageFileId && (!attachments || attachments.length === 0)) {
+			return NextResponse.json(
+				{ error: "text, imageFileId, or attachments required" },
+				{ status: 400 }
+			);
+		}
 
-        const parent = (await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        )) as unknown as Message;
+		addTransactionAttributes({
+			messageId,
+			userId: user.$id,
+			hasText: Boolean(text),
+			hasImage: Boolean(imageFileId),
+		});
 
-        if (!parent.channelId) {
-            return NextResponse.json(
-                { error: "Parent message has no channel context" },
-                { status: 400 },
-            );
-        }
+		const env = getEnvConfig();
+		const { databases } = getServerClient();
 
-        const access = await getChannelAccessForUser(
-            databases,
-            env,
-            parent.channelId,
-            user.$id,
-        );
-        if (!access.isMember || !access.canSend) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
+		// Get the parent message to inherit channelId/serverId
+		let parentMessage: Message;
+		try {
+			parentMessage = (await databases.getDocument(
+				env.databaseId,
+				env.collections.messages,
+				messageId
+			)) as unknown as Message;
+		} catch {
+			return NextResponse.json(
+				{ error: "Parent message not found" },
+				{ status: 404 }
+			);
+		}
 
-        const permissions = perms.message(user.$id, {
-            mod: env.teams.moderatorTeamId,
-            admin: env.teams.adminTeamId,
-        });
+		// If parent is already a thread reply, use its threadId (flatten threads to single level)
+		const actualThreadId = parentMessage.threadId ?? messageId;
 
-        const messageData: Record<string, unknown> = {
-            userId: user.$id,
-            userName: user.name,
-            text: text?.trim() || "",
-            channelId: parent.channelId,
-            serverId: parent.serverId,
-            threadId: messageId,
-        };
+		// Create the thread reply message
+		const messageData: Record<string, unknown> = {
+			userId: user.$id,
+			userName: user.name,
+			text: text || "",
+			channelId: parentMessage.channelId,
+			serverId: parentMessage.serverId,
+			threadId: actualThreadId,
+		};
 
-        if (imageFileId) {
-            messageData.imageFileId = imageFileId;
-        }
-        if (imageUrl) {
-            messageData.imageUrl = imageUrl;
-        }
-        if (mentions && mentions.length > 0) {
-            messageData.mentions = mentions;
-        }
+		if (imageFileId) {
+			messageData.imageFileId = imageFileId;
+		}
+		if (imageUrl) {
+			messageData.imageUrl = imageUrl;
+		}
+		if (attachments && attachments.length > 0) {
+			messageData.attachments = JSON.stringify(attachments);
+		}
+		if (mentions && mentions.length > 0) {
+			messageData.mentions = JSON.stringify(mentions);
+		}
 
-        const created = await databases.createDocument(
-            env.databaseId,
-            env.collections.messages,
-            ID.unique(),
-            messageData,
-            permissions,
-        );
+		// Set permissions
+		const permissions = perms.message(user.$id, {
+			mod: env.teams.moderatorTeamId,
+			admin: env.teams.adminTeamId,
+		});
 
-        if (attachments && attachments.length > 0) {
-            await createAttachments(String(created.$id), attachments);
-        }
+		// Create the thread reply
+		const newReply = await databases.createDocument(
+			env.databaseId,
+			env.collections.messages,
+			ID.unique(),
+			messageData,
+			permissions
+		);
 
-        const existingParticipants = Array.isArray(parent.threadParticipants)
-            ? parent.threadParticipants
-            : [];
-        const nextParticipants = Array.from(
-            new Set([...existingParticipants, user.$id]),
-        );
-        const nextCount = (parent.threadMessageCount || 0) + 1;
+		// Update the parent message (the actual thread root) with thread metadata
+		const actualParentId = parentMessage.threadId ?? messageId;
+		const actualParent = parentMessage.threadId
+			? (await databases.getDocument(
+					env.databaseId,
+					env.collections.messages,
+					actualParentId
+				)) as unknown as Message
+			: parentMessage;
 
-        await databases.updateDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-            {
-                threadMessageCount: nextCount,
-                threadParticipants: nextParticipants,
-                lastThreadReplyAt: new Date().toISOString(),
-            },
-        );
+		// Parse existing threadParticipants
+		let participants: string[] = [];
+		if (actualParent.threadParticipants) {
+			if (typeof actualParent.threadParticipants === "string") {
+				try {
+					participants = JSON.parse(actualParent.threadParticipants);
+				} catch {
+					participants = [];
+				}
+			} else if (Array.isArray(actualParent.threadParticipants)) {
+				participants = actualParent.threadParticipants;
+			}
+		}
 
-        const d = created as unknown as Record<string, unknown>;
-        const message: Message = {
-            $id: String(d.$id),
-            userId: String(d.userId),
-            userName: d.userName as string | undefined,
-            text: String(d.text || ""),
-            $createdAt: String(d.$createdAt || ""),
-            channelId: d.channelId as string | undefined,
-            serverId: d.serverId as string | undefined,
-            editedAt: d.editedAt as string | undefined,
-            removedAt: d.removedAt as string | undefined,
-            removedBy: d.removedBy as string | undefined,
-            imageFileId: d.imageFileId as string | undefined,
-            imageUrl: d.imageUrl as string | undefined,
-            threadId: d.threadId as string | undefined,
-            mentions: Array.isArray(d.mentions)
-                ? (d.mentions as string[])
-                : undefined,
-            attachments,
-        };
+		// Add current user to participants if not already present
+		if (!participants.includes(user.$id)) {
+			participants.push(user.$id);
+		}
 
-        return NextResponse.json({ message });
-    } catch (error) {
-        return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to create thread reply",
-            },
-            { status: 500 },
-        );
-    }
+		// Update parent message with thread metadata
+		await databases.updateDocument(
+			env.databaseId,
+			env.collections.messages,
+			actualParentId,
+			{
+				threadReplyCount: (actualParent.threadReplyCount ?? 0) + 1,
+				threadParticipants: JSON.stringify(participants),
+				lastThreadReplyAt: new Date().toISOString(),
+			}
+		);
+
+		const duration = Date.now() - startTime;
+		trackApiCall("/api/messages/[messageId]/thread", "POST", 201, duration);
+
+		logger.info("Thread reply created successfully", {
+			messageId,
+			replyId: newReply.$id,
+			userId: user.$id,
+		});
+
+		return NextResponse.json(
+			{
+				success: true,
+				reply: newReply,
+				threadId: actualThreadId,
+			},
+			{ status: 201 }
+		);
+	} catch (error) {
+		const duration = Date.now() - startTime;
+		logger.error("Failed to create thread reply", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		recordError(error instanceof Error ? error : new Error(String(error)), {
+			endpoint: "/api/messages/[messageId]/thread",
+			method: "POST",
+		});
+		trackApiCall("/api/messages/[messageId]/thread", "POST", 500, duration);
+
+		return NextResponse.json(
+			{ error: "Failed to create thread reply" },
+			{ status: 500 }
+		);
+	}
 }

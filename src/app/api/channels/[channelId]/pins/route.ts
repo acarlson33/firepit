@@ -1,126 +1,110 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import { getChannelAccessForUser } from "@/lib/server-channel-access";
-import type { Message, PinnedMessage } from "@/lib/types";
+import type { Message } from "@/lib/types";
+import {
+	logger,
+	recordError,
+	setTransactionName,
+	trackApiCall,
+	addTransactionAttributes,
+} from "@/lib/newrelic-utils";
 
 type RouteContext = {
-    params: Promise<{
-        channelId: string;
-    }>;
+	params: Promise<{
+		channelId: string;
+	}>;
 };
 
 /**
  * GET /api/channels/[channelId]/pins
- * Lists pinned messages for a channel.
+ * Get all pinned messages in a channel
  */
-export async function GET(_request: Request, context: RouteContext) {
-    try {
-        const user = await getServerSession();
-        if (!user) {
-            return NextResponse.json(
-                { error: "Authentication required" },
-                { status: 401 },
-            );
-        }
+export async function GET(request: NextRequest, context: RouteContext) {
+	const startTime = Date.now();
 
-        const { channelId } = await context.params;
-        const env = getEnvConfig();
-        const { databases } = getServerClient();
+	try {
+		setTransactionName("GET /api/channels/[channelId]/pins");
 
-        const access = await getChannelAccessForUser(
-            databases,
-            env,
-            channelId,
-            user.$id,
-        );
-        if (!access.isMember || !access.canRead) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-        }
+		// Verify user is authenticated
+		const user = await getServerSession();
+		if (!user) {
+			logger.warn("Unauthenticated pins fetch attempt");
+			return NextResponse.json(
+				{ error: "Authentication required" },
+				{ status: 401 }
+			);
+		}
 
-        const pinDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.pinnedMessages,
-            [
-                Query.equal("contextType", "channel"),
-                Query.equal("contextId", channelId),
-                Query.orderDesc("$createdAt"),
-                Query.limit(50),
-            ],
-        );
+		const { channelId } = await context.params;
 
-        const pins = pinDocs.documents as unknown as PinnedMessage[];
-        const messageIds = pins.map((pin) => pin.messageId);
+		addTransactionAttributes({
+			channelId,
+			userId: user.$id,
+		});
 
-        if (messageIds.length === 0) {
-            return NextResponse.json({ items: [] });
-        }
+		const env = getEnvConfig();
+		const { databases } = getServerClient();
 
-        const messageDocs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.messages,
-            [Query.equal("$id", messageIds), Query.limit(50)],
-        );
+		// Verify channel exists
+		try {
+			await databases.getDocument(
+				env.databaseId,
+				env.collections.channels,
+				channelId
+			);
+		} catch {
+			return NextResponse.json(
+				{ error: "Channel not found" },
+				{ status: 404 }
+			);
+		}
 
-        const messagesById = new Map<string, Message>();
-        for (const doc of messageDocs.documents) {
-            const d = doc as unknown as Record<string, unknown>;
-            messagesById.set(String(d.$id), {
-                $id: String(d.$id),
-                userId: String(d.userId),
-                userName: d.userName as string | undefined,
-                text: String(d.text || ""),
-                $createdAt: String(d.$createdAt || ""),
-                channelId: d.channelId as string | undefined,
-                serverId: d.serverId as string | undefined,
-                editedAt: d.editedAt as string | undefined,
-                removedAt: d.removedAt as string | undefined,
-                removedBy: d.removedBy as string | undefined,
-                imageFileId: d.imageFileId as string | undefined,
-                imageUrl: d.imageUrl as string | undefined,
-                replyToId: d.replyToId as string | undefined,
-                threadId: d.threadId as string | undefined,
-                threadMessageCount:
-                    typeof d.threadMessageCount === "number"
-                        ? d.threadMessageCount
-                        : undefined,
-                threadParticipants: Array.isArray(d.threadParticipants)
-                    ? (d.threadParticipants as string[])
-                    : undefined,
-                lastThreadReplyAt: d.lastThreadReplyAt as string | undefined,
-                mentions: Array.isArray(d.mentions)
-                    ? (d.mentions as string[])
-                    : undefined,
-            });
-        }
+		// Fetch pinned messages for this channel
+		const response = await databases.listDocuments(
+			env.databaseId,
+			env.collections.messages,
+			[
+				Query.equal("channelId", channelId),
+				Query.equal("isPinned", true),
+				Query.orderDesc("pinnedAt"),
+				Query.limit(50),
+			]
+		);
 
-        const items = pins
-            .map((pin) => {
-                const message = messagesById.get(pin.messageId);
-                if (!message) {
-                    return null;
-                }
+		const pinnedMessages = response.documents as unknown as Message[];
 
-                return {
-                    pin,
-                    message,
-                };
-            })
-            .filter(Boolean);
+		const duration = Date.now() - startTime;
+		trackApiCall("/api/channels/[channelId]/pins", "GET", 200, duration);
 
-        return NextResponse.json({ items });
-    } catch (error) {
-        return NextResponse.json(
-            {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch pinned messages",
-            },
-            { status: 500 },
-        );
-    }
+		logger.info("Pinned messages fetched successfully", {
+			channelId,
+			userId: user.$id,
+			count: pinnedMessages.length,
+		});
+
+		return NextResponse.json({
+			pins: pinnedMessages,
+			total: response.total,
+		});
+	} catch (error) {
+		const duration = Date.now() - startTime;
+		logger.error("Failed to fetch pinned messages", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		recordError(error instanceof Error ? error : new Error(String(error)), {
+			endpoint: "/api/channels/[channelId]/pins",
+			method: "GET",
+		});
+		trackApiCall("/api/channels/[channelId]/pins", "GET", 500, duration);
+
+		return NextResponse.json(
+			{ error: "Failed to fetch pinned messages" },
+			{ status: 500 }
+		);
+	}
 }

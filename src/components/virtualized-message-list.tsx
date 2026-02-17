@@ -7,62 +7,56 @@ import { MessageWithMentions } from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import { ThreadIndicator } from "@/components/thread-indicator";
 import { formatMessageTimestamp } from "@/lib/utils";
-import { MessageSquare, Pencil, Pin, Reply, Trash2 } from "lucide-react";
+import { MessageSquare, MessageSquareMore, Pencil, Trash2, Pin } from "lucide-react";
 
 type VirtualizedMessageListProps = {
-    messages: Message[];
-    userId: string | null;
-    userIdSlice: number;
-    editingMessageId: string | null;
-    deleteConfirmId: string | null;
-    setDeleteConfirmId: (id: string | null) => void;
-    onStartEdit: (message: Message) => void;
-    onStartReply: (message: Message) => void;
-    onRemove: (id: string) => void;
-    onTogglePin?: (message: Message) => Promise<void>;
-    onOpenThread?: (message: Message) => Promise<void>;
-    onToggleReaction: (
-        messageId: string,
-        emoji: string,
-        isAdding: boolean,
-    ) => Promise<void>;
-    onOpenProfileModal: (
-        userId: string,
-        userName?: string,
-        displayName?: string,
-        avatarUrl?: string,
-    ) => void;
-    onOpenImageViewer: (imageUrl: string) => void;
-    customEmojis?: CustomEmoji[];
-    onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
-    shouldShowLoadOlder: boolean;
-    onLoadOlder: () => void;
-    messageDensity?: "compact" | "cozy";
-    pinnedMessageIds?: string[];
+  messages: Message[];
+  userId: string | null;
+  userIdSlice: number;
+  editingMessageId: string | null;
+  deleteConfirmId: string | null;
+  setDeleteConfirmId: (id: string | null) => void;
+  onStartEdit: (message: Message) => void;
+  onStartReply: (message: Message) => void;
+  onRemove: (id: string) => void;
+  onToggleReaction: (messageId: string, emoji: string, isAdding: boolean) => Promise<void>;
+  onOpenProfileModal: (userId: string, userName?: string, displayName?: string, avatarUrl?: string) => void;
+  onOpenImageViewer: (imageUrl: string) => void;
+  customEmojis?: CustomEmoji[];
+  onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
+  shouldShowLoadOlder: boolean;
+  onLoadOlder: () => void;
+  // Threading props
+  onOpenThread?: (message: Message) => void;
+  // Pinning props
+  onPinMessage?: (messageId: string) => Promise<void>;
+  onUnpinMessage?: (messageId: string) => Promise<void>;
+  canManageMessages?: boolean;
 };
 
 export function VirtualizedMessageList({
-    messages,
-    userId,
-    userIdSlice,
-    editingMessageId,
-    deleteConfirmId,
-    setDeleteConfirmId,
-    onStartEdit,
-    onStartReply,
-    onRemove,
-    onTogglePin,
-    onOpenThread,
-    onToggleReaction,
-    onOpenProfileModal,
-    onOpenImageViewer,
-    customEmojis,
-    onUploadCustomEmoji,
-    shouldShowLoadOlder,
-    onLoadOlder,
-    messageDensity = "compact",
-    pinnedMessageIds,
+  messages,
+  userId,
+  userIdSlice,
+  editingMessageId,
+  deleteConfirmId,
+  setDeleteConfirmId,
+  onStartEdit,
+  onStartReply,
+  onRemove,
+  onToggleReaction,
+  onOpenProfileModal,
+  onOpenImageViewer,
+  customEmojis,
+  onUploadCustomEmoji,
+  shouldShowLoadOlder,
+  onLoadOlder,
+  onOpenThread,
+  onPinMessage,
+  onUnpinMessage,
+  canManageMessages = false,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
 
@@ -218,194 +212,155 @@ export function VirtualizedMessageList({
                                 </div>
                             )}
 
-                            {m.attachments &&
-                                m.attachments.length > 0 &&
-                                !removed && (
-                                    <div className="mt-2 space-y-2">
-                                        {m.attachments.map(
-                                            (attachment, idx) => (
-                                                <FileAttachmentDisplay
-                                                    key={`${m.$id}-${attachment.fileId}-${idx}`}
-                                                    attachment={attachment}
-                                                />
-                                            ),
-                                        )}
-                                    </div>
-                                )}
+              {/* Thread indicator - only show on non-thread messages with replies */}
+              {!m.threadId && m.threadReplyCount && m.threadReplyCount > 0 && onOpenThread && (
+                <ThreadIndicator
+                  replyCount={m.threadReplyCount}
+                  lastReplyAt={m.lastThreadReplyAt}
+                  onClick={() => onOpenThread(m)}
+                />
+              )}
 
-                            {m.reactions && m.reactions.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                    {m.reactions.map((reaction) => {
-                                        return (
-                                            <ReactionButton
-                                                currentUserId={userId}
-                                                customEmojis={customEmojis}
-                                                key={`${m.$id}-${reaction.emoji}`}
-                                                onToggle={(e, isAdding) =>
-                                                    onToggleReaction(
-                                                        m.$id,
-                                                        e,
-                                                        isAdding,
-                                                    )
-                                                }
-                                                reaction={reaction}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            )}
+              {/* Pinned indicator */}
+              {m.isPinned && (
+                <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                  <Pin className="h-3 w-3" />
+                  <span>Pinned</span>
+                </div>
+              )}
 
-                            {typeof m.threadMessageCount === "number" &&
-                                m.threadMessageCount > 0 &&
-                                onOpenThread && (
-                                    <button
-                                        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                                        aria-label={`View thread with ${m.threadMessageCount} ${m.threadMessageCount === 1 ? "reply" : "replies"}`}
-                                        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                                        onClick={() => {
-                                            void onOpenThread(m);
-                                        }}
-                                        type="button"
-                                    >
-                                        <MessageSquare className="h-3 w-3" />
-                                        {m.threadMessageCount}{" "}
-                                        {m.threadMessageCount === 1
-                                            ? "reply"
-                                            : "replies"}
-                                    </button>
-                                )}
+              {m.reactions && m.reactions.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {m.reactions.map((reaction) => {
+                    return (
+                      <ReactionButton
+                        currentUserId={userId}
+                        customEmojis={customEmojis}
+                        key={`${m.$id}-${reaction.emoji}`}
+                        onToggle={(e, isAdding) => onToggleReaction(m.$id, e, isAdding)}
+                        reaction={reaction}
+                      />
+                    );
+                  })}
+                </div>
+              )}
 
-                            {!removed && (
-                                <div
-                                    className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
-                                >
-                                    <ReactionPicker
-                                        customEmojis={customEmojis}
-                                        onUploadCustomEmoji={
-                                            onUploadCustomEmoji
-                                        }
-                                        onSelectEmoji={async (emoji) => {
-                                            await onToggleReaction(
-                                                m.$id,
-                                                emoji,
-                                                true,
-                                            );
-                                        }}
-                                    />
-                                    <Button
-                                        aria-label="Reply"
-                                        onClick={() => onStartReply(m)}
-                                        size="sm"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        <Reply className="h-4 w-4" />
-                                    </Button>
-                                    {onOpenThread && (
-                                        <Button
-                                            aria-label="Start thread"
-                                            onClick={() => {
-                                                void onOpenThread(m);
-                                            }}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <MessageSquare className="h-4 w-4" />
-                                        </Button>
-                                    )}
-                                    {onTogglePin && (
-                                        <Button
-                                            aria-label={
-                                                isPinned
-                                                    ? "Unpin message"
-                                                    : "Pin message"
-                                            }
-                                            onClick={() => {
-                                                void onTogglePin(m);
-                                            }}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Pin
-                                                className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
-                                            />
-                                        </Button>
-                                    )}
-                                    {mine && (
-                                        <>
-                                            <Button
-                                                onClick={() => onStartEdit(m)}
-                                                size="sm"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            {isDeleting ? (
-                                                <>
-                                                    <Button
-                                                        onClick={() =>
-                                                            onRemove(m.$id)
-                                                        }
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="destructive"
-                                                    >
-                                                        Confirm
-                                                    </Button>
-                                                    <Button
-                                                        onClick={() =>
-                                                            setDeleteConfirmId(
-                                                                null,
-                                                            )
-                                                        }
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="ghost"
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </>
-                                            ) : (
-                                                <Button
-                                                    onClick={() =>
-                                                        setDeleteConfirmId(
-                                                            m.$id,
-                                                        )
-                                                    }
-                                                    size="sm"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-            }}
-            components={{
-                Header: shouldShowLoadOlder
-                    ? () => (
-                          <div className="flex justify-center p-4">
-                              <Button
-                                  onClick={onLoadOlder}
-                                  size="sm"
-                                  type="button"
-                                  variant="outline"
-                              >
-                                  Load older messages
-                              </Button>
-                          </div>
+              {!removed && (
+                <div className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}>
+                  <ReactionPicker
+                    customEmojis={customEmojis}
+                    onUploadCustomEmoji={onUploadCustomEmoji}
+                    onSelectEmoji={async (emoji) => {
+                      await onToggleReaction(m.$id, emoji, true);
+                    }}
+                  />
+                  <Button
+                    onClick={() => onStartReply(m)}
+                    size="sm"
+                    title="Reply"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                  {/* Thread button - only show on non-thread messages */}
+                  {!m.threadId && onOpenThread && (
+                    <Button
+                      onClick={() => onOpenThread(m)}
+                      size="sm"
+                      title="Start or view thread"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MessageSquareMore className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {/* Pin/Unpin button - only show if user can manage messages */}
+                  {canManageMessages && (
+                    m.isPinned ? (
+                      onUnpinMessage && (
+                        <Button
+                          onClick={() => void onUnpinMessage(m.$id)}
+                          size="sm"
+                          title="Unpin message"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pin className="h-4 w-4 text-amber-600" />
+                        </Button>
                       )
-                    : undefined,
-            }}
-        />
-    );
+                    ) : (
+                      onPinMessage && (
+                        <Button
+                          onClick={() => void onPinMessage(m.$id)}
+                          size="sm"
+                          title="Pin message"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Pin className="h-4 w-4" />
+                        </Button>
+                      )
+                    )
+                  )}
+                  {mine && (
+                    <>
+                      <Button
+                        onClick={() => onStartEdit(m)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      {isDeleting ? (
+                        <>
+                          <Button
+                            onClick={() => onRemove(m.$id)}
+                            size="sm"
+                            type="button"
+                            variant="destructive"
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            onClick={() => setDeleteConfirmId(null)}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          onClick={() => setDeleteConfirmId(m.$id)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }}
+      components={{
+        Header: shouldShowLoadOlder
+          ? () => (
+              <div className="flex justify-center p-4">
+                <Button onClick={onLoadOlder} size="sm" type="button" variant="outline">
+                  Load older messages
+                </Button>
+              </div>
+            )
+          : undefined,
+      }}
+    />
+  );
 }

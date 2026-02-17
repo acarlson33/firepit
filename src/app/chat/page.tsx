@@ -2,20 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
-import {
-    MessageSquare,
-    Reply,
-    Hash,
-    Image as ImageIcon,
-    X,
-    Settings,
-    Shield,
-    Pencil,
-    Trash2,
-    BellOff,
-    MoreVertical,
-    Pin,
-} from "lucide-react";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,7 +14,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
-import type { Channel, FileAttachment } from "@/lib/types";
+import type { Channel, FileAttachment, Message } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
@@ -53,78 +40,36 @@ import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
 
 // Lazy load heavy components
-const ServerBrowser = dynamic(
-    () =>
-        import("./components/ServerBrowser").then((mod) => ({
-            default: mod.ServerBrowser,
-        })),
-    {
-        ssr: false,
-    },
-);
-const UserProfileModal = dynamic(
-    () =>
-        import("@/components/user-profile-modal").then((mod) => ({
-            default: mod.UserProfileModal,
-        })),
-    {
-        ssr: false,
-    },
-);
-const NewConversationDialog = dynamic(
-    () =>
-        import("./components/NewConversationDialog").then((mod) => ({
-            default: mod.NewConversationDialog,
-        })),
-    {
-        ssr: false,
-    },
-);
-const RoleSettingsDialog = dynamic(
-    () =>
-        import("@/components/role-settings-dialog").then((mod) => ({
-            default: mod.RoleSettingsDialog,
-        })),
-    {
-        ssr: false,
-    },
-);
-const ChannelPermissionsEditor = dynamic(
-    () =>
-        import("@/components/channel-permissions-editor").then((mod) => ({
-            default: mod.ChannelPermissionsEditor,
-        })),
-    {
-        ssr: false,
-    },
-);
-const ServerAdminPanel = dynamic(
-    () =>
-        import("@/components/server-admin-panel").then((mod) => ({
-            default: mod.ServerAdminPanel,
-        })),
-    {
-        ssr: false,
-    },
-);
-const CreateServerDialog = dynamic(
-    () =>
-        import("@/components/create-server-dialog").then((mod) => ({
-            default: mod.CreateServerDialog,
-        })),
-    {
-        ssr: false,
-    },
-);
-const MuteDialog = dynamic(
-    () =>
-        import("@/components/mute-dialog").then((mod) => ({
-            default: mod.MuteDialog,
-        })),
-    {
-        ssr: false,
-    },
-);
+const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
+  ssr: false,
+});
+const UserProfileModal = dynamic(() => import("@/components/user-profile-modal").then((mod) => ({ default: mod.UserProfileModal })), {
+  ssr: false,
+});
+const NewConversationDialog = dynamic(() => import("./components/NewConversationDialog").then((mod) => ({ default: mod.NewConversationDialog })), {
+  ssr: false,
+});
+const RoleSettingsDialog = dynamic(() => import("@/components/role-settings-dialog").then((mod) => ({ default: mod.RoleSettingsDialog })), {
+  ssr: false,
+});
+const ChannelPermissionsEditor = dynamic(() => import("@/components/channel-permissions-editor").then((mod) => ({ default: mod.ChannelPermissionsEditor })), {
+  ssr: false,
+});
+const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel").then((mod) => ({ default: mod.ServerAdminPanel })), {
+  ssr: false,
+});
+const CreateServerDialog = dynamic(() => import("@/components/create-server-dialog").then((mod) => ({ default: mod.CreateServerDialog })), {
+  ssr: false,
+});
+const MuteDialog = dynamic(() => import("@/components/mute-dialog").then((mod) => ({ default: mod.MuteDialog })), {
+  ssr: false,
+});
+const ThreadPanel = dynamic(() => import("@/components/thread-panel").then((mod) => ({ default: mod.ThreadPanel })), {
+  ssr: false,
+});
+const PinnedMessagesPanel = dynamic(() => import("@/components/pinned-messages-panel").then((mod) => ({ default: mod.PinnedMessagesPanel })), {
+  ssr: false,
+});
 
 // Lazy load interactive components that aren't always visible (Performance Optimization)
 const EmojiPicker = dynamic(
@@ -155,74 +100,135 @@ const ImageViewer = dynamic(
 // Lazy load dialogs and modals only when needed
 
 export default function ChatPage() {
-    const { userData, loading: _authLoading } = useAuth();
-    const userId = userData?.userId ?? null;
-    const userName = userData?.name ?? null;
-    const searchParams = useSearchParams();
-    const router = useRouter();
+  const { userData, loading: _authLoading } = useAuth();
+  const userId = userData?.userId ?? null;
+  const userName = userData?.name ?? null;
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  // Automatic status tracking removed to preserve manual status settings
+  // Users can manually set their status via the profile/settings UI
+  const membershipEnabled = Boolean(
+    process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
+  );
+  const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
+  const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
+  const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [allowUserServers, setAllowUserServers] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<{
+    userId: string;
+    userName?: string;
+    displayName?: string;
+    avatarUrl?: string;
+  } | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
+  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [muteDialogState, setMuteDialogState] = useState<{
+    open: boolean;
+    type: "server" | "channel" | "conversation";
+    id: string;
+    name: string;
+  }>({ open: false, type: "channel", id: "", name: "" });
+  // Threading and pinning state
+  const [activeThread, setActiveThread] = useState<Message | null>(null);
+  const [showPinnedPanel, setShowPinnedPanel] = useState(false);
+  const [canManageMessages, setCanManageMessages] = useState(false);
+  const _messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isWindowFocused, setIsWindowFocused] = useState(true);
 
-    // Automatic status tracking removed to preserve manual status settings
-    // Users can manually set their status via the profile/settings UI
-    const membershipEnabled = Boolean(
-        process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
-    );
-    const [messageDensity, setMessageDensity] = useState<"compact" | "cozy">(
-        "compact",
-    );
-    const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
-    const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-    const [selectedConversationId, setSelectedConversationId] = useState<
-        string | null
-    >(null);
-    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-    const [profileModalOpen, setProfileModalOpen] = useState(false);
-    const [newConversationOpen, setNewConversationOpen] = useState(false);
-    const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
-    const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
-    const [adminPanelOpen, setAdminPanelOpen] = useState(false);
-    const [allowUserServers, setAllowUserServers] = useState(false);
-    const [selectedProfile, setSelectedProfile] = useState<{
-        userId: string;
-        userName?: string;
-        displayName?: string;
-        avatarUrl?: string;
-    } | null>(null);
-    const [selectedImage, setSelectedImage] = useState<File | null>(null);
-    const [imagePreview, setImagePreview] = useState<string | null>(null);
-    const [uploadingImage, setUploadingImage] = useState(false);
-    const [viewingImage, setViewingImage] = useState<{
-        url: string;
-        alt: string;
-    } | null>(null);
-    const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>(
-        [],
-    );
-    const [muteDialogState, setMuteDialogState] = useState<{
-        open: boolean;
-        type: "server" | "channel" | "conversation";
-        id: string;
-        name: string;
-    }>({ open: false, type: "channel", id: "", name: "" });
-    const _messagesEndRef = useRef<HTMLDivElement>(null);
-    const messagesContainerRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isWindowFocused, setIsWindowFocused] = useState(true);
-    const [threadReplyText, setThreadReplyText] = useState("");
+  // Custom emojis
+  const { customEmojis, uploadEmoji } = useCustomEmojis();
 
-    // Custom emojis
-    const { customEmojis, uploadEmoji } = useCustomEmojis();
+  const openProfileModal = (
+    profileUserId: string,
+    profileUserName?: string,
+    profileDisplayName?: string,
+    profileAvatarUrl?: string
+  ) => {
+    setSelectedProfile({
+      userId: profileUserId,
+      userName: profileUserName,
+      displayName: profileDisplayName,
+      avatarUrl: profileAvatarUrl,
+    });
+    setProfileModalOpen(true);
+  };
+  // Check if user server creation is enabled
+  useEffect(() => {
+    if (userId) {
+      fetch("/api/feature-flags/allow-user-servers")
+        .then((res) => res.json())
+        .then((data: { enabled: boolean }) => {
+          console.log("Feature flag allow-user-servers:", data.enabled);
+          setAllowUserServers(data.enabled);
+        })
+        .catch((error) => {
+          console.error("Failed to fetch feature flag:", error);
+          setAllowUserServers(false);
+        });
+    }
+  }, [userId]);
 
-    const openProfileModal = (
-        profileUserId: string,
-        profileUserName?: string,
-        profileDisplayName?: string,
-        profileAvatarUrl?: string,
-    ) => {
-        setSelectedProfile({
-            userId: profileUserId,
-            userName: profileUserName,
-            displayName: profileDisplayName,
-            avatarUrl: profileAvatarUrl,
+  // Auto-join server via invite code from query param
+  useEffect(() => {
+    const inviteCode = searchParams.get("invite");
+    if (inviteCode && userId) {
+      // Only auto-join once per code
+      const joinedKey = `invite_joined_${inviteCode}`;
+      if (sessionStorage.getItem(joinedKey)) {
+        // Clear the query param
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("invite");
+        router.replace(`/chat?${newParams.toString()}`);
+        return;
+      }
+
+      // Attempt to join via invite
+      fetch(`/api/invites/${inviteCode}/join`, {
+        method: "POST",
+      })
+        .then(async (res) => {
+          if (res.ok) {
+            await res.json(); // intentionally unused: response data not needed
+            sessionStorage.setItem(joinedKey, "true");
+            toast.success("Successfully joined server via invite!");
+            
+            // Clear the query param
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete("invite");
+            router.replace(`/chat?${newParams.toString()}`);
+            
+            // Optionally select the server (if serversApi is available)
+            // This will be handled by the servers hook automatically
+          } else {
+            const error = await res.json();
+            toast.error(error.error || "Failed to join server");
+            
+            // Clear the query param on error too
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete("invite");
+            router.replace(`/chat?${newParams.toString()}`);
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to join via invite:", error);
+          toast.error("Failed to join server");
+          
+          // Clear the query param
+          const newParams = new URLSearchParams(searchParams);
+          newParams.delete("invite");
+          router.replace(`/chat?${newParams.toString()}`);
         });
         setProfileModalOpen(true);
     };
@@ -273,7 +279,74 @@ export default function ChatPage() {
             cancelled = true;
             controller.abort();
         };
-    }, [userId]);
+        document.addEventListener("click", handleInteraction, { once: true });
+        return () => document.removeEventListener("click", handleInteraction);
+      }
+    }
+  }, [userId, requestNotificationPermission]);
+
+  // Check manageMessages permission when channel changes
+  useEffect(() => {
+    async function checkPermissions() {
+      if (!selectedChannel || !userId || !serversApi.selectedServer) {
+        setCanManageMessages(false);
+        return;
+      }
+
+      // Server owner always has permission
+      const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
+      if (selectedServerData?.ownerId === userId) {
+        setCanManageMessages(true);
+        return;
+      }
+
+      // Check via API
+      try {
+        const res = await fetch(`/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCanManageMessages(data.manageMessages ?? false);
+        } else {
+          setCanManageMessages(false);
+        }
+      } catch {
+        setCanManageMessages(false);
+      }
+    }
+
+    void checkPermissions();
+  }, [selectedChannel, userId, serversApi.selectedServer, serversApi.servers]);
+
+  // Handlers -----------------
+  const selectChannel = useCallback((c: Channel) => {
+    setSelectedChannel(c.$id);
+    setViewMode("channels");
+    setSelectedConversationId(null);
+  }, []);
+
+  const selectConversation = useCallback((conversation: { $id: string }) => {
+    setSelectedConversationId(conversation.$id);
+    setViewMode("dms");
+    setSelectedChannel(null);
+  }, []);
+
+  const _confirmDelete = useCallback((messageId: string) => {
+    setDeleteConfirmId(messageId);
+  }, []);
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteConfirmId) {
+      return;
+    }
+    await removeMessage(deleteConfirmId);
+    setDeleteConfirmId(null);
+  }, [deleteConfirmId, removeMessage]);
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
 
     // Auto-join server via invite code from query param
     useEffect(() => {
@@ -419,16 +492,53 @@ export default function ChatPage() {
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-    // DM hooks
-    const conversationsApi = useConversations(userId);
-    const selectedConversation = useMemo(
-        () =>
-            conversationsApi.conversations.find(
-                (c) => c.$id === selectedConversationId,
-            ),
-        [conversationsApi.conversations, selectedConversationId],
-    );
-    const receiverId = selectedConversation?.otherUser?.userId;
+  // Thread handlers
+  const handleOpenThread = useCallback((message: Message) => {
+    setActiveThread(message);
+  }, []);
+
+  const handleCloseThread = useCallback(() => {
+    setActiveThread(null);
+  }, []);
+
+  // Pin handlers
+  const handlePinMessage = useCallback(async (messageId: string) => {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/pin`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to pin message");
+      } else {
+        toast.success("Message pinned");
+      }
+    } catch {
+      toast.error("Failed to pin message");
+    }
+  }, []);
+
+  const handleUnpinMessage = useCallback(async (messageId: string) => {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/pin`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to unpin message");
+      } else {
+        toast.success("Message unpinned");
+      }
+    } catch {
+      toast.error("Failed to unpin message");
+    }
+  }, []);
+
+  // Derived helpers
+  const showChat = useMemo(
+    () => Boolean(selectedChannel) || Boolean(selectedConversationId),
+    [selectedChannel, selectedConversationId]
+  );
 
     const dmApi = useDirectMessages({
         conversationId: selectedConversationId || "",
@@ -899,11 +1009,139 @@ export default function ChatPage() {
             );
         }
 
-        // Show loading spinner when switching channels
-        if (messagesLoading) {
-            return (
-                <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-border/60 bg-background/70 p-10">
-                    <Loader />
+  function renderMessages() {
+    if (!showChat) {
+      return (
+        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
+          Pick a channel or direct conversation to get started. Your messages will appear here.
+        </div>
+      );
+    }
+    
+    // Show loading spinner when switching channels
+    if (messagesLoading) {
+      return (
+        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-border/60 bg-background/70 p-10">
+          <Loader />
+        </div>
+      );
+    }
+    
+    // Use virtual scrolling only for large message lists (50+ messages)
+    // This avoids scrolling issues with small lists
+    const useVirtualScrolling = messages.length >= 50;
+    
+    if (useVirtualScrolling) {
+      return (
+        <VirtualizedMessageList
+          canManageMessages={canManageMessages}
+          customEmojis={customEmojis}
+          deleteConfirmId={deleteConfirmId}
+          editingMessageId={editingMessageId}
+          messages={messages}
+          onLoadOlder={loadOlder}
+          onOpenImageViewer={(imageUrl: string) => {
+            setViewingImage({
+              url: imageUrl,
+              alt: "Image",
+            });
+          }}
+          onOpenProfileModal={openProfileModal}
+          onOpenThread={handleOpenThread}
+          onPinMessage={handlePinMessage}
+          onRemove={handleDelete}
+          onStartEdit={startEdit}
+          onStartReply={startReply}
+          onToggleReaction={async (messageId: string, emoji: string, isAdding: boolean) => {
+            try {
+              await toggleReaction(messageId, emoji, isAdding, false);
+            } catch {
+              // Error already logged by reaction handler
+            }
+          }}
+          onUnpinMessage={handleUnpinMessage}
+          onUploadCustomEmoji={uploadEmoji}
+          setDeleteConfirmId={setDeleteConfirmId}
+          shouldShowLoadOlder={shouldShowLoadOlder()}
+          userId={userId}
+          userIdSlice={userIdSlice}
+        />
+      );
+    }
+    
+    // Regular rendering for smaller lists
+    return (
+      <div
+        className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+        ref={messagesContainerRef}
+      >
+        {shouldShowLoadOlder() && (
+          <div className="flex justify-center pb-4">
+            <Button
+              onClick={loadOlder}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Load older messages
+            </Button>
+          </div>
+        )}
+        {messages.map((m) => {
+          const mine = m.userId === userId;
+          const isEditing = editingMessageId === m.$id;
+          const removed = Boolean(m.removedAt);
+          const isDeleting = deleteConfirmId === m.$id;
+          const displayName =
+            m.displayName || m.userName || m.userId.slice(0, userIdSlice);
+
+          return (
+            <div
+              className={`group flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
+                mine
+                  ? "ml-auto max-w-[85%] flex-row-reverse text-right"
+                  : "mr-auto max-w-[85%]"
+              } ${
+                isEditing
+                  ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
+                  : "hover:border-border/80"
+              }`}
+              key={m.$id}
+            >
+              <button
+                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
+                onClick={() =>
+                  openProfileModal(
+                    m.userId,
+                    m.userName,
+                    m.displayName,
+                    m.avatarUrl,
+                  )
+                }
+                type="button"
+              >
+                <Avatar
+                  alt={displayName}
+                  fallback={displayName}
+                  size="md"
+                  src={m.avatarUrl}
+                />
+              </button>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div
+                  className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
+                >
+                  <span className="font-medium text-foreground">
+                    {displayName}
+                  </span>
+                  {m.pronouns && (
+                    <span className="italic text-muted-foreground">
+                      ({m.pronouns})
+                    </span>
+                  )}
+                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
+                  {m.editedAt && <span className="italic">(edited)</span>}
+                  {removed && <span className="text-destructive">(removed)</span>}
                 </div>
             );
         }
@@ -1416,30 +1654,239 @@ export default function ChatPage() {
                     )}
                 </aside>
 
-                <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
-                    {viewMode === "dms" && selectedConversation && userId ? (
-                        <DirectMessageView
-                            conversation={selectedConversation}
-                            currentUserId={userId}
-                            messageDensity={messageDensity}
-                            loading={dmApi.loading}
-                            messages={dmApi.messages}
-                            onDelete={dmApi.deleteMsg}
-                            onEdit={dmApi.edit}
-                            onSend={dmApi.send}
-                            sending={dmApi.sending}
-                            typingUsers={dmApi.typingUsers}
-                            onTypingChange={dmApi.handleTypingChange}
-                            pinnedMessageIds={dmApi.conversationPins.map(
-                                (entry) => entry.message.$id,
-                            )}
-                            onTogglePinMessage={dmApi.togglePin}
-                            onOpenThread={dmApi.openThread}
-                            activeThreadParent={dmApi.activeThreadParent}
-                            threadMessages={dmApi.threadMessages}
-                            threadLoading={dmApi.threadLoading}
-                            onCloseThread={dmApi.closeThread}
-                            onSendThreadReply={dmApi.sendThreadReply}
+  // Show loader during initial load
+  if (serversApi.initialLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+          {/* View Mode Toggle */}
+          <div className="rounded-2xl bg-muted/40 p-1">
+            <div className="grid grid-cols-2 gap-1">
+              <Button
+                aria-pressed={viewMode === "channels"}
+                className="rounded-xl"
+                onClick={() => {
+                  setViewMode("channels");
+                  setSelectedConversationId(null);
+                }}
+                size="sm"
+                type="button"
+                variant={viewMode === "channels" ? "default" : "ghost"}
+              >
+                <Hash className="mr-2 h-4 w-4" />
+                Channels
+              </Button>
+              <Button
+                aria-pressed={viewMode === "dms"}
+                className="rounded-xl"
+                onClick={() => {
+                  setViewMode("dms");
+                  setSelectedChannel(null);
+                }}
+                size="sm"
+                type="button"
+                variant={viewMode === "dms" ? "default" : "ghost"}
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                DMs
+              </Button>
+            </div>
+          </div>
+
+          {viewMode === "channels" ? (
+            <div className="space-y-4">
+              {renderServers()}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold tracking-tight">Channels</h2>
+                  {selectedChannel && (
+                    <span className="rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
+                      Active
+                    </span>
+                  )}
+                </div>
+                {renderChannels()}
+              </div>
+              <ServerBrowser
+                membershipEnabled={membershipEnabled}
+                userId={userId}
+                joinedServerIds={serversApi.servers.map((s) => s.$id)}
+                onServerJoined={() => {
+                  // Clear membership cache to ensure fresh data after reload
+                  if (userId) {
+                    apiCache.clear(`memberships:${userId}`);
+                    apiCache.clear(`servers:initial:${userId}`);
+                  }
+                  // Reload the page to refresh server list
+                  window.location.reload();
+                }}
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border/60 bg-background/60 p-2 shadow-sm">
+              <ConversationList
+                conversations={conversationsApi.conversations}
+                loading={conversationsApi.loading}
+                onMuteConversation={(conversationId, conversationName) => {
+                  setMuteDialogState({
+                    open: true,
+                    type: "conversation",
+                    id: conversationId,
+                    name: conversationName,
+                  });
+                }}
+                onNewConversation={() => setNewConversationOpen(true)}
+                onSelectConversation={selectConversation}
+                selectedConversationId={selectedConversationId}
+              />
+            </div>
+          )}
+        </aside>
+
+        <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+          {viewMode === "dms" && selectedConversation && userId ? (
+            <DirectMessageView
+              conversation={selectedConversation}
+              currentUserId={userId}
+              loading={dmApi.loading}
+              messages={dmApi.messages}
+              onDelete={dmApi.deleteMsg}
+              onEdit={dmApi.edit}
+              onSend={dmApi.send}
+              sending={dmApi.sending}
+              typingUsers={dmApi.typingUsers}
+              onTypingChange={dmApi.handleTypingChange}
+            />
+          ) : (
+            <>
+              {/* Channel Header */}
+              {selectedChannel && (
+                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-semibold">
+                      {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => setShowPinnedPanel(true)}
+                      size="sm"
+                      title="View pinned messages"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Pin className="h-4 w-4" />
+                      <span className="ml-2 hidden sm:inline">Pins</span>
+                    </Button>
+                    {serversApi.selectedServer && 
+                     serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                      <Button
+                        onClick={() => setChannelPermissionsOpen(true)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Settings className="h-4 w-4" />
+                        <span className="ml-2">Channel Permissions</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {renderMessages()}
+              {/* Chat Input */}
+              {!selectedConversationId && (
+                <div className="space-y-3">
+                  <MentionHelpTooltip />
+                  {replyingToMessage && (
+                    <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+                    <div className="flex-1">
+                      <div className="font-medium">
+                        Replying to {replyingToMessage.displayName || replyingToMessage.userName || "Unknown"}
+                      </div>
+                      <div className="line-clamp-1 text-xs text-muted-foreground">
+                        {replyingToMessage.text}
+                      </div>
+                    </div>
+                    <Button
+                      onClick={cancelReply}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                {editingMessageId && (
+                  <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
+                    <span className="text-blue-700 dark:text-blue-300">
+                      Editing message
+                    </span>
+                    <Button
+                      onClick={cancelEdit}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                {editingMessageId ? (
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                    <Input
+                      aria-label="Edit message"
+                      className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
+                      onChange={onChangeText}
+                      placeholder="Edit your message..."
+                      value={text}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void send(e);
+                        }
+                        if (e.key === "Escape") {
+                          cancelEdit();
+                        }
+                      }}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={(e) => {
+                          void send(e);
+                        }}
+                        type="button"
+                        variant="default"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        onClick={cancelEdit}
+                        type="button"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {imagePreview && (
+                      <div className="relative inline-block">
+                        <img
+                          alt="Upload preview"
+                          className="h-32 rounded-lg object-cover"
+                          src={imagePreview}
                         />
                     ) : (
                         <>
@@ -2045,5 +2492,118 @@ export default function ChatPage() {
                 targetName={muteDialogState.name}
             />
         </div>
-    );
+      </div>      {/* User Profile Modal */}
+      {selectedProfile && (
+        <UserProfileModal
+          avatarUrl={selectedProfile.avatarUrl}
+          displayName={selectedProfile.displayName}
+          onOpenChange={setProfileModalOpen}
+          open={profileModalOpen}
+          userId={selectedProfile.userId}
+          userName={selectedProfile.userName}
+          onStartDM={(conversationId) => {
+            setSelectedConversationId(conversationId);
+            setViewMode("dms");
+            setSelectedChannel(null);
+            setProfileModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* New Conversation Dialog */}
+      {userId && (
+        <NewConversationDialog
+          currentUserId={userId}
+          onConversationCreated={(conversation) => {
+            setSelectedConversationId(conversation.$id);
+            setViewMode("dms");
+            setSelectedChannel(null);
+            setNewConversationOpen(false);
+          }}
+          onOpenChange={setNewConversationOpen}
+          open={newConversationOpen}
+        />
+      )}
+
+      {/* Image Viewer Modal */}
+      {viewingImage && (
+        <ImageViewer
+          alt={viewingImage.alt}
+          onClose={() => {
+            setViewingImage(null);
+          }}
+          src={viewingImage.url}
+        />
+      )}
+
+      {/* Role Settings Dialog */}
+      {serversApi.selectedServer && (
+        <RoleSettingsDialog
+          open={roleSettingsOpen}
+          onOpenChange={setRoleSettingsOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+
+      {/* Channel Permissions Editor */}
+      {selectedChannel && serversApi.selectedServer && (
+        <ChannelPermissionsEditor
+          open={channelPermissionsOpen}
+          onOpenChange={setChannelPermissionsOpen}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+          serverId={serversApi.selectedServer}
+        />
+      )}
+
+      {/* Server Admin Panel */}
+      {serversApi.selectedServer && (
+        <ServerAdminPanel
+          open={adminPanelOpen}
+          onOpenChange={setAdminPanelOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+
+      {/* Mute Dialog */}
+      <MuteDialog
+        open={muteDialogState.open}
+        onOpenChange={(open) => setMuteDialogState((prev) => ({ ...prev, open }))}
+        targetType={muteDialogState.type}
+        targetId={muteDialogState.id}
+        targetName={muteDialogState.name}
+      />
+
+      {/* Thread Panel */}
+      {activeThread && userId && (
+        <ThreadPanel
+          customEmojis={customEmojis}
+          onOpenChange={(open) => {
+            if (!open) {
+              handleCloseThread();
+            }
+          }}
+          open={Boolean(activeThread)}
+          parentMessage={activeThread}
+          userId={userId}
+        />
+      )}
+
+      {/* Pinned Messages Panel */}
+      {selectedChannel && (
+        <PinnedMessagesPanel
+          canManageMessages={canManageMessages}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name}
+          onOpenChange={setShowPinnedPanel}
+          onUnpin={handleUnpinMessage}
+          open={showPinnedPanel}
+        />
+      )}
+    </div>
+  );
 }

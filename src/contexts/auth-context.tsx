@@ -1,14 +1,7 @@
 "use client";
 
-import {
-    createContext,
-    useContext,
-    useEffect,
-    useState,
-    useCallback,
-    type ReactNode,
-} from "react";
-import { getEnvConfig } from "@/lib/appwrite-core";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { getEnvConfig } from "@/lib/appwrite-core"; 
 import type { UserStatus } from "@/lib/types";
 import {
     getUserStatus,
@@ -45,33 +38,37 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [userData, setUserData] = useState<UserData | null>(null);
-    const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
-    const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    const fetchUserData = useCallback(async () => {
-        try {
-            const res = await fetch("/api/me");
-            if (res.ok) {
-                const data = (await res.json()) as UserData;
-                setUserData(data);
 
-                // Fetch user status
-                if (data.userId) {
-                    const status = await getUserStatus(data.userId);
-                    if (status) {
-                        setUserStatusState(status);
-                    }
-                }
-            } else {
-                setUserData(null);
-                setUserStatusState(null);
-            }
-        } catch {
-            setUserData(null);
-            setUserStatusState(null);
-        } finally {
-            setLoading(false);
+  const fetchUserData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/me");
+
+      // If not authorized, clear state and redirect users to the home page
+      // only when they are not currently on an auth page (login/register).
+      if (res.status === 401) {
+        // Clear user state on 401; navigation should be handled by middleware
+        // or by the calling UI to avoid interfering with auth flows (e.g. the
+        // user trying to navigate from home -> /login). This avoids races
+        // caused by concurrent client-side navigation.
+        setUserData(null);
+        setUserStatusState(null);
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json() as UserData;
+        setUserData(data);
+        
+        // Fetch user status
+        if (data.userId) {
+          const status = await getUserStatus(data.userId);
+          if (status) {
+            setUserStatusState(status);
+          }
         }
     }, []);
 

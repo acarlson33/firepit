@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import type { Message } from "@/lib/types";
 
@@ -46,6 +47,62 @@ describe("VirtualizedMessageList", () => {
 		shouldShowLoadOlder: false,
 		onLoadOlder: vi.fn(),
 	};
+
+	it("renders thread controls when enabled", async () => {
+		const onOpenThread = vi.fn();
+		const user = userEvent.setup();
+		const threadMessage: Message = {
+			...mockMessages[0],
+			$id: "thread-parent",
+			threadReplyCount: 2,
+		};
+
+		render(
+			<VirtualizedMessageList
+				{...defaultProps}
+				messages={[threadMessage]}
+				onOpenThread={onOpenThread}
+			/>
+		);
+
+		const threadButton = await screen.findByTitle("Start or view thread");
+		await user.click(threadButton);
+		expect(onOpenThread).toHaveBeenCalledWith(expect.objectContaining({ $id: "thread-parent" }));
+	});
+
+	it("renders pin and unpin buttons when user can manage messages", async () => {
+		const onPinMessage = vi.fn();
+		const onUnpinMessage = vi.fn();
+		const user = userEvent.setup();
+
+		render(
+			<VirtualizedMessageList
+				{...defaultProps}
+				messages={[{ ...mockMessages[0], $id: "pin-test", isPinned: false }]}
+				onPinMessage={onPinMessage}
+				onUnpinMessage={onUnpinMessage}
+				canManageMessages
+			/>
+		);
+
+		const pinButton = await screen.findByTitle("Pin message");
+		await user.click(pinButton);
+		expect(onPinMessage).toHaveBeenCalledWith("pin-test");
+
+		render(
+			<VirtualizedMessageList
+				{...defaultProps}
+				messages={[{ ...mockMessages[0], $id: "pinned-test", isPinned: true }]}
+				onPinMessage={onPinMessage}
+				onUnpinMessage={onUnpinMessage}
+				canManageMessages
+			/>
+		);
+
+		const unpinButton = await screen.findByTitle("Unpin message");
+		await user.click(unpinButton);
+		expect(onUnpinMessage).toHaveBeenCalledWith("pinned-test");
+	});
 
 	it("should render message list", () => {
 		render(<VirtualizedMessageList {...defaultProps} />);
