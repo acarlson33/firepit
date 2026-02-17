@@ -13,6 +13,7 @@ import {
 	addTransactionAttributes,
 	recordEvent,
 } from "@/lib/newrelic-utils";
+import { assignDefaultRoleServer } from "@/lib/default-role";
 
 /**
  * POST /api/servers/join
@@ -124,6 +125,11 @@ export async function POST(request: NextRequest) {
 				serverId,
 				{ memberCount: currentCount + 1 }
 			);
+			try {
+				await assignDefaultRoleServer(serverId, userId);
+			} catch {
+				// Non-fatal: continue even if default role assignment fails
+			}
 		} catch (error) {
 			// Log but don't fail if we can't update the count
 			logger.warn("Failed to update member count", { 

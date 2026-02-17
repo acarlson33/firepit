@@ -58,113 +58,159 @@ export function VirtualizedMessageList({
   onUnpinMessage,
   canManageMessages = false,
 }: VirtualizedMessageListProps) {
-  return (
-    <Virtuoso
-      className="h-[60vh] rounded-3xl border border-border/60 bg-background/70 shadow-inner"
-      data={messages}
-      followOutput="smooth"
-      initialTopMostItemIndex={messages.length - 1}
-      itemContent={(index, m) => {
-        const mine = m.userId === userId;
-        const isEditing = editingMessageId === m.$id;
-        const removed = Boolean(m.removedAt);
-        const isDeleting = deleteConfirmId === m.$id;
-        const displayName = m.displayName || m.userName || m.userId.slice(0, userIdSlice);
+    const isCompact = messageDensity === "compact";
 
-        return (
-          <div
-            className={`group mb-4 mx-4 flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
-              mine ? "ml-auto max-w-[85%] flex-row-reverse text-right" : "mr-auto max-w-[85%]"
-            } ${
-              isEditing ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30" : "hover:border-border/80"
-            }`}
-          >
-            <button
-              className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
-              onClick={() => onOpenProfileModal(m.userId, m.userName, m.displayName, m.avatarUrl)}
-              type="button"
-            >
-              <Avatar
-                alt={displayName}
-                fallback={displayName}
-                size="md"
-                src={m.avatarUrl}
-              />
-            </button>
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}>
-                <span className="font-medium text-foreground">
-                  {displayName}
-                </span>
-                {m.pronouns && (
-                  <span className="italic text-muted-foreground">
-                    ({m.pronouns})
-                  </span>
-                )}
-                <span>{formatMessageTimestamp(m.$createdAt)}</span>
-                {m.editedAt && <span className="italic">(edited)</span>}
-                {removed && <span className="text-destructive">(removed)</span>}
-              </div>
+    return (
+        <Virtuoso
+            className={`h-[60vh] ${
+                isCompact ? "rounded-2xl p-3" : "rounded-3xl p-4"
+            } border border-border/60 bg-background/70 shadow-inner`}
+            data={messages}
+            followOutput="smooth"
+            initialTopMostItemIndex={messages.length - 1}
+            itemContent={(index, m) => {
+                const mine = m.userId === userId;
+                const isEditing = editingMessageId === m.$id;
+                const removed = Boolean(m.removedAt);
+                const isDeleting = deleteConfirmId === m.$id;
+                const isPinned =
+                    Array.isArray(pinnedMessageIds) &&
+                    pinnedMessageIds.includes(m.$id);
+                const displayName =
+                    m.displayName ||
+                    m.userName ||
+                    m.userId.slice(0, userIdSlice);
 
-              {m.replyTo && (
-                <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs">
-                  <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <span className="font-medium text-foreground">
-                      {m.replyTo.displayName || m.replyTo.userName || "User"}
-                    </span>
-                    <span className="ml-1 text-muted-foreground">
-                      {m.replyTo.text?.length > 50
-                        ? `${m.replyTo.text.slice(0, 50)}...`
-                        : m.replyTo.text}
-                    </span>
-                  </div>
-                </div>
-              )}
+                return (
+                    <div
+                        id={`message-${m.$id}`}
+                        className={`group mx-4 flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
+                            mine
+                                ? "ml-auto max-w-[85%] flex-row-reverse text-right"
+                                : "mr-auto max-w-[85%]"
+                        } ${
+                            isEditing
+                                ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
+                                : "hover:border-border/80"
+                        } ${isCompact ? "mb-3 gap-2 p-2" : "mb-4 gap-3 p-3"}`}
+                    >
+                        <button
+                            className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
+                            onClick={() =>
+                                onOpenProfileModal(
+                                    m.userId,
+                                    m.userName,
+                                    m.displayName,
+                                    m.avatarUrl,
+                                )
+                            }
+                            type="button"
+                        >
+                            <Avatar
+                                alt={displayName}
+                                fallback={displayName}
+                                size="md"
+                                src={m.avatarUrl}
+                            />
+                        </button>
+                        <div className="min-w-0 flex-1 space-y-2">
+                            <div
+                                className={`flex flex-wrap items-baseline gap-2 ${
+                                    mine ? "justify-end" : ""
+                                } text-muted-foreground ${
+                                    isCompact ? "text-[11px]" : "text-xs"
+                                }`}
+                            >
+                                <span className="font-medium text-foreground">
+                                    {displayName}
+                                </span>
+                                {m.pronouns && (
+                                    <span className="italic text-muted-foreground">
+                                        ({m.pronouns})
+                                    </span>
+                                )}
+                                <span>
+                                    {formatMessageTimestamp(m.$createdAt)}
+                                </span>
+                                {m.editedAt && (
+                                    <span className="italic">(edited)</span>
+                                )}
+                                {removed && (
+                                    <span className="text-destructive">
+                                        (removed)
+                                    </span>
+                                )}
+                                {isPinned && (
+                                    <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                        <Pin className="h-3 w-3" />
+                                        Pinned
+                                    </span>
+                                )}
+                            </div>
 
-              {!removed && (
-                <div className="wrap-break-word text-sm">
-                  <MessageWithMentions text={m.text} />
-                </div>
-              )}
-              {removed && m.removedBy && (
-                <div className="text-xs italic text-muted-foreground">
-                  Removed by moderator
-                </div>
-              )}
+                            {m.replyTo && (
+                                <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs">
+                                    <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                        <span className="font-medium text-foreground">
+                                            {m.replyTo.displayName ||
+                                                m.replyTo.userName ||
+                                                "User"}
+                                        </span>
+                                        <span className="ml-1 text-muted-foreground">
+                                            {m.replyTo.text?.length > 50
+                                                ? `${m.replyTo.text.slice(0, 50)}...`
+                                                : m.replyTo.text}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
-              {m.imageUrl && !removed && (
-                <div className="mt-2">
-                  <button
-                    className="overflow-hidden rounded-lg border border-border transition hover:opacity-90"
-                    onClick={() => {
-                      if (m.imageUrl) {
-                        onOpenImageViewer(m.imageUrl);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <img
-                      alt="Attached"
-                      className="max-h-64 w-auto"
-                      decoding="async"
-                      loading="lazy"
-                      src={m.imageUrl}
-                    />
-                  </button>
-                </div>
-              )}
+                            {!removed && (
+                                <div
+                                    className={`wrap-break-word ${
+                                        isCompact ? "text-xs" : "text-sm"
+                                    }`}
+                                >
+                                    <MessageWithMentions
+                                        text={m.text}
+                                        mentions={m.mentions}
+                                        currentUserId={userId ?? undefined}
+                                        customEmojis={customEmojis}
+                                    />
+                                </div>
+                            )}
+                            {removed && m.removedBy && (
+                                <div
+                                    className={`${
+                                        isCompact ? "text-[11px]" : "text-xs"
+                                    } italic text-muted-foreground`}
+                                >
+                                    Removed by moderator
+                                </div>
+                            )}
 
-              {m.attachments && m.attachments.length > 0 && !removed && (
-                <div className="mt-2 space-y-2">
-                  {m.attachments.map((attachment, idx) => (
-                    <FileAttachmentDisplay
-                      key={`${m.$id}-${attachment.fileId}-${idx}`}
-                      attachment={attachment}
-                    />
-                  ))}
-                </div>
-              )}
+                            {m.imageUrl && !removed && (
+                                <div className="mt-2">
+                                    <button
+                                        className="overflow-hidden rounded-lg border border-border transition hover:opacity-90"
+                                        onClick={() => {
+                                            if (m.imageUrl) {
+                                                onOpenImageViewer(m.imageUrl);
+                                            }
+                                        }}
+                                        type="button"
+                                    >
+                                        <img
+                                            alt="Attached"
+                                            className="max-h-64 w-auto"
+                                            decoding="async"
+                                            loading="lazy"
+                                            src={m.imageUrl}
+                                        />
+                                    </button>
+                                </div>
+                            )}
 
               {/* Thread indicator - only show on non-thread messages with replies */}
               {!m.threadId && m.threadReplyCount && m.threadReplyCount > 0 && onOpenThread && (

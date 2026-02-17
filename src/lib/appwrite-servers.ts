@@ -8,6 +8,7 @@ import {
   withSession,
 } from "./appwrite-core";
 import type { Channel, Membership, Server } from "./types";
+import { assignDefaultRoleBrowser } from "./default-role";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -281,6 +282,11 @@ export async function joinServer(
     permissions,
   });
   const d = res as unknown as Record<string, unknown>;
+  try {
+    await assignDefaultRoleBrowser(serverId, userId);
+  } catch {
+    // Non-fatal: continue even if role assignment fails
+  }
   return {
     $id: String(d.$id),
     serverId: String(d.serverId),

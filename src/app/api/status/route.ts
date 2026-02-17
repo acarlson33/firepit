@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
 
-import { getServerClient, getEnvConfig, perms } from "@/lib/appwrite-core";
+import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
+import { compressedResponse } from "@/lib/api-compression";
 import {
-	logger,
-	recordError,
-	setTransactionName,
-	trackApiCall,
-	addTransactionAttributes,
-	recordEvent,
+    logger,
+    recordError,
+    setTransactionName,
+    trackApiCall,
+    addTransactionAttributes,
+    recordEvent,
 } from "@/lib/newrelic-utils";
+import { normalizeStatus } from "@/lib/status-normalization";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -19,337 +22,372 @@ const STATUSES_COLLECTION = env.collections.statuses;
  * Set or update user status (server-side)
  */
 export async function POST(request: Request) {
-	const startTime = Date.now();
-	
-	try {
-		setTransactionName("POST /api/status");
-		
-		const { userId, status, customMessage, expiresAt, isManuallySet } = await request.json();
+    const startTime = Date.now();
 
-		if (!userId || !status) {
-			logger.warn("Invalid status request", { userId, status });
-			return NextResponse.json(
-				{ error: "userId and status are required" },
-				{ status: 400 },
-			);
-		}
-		
-		addTransactionAttributes({
-			userId,
-			status,
-			isManuallySet: !!isManuallySet,
-		});
+    try {
+        setTransactionName("POST /api/status");
 
-		if (!STATUSES_COLLECTION) {
-			logger.error("Statuses collection not configured");
-			return NextResponse.json(
-				{ error: "Statuses collection not configured" },
-				{ status: 500 },
-			);
-		}
+        const { userId, status, customMessage, expiresAt, isManuallySet } =
+            await request.json();
 
-		const { databases } = getServerClient();
-		const now = new Date().toISOString();
+        if (!userId || !status) {
+            logger.warn("Invalid status request", { userId, status });
+            return NextResponse.json(
+                { error: "userId and status are required" },
+                { status: 400 },
+            );
+        }
 
-		// Try to find existing status document
-		const dbStartTime = Date.now();
-		const existing = await databases.listDocuments(
-			DATABASE_ID,
-			STATUSES_COLLECTION,
-			[Query.equal("userId", userId), Query.limit(1)],
-		);
-		
-		trackApiCall(
-			"/api/status",
-			"GET",
-			200,
-			Date.now() - dbStartTime,
-			{ operation: "listDocuments", collection: "statuses" }
-		);
+        addTransactionAttributes({
+            userId,
+            status,
+            isManuallySet: !!isManuallySet,
+        });
 
-		// Check if status has expired
-		let shouldUpdate = true;
-		if (existing.documents.length > 0) {
-			const doc = existing.documents[0];
-			const docExpiresAt = doc.expiresAt as string | undefined;
-			const docIsManuallySet = doc.isManuallySet as boolean | undefined;
-			
-			// If there's an active manually-set status that hasn't expired, don't overwrite with auto-status
-			if (docIsManuallySet && !isManuallySet && docExpiresAt) {
-				const expirationDate = new Date(docExpiresAt);
-				if (expirationDate > new Date()) {
-					// Don't overwrite - manually set status is still active
-					shouldUpdate = false;
-				}
-			}
-		}
+        if (!STATUSES_COLLECTION) {
+            logger.error("Statuses collection not configured");
+            return NextResponse.json(
+                { error: "Statuses collection not configured" },
+                { status: 500 },
+            );
+        }
 
-		if (existing.documents.length > 0 && shouldUpdate) {
-			// Update existing
-			const doc = existing.documents[0];
-			const updateStartTime = Date.now();
-			const updated = await databases.updateDocument(
-				DATABASE_ID,
-				STATUSES_COLLECTION,
-				doc.$id,
-				{
-					status,
-					customMessage: customMessage || null,
-					lastSeenAt: now,
-					expiresAt: expiresAt || null,
-					isManuallySet: isManuallySet || false,
-				},
-				perms.serverOwner(userId),
-			);
-			
-			trackApiCall(
-				"/api/status",
-				"POST",
-				200,
-				Date.now() - updateStartTime,
-				{ operation: "updateDocument", action: "update" }
-			);
-			
-			recordEvent("StatusUpdate", {
-				userId,
-				status,
-				action: "updated",
-				isManuallySet: !!isManuallySet,
-			});
-			
-			logger.info("Status updated", { userId, status, duration: Date.now() - startTime });
+        const { databases } = getServerClient();
+        const nowDate = new Date();
+        const now = nowDate.toISOString();
 
-			return NextResponse.json(updated);
-		}
+        // Try to find existing status document
+        const dbStartTime = Date.now();
+        const existing = await databases.listDocuments(
+            DATABASE_ID,
+            STATUSES_COLLECTION,
+            [Query.equal("userId", userId), Query.limit(1)],
+        );
 
-		if (existing.documents.length > 0 && !shouldUpdate) {
-			logger.info("Status not updated - manual status still active", { userId });
-			// Return existing status without updating
-			return NextResponse.json(existing.documents[0]);
-		}
+        trackApiCall("/api/status", "GET", 200, Date.now() - dbStartTime, {
+            operation: "listDocuments",
+            collection: "statuses",
+        });
 
-		// Create new status document
-		const createStartTime = Date.now();
-		const created = await databases.createDocument(
-			DATABASE_ID,
-			STATUSES_COLLECTION,
-			ID.unique(),
-			{
-				userId,
-				status,
-				customMessage: customMessage || null,
-				lastSeenAt: now,
-				expiresAt: expiresAt || null,
-				isManuallySet: isManuallySet || false,
-			},
-			perms.serverOwner(userId),
-		);
-		
-		trackApiCall(
-			"/api/status",
-			"POST",
-			200,
-			Date.now() - createStartTime,
-			{ operation: "createDocument", action: "create" }
-		);
-		
-		recordEvent("StatusUpdate", {
-			userId,
-			status,
-			action: "created",
-			isManuallySet: !!isManuallySet,
-		});
-		
-		logger.info("Status created", { userId, status, duration: Date.now() - startTime });
+        // Check if status has expired
+        let shouldUpdate = true;
+        if (existing.documents.length > 0) {
+            const doc = existing.documents[0];
+            const docExpiresAt = doc.expiresAt as string | undefined;
+            const docIsManuallySet = doc.isManuallySet as boolean | undefined;
 
-		return NextResponse.json(created);
-	} catch (error) {
-		recordError(
-			error instanceof Error ? error : new Error(String(error)),
-			{
-				context: "POST /api/status",
-				endpoint: "/api/status",
-			}
-		);
-		
-		logger.error("Failed to set status", {
-			error: error instanceof Error ? error.message : String(error),
-			duration: Date.now() - startTime,
-		});
-		
-		return NextResponse.json(
-			{ error: "Failed to set user status", details: error instanceof Error ? error.message : String(error) },
-			{ status: 500 },
-		);
-	}
+            // If there's an active manually-set status that hasn't expired, don't overwrite with auto-status
+            if (docIsManuallySet && !isManuallySet) {
+                const expirationDate = docExpiresAt
+                    ? new Date(docExpiresAt)
+                    : null;
+
+                if (!expirationDate || expirationDate > nowDate) {
+                    // Don't overwrite - manually set status is still active
+                    shouldUpdate = false;
+                }
+            }
+        }
+
+        if (existing.documents.length > 0 && shouldUpdate) {
+            // Update existing
+            const doc = existing.documents[0];
+            const updateStartTime = Date.now();
+            const updated = await databases.updateDocument(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                doc.$id,
+                {
+                    status,
+                    customMessage: customMessage || null,
+                    lastSeenAt: now,
+                    expiresAt: expiresAt || null,
+                    isManuallySet: isManuallySet || false,
+                },
+                perms.serverOwner(userId),
+            );
+
+            trackApiCall(
+                "/api/status",
+                "POST",
+                200,
+                Date.now() - updateStartTime,
+                { operation: "updateDocument", action: "update" },
+            );
+
+            recordEvent("StatusUpdate", {
+                userId,
+                status,
+                action: "updated",
+                isManuallySet: !!isManuallySet,
+            });
+
+            logger.info("Status updated", {
+                userId,
+                status,
+                duration: Date.now() - startTime,
+            });
+
+            return NextResponse.json(updated);
+        }
+
+        if (existing.documents.length > 0 && !shouldUpdate) {
+            logger.info("Status not updated - manual status still active", {
+                userId,
+            });
+            // Return existing status without updating
+            return NextResponse.json(existing.documents[0]);
+        }
+
+        // Create new status document
+        const createStartTime = Date.now();
+        const created = await databases.createDocument(
+            DATABASE_ID,
+            STATUSES_COLLECTION,
+            ID.unique(),
+            {
+                userId,
+                status,
+                customMessage: customMessage || null,
+                lastSeenAt: now,
+                expiresAt: expiresAt || null,
+                isManuallySet: isManuallySet || false,
+            },
+            perms.serverOwner(userId),
+        );
+
+        trackApiCall("/api/status", "POST", 200, Date.now() - createStartTime, {
+            operation: "createDocument",
+            action: "create",
+        });
+
+        recordEvent("StatusUpdate", {
+            userId,
+            status,
+            action: "created",
+            isManuallySet: !!isManuallySet,
+        });
+
+        logger.info("Status created", {
+            userId,
+            status,
+            duration: Date.now() - startTime,
+        });
+
+        return NextResponse.json(created);
+    } catch (error) {
+        recordError(error instanceof Error ? error : new Error(String(error)), {
+            context: "POST /api/status",
+            endpoint: "/api/status",
+        });
+
+        logger.error("Failed to set status", {
+            error: error instanceof Error ? error.message : String(error),
+            duration: Date.now() - startTime,
+        });
+
+        return NextResponse.json(
+            {
+                error: "Failed to set user status",
+                details: error instanceof Error ? error.message : String(error),
+            },
+            { status: 500 },
+        );
+    }
 }
 
 /**
  * Get user status(es) (server-side)
  */
 export async function GET(request: Request) {
-	try {
-		const { searchParams } = new URL(request.url);
-		const userId = searchParams.get("userId");
-		const userIds = searchParams.get("userIds");
+    try {
+        const { searchParams } = new URL(request.url);
+        const userId = searchParams.get("userId");
+        const userIds = searchParams.get("userIds");
 
-		if (!STATUSES_COLLECTION) {
-			return NextResponse.json(
-				{ error: "Statuses collection not configured" },
-				{ status: 500 },
-			);
-		}
+        const cacheHeaders = {
+            headers: {
+                "Cache-Control":
+                    "public, s-maxage=15, stale-while-revalidate=60",
+            },
+        } as const;
 
-		const { databases } = getServerClient();
+        if (!STATUSES_COLLECTION) {
+            return NextResponse.json(
+                { error: "Statuses collection not configured" },
+                { status: 500 },
+            );
+        }
 
-		// Single user query
-		if (userId) {
-			const existing = await databases.listDocuments(
-				DATABASE_ID,
-				STATUSES_COLLECTION,
-				[Query.equal("userId", userId), Query.limit(1)],
-			);
+        const { databases } = getServerClient();
 
-			if (existing.documents.length === 0) {
-				return NextResponse.json({ status: null });
-			}
+        // Single user query
+        if (userId) {
+            const existing = await databases.listDocuments(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                [Query.equal("userId", userId), Query.limit(1)],
+            );
 
-			return NextResponse.json(existing.documents[0]);
-		}
+            if (existing.documents.length === 0) {
+                return compressedResponse({ status: null }, cacheHeaders);
+            }
 
-		// Multiple users query
-		if (userIds) {
-			const userIdList = userIds.split(",").filter(Boolean);
-			if (userIdList.length === 0) {
-				return NextResponse.json({ statuses: [] });
-			}
+            const { normalized } = normalizeStatus(existing.documents[0]);
 
-			// Note: Limited to 100 users per request for performance.
-			// For larger batches, consider pagination or multiple requests.
-			const existing = await databases.listDocuments(
-				DATABASE_ID,
-				STATUSES_COLLECTION,
-				[Query.equal("userId", userIdList), Query.limit(100)],
-			);
+            return compressedResponse(normalized, cacheHeaders);
+        }
 
-			return NextResponse.json({ statuses: existing.documents });
-		}
+        // Multiple users query
+        if (userIds) {
+            const userIdList = userIds.split(",").filter(Boolean);
+            if (userIdList.length === 0) {
+                return compressedResponse({ statuses: [] }, cacheHeaders);
+            }
 
-		return NextResponse.json(
-			{ error: "userId or userIds parameter is required" },
-			{ status: 400 },
-		);
-	} catch (error) {
-		console.error("Error in GET /api/status:", error);
-		return NextResponse.json(
-			{ error: "Failed to get user status", details: error instanceof Error ? error.message : String(error) },
-			{ status: 500 },
-		);
-	}
+            // Note: Limited to 100 users per request for performance.
+            // For larger batches, consider pagination or multiple requests.
+            const existing = await databases.listDocuments(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                [Query.equal("userId", userIdList), Query.limit(100)],
+            );
+
+            const normalizedStatuses = existing.documents.map(
+                (doc) => normalizeStatus(doc).normalized,
+            );
+
+            return compressedResponse(
+                { statuses: normalizedStatuses },
+                cacheHeaders,
+            );
+        }
+
+        return NextResponse.json(
+            { error: "userId or userIds parameter is required" },
+            { status: 400 },
+        );
+    } catch (error) {
+        logger.error("Error in GET /api/status", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            {
+                error: "Failed to get user status",
+                details: error instanceof Error ? error.message : String(error),
+            },
+            { status: 500 },
+        );
+    }
 }
 
 /**
  * Update last seen timestamp (server-side)
  */
 export async function PATCH(request: Request) {
-	try {
-		const { userId } = await request.json();
+    try {
+        const { userId } = await request.json();
 
-		if (!userId) {
-			return NextResponse.json(
-				{ error: "userId is required" },
-				{ status: 400 },
-			);
-		}
+        if (!userId) {
+            return NextResponse.json(
+                { error: "userId is required" },
+                { status: 400 },
+            );
+        }
 
-		if (!STATUSES_COLLECTION) {
-			return NextResponse.json(
-				{ error: "Statuses collection not configured" },
-				{ status: 500 },
-			);
-		}
+        if (!STATUSES_COLLECTION) {
+            return NextResponse.json(
+                { error: "Statuses collection not configured" },
+                { status: 500 },
+            );
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Find existing status document
-		const existing = await databases.listDocuments(
-			DATABASE_ID,
-			STATUSES_COLLECTION,
-			[Query.equal("userId", userId), Query.limit(1)],
-		);
+        // Find existing status document
+        const existing = await databases.listDocuments(
+            DATABASE_ID,
+            STATUSES_COLLECTION,
+            [Query.equal("userId", userId), Query.limit(1)],
+        );
 
-		if (existing.documents.length > 0) {
-			const doc = existing.documents[0];
-			await databases.updateDocument(
-				DATABASE_ID,
-				STATUSES_COLLECTION,
-				doc.$id,
-				{
-					lastSeenAt: new Date().toISOString(),
-				},
-				perms.serverOwner(userId),
-			);
-		}
+        if (existing.documents.length > 0) {
+            const doc = existing.documents[0];
+            await databases.updateDocument(
+                DATABASE_ID,
+                STATUSES_COLLECTION,
+                doc.$id,
+                {
+                    lastSeenAt: new Date().toISOString(),
+                },
+                perms.serverOwner(userId),
+            );
+        }
 
-		return NextResponse.json({ success: true });
-	} catch {
-		return NextResponse.json(
-			{ error: "Failed to update last seen" },
-			{ status: 500 },
-		);
-	}
+        return NextResponse.json({ success: true });
+    } catch {
+        return NextResponse.json(
+            { error: "Failed to update last seen" },
+            { status: 500 },
+        );
+    }
 }
 
 /**
  * Delete user status (server-side)
  */
 export async function DELETE(request: Request) {
-	try {
-		const { userId } = await request.json();
+    try {
+        const { userId } = await request.json();
 
-		if (!userId) {
-			return NextResponse.json(
-				{ error: "userId is required" },
-				{ status: 400 },
-			);
-		}
+        if (!userId) {
+            return NextResponse.json(
+                { error: "userId is required" },
+                { status: 400 },
+            );
+        }
 
-		if (!STATUSES_COLLECTION) {
-			return NextResponse.json(
-				{ error: "Statuses collection not configured" },
-				{ status: 500 },
-			);
-		}
+        if (!STATUSES_COLLECTION) {
+            return NextResponse.json(
+                { error: "Statuses collection not configured" },
+                { status: 500 },
+            );
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Find existing status document
-		const existing = await databases.listDocuments(
-			DATABASE_ID,
-			STATUSES_COLLECTION,
-			[Query.equal("userId", userId), Query.limit(1)],
-		);
+        // Find existing status document
+        const existing = await databases.listDocuments(
+            DATABASE_ID,
+            STATUSES_COLLECTION,
+            [Query.equal("userId", userId), Query.limit(1)],
+        );
 
-		if (existing.documents.length === 0) {
-			return NextResponse.json(
-				{ error: "Status not found" },
-				{ status: 404 },
-			);
-		}
+        if (existing.documents.length === 0) {
+            return NextResponse.json(
+                { error: "Status not found" },
+                { status: 404 },
+            );
+        }
 
-		const doc = existing.documents[0];
-		await databases.deleteDocument(
-			DATABASE_ID,
-			STATUSES_COLLECTION,
-			doc.$id,
-		);
+        const doc = existing.documents[0];
+        await databases.deleteDocument(
+            DATABASE_ID,
+            STATUSES_COLLECTION,
+            doc.$id,
+        );
 
-		return NextResponse.json({ success: true, deletedId: doc.$id });
-	} catch (error) {
-		console.error("Error in DELETE /api/status:", error);
-		return NextResponse.json(
-			{ error: "Failed to delete user status", details: error instanceof Error ? error.message : String(error) },
-			{ status: 500 },
-		);
-	}
+        return NextResponse.json({ success: true, deletedId: doc.$id });
+    } catch (error) {
+        logger.error("Error in DELETE /api/status", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            {
+                error: "Failed to delete user status",
+                details: error instanceof Error ? error.message : String(error),
+            },
+            { status: 500 },
+        );
+    }
 }

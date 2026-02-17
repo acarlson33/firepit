@@ -3,48 +3,51 @@ import { Query } from "node-appwrite";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { CustomEmoji } from "@/lib/types";
+import { logger } from "@/lib/newrelic-utils";
 
 /**
  * GET /api/custom-emojis
  * List all custom emojis from Appwrite Storage using admin client
  */
 export async function GET() {
-  try {
-    const { storage } = getAdminClient();
-    const env = getEnvConfig();
-    
-    // List all files in the emojis bucket
-    const files = await storage.listFiles(
-      env.buckets.emojis,
-      [Query.orderDesc("$createdAt"), Query.limit(100)]
-    );
+    try {
+        const { storage } = getAdminClient();
+        const env = getEnvConfig();
 
-    const emojis: CustomEmoji[] = files.files.map((file) => {
-      // Extract emoji name from file name or use file name as fallback
-      const emojiName = file.name.replace(/\.[^.]+$/, ""); // Remove file extension
-      
-      return {
-        fileId: file.$id,
-        url: `/api/emoji/${file.$id}`,
-        name: emojiName,
-      };
-    });
+        // List all files in the emojis bucket
+        const files = await storage.listFiles(env.buckets.emojis, [
+            Query.orderDesc("$createdAt"),
+            Query.limit(100),
+        ]);
 
-    const response = NextResponse.json(emojis);
+        const emojis: CustomEmoji[] = files.files.map((file) => {
+            // Extract emoji name from file name or use file name as fallback
+            const emojiName = file.name.replace(/\.[^.]+$/, ""); // Remove file extension
 
-    // Cache custom emojis for 5 minutes (rarely change)
-    // Allow stale data for 30 minutes while revalidating
-    response.headers.set(
-      "Cache-Control",
-      "public, s-maxage=300, stale-while-revalidate=1800"
-    );
+            return {
+                fileId: file.$id,
+                url: `/api/emoji/${file.$id}`,
+                name: emojiName,
+            };
+        });
 
-    return response;
-  } catch (error) {
-    console.error("Error fetching custom emojis:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch custom emojis" },
-      { status: 500 }
-    );
-  }
+        const response = NextResponse.json(emojis);
+
+        // Cache custom emojis for 5 minutes (rarely change)
+        // Allow stale data for 30 minutes while revalidating
+        response.headers.set(
+            "Cache-Control",
+            "public, s-maxage=300, stale-while-revalidate=1800",
+        );
+
+        return response;
+    } catch (error) {
+        logger.error("Error fetching custom emojis", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            { error: "Failed to fetch custom emojis" },
+            { status: 500 },
+        );
+    }
 }

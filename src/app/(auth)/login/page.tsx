@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
-import { loginAction, registerAction } from "./actions";
+import { loginAction } from "./actions";
 
 function LoginFormContent() {
 	const router = useRouter();
@@ -16,7 +17,6 @@ function LoginFormContent() {
 	const { refreshUser } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
-	const [name, setName] = useState("");
 	const [loading, setLoading] = useState(false);
 
 	const redirectPath = searchParams.get("redirect");
@@ -44,35 +44,6 @@ function LoginFormContent() {
 			// Enhanced error handling to prevent "unexpected response" errors
 			const message = err instanceof Error ? err.message : "An error occurred during login. Please try again.";
 			toast.error(message);
-			console.error("Login error:", err);
-		} finally {
-			setLoading(false);
-		}
-	}
-
-	async function onRegister(e: React.FormEvent) {
-		e.preventDefault();
-		setLoading(true);
-		try {
-			const formData = new FormData();
-			formData.set("email", email);
-			formData.set("password", password);
-			formData.set("name", name || email.split("@")[0]);
-			const result = await registerAction(formData);
-			if (result.success) {
-				toast.success("Account created");
-				// Refresh user data in context before navigating
-				await refreshUser();
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				router.push(destination as any);
-			} else {
-				toast.error(result.error);
-			}
-		} catch (err) {
-			// Enhanced error handling to prevent "unexpected response" errors
-			const message = err instanceof Error ? err.message : "An error occurred during registration. Please try again.";
-			toast.error(message);
-			console.error("Registration error:", err);
 		} finally {
 			setLoading(false);
 		}
@@ -80,20 +51,11 @@ function LoginFormContent() {
 
 	return (
 		<div className="container mx-auto max-w-md px-4 py-8">
-			<h1 className="mb-6 font-semibold text-2xl">Sign in to Firepit</h1>
+			<div className="mb-6 space-y-2">
+				<h1 className="font-semibold text-2xl">Sign in to Firepit</h1>
+				<p className="text-muted-foreground">Access your chats and servers.</p>
+			</div>
 			<form className="grid gap-4" onSubmit={onLogin}>
-				<div className="grid gap-2">
-					<Label htmlFor="name">Name</Label>
-					<Input
-						autoComplete="name"
-						id="name"
-						name="name"
-						onChange={(e) => setName(e.target.value)}
-						placeholder="Your display name"
-						type="text"
-						value={name}
-					/>
-				</div>
 				<div className="grid gap-2">
 					<Label htmlFor="email">Email</Label>
 					<Input
@@ -119,20 +81,13 @@ function LoginFormContent() {
 						value={password}
 					/>
 				</div>
-				<div className="flex gap-2">
-					<Button disabled={loading} type="submit">
-						{loading ? "Signing in..." : "Sign in"}
-					</Button>
-					<Button
-						disabled={loading}
-						onClick={onRegister}
-						type="button"
-						variant="outline"
-					>
-						{loading ? "Creating..." : "Create account"}
-					</Button>
-				</div>
+				<Button disabled={loading} type="submit">
+					{loading ? "Signing in..." : "Sign in"}
+				</Button>
 			</form>
+			<p className="mt-6 text-sm text-muted-foreground">
+				Need an account? <Link className="text-primary underline" href="/register">Create one</Link>.
+			</p>
 		</div>
 	);
 }

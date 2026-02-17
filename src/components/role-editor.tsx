@@ -36,6 +36,7 @@ export function RoleEditor({
 	const [color, setColor] = useState("#5865F2");
 	const [position, setPosition] = useState(0);
 	const [mentionable, setMentionable] = useState(true);
+	const [defaultOnJoin, setDefaultOnJoin] = useState(false);
 	const [permissions, setPermissions] = useState<Record<Permission, boolean>>({
 		readMessages: true,
 		sendMessages: true,
@@ -55,6 +56,7 @@ export function RoleEditor({
 			setColor(role.color);
 			setPosition(role.position);
 			setMentionable(role.mentionable);
+			setDefaultOnJoin(Boolean(role.defaultOnJoin));
 			setPermissions({
 				readMessages: role.readMessages,
 				sendMessages: role.sendMessages,
@@ -71,6 +73,7 @@ export function RoleEditor({
 			setColor("#5865F2");
 			setPosition(0);
 			setMentionable(true);
+			setDefaultOnJoin(false);
 			setPermissions({
 				readMessages: true,
 				sendMessages: true,
@@ -99,6 +102,7 @@ export function RoleEditor({
 				color,
 				position,
 				mentionable,
+				defaultOnJoin,
 				...permissions,
 			};
 
@@ -196,6 +200,20 @@ export function RoleEditor({
 								id="mentionable"
 								checked={mentionable}
 								onCheckedChange={setMentionable}
+							/>
+						</div>
+
+						<div className="flex items-center justify-between rounded-lg border border-border p-3">
+							<div className="space-y-0.5">
+								<Label htmlFor="default-on-join">Default on join</Label>
+								<p className="text-xs text-muted-foreground">
+									New members automatically receive this role when they join the server.
+								</p>
+							</div>
+							<Switch
+								id="default-on-join"
+								checked={defaultOnJoin}
+								onCheckedChange={setDefaultOnJoin}
 							/>
 						</div>
 					</div>
