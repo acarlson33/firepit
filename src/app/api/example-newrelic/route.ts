@@ -14,7 +14,6 @@ const ENDPOINT = "/api/example";
 
 export async function GET(request: NextRequest) {
     const startTime = Date.now();
-    const userAgent = request.headers.get("user-agent") ?? "unknown";
 
     // Disable this example endpoint outside development to avoid exposure in prod
     if (process.env.NODE_ENV === "production") {
@@ -34,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     addTransactionAttributes({
-      endpoint: "/api/example",
+      endpoint: ENDPOINT,
       method: "GET",
       userAgent,
     });
@@ -50,23 +49,6 @@ export async function GET(request: NextRequest) {
     logger.info("Processing example API request", {
       url: reqUrl,
       method: "GET",
-    });
-    
-    // Simulate some work with performance tracking
-    const result = await measureAsync(
-      "example-operation",
-      async () => {
-        // Simulate database query or external API call
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return { message: "Hello from New Relic instrumented API!" };
-      },
-      { operation: "example" }
-    );
-    
-    // Track the API call
-    const duration = Date.now() - startTime;
-    trackApiCall("/api/example", "GET", 200, duration, {
-      cached: false,
     });
 
     try {
