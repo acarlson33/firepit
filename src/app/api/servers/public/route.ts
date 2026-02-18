@@ -3,6 +3,7 @@ import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getActualMemberCount } from "@/lib/membership-count";
 
 /**
  * GET /api/servers/public
@@ -19,12 +20,18 @@ export async function GET() {
 			[Query.limit(100), Query.orderDesc("$createdAt")]
 		);
 
-		const servers = response.documents.map((doc) => ({
-			$id: doc.$id,
-			name: String(doc.name),
-			ownerId: String(doc.ownerId),
-			memberCount: typeof doc.memberCount === 'number' ? doc.memberCount : undefined,
-		}));
+		// Enrich servers with actual member counts from memberships
+		const servers = await Promise.all(
+			response.documents.map(async (doc) => {
+				const actualCount = await getActualMemberCount(databases, doc.$id);
+				return {
+					$id: doc.$id,
+					name: String(doc.name),
+					ownerId: String(doc.ownerId),
+					memberCount: actualCount,
+				};
+			})
+		);
 
 		return NextResponse.json({ servers });
 	} catch (error) {

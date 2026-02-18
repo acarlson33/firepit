@@ -9,6 +9,7 @@ import {
 } from "./appwrite-core";
 import type { Channel, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
+import { getActualMemberCount } from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -35,16 +36,23 @@ export async function listServers(limit = 25): Promise<Server[]> {
     // Use system attribute $createdAt for ordering to avoid schema attribute requirement
     queries: [Query.limit(Math.min(limit, 100)), Query.orderAsc("$createdAt")],
   });
-  return res.documents.map((doc) => {
-    const d = doc as unknown as Record<string, unknown>;
-    return {
-      $id: String(d.$id),
-      name: String(d.name),
-      $createdAt: String(d.$createdAt ?? ""),
-      ownerId: String(d.ownerId),
-      memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
-    } satisfies Server;
-  });
+  
+  // Enrich with actual member counts from memberships
+  const servers = await Promise.all(
+    res.documents.map(async (doc) => {
+      const d = doc as unknown as Record<string, unknown>;
+      const actualCount = await getActualMemberCount(getDatabases(), String(d.$id));
+      return {
+        $id: String(d.$id),
+        name: String(d.name),
+        $createdAt: String(d.$createdAt ?? ""),
+        ownerId: String(d.ownerId),
+        memberCount: actualCount,
+      } satisfies Server;
+    })
+  );
+  
+  return servers;
 }
 
 export async function listServersPage(
@@ -60,16 +68,22 @@ export async function listServersPage(
     collectionId: SERVERS_COLLECTION_ID,
     queries,
   });
-  const items = res.documents.map((doc) => {
-    const d = doc as unknown as Record<string, unknown>;
-    return {
-      $id: String(d.$id),
-      name: String(d.name),
-      $createdAt: String(d.$createdAt ?? ""),
-      ownerId: String(d.ownerId),
-      memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
-    } satisfies Server;
-  });
+  
+  // Enrich with actual member counts from memberships
+  const items = await Promise.all(
+    res.documents.map(async (doc) => {
+      const d = doc as unknown as Record<string, unknown>;
+      const actualCount = await getActualMemberCount(getDatabases(), String(d.$id));
+      return {
+        $id: String(d.$id),
+        name: String(d.name),
+        $createdAt: String(d.$createdAt ?? ""),
+        ownerId: String(d.ownerId),
+        memberCount: actualCount,
+      } satisfies Server;
+    })
+  );
+  
   const last = items.at(-1);
   const nextCursor = items.length === limit && last ? last.$id : null;
   return { servers: items, nextCursor };
@@ -134,6 +148,19 @@ export function createServer(name: string, options?: { bypassFeatureCheck?: bool
             },
             permissions: membershipPerms,
           });
+          
+          // Sync member count from actual memberships after creation
+          try {
+            const actualCount = await getActualMemberCount(getDatabases(), String(s.$id));
+            await getDatabases().updateDocument({
+              databaseId: DATABASE_ID,
+              collectionId: SERVERS_COLLECTION_ID,
+              documentId: String(s.$id),
+              data: { memberCount: actualCount },
+            });
+          } catch {
+            // ignore count sync failure
+          }
         } catch {
           // ignore membership creation failure
         }
@@ -143,12 +170,16 @@ export function createServer(name: string, options?: { bypassFeatureCheck?: bool
       } catch {
         // ignore channel creation failure
       }
+      
+      // Get actual member count for return value
+      const actualMemberCount = await getActualMemberCount(getDatabases(), String(s.$id));
+      
       return {
         $id: String(s.$id),
         name: String(s.name),
         $createdAt: String(s.$createdAt ?? ""),
         ownerId: String(s.ownerId),
-        memberCount: typeof s.memberCount === 'number' ? s.memberCount : 1,
+        memberCount: actualMemberCount,
       } satisfies Server;
     } catch (e) {
       throw normalizeError(e);

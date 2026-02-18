@@ -4,6 +4,7 @@ import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
+import { syncServerMemberCount } from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -242,24 +243,11 @@ export async function useInvite(
         // Non-fatal - membership was created successfully
     }
 
-    // Increment server member count
+    // Sync server member count from actual memberships (single source of truth)
     try {
-        const server = await databases.getDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            invite.serverId,
-        );
-
-        const currentCount =
-            typeof server.memberCount === "number" ? server.memberCount : 0;
-        await databases.updateDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            invite.serverId,
-            { memberCount: currentCount + 1 },
-        );
+        await syncServerMemberCount(databases, invite.serverId);
     } catch (error) {
-        console.error("Failed to update server member count:", error);
+        console.error("Failed to sync server member count:", error);
         // Non-fatal
     }
 
@@ -350,10 +338,14 @@ export async function getServerPreview(serverId: string): Promise<{
             SERVERS_COLLECTION_ID,
             serverId,
         );
+        
+        // Get actual member count from memberships (single source of truth)
+        const { getActualMemberCount } = await import("./membership-count");
+        const actualCount = await getActualMemberCount(databases, serverId);
 
         return {
             name: server.name as string,
-            memberCount: (server.memberCount as number) || 0,
+            memberCount: actualCount,
         };
     } catch (error) {
         console.error("Failed to get server preview:", error);
