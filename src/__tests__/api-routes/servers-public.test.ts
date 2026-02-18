@@ -9,6 +9,9 @@ const mockDatabases = {
 	listDocuments: vi.fn(),
 };
 
+// Mock membership counting
+const mockGetActualMemberCount = vi.fn();
+
 // Mock dependencies
 vi.mock("@/lib/appwrite-server", () => ({
 	getServerClient: vi.fn(() => ({
@@ -21,8 +24,13 @@ vi.mock("@/lib/appwrite-core", () => ({
 		databaseId: "test-db",
 		collections: {
 			servers: "servers-collection",
+			memberships: "memberships-collection",
 		},
 	})),
+}));
+
+vi.mock("@/lib/membership-count", () => ({
+	getActualMemberCount: (databases: unknown, serverId: string) => mockGetActualMemberCount(serverId),
 }));
 
 vi.mock("node-appwrite", () => ({
@@ -55,7 +63,15 @@ describe("GET /api/servers/public", () => {
 			},
 		];
 
-		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers });
+		// Mock server list
+		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers, total: 2 });
+
+		// Mock member counts
+		mockGetActualMemberCount.mockImplementation((serverId: string) => {
+			if (serverId === "server1") return Promise.resolve(50);
+			if (serverId === "server2") return Promise.resolve(25);
+			return Promise.resolve(0);
+		});
 
 		const response = await GET();
 		const data = await response.json();
@@ -88,13 +104,15 @@ describe("GET /api/servers/public", () => {
 			},
 		];
 
-		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers });
+		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers, total: 1 });
+		mockGetActualMemberCount.mockResolvedValue(0);
 
 		const response = await GET();
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(data.servers[0].memberCount).toBeUndefined();
+		// Member count is now always a number (computed from memberships)
+		expect(data.servers[0].memberCount).toBe(0);
 	});
 
 	it("should return empty array when no servers exist", async () => {

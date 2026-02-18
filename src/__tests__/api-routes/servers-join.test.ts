@@ -177,8 +177,18 @@ describe("Server Join API", () => {
 				memberCount: 5,
 			});
 
-			mockListDocuments.mockResolvedValue({
-				documents: [],
+			// Mock listDocuments to handle both calls:
+			// 1. Check existing membership (returns empty)
+			// 2. Get actual member count (returns total: 6 after join)
+			let callCount = 0;
+			mockListDocuments.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					// First call: check existing membership
+					return Promise.resolve({ documents: [], total: 0 });
+				}
+				// Second call: get actual member count after join
+				return Promise.resolve({ documents: [], total: 6 });
 			});
 
 			mockCreateDocument.mockResolvedValue({
@@ -217,7 +227,7 @@ describe("Server Join API", () => {
 				expect.any(Array)
 			);
 
-			// Verify member count was incremented
+			// Verify member count was synced from actual memberships
 			expect(mockUpdateDocument).toHaveBeenCalledWith(
 				"test-db",
 				"servers-collection",
@@ -238,8 +248,18 @@ describe("Server Join API", () => {
 				// No memberCount field
 			});
 
-			mockListDocuments.mockResolvedValue({
-				documents: [],
+			// Mock listDocuments to handle both calls:
+			// 1. Check existing membership (returns empty)
+			// 2. Get actual member count (returns total: 1 after join)
+			let callCount = 0;
+			mockListDocuments.mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					// First call: check existing membership
+					return Promise.resolve({ documents: [], total: 0 });
+				}
+				// Second call: get actual member count after join
+				return Promise.resolve({ documents: [], total: 1 });
 			});
 
 			mockCreateDocument.mockResolvedValue({
@@ -265,7 +285,7 @@ describe("Server Join API", () => {
 			expect(response.status).toBe(200);
 			expect(data.success).toBe(true);
 			
-			// Should treat missing count as 0 and increment to 1
+			// Should sync count from actual memberships (1 member after join)
 			expect(mockUpdateDocument).toHaveBeenCalledWith(
 				"test-db",
 				"servers-collection",
