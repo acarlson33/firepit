@@ -32,31 +32,3 @@ export async function getActualMemberCount(
         return 0;
     }
 }
-
-/**
- * Updates the cached memberCount field on a server document to match the actual count.
- * This ensures the cached value stays in sync with reality.
- * 
- * @param databases - Appwrite Databases instance
- * @param serverId - Server ID to update
- * @returns The updated member count, or null if update failed
- */
-export async function syncServerMemberCount(
-    databases: Databases,
-    serverId: string
-): Promise<number | null> {
-    const env = getEnvConfig();
-    const actualCount = await getActualMemberCount(databases, serverId);
-    
-    try {
-        await databases.updateDocument(
-            env.databaseId,
-            env.collections.servers,
-            serverId,
-            { memberCount: actualCount }
-        );
-        return actualCount;
-    } catch {
-        return null;
-    }
-}

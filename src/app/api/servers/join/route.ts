@@ -14,11 +14,10 @@ import {
 	recordEvent,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
-import { syncServerMemberCount } from "@/lib/membership-count";
 
 /**
  * POST /api/servers/join
- * Joins a user to a server by creating a membership record and increments the server's member count
+ * Joins a user to a server by creating a membership record
  * Uses SSR authentication to verify the user
  */
 export async function POST(request: NextRequest) {
@@ -116,24 +115,11 @@ export async function POST(request: NextRequest) {
 			membershipPerms
 		);
 		
-		// Sync server member count from actual memberships (single source of truth)
-		let newMemberCount = 1;
+		// Assign default role to the new member
 		try {
-			const syncedCount = await syncServerMemberCount(databases, serverId);
-			if (syncedCount !== null) {
-				newMemberCount = syncedCount;
-			}
-			try {
-				await assignDefaultRoleServer(serverId, userId);
-			} catch {
-				// Non-fatal: continue even if default role assignment fails
-			}
-		} catch (error) {
-			// Log but don't fail if we can't update the count
-			logger.warn("Failed to sync member count", { 
-				serverId, 
-				error: error instanceof Error ? error.message : String(error) 
-			});
+			await assignDefaultRoleServer(serverId, userId);
+		} catch {
+			// Non-fatal: continue even if default role assignment fails
 		}
 		
 		trackApiCall(
@@ -147,7 +133,6 @@ export async function POST(request: NextRequest) {
 		recordEvent("ServerJoin", {
 			userId,
 			serverId,
-			newMemberCount,
 		});
 		
 		logger.info("User joined server", {

@@ -125,7 +125,7 @@ export function createServer(name: string, options?: { bypassFeatureCheck?: bool
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,
         documentId: ID.unique(),
-        data: { name, ownerId, memberCount: 1 },
+        data: { name, ownerId },
         permissions,
       });
       const s = serverDoc as unknown as Record<string, unknown>;
@@ -148,19 +148,6 @@ export function createServer(name: string, options?: { bypassFeatureCheck?: bool
             },
             permissions: membershipPerms,
           });
-          
-          // Sync member count from actual memberships after creation
-          try {
-            const actualCount = await getActualMemberCount(getDatabases(), String(s.$id));
-            await getDatabases().updateDocument({
-              databaseId: DATABASE_ID,
-              collectionId: SERVERS_COLLECTION_ID,
-              documentId: String(s.$id),
-              data: { memberCount: actualCount },
-            });
-          } catch {
-            // ignore count sync failure
-          }
         } catch {
           // ignore membership creation failure
         }

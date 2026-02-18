@@ -177,30 +177,14 @@ describe("Server Join API", () => {
 				memberCount: 5,
 			});
 
-			// Mock listDocuments to handle both calls:
-			// 1. Check existing membership (returns empty)
-			// 2. Get actual member count (returns total: 6 after join)
-			let callCount = 0;
-			mockListDocuments.mockImplementation(() => {
-				callCount++;
-				if (callCount === 1) {
-					// First call: check existing membership
-					return Promise.resolve({ documents: [], total: 0 });
-				}
-				// Second call: get actual member count after join
-				return Promise.resolve({ documents: [], total: 6 });
-			});
+			// Mock checking existing membership (returns empty)
+			mockListDocuments.mockResolvedValue({ documents: [], total: 0 });
 
 			mockCreateDocument.mockResolvedValue({
 				$id: "membership-1",
 				userId: "user-1",
 				serverId: "server-1",
 				role: "member",
-			});
-
-			mockUpdateDocument.mockResolvedValue({
-				$id: "server-1",
-				memberCount: 6,
 			});
 
 			const request = new NextRequest("http://localhost/api/servers/join", {
@@ -227,13 +211,8 @@ describe("Server Join API", () => {
 				expect.any(Array)
 			);
 
-			// Verify member count was synced from actual memberships
-			expect(mockUpdateDocument).toHaveBeenCalledWith(
-				"test-db",
-				"servers-collection",
-				"server-1",
-				{ memberCount: 6 }
-			);
+			// Member count is no longer updated in DB
+			expect(mockUpdateDocument).not.toHaveBeenCalled();
 		});
 
 		it("should handle missing memberCount gracefully", async () => {
@@ -248,30 +227,14 @@ describe("Server Join API", () => {
 				// No memberCount field
 			});
 
-			// Mock listDocuments to handle both calls:
-			// 1. Check existing membership (returns empty)
-			// 2. Get actual member count (returns total: 1 after join)
-			let callCount = 0;
-			mockListDocuments.mockImplementation(() => {
-				callCount++;
-				if (callCount === 1) {
-					// First call: check existing membership
-					return Promise.resolve({ documents: [], total: 0 });
-				}
-				// Second call: get actual member count after join
-				return Promise.resolve({ documents: [], total: 1 });
-			});
+			// Mock checking existing membership (returns empty)
+			mockListDocuments.mockResolvedValue({ documents: [], total: 0 });
 
 			mockCreateDocument.mockResolvedValue({
 				$id: "membership-1",
 				userId: "user-1",
 				serverId: "server-1",
 				role: "member",
-			});
-
-			mockUpdateDocument.mockResolvedValue({
-				$id: "server-1",
-				memberCount: 1,
 			});
 
 			const request = new NextRequest("http://localhost/api/servers/join", {
@@ -285,52 +248,9 @@ describe("Server Join API", () => {
 			expect(response.status).toBe(200);
 			expect(data.success).toBe(true);
 			
-			// Should sync count from actual memberships (1 member after join)
-			expect(mockUpdateDocument).toHaveBeenCalledWith(
-				"test-db",
-				"servers-collection",
-				"server-1",
-				{ memberCount: 1 }
-			);
+			// Member count is no longer stored in DB
+			expect(mockUpdateDocument).not.toHaveBeenCalled();
 		});
 
-		it("should succeed even if member count update fails", async () => {
-			mockGetServerSession.mockResolvedValue({
-				$id: "user-1",
-				name: "Test User",
-			});
-
-			mockGetDocument.mockResolvedValue({
-				$id: "server-1",
-				name: "Test Server",
-				memberCount: 5,
-			});
-
-			mockListDocuments.mockResolvedValue({
-				documents: [],
-			});
-
-			mockCreateDocument.mockResolvedValue({
-				$id: "membership-1",
-				userId: "user-1",
-				serverId: "server-1",
-				role: "member",
-			});
-
-			// Member count update fails
-			mockUpdateDocument.mockRejectedValue(new Error("Update failed"));
-
-			const request = new NextRequest("http://localhost/api/servers/join", {
-				method: "POST",
-				body: JSON.stringify({ serverId: "server-1" }),
-			});
-
-			const response = await POST(request);
-			const data = await response.json();
-
-			// Should still succeed since membership was created
-			expect(response.status).toBe(200);
-			expect(data.success).toBe(true);
-		});
 	});
 });

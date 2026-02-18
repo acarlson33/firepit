@@ -4,7 +4,6 @@ import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
-import { syncServerMemberCount } from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -241,14 +240,6 @@ export async function useInvite(
     } catch (error) {
         console.error("Failed to record invite usage:", error);
         // Non-fatal - membership was created successfully
-    }
-
-    // Sync server member count from actual memberships (single source of truth)
-    try {
-        await syncServerMemberCount(databases, invite.serverId);
-    } catch (error) {
-        console.error("Failed to sync server member count:", error);
-        // Non-fatal
     }
 
     return { success: true, serverId: invite.serverId };
