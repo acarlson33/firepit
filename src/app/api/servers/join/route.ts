@@ -68,9 +68,8 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		let serverDoc;
 		try {
-			serverDoc = await databases.getDocument(
+			await databases.getDocument(
 				env.databaseId,
 				env.collections.servers,
 				serverId
