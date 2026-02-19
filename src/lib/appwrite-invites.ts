@@ -242,27 +242,6 @@ export async function useInvite(
         // Non-fatal - membership was created successfully
     }
 
-    // Increment server member count
-    try {
-        const server = await databases.getDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            invite.serverId,
-        );
-
-        const currentCount =
-            typeof server.memberCount === "number" ? server.memberCount : 0;
-        await databases.updateDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            invite.serverId,
-            { memberCount: currentCount + 1 },
-        );
-    } catch (error) {
-        console.error("Failed to update server member count:", error);
-        // Non-fatal
-    }
-
     return { success: true, serverId: invite.serverId };
 }
 
@@ -350,10 +329,14 @@ export async function getServerPreview(serverId: string): Promise<{
             SERVERS_COLLECTION_ID,
             serverId,
         );
+        
+        // Get actual member count from memberships (single source of truth)
+        const { getActualMemberCount } = await import("./membership-count");
+        const actualCount = await getActualMemberCount(databases, serverId);
 
         return {
             name: server.name as string,
-            memberCount: (server.memberCount as number) || 0,
+            memberCount: actualCount,
         };
     } catch (error) {
         console.error("Failed to get server preview:", error);

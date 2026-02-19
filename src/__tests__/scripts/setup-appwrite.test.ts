@@ -167,11 +167,6 @@ describe("Setup Appwrite Script", () => {
                 expect(attr).toBeTruthy();
             });
         });
-
-        it("should have memberCount attribute", () => {
-            const memberCountAttr = "memberCount";
-            expect(memberCountAttr).toBe("memberCount");
-        });
     });
 
     describe("Collection Setup - Memberships", () => {

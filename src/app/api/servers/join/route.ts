@@ -17,7 +17,7 @@ import { assignDefaultRoleServer } from "@/lib/default-role";
 
 /**
  * POST /api/servers/join
- * Joins a user to a server by creating a membership record and increments the server's member count
+ * Joins a user to a server by creating a membership record
  * Uses SSR authentication to verify the user
  */
 export async function POST(request: NextRequest) {
@@ -67,9 +67,8 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		let serverDoc;
 		try {
-			serverDoc = await databases.getDocument(
+			await databases.getDocument(
 				env.databaseId,
 				env.collections.servers,
 				serverId
@@ -116,26 +115,11 @@ export async function POST(request: NextRequest) {
 			membershipPerms
 		);
 		
-		// Increment server member count
-		const currentCount = typeof serverDoc.memberCount === 'number' ? serverDoc.memberCount : 0;
+		// Assign default role to the new member
 		try {
-			await databases.updateDocument(
-				env.databaseId,
-				env.collections.servers,
-				serverId,
-				{ memberCount: currentCount + 1 }
-			);
-			try {
-				await assignDefaultRoleServer(serverId, userId);
-			} catch {
-				// Non-fatal: continue even if default role assignment fails
-			}
-		} catch (error) {
-			// Log but don't fail if we can't update the count
-			logger.warn("Failed to update member count", { 
-				serverId, 
-				error: error instanceof Error ? error.message : String(error) 
-			});
+			await assignDefaultRoleServer(serverId, userId);
+		} catch {
+			// Non-fatal: continue even if default role assignment fails
 		}
 		
 		trackApiCall(
@@ -149,7 +133,6 @@ export async function POST(request: NextRequest) {
 		recordEvent("ServerJoin", {
 			userId,
 			serverId,
-			newMemberCount: currentCount + 1,
 		});
 		
 		logger.info("User joined server", {

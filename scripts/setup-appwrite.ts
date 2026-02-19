@@ -447,14 +447,7 @@ async function setupServers() {
     await ensureCollection("servers", "Servers");
     await ensureStringAttribute("servers", "name", LEN_ID, true);
     await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
-    await ensureIntegerAttribute(
-        "servers",
-        "memberCount",
-        false,
-        1,
-        0,
-        1000000,
-    );
+    // Note: memberCount removed - use getActualMemberCount() to query memberships instead
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
 }
 

@@ -6,6 +6,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
+import { getActualMemberCount } from "@/lib/membership-count";
 
 /**
  * GET /api/servers
@@ -38,16 +39,20 @@ export async function GET(request: NextRequest) {
 			queries
 		);
 
-		const servers: Server[] = res.documents.map((doc) => {
-			const d = doc as unknown as Record<string, unknown>;
-			return {
-				$id: String(d.$id),
-				name: String(d.name),
-				$createdAt: String(d.$createdAt ?? ""),
-				ownerId: String(d.ownerId),
-				memberCount: typeof d.memberCount === 'number' ? d.memberCount : undefined,
-			} satisfies Server;
-		});
+		// Enrich servers with actual member counts from memberships
+		const servers: Server[] = await Promise.all(
+			res.documents.map(async (doc) => {
+				const d = doc as unknown as Record<string, unknown>;
+				const actualCount = await getActualMemberCount(databases, String(d.$id));
+				return {
+					$id: String(d.$id),
+					name: String(d.name),
+					$createdAt: String(d.$createdAt ?? ""),
+					ownerId: String(d.ownerId),
+					memberCount: actualCount,
+				} satisfies Server;
+			})
+		);
 
 		const last = servers.at(-1);
 		const nextCursor = servers.length === limit && last ? last.$id : null;

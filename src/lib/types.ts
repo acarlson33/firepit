@@ -63,7 +63,7 @@ export type Server = {
     name: string;
     $createdAt: string;
     ownerId: string;
-    memberCount?: number;
+    memberCount?: number; // Computed from memberships, not stored in DB
 };
 
 export type Channel = {

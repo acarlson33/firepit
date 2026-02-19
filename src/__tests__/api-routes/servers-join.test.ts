@@ -177,20 +177,14 @@ describe("Server Join API", () => {
 				memberCount: 5,
 			});
 
-			mockListDocuments.mockResolvedValue({
-				documents: [],
-			});
+			// Mock checking existing membership (returns empty)
+			mockListDocuments.mockResolvedValue({ documents: [], total: 0 });
 
 			mockCreateDocument.mockResolvedValue({
 				$id: "membership-1",
 				userId: "user-1",
 				serverId: "server-1",
 				role: "member",
-			});
-
-			mockUpdateDocument.mockResolvedValue({
-				$id: "server-1",
-				memberCount: 6,
 			});
 
 			const request = new NextRequest("http://localhost/api/servers/join", {
@@ -217,13 +211,8 @@ describe("Server Join API", () => {
 				expect.any(Array)
 			);
 
-			// Verify member count was incremented
-			expect(mockUpdateDocument).toHaveBeenCalledWith(
-				"test-db",
-				"servers-collection",
-				"server-1",
-				{ memberCount: 6 }
-			);
+			// Member count is no longer updated in DB
+			expect(mockUpdateDocument).not.toHaveBeenCalled();
 		});
 
 		it("should handle missing memberCount gracefully", async () => {
@@ -238,20 +227,14 @@ describe("Server Join API", () => {
 				// No memberCount field
 			});
 
-			mockListDocuments.mockResolvedValue({
-				documents: [],
-			});
+			// Mock checking existing membership (returns empty)
+			mockListDocuments.mockResolvedValue({ documents: [], total: 0 });
 
 			mockCreateDocument.mockResolvedValue({
 				$id: "membership-1",
 				userId: "user-1",
 				serverId: "server-1",
 				role: "member",
-			});
-
-			mockUpdateDocument.mockResolvedValue({
-				$id: "server-1",
-				memberCount: 1,
 			});
 
 			const request = new NextRequest("http://localhost/api/servers/join", {
@@ -265,52 +248,9 @@ describe("Server Join API", () => {
 			expect(response.status).toBe(200);
 			expect(data.success).toBe(true);
 			
-			// Should treat missing count as 0 and increment to 1
-			expect(mockUpdateDocument).toHaveBeenCalledWith(
-				"test-db",
-				"servers-collection",
-				"server-1",
-				{ memberCount: 1 }
-			);
+			// Member count is no longer stored in DB
+			expect(mockUpdateDocument).not.toHaveBeenCalled();
 		});
 
-		it("should succeed even if member count update fails", async () => {
-			mockGetServerSession.mockResolvedValue({
-				$id: "user-1",
-				name: "Test User",
-			});
-
-			mockGetDocument.mockResolvedValue({
-				$id: "server-1",
-				name: "Test Server",
-				memberCount: 5,
-			});
-
-			mockListDocuments.mockResolvedValue({
-				documents: [],
-			});
-
-			mockCreateDocument.mockResolvedValue({
-				$id: "membership-1",
-				userId: "user-1",
-				serverId: "server-1",
-				role: "member",
-			});
-
-			// Member count update fails
-			mockUpdateDocument.mockRejectedValue(new Error("Update failed"));
-
-			const request = new NextRequest("http://localhost/api/servers/join", {
-				method: "POST",
-				body: JSON.stringify({ serverId: "server-1" }),
-			});
-
-			const response = await POST(request);
-			const data = await response.json();
-
-			// Should still succeed since membership was created
-			expect(response.status).toBe(200);
-			expect(data.success).toBe(true);
-		});
 	});
 });
