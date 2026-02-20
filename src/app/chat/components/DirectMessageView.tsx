@@ -953,28 +953,26 @@ export function DirectMessageView({
                                         </div>
                                     );
                                 })}
-                                {Object.values(typingUsers).length > 0 && (
-                                    <div className="flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">
-                                        <span
-                                            className="inline-flex size-2 animate-pulse rounded-full bg-primary"
-                                            aria-hidden="true"
-                                        />
-                                        <span>
-                                            {Object.values(typingUsers)
-                                                .map(
-                                                    (t) =>
-                                                        t.userName ||
-                                                        t.userId.slice(0, 6),
-                                                )
-                                                .join(", ")}{" "}
-                                            {Object.values(typingUsers).length >
-                                            1
-                                                ? "are"
-                                                : "is"}{" "}
-                                            typing...
-                                        </span>
-                                    </div>
-                                )}
+                                <div className={`flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300 ${Object.values(typingUsers).length > 0 ? "bg-muted/50 opacity-100" : "pointer-events-none opacity-0"}`} aria-live="polite">
+                                    <span
+                                        className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
+                                        aria-hidden="true"
+                                    />
+                                    <span className="truncate">
+                                        {Object.values(typingUsers)
+                                            .map(
+                                                (t) =>
+                                                    t.userName ||
+                                                    t.userId.slice(0, 6),
+                                            )
+                                            .join(", ")}{" "}
+                                        {Object.values(typingUsers).length >
+                                        1
+                                            ? "are"
+                                            : "is"}{" "}
+                                        typing...
+                                    </span>
+                                </div>
                             </>
                         )}
                         <div ref={messagesEndRef} />
