@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
-import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical, Pin } from "lucide-react";
+import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical, Pin, Reply } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,6 +132,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
+  const [messageDensity, setMessageDensity] = useState<"compact" | "cozy">("compact");
   const [muteDialogState, setMuteDialogState] = useState<{
     open: boolean;
     type: "server" | "channel" | "conversation";
@@ -140,6 +141,7 @@ export default function ChatPage() {
   }>({ open: false, type: "channel", id: "", name: "" });
   // Threading and pinning state
   const [activeThread, setActiveThread] = useState<Message | null>(null);
+  const [threadReplyText, setThreadReplyText] = useState("");
   const [showPinnedPanel, setShowPinnedPanel] = useState(false);
   const [canManageMessages, setCanManageMessages] = useState(false);
   const _messagesEndRef = useRef<HTMLDivElement>(null);
@@ -149,6 +151,14 @@ export default function ChatPage() {
 
   // Custom emojis
   const { customEmojis, uploadEmoji } = useCustomEmojis();
+  const conversationsApi = useConversations(userId);
+  const selectedConversation = useMemo(
+    () =>
+      conversationsApi.conversations.find(
+        (conversation) => conversation.$id === selectedConversationId,
+      ) || null,
+    [conversationsApi.conversations, selectedConversationId],
+  );
 
   const openProfileModal = (
     profileUserId: string,
@@ -264,122 +274,6 @@ export default function ChatPage() {
           controller.abort();
       };
   }, [userId]);
-
-  // Check manageMessages permission when channel changes
-  useEffect(() => {
-    async function checkPermissions() {
-      if (!selectedChannel || !userId || !serversApi.selectedServer) {
-        setCanManageMessages(false);
-        return;
-      }
-
-      // Server owner always has permission
-      const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
-      if (selectedServerData?.ownerId === userId) {
-        setCanManageMessages(true);
-        return;
-      }
-
-      // Check via API
-      try {
-        const res = await fetch(`/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`);
-        if (res.ok) {
-          const data = await res.json();
-          setCanManageMessages(data.manageMessages ?? false);
-        } else {
-          setCanManageMessages(false);
-        }
-      } catch {
-        setCanManageMessages(false);
-      }
-    }
-
-    void checkPermissions();
-  }, [selectedChannel, userId, serversApi.selectedServer, serversApi.servers]);
-
-  // Handlers -----------------
-  const selectChannel = useCallback((c: Channel) => {
-    setSelectedChannel(c.$id);
-    setViewMode("channels");
-    setSelectedConversationId(null);
-  }, []);
-
-  const selectConversation = useCallback((conversation: { $id: string }) => {
-    setSelectedConversationId(conversation.$id);
-    setViewMode("dms");
-    setSelectedChannel(null);
-  }, []);
-
-  const _confirmDelete = useCallback((messageId: string) => {
-    setDeleteConfirmId(messageId);
-  }, []);
-
-  const handleDelete = useCallback(async () => {
-    if (!deleteConfirmId) {
-      return;
-    }
-    await removeMessage(deleteConfirmId);
-    setDeleteConfirmId(null);
-  }, [deleteConfirmId, removeMessage]);
-
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    // Auto-join server via invite code from query param
-    useEffect(() => {
-        const inviteCode = searchParams.get("invite");
-        if (inviteCode && userId) {
-            // Only auto-join once per code
-            const joinedKey = `invite_joined_${inviteCode}`;
-            if (sessionStorage.getItem(joinedKey)) {
-                // Clear the query param
-                const newParams = new URLSearchParams(searchParams);
-                newParams.delete("invite");
-                router.replace(`/chat?${newParams.toString()}`);
-                return;
-            }
-
-            // Attempt to join via invite
-            fetch(`/api/invites/${inviteCode}/join`, {
-                method: "POST",
-            })
-                .then(async (res) => {
-                    if (res.ok) {
-                        await res.json(); // intentionally unused: response data not needed
-                        sessionStorage.setItem(joinedKey, "true");
-                        toast.success("Successfully joined server via invite!");
-
-                        // Clear the query param
-                        const newParams = new URLSearchParams(searchParams);
-                        newParams.delete("invite");
-                        router.replace(`/chat?${newParams.toString()}`);
-
-                        // Optionally select the server (if serversApi is available)
-                        // This will be handled by the servers hook automatically
-                    } else {
-                        const error = await res.json();
-                        toast.error(error.error || "Failed to join server");
-
-                        // Clear the query param on error too
-                        const newParams = new URLSearchParams(searchParams);
-                        newParams.delete("invite");
-                        router.replace(`/chat?${newParams.toString()}`);
-                    }
-                })
-                .catch((error) => {
-                    console.error("Failed to join via invite:", error);
-                    toast.error("Failed to join server");
-
-                    // Clear the query param
-                    const newParams = new URLSearchParams(searchParams);
-                    newParams.delete("invite");
-                    router.replace(`/chat?${newParams.toString()}`);
-                });
-        }
-    }, [searchParams, userId, router]);
 
     const serversApi = useServers({ userId, membershipEnabled });
     const channelsApi = useChannels({
@@ -514,18 +408,41 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Derived helpers
-  const showChat = useMemo(
-    () => Boolean(selectedChannel) || Boolean(selectedConversationId),
-    [selectedChannel, selectedConversationId]
-  );
-
     const dmApi = useDirectMessages({
         conversationId: selectedConversationId || "",
         userId,
-        receiverId: receiverId || "",
         userName,
     });
+
+    // Check manageMessages permission when channel changes
+    useEffect(() => {
+      async function checkPermissions() {
+        if (!selectedChannel || !userId || !serversApi.selectedServer) {
+          setCanManageMessages(false);
+          return;
+        }
+
+        const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
+        if (selectedServerData?.ownerId === userId) {
+          setCanManageMessages(true);
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`);
+          if (res.ok) {
+            const data = await res.json();
+            setCanManageMessages(data.manageMessages ?? false);
+          } else {
+            setCanManageMessages(false);
+          }
+        } catch {
+          setCanManageMessages(false);
+        }
+      }
+
+      void checkPermissions();
+    }, [selectedChannel, userId, serversApi.selectedServer, serversApi.servers]);
 
     // Notifications - listens for incoming messages and triggers notifications
     const { requestPermission: requestNotificationPermission } =
@@ -1011,9 +928,8 @@ export default function ChatPage() {
                     }}
                     onOpenProfileModal={openProfileModal}
                     onRemove={handleDelete}
-                    onTogglePin={async (message) => {
-                        await togglePin(message);
-                    }}
+                    onPinMessage={handlePinMessage}
+                    onUnpinMessage={handleUnpinMessage}
                     onOpenThread={async (message) => {
                         await openThread(message);
                     }}

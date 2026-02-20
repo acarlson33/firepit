@@ -30,6 +30,7 @@ type VirtualizedMessageListProps = {
   // Threading props
   onOpenThread?: (message: Message) => void;
   // Pinning props
+  onTogglePin?: (message: Message) => Promise<void>;
   onPinMessage?: (messageId: string) => Promise<void>;
   onUnpinMessage?: (messageId: string) => Promise<void>;
   canManageMessages?: boolean;
@@ -55,6 +56,7 @@ export function VirtualizedMessageList({
   shouldShowLoadOlder,
   onLoadOlder,
   onOpenThread,
+  onTogglePin,
   onPinMessage,
   onUnpinMessage,
   canManageMessages = false,
@@ -282,9 +284,17 @@ export function VirtualizedMessageList({
                   {/* Pin/Unpin button - only show if user can manage messages */}
                   {canManageMessages && (
                     m.isPinned ? (
-                      onUnpinMessage && (
+                      (onTogglePin || onUnpinMessage) && (
                         <Button
-                          onClick={() => void onUnpinMessage(m.$id)}
+                          onClick={() => {
+                            if (onTogglePin) {
+                              void onTogglePin(m);
+                              return;
+                            }
+                            if (onUnpinMessage) {
+                              void onUnpinMessage(m.$id);
+                            }
+                          }}
                           size="sm"
                           title="Unpin message"
                           type="button"
@@ -294,9 +304,17 @@ export function VirtualizedMessageList({
                         </Button>
                       )
                     ) : (
-                      onPinMessage && (
+                      (onTogglePin || onPinMessage) && (
                         <Button
-                          onClick={() => void onPinMessage(m.$id)}
+                          onClick={() => {
+                            if (onTogglePin) {
+                              void onTogglePin(m);
+                              return;
+                            }
+                            if (onPinMessage) {
+                              void onPinMessage(m.$id);
+                            }
+                          }}
                           size="sm"
                           title="Pin message"
                           type="button"

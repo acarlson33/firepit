@@ -1,5 +1,4 @@
 import { Query } from "node-appwrite";
-import type { Databases } from "node-appwrite";
 import { getEnvConfig } from "./appwrite-core";
 
 /**
@@ -11,7 +10,7 @@ import { getEnvConfig } from "./appwrite-core";
  * @returns The actual number of members in the server
  */
 export async function getActualMemberCount(
-    databases: Databases,
+    databases: unknown,
     serverId: string
 ): Promise<number> {
     const env = getEnvConfig();
@@ -22,13 +21,38 @@ export async function getActualMemberCount(
     }
     
     try {
-        const result = await databases.listDocuments(
+        const db = databases as {
+            listDocuments: (
+                databaseId: string,
+                collectionId: string,
+                queries: string[],
+            ) => Promise<{ total: number }>;
+        };
+        const query = [Query.equal("serverId", serverId), Query.limit(1)];
+        const result = await db.listDocuments(
             env.databaseId,
             membershipsCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(1)]
+            query,
         );
         return result.total;
     } catch {
-        return 0;
+        try {
+            const db = databases as {
+                listDocuments: (params: {
+                    databaseId: string;
+                    collectionId: string;
+                    queries: string[];
+                }) => Promise<{ total: number }>;
+            };
+            const query = [Query.equal("serverId", serverId), Query.limit(1)];
+            const result = await db.listDocuments({
+                databaseId: env.databaseId,
+                collectionId: membershipsCollectionId,
+                queries: query,
+            });
+            return result.total;
+        } catch {
+            return 0;
+        }
     }
 }

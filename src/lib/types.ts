@@ -46,6 +46,7 @@ export type Message = {
     }>;
     // Profile information (enriched from profiles collection)
     displayName?: string;
+    avatarFileId?: string;
     avatarUrl?: string;
     pronouns?: string;
     // Reply context (enriched from parent message)
@@ -237,15 +238,6 @@ export type InviteUsage = {
     userId: string;
     serverId: string;
     joinedAt: string;
-};
-
-export type PinnedMessage = {
-  $id: string;
-  channelId: string;
-  messageId: string;
-  pinnedBy: string;
-  pinnedAt: string;
-  $createdAt: string;
 };
 
 export type RoleAssignment = {
