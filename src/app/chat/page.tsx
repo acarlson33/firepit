@@ -164,22 +164,6 @@ export default function ChatPage() {
     });
     setProfileModalOpen(true);
   };
-  // Check if user server creation is enabled
-  useEffect(() => {
-    if (userId) {
-      fetch("/api/feature-flags/allow-user-servers")
-        .then((res) => res.json())
-        .then((data: { enabled: boolean }) => {
-          console.log("Feature flag allow-user-servers:", data.enabled);
-          setAllowUserServers(data.enabled);
-        })
-        .catch((error) => {
-          console.error("Failed to fetch feature flag:", error);
-          setAllowUserServers(false);
-        });
-    }
-  }, [userId]);
-
   // Auto-join server via invite code from query param
   useEffect(() => {
     const inviteCode = searchParams.get("invite");
@@ -230,60 +214,56 @@ export default function ChatPage() {
           newParams.delete("invite");
           router.replace(`/chat?${newParams.toString()}`);
         });
-        setProfileModalOpen(true);
-    };
-    // Check if user server creation is enabled (cached + abortable)
-    useEffect(() => {
-        if (!userId) {
-            setAllowUserServers(false);
-            return;
-        }
-
-        let cancelled = false;
-        const controller = new AbortController();
-        const cacheKey = "feature-flag:allow-user-servers";
-
-        apiCache
-            .dedupe(
-                cacheKey,
-                async () => {
-                    const res = await fetch(
-                        "/api/feature-flags/allow-user-servers",
-                        { signal: controller.signal },
-                    );
-
-                    if (!res.ok) {
-                        throw new Error("Failed to fetch feature flag");
-                    }
-
-                    return (await res.json()) as { enabled: boolean };
-                },
-                CACHE_TTL.SERVERS,
-            )
-            .then((data) => {
-                if (!cancelled) {
-                    setAllowUserServers(Boolean(data.enabled));
-                }
-            })
-            .catch((error: unknown) => {
-                if (
-                    error instanceof DOMException &&
-                    error.name === "AbortError"
-                ) {
-                    return;
-                }
-                setAllowUserServers(false);
-            });
-
-        return () => {
-            cancelled = true;
-            controller.abort();
-        };
-        document.addEventListener("click", handleInteraction, { once: true });
-        return () => document.removeEventListener("click", handleInteraction);
-      }
     }
-  }, [userId, requestNotificationPermission]);
+  }, [searchParams, userId, router]);
+  // Check if user server creation is enabled (cached + abortable)
+  useEffect(() => {
+      if (!userId) {
+          setAllowUserServers(false);
+          return;
+      }
+
+      let cancelled = false;
+      const controller = new AbortController();
+      const cacheKey = "feature-flag:allow-user-servers";
+
+      apiCache
+          .dedupe(
+              cacheKey,
+              async () => {
+                  const res = await fetch(
+                      "/api/feature-flags/allow-user-servers",
+                      { signal: controller.signal },
+                  );
+
+                  if (!res.ok) {
+                      throw new Error("Failed to fetch feature flag");
+                  }
+
+                  return (await res.json()) as { enabled: boolean };
+              },
+              CACHE_TTL.SERVERS,
+          )
+          .then((data) => {
+              if (!cancelled) {
+                  setAllowUserServers(Boolean(data.enabled));
+              }
+          })
+          .catch((error: unknown) => {
+              if (
+                  error instanceof DOMException &&
+                  error.name === "AbortError"
+              ) {
+                  return;
+              }
+              setAllowUserServers(false);
+          });
+
+      return () => {
+          cancelled = true;
+          controller.abort();
+      };
+  }, [userId]);
 
   // Check manageMessages permission when channel changes
   useEffect(() => {

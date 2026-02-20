@@ -70,7 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUserStatusState(status);
           }
         }
-    }, []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
     useEffect(() => {
         void fetchUserData();
