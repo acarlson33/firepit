@@ -307,8 +307,10 @@ export function useMessages({
 
     // realtime subscription for typing indicators
     useEffect(() => {
+        // Clear typing users whenever the channel changes (including to null)
+        setTypingUsers({});
+
         if (!channelId) {
-            setTypingUsers({});
             return;
         }
         const databaseId = env.databaseId;
@@ -318,8 +320,12 @@ export function useMessages({
             return;
         }
 
+        let cleanupFn: (() => void) | undefined;
+        let cancelled = false;
+
         import("@/lib/realtime-pool")
             .then(({ getSharedClient, trackSubscription }) => {
+                if (cancelled) return;
                 const c = getSharedClient();
                 const typingChannel = `databases.${databaseId}.collections.${typingCollectionId}.documents`;
 
@@ -341,8 +347,8 @@ export function useMessages({
                 ) {
                     const typing = parseTyping(event);
 
-                    // Only process typing events for current channel
-                    if (typing.channelId !== channelId) {
+                    // Use ref to get current channel ID, avoiding stale closure
+                    if (typing.channelId !== currentChannelIdRef.current) {
                         return;
                     }
 
@@ -378,8 +384,7 @@ export function useMessages({
 
                 const unsub = c.subscribe(typingChannel, handleTypingEvent);
                 const untrack = trackSubscription(typingChannel);
-
-                return () => {
+                cleanupFn = () => {
                     untrack();
                     unsub();
                 };
@@ -387,6 +392,11 @@ export function useMessages({
             .catch(() => {
                 /* failed to set up typing realtime; ignore silently */
             });
+
+        return () => {
+            cancelled = true;
+            cleanupFn?.();
+        };
     }, [channelId, userId]);
 
     useEffect(() => {

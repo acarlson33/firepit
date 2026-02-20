@@ -64,6 +64,7 @@ export function useDirectMessages({
     const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastTypingSentState = useRef<boolean>(false);
     const lastTypingSentAt = useRef<number>(0);
+    const currentConversationIdRef = useRef<string | null>(conversationId);
     const userProfileCache = useRef<
         Record<
             string,
@@ -124,6 +125,10 @@ export function useDirectMessages({
         } finally {
             setLoading(false);
         }
+    }, [conversationId]);
+
+    useEffect(() => {
+        currentConversationIdRef.current = conversationId;
     }, [conversationId]);
 
     useEffect(() => {
@@ -510,15 +515,21 @@ export function useDirectMessages({
 
     // Realtime subscription for typing indicators
     useEffect(() => {
+        // Clear typing users whenever conversation changes (including to null)
+        setTypingUsers({});
+
         if (!conversationId || !TYPING_COLLECTION_ID) {
-            setTypingUsers({});
             return;
         }
 
         const databaseId = env.databaseId;
 
+        let cleanupFn: (() => void) | undefined;
+        let cancelled = false;
+
         import("appwrite")
             .then(({ Client }) => {
+                if (cancelled) return;
                 const client = new Client()
                     .setEndpoint(env.endpoint)
                     .setProject(env.project);
@@ -544,8 +555,8 @@ export function useDirectMessages({
                             ),
                         };
 
-                        // Only process typing events for current conversation
-                        if (typing.channelId !== conversationId) {
+                        // Use ref to get current conversation ID, avoiding stale closure
+                        if (typing.channelId !== currentConversationIdRef.current) {
                             return;
                         }
 
@@ -588,13 +599,18 @@ export function useDirectMessages({
                     },
                 );
 
-                return () => {
+                cleanupFn = () => {
                     unsubscribe();
                 };
             })
             .catch(() => {
                 // Ignore subscription errors
             });
+
+        return () => {
+            cancelled = true;
+            cleanupFn?.();
+        };
     }, [conversationId, userId]);
 
     // Cleanup stale typing indicators

@@ -1009,142 +1009,6 @@ export default function ChatPage() {
             );
         }
 
-  function renderMessages() {
-    if (!showChat) {
-      return (
-        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
-          Pick a channel or direct conversation to get started. Your messages will appear here.
-        </div>
-      );
-    }
-    
-    // Show loading spinner when switching channels
-    if (messagesLoading) {
-      return (
-        <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-border/60 bg-background/70 p-10">
-          <Loader />
-        </div>
-      );
-    }
-    
-    // Use virtual scrolling only for large message lists (50+ messages)
-    // This avoids scrolling issues with small lists
-    const useVirtualScrolling = messages.length >= 50;
-    
-    if (useVirtualScrolling) {
-      return (
-        <VirtualizedMessageList
-          canManageMessages={canManageMessages}
-          customEmojis={customEmojis}
-          deleteConfirmId={deleteConfirmId}
-          editingMessageId={editingMessageId}
-          messages={messages}
-          onLoadOlder={loadOlder}
-          onOpenImageViewer={(imageUrl: string) => {
-            setViewingImage({
-              url: imageUrl,
-              alt: "Image",
-            });
-          }}
-          onOpenProfileModal={openProfileModal}
-          onOpenThread={handleOpenThread}
-          onPinMessage={handlePinMessage}
-          onRemove={handleDelete}
-          onStartEdit={startEdit}
-          onStartReply={startReply}
-          onToggleReaction={async (messageId: string, emoji: string, isAdding: boolean) => {
-            try {
-              await toggleReaction(messageId, emoji, isAdding, false);
-            } catch {
-              // Error already logged by reaction handler
-            }
-          }}
-          onUnpinMessage={handleUnpinMessage}
-          onUploadCustomEmoji={uploadEmoji}
-          setDeleteConfirmId={setDeleteConfirmId}
-          shouldShowLoadOlder={shouldShowLoadOlder()}
-          userId={userId}
-          userIdSlice={userIdSlice}
-        />
-      );
-    }
-    
-    // Regular rendering for smaller lists
-    return (
-      <div
-        className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
-        ref={messagesContainerRef}
-      >
-        {shouldShowLoadOlder() && (
-          <div className="flex justify-center pb-4">
-            <Button
-              onClick={loadOlder}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Load older messages
-            </Button>
-          </div>
-        )}
-        {messages.map((m) => {
-          const mine = m.userId === userId;
-          const isEditing = editingMessageId === m.$id;
-          const removed = Boolean(m.removedAt);
-          const isDeleting = deleteConfirmId === m.$id;
-          const displayName =
-            m.displayName || m.userName || m.userId.slice(0, userIdSlice);
-
-          return (
-            <div
-              className={`group flex gap-3 rounded-2xl border border-transparent bg-background/60 p-3 transition-colors ${
-                mine
-                  ? "ml-auto max-w-[85%] flex-row-reverse text-right"
-                  : "mr-auto max-w-[85%]"
-              } ${
-                isEditing
-                  ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
-                  : "hover:border-border/80"
-              }`}
-              key={m.$id}
-            >
-              <button
-                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
-                onClick={() =>
-                  openProfileModal(
-                    m.userId,
-                    m.userName,
-                    m.displayName,
-                    m.avatarUrl,
-                  )
-                }
-                type="button"
-              >
-                <Avatar
-                  alt={displayName}
-                  fallback={displayName}
-                  size="md"
-                  src={m.avatarUrl}
-                />
-              </button>
-              <div className="min-w-0 flex-1 space-y-2">
-                <div
-                  className={`flex flex-wrap items-baseline gap-2 text-xs ${mine ? "justify-end" : ""} text-muted-foreground`}
-                >
-                  <span className="font-medium text-foreground">
-                    {displayName}
-                  </span>
-                  {m.pronouns && (
-                    <span className="italic text-muted-foreground">
-                      ({m.pronouns})
-                    </span>
-                  )}
-                  <span>{formatMessageTimestamp(m.$createdAt)}</span>
-                  {m.editedAt && <span className="italic">(edited)</span>}
-                  {removed && <span className="text-destructive">(removed)</span>}
-                </div>
-            );
-        }
 
         // Use virtual scrolling only for large message lists (50+ messages)
         // This avoids scrolling issues with small lists
@@ -1540,119 +1404,6 @@ export default function ChatPage() {
         );
     }
 
-    // Show loader during initial load
-    if (serversApi.initialLoading) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center">
-                <Loader />
-            </div>
-        );
-    }
-
-    return (
-        <div className="mx-auto w-full max-w-7xl px-6 py-8">
-            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="max-h-[calc(100vh-8rem)] space-y-6 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
-                    {/* View Mode Toggle */}
-                    <div className="rounded-2xl bg-muted/40 p-1">
-                        <div className="grid grid-cols-2 gap-1">
-                            <Button
-                                aria-pressed={viewMode === "channels"}
-                                className="rounded-xl"
-                                onClick={() => {
-                                    setViewMode("channels");
-                                    setSelectedConversationId(null);
-                                }}
-                                size="sm"
-                                type="button"
-                                variant={
-                                    viewMode === "channels"
-                                        ? "default"
-                                        : "ghost"
-                                }
-                            >
-                                <Hash className="mr-2 h-4 w-4" />
-                                Channels
-                            </Button>
-                            <Button
-                                aria-pressed={viewMode === "dms"}
-                                className="rounded-xl"
-                                onClick={() => {
-                                    setViewMode("dms");
-                                    setSelectedChannel(null);
-                                }}
-                                size="sm"
-                                type="button"
-                                variant={
-                                    viewMode === "dms" ? "default" : "ghost"
-                                }
-                            >
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                DMs
-                            </Button>
-                        </div>
-                    </div>
-
-                    {viewMode === "channels" ? (
-                        <div className="space-y-4">
-                            {renderServers()}
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <h2 className="text-sm font-semibold tracking-tight">
-                                        Channels
-                                    </h2>
-                                    {selectedChannel && (
-                                        <span className="rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
-                                            Active
-                                        </span>
-                                    )}
-                                </div>
-                                {renderChannels()}
-                            </div>
-                            <ServerBrowser
-                                membershipEnabled={membershipEnabled}
-                                userId={userId}
-                                joinedServerIds={serversApi.servers.map(
-                                    (s) => s.$id,
-                                )}
-                                onServerJoined={() => {
-                                    // Clear membership cache to ensure fresh data after reload
-                                    if (userId) {
-                                        apiCache.clear(`memberships:${userId}`);
-                                        apiCache.clear(
-                                            `servers:initial:${userId}`,
-                                        );
-                                    }
-                                    // Reload the page to refresh server list
-                                    window.location.reload();
-                                }}
-                            />
-                        </div>
-                    ) : (
-                        <div className="rounded-2xl border border-border/60 bg-background/60 p-2 shadow-sm">
-                            <ConversationList
-                                conversations={conversationsApi.conversations}
-                                loading={conversationsApi.loading}
-                                onMuteConversation={(
-                                    conversationId,
-                                    conversationName,
-                                ) => {
-                                    setMuteDialogState({
-                                        open: true,
-                                        type: "conversation",
-                                        id: conversationId,
-                                        name: conversationName,
-                                    });
-                                }}
-                                onNewConversation={() =>
-                                    setNewConversationOpen(true)
-                                }
-                                onSelectConversation={selectConversation}
-                                selectedConversationId={selectedConversationId}
-                            />
-                        </div>
-                    )}
-                </aside>
 
   // Show loader during initial load
   if (serversApi.initialLoading) {
@@ -2058,25 +1809,28 @@ export default function ChatPage() {
                                                 </div>
                                             ) : (
                                                 <>
-                                                    {typingUsersList.length >
-                                                        0 && (
-                                                        <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                                                            <span
-                                                                aria-hidden="true"
-                                                                className="inline-flex size-2 animate-pulse rounded-full bg-primary"
-                                                            />
-                                                            <span>
-                                                                {typingDisplayNames.join(
-                                                                    ", ",
-                                                                )}{" "}
-                                                                {typingUsersList.length >
-                                                                1
-                                                                    ? "are"
-                                                                    : "is"}{" "}
-                                                                typing...
-                                                            </span>
-                                                        </div>
-                                                    )}
+                                                    <div
+                                                        aria-live="polite"
+                                                        className={[
+                                                            "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
+                                                            typingUsersList.length > 0 ? "bg-muted/60 opacity-100" : "pointer-events-none opacity-0",
+                                                        ].join(" ")}
+                                                    >
+                                                        <span
+                                                            aria-hidden="true"
+                                                            className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
+                                                        />
+                                                        <span className="truncate">
+                                                            {typingDisplayNames.join(
+                                                                ", ",
+                                                            )}{" "}
+                                                            {typingUsersList.length >
+                                                            1
+                                                                ? "are"
+                                                                : "is"}{" "}
+                                                            typing...
+                                                        </span>
+                                                    </div>
 
                                                     {imagePreview && (
                                                         <div className="relative inline-block">
