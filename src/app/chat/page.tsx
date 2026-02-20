@@ -132,7 +132,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
   const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
-  const [messageDensity, setMessageDensity] = useState<"compact" | "cozy">("compact");
+  const messageDensity = "compact";
   const [muteDialogState, setMuteDialogState] = useState<{
     open: boolean;
     type: "server" | "channel" | "conversation";
@@ -141,7 +141,6 @@ export default function ChatPage() {
   }>({ open: false, type: "channel", id: "", name: "" });
   // Threading and pinning state
   const [activeThread, setActiveThread] = useState<Message | null>(null);
-  const [threadReplyText, setThreadReplyText] = useState("");
   const [showPinnedPanel, setShowPinnedPanel] = useState(false);
   const [canManageMessages, setCanManageMessages] = useState(false);
   const _messagesEndRef = useRef<HTMLDivElement>(null);
@@ -352,10 +351,6 @@ export default function ChatPage() {
         () => channelPins.map((item) => item.message.$id),
         [channelPins],
     );
-
-    useEffect(() => {
-        setThreadReplyText("");
-    }, [activeThreadParent?.$id]);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -1366,7 +1361,42 @@ export default function ChatPage() {
               onTypingChange={dmApi.handleTypingChange}
             />
           ) : (
-            renderMessages()
+            <>
+              {selectedChannel && (
+                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="font-semibold">
+                      {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => setShowPinnedPanel(true)}
+                      size="sm"
+                      title="View pinned messages"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Pin className="h-4 w-4" />
+                    </Button>
+                    {serversApi.selectedServer &&
+                      serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
+                        <Button
+                          onClick={() => setChannelPermissionsOpen(true)}
+                          size="sm"
+                          title="Channel permissions"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      )}
+                  </div>
+                </div>
+              )}
+              {renderMessages()}
+            </>
           )}
         </div>
       </div>
@@ -1416,6 +1446,56 @@ export default function ChatPage() {
         targetName={muteDialogState.name}
         targetType={muteDialogState.type}
       />
+      {serversApi.selectedServer && (
+        <RoleSettingsDialog
+          open={roleSettingsOpen}
+          onOpenChange={setRoleSettingsOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+      {selectedChannel && serversApi.selectedServer && (
+        <ChannelPermissionsEditor
+          open={channelPermissionsOpen}
+          onOpenChange={setChannelPermissionsOpen}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
+          serverId={serversApi.selectedServer}
+        />
+      )}
+      {serversApi.selectedServer && (
+        <ServerAdminPanel
+          open={adminPanelOpen}
+          onOpenChange={setAdminPanelOpen}
+          serverId={serversApi.selectedServer}
+          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
+          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
+        />
+      )}
+      {activeThreadParent && userId && (
+        <ThreadPanel
+          customEmojis={customEmojis}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeThread();
+            }
+          }}
+          open={Boolean(activeThreadParent)}
+          parentMessage={activeThreadParent}
+          userId={userId}
+        />
+      )}
+      {selectedChannel && (
+        <PinnedMessagesPanel
+          canManageMessages={canManageMessages}
+          channelId={selectedChannel}
+          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name}
+          onOpenChange={setShowPinnedPanel}
+          onUnpin={handleUnpinMessage}
+          open={showPinnedPanel}
+        />
+      )}
     </div>
   );
 }
