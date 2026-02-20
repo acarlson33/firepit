@@ -22,54 +22,13 @@ export async function GET(request: NextRequest) {
     }
 
     setTransactionName("GET /api/example");
-    
-    // Add custom attributes to this transaction
-    // Accessing request.headers may throw during prerendering. Read it safely.
-    let userAgent = "unknown";
-    try {
-      userAgent = request.headers.get("user-agent") || "unknown";
-    } catch {
-      // In prerendering context, accessing headers can cause an early exit. Use fallback.
-      userAgent = "unknown";
-    }
-
-    addTransactionAttributes({
-      endpoint: "/api/example",
-      method: "GET",
-      userAgent,
-    });
-    
-    // Log the request (access request.url safely in case prerendering blocks access)
-    let reqUrl = "unknown";
-    try {
-      reqUrl = request.url;
-    } catch {
-      reqUrl = "unknown";
-    }
-
-    logger.info("Processing example API request", {
-      url: reqUrl,
-      method: "GET",
-    });
-    
-    // Simulate some work with performance tracking
-    const result = await measureAsync(
-      "example-operation",
-      async () => {
-        // Simulate database query or external API call
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return { message: "Hello from New Relic instrumented API!" };
-      },
-      { operation: "example" }
-    );
-    
-    // Track the API call
-    const duration = Date.now() - startTime;
-    trackApiCall("/api/example", "GET", 200, duration, {
-      cached: false,
-    });
 
     try {
+        addTransactionAttributes({
+            endpoint: ENDPOINT,
+            method: "GET",
+            userAgent,
+        });
         const result = await measureAsync(
             "example-operation",
             async () => ({
