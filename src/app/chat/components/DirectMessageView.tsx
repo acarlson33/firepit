@@ -953,7 +953,13 @@ export function DirectMessageView({
                                         </div>
                                     );
                                 })}
-                                <div className={`flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300 ${Object.values(typingUsers).length > 0 ? "bg-muted/50 opacity-100" : "pointer-events-none opacity-0"}`} aria-live="polite">
+                                <div
+                                    aria-live="polite"
+                                    className={[
+                                        "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
+                                        Object.values(typingUsers).length > 0 ? "bg-muted/50 opacity-100" : "pointer-events-none opacity-0",
+                                    ].join(" ")}
+                                >
                                     <span
                                         className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
                                         aria-hidden="true"

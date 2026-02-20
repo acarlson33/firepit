@@ -1809,7 +1809,13 @@ export default function ChatPage() {
                                                 </div>
                                             ) : (
                                                 <>
-                                                    <div className={`flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300 ${typingUsersList.length > 0 ? "bg-muted/60 opacity-100" : "pointer-events-none opacity-0"}`} aria-live="polite">
+                                                    <div
+                                                        aria-live="polite"
+                                                        className={[
+                                                            "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
+                                                            typingUsersList.length > 0 ? "bg-muted/60 opacity-100" : "pointer-events-none opacity-0",
+                                                        ].join(" ")}
+                                                    >
                                                         <span
                                                             aria-hidden="true"
                                                             className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
