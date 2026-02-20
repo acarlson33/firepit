@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
-import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { ThreadIndicator } from "@/components/thread-indicator";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { MessageSquare, MessageSquareMore, Pencil, Trash2, Pin } from "lucide-react";
@@ -34,6 +33,8 @@ type VirtualizedMessageListProps = {
   onPinMessage?: (messageId: string) => Promise<void>;
   onUnpinMessage?: (messageId: string) => Promise<void>;
   canManageMessages?: boolean;
+  messageDensity?: "compact" | "cozy";
+  pinnedMessageIds?: string[];
 };
 
 export function VirtualizedMessageList({
@@ -57,6 +58,8 @@ export function VirtualizedMessageList({
   onPinMessage,
   onUnpinMessage,
   canManageMessages = false,
+  messageDensity = "compact",
+  pinnedMessageIds,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
 
@@ -74,8 +77,9 @@ export function VirtualizedMessageList({
                 const removed = Boolean(m.removedAt);
                 const isDeleting = deleteConfirmId === m.$id;
                 const isPinned =
-                    Array.isArray(pinnedMessageIds) &&
-                    pinnedMessageIds.includes(m.$id);
+                    m.isPinned ||
+                    (Array.isArray(pinnedMessageIds) &&
+                        pinnedMessageIds.includes(m.$id));
                 const displayName =
                     m.displayName ||
                     m.userName ||

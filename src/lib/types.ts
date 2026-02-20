@@ -46,16 +46,20 @@ export type Message = {
     }>;
     // Profile information (enriched from profiles collection)
     displayName?: string;
-  };
-  // Threading fields
-  threadId?: string; // Parent message ID if this is a thread reply
-  threadReplyCount?: number; // Count of replies (on parent message)
-  threadParticipants?: string[]; // User IDs who replied in thread (on parent)
-  lastThreadReplyAt?: string; // ISO timestamp of last thread reply (on parent)
-  // Pinning fields
-  isPinned?: boolean;
-  pinnedAt?: string; // ISO timestamp when pinned
-  pinnedBy?: string; // User ID who pinned it
+    avatarUrl?: string;
+    pronouns?: string;
+    // Reply context (enriched from parent message)
+    replyTo?: {
+        text: string;
+        userName?: string;
+        displayName?: string;
+    };
+    // Threading fields
+    threadReplyCount?: number; // Count of replies (on parent message)
+    // Pinning fields
+    isPinned?: boolean;
+    pinnedAt?: string; // ISO timestamp when pinned
+    pinnedBy?: string; // User ID who pinned it
 };
 
 export type Server = {
