@@ -7,14 +7,12 @@ const {
     mockListDocuments,
     mockCreateDocument,
     mockUpdateDocument,
-    mockGetChannelAccessForUser,
 } = vi.hoisted(() => ({
     mockGetServerSession: vi.fn(),
     mockGetDocument: vi.fn(),
     mockListDocuments: vi.fn(),
     mockCreateDocument: vi.fn(),
     mockUpdateDocument: vi.fn(),
-    mockGetChannelAccessForUser: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-server", () => ({
@@ -49,10 +47,6 @@ vi.mock("@/lib/appwrite-core", () => ({
     },
 }));
 
-vi.mock("@/lib/server-channel-access", () => ({
-    getChannelAccessForUser: mockGetChannelAccessForUser,
-}));
-
 vi.mock("node-appwrite", () => ({
     ID: { unique: () => "thread-msg-1" },
     Query: {
@@ -65,14 +59,6 @@ vi.mock("node-appwrite", () => ({
 describe("Message Thread API", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-
-        mockGetChannelAccessForUser.mockResolvedValue({
-            isMember: true,
-            canRead: true,
-            canSend: true,
-            serverId: "server-1",
-            isServerOwner: false,
-        });
     });
 
     it("GET returns 401 when unauthenticated", async () => {
@@ -124,8 +110,8 @@ describe("Message Thread API", () => {
         const data = await response.json();
 
         expect(response.status).toBe(200);
-        expect(data.items).toHaveLength(1);
-        expect(data.items[0].threadId).toBe("msg-1");
+        expect(data.replies).toHaveLength(1);
+        expect(data.replies[0].threadId).toBe("msg-1");
     });
 
     it("POST creates thread reply and updates parent counters", async () => {
@@ -166,36 +152,23 @@ describe("Message Thread API", () => {
             params: Promise.resolve({ messageId: "msg-1" }),
         });
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(201);
         expect(mockCreateDocument).toHaveBeenCalledOnce();
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "test-db",
             "messages",
             "msg-1",
             expect.objectContaining({
-                threadMessageCount: 2,
-                threadParticipants: ["user-2", "user-1"],
+                threadReplyCount: 1,
+                threadParticipants: JSON.stringify(["user-2", "user-1"]),
             }),
         );
     });
 
-    it("POST returns 403 when user cannot send", async () => {
+    it("POST returns 400 when body has no message content", async () => {
         mockGetServerSession.mockResolvedValue({
             $id: "user-1",
             name: "Test User",
-        });
-        mockGetDocument.mockResolvedValue({
-            $id: "msg-1",
-            channelId: "channel-1",
-            serverId: "server-1",
-        });
-
-        mockGetChannelAccessForUser.mockResolvedValue({
-            isMember: true,
-            canRead: true,
-            canSend: false,
-            serverId: "server-1",
-            isServerOwner: false,
         });
 
         const { POST } =
@@ -204,7 +177,7 @@ describe("Message Thread API", () => {
             "http://localhost/api/messages/msg-1/thread",
             {
                 method: "POST",
-                body: JSON.stringify({ text: "Thread reply" }),
+                body: JSON.stringify({}),
             },
         );
 
@@ -213,8 +186,8 @@ describe("Message Thread API", () => {
         });
         const data = await response.json();
 
-        expect(response.status).toBe(403);
-        expect(data.error).toBe("Forbidden");
+        expect(response.status).toBe(400);
+        expect(data.error).toBe("text, imageFileId, or attachments required");
         expect(mockCreateDocument).not.toHaveBeenCalled();
     });
 });

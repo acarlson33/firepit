@@ -7,16 +7,16 @@ const {
     mockListDocuments,
     mockCreateDocument,
     mockDeleteDocument,
-    mockGetChannelAccessForUser,
-    mockGetServerPermissionsForUser,
+    mockRolesListDocuments,
+    mockRolesGetDocument,
 } = vi.hoisted(() => ({
     mockGetServerSession: vi.fn(),
     mockGetDocument: vi.fn(),
     mockListDocuments: vi.fn(),
     mockCreateDocument: vi.fn(),
     mockDeleteDocument: vi.fn(),
-    mockGetChannelAccessForUser: vi.fn(),
-    mockGetServerPermissionsForUser: vi.fn(),
+    mockRolesListDocuments: vi.fn(),
+    mockRolesGetDocument: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-server", () => ({
@@ -40,21 +40,41 @@ vi.mock("@/lib/appwrite-core", () => ({
         collections: {
             messages: "messages",
             pinnedMessages: "pinned_messages",
-            directMessages: "direct_messages",
-            conversations: "conversations",
+            servers: "servers",
         },
     })),
 }));
 
-vi.mock("@/lib/server-channel-access", () => ({
-    getChannelAccessForUser: mockGetChannelAccessForUser,
-    getServerPermissionsForUser: mockGetServerPermissionsForUser,
+vi.mock("@/lib/permissions", () => ({
+    getEffectivePermissions: vi.fn(() => ({ manageMessages: true })),
+    hasPermission: vi.fn(
+        (permission: string, permissions: Record<string, boolean>) =>
+            Boolean(permissions[permission]),
+    ),
 }));
 
 vi.mock("node-appwrite", () => ({
+    Client: class {
+        setEndpoint() {
+            return this;
+        }
+
+        setProject() {
+            return this;
+        }
+
+        setKey() {
+            return this;
+        }
+    },
+    Databases: class {
+        listDocuments = mockRolesListDocuments;
+        getDocument = mockRolesGetDocument;
+    },
     ID: { unique: () => "pin-1" },
     Query: {
-        equal: (field: string, value: string) => `equal(${field},${value})`,
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${Array.isArray(value) ? value.join(",") : value})`,
         limit: (value: number) => `limit(${value})`,
     },
 }));
@@ -63,28 +83,17 @@ describe("Message Pinning API", () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        mockGetChannelAccessForUser.mockResolvedValue({
-            isMember: true,
-            canRead: true,
-            canSend: true,
-            serverId: "server-1",
-            isServerOwner: false,
-        });
+        process.env.APPWRITE_ENDPOINT = "https://example.appwrite.test/v1";
+        process.env.APPWRITE_PROJECT_ID = "project-test";
+        process.env.APPWRITE_API_KEY = "api-key-test";
 
-        mockGetServerPermissionsForUser.mockResolvedValue({
-            isMember: true,
-            isServerOwner: false,
-            permissions: {
-                readMessages: true,
-                sendMessages: true,
-                manageMessages: true,
-                manageChannels: false,
-                manageRoles: false,
-                manageServer: false,
-                mentionEveryone: false,
-                administrator: false,
-            },
-            serverId: "server-1",
+        mockRolesListDocuments.mockResolvedValue({
+            total: 1,
+            documents: [{ roleIds: ["role-1"] }],
+        });
+        mockRolesGetDocument.mockResolvedValue({
+            $id: "role-1",
+            permissions: { manageMessages: true },
         });
     });
 

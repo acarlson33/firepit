@@ -1,6 +1,20 @@
 import { Query } from "node-appwrite";
-import type { Databases } from "node-appwrite";
 import { getEnvConfig } from "./appwrite-core";
+
+type MemberCountDatabases = {
+    listDocuments: {
+        (
+            databaseId: string,
+            collectionId: string,
+            queries?: string[],
+        ): Promise<{ total: number }>;
+        (params: {
+            databaseId: string;
+            collectionId: string;
+            queries?: string[];
+        }): Promise<{ total: number }>;
+    };
+};
 
 /**
  * Gets the actual member count for a server by querying the memberships collection.
@@ -11,7 +25,7 @@ import { getEnvConfig } from "./appwrite-core";
  * @returns The actual number of members in the server
  */
 export async function getActualMemberCount(
-    databases: Databases,
+    databases: MemberCountDatabases,
     serverId: string
 ): Promise<number> {
     const env = getEnvConfig();
@@ -25,7 +39,7 @@ export async function getActualMemberCount(
         const result = await databases.listDocuments(
             env.databaseId,
             membershipsCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(1)]
+            [Query.equal("serverId", serverId), Query.limit(1)],
         );
         return result.total;
     } catch {

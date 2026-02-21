@@ -2,7 +2,20 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
-import { MessageSquare, Hash, Image as ImageIcon, X, Settings, Shield, Pencil, Trash2, BellOff, MoreVertical, Pin } from "lucide-react";
+import {
+    MessageSquare,
+    Hash,
+    Image as ImageIcon,
+    X,
+    Settings,
+    Shield,
+    Pencil,
+    Trash2,
+    BellOff,
+    MoreVertical,
+    Pin,
+    Reply,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,9 +27,8 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
-import type { Channel, FileAttachment, Message } from "@/lib/types";
+import type { Channel, FileAttachment } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
-import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { ReactionButton } from "@/components/reaction-button";
@@ -40,36 +52,96 @@ import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
 
 // Lazy load heavy components
-const ServerBrowser = dynamic(() => import("./components/ServerBrowser").then((mod) => ({ default: mod.ServerBrowser })), {
-  ssr: false,
-});
-const UserProfileModal = dynamic(() => import("@/components/user-profile-modal").then((mod) => ({ default: mod.UserProfileModal })), {
-  ssr: false,
-});
-const NewConversationDialog = dynamic(() => import("./components/NewConversationDialog").then((mod) => ({ default: mod.NewConversationDialog })), {
-  ssr: false,
-});
-const RoleSettingsDialog = dynamic(() => import("@/components/role-settings-dialog").then((mod) => ({ default: mod.RoleSettingsDialog })), {
-  ssr: false,
-});
-const ChannelPermissionsEditor = dynamic(() => import("@/components/channel-permissions-editor").then((mod) => ({ default: mod.ChannelPermissionsEditor })), {
-  ssr: false,
-});
-const ServerAdminPanel = dynamic(() => import("@/components/server-admin-panel").then((mod) => ({ default: mod.ServerAdminPanel })), {
-  ssr: false,
-});
-const CreateServerDialog = dynamic(() => import("@/components/create-server-dialog").then((mod) => ({ default: mod.CreateServerDialog })), {
-  ssr: false,
-});
-const MuteDialog = dynamic(() => import("@/components/mute-dialog").then((mod) => ({ default: mod.MuteDialog })), {
-  ssr: false,
-});
-const ThreadPanel = dynamic(() => import("@/components/thread-panel").then((mod) => ({ default: mod.ThreadPanel })), {
-  ssr: false,
-});
-const PinnedMessagesPanel = dynamic(() => import("@/components/pinned-messages-panel").then((mod) => ({ default: mod.PinnedMessagesPanel })), {
-  ssr: false,
-});
+const _ServerBrowser = dynamic(
+    () =>
+        import("./components/ServerBrowser").then((mod) => ({
+            default: mod.ServerBrowser,
+        })),
+    {
+        ssr: false,
+    },
+);
+const UserProfileModal = dynamic(
+    () =>
+        import("@/components/user-profile-modal").then((mod) => ({
+            default: mod.UserProfileModal,
+        })),
+    {
+        ssr: false,
+    },
+);
+const NewConversationDialog = dynamic(
+    () =>
+        import("./components/NewConversationDialog").then((mod) => ({
+            default: mod.NewConversationDialog,
+        })),
+    {
+        ssr: false,
+    },
+);
+const RoleSettingsDialog = dynamic(
+    () =>
+        import("@/components/role-settings-dialog").then((mod) => ({
+            default: mod.RoleSettingsDialog,
+        })),
+    {
+        ssr: false,
+    },
+);
+const ChannelPermissionsEditor = dynamic(
+    () =>
+        import("@/components/channel-permissions-editor").then((mod) => ({
+            default: mod.ChannelPermissionsEditor,
+        })),
+    {
+        ssr: false,
+    },
+);
+const ServerAdminPanel = dynamic(
+    () =>
+        import("@/components/server-admin-panel").then((mod) => ({
+            default: mod.ServerAdminPanel,
+        })),
+    {
+        ssr: false,
+    },
+);
+const CreateServerDialog = dynamic(
+    () =>
+        import("@/components/create-server-dialog").then((mod) => ({
+            default: mod.CreateServerDialog,
+        })),
+    {
+        ssr: false,
+    },
+);
+const MuteDialog = dynamic(
+    () =>
+        import("@/components/mute-dialog").then((mod) => ({
+            default: mod.MuteDialog,
+        })),
+    {
+        ssr: false,
+    },
+);
+const ThreadPanel = dynamic(
+    () =>
+        import("@/components/thread-panel").then((mod) => ({
+            default: mod.ThreadPanel,
+        })),
+    {
+        ssr: false,
+    },
+);
+const PinnedMessagesPanel = dynamic(
+    () =>
+        import("@/components/pinned-messages-panel").then((mod) => ({
+            default: mod.PinnedMessagesPanel,
+        })),
+    {
+        ssr: false,
+    },
+);
 
 // Lazy load interactive components that aren't always visible (Performance Optimization)
 const EmojiPicker = dynamic(
@@ -100,234 +172,84 @@ const ImageViewer = dynamic(
 // Lazy load dialogs and modals only when needed
 
 export default function ChatPage() {
-  const { userData, loading: _authLoading } = useAuth();
-  const userId = userData?.userId ?? null;
-  const userName = userData?.name ?? null;
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  
-  // Automatic status tracking removed to preserve manual status settings
-  // Users can manually set their status via the profile/settings UI
-  const membershipEnabled = Boolean(
-    process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID
-  );
-  const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
-  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
-  const [newConversationOpen, setNewConversationOpen] = useState(false);
-  const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
-  const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
-  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
-  const [allowUserServers, setAllowUserServers] = useState(false);
-  const [selectedProfile, setSelectedProfile] = useState<{
-    userId: string;
-    userName?: string;
-    displayName?: string;
-    avatarUrl?: string;
-  } | null>(null);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [viewingImage, setViewingImage] = useState<{ url: string; alt: string } | null>(null);
-  const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>([]);
-  const [muteDialogState, setMuteDialogState] = useState<{
-    open: boolean;
-    type: "server" | "channel" | "conversation";
-    id: string;
-    name: string;
-  }>({ open: false, type: "channel", id: "", name: "" });
-  // Threading and pinning state
-  const [activeThread, setActiveThread] = useState<Message | null>(null);
-  const [showPinnedPanel, setShowPinnedPanel] = useState(false);
-  const [canManageMessages, setCanManageMessages] = useState(false);
-  const _messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isWindowFocused, setIsWindowFocused] = useState(true);
+    const { userData, loading: _authLoading } = useAuth();
+    const userId = userData?.userId ?? null;
+    const userName = userData?.name ?? null;
+    const searchParams = useSearchParams();
+    const router = useRouter();
 
-  // Custom emojis
-  const { customEmojis, uploadEmoji } = useCustomEmojis();
+    // Automatic status tracking removed to preserve manual status settings
+    // Users can manually set their status via the profile/settings UI
+    const membershipEnabled = Boolean(
+        process.env.APPWRITE_MEMBERSHIPS_COLLECTION_ID,
+    );
+    const [viewMode, setViewMode] = useState<"channels" | "dms">("channels");
+    const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+    const [selectedConversationId, setSelectedConversationId] = useState<
+        string | null
+    >(null);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [profileModalOpen, setProfileModalOpen] = useState(false);
+    const [newConversationOpen, setNewConversationOpen] = useState(false);
+    const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
+    const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
+    const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+    const [allowUserServers, setAllowUserServers] = useState(false);
+    const [selectedProfile, setSelectedProfile] = useState<{
+        userId: string;
+        userName?: string;
+        displayName?: string;
+        avatarUrl?: string;
+    } | null>(null);
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [viewingImage, setViewingImage] = useState<{
+        url: string;
+        alt: string;
+    } | null>(null);
+    const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>(
+        [],
+    );
+    const messageDensity = "compact";
+    const [muteDialogState, setMuteDialogState] = useState<{
+        open: boolean;
+        type: "server" | "channel" | "conversation";
+        id: string;
+        name: string;
+    }>({ open: false, type: "channel", id: "", name: "" });
+    const [showPinnedPanel, setShowPinnedPanel] = useState(false);
+    const [canManageMessages, setCanManageMessages] = useState(false);
+    const _messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isWindowFocused, setIsWindowFocused] = useState(true);
 
-  const openProfileModal = (
-    profileUserId: string,
-    profileUserName?: string,
-    profileDisplayName?: string,
-    profileAvatarUrl?: string
-  ) => {
-    setSelectedProfile({
-      userId: profileUserId,
-      userName: profileUserName,
-      displayName: profileDisplayName,
-      avatarUrl: profileAvatarUrl,
-    });
-    setProfileModalOpen(true);
-  };
-  // Auto-join server via invite code from query param
-  useEffect(() => {
-    const inviteCode = searchParams.get("invite");
-    if (inviteCode && userId) {
-      // Only auto-join once per code
-      const joinedKey = `invite_joined_${inviteCode}`;
-      if (sessionStorage.getItem(joinedKey)) {
-        // Clear the query param
-        const newParams = new URLSearchParams(searchParams);
-        newParams.delete("invite");
-        router.replace(`/chat?${newParams.toString()}`);
-        return;
-      }
+    // Custom emojis
+    const { customEmojis, uploadEmoji } = useCustomEmojis();
+    const conversationsApi = useConversations(userId);
+    const selectedConversation = useMemo(
+        () =>
+            conversationsApi.conversations.find(
+                (conversation) => conversation.$id === selectedConversationId,
+            ) || null,
+        [conversationsApi.conversations, selectedConversationId],
+    );
 
-      // Attempt to join via invite
-      fetch(`/api/invites/${inviteCode}/join`, {
-        method: "POST",
-      })
-        .then(async (res) => {
-          if (res.ok) {
-            await res.json(); // intentionally unused: response data not needed
-            sessionStorage.setItem(joinedKey, "true");
-            toast.success("Successfully joined server via invite!");
-            
-            // Clear the query param
-            const newParams = new URLSearchParams(searchParams);
-            newParams.delete("invite");
-            router.replace(`/chat?${newParams.toString()}`);
-            
-            // Optionally select the server (if serversApi is available)
-            // This will be handled by the servers hook automatically
-          } else {
-            const error = await res.json();
-            toast.error(error.error || "Failed to join server");
-            
-            // Clear the query param on error too
-            const newParams = new URLSearchParams(searchParams);
-            newParams.delete("invite");
-            router.replace(`/chat?${newParams.toString()}`);
-          }
-        })
-        .catch((error) => {
-          console.error("Failed to join via invite:", error);
-          toast.error("Failed to join server");
-          
-          // Clear the query param
-          const newParams = new URLSearchParams(searchParams);
-          newParams.delete("invite");
-          router.replace(`/chat?${newParams.toString()}`);
+    const openProfileModal = (
+        profileUserId: string,
+        profileUserName?: string,
+        profileDisplayName?: string,
+        profileAvatarUrl?: string,
+    ) => {
+        setSelectedProfile({
+            userId: profileUserId,
+            userName: profileUserName,
+            displayName: profileDisplayName,
+            avatarUrl: profileAvatarUrl,
         });
-    }
-  }, [searchParams, userId, router]);
-  // Check if user server creation is enabled (cached + abortable)
-  useEffect(() => {
-      if (!userId) {
-          setAllowUserServers(false);
-          return;
-      }
-
-      let cancelled = false;
-      const controller = new AbortController();
-      const cacheKey = "feature-flag:allow-user-servers";
-
-      apiCache
-          .dedupe(
-              cacheKey,
-              async () => {
-                  const res = await fetch(
-                      "/api/feature-flags/allow-user-servers",
-                      { signal: controller.signal },
-                  );
-
-                  if (!res.ok) {
-                      throw new Error("Failed to fetch feature flag");
-                  }
-
-                  return (await res.json()) as { enabled: boolean };
-              },
-              CACHE_TTL.SERVERS,
-          )
-          .then((data) => {
-              if (!cancelled) {
-                  setAllowUserServers(Boolean(data.enabled));
-              }
-          })
-          .catch((error: unknown) => {
-              if (
-                  error instanceof DOMException &&
-                  error.name === "AbortError"
-              ) {
-                  return;
-              }
-              setAllowUserServers(false);
-          });
-
-      return () => {
-          cancelled = true;
-          controller.abort();
-      };
-  }, [userId]);
-
-  // Check manageMessages permission when channel changes
-  useEffect(() => {
-    async function checkPermissions() {
-      if (!selectedChannel || !userId || !serversApi.selectedServer) {
-        setCanManageMessages(false);
-        return;
-      }
-
-      // Server owner always has permission
-      const selectedServerData = serversApi.servers.find((s) => s.$id === serversApi.selectedServer);
-      if (selectedServerData?.ownerId === userId) {
-        setCanManageMessages(true);
-        return;
-      }
-
-      // Check via API
-      try {
-        const res = await fetch(`/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`);
-        if (res.ok) {
-          const data = await res.json();
-          setCanManageMessages(data.manageMessages ?? false);
-        } else {
-          setCanManageMessages(false);
-        }
-      } catch {
-        setCanManageMessages(false);
-      }
-    }
-
-    void checkPermissions();
-  }, [selectedChannel, userId, serversApi.selectedServer, serversApi.servers]);
-
-  // Handlers -----------------
-  const selectChannel = useCallback((c: Channel) => {
-    setSelectedChannel(c.$id);
-    setViewMode("channels");
-    setSelectedConversationId(null);
-  }, []);
-
-  const selectConversation = useCallback((conversation: { $id: string }) => {
-    setSelectedConversationId(conversation.$id);
-    setViewMode("dms");
-    setSelectedChannel(null);
-  }, []);
-
-  const _confirmDelete = useCallback((messageId: string) => {
-    setDeleteConfirmId(messageId);
-  }, []);
-
-  const handleDelete = useCallback(async () => {
-    if (!deleteConfirmId) {
-      return;
-    }
-    await removeMessage(deleteConfirmId);
-    setDeleteConfirmId(null);
-  }, [deleteConfirmId, removeMessage]);
-
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
+        setProfileModalOpen(true);
+    };
     // Auto-join server via invite code from query param
     useEffect(() => {
         const inviteCode = searchParams.get("invite");
@@ -380,6 +302,54 @@ export default function ChatPage() {
                 });
         }
     }, [searchParams, userId, router]);
+    // Check if user server creation is enabled (cached + abortable)
+    useEffect(() => {
+        if (!userId) {
+            setAllowUserServers(false);
+            return;
+        }
+
+        let cancelled = false;
+        const controller = new AbortController();
+        const cacheKey = "feature-flag:allow-user-servers";
+
+        apiCache
+            .dedupe(
+                cacheKey,
+                async () => {
+                    const res = await fetch(
+                        "/api/feature-flags/allow-user-servers",
+                        { signal: controller.signal },
+                    );
+
+                    if (!res.ok) {
+                        throw new Error("Failed to fetch feature flag");
+                    }
+
+                    return (await res.json()) as { enabled: boolean };
+                },
+                CACHE_TTL.SERVERS,
+            )
+            .then((data) => {
+                if (!cancelled) {
+                    setAllowUserServers(Boolean(data.enabled));
+                }
+            })
+            .catch((error: unknown) => {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+                setAllowUserServers(false);
+            });
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
+    }, [userId]);
 
     const serversApi = useServers({ userId, membershipEnabled });
     const channelsApi = useChannels({
@@ -413,7 +383,7 @@ export default function ChatPage() {
 
     const {
         messages,
-        loading: messagesLoading,
+        loading: _messagesLoading,
         text,
         editingMessageId,
         replyingToMessage,
@@ -433,12 +403,12 @@ export default function ChatPage() {
         channelPins,
         togglePin,
         activeThreadParent,
-        threadMessages,
-        threadLoading,
+        threadMessages: _threadMessages,
+        threadLoading: _threadLoading,
         openThread,
         closeThread,
-        sendThreadReply,
-        setMentionedNames: _setMentionedNames,
+        sendThreadReply: _sendThreadReply,
+        setMentionedNames,
     } = messagesApi;
 
     const typingUsersList = useMemo(
@@ -459,10 +429,6 @@ export default function ChatPage() {
         [channelPins],
     );
 
-    useEffect(() => {
-        setThreadReplyText("");
-    }, [activeThreadParent?.$id]);
-
     // Auto-scroll to bottom on new messages
     useEffect(() => {
         if (messagesContainerRef.current) {
@@ -472,60 +438,83 @@ export default function ChatPage() {
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-  // Thread handlers
-  const handleOpenThread = useCallback((message: Message) => {
-    setActiveThread(message);
-  }, []);
+    // Pin handlers
+    const handlePinMessage = useCallback(async (messageId: string) => {
+        try {
+            const res = await fetch(`/api/messages/${messageId}/pin`, {
+                method: "POST",
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                toast.error(data.error || "Failed to pin message");
+            } else {
+                toast.success("Message pinned");
+            }
+        } catch {
+            toast.error("Failed to pin message");
+        }
+    }, []);
 
-  const handleCloseThread = useCallback(() => {
-    setActiveThread(null);
-  }, []);
-
-  // Pin handlers
-  const handlePinMessage = useCallback(async (messageId: string) => {
-    try {
-      const res = await fetch(`/api/messages/${messageId}/pin`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to pin message");
-      } else {
-        toast.success("Message pinned");
-      }
-    } catch {
-      toast.error("Failed to pin message");
-    }
-  }, []);
-
-  const handleUnpinMessage = useCallback(async (messageId: string) => {
-    try {
-      const res = await fetch(`/api/messages/${messageId}/pin`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to unpin message");
-      } else {
-        toast.success("Message unpinned");
-      }
-    } catch {
-      toast.error("Failed to unpin message");
-    }
-  }, []);
-
-  // Derived helpers
-  const showChat = useMemo(
-    () => Boolean(selectedChannel) || Boolean(selectedConversationId),
-    [selectedChannel, selectedConversationId]
-  );
+    const handleUnpinMessage = useCallback(async (messageId: string) => {
+        try {
+            const res = await fetch(`/api/messages/${messageId}/pin`, {
+                method: "DELETE",
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                toast.error(data.error || "Failed to unpin message");
+            } else {
+                toast.success("Message unpinned");
+            }
+        } catch {
+            toast.error("Failed to unpin message");
+        }
+    }, []);
 
     const dmApi = useDirectMessages({
         conversationId: selectedConversationId || "",
         userId,
-        receiverId: receiverId || "",
         userName,
     });
+
+    // Check manageMessages permission when channel changes
+    useEffect(() => {
+        async function checkPermissions() {
+            if (!selectedChannel || !userId || !serversApi.selectedServer) {
+                setCanManageMessages(false);
+                return;
+            }
+
+            const selectedServerData = serversApi.servers.find(
+                (s) => s.$id === serversApi.selectedServer,
+            );
+            if (selectedServerData?.ownerId === userId) {
+                setCanManageMessages(true);
+                return;
+            }
+
+            try {
+                const res = await fetch(
+                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`,
+                );
+                if (res.ok) {
+                    const data = await res.json();
+                    setCanManageMessages(data.manageMessages ?? false);
+                } else {
+                    setCanManageMessages(false);
+                }
+            } catch {
+                setCanManageMessages(false);
+            }
+        }
+
+        void checkPermissions();
+    }, [
+        selectedChannel,
+        userId,
+        serversApi.selectedServer,
+        serversApi.servers,
+    ]);
 
     // Notifications - listens for incoming messages and triggers notifications
     const { requestPermission: requestNotificationPermission } =
@@ -702,7 +691,7 @@ export default function ChatPage() {
         setFileAttachments((prev) => prev.filter((_, i) => i !== index));
     }, []);
 
-    const _handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const handlePaste = useCallback((e: React.ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) {
             return;
@@ -989,7 +978,6 @@ export default function ChatPage() {
             );
         }
 
-
         // Use virtual scrolling only for large message lists (50+ messages)
         // This avoids scrolling issues with small lists
         const useVirtualScrolling = messages.length >= 50;
@@ -1011,9 +999,8 @@ export default function ChatPage() {
                     }}
                     onOpenProfileModal={openProfileModal}
                     onRemove={handleDelete}
-                    onTogglePin={async (message) => {
-                        await togglePin(message);
-                    }}
+                    onPinMessage={handlePinMessage}
+                    onUnpinMessage={handleUnpinMessage}
                     onOpenThread={async (message) => {
                         await openThread(message);
                     }}
@@ -1311,7 +1298,11 @@ export default function ChatPage() {
                                             <MessageSquare className="h-4 w-4" />
                                         </Button>
                                         <Button
-                                            aria-label={isPinned ? "Unpin message" : "Pin message"}
+                                            aria-label={
+                                                isPinned
+                                                    ? "Unpin message"
+                                                    : "Pin message"
+                                            }
                                             onClick={() => {
                                                 void togglePin(m);
                                             }}
@@ -1384,244 +1375,102 @@ export default function ChatPage() {
         );
     }
 
+    // Show loader during initial load
+    if (serversApi.initialLoading) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center">
+                <Loader />
+            </div>
+        );
+    }
 
-  // Show loader during initial load
-  if (serversApi.initialLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader />
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-8">
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
-          {/* View Mode Toggle */}
-          <div className="rounded-2xl bg-muted/40 p-1">
-            <div className="grid grid-cols-2 gap-1">
-              <Button
-                aria-pressed={viewMode === "channels"}
-                className="rounded-xl"
-                onClick={() => {
-                  setViewMode("channels");
-                  setSelectedConversationId(null);
-                }}
-                size="sm"
-                type="button"
-                variant={viewMode === "channels" ? "default" : "ghost"}
-              >
-                <Hash className="mr-2 h-4 w-4" />
-                Channels
-              </Button>
-              <Button
-                aria-pressed={viewMode === "dms"}
-                className="rounded-xl"
-                onClick={() => {
-                  setViewMode("dms");
-                  setSelectedChannel(null);
-                }}
-                size="sm"
-                type="button"
-                variant={viewMode === "dms" ? "default" : "ghost"}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                DMs
-              </Button>
-            </div>
-          </div>
-
-          {viewMode === "channels" ? (
-            <div className="space-y-4">
-              {renderServers()}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold tracking-tight">Channels</h2>
-                  {selectedChannel && (
-                    <span className="rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
-                      Active
-                    </span>
-                  )}
-                </div>
-                {renderChannels()}
-              </div>
-              <ServerBrowser
-                membershipEnabled={membershipEnabled}
-                userId={userId}
-                joinedServerIds={serversApi.servers.map((s) => s.$id)}
-                onServerJoined={() => {
-                  // Clear membership cache to ensure fresh data after reload
-                  if (userId) {
-                    apiCache.clear(`memberships:${userId}`);
-                    apiCache.clear(`servers:initial:${userId}`);
-                  }
-                  // Reload the page to refresh server list
-                  window.location.reload();
-                }}
-              />
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-border/60 bg-background/60 p-2 shadow-sm">
-              <ConversationList
-                conversations={conversationsApi.conversations}
-                loading={conversationsApi.loading}
-                onMuteConversation={(conversationId, conversationName) => {
-                  setMuteDialogState({
-                    open: true,
-                    type: "conversation",
-                    id: conversationId,
-                    name: conversationName,
-                  });
-                }}
-                onNewConversation={() => setNewConversationOpen(true)}
-                onSelectConversation={selectConversation}
-                selectedConversationId={selectedConversationId}
-              />
-            </div>
-          )}
-        </aside>
-
-        <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
-          {viewMode === "dms" && selectedConversation && userId ? (
-            <DirectMessageView
-              conversation={selectedConversation}
-              currentUserId={userId}
-              loading={dmApi.loading}
-              messages={dmApi.messages}
-              onDelete={dmApi.deleteMsg}
-              onEdit={dmApi.edit}
-              onSend={dmApi.send}
-              sending={dmApi.sending}
-              typingUsers={dmApi.typingUsers}
-              onTypingChange={dmApi.handleTypingChange}
-            />
-          ) : (
-            <>
-              {/* Channel Header */}
-              {selectedChannel && (
-                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Hash className="h-5 w-5 text-muted-foreground" />
-                    <h2 className="font-semibold">
-                      {channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={() => setShowPinnedPanel(true)}
-                      size="sm"
-                      title="View pinned messages"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <Pin className="h-4 w-4" />
-                      <span className="ml-2 hidden sm:inline">Pins</span>
-                    </Button>
-                    {serversApi.selectedServer && 
-                     serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId && (
-                      <Button
-                        onClick={() => setChannelPermissionsOpen(true)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Settings className="h-4 w-4" />
-                        <span className="ml-2">Channel Permissions</span>
-                      </Button>
+        <div className="mx-auto w-full max-w-7xl px-6 py-8">
+            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+                <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
+                    <div className="rounded-2xl bg-muted/40 p-1">
+                        <div className="grid grid-cols-2 gap-1">
+                            <Button
+                                aria-pressed={viewMode === "channels"}
+                                className="rounded-xl"
+                                onClick={() => {
+                                    setViewMode("channels");
+                                    setSelectedConversationId(null);
+                                }}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    viewMode === "channels"
+                                        ? "default"
+                                        : "ghost"
+                                }
+                            >
+                                <Hash className="mr-2 h-4 w-4" />
+                                Channels
+                            </Button>
+                            <Button
+                                aria-pressed={viewMode === "dms"}
+                                className="rounded-xl"
+                                onClick={() => {
+                                    setViewMode("dms");
+                                    setSelectedChannel(null);
+                                }}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    viewMode === "dms" ? "default" : "ghost"
+                                }
+                            >
+                                <MessageSquare className="mr-2 h-4 w-4" />
+                                DMs
+                            </Button>
+                        </div>
+                    </div>
+                    {viewMode === "channels" ? (
+                        <div className="space-y-4">
+                            {renderServers()}
+                            {renderChannels()}
+                        </div>
+                    ) : (
+                        <ConversationList
+                            conversations={conversationsApi.conversations}
+                            loading={conversationsApi.loading}
+                            onMuteConversation={(
+                                conversationId,
+                                conversationName,
+                            ) => {
+                                setMuteDialogState({
+                                    open: true,
+                                    type: "conversation",
+                                    id: conversationId,
+                                    name: conversationName,
+                                });
+                            }}
+                            onNewConversation={() =>
+                                setNewConversationOpen(true)
+                            }
+                            onSelectConversation={selectConversation}
+                            selectedConversationId={selectedConversationId}
+                        />
                     )}
-                  </div>
-                </div>
-              )}
-              {renderMessages()}
-              {/* Chat Input */}
-              {!selectedConversationId && (
-                <div className="space-y-3">
-                  <MentionHelpTooltip />
-                  {replyingToMessage && (
-                    <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                    <div className="flex-1">
-                      <div className="font-medium">
-                        Replying to {replyingToMessage.displayName || replyingToMessage.userName || "Unknown"}
-                      </div>
-                      <div className="line-clamp-1 text-xs text-muted-foreground">
-                        {replyingToMessage.text}
-                      </div>
-                    </div>
-                    <Button
-                      onClick={cancelReply}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-                {editingMessageId && (
-                  <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
-                    <span className="text-blue-700 dark:text-blue-300">
-                      Editing message
-                    </span>
-                    <Button
-                      onClick={cancelEdit}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-                {editingMessageId ? (
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <Input
-                      aria-label="Edit message"
-                      className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
-                      onChange={onChangeText}
-                      placeholder="Edit your message..."
-                      value={text}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void send(e);
-                        }
-                        if (e.key === "Escape") {
-                          cancelEdit();
-                        }
-                      }}
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={(e) => {
-                          void send(e);
-                        }}
-                        type="button"
-                        variant="default"
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        onClick={cancelEdit}
-                        type="button"
-                        variant="outline"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {imagePreview && (
-                      <div className="relative inline-block">
-                        <img
-                          alt="Upload preview"
-                          className="h-32 rounded-lg object-cover"
-                          src={imagePreview}
+                </aside>
+
+                <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+                    {viewMode === "dms" && selectedConversation && userId ? (
+                        <DirectMessageView
+                            conversation={selectedConversation}
+                            currentUserId={userId}
+                            loading={dmApi.loading}
+                            messages={dmApi.messages}
+                            onDelete={dmApi.deleteMsg}
+                            onEdit={dmApi.edit}
+                            onSend={dmApi.send}
+                            sending={dmApi.sending}
+                            typingUsers={dmApi.typingUsers}
+                            onTypingChange={dmApi.handleTypingChange}
                         />
                     ) : (
                         <>
-                            {/* Channel Header */}
                             {selectedChannel && (
                                 <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
                                     <div className="flex items-center gap-2">
@@ -1633,498 +1482,278 @@ export default function ChatPage() {
                                             )?.name || "Channel"}
                                         </h2>
                                     </div>
-                                    {serversApi.selectedServer &&
-                                        serversApi.servers.find(
-                                            (s) =>
-                                                s.$id ===
-                                                serversApi.selectedServer,
-                                        )?.ownerId === userId && (
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            onClick={() =>
+                                                setShowPinnedPanel(true)
+                                            }
+                                            size="sm"
+                                            title="View pinned messages"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <Pin className="h-4 w-4" />
+                                        </Button>
+                                        {serversApi.selectedServer &&
+                                            serversApi.servers.find(
+                                                (s) =>
+                                                    s.$id ===
+                                                    serversApi.selectedServer,
+                                            )?.ownerId === userId && (
+                                                <Button
+                                                    onClick={() =>
+                                                        setChannelPermissionsOpen(
+                                                            true,
+                                                        )
+                                                    }
+                                                    size="sm"
+                                                    title="Channel permissions"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    <Settings className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                    </div>
+                                </div>
+                            )}
+                            {renderMessages()}
+                            {selectedChannel && (
+                                <div className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-4">
+                                    {replyingToMessage && (
+                                        <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm">
+                                            <div className="truncate">
+                                                Replying to{" "}
+                                                <span className="font-medium">
+                                                    {replyingToMessage.displayName ||
+                                                        replyingToMessage.userName ||
+                                                        "User"}
+                                                </span>
+                                            </div>
                                             <Button
-                                                onClick={() =>
-                                                    setChannelPermissionsOpen(
-                                                        true,
-                                                    )
-                                                }
+                                                onClick={cancelReply}
                                                 size="sm"
                                                 type="button"
                                                 variant="ghost"
                                             >
-                                                <Settings className="h-4 w-4" />
-                                                <span className="ml-2">
-                                                    Channel Permissions
-                                                </span>
+                                                Cancel
                                             </Button>
-                                        )}
-                                </div>
-                            )}
-                            <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-muted-foreground">
-                                <span className="whitespace-nowrap">
-                                    Message size
-                                </span>
-                                <div className="inline-flex rounded-xl border border-border/60 bg-muted/40 p-1">
-                                    <Button
-                                        aria-pressed={
-                                            messageDensity === "compact"
-                                        }
-                                        onClick={() =>
-                                            setMessageDensity("compact")
-                                        }
-                                        size="sm"
-                                        type="button"
-                                        variant={
-                                            messageDensity === "compact"
-                                                ? "default"
-                                                : "ghost"
-                                        }
-                                    >
-                                        Compact
-                                    </Button>
-                                    <Button
-                                        aria-pressed={messageDensity === "cozy"}
-                                        onClick={() =>
-                                            setMessageDensity("cozy")
-                                        }
-                                        size="sm"
-                                        type="button"
-                                        variant={
-                                            messageDensity === "cozy"
-                                                ? "default"
-                                                : "ghost"
-                                        }
-                                    >
-                                        Cozy
-                                    </Button>
-                                </div>
-                            </div>
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                                <div className="space-y-4">
-                                    {renderMessages()}
-                                    {/* Chat Input */}
-                                    {!selectedConversationId && (
-                                        <div className="space-y-3">
-                                            <MentionHelpTooltip />
-                                            {replyingToMessage && (
-                                                <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                                                    <div className="flex-1">
-                                                        <div className="font-medium">
-                                                            Replying to{" "}
-                                                            {replyingToMessage.displayName ||
-                                                                replyingToMessage.userName ||
-                                                                "Unknown"}
-                                                        </div>
-                                                        <div className="line-clamp-1 text-xs text-muted-foreground">
-                                                            {
-                                                                replyingToMessage.text
-                                                            }
-                                                        </div>
-                                                    </div>
-                                                    <Button
-                                                        onClick={cancelReply}
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="ghost"
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </div>
-                                            )}
-                                            {editingMessageId && (
-                                                <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
-                                                    <span className="text-blue-700 dark:text-blue-300">
-                                                        Editing message
-                                                    </span>
-                                                    <Button
-                                                        onClick={cancelEdit}
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="ghost"
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </div>
-                                            )}
-                                            {editingMessageId ? (
-                                                <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                                                    <Input
-                                                        aria-label="Edit message"
-                                                        className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
-                                                        onChange={onChangeText}
-                                                        placeholder="Edit your message..."
-                                                        value={text}
-                                                        onKeyDown={(e) => {
-                                                            if (
-                                                                e.key ===
-                                                                    "Enter" &&
-                                                                !e.shiftKey
-                                                            ) {
-                                                                e.preventDefault();
-                                                                void send(e);
-                                                            }
-                                                            if (
-                                                                e.key ===
-                                                                "Escape"
-                                                            ) {
-                                                                cancelEdit();
-                                                            }
-                                                        }}
-                                                    />
-                                                    <div className="flex gap-2">
-                                                        <Button
-                                                            onClick={(e) => {
-                                                                void send(e);
-                                                            }}
-                                                            type="button"
-                                                            variant="default"
-                                                        >
-                                                            Save
-                                                        </Button>
-                                                        <Button
-                                                            onClick={cancelEdit}
-                                                            type="button"
-                                                            variant="outline"
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <div
-                                                        aria-live="polite"
-                                                        className={[
-                                                            "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
-                                                            typingUsersList.length > 0 ? "bg-muted/60 opacity-100" : "pointer-events-none opacity-0",
-                                                        ].join(" ")}
-                                                    >
-                                                        <span
-                                                            aria-hidden="true"
-                                                            className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
-                                                        />
-                                                        <span className="truncate">
-                                                            {typingDisplayNames.join(
-                                                                ", ",
-                                                            )}{" "}
-                                                            {typingUsersList.length >
-                                                            1
-                                                                ? "are"
-                                                                : "is"}{" "}
-                                                            typing...
-                                                        </span>
-                                                    </div>
-
-                                                    {imagePreview && (
-                                                        <div className="relative inline-block">
-                                                            <img
-                                                                alt="Upload preview"
-                                                                className="h-32 rounded-lg object-cover"
-                                                                src={
-                                                                    imagePreview
-                                                                }
-                                                            />
-                                                            <Button
-                                                                className="absolute -right-2 -top-2"
-                                                                onClick={
-                                                                    removeImage
-                                                                }
-                                                                size="icon"
-                                                                type="button"
-                                                                variant="destructive"
-                                                            >
-                                                                <X className="size-4" />
-                                                            </Button>
-                                                        </div>
-                                                    )}
-                                                    {fileAttachments.length >
-                                                        0 && (
-                                                        <div className="flex flex-col gap-2">
-                                                            {fileAttachments.map(
-                                                                (
-                                                                    attachment,
-                                                                    index,
-                                                                ) => (
-                                                                    <FilePreview
-                                                                        key={`${attachment.fileId}-${index}`}
-                                                                        attachment={
-                                                                            attachment
-                                                                        }
-                                                                        onRemove={() =>
-                                                                            removeFileAttachment(
-                                                                                index,
-                                                                            )
-                                                                        }
-                                                                    />
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    <form
-                                                        className="flex flex-col gap-3 sm:flex-row sm:items-center"
-                                                        onSubmit={
-                                                            handleSendWithImage
-                                                        }
-                                                    >
-                                                        <input
-                                                            accept="image/*"
-                                                            className="hidden"
-                                                            onChange={
-                                                                handleImageSelect
-                                                            }
-                                                            ref={fileInputRef}
-                                                            type="file"
-                                                        />
-                                                        <Button
-                                                            disabled={
-                                                                !showChat ||
-                                                                uploadingImage ||
-                                                                Boolean(
-                                                                    editingMessageId,
-                                                                )
-                                                            }
-                                                            onClick={() =>
-                                                                fileInputRef.current?.click()
-                                                            }
-                                                            size="icon"
-                                                            type="button"
-                                                            variant="outline"
-                                                            className="shrink-0"
-                                                        >
-                                                            <ImageIcon className="size-4" />
-                                                        </Button>
-                                                        <FileUploadButton
-                                                            onFileSelect={
-                                                                handleFileAttachmentSelect
-                                                            }
-                                                            disabled={
-                                                                !showChat ||
-                                                                uploadingImage ||
-                                                                Boolean(
-                                                                    editingMessageId,
-                                                                )
-                                                            }
-                                                            className="shrink-0"
-                                                        />
-                                                        <EmojiPicker
-                                                            onEmojiSelect={
-                                                                handleEmojiSelect
-                                                            }
-                                                            customEmojis={
-                                                                customEmojis
-                                                            }
-                                                            onUploadCustomEmoji={
-                                                                uploadEmoji
-                                                            }
-                                                        />
-                                                        <ChatInput
-                                                            aria-label="Message"
-                                                            disabled={
-                                                                !showChat ||
-                                                                uploadingImage
-                                                            }
-                                                            onChange={(
-                                                                newValue,
-                                                            ) => {
-                                                                onChangeText({
-                                                                    target: {
-                                                                        value: newValue,
-                                                                    },
-                                                                } as React.ChangeEvent<HTMLInputElement>);
-                                                            }}
-                                                            placeholder={
-                                                                showChat
-                                                                    ? "Type a message"
-                                                                    : "Select a channel"
-                                                            }
-                                                            value={text}
-                                                            className="flex-1 rounded-2xl border-border/60"
-                                                            onKeyDown={(e) => {
-                                                                if (
-                                                                    e.key ===
-                                                                        "Enter" &&
-                                                                    !e.shiftKey
-                                                                ) {
-                                                                    e.preventDefault();
-                                                                    void handleSendWithImage(
-                                                                        e as unknown as React.FormEvent,
-                                                                    );
-                                                                }
-                                                            }}
-                                                        />
-                                                        <Button
-                                                            className="rounded-2xl shrink-0"
-                                                            disabled={
-                                                                !showChat ||
-                                                                uploadingImage ||
-                                                                (!text.trim() &&
-                                                                    !selectedImage &&
-                                                                    fileAttachments.length ===
-                                                                        0)
-                                                            }
-                                                            type="submit"
-                                                        >
-                                                            {uploadingImage
-                                                                ? "Uploading..."
-                                                                : "Send"}
-                                                        </Button>
-                                                    </form>
-                                                </>
-                                            )}
                                         </div>
                                     )}
-                                </div>
 
-                                <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
-                                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                                        <div className="mb-2 flex items-center gap-2 font-medium text-sm text-foreground">
-                                            <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                                            Pinned Messages
-                                        </div>
-                                        {selectedChannel &&
-                                        channelPins.length > 0 ? (
-                                            <div className="space-y-1">
-                                                {channelPins
-                                                    .slice(0, 10)
-                                                    .map((item) => (
-                                                        <button
-                                                            className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
-                                                            key={item.pin.$id}
-                                                            onClick={() => {
-                                                                const target = document.getElementById(
-                                                                    `message-${item.message.$id}`,
-                                                                );
-                                                                if (target) {
-                                                                    target.scrollIntoView({
-                                                                        behavior: "smooth",
-                                                                        block: "center",
-                                                                    });
-                                                                    target.classList.add(
-                                                                        "ring-2",
-                                                                        "ring-amber-400",
-                                                                    );
-                                                                    window.setTimeout(() => {
-                                                                        if (target.isConnected) {
-                                                                            target.classList.remove(
-                                                                                "ring-2",
-                                                                                "ring-amber-400",
-                                                                            );
-                                                                        }
-                                                                    }, 2000);
-                                                                }
-                                                            }}
-                                                            type="button"
-                                                        >
-                                                            {item.message
-                                                                .text ||
-                                                                "(attachment)"}
-                                                        </button>
-                                                    ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-muted-foreground">
-                                                No pinned messages in this
-                                                channel.
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                                        <div className="mb-2 flex items-center justify-between">
-                                            <h3 className="font-medium text-sm">
-                                                Thread
-                                            </h3>
-                                            {activeThreadParent && (
+                                    {editingMessageId ? (
+                                        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                                            <Input
+                                                aria-label="Edit message"
+                                                className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
+                                                onChange={onChangeText}
+                                                onKeyDown={(e) => {
+                                                    if (
+                                                        e.key === "Enter" &&
+                                                        !e.shiftKey
+                                                    ) {
+                                                        e.preventDefault();
+                                                        void send(e);
+                                                    }
+                                                    if (e.key === "Escape") {
+                                                        cancelEdit();
+                                                    }
+                                                }}
+                                                placeholder="Edit your message..."
+                                                value={text}
+                                            />
+                                            <div className="flex gap-2">
                                                 <Button
-                                                    onClick={closeThread}
-                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        void send(e);
+                                                    }}
                                                     type="button"
-                                                    variant="ghost"
+                                                    variant="default"
                                                 >
-                                                    Close
+                                                    Save
                                                 </Button>
-                                            )}
+                                                <Button
+                                                    onClick={cancelEdit}
+                                                    type="button"
+                                                    variant="outline"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </div>
                                         </div>
-
-                                        {!activeThreadParent ? (
-                                            <p className="text-xs text-muted-foreground">
-                                                Open a message thread to view
-                                                replies here.
-                                            </p>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <p className="line-clamp-2 text-xs text-muted-foreground">
-                                                    {activeThreadParent.text ||
-                                                        "(attachment)"}
-                                                </p>
-                                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/60 p-2">
-                                                    {threadLoading ? (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Loading thread...
-                                                        </p>
-                                                    ) : threadMessages.length ===
-                                                      0 ? (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            No replies yet.
-                                                        </p>
-                                                    ) : (
-                                                        threadMessages.map(
-                                                            (threadMessage) => (
-                                                                <div
-                                                                    className="rounded-md bg-background/80 px-2 py-1.5"
-                                                                    key={
-                                                                        threadMessage.$id
-                                                                    }
-                                                                >
-                                                                    <div className="mb-1 text-[11px] text-muted-foreground">
-                                                                        {threadMessage.displayName ||
-                                                                            threadMessage.userName ||
-                                                                            threadMessage.userId.slice(
-                                                                                0,
-                                                                                userIdSlice,
-                                                                            )}
-                                                                    </div>
-                                                                    <div className="text-xs">
-                                                                        {threadMessage.text ||
-                                                                            "(attachment)"}
-                                                                    </div>
-                                                                </div>
-                                                            ),
-                                                        )
-                                                    )}
+                                    ) : (
+                                        <>
+                                            {typingUsersList.length > 0 && (
+                                                <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="inline-flex size-2 animate-pulse rounded-full bg-primary"
+                                                    />
+                                                    <span>
+                                                        {typingDisplayNames.join(
+                                                            ", ",
+                                                        )}{" "}
+                                                        {typingUsersList.length >
+                                                        1
+                                                            ? "are"
+                                                            : "is"}{" "}
+                                                        typing...
+                                                    </span>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <ChatInput
-                                                        onChange={setThreadReplyText}
-                                                        placeholder="Reply in thread"
-                                                        value={threadReplyText}
+                                            )}
+
+                                            {imagePreview && (
+                                                <div className="relative inline-block">
+                                                    <img
+                                                        alt="Upload preview"
+                                                        className="h-32 rounded-lg object-cover"
+                                                        src={imagePreview}
                                                     />
                                                     <Button
-                                                        disabled={
-                                                            !threadReplyText.trim()
-                                                        }
-                                                        onClick={() => {
-                                                            const value =
-                                                                threadReplyText;
-                                                            setThreadReplyText(
-                                                                "",
-                                                            );
-                                                            void sendThreadReply(
-                                                                value,
-                                                            );
-                                                        }}
+                                                        className="absolute -right-2 -top-2"
+                                                        onClick={removeImage}
+                                                        size="icon"
                                                         type="button"
+                                                        variant="destructive"
                                                     >
-                                                        Reply
+                                                        <X className="size-4" />
                                                     </Button>
                                                 </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </aside>
-                            </div>
+                                            )}
+
+                                            {fileAttachments.length > 0 && (
+                                                <div className="flex flex-col gap-2">
+                                                    {fileAttachments.map(
+                                                        (attachment, index) => (
+                                                            <FilePreview
+                                                                key={`${attachment.fileId}-${index}`}
+                                                                attachment={
+                                                                    attachment
+                                                                }
+                                                                onRemove={() =>
+                                                                    removeFileAttachment(
+                                                                        index,
+                                                                    )
+                                                                }
+                                                            />
+                                                        ),
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <form
+                                                className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                                                onSubmit={handleSendWithImage}
+                                            >
+                                                <input
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                    onChange={handleImageSelect}
+                                                    ref={fileInputRef}
+                                                    type="file"
+                                                />
+                                                <Button
+                                                    className="shrink-0"
+                                                    disabled={
+                                                        !showChat ||
+                                                        uploadingImage ||
+                                                        Boolean(
+                                                            editingMessageId,
+                                                        )
+                                                    }
+                                                    onClick={() =>
+                                                        fileInputRef.current?.click()
+                                                    }
+                                                    size="icon"
+                                                    type="button"
+                                                    variant="outline"
+                                                >
+                                                    <ImageIcon className="size-4" />
+                                                </Button>
+                                                <FileUploadButton
+                                                    className="shrink-0"
+                                                    disabled={
+                                                        !showChat ||
+                                                        uploadingImage ||
+                                                        Boolean(
+                                                            editingMessageId,
+                                                        )
+                                                    }
+                                                    onFileSelect={
+                                                        handleFileAttachmentSelect
+                                                    }
+                                                />
+                                                <EmojiPicker
+                                                    customEmojis={customEmojis}
+                                                    onEmojiSelect={
+                                                        handleEmojiSelect
+                                                    }
+                                                    onUploadCustomEmoji={
+                                                        uploadEmoji
+                                                    }
+                                                />
+                                                <ChatInput
+                                                    aria-label="Message"
+                                                    className="flex-1 rounded-2xl border-border/60"
+                                                    disabled={
+                                                        !showChat ||
+                                                        uploadingImage
+                                                    }
+                                                    onChange={(newValue) => {
+                                                        onChangeText({
+                                                            target: {
+                                                                value: newValue,
+                                                            },
+                                                        } as React.ChangeEvent<HTMLInputElement>);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (
+                                                            e.key === "Enter" &&
+                                                            !e.shiftKey
+                                                        ) {
+                                                            e.preventDefault();
+                                                            void handleSendWithImage(
+                                                                e as unknown as React.FormEvent,
+                                                            );
+                                                        }
+                                                    }}
+                                                    onMentionsChange={
+                                                        setMentionedNames
+                                                    }
+                                                    onPaste={handlePaste}
+                                                    placeholder={
+                                                        showChat
+                                                            ? "Type a message"
+                                                            : "Select a channel"
+                                                    }
+                                                    value={text}
+                                                />
+                                                <Button
+                                                    className="shrink-0 rounded-2xl"
+                                                    disabled={
+                                                        !showChat ||
+                                                        uploadingImage ||
+                                                        (!text.trim() &&
+                                                            !selectedImage &&
+                                                            fileAttachments.length ===
+                                                                0)
+                                                    }
+                                                    type="submit"
+                                                >
+                                                    {uploadingImage
+                                                        ? "Uploading..."
+                                                        : "Send"}
+                                                </Button>
+                                            </form>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
-            </div>{" "}
-            {/* User Profile Modal */}
+            </div>
+
             {selectedProfile && (
                 <UserProfileModal
                     avatarUrl={selectedProfile.avatarUrl}
@@ -2141,7 +1770,6 @@ export default function ChatPage() {
                     }}
                 />
             )}
-            {/* New Conversation Dialog */}
             {userId && (
                 <NewConversationDialog
                     currentUserId={userId}
@@ -2155,7 +1783,6 @@ export default function ChatPage() {
                     open={newConversationOpen}
                 />
             )}
-            {/* Image Viewer Modal */}
             {viewingImage && (
                 <ImageViewer
                     alt={viewingImage.alt}
@@ -2165,7 +1792,15 @@ export default function ChatPage() {
                     src={viewingImage.url}
                 />
             )}
-            {/* Role Settings Dialog */}
+            <MuteDialog
+                open={muteDialogState.open}
+                onOpenChange={(open) =>
+                    setMuteDialogState((prev) => ({ ...prev, open }))
+                }
+                targetId={muteDialogState.id}
+                targetName={muteDialogState.name}
+                targetType={muteDialogState.type}
+            />
             {serversApi.selectedServer && (
                 <RoleSettingsDialog
                     open={roleSettingsOpen}
@@ -2183,7 +1818,6 @@ export default function ChatPage() {
                     }
                 />
             )}
-            {/* Channel Permissions Editor */}
             {selectedChannel && serversApi.selectedServer && (
                 <ChannelPermissionsEditor
                     open={channelPermissionsOpen}
@@ -2197,7 +1831,6 @@ export default function ChatPage() {
                     serverId={serversApi.selectedServer}
                 />
             )}
-            {/* Server Admin Panel */}
             {serversApi.selectedServer && (
                 <ServerAdminPanel
                     open={adminPanelOpen}
@@ -2215,129 +1848,33 @@ export default function ChatPage() {
                     }
                 />
             )}
-            {/* Mute Dialog */}
-            <MuteDialog
-                open={muteDialogState.open}
-                onOpenChange={(open) =>
-                    setMuteDialogState((prev) => ({ ...prev, open }))
-                }
-                targetType={muteDialogState.type}
-                targetId={muteDialogState.id}
-                targetName={muteDialogState.name}
-            />
+            {activeThreadParent && userId && (
+                <ThreadPanel
+                    customEmojis={customEmojis}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            closeThread();
+                        }
+                    }}
+                    open={Boolean(activeThreadParent)}
+                    parentMessage={activeThreadParent}
+                    userId={userId}
+                />
+            )}
+            {selectedChannel && (
+                <PinnedMessagesPanel
+                    canManageMessages={canManageMessages}
+                    channelId={selectedChannel}
+                    channelName={
+                        channelsApi.channels.find(
+                            (c) => c.$id === selectedChannel,
+                        )?.name
+                    }
+                    onOpenChange={setShowPinnedPanel}
+                    onUnpin={handleUnpinMessage}
+                    open={showPinnedPanel}
+                />
+            )}
         </div>
-      </div>      {/* User Profile Modal */}
-      {selectedProfile && (
-        <UserProfileModal
-          avatarUrl={selectedProfile.avatarUrl}
-          displayName={selectedProfile.displayName}
-          onOpenChange={setProfileModalOpen}
-          open={profileModalOpen}
-          userId={selectedProfile.userId}
-          userName={selectedProfile.userName}
-          onStartDM={(conversationId) => {
-            setSelectedConversationId(conversationId);
-            setViewMode("dms");
-            setSelectedChannel(null);
-            setProfileModalOpen(false);
-          }}
-        />
-      )}
-
-      {/* New Conversation Dialog */}
-      {userId && (
-        <NewConversationDialog
-          currentUserId={userId}
-          onConversationCreated={(conversation) => {
-            setSelectedConversationId(conversation.$id);
-            setViewMode("dms");
-            setSelectedChannel(null);
-            setNewConversationOpen(false);
-          }}
-          onOpenChange={setNewConversationOpen}
-          open={newConversationOpen}
-        />
-      )}
-
-      {/* Image Viewer Modal */}
-      {viewingImage && (
-        <ImageViewer
-          alt={viewingImage.alt}
-          onClose={() => {
-            setViewingImage(null);
-          }}
-          src={viewingImage.url}
-        />
-      )}
-
-      {/* Role Settings Dialog */}
-      {serversApi.selectedServer && (
-        <RoleSettingsDialog
-          open={roleSettingsOpen}
-          onOpenChange={setRoleSettingsOpen}
-          serverId={serversApi.selectedServer}
-          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
-          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
-        />
-      )}
-
-      {/* Channel Permissions Editor */}
-      {selectedChannel && serversApi.selectedServer && (
-        <ChannelPermissionsEditor
-          open={channelPermissionsOpen}
-          onOpenChange={setChannelPermissionsOpen}
-          channelId={selectedChannel}
-          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name || "Channel"}
-          serverId={serversApi.selectedServer}
-        />
-      )}
-
-      {/* Server Admin Panel */}
-      {serversApi.selectedServer && (
-        <ServerAdminPanel
-          open={adminPanelOpen}
-          onOpenChange={setAdminPanelOpen}
-          serverId={serversApi.selectedServer}
-          serverName={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.name || "Server"}
-          isOwner={serversApi.servers.find((s) => s.$id === serversApi.selectedServer)?.ownerId === userId}
-        />
-      )}
-
-      {/* Mute Dialog */}
-      <MuteDialog
-        open={muteDialogState.open}
-        onOpenChange={(open) => setMuteDialogState((prev) => ({ ...prev, open }))}
-        targetType={muteDialogState.type}
-        targetId={muteDialogState.id}
-        targetName={muteDialogState.name}
-      />
-
-      {/* Thread Panel */}
-      {activeThread && userId && (
-        <ThreadPanel
-          customEmojis={customEmojis}
-          onOpenChange={(open) => {
-            if (!open) {
-              handleCloseThread();
-            }
-          }}
-          open={Boolean(activeThread)}
-          parentMessage={activeThread}
-          userId={userId}
-        />
-      )}
-
-      {/* Pinned Messages Panel */}
-      {selectedChannel && (
-        <PinnedMessagesPanel
-          canManageMessages={canManageMessages}
-          channelId={selectedChannel}
-          channelName={channelsApi.channels.find((c) => c.$id === selectedChannel)?.name}
-          onOpenChange={setShowPinnedPanel}
-          onUnpin={handleUnpinMessage}
-          open={showPinnedPanel}
-        />
-      )}
-    </div>
-  );
+    );
 }
