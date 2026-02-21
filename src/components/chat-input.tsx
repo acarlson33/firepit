@@ -17,6 +17,7 @@ type ChatInputProps = {
     className?: string;
     "aria-label"?: string;
     onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+    onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
     /** Called whenever the set of autocompleted mention display names changes */
     onMentionsChange?: (names: string[]) => void;
 };
@@ -29,6 +30,7 @@ export function ChatInput({
     className = "",
     "aria-label": ariaLabel = "Message",
     onKeyDown,
+    onPaste,
     onMentionsChange,
 }: ChatInputProps) {
     const [showMentionAutocomplete, setShowMentionAutocomplete] =
@@ -214,6 +216,7 @@ export function ChatInput({
                     aria-label={ariaLabel}
                     disabled={disabled}
                     onChange={handleChange}
+                    onPaste={onPaste}
                     placeholder={enhancedPlaceholder}
                     value={value}
                     className={className}

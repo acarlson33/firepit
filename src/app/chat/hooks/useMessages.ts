@@ -325,7 +325,9 @@ export function useMessages({
 
         import("@/lib/realtime-pool")
             .then(({ getSharedClient, trackSubscription }) => {
-                if (cancelled) return;
+                if (cancelled) {
+                    return;
+                }
                 const c = getSharedClient();
                 const typingChannel = `databases.${databaseId}.collections.${typingCollectionId}.documents`;
 
