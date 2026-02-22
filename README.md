@@ -2,8 +2,6 @@
 
 > **Version 1.0** - Production Ready 🎉
 
-> WARNING ⚠️ - The tests pass, but only with full environment variable setup. So the tests on the repository will fail. Same with the build.
-
 A modern, open-source chat platform inspired by Discord, built with Next.js 15, Appwrite, and TypeScript. Features real-time messaging, server organization, role-based permissions, and comprehensive moderation tools.
 
 ## Features
