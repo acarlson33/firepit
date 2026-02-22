@@ -23,7 +23,7 @@ jobs:
               run: bun install
 
             - name: Validate environment
-              run: bun run validate-env
+              run: bun run validate-env:ci
               env:
                   NEXT_TELEMETRY_DISABLED: 1
                   APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
