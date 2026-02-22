@@ -529,7 +529,9 @@ export function useDirectMessages({
 
         import("appwrite")
             .then(({ Client }) => {
-                if (cancelled) return;
+                if (cancelled) {
+                    return;
+                }
                 const client = new Client()
                     .setEndpoint(env.endpoint)
                     .setProject(env.project);
@@ -556,7 +558,10 @@ export function useDirectMessages({
                         };
 
                         // Use ref to get current conversation ID, avoiding stale closure
-                        if (typing.channelId !== currentConversationIdRef.current) {
+                        if (
+                            typing.channelId !==
+                            currentConversationIdRef.current
+                        ) {
                             return;
                         }
 
