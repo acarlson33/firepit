@@ -18,7 +18,12 @@ type ModerationMessage = {
     channelId?: string;
     text?: string;
     userId?: string;
+    userName?: string;
     mentions?: string[];
+    senderDisplay?: string;
+    serverDisplay?: string;
+    channelDisplay?: string;
+    removedByDisplay?: string;
 };
 
 type Props = {
@@ -154,8 +159,8 @@ export function ModerationMessageList({
                                 {/* Server/Channel Info */}
                                 <div className="flex items-center gap-2 text-muted-foreground text-xs">
                                     <span className="font-medium">
-                                        {m.serverId || "No Server"} /{" "}
-                                        {m.channelId || "No Channel"}
+                                        {m.serverDisplay || "No Server"} /{" "}
+                                        {m.channelDisplay || "No Channel"}
                                     </span>
                                     {removed && (
                                         <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 font-medium text-destructive text-xs">
@@ -180,8 +185,10 @@ export function ModerationMessageList({
                                 <div className="flex flex-wrap items-center gap-2 text-xs">
                                     <span className="text-muted-foreground">
                                         User:{" "}
-                                        <span className="font-mono">
-                                            {m.userId?.slice(0, 8)}...
+                                        <span>
+                                            {m.senderDisplay ||
+                                                m.userName ||
+                                                m.userId?.slice(0, 8)}
                                         </span>
                                     </span>
                                     {authorBadges.map((b) => (
@@ -212,8 +219,9 @@ export function ModerationMessageList({
                                             </span>
                                             <span className="text-muted-foreground">
                                                 By:{" "}
-                                                <span className="font-mono">
-                                                    {m.removedBy.slice(0, 8)}...
+                                                <span>
+                                                    {m.removedByDisplay ||
+                                                        m.removedBy.slice(0, 8)}
                                                 </span>
                                                 {removerBadges.map((b) => (
                                                     <span
