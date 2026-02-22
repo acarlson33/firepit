@@ -115,6 +115,7 @@ export async function listGlobalMessages(
         removedAt?: string;
         text?: string;
         userId?: string;
+        userName?: string;
         channelId?: string;
         serverId?: string;
         removedBy?: string;
@@ -148,6 +149,7 @@ type MappedMessage = {
     removedAt?: string;
     text?: string;
     userId?: string;
+    userName?: string;
     channelId?: string;
     serverId?: string;
     removedBy?: string;
@@ -167,6 +169,7 @@ function coerceMessage(raw: unknown): MappedMessage | null {
         removedAt: pick("removedAt"),
         text: pick("text"),
         userId: pick("userId"),
+        userName: pick("userName"),
         channelId: pick("channelId"),
         serverId: pick("serverId"),
         removedBy: pick("removedBy"),
