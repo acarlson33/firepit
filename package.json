@@ -18,6 +18,7 @@
         "check": "eslint . --ext .ts,.tsx",
         "setup": "bun scripts/setup-appwrite.ts",
         "validate-env": "bun scripts/validate-env.ts",
+        "validate-env:ci": "bun scripts/validate-ci-env.ts",
         "cleanup-orphan-memberships": "bun run scripts/cleanup-orphan-memberships.ts"
     },
     "dependencies": {
