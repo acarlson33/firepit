@@ -9,13 +9,6 @@ on:
 jobs:
     build:
         runs-on: ubuntu-latest
-        env:
-            NEXT_TELEMETRY_DISABLED: 1
-            APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
-            NEXT_PUBLIC_APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
-            APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
-            NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
-            APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
 
         steps:
             - name: Checkout repository
@@ -30,7 +23,21 @@ jobs:
               run: bun install
 
             - name: Validate environment
-              run: bun run validate-env:ci
+              run: bun run validate-env
+              env:
+                  NEXT_TELEMETRY_DISABLED: 1
+                  APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+                  NEXT_PUBLIC_APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+                  APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+                  NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+                  APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
 
             - name: Build project
               run: bun run build
+              env:
+                  NEXT_TELEMETRY_DISABLED: 1
+                  APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+                  NEXT_PUBLIC_APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+                  APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+                  NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
+                  APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
