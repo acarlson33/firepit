@@ -1385,7 +1385,7 @@ export default function ChatPage() {
     }
 
     return (
-        <div className="mx-auto w-full max-w-7xl px-6 py-8 pr-8 sm:pr-6">
+        <div className="mx-auto w-full max-w-7xl py-8 pl-6 pr-8 sm:px-6">
             <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
                     <div className="rounded-2xl bg-muted/40 p-1">

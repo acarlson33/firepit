@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const CHAT_PAGE_PATH = `${process.cwd()}/src/app/chat/page.tsx`;
+
 describe("Chat UI Fixes", () => {
 	describe("Message deduplication in useMessages", () => {
 		it("should prevent duplicate messages from being added", () => {
@@ -116,10 +118,19 @@ describe("Chat UI Fixes", () => {
 
 	describe("Mobile chat layout padding", () => {
 		it("should include extra right padding on mobile for chat container centering", () => {
-			const source = readFileSync(`${process.cwd()}/src/app/chat/page.tsx`, "utf8");
-			expect(source).toContain(
-				'className="mx-auto w-full max-w-7xl px-6 py-8 pr-8 sm:pr-6"',
+			const source = readFileSync(CHAT_PAGE_PATH, "utf8");
+			const containerClassMatch = source.match(
+				/className="([^"]*max-w-7xl[^"]*)"/,
 			);
+			if (!containerClassMatch) {
+				throw new Error("Unable to find chat container className");
+			}
+			const classes = new Set(containerClassMatch[1].split(" "));
+
+			expect(classes.has("py-8")).toBe(true);
+			expect(classes.has("pl-6")).toBe(true);
+			expect(classes.has("pr-8")).toBe(true);
+			expect(classes.has("sm:px-6")).toBe(true);
 		});
 	});
 
