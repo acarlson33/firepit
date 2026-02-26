@@ -1064,34 +1064,36 @@ export function DirectMessageView({
                                 ref={fileInputRef}
                                 type="file"
                             />
-                            <Button
-                                disabled={
-                                    sending ||
-                                    uploadingImage ||
-                                    Boolean(editingMessageId)
-                                }
-                                onClick={() => fileInputRef.current?.click()}
-                                size="icon"
-                                type="button"
-                                variant="outline"
-                                className="shrink-0"
-                            >
-                                <ImageIcon className="size-4" />
-                            </Button>
-                            <FileUploadButton
-                                onFileSelect={handleFileAttachmentSelect}
-                                disabled={
-                                    sending ||
-                                    uploadingImage ||
-                                    Boolean(editingMessageId)
-                                }
-                                className="shrink-0"
-                            />
-                            <EmojiPicker
-                                onEmojiSelect={handleEmojiSelect}
-                                customEmojis={customEmojis}
-                                onUploadCustomEmoji={uploadEmoji}
-                            />
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    disabled={
+                                        sending ||
+                                        uploadingImage ||
+                                        Boolean(editingMessageId)
+                                    }
+                                    onClick={() => fileInputRef.current?.click()}
+                                    size="icon"
+                                    type="button"
+                                    variant="outline"
+                                    className="shrink-0"
+                                >
+                                    <ImageIcon className="size-4" />
+                                </Button>
+                                <FileUploadButton
+                                    onFileSelect={handleFileAttachmentSelect}
+                                    disabled={
+                                        sending ||
+                                        uploadingImage ||
+                                        Boolean(editingMessageId)
+                                    }
+                                    className="shrink-0"
+                                />
+                                <EmojiPicker
+                                    onEmojiSelect={handleEmojiSelect}
+                                    customEmojis={customEmojis}
+                                    onUploadCustomEmoji={uploadEmoji}
+                                />
+                            </div>
                             <ChatInput
                                 aria-label={
                                     editingMessageId
