@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 describe("Chat UI Fixes", () => {
@@ -110,6 +111,15 @@ describe("Chat UI Fixes", () => {
 			expect(result.find((m) => m.$id === "msg2")).toBeUndefined();
 			expect(result[0].$id).toBe("msg1");
 			expect(result[1].$id).toBe("msg3");
+		});
+	});
+
+	describe("Mobile chat layout padding", () => {
+		it("should include extra right padding on mobile for chat container centering", () => {
+			const source = readFileSync(`${process.cwd()}/src/app/chat/page.tsx`, "utf8");
+			expect(source).toContain(
+				'className="mx-auto w-full max-w-7xl px-6 py-8 pr-8 sm:pr-6"',
+			);
 		});
 	});
 
