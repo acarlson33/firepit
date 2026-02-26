@@ -899,7 +899,7 @@ export default function ChatPage() {
                                 <div className="flex items-center gap-1">
                                     <Button
                                         aria-pressed={active}
-                                        className={`flex-1 justify-between rounded-xl transition-colors ${
+                                        className={`min-w-0 flex-1 justify-between overflow-hidden rounded-xl transition-colors ${
                                             active
                                                 ? ""
                                                 : "border border-border/60 bg-background"
@@ -908,10 +908,10 @@ export default function ChatPage() {
                                         type="button"
                                         variant={active ? "default" : "outline"}
                                     >
-                                        <span className="truncate text-left font-medium">
+                                        <span className="min-w-0 truncate text-left font-medium">
                                             {c.name}
                                         </span>
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="shrink-0 text-xs text-muted-foreground">
                                             #{c.$id.slice(0, 4)}
                                         </span>
                                     </Button>
@@ -1473,9 +1473,9 @@ export default function ChatPage() {
                         <>
                             {selectedChannel && (
                                 <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex min-w-0 items-center gap-2">
                                         <Hash className="h-5 w-5 text-muted-foreground" />
-                                        <h2 className="font-semibold">
+                                        <h2 className="truncate font-semibold">
                                             {channelsApi.channels.find(
                                                 (c) =>
                                                     c.$id === selectedChannel,
@@ -1652,46 +1652,48 @@ export default function ChatPage() {
                                                     ref={fileInputRef}
                                                     type="file"
                                                 />
-                                                <Button
-                                                    className="shrink-0"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        Boolean(
-                                                            editingMessageId,
-                                                        )
-                                                    }
-                                                    onClick={() =>
-                                                        fileInputRef.current?.click()
-                                                    }
-                                                    size="icon"
-                                                    type="button"
-                                                    variant="outline"
-                                                >
-                                                    <ImageIcon className="size-4" />
-                                                </Button>
-                                                <FileUploadButton
-                                                    className="shrink-0"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        Boolean(
-                                                            editingMessageId,
-                                                        )
-                                                    }
-                                                    onFileSelect={
-                                                        handleFileAttachmentSelect
-                                                    }
-                                                />
-                                                <EmojiPicker
-                                                    customEmojis={customEmojis}
-                                                    onEmojiSelect={
-                                                        handleEmojiSelect
-                                                    }
-                                                    onUploadCustomEmoji={
-                                                        uploadEmoji
-                                                    }
-                                                />
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        className="shrink-0"
+                                                        disabled={
+                                                            !showChat ||
+                                                            uploadingImage ||
+                                                            Boolean(
+                                                                editingMessageId,
+                                                            )
+                                                        }
+                                                        onClick={() =>
+                                                            fileInputRef.current?.click()
+                                                        }
+                                                        size="icon"
+                                                        type="button"
+                                                        variant="outline"
+                                                    >
+                                                        <ImageIcon className="size-4" />
+                                                    </Button>
+                                                    <FileUploadButton
+                                                        className="shrink-0"
+                                                        disabled={
+                                                            !showChat ||
+                                                            uploadingImage ||
+                                                            Boolean(
+                                                                editingMessageId,
+                                                            )
+                                                        }
+                                                        onFileSelect={
+                                                            handleFileAttachmentSelect
+                                                        }
+                                                    />
+                                                    <EmojiPicker
+                                                        customEmojis={customEmojis}
+                                                        onEmojiSelect={
+                                                            handleEmojiSelect
+                                                        }
+                                                        onUploadCustomEmoji={
+                                                            uploadEmoji
+                                                        }
+                                                    />
+                                                </div>
                                                 <ChatInput
                                                     aria-label="Message"
                                                     className="flex-1 rounded-2xl border-border/60"
