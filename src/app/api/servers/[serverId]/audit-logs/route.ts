@@ -11,6 +11,56 @@ const AUDIT_COLLECTION_ID = process.env.APPWRITE_AUDIT_COLLECTION_ID ?? "";
 const PROFILES_COLLECTION_ID =
     process.env.APPWRITE_PROFILES_COLLECTION_ID ?? "";
 
+type AuditLogDocument = {
+    $id: string;
+    $createdAt?: string;
+    action?: string;
+    operation?: string;
+    actorId?: string;
+    targetId?: string;
+    userId?: string;
+    targetUserId?: string;
+    serverId?: string;
+    reason?: string;
+    details?: string;
+    metadata?: Record<string, unknown>;
+    meta?: Record<string, unknown>;
+};
+
+function getString(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function getMeta(log: AuditLogDocument) {
+    return (log.meta || log.metadata || {}) as Record<string, unknown>;
+}
+
+function getLegacyServerId(log: AuditLogDocument) {
+    return getString(getMeta(log).serverId);
+}
+
+function getModeratorId(log: AuditLogDocument) {
+    return getString(log.userId) || getString(log.actorId);
+}
+
+function getTargetUserId(log: AuditLogDocument) {
+    const topLevelTarget = getString(log.targetUserId);
+    if (topLevelTarget) {
+        return topLevelTarget;
+    }
+
+    const metaTarget = getString(getMeta(log).targetUserId);
+    if (metaTarget) {
+        return metaTarget;
+    }
+
+    if (getString(log.serverId) || getLegacyServerId(log)) {
+        return getString(log.targetId);
+    }
+
+    return undefined;
+}
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ serverId: string }> },
@@ -48,7 +98,9 @@ export async function GET(
             );
         }
 
-        // Fetch audit logs for this server
+        // Fetch audit logs for this server.
+        // Prefer the denormalized top-level serverId, but fall back to recent
+        // legacy documents that only stored serverId inside metadata.
         const auditLogs = await databases.listDocuments(
             DATABASE_ID,
             AUDIT_COLLECTION_ID,
@@ -59,18 +111,42 @@ export async function GET(
             ],
         );
 
+        let auditDocuments = auditLogs.documents as AuditLogDocument[];
+        if (auditDocuments.length === 0) {
+            const legacyWindow = Math.min(Math.max(limit * 10, 200), 1000);
+            const legacyLogs = await databases.listDocuments(
+                DATABASE_ID,
+                AUDIT_COLLECTION_ID,
+                [Query.orderDesc("$createdAt"), Query.limit(legacyWindow)],
+            );
+
+            auditDocuments = (legacyLogs.documents as AuditLogDocument[])
+                .filter((log) => getLegacyServerId(log) === serverId)
+                .slice(0, limit);
+        }
+
         // Enrich with profile data
         const userIds = new Set<string>();
-        for (const log of auditLogs.documents) {
-            if (log.userId) {
-                userIds.add(log.userId);
+        for (const log of auditDocuments) {
+            const moderatorId = getModeratorId(log);
+            if (moderatorId) {
+                userIds.add(moderatorId);
             }
-            if (log.targetUserId) {
-                userIds.add(log.targetUserId);
+
+            const targetUserId = getTargetUserId(log);
+            if (targetUserId) {
+                userIds.add(targetUserId);
             }
         }
 
-        const profiles = new Map();
+        const profiles = new Map<
+            string,
+            {
+                displayName?: string;
+                userName?: string;
+                avatarUrl?: string;
+            }
+        >();
         if (userIds.size > 0 && PROFILES_COLLECTION_ID) {
             const profilesResult = await databases.listDocuments(
                 DATABASE_ID,
@@ -87,26 +163,29 @@ export async function GET(
             }
         }
 
-        const enrichedLogs = auditLogs.documents.map((log) => {
-            const moderatorProfile = log.userId
-                ? profiles.get(log.userId)
+        const enrichedLogs = auditDocuments.map((log) => {
+            const meta = getMeta(log);
+            const moderatorId = getModeratorId(log);
+            const targetUserId = getTargetUserId(log);
+            const moderatorProfile = moderatorId
+                ? profiles.get(moderatorId)
                 : null;
-            const targetProfile = log.targetUserId
-                ? profiles.get(log.targetUserId)
+            const targetProfile = targetUserId
+                ? profiles.get(targetUserId)
                 : null;
 
             return {
                 $id: log.$id,
                 action: log.action || log.operation || "unknown",
-                moderatorId: log.userId,
+                moderatorId,
                 moderatorName:
                     moderatorProfile?.displayName || moderatorProfile?.userName,
-                targetUserId: log.targetUserId,
+                targetUserId,
                 targetUserName:
                     targetProfile?.displayName || targetProfile?.userName,
-                reason: log.reason || log.metadata?.reason,
+                reason: getString(log.reason) || getString(meta.reason),
                 timestamp: log.$createdAt,
-                details: log.details || log.metadata?.details,
+                details: getString(log.details) || getString(meta.details),
             };
         });
 

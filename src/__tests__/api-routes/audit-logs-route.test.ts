@@ -170,4 +170,61 @@ describe("audit logs route", () => {
         expect(data[0].targetUserId).toBe("user-1");
         expect(data[0].targetUserName).toBe("Target");
     });
+
+    it("falls back to legacy metadata-backed audit logs", async () => {
+        const { GET } = await loadRoute();
+
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "log-legacy-1",
+                        $createdAt: "2024-01-01T00:00:00Z",
+                        actorId: "mod-1",
+                        targetId: "user-1",
+                        action: "ban",
+                        meta: {
+                            serverId: "server-1",
+                            reason: "legacy-rule",
+                            details: "legacy-details",
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "mod-1",
+                        displayName: "Moderator",
+                        userName: "moderator",
+                        avatarUrl: "mod.png",
+                    },
+                    {
+                        userId: "user-1",
+                        displayName: "Target",
+                        userName: "target",
+                        avatarUrl: "target.png",
+                    },
+                ],
+            });
+
+        const response = await GET(
+            new NextRequest(
+                "http://localhost/api/servers/server-1/audit-logs?limit=5",
+            ),
+            {
+                params: Promise.resolve({ serverId: "server-1" }),
+            },
+        );
+
+        const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data[0].moderatorId).toBe("mod-1");
+        expect(data[0].targetUserId).toBe("user-1");
+        expect(data[0].reason).toBe("legacy-rule");
+        expect(data[0].details).toBe("legacy-details");
+    });
 });
