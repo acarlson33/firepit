@@ -15,6 +15,23 @@ const MEMBERSHIPS_COLLECTION_ID = envConfig.collections.memberships;
 const BANNED_USERS_COLLECTION_ID = envConfig.collections.bannedUsers;
 const MUTED_USERS_COLLECTION_ID = envConfig.collections.mutedUsers;
 
+function getAuditDetail(action: string) {
+    switch (action) {
+        case "ban":
+            return "User banned from server";
+        case "unban":
+            return "User unbanned from server";
+        case "mute":
+            return "User muted in server";
+        case "unmute":
+            return "User unmuted in server";
+        case "kick":
+            return "User kicked from server";
+        default:
+            return `Moderation action: ${action}`;
+    }
+}
+
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ serverId: string }> },
@@ -279,7 +296,7 @@ export async function POST(
         await recordAudit(action as string, userId, moderatorId, {
             serverId,
             reason,
-            details: `User ${String(action)}ned from server`,
+            details: getAuditDetail(String(action)),
         });
 
         return NextResponse.json({

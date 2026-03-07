@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { getBrowserClient } from "@/lib/appwrite-core";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
@@ -36,45 +37,59 @@ type Props = {
 function ActionButtons({
     message,
     isAdmin,
+    onHardDelete,
+    onRestore,
+    onSoftDelete,
 }: {
     message: { $id: string; removedAt?: string };
     isAdmin: boolean;
+    onHardDelete: (messageId: string) => void;
+    onRestore: (messageId: string) => void;
+    onSoftDelete: (messageId: string) => void;
 }) {
     const removed = Boolean(message.removedAt);
+    const [isPending, startTransition] = useTransition();
     return (
         <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-                <form action={actionSoftDeleteBound}>
-                    <input name="messageId" type="hidden" value={message.$id} />
-                    <button
-                        className="rounded-md bg-destructive px-3 py-1.5 text-destructive-foreground text-sm font-medium transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={removed}
-                        type="submit"
-                    >
-                        Remove
-                    </button>
-                </form>
-                <form action={actionRestoreBound}>
-                    <input name="messageId" type="hidden" value={message.$id} />
-                    <button
-                        className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!removed}
-                        type="submit"
-                    >
-                        Restore
-                    </button>
-                </form>
+                <button
+                    className="rounded-md bg-destructive px-3 py-1.5 text-destructive-foreground text-sm font-medium transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={removed || isPending}
+                    onClick={() =>
+                        startTransition(() => {
+                            void onSoftDelete(message.$id);
+                        })
+                    }
+                    type="button"
+                >
+                    Remove
+                </button>
+                <button
+                    className="rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!removed || isPending}
+                    onClick={() =>
+                        startTransition(() => {
+                            void onRestore(message.$id);
+                        })
+                    }
+                    type="button"
+                >
+                    Restore
+                </button>
             </div>
             {isAdmin && (
-                <form action={actionHardDeleteBound}>
-                    <input name="messageId" type="hidden" value={message.$id} />
-                    <button
-                        className="w-full rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-destructive text-xs font-medium transition-colors hover:bg-destructive/20"
-                        type="submit"
-                    >
-                        Permanently Delete (Admin)
-                    </button>
-                </form>
+                <button
+                    className="w-full rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-destructive text-xs font-medium transition-colors hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isPending}
+                    onClick={() =>
+                        startTransition(() => {
+                            void onHardDelete(message.$id);
+                        })
+                    }
+                    type="button"
+                >
+                    Permanently Delete (Admin)
+                </button>
             )}
         </div>
     );
@@ -86,13 +101,15 @@ export function ModerationMessageList({
     isAdmin,
 }: Props) {
     const [messages, setMessages] = useState(initialMessages);
+    const router = useRouter();
     const { customEmojis } = useCustomEmojis();
 
     useEffect(() => {
         // Subscribe to real-time updates for the messages collection
         const client = getBrowserClient();
-        const databaseId = process.env.APPWRITE_DATABASE_ID;
-        const messagesCollectionId = process.env.APPWRITE_COLLECTION_MESSAGES;
+        const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
+        const messagesCollectionId =
+            process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID;
 
         if (!databaseId || !messagesCollectionId) {
             return;
@@ -133,6 +150,78 @@ export function ModerationMessageList({
     useEffect(() => {
         setMessages(initialMessages);
     }, [initialMessages]);
+
+    async function runAction(action: () => Promise<void>) {
+        await action();
+        router.refresh();
+    }
+
+    function buildFormData(messageId: string) {
+        const formData = new FormData();
+        formData.set("messageId", messageId);
+        return formData;
+    }
+
+    async function handleSoftDelete(messageId: string) {
+        let previousMessages: ModerationMessage[] = [];
+        setMessages((prev) => {
+            previousMessages = prev;
+            return prev.map((message) =>
+                message.$id === messageId
+                    ? {
+                          ...message,
+                          removedAt: new Date().toISOString(),
+                      }
+                    : message,
+            );
+        });
+        try {
+            await runAction(() =>
+                actionSoftDeleteBound(buildFormData(messageId)),
+            );
+        } catch {
+            setMessages(previousMessages);
+            router.refresh();
+        }
+    }
+
+    async function handleRestore(messageId: string) {
+        let previousMessages: ModerationMessage[] = [];
+        setMessages((prev) => {
+            previousMessages = prev;
+            return prev.map((message) =>
+                message.$id === messageId
+                    ? {
+                          ...message,
+                          removedAt: undefined,
+                          removedBy: undefined,
+                      }
+                    : message,
+            );
+        });
+        try {
+            await runAction(() => actionRestoreBound(buildFormData(messageId)));
+        } catch {
+            setMessages(previousMessages);
+            router.refresh();
+        }
+    }
+
+    async function handleHardDelete(messageId: string) {
+        let previousMessages: ModerationMessage[] = [];
+        setMessages((prev) => {
+            previousMessages = prev;
+            return prev.filter((message) => message.$id !== messageId);
+        });
+        try {
+            await runAction(() =>
+                actionHardDeleteBound(buildFormData(messageId)),
+            );
+        } catch {
+            setMessages(previousMessages);
+            router.refresh();
+        }
+    }
 
     if (messages.length === 0) {
         return (
@@ -244,7 +333,13 @@ export function ModerationMessageList({
                             </div>
 
                             {/* Action Buttons */}
-                            <ActionButtons message={m} isAdmin={isAdmin} />
+                            <ActionButtons
+                                isAdmin={isAdmin}
+                                message={m}
+                                onHardDelete={handleHardDelete}
+                                onRestore={handleRestore}
+                                onSoftDelete={handleSoftDelete}
+                            />
                         </div>
                     </div>
                 );

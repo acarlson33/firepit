@@ -2,6 +2,50 @@ import { describe, expect, it } from "vitest";
 
 import { setupMockAppwrite } from "./__helpers__/mockAppwrite";
 
+const { mockAuditDocuments } = vi.hoisted(() => ({
+    mockAuditDocuments: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock("../lib/appwrite-server", () => ({
+    getServerClient: () => ({
+        databases: {
+            createDocument: vi.fn(
+                async (
+                    _databaseId: string,
+                    collectionId: string,
+                    _documentId: string,
+                    data: Record<string, unknown>,
+                ) => {
+                    if (collectionId !== "audit") {
+                        return {
+                            $id: `doc-${mockAuditDocuments.length + 1}`,
+                            ...data,
+                        };
+                    }
+
+                    const generatedId = `audit-${mockAuditDocuments.length + 1}`;
+                    const doc = {
+                        $id: generatedId,
+                        $createdAt: new Date().toISOString(),
+                        ...data,
+                    };
+                    mockAuditDocuments.push(doc);
+                    return doc;
+                },
+            ),
+            listDocuments: vi.fn(async () => ({ documents: [] })),
+        },
+    }),
+}));
+
+vi.mock("../lib/feature-flags", () => ({
+    getFeatureFlag: vi.fn(async () => true),
+    FEATURE_FLAGS: {
+        ENABLE_AUDIT_LOGGING: "enable_audit_logging",
+        ALLOW_USER_SERVERS: "allow_user_servers",
+    },
+}));
+
 // Utility to set minimal env
 function baseEnv() {
     (process.env as any).APPWRITE_ENDPOINT = "http://x";
@@ -15,6 +59,7 @@ function baseEnv() {
 
 describe("audit + diagnostics", () => {
     it("recordAudit no-ops when collection missing", async () => {
+        mockAuditDocuments.length = 0;
         setupMockAppwrite({});
         baseEnv();
         // Remove audit collection
@@ -29,22 +74,9 @@ describe("audit + diagnostics", () => {
     });
 
     it("recordAudit stores event and listAuditEvents paginates", async () => {
-        const docs: any[] = [];
+        mockAuditDocuments.length = 0;
         setupMockAppwrite({
             overrides: {
-                createDocument: (opts: any) => {
-                    if (opts.collectionId === "audit") {
-                        docs.push({ $id: `a${docs.length + 1}`, ...opts.data });
-                        return Promise.resolve({
-                            $id: `a${docs.length}`,
-                            ...opts.data,
-                        });
-                    }
-                    return Promise.resolve({
-                        $id: `${opts.collectionId}-x`,
-                        ...opts.data,
-                    });
-                },
                 listDocuments: (opts: any) => {
                     if (opts.collectionId === "audit") {
                         const limitQ = (opts.queries || []).find((q: string) =>
@@ -69,10 +101,15 @@ describe("audit + diagnostics", () => {
                                 "cursorAfter(".length,
                                 cursorQ.length - 1,
                             );
-                            const idx = docs.findIndex((d) => d.$id === cur);
+                            const idx = mockAuditDocuments.findIndex(
+                                (d) => d.$id === cur,
+                            );
                             start = idx >= 0 ? idx + 1 : 0;
                         }
-                        const slice = docs.slice(start, start + limit);
+                        const slice = mockAuditDocuments.slice(
+                            start,
+                            start + limit,
+                        );
                         return Promise.resolve({ documents: slice });
                     }
                     return Promise.resolve({ documents: [] });

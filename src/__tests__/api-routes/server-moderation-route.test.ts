@@ -233,6 +233,15 @@ describe("server moderation route", () => {
 
         expect(response.status).toBe(200);
         expect(data.success).toBe(true);
-        expect(mockRecordAudit).toHaveBeenCalled();
+        expect(mockRecordAudit).toHaveBeenCalledWith(
+            "kick",
+            "user-3",
+            "moderator-1",
+            expect.objectContaining({
+                serverId: "server-1",
+                reason: "rule",
+                details: "User kicked from server",
+            }),
+        );
     });
 });

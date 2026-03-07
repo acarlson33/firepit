@@ -3,10 +3,32 @@ import { Query, Storage } from "node-appwrite";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 
-// Collection IDs (align with provisioning script / schema)
-const SERVERS_COLLECTION = "servers";
-const CHANNELS_COLLECTION = "channels";
-const MESSAGES_COLLECTION = "messages";
+function getCollectionIds() {
+    const { collections } = getEnvConfig();
+    return {
+        servers: collections.servers,
+        channels: collections.channels,
+        messages: collections.messages,
+    };
+}
+
+function isDocumentNotFoundError(error: unknown) {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    const candidate = error as Error & {
+        code?: number;
+        type?: string;
+        response?: string;
+    };
+
+    if (candidate.code === 404 || candidate.type === "document_not_found") {
+        return true;
+    }
+
+    return candidate.message.includes("document_not_found");
+}
 
 type PageResult<T> = { items: T[]; nextCursor?: string | null };
 
@@ -16,6 +38,7 @@ export async function listAllServersPage(
 ): Promise<PageResult<{ $id: string; name?: string }>> {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
+    const { servers } = getCollectionIds();
     const queries: string[] = [
         Query.limit(limit),
         Query.orderAsc("$createdAt"),
@@ -24,11 +47,7 @@ export async function listAllServersPage(
         queries.push(Query.cursorAfter(cursor));
     }
     try {
-        const res = await databases.listDocuments(
-            dbId,
-            SERVERS_COLLECTION,
-            queries,
-        );
+        const res = await databases.listDocuments(dbId, servers, queries);
         const rawList =
             (res as unknown as { documents?: unknown[] }).documents || [];
         const items: { $id: string; name?: string }[] = [];
@@ -58,6 +77,7 @@ export async function listAllChannelsPage(
 ): Promise<PageResult<{ $id: string; name?: string }>> {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
+    const { channels } = getCollectionIds();
     const queries: string[] = [
         Query.limit(limit),
         Query.orderDesc("$createdAt"),
@@ -67,11 +87,7 @@ export async function listAllChannelsPage(
         queries.push(Query.cursorAfter(cursor));
     }
     try {
-        const res = await databases.listDocuments(
-            dbId,
-            CHANNELS_COLLECTION,
-            queries,
-        );
+        const res = await databases.listDocuments(dbId, channels, queries);
         const rawList =
             (res as unknown as { documents?: unknown[] }).documents || [];
         const items: { $id: string; name?: string }[] = [];
@@ -123,13 +139,10 @@ export async function listGlobalMessages(
 > {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
+    const { messages } = getCollectionIds();
     const queries = buildMessageQueries(filters, filters.limit);
     try {
-        const res = await databases.listDocuments(
-            dbId,
-            MESSAGES_COLLECTION,
-            queries,
-        );
+        const res = await databases.listDocuments(dbId, messages, queries);
         const items = mapMessageDocuments(
             (res as unknown as { documents?: unknown[] }).documents || [],
         );
@@ -187,10 +200,28 @@ function mapMessageDocuments(rawList: unknown[]) {
     return out;
 }
 
+export async function getAdminMessageAuditContext(messageId: string) {
+    const { databases } = getAdminClient();
+    const dbId = getEnvConfig().databaseId;
+    const { messages } = getCollectionIds();
+
+    try {
+        const raw = await databases.getDocument(dbId, messages, messageId);
+        return coerceMessage(raw);
+    } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return null;
+        }
+
+        throw error;
+    }
+}
+
 // Basic stats aggregation using listDocuments with minimal queries.
 export async function getBasicStats() {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
+    const collectionIds = getCollectionIds();
     // We only need counts; use small limit to reduce payload and rely on total.
     async function count(col: string) {
         try {
@@ -202,12 +233,16 @@ export async function getBasicStats() {
             return 0;
         }
     }
-    const [servers, channels, messages] = await Promise.all([
-        count(SERVERS_COLLECTION),
-        count(CHANNELS_COLLECTION),
-        count(MESSAGES_COLLECTION),
+    const [serverCount, channelCount, messageCount] = await Promise.all([
+        count(collectionIds.servers),
+        count(collectionIds.channels),
+        count(collectionIds.messages),
     ]);
-    return { servers, channels, messages };
+    return {
+        servers: serverCount,
+        channels: channelCount,
+        messages: messageCount,
+    };
 }
 
 // Query builder utilities referenced by tests.
@@ -295,8 +330,9 @@ export async function adminSoftDeleteMessage(
 ) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
+    const { messages } = getCollectionIds();
     const removedAt = new Date().toISOString();
-    await databases.updateDocument(dbId, MESSAGES_COLLECTION, messageId, {
+    await databases.updateDocument(dbId, messages, messageId, {
         removedAt,
         removedBy: moderatorId,
     });
@@ -305,7 +341,8 @@ export async function adminSoftDeleteMessage(
 export async function adminRestoreMessage(messageId: string) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
-    await databases.updateDocument(dbId, MESSAGES_COLLECTION, messageId, {
+    const { messages } = getCollectionIds();
+    await databases.updateDocument(dbId, messages, messageId, {
         removedAt: null,
         removedBy: null,
     });
@@ -314,5 +351,15 @@ export async function adminRestoreMessage(messageId: string) {
 export async function adminDeleteMessage(messageId: string) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
-    await databases.deleteDocument(dbId, MESSAGES_COLLECTION, messageId);
+    const { messages } = getCollectionIds();
+
+    try {
+        await databases.deleteDocument(dbId, messages, messageId);
+    } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return;
+        }
+
+        throw error;
+    }
 }

@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+    adminDeleteMessage,
     buildMessageQueries,
     listAllChannelsPage,
     listGlobalMessages,
     postFilterMessages,
 } from "../lib/appwrite-admin";
+
+const { mockDeleteDocument } = vi.hoisted(() => ({
+    mockDeleteDocument: vi.fn(),
+}));
 
 const SMALL_LIMIT = 5;
 const DEFAULT_LIMIT = 10;
@@ -117,6 +122,7 @@ vi.mock("../lib/appwrite-server", () => {
             }
             return Promise.resolve({ documents: [] });
         }),
+        deleteDocument: mockDeleteDocument,
     } as any;
     return {
         getServerClient: () => ({
@@ -174,5 +180,35 @@ describe("admin channel & global message listing", () => {
         expect(res.items).toHaveLength(0);
         const res2 = await mod.listGlobalMessages({ limit: 2 });
         expect(res2.items).toHaveLength(0);
+    });
+});
+
+describe("adminDeleteMessage", () => {
+    it("swallows document_not_found errors", async () => {
+        (process.env as any).APPWRITE_ENDPOINT = "http://x";
+        (process.env as any).APPWRITE_PROJECT_ID = "p";
+        (process.env as any).APPWRITE_API_KEY = "k";
+        mockDeleteDocument.mockRejectedValueOnce(
+            Object.assign(
+                new Error(
+                    "Document with the requested ID 'm1' could not be found.",
+                ),
+                {
+                    code: 404,
+                    type: "document_not_found",
+                },
+            ),
+        );
+
+        await expect(adminDeleteMessage("m1")).resolves.toBeUndefined();
+    });
+
+    it("rethrows unexpected delete errors", async () => {
+        (process.env as any).APPWRITE_ENDPOINT = "http://x";
+        (process.env as any).APPWRITE_PROJECT_ID = "p";
+        (process.env as any).APPWRITE_API_KEY = "k";
+        mockDeleteDocument.mockRejectedValueOnce(new Error("boom"));
+
+        await expect(adminDeleteMessage("m2")).rejects.toThrow("boom");
     });
 });
