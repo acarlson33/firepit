@@ -6,91 +6,96 @@ import Header from "../../components/header";
 
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
-	useRouter: () => ({
-		push: vi.fn(),
-	}),
+    useRouter: () => ({
+        push: vi.fn(),
+    }),
 }));
 
 // Mock auth context
 vi.mock("@/contexts/auth-context", () => ({
-	useAuth: () => ({
-		userData: null,
-		userStatus: null,
-		loading: false,
-		setUserData: vi.fn(),
-		updateUserStatus: vi.fn(),
-	}),
+    useAuth: () => ({
+        userData: null,
+        userStatus: null,
+        loading: false,
+        setUserData: vi.fn(),
+        updateUserStatus: vi.fn(),
+    }),
 }));
 
 // Mock theme provider
 vi.mock("next-themes", () => ({
-	useTheme: () => ({
-		theme: "light",
-		setTheme: vi.fn(),
-	}),
+    useTheme: () => ({
+        theme: "light",
+        setTheme: vi.fn(),
+    }),
 }));
 
 // Helper to render with QueryClientProvider
 function renderWithQueryClient(component: React.ReactElement<any>) {
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				retry: false,
-			},
-		},
-	});
+    const queryClient = new QueryClient({
+        defaultOptions: {
+            queries: {
+                retry: false,
+            },
+        },
+    });
 
-	return render(
-		<QueryClientProvider client={queryClient}>
-			{component}
-		</QueryClientProvider>,
-	);
+    return render(
+        <QueryClientProvider client={queryClient}>
+            {component}
+        </QueryClientProvider>,
+    );
 }
 
 describe("Header", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
 
-	it("should render header without search icon when onSearchClick is not provided", () => {
-		renderWithQueryClient(<Header />);
+    it("should render header without search icon when onSearchClick is not provided", () => {
+        renderWithQueryClient(<Header />);
 
-		expect(screen.getByText("firepit")).toBeInTheDocument();
-		expect(screen.queryByLabelText("Search messages")).not.toBeInTheDocument();
-	});
+        expect(screen.getByText("firepit")).toBeInTheDocument();
+        expect(
+            screen.queryByLabelText("Search messages"),
+        ).not.toBeInTheDocument();
+    });
 
-	it("should render search icon when onSearchClick is provided", () => {
-		const onSearchClick = vi.fn();
-		renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
+    it("should render search icon when onSearchClick is provided", () => {
+        const onSearchClick = vi.fn();
+        renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
 
-		expect(screen.getByLabelText("Search messages")).toBeInTheDocument();
-	});
+        expect(screen.getByLabelText("Search messages")).toBeInTheDocument();
+    });
 
-	it("should call onSearchClick when search button is clicked", async () => {
-		const onSearchClick = vi.fn();
-		renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
+    it("should call onSearchClick when search button is clicked", async () => {
+        const onSearchClick = vi.fn();
+        renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
 
-		const searchButton = screen.getByLabelText("Search messages");
-		await userEvent.click(searchButton);
+        const searchButton = screen.getByLabelText("Search messages");
+        await userEvent.click(searchButton);
 
-		expect(onSearchClick).toHaveBeenCalledTimes(1);
-	});
+        expect(onSearchClick).toHaveBeenCalledTimes(1);
+    });
 
-	it("should have correct tooltip for search button", () => {
-		const onSearchClick = vi.fn();
-		renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
+    it("should have correct tooltip for search button", () => {
+        const onSearchClick = vi.fn();
+        renderWithQueryClient(<Header onSearchClick={onSearchClick} />);
 
-		const searchButton = screen.getByLabelText("Search messages");
-		expect(searchButton).toHaveAttribute("title", "Search messages (Ctrl+K)");
-	});
+        const searchButton = screen.getByLabelText("Search messages");
+        expect(searchButton).toHaveAttribute(
+            "title",
+            "Search messages (Ctrl+K)",
+        );
+    });
 
-	it("should have consistent min-height classes to prevent CLS", () => {
-		// Render header in non-loading state
-		const { container } = renderWithQueryClient(<Header />);
-		const header = container.querySelector("header");
-		
-		// Check that header has min-height classes
-		expect(header).toHaveClass("min-h-[73px]");
-		expect(header).toHaveClass("sm:min-h-[81px]");
-	});
+    it("should have consistent min-height classes to prevent CLS", () => {
+        // Render header in non-loading state
+        const { container } = renderWithQueryClient(<Header />);
+        const header = container.querySelector("header");
+
+        // Check that header has min-height classes
+        expect(header).toHaveClass("min-h-18.25");
+        expect(header).toHaveClass("sm:min-h-20.25");
+    });
 });

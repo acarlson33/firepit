@@ -6,16 +6,23 @@ const PUBLIC_ROUTES = [
     "/",
     "/login",
     "/register",
+    "/docs",
     "/manifest.webmanifest",
     "/favicon.ico",
     "/robots.txt",
 ];
 
+const PUBLIC_ROUTE_PREFIXES = ["/docs/"];
+
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     // Check if route is public (doesn't need authentication)
-    const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname === route);
+    const isPublicRoute =
+        PUBLIC_ROUTES.some((route) => pathname === route) ||
+        PUBLIC_ROUTE_PREFIXES.some((routePrefix) =>
+            pathname.startsWith(routePrefix),
+        );
     const isAuthRoute = pathname === "/login" || pathname === "/register";
 
     // Get session cookie
