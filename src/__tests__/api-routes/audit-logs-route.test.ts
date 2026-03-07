@@ -186,11 +186,11 @@ describe("audit logs route", () => {
                         actorId: "mod-1",
                         targetId: "user-1",
                         action: "ban",
-                        meta: {
+                        meta: JSON.stringify({
                             serverId: "server-1",
                             reason: "legacy-rule",
                             details: "legacy-details",
-                        },
+                        }),
                     },
                 ],
             })

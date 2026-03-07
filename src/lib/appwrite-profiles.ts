@@ -11,6 +11,7 @@ import { getEnvConfig } from "./appwrite-core";
 export type UserProfile = {
     $id: string;
     userId: string;
+    userName?: string;
     displayName?: string;
     bio?: string;
     pronouns?: string;
@@ -44,6 +45,42 @@ export async function getUserProfile(
         return profiles.documents[0] as unknown as UserProfile;
     } catch {
         return null;
+    }
+}
+
+/**
+ * Resolve a profile by either exact userId or exact userName.
+ */
+export async function resolveProfileUserId(identifier: string) {
+    const trimmedIdentifier = identifier.trim();
+    if (!trimmedIdentifier) {
+        return undefined;
+    }
+
+    try {
+        const { databases } = getAdminClient();
+        const env = getEnvConfig();
+
+        let profiles = await databases.listDocuments(
+            env.databaseId,
+            env.collections.profiles,
+            [Query.equal("userId", trimmedIdentifier), Query.limit(1)],
+        );
+
+        if (profiles.documents.length === 0) {
+            profiles = await databases.listDocuments(
+                env.databaseId,
+                env.collections.profiles,
+                [Query.equal("userName", trimmedIdentifier), Query.limit(1)],
+            );
+        }
+
+        const profile = profiles.documents[0] as unknown as
+            | UserProfile
+            | undefined;
+        return profile?.userId;
+    } catch {
+        return undefined;
     }
 }
 

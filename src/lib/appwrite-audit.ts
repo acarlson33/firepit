@@ -35,6 +35,42 @@ function getMetaString(
     return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function serializeAuditMeta(meta: Record<string, unknown> | undefined) {
+    if (!meta) {
+        return undefined;
+    }
+
+    try {
+        return JSON.stringify(meta);
+    } catch {
+        return undefined;
+    }
+}
+
+function parseAuditMeta(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value) as unknown;
+            if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+            ) {
+                return parsed as Record<string, unknown>;
+            }
+        } catch {
+            return undefined;
+        }
+        return undefined;
+    }
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+
+    return undefined;
+}
+
 export async function recordAudit(
     action: string,
     targetId: string,
@@ -57,12 +93,13 @@ export async function recordAudit(
     const targetUserId =
         getMetaString(meta, "targetUserId") ||
         (serverId ? targetId : undefined);
+    const serializedMeta = serializeAuditMeta(meta);
 
     const auditData = {
         action,
         targetId,
         actorId,
-        meta,
+        meta: serializedMeta,
         serverId,
         userId: getMetaString(meta, "userId") || actorId,
         targetUserId,
@@ -70,15 +107,32 @@ export async function recordAudit(
         details: getMetaString(meta, "details"),
     };
 
+    const fallbackAuditData = {
+        action,
+        targetId,
+        actorId,
+        meta: serializedMeta,
+    };
+
     try {
         const { databases } = getServerClient();
-        await databases.createDocument(
-            DATABASE_ID,
-            AUDIT_COLLECTION_ID,
-            ID.unique(),
-            auditData,
-            ['read("any")'],
-        );
+        try {
+            await databases.createDocument(
+                DATABASE_ID,
+                AUDIT_COLLECTION_ID,
+                ID.unique(),
+                auditData,
+                ['read("any")'],
+            );
+        } catch {
+            await databases.createDocument(
+                DATABASE_ID,
+                AUDIT_COLLECTION_ID,
+                ID.unique(),
+                fallbackAuditData,
+                ['read("any")'],
+            );
+        }
     } catch {
         // ignore audit failures
     }
@@ -125,9 +179,7 @@ export async function listAuditEvents(opts: ListAuditOpts = {}) {
         targetId: String((d as Record<string, unknown>).targetId),
         actorId: String((d as Record<string, unknown>).actorId),
         $createdAt: String((d as Record<string, unknown>).$createdAt),
-        meta: (d as Record<string, unknown>).meta as
-            | Record<string, unknown>
-            | undefined,
+        meta: parseAuditMeta((d as Record<string, unknown>).meta),
     }));
     const last = items.at(-1);
     return {
@@ -179,9 +231,7 @@ export async function adminListAuditEvents(opts: ListAuditOpts = {}) {
         targetId: String((d as Record<string, unknown>).targetId),
         actorId: String((d as Record<string, unknown>).actorId),
         $createdAt: String((d as Record<string, unknown>).$createdAt),
-        meta: (d as Record<string, unknown>).meta as
-            | Record<string, unknown>
-            | undefined,
+        meta: parseAuditMeta((d as Record<string, unknown>).meta),
     }));
     const last = items.at(-1);
     return {

@@ -508,6 +508,11 @@ async function setupAudit() {
         ["action", LEN_ID, true],
         ["targetId", LEN_ID, true],
         ["actorId", LEN_ID, true],
+        ["serverId", LEN_ID, false],
+        ["userId", LEN_ID, false],
+        ["targetUserId", LEN_ID, false],
+        ["reason", LEN_TEXT, false],
+        ["details", LEN_TEXT, false],
         ["meta", LEN_TEXT, false],
     ];
     for (const [k, size, req] of fields) {
@@ -517,6 +522,7 @@ async function setupAudit() {
     await ensureIndex("audit", "idx_action", "key", ["action"]);
     await ensureIndex("audit", "idx_actor", "key", ["actorId"]);
     await ensureIndex("audit", "idx_target", "key", ["targetId"]);
+    await ensureIndex("audit", "idx_server", "key", ["serverId"]);
 }
 
 async function setupTyping() {

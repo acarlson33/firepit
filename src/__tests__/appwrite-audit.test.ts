@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+const { mockServerCreateDocument } = vi.hoisted(() => ({
+    mockServerCreateDocument: vi.fn(),
+}));
+
 // Mock appwrite
 vi.mock("appwrite", () => ({
     ID: {
@@ -148,7 +152,7 @@ vi.mock("../lib/appwrite-admin", () => ({
 vi.mock("../lib/appwrite-server", () => ({
     getServerClient: () => ({
         databases: {
-            createDocument: vi.fn(
+            createDocument: mockServerCreateDocument.mockImplementation(
                 async (
                     _databaseId: string,
                     _collectionId: string,
@@ -197,6 +201,7 @@ function clearMockAuditDocs() {
 describe("appwrite-audit", () => {
     beforeEach(() => {
         clearMockAuditDocs();
+        mockServerCreateDocument.mockClear();
     });
 
     describe("recordAudit", () => {
@@ -221,7 +226,7 @@ describe("appwrite-audit", () => {
             await recordAudit("user.login", "user-123", "actor-456", meta);
 
             const docs = (globalThis as any).__mockAuditDocs;
-            expect(docs[0].meta).toEqual(meta);
+            expect(JSON.parse(docs[0].meta)).toEqual(meta);
         });
 
         it("should denormalize server moderation fields for server audit queries", async () => {
@@ -246,13 +251,9 @@ describe("appwrite-audit", () => {
         it("should handle audit recording failure gracefully", async () => {
             const { recordAudit } = await import("../lib/appwrite-audit");
 
-            // Mock a failure in createDocument
-            const { getBrowserDatabases } =
-                await import("../lib/appwrite-core");
-            const mockDb = getBrowserDatabases();
-            vi.spyOn(mockDb, "createDocument").mockRejectedValueOnce(
-                new Error("Database error"),
-            );
+            mockServerCreateDocument
+                .mockRejectedValueOnce(new Error("Schema mismatch"))
+                .mockRejectedValueOnce(new Error("Database error"));
 
             // Should not throw
             await expect(
@@ -494,13 +495,39 @@ describe("appwrite-audit", () => {
                     targetId: "user-1",
                     actorId: "actor-1",
                     $createdAt: "2023-01-01T00:00:00.000Z",
-                    meta: { ip: "192.168.1.1" },
+                    meta: JSON.stringify({ ip: "192.168.1.1" }),
                 },
             ]);
 
             const result = await listAuditEvents();
 
             expect(result.items[0].meta).toEqual({ ip: "192.168.1.1" });
+        });
+
+        it("falls back to minimal schema-compatible audit documents", async () => {
+            const { recordAudit } = await import("../lib/appwrite-audit");
+
+            mockServerCreateDocument.mockRejectedValueOnce(
+                new Error("Unknown attribute: serverId"),
+            );
+
+            await recordAudit("hard_delete", "message-1", "actor-1", {
+                serverId: "server-1",
+                targetUserId: "user-1",
+            });
+
+            const docs = (globalThis as any).__mockAuditDocs;
+            expect(docs).toHaveLength(1);
+            expect(docs[0]).toMatchObject({
+                action: "hard_delete",
+                targetId: "message-1",
+                actorId: "actor-1",
+            });
+            expect(docs[0]).not.toHaveProperty("serverId");
+            expect(JSON.parse(docs[0].meta)).toMatchObject({
+                serverId: "server-1",
+                targetUserId: "user-1",
+            });
         });
     });
 

@@ -38,6 +38,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
 import { toast } from "sonner";
 
 interface ServerAdminPanelProps {
@@ -268,6 +269,26 @@ export function ServerAdminPanel({
             m.userId.toLowerCase().includes(query)
         );
     });
+
+    const getAuditModeratorLabel = (log: AuditLog) =>
+        getAuditUserLabel({
+            defaultLabel: "Moderator",
+            fallbackName: log.moderatorName,
+            members,
+            userId: log.moderatorId,
+        });
+
+    const getAuditTargetLabel = (log: AuditLog) => {
+        if (!log.targetUserId && !log.targetUserName) {
+            return undefined;
+        }
+
+        return getAuditUserLabel({
+            fallbackName: log.targetUserName,
+            members,
+            userId: log.targetUserId,
+        });
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -801,67 +822,76 @@ export function ServerAdminPanel({
                                             : "No logs match the selected filter"}
                                     </div>
                                 ) : (
-                                    filteredAuditLogs.map((log) => (
-                                        <Card key={log.$id} className="p-3">
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <Badge
-                                                            variant={
-                                                                log.action ===
-                                                                    "ban" ||
-                                                                log.action ===
-                                                                    "hard_delete"
-                                                                    ? "destructive"
-                                                                    : log.action ===
-                                                                        "mute"
-                                                                      ? "outline"
-                                                                      : log.action ===
-                                                                              "kick" ||
-                                                                          log.action ===
-                                                                              "soft_delete"
-                                                                        ? "secondary"
-                                                                        : "default"
-                                                            }
-                                                        >
-                                                            {log.action}
-                                                        </Badge>
-                                                        <span className="text-sm font-medium">
-                                                            {log.moderatorName ||
-                                                                "Moderator"}
-                                                        </span>
-                                                        {log.targetUserName && (
-                                                            <>
-                                                                <span className="text-sm text-muted-foreground">
-                                                                    →
-                                                                </span>
-                                                                <span className="text-sm">
-                                                                    {
-                                                                        log.targetUserName
-                                                                    }
-                                                                </span>
-                                                            </>
+                                    filteredAuditLogs.map((log) => {
+                                        const moderatorDisplay =
+                                            getAuditModeratorLabel(log);
+                                        const targetDisplay =
+                                            getAuditTargetLabel(log);
+
+                                        return (
+                                            <Card key={log.$id} className="p-3">
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <Badge
+                                                                variant={
+                                                                    log.action ===
+                                                                        "ban" ||
+                                                                    log.action ===
+                                                                        "hard_delete"
+                                                                        ? "destructive"
+                                                                        : log.action ===
+                                                                            "mute"
+                                                                          ? "outline"
+                                                                          : log.action ===
+                                                                                  "kick" ||
+                                                                              log.action ===
+                                                                                  "soft_delete"
+                                                                            ? "secondary"
+                                                                            : "default"
+                                                                }
+                                                            >
+                                                                {log.action}
+                                                            </Badge>
+                                                            <span className="text-sm font-medium">
+                                                                {
+                                                                    moderatorDisplay
+                                                                }
+                                                            </span>
+                                                            {targetDisplay && (
+                                                                <>
+                                                                    <span className="text-sm text-muted-foreground">
+                                                                        →
+                                                                    </span>
+                                                                    <span className="text-sm">
+                                                                        {
+                                                                            targetDisplay
+                                                                        }
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                        {log.reason && (
+                                                            <p className="text-sm text-muted-foreground mt-1">
+                                                                Reason:{" "}
+                                                                {log.reason}
+                                                            </p>
+                                                        )}
+                                                        {log.details && (
+                                                            <p className="text-xs text-muted-foreground mt-1">
+                                                                {log.details}
+                                                            </p>
                                                         )}
                                                     </div>
-                                                    {log.reason && (
-                                                        <p className="text-sm text-muted-foreground mt-1">
-                                                            Reason: {log.reason}
-                                                        </p>
-                                                    )}
-                                                    {log.details && (
-                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                            {log.details}
-                                                        </p>
-                                                    )}
+                                                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">
+                                                        {new Date(
+                                                            log.timestamp,
+                                                        ).toLocaleString()}
+                                                    </span>
                                                 </div>
-                                                <span className="text-xs text-muted-foreground whitespace-nowrap ml-4">
-                                                    {new Date(
-                                                        log.timestamp,
-                                                    ).toLocaleString()}
-                                                </span>
-                                            </div>
-                                        </Card>
-                                    ))
+                                            </Card>
+                                        );
+                                    })
                                 )}
                             </div>
                         </TabsContent>

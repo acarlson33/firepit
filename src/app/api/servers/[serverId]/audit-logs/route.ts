@@ -32,7 +32,23 @@ function getString(value: unknown): string | undefined {
 }
 
 function getMeta(log: AuditLogDocument) {
-    return (log.meta || log.metadata || {}) as Record<string, unknown>;
+    const raw = log.meta || log.metadata;
+    if (typeof raw === "string") {
+        try {
+            const parsed = JSON.parse(raw) as unknown;
+            if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+            ) {
+                return parsed as Record<string, unknown>;
+            }
+        } catch {
+            return {};
+        }
+    }
+
+    return (raw || {}) as Record<string, unknown>;
 }
 
 function getLegacyServerId(log: AuditLogDocument) {
