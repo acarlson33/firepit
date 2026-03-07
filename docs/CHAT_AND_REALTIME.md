@@ -1,0 +1,125 @@
+# Chat And Realtime
+
+## Scope
+
+This document covers the real-time communication surface of Firepit: channel messages, direct messages, reactions, threads, pins, typing indicators, presence, uploads, emoji, search, and notification settings.
+
+## Channel Messaging
+
+Channel messages are created through `POST /api/messages` and support more than plain text.
+
+Supported message features:
+
+- plain text content
+- image attachments
+- generic file attachments
+- replies through `replyToId`
+- mentions through a `mentions` array
+- reactions through `/api/messages/{messageId}/reactions`
+- per-message thread access through `/api/messages/{messageId}/thread`
+- pin and unpin operations through `/api/messages/{messageId}/pin`
+
+Message creation is gated by channel membership and send permissions. The server validates attachment and message size constraints before writing records.
+
+## Direct Messages
+
+Direct message operations are multiplexed through `/api/direct-messages`.
+
+Current supported GET modes:
+
+- `type=conversations`: list the current user’s conversations
+- `type=conversation`: fetch or create a conversation between users
+- `type=messages`: list messages in a conversation
+
+Direct messages also support:
+
+- create, edit, and delete message operations through `POST`, `PATCH`, and `DELETE`
+- reactions through `/api/direct-messages/{messageId}/reactions`
+- thread access through `/api/direct-messages/{messageId}/thread`
+- pin and unpin through `/api/direct-messages/{messageId}/pin`
+- conversation-level pins through `/api/conversations/{conversationId}/pins`
+- conversation mute through `/api/conversations/{conversationId}/mute`
+
+## Threads And Pins
+
+Threaded conversations are available for both channel and DM messages. The API exposes separate endpoints for reading and creating thread state on top of a parent message.
+
+Pinning is split across two levels:
+
+- message-level pin and unpin operations
+- list pinned items for a channel or conversation
+
+For channel views, pinned history is available at `/api/channels/{channelId}/pins`.
+
+## Typing Indicators
+
+Typing state is managed through `/api/typing`.
+
+Behavior:
+
+- accepts either `channelId` or `conversationId`
+- creates or updates a deterministic typing-status record per user and context
+- requires channel send access for channel typing updates
+- deletes the current user’s typing record when the client stops typing or leaves the context
+
+Typing records are intentionally short-lived and should be treated as ephemeral UI state rather than durable history.
+
+## Presence And Status
+
+Presence is handled through `/api/status` and `/api/status/batch`.
+
+Capabilities:
+
+- set or update a status document
+- fetch a single user status or batch status data
+- preserve manually set statuses until expiration
+- normalize stale or expired records before returning them to clients
+
+Expected status states include `online`, `offline`, `away`, and `dnd`, with optional custom messages and expirations.
+
+## Uploads And Attachments
+
+Firepit separates media upload from message creation.
+
+Current upload endpoints:
+
+- `/api/upload-image`: image upload and deletion
+- `/api/upload-file`: generic file upload and deletion
+- `/api/upload-emoji`: custom emoji upload and deletion
+- `/api/emoji/{fileId}`: emoji file retrieval proxy
+
+Message records may reference uploaded media by file identifier and resolved URL. Attachment metadata is stored separately for richer rendering.
+
+## Emoji And Reactions
+
+Custom emojis are exposed through `/api/custom-emojis`, with upload handled separately. Reaction APIs exist for both channel and direct-message messages, which keeps the client interaction model consistent across contexts.
+
+Client expectations:
+
+- optimistic UI is acceptable, but server responses remain authoritative
+- deleted emoji assets should fail gracefully in the UI
+- reactions should be displayed consistently across message list, thread view, and pinned views
+
+## Search And Notifications
+
+Chat-adjacent discovery is handled by:
+
+- `/api/search/messages` for message search
+- `/api/users/search` for people lookup and mentions
+- `/api/notifications/settings` for user notification preferences
+- `/api/memberships` for membership resolution used by navigation and mention features
+
+## Realtime Design Notes
+
+The app uses Appwrite realtime subscriptions with pooled connections. Clients should assume that:
+
+- server responses are the source of truth
+- optimistic updates may be corrected by realtime events
+- message, reaction, status, and typing updates can arrive out of order
+- pinned and threaded views should handle partial hydration cleanly
+
+## Operational Constraints
+
+- Large JSON responses may advertise compression support.
+- Channel access is permission-aware and enforced server-side.
+- Typing and status collections may be unavailable in partially configured environments; clients should surface those failures as degraded realtime features rather than full application failure.
