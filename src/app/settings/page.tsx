@@ -21,6 +21,7 @@ import { AvatarUpload } from "./AvatarUpload";
 import { BlockedUsersSettings } from "@/components/blocked-users-settings";
 import { FriendsSettings } from "@/components/friends-settings";
 import { NotificationSettings } from "@/components/notification-settings";
+import { PendingFriendRequestsBadge } from "@/components/pending-friend-requests-badge";
 import { FlushCaches } from "./FlushCaches";
 
 export default async function SettingsPage() {
@@ -230,9 +231,12 @@ export default async function SettingsPage() {
 
                 <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
                     <div className="mb-6 space-y-3">
-                        <h2 className="text-2xl font-semibold tracking-tight">
-                            Connections
-                        </h2>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <h2 className="text-2xl font-semibold tracking-tight">
+                                Connections
+                            </h2>
+                            <PendingFriendRequestsBadge />
+                        </div>
                         <p className="text-muted-foreground">
                             Manage friends and pending requests from one place.
                         </p>

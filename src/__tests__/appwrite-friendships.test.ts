@@ -150,4 +150,58 @@ describe("appwrite-friendships", () => {
         expect(relationship.canSendDirectMessage).toBe(false);
         expect(relationship.canReceiveFriendRequest).toBe(true);
     });
+
+    it("returns empty lists when the relationship schema is not deployed yet", async () => {
+        const { listBlockedUsers, listFriendshipsForUser } =
+            await import("@/lib/appwrite-friendships");
+
+        mockDatabases.listDocuments
+            .mockRejectedValueOnce(
+                new Error(
+                    "Invalid query: Attribute not found in schema: requesterId",
+                ),
+            )
+            .mockRejectedValueOnce(
+                new Error(
+                    "Invalid query: Attribute not found in schema: recipientId",
+                ),
+            )
+            .mockRejectedValueOnce(
+                new Error(
+                    "Invalid query: Attribute not found in schema: userId",
+                ),
+            );
+
+        const friendships = await listFriendshipsForUser("user-1");
+        const blocks = await listBlockedUsers("user-1");
+
+        expect(friendships).toEqual({
+            friends: [],
+            incoming: [],
+            outgoing: [],
+        });
+        expect(blocks).toEqual([]);
+    });
+
+    it("surfaces a migration message for writes when the block schema is missing", async () => {
+        const { RelationshipError, blockUser } =
+            await import("@/lib/appwrite-friendships");
+
+        mockDatabases.listDocuments
+            .mockRejectedValueOnce(
+                new Error(
+                    "Invalid query: Attribute not found in schema: userId",
+                ),
+            )
+            .mockResolvedValueOnce({ documents: [] });
+        mockDatabases.createDocument.mockRejectedValueOnce(
+            new Error("Invalid query: Attribute not found in schema: userId"),
+        );
+
+        await expect(blockUser("user-1", "user-2")).rejects.toMatchObject({
+            name: RelationshipError.name,
+            status: 503,
+            message: expect.stringContaining("bun run setup"),
+        });
+    });
 });

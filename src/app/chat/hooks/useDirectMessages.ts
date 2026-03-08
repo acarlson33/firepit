@@ -9,7 +9,7 @@ import {
     editDirectMessage,
     deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
-import type { DirectMessage } from "@/lib/types";
+import type { DirectMessage, RelationshipStatus } from "@/lib/types";
 import type { PinnedMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
@@ -49,6 +49,11 @@ export function useDirectMessages({
     const [messages, setMessages] = useState<DirectMessage[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [readOnly, setReadOnly] = useState(false);
+    const [readOnlyReason, setReadOnlyReason] = useState<string | null>(null);
+    const [relationship, setRelationship] = useState<RelationshipStatus | null>(
+        null,
+    );
     const [sending, setSending] = useState(false);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -102,6 +107,9 @@ export function useDirectMessages({
     const loadMessages = useCallback(async () => {
         if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
             setMessages([]);
+            setReadOnly(false);
+            setReadOnlyReason(null);
+            setRelationship(null);
             setLoading(false);
             return;
         }
@@ -118,6 +126,9 @@ export function useDirectMessages({
             // Reverse to show oldest first
             const orderedItems = result.items.reverse();
             setMessages(orderedItems.filter(isTopLevelMessage));
+            setReadOnly(result.readOnly);
+            setReadOnlyReason(result.readOnlyReason ?? null);
+            setRelationship(result.relationship ?? null);
         } catch (err) {
             setError(
                 err instanceof Error ? err.message : "Failed to load messages",
@@ -246,6 +257,14 @@ export function useDirectMessages({
                 return;
             }
 
+            if (readOnly) {
+                toast.error(
+                    readOnlyReason ||
+                        "This conversation is read-only right now",
+                );
+                return;
+            }
+
             // Require either text, image, or attachments
             if (
                 !text.trim() &&
@@ -338,7 +357,7 @@ export function useDirectMessages({
                 setSending(false);
             }
         },
-        [conversationId, userId, receiverId],
+        [conversationId, readOnly, readOnlyReason, receiverId, userId],
     );
 
     const edit = useCallback(
@@ -488,6 +507,9 @@ export function useDirectMessages({
     const handleTypingChange = useCallback(
         (text: string) => {
             if (!userId || !conversationId) {
+                return;
+            }
+            if (readOnly) {
                 return;
             }
             const isTyping = text.trim().length > 0;
@@ -785,6 +807,9 @@ export function useDirectMessages({
         conversationPins,
         refreshPins,
         togglePin,
+        readOnly,
+        readOnlyReason,
+        relationship,
         activeThreadParent,
         threadMessages,
         threadLoading,

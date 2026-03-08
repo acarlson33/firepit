@@ -4,6 +4,21 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Header from "../../components/header";
 
+const authState = vi.hoisted(() => ({
+    userData: null as {
+        userId: string;
+        name: string;
+        email: string;
+        roles: { isAdmin: boolean; isModerator: boolean };
+    } | null,
+    userStatus: null,
+    loading: false,
+    setUserData: vi.fn(),
+    updateUserStatus: vi.fn(),
+}));
+
+const mockUseFriends = vi.hoisted(() => vi.fn());
+
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
@@ -13,13 +28,11 @@ vi.mock("next/navigation", () => ({
 
 // Mock auth context
 vi.mock("@/contexts/auth-context", () => ({
-    useAuth: () => ({
-        userData: null,
-        userStatus: null,
-        loading: false,
-        setUserData: vi.fn(),
-        updateUserStatus: vi.fn(),
-    }),
+    useAuth: () => authState,
+}));
+
+vi.mock("@/hooks/useFriends", () => ({
+    useFriends: (enabled: boolean) => mockUseFriends(enabled),
 }));
 
 // Mock theme provider
@@ -50,6 +63,12 @@ function renderWithQueryClient(component: React.ReactElement<any>) {
 describe("Header", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        authState.userData = null;
+        authState.loading = false;
+        mockUseFriends.mockReturnValue({
+            incoming: [],
+            loading: false,
+        });
     });
 
     it("should render header without search icon when onSearchClick is not provided", () => {
@@ -97,5 +116,31 @@ describe("Header", () => {
         // Check that header has min-height classes
         expect(header).toHaveClass("min-h-18.25");
         expect(header).toHaveClass("sm:min-h-20.25");
+    });
+
+    it("shows the friends nav badge and add friend button for authenticated users", () => {
+        authState.userData = {
+            userId: "user-1",
+            name: "August",
+            email: "august@example.com",
+            roles: {
+                isAdmin: false,
+                isModerator: false,
+            },
+        };
+        mockUseFriends.mockReturnValue({
+            incoming: [{ friendship: { $id: "f-1" }, user: { userId: "u-2" } }],
+            loading: false,
+        });
+
+        renderWithQueryClient(<Header />);
+
+        expect(
+            screen.getByRole("link", { name: /friends/i }),
+        ).toBeInTheDocument();
+        expect(screen.getByText("1")).toBeInTheDocument();
+        expect(
+            screen.getByRole("link", { name: /add friend/i }),
+        ).toHaveAttribute("href", "/chat?compose=1");
     });
 });

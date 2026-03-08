@@ -20,6 +20,62 @@ export class RelationshipError extends Error {
     }
 }
 
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return String(error);
+}
+
+function isRelationshipSchemaError(error: unknown) {
+    const message = getErrorMessage(error).toLowerCase();
+
+    return (
+        message.includes("attribute not found in schema") ||
+        message.includes("attribute not available") ||
+        message.includes("requested attribute") ||
+        message.includes(
+            "collection with the requested id could not be found",
+        ) ||
+        message.includes("collection not found")
+    );
+}
+
+function createRelationshipSchemaUnavailableError() {
+    return new RelationshipError(
+        "Friend system schema is not available yet. Run bun run setup to provision the Appwrite collections.",
+        503,
+    );
+}
+
+async function readRelationshipData<T>(
+    operation: () => Promise<T>,
+    fallback: T,
+) {
+    try {
+        return await operation();
+    } catch (error) {
+        if (isRelationshipSchemaError(error)) {
+            return fallback;
+        }
+
+        throw error;
+    }
+}
+
+async function writeRelationshipData<T>(operation: () => Promise<T>) {
+    try {
+        return await operation();
+    } catch (error) {
+        if (isRelationshipSchemaError(error)) {
+            throw createRelationshipSchemaUnavailableError();
+        }
+
+        throw error;
+    }
+}
+
 function friendshipPermissions(requesterId: string, recipientId: string) {
     return [
         Permission.read(Role.user(requesterId)),
@@ -66,6 +122,10 @@ function toBlockedUser(doc: Record<string, unknown>): BlockedUser {
     };
 }
 
+type RelationshipDocumentList = {
+    documents: Array<Record<string, unknown>>;
+};
+
 export function normalizeUserPair(userId: string, otherUserId: string) {
     const [firstUserId, secondUserId] = [userId, otherUserId].sort();
     return {
@@ -105,10 +165,13 @@ export async function getFriendshipByPair(
 ) {
     const { databases } = getAdminClient();
     const { pairKey } = normalizeUserPair(userId, targetUserId);
-    const response = await databases.listDocuments(
-        DATABASE_ID,
-        FRIENDSHIPS_COLLECTION_ID,
-        [Query.equal("pairKey", pairKey), Query.limit(1)],
+    const response = await readRelationshipData<RelationshipDocumentList>(
+        () =>
+            databases.listDocuments(DATABASE_ID, FRIENDSHIPS_COLLECTION_ID, [
+                Query.equal("pairKey", pairKey),
+                Query.limit(1),
+            ]) as Promise<RelationshipDocumentList>,
+        { documents: [] },
     );
 
     const document = response.documents[0] as
@@ -119,14 +182,14 @@ export async function getFriendshipByPair(
 
 export async function getBlockRecord(userId: string, blockedUserId: string) {
     const { databases } = getAdminClient();
-    const response = await databases.listDocuments(
-        DATABASE_ID,
-        BLOCKS_COLLECTION_ID,
-        [
-            Query.equal("userId", userId),
-            Query.equal("blockedUserId", blockedUserId),
-            Query.limit(1),
-        ],
+    const response = await readRelationshipData<RelationshipDocumentList>(
+        () =>
+            databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
+                Query.equal("userId", userId),
+                Query.equal("blockedUserId", blockedUserId),
+                Query.limit(1),
+            ]) as Promise<RelationshipDocumentList>,
+        { documents: [] },
     );
 
     const document = response.documents[0] as
@@ -193,16 +256,32 @@ export async function getRelationshipStatus(
 export async function listFriendshipsForUser(userId: string) {
     const { databases } = getAdminClient();
     const [requested, received] = await Promise.all([
-        databases.listDocuments(DATABASE_ID, FRIENDSHIPS_COLLECTION_ID, [
-            Query.equal("requesterId", userId),
-            Query.limit(200),
-            Query.orderDesc("requestedAt"),
-        ]),
-        databases.listDocuments(DATABASE_ID, FRIENDSHIPS_COLLECTION_ID, [
-            Query.equal("recipientId", userId),
-            Query.limit(200),
-            Query.orderDesc("requestedAt"),
-        ]),
+        readRelationshipData<RelationshipDocumentList>(
+            () =>
+                databases.listDocuments(
+                    DATABASE_ID,
+                    FRIENDSHIPS_COLLECTION_ID,
+                    [
+                        Query.equal("requesterId", userId),
+                        Query.limit(200),
+                        Query.orderDesc("requestedAt"),
+                    ],
+                ) as Promise<RelationshipDocumentList>,
+            { documents: [] },
+        ),
+        readRelationshipData<RelationshipDocumentList>(
+            () =>
+                databases.listDocuments(
+                    DATABASE_ID,
+                    FRIENDSHIPS_COLLECTION_ID,
+                    [
+                        Query.equal("recipientId", userId),
+                        Query.limit(200),
+                        Query.orderDesc("requestedAt"),
+                    ],
+                ) as Promise<RelationshipDocumentList>,
+            { documents: [] },
+        ),
     ]);
 
     const friendships = [...requested.documents, ...received.documents].map(
@@ -228,14 +307,14 @@ export async function listFriendshipsForUser(userId: string) {
 
 export async function listBlockedUsers(userId: string) {
     const { databases } = getAdminClient();
-    const response = await databases.listDocuments(
-        DATABASE_ID,
-        BLOCKS_COLLECTION_ID,
-        [
-            Query.equal("userId", userId),
-            Query.limit(200),
-            Query.orderDesc("blockedAt"),
-        ],
+    const response = await readRelationshipData<RelationshipDocumentList>(
+        () =>
+            databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
+                Query.equal("userId", userId),
+                Query.limit(200),
+                Query.orderDesc("blockedAt"),
+            ]) as Promise<RelationshipDocumentList>,
+        { documents: [] },
     );
 
     return response.documents.map((doc) =>
@@ -245,10 +324,12 @@ export async function listBlockedUsers(userId: string) {
 
 async function deleteFriendshipById(friendshipId: string) {
     const { databases } = getAdminClient();
-    await databases.deleteDocument(
-        DATABASE_ID,
-        FRIENDSHIPS_COLLECTION_ID,
-        friendshipId,
+    await writeRelationshipData(() =>
+        databases.deleteDocument(
+            DATABASE_ID,
+            FRIENDSHIPS_COLLECTION_ID,
+            friendshipId,
+        ),
     );
 }
 
@@ -294,49 +375,55 @@ export async function createFriendRequest(
                 );
             }
 
-            const updated = await databases.updateDocument(
-                DATABASE_ID,
-                FRIENDSHIPS_COLLECTION_ID,
-                existingFriendship.$id,
-                {
-                    status: "accepted",
-                    respondedAt: now,
-                    acceptedAt: now,
-                },
+            const updated = await writeRelationshipData(() =>
+                databases.updateDocument(
+                    DATABASE_ID,
+                    FRIENDSHIPS_COLLECTION_ID,
+                    existingFriendship.$id,
+                    {
+                        status: "accepted",
+                        respondedAt: now,
+                        acceptedAt: now,
+                    },
+                ),
             );
 
             return toFriendship(updated as unknown as Record<string, unknown>);
         }
 
-        const updated = await databases.updateDocument(
-            DATABASE_ID,
-            FRIENDSHIPS_COLLECTION_ID,
-            existingFriendship.$id,
-            {
-                requesterId: userId,
-                recipientId: targetUserId,
-                status: "pending",
-                requestedAt: now,
-                respondedAt: null,
-                acceptedAt: null,
-            },
+        const updated = await writeRelationshipData(() =>
+            databases.updateDocument(
+                DATABASE_ID,
+                FRIENDSHIPS_COLLECTION_ID,
+                existingFriendship.$id,
+                {
+                    requesterId: userId,
+                    recipientId: targetUserId,
+                    status: "pending",
+                    requestedAt: now,
+                    respondedAt: null,
+                    acceptedAt: null,
+                },
+            ),
         );
 
         return toFriendship(updated as unknown as Record<string, unknown>);
     }
 
-    const friendship = await databases.createDocument(
-        DATABASE_ID,
-        FRIENDSHIPS_COLLECTION_ID,
-        ID.unique(),
-        {
-            requesterId: userId,
-            recipientId: targetUserId,
-            pairKey,
-            status: "pending",
-            requestedAt: now,
-        },
-        friendshipPermissions(userId, targetUserId),
+    const friendship = await writeRelationshipData(() =>
+        databases.createDocument(
+            DATABASE_ID,
+            FRIENDSHIPS_COLLECTION_ID,
+            ID.unique(),
+            {
+                requesterId: userId,
+                recipientId: targetUserId,
+                pairKey,
+                status: "pending",
+                requestedAt: now,
+            },
+            friendshipPermissions(userId, targetUserId),
+        ),
     );
 
     return toFriendship(friendship as unknown as Record<string, unknown>);
@@ -366,15 +453,17 @@ export async function respondToFriendRequest(
 
     const now = new Date().toISOString();
     const { databases } = getAdminClient();
-    const updated = await databases.updateDocument(
-        DATABASE_ID,
-        FRIENDSHIPS_COLLECTION_ID,
-        friendship.$id,
-        {
-            status: action === "accept" ? "accepted" : "declined",
-            respondedAt: now,
-            acceptedAt: action === "accept" ? now : null,
-        },
+    const updated = await writeRelationshipData(() =>
+        databases.updateDocument(
+            DATABASE_ID,
+            FRIENDSHIPS_COLLECTION_ID,
+            friendship.$id,
+            {
+                status: action === "accept" ? "accepted" : "declined",
+                respondedAt: now,
+                acceptedAt: action === "accept" ? now : null,
+            },
+        ),
     );
 
     return toFriendship(updated as unknown as Record<string, unknown>);
@@ -410,17 +499,19 @@ export async function blockUser(
     }
 
     const { databases } = getAdminClient();
-    const block = await databases.createDocument(
-        DATABASE_ID,
-        BLOCKS_COLLECTION_ID,
-        ID.unique(),
-        {
-            userId,
-            blockedUserId,
-            blockedAt: new Date().toISOString(),
-            reason: reason?.trim() ? reason.trim() : null,
-        },
-        blockPermissions(userId),
+    const block = await writeRelationshipData(() =>
+        databases.createDocument(
+            DATABASE_ID,
+            BLOCKS_COLLECTION_ID,
+            ID.unique(),
+            {
+                userId,
+                blockedUserId,
+                blockedAt: new Date().toISOString(),
+                reason: reason?.trim() ? reason.trim() : null,
+            },
+            blockPermissions(userId),
+        ),
     );
 
     return toBlockedUser(block as unknown as Record<string, unknown>);
@@ -435,10 +526,12 @@ export async function unblockUser(userId: string, blockedUserId: string) {
     }
 
     const { databases } = getAdminClient();
-    await databases.deleteDocument(
-        DATABASE_ID,
-        BLOCKS_COLLECTION_ID,
-        existingBlock.$id,
+    await writeRelationshipData(() =>
+        databases.deleteDocument(
+            DATABASE_ID,
+            BLOCKS_COLLECTION_ID,
+            existingBlock.$id,
+        ),
     );
     return existingBlock;
 }

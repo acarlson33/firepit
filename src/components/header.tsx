@@ -3,14 +3,16 @@ import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, UserPlus } from "lucide-react";
 
 import { ModeToggle } from "./mode-toggle";
 import { StatusSelector } from "./status-selector";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { useAuth } from "@/contexts/auth-context";
+import { useFriends } from "@/hooks/useFriends";
 
 type HeaderProps = {
     onSearchClick?: () => void;
@@ -20,10 +22,12 @@ export default function Header({ onSearchClick }: HeaderProps) {
     const router = useRouter();
     const { userData, userStatus, loading, setUserData, updateUserStatus } =
         useAuth();
+    const { incoming, loading: friendsLoading } = useFriends(Boolean(userData));
     const [loggingOut, setLoggingOut] = useState(false);
 
     const isAuthenticated = Boolean(userData);
     const roles = userData?.roles;
+    const incomingRequestCount = friendsLoading ? 0 : incoming.length;
 
     const baseLinks: Array<{ to: string; label: string }> = [
         { to: "/", label: "Home" },
@@ -31,8 +35,23 @@ export default function Header({ onSearchClick }: HeaderProps) {
         { to: "/docs", label: "Docs" },
     ];
 
-    const links: Array<{ to: string; label: string }> = [
-        ...baseLinks,
+    const links: Array<{ to: Route; label: string; count?: number }> = [
+        ...baseLinks.map((link) => ({
+            to: link.to as Route,
+            label: link.label,
+        })),
+        ...(isAuthenticated
+            ? [
+                  {
+                      to: "/friends" as Route,
+                      label: "Friends",
+                      count:
+                          incomingRequestCount > 0
+                              ? incomingRequestCount
+                              : undefined,
+                  },
+              ]
+            : []),
         ...(isAuthenticated
             ? [{ to: "/settings" as Route, label: "Settings" }]
             : []),
@@ -40,7 +59,17 @@ export default function Header({ onSearchClick }: HeaderProps) {
             ? [{ to: "/moderation" as Route, label: "Moderation" }]
             : []),
         ...(roles?.isAdmin ? [{ to: "/admin" as Route, label: "Admin" }] : []),
-    ];
+    ].reduce<Array<{ to: Route; label: string; count?: number }>>(
+        (allLinks, link) => {
+            if (allLinks.some((existingLink) => existingLink.to === link.to)) {
+                return allLinks;
+            }
+
+            allLinks.push(link);
+            return allLinks;
+        },
+        [],
+    );
 
     async function handleLogout(e: React.FormEvent) {
         e.preventDefault();
@@ -132,11 +161,19 @@ export default function Header({ onSearchClick }: HeaderProps) {
                     >
                         {links.map((link) => (
                             <Link
-                                href={link.to as Route}
+                                href={link.to}
                                 key={link.to}
-                                className="rounded-full border border-transparent px-3 py-1 transition-colors hover:border-border hover:text-foreground"
+                                className="inline-flex items-center gap-2 rounded-full border border-transparent px-3 py-1 transition-colors hover:border-border hover:text-foreground"
                             >
                                 {link.label}
+                                {link.count ? (
+                                    <Badge
+                                        className="h-5 min-w-5 rounded-full px-1.5 text-[10px] leading-none"
+                                        variant="destructive"
+                                    >
+                                        {link.count}
+                                    </Badge>
+                                ) : null}
                             </Link>
                         ))}
                     </nav>
@@ -144,6 +181,17 @@ export default function Header({ onSearchClick }: HeaderProps) {
                 <div className="flex min-w-42 items-center gap-3 self-end sm:self-auto">
                     {isAuthenticated && userData ? (
                         <div className="flex items-center gap-3">
+                            <Button asChild size="sm" variant="secondary">
+                                <Link href="/chat?compose=1">
+                                    <UserPlus className="h-4 w-4" />
+                                    <span className="hidden sm:inline">
+                                        Add Friend
+                                    </span>
+                                    <span className="sr-only sm:hidden">
+                                        Add Friend
+                                    </span>
+                                </Link>
+                            </Button>
                             {userData.name && (
                                 <span className="hidden text-muted-foreground text-sm sm:inline">
                                     {userData.name}

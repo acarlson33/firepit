@@ -111,6 +111,9 @@ export type Conversation = {
     avatarUrl?: string; // Optional custom avatar for the group DM
     createdBy?: string; // Creator of the conversation
     participantCount?: number; // Convenience count for UI
+    readOnly?: boolean;
+    readOnlyReason?: string;
+    relationship?: RelationshipStatus;
     // Enriched data
     otherUser?: {
         userId: string;

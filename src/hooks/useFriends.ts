@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { useAuth } from "@/contexts/auth-context";
 
 type FriendUserSummary = {
     userId: string;
@@ -30,46 +33,89 @@ type FriendsResponse = {
     error?: string;
 };
 
+type FriendsData = {
+    friends: FriendshipEntry[];
+    incoming: FriendshipEntry[];
+    outgoing: FriendshipEntry[];
+};
+
+const EMPTY_FRIENDS_DATA: FriendsData = {
+    friends: [],
+    incoming: [],
+    outgoing: [],
+};
+
+function getFriendsQueryKey(userId: string | null) {
+    return ["friends", userId] as const;
+}
+
 async function parseResponse(response: Response) {
     return (await response.json().catch(() => ({}))) as FriendsResponse;
 }
 
-export function useFriends() {
-    const [friends, setFriends] = useState<FriendshipEntry[]>([]);
-    const [incoming, setIncoming] = useState<FriendshipEntry[]>([]);
-    const [outgoing, setOutgoing] = useState<FriendshipEntry[]>([]);
-    const [loading, setLoading] = useState(false);
+async function fetchFriends(): Promise<FriendsData> {
+    const response = await fetch("/api/friends");
+    const data = await parseResponse(response);
+
+    if (!response.ok) {
+        throw new Error(data.error || "Failed to load friends");
+    }
+
+    return {
+        friends: data.friends ?? [],
+        incoming: data.incoming ?? [],
+        outgoing: data.outgoing ?? [],
+    };
+}
+
+export function useFriends(enabled = true) {
+    const { userData } = useAuth();
+    const queryClient = useQueryClient();
+    const currentUserId = userData?.userId ?? null;
+    const isEnabled = enabled && Boolean(currentUserId);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const refetch = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const response = await fetch("/api/friends");
-            const data = await parseResponse(response);
+    const {
+        data,
+        isLoading,
+        refetch: queryRefetch,
+    } = useQuery({
+        queryKey: getFriendsQueryKey(currentUserId),
+        queryFn: fetchFriends,
+        enabled: isEnabled,
+        staleTime: 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
 
-            if (!response.ok) {
-                throw new Error(data.error || "Failed to load friends");
+    const friendsData = isEnabled
+        ? (data ?? EMPTY_FRIENDS_DATA)
+        : EMPTY_FRIENDS_DATA;
+
+    const refetch = useCallback(async () => {
+        if (!isEnabled) {
+            setError(null);
+            return EMPTY_FRIENDS_DATA;
+        }
+
+        setError(null);
+
+        try {
+            const result = await queryRefetch();
+            if (result.error) {
+                throw result.error;
             }
 
-            setFriends(data.friends ?? []);
-            setIncoming(data.incoming ?? []);
-            setOutgoing(data.outgoing ?? []);
+            return result.data ?? EMPTY_FRIENDS_DATA;
         } catch (fetchError) {
             setError(
                 fetchError instanceof Error
                     ? fetchError.message
                     : "Failed to load friends",
             );
-        } finally {
-            setLoading(false);
+            return EMPTY_FRIENDS_DATA;
         }
-    }, []);
-
-    useEffect(() => {
-        void refetch();
-    }, [refetch]);
+    }, [isEnabled, queryRefetch]);
 
     const runAction = useCallback(
         async (
@@ -91,7 +137,12 @@ export function useFriends() {
                     throw new Error(data.error || "Friend action failed");
                 }
 
-                await refetch();
+                if (currentUserId) {
+                    await queryClient.invalidateQueries({
+                        queryKey: getFriendsQueryKey(currentUserId),
+                        refetchType: "active",
+                    });
+                }
                 return true;
             } catch (actionError) {
                 setError(
@@ -104,14 +155,14 @@ export function useFriends() {
                 setActionLoading(null);
             }
         },
-        [refetch],
+        [currentUserId, queryClient, refetch],
     );
 
     return {
-        friends,
-        incoming,
-        outgoing,
-        loading,
+        friends: friendsData.friends,
+        incoming: friendsData.incoming,
+        outgoing: friendsData.outgoing,
+        loading: isEnabled ? isLoading : false,
         actionLoading,
         error,
         refetch,
