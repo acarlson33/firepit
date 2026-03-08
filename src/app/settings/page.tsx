@@ -19,6 +19,7 @@ import {
 } from "./actions";
 import { AvatarUpload } from "./AvatarUpload";
 import { BlockedUsersSettings } from "@/components/blocked-users-settings";
+import { FriendsSettings } from "@/components/friends-settings";
 import { NotificationSettings } from "@/components/notification-settings";
 import { FlushCaches } from "./FlushCaches";
 
@@ -228,7 +229,19 @@ export default async function SettingsPage() {
                 </section>
 
                 <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="space-y-3 mb-6">
+                    <div className="mb-6 space-y-3">
+                        <h2 className="text-2xl font-semibold tracking-tight">
+                            Connections
+                        </h2>
+                        <p className="text-muted-foreground">
+                            Manage friends and pending requests from one place.
+                        </p>
+                    </div>
+                    <FriendsSettings />
+                </section>
+
+                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
+                    <div className="mb-6 space-y-3">
                         <h2 className="text-2xl font-semibold tracking-tight">
                             Privacy & Blocking
                         </h2>
