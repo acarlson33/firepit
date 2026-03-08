@@ -588,6 +588,45 @@ async function setupMutedUsers() {
     ]);
 }
 
+async function setupFriendships() {
+    await ensureCollection("friendships", "Friendships");
+    const fields: [string, number, boolean][] = [
+        ["requesterId", LEN_ID, true],
+        ["recipientId", LEN_ID, true],
+        ["pairKey", LEN_ID * 2 + 1, true],
+        ["status", 32, true],
+        ["requestedAt", LEN_TS, true],
+        ["respondedAt", LEN_TS, false],
+        ["acceptedAt", LEN_TS, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("friendships", k, size, req);
+    }
+    await ensureIndex("friendships", "idx_pairKey", "unique", ["pairKey"]);
+    await ensureIndex("friendships", "idx_requester", "key", ["requesterId"]);
+    await ensureIndex("friendships", "idx_recipient", "key", ["recipientId"]);
+    await ensureIndex("friendships", "idx_status", "key", ["status"]);
+}
+
+async function setupBlocks() {
+    await ensureCollection("blocks", "Blocks");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["blockedUserId", LEN_ID, true],
+        ["blockedAt", LEN_TS, true],
+        ["reason", LEN_TEXT, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("blocks", k, size, req);
+    }
+    await ensureIndex("blocks", "idx_user", "key", ["userId"]);
+    await ensureIndex("blocks", "idx_blocked_user", "key", ["blockedUserId"]);
+    await ensureIndex("blocks", "idx_user_blocked", "unique", [
+        "userId",
+        "blockedUserId",
+    ]);
+}
+
 async function setupRoles() {
     await ensureCollection("roles", "Roles");
     const stringFields: [string, number, boolean][] = [
@@ -845,6 +884,7 @@ async function setupNotificationSettings() {
     const fields: [string, number, boolean][] = [
         ["userId", LEN_ID, true],
         ["globalNotifications", 32, true], // "all" | "mentions" | "nothing"
+        ["directMessagePrivacy", 32, true], // "everyone" | "friends"
         ["quietHoursStart", 8, false], // HH:mm format
         ["quietHoursEnd", 8, false], // HH:mm format
         ["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
@@ -1081,6 +1121,10 @@ async function run() {
     }
     info("[setup] Setting up memberships...");
     await setupMemberships();
+    info("[setup] Setting up friendships...");
+    await setupFriendships();
+    info("[setup] Setting up blocks...");
+    await setupBlocks();
     info("[setup] Setting up banned users...");
     await setupBannedUsers();
     info("[setup] Setting up muted users...");

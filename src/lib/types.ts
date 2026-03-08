@@ -240,6 +240,55 @@ export type InviteUsage = {
     joinedAt: string;
 };
 
+export const FRIENDSHIP_STATUS_VALUES = [
+    "pending",
+    "accepted",
+    "declined",
+] as const;
+
+export type FriendshipStatus = (typeof FRIENDSHIP_STATUS_VALUES)[number];
+
+export type Friendship = {
+    $id: string;
+    requesterId: string;
+    recipientId: string;
+    pairKey: string;
+    status: FriendshipStatus;
+    requestedAt: string;
+    respondedAt?: string;
+    acceptedAt?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
+export type BlockedUser = {
+    $id: string;
+    userId: string;
+    blockedUserId: string;
+    blockedAt: string;
+    reason?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
+export const DIRECT_MESSAGE_PRIVACY_VALUES = ["everyone", "friends"] as const;
+
+export type DirectMessagePrivacy =
+    (typeof DIRECT_MESSAGE_PRIVACY_VALUES)[number];
+
+export type RelationshipStatus = {
+    userId: string;
+    friendshipStatus?: FriendshipStatus;
+    isFriend: boolean;
+    outgoingRequest: boolean;
+    incomingRequest: boolean;
+    blockedByMe: boolean;
+    blockedMe: boolean;
+    directMessagePrivacy: DirectMessagePrivacy;
+    canSendDirectMessage: boolean;
+    canReceiveFriendRequest: boolean;
+};
+
 export type RoleAssignment = {
     $id: string;
     userId: string;
@@ -309,6 +358,7 @@ export type NotificationSettings = {
 
     // Global settings
     globalNotifications: NotificationLevel;
+    directMessagePrivacy: DirectMessagePrivacy;
     desktopNotifications: boolean;
     pushNotifications: boolean;
     notificationSound: boolean;
