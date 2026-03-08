@@ -6,6 +6,10 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import type { FileAttachment } from "@/lib/types";
 import {
+    getRelationshipMap,
+    getRelationshipStatus,
+} from "@/lib/appwrite-friendships";
+import {
     logger,
     recordError,
     setTransactionName,
@@ -24,6 +28,30 @@ const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+
+function getReadOnlyReason(relationship: {
+    blockedByMe: boolean;
+    blockedMe: boolean;
+    directMessagePrivacy: "everyone" | "friends";
+    isFriend: boolean;
+}) {
+    if (relationship.blockedByMe) {
+        return "You blocked this user";
+    }
+
+    if (relationship.blockedMe) {
+        return "This user blocked you";
+    }
+
+    if (
+        relationship.directMessagePrivacy === "friends" &&
+        !relationship.isFriend
+    ) {
+        return "This user only accepts direct messages from friends";
+    }
+
+    return undefined;
+}
 
 /**
  * Helper to create attachment records for a direct message
@@ -188,12 +216,50 @@ export async function GET(request: NextRequest) {
                     : undefined,
             }));
 
-            logger.info("Listed conversations", {
-                userId: session.$id,
-                count: conversations.length,
+            const oneToOneOtherUserIds = conversations
+                .filter((conversation) => !conversation.isGroup)
+                .map((conversation) =>
+                    conversation.participants.find((id) => id !== session.$id),
+                )
+                .filter((value): value is string => Boolean(value));
+            const relationshipMap = await getRelationshipMap(
+                session.$id,
+                oneToOneOtherUserIds,
+            );
+
+            const enrichedConversations = conversations.map((conversation) => {
+                if (conversation.isGroup) {
+                    return conversation;
+                }
+
+                const otherUserId = conversation.participants.find(
+                    (id) => id !== session.$id,
+                );
+                if (!otherUserId) {
+                    return conversation;
+                }
+
+                const relationship = relationshipMap.get(otherUserId);
+                const readOnly = relationship
+                    ? !relationship.canSendDirectMessage
+                    : false;
+
+                return {
+                    ...conversation,
+                    readOnly,
+                    readOnlyReason: relationship
+                        ? getReadOnlyReason(relationship)
+                        : undefined,
+                    relationship,
+                };
             });
 
-            return jsonResponse({ conversations });
+            logger.info("Listed conversations", {
+                userId: session.$id,
+                count: enrichedConversations.length,
+            });
+
+            return jsonResponse({ conversations: enrichedConversations });
         }
 
         // Get or create a conversation between two users
@@ -218,6 +284,20 @@ export async function GET(request: NextRequest) {
             // Sort user IDs to ensure consistent ordering
             const [user1, user2] = [userId1, userId2].sort();
             const participants = [user1, user2];
+            if (!participants.includes(session.$id)) {
+                return jsonResponse(
+                    { error: "You can only access your own direct messages" },
+                    { status: 403 },
+                );
+            }
+
+            const targetUserId = participants.find((id) => id !== session.$id);
+            if (!targetUserId) {
+                return jsonResponse(
+                    { error: "A target user is required" },
+                    { status: 400 },
+                );
+            }
 
             const { databases } = getServerClient();
 
@@ -235,6 +315,10 @@ export async function GET(request: NextRequest) {
 
                 if (existing.documents.length > 0) {
                     const doc = existing.documents[0];
+                    const relationship = await getRelationshipStatus(
+                        session.$id,
+                        targetUserId,
+                    );
                     return jsonResponse({
                         conversation: {
                             $id: doc.$id,
@@ -257,11 +341,30 @@ export async function GET(request: NextRequest) {
                             participantCount: Array.isArray(doc.participants)
                                 ? (doc.participants as unknown[]).length
                                 : undefined,
+                            readOnly: !relationship.canSendDirectMessage,
+                            readOnlyReason: getReadOnlyReason(relationship),
+                            relationship,
                         },
                     });
                 }
             } catch {
                 // Continue to create new conversation if not found
+            }
+
+            const relationship = await getRelationshipStatus(
+                session.$id,
+                targetUserId,
+            );
+            if (!relationship.canSendDirectMessage) {
+                return jsonResponse(
+                    {
+                        error:
+                            getReadOnlyReason(relationship) ||
+                            "Direct messages are not available for this user",
+                        relationship,
+                    },
+                    { status: 403 },
+                );
             }
 
             // Create new conversation
@@ -293,6 +396,8 @@ export async function GET(request: NextRequest) {
                     $createdAt: newConv.$createdAt,
                     isGroup: false,
                     participantCount: participants.length,
+                    readOnly: false,
+                    relationship,
                 },
             });
         }
@@ -315,6 +420,49 @@ export async function GET(request: NextRequest) {
             }
 
             const { databases } = getServerClient();
+            const conversation = await databases
+                .getDocument(
+                    DATABASE_ID,
+                    CONVERSATIONS_COLLECTION,
+                    conversationId,
+                )
+                .catch(() => null);
+
+            let readOnly = false;
+            let readOnlyReason: string | undefined;
+            let relationship;
+
+            if (conversation) {
+                const participants = Array.isArray(conversation.participants)
+                    ? (conversation.participants as string[])
+                    : [];
+                if (!participants.includes(session.$id)) {
+                    return jsonResponse(
+                        { error: "Forbidden" },
+                        { status: 403 },
+                    );
+                }
+
+                const isGroupConversation =
+                    Boolean(
+                        (conversation as Record<string, unknown>).isGroup,
+                    ) || participants.length > 2;
+
+                if (!isGroupConversation) {
+                    const otherUserId = participants.find(
+                        (id) => id !== session.$id,
+                    );
+                    if (otherUserId) {
+                        relationship = await getRelationshipStatus(
+                            session.$id,
+                            otherUserId,
+                        );
+                        readOnly = !relationship.canSendDirectMessage;
+                        readOnlyReason = getReadOnlyReason(relationship);
+                    }
+                }
+            }
+
             const queries = [
                 Query.equal("conversationId", conversationId),
                 Query.orderDesc("$createdAt"),
@@ -331,7 +479,7 @@ export async function GET(request: NextRequest) {
                 queries,
             );
 
-            const items = response.documents.map((doc) => ({
+            let items = response.documents.map((doc) => ({
                 $id: doc.$id,
                 conversationId: doc.conversationId as string,
                 senderId: doc.senderId as string,
@@ -349,10 +497,39 @@ export async function GET(request: NextRequest) {
                     : undefined,
             }));
 
+            if (conversation) {
+                const participants = Array.isArray(conversation.participants)
+                    ? (conversation.participants as string[])
+                    : [];
+                const isGroupConversation =
+                    Boolean(
+                        (conversation as Record<string, unknown>).isGroup,
+                    ) || participants.length > 2;
+
+                if (isGroupConversation) {
+                    const relationshipMap = await getRelationshipMap(
+                        session.$id,
+                        participants.filter((id) => id !== session.$id),
+                    );
+                    items = items.filter((item) => {
+                        const messageRelationship = relationshipMap.get(
+                            item.senderId,
+                        );
+                        return (
+                            !messageRelationship?.blockedByMe &&
+                            !messageRelationship?.blockedMe
+                        );
+                    });
+                }
+            }
+
             const last = items.at(-1);
             return jsonResponse({
                 items,
                 nextCursor: items.length === limit && last ? last.$id : null,
+                readOnly,
+                readOnlyReason,
+                relationship,
             });
         }
 
@@ -440,6 +617,33 @@ export async function POST(request: NextRequest) {
                         error: "Group conversations require at least 3 participants",
                     },
                     { status: 400 },
+                );
+            }
+
+            const relationshipMap = await getRelationshipMap(
+                session.$id,
+                participantIds.filter((id) => id !== session.$id),
+            );
+            const unavailableParticipants = participantIds.filter(
+                (participantId) => {
+                    if (participantId === session.$id) {
+                        return false;
+                    }
+
+                    const relationship = relationshipMap.get(participantId);
+                    return Boolean(
+                        relationship?.blockedByMe || relationship?.blockedMe,
+                    );
+                },
+            );
+
+            if (unavailableParticipants.length > 0) {
+                return jsonResponse(
+                    {
+                        error: "One or more users cannot be added to this group conversation",
+                        unavailableParticipants,
+                    },
+                    { status: 403 },
                 );
             }
 
@@ -595,6 +799,24 @@ export async function POST(request: NextRequest) {
                 { error: "receiverId is required for direct messages" },
                 { status: 400 },
             );
+        }
+
+        if (!isGroupConversation && targetReceiverId) {
+            const relationship = await getRelationshipStatus(
+                senderId,
+                targetReceiverId,
+            );
+            if (!relationship.canSendDirectMessage) {
+                return jsonResponse(
+                    {
+                        error:
+                            getReadOnlyReason(relationship) ||
+                            "Direct messages are not available for this user",
+                        relationship,
+                    },
+                    { status: 403 },
+                );
+            }
         }
 
         const permissions = [

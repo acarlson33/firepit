@@ -463,3 +463,19 @@ export async function getRelationshipMap(
 
     return new Map(entries);
 }
+
+export async function filterVisibleUserIds(
+    userId: string,
+    otherUserIds: string[],
+) {
+    const relationshipMap = await getRelationshipMap(userId, otherUserIds);
+
+    return otherUserIds.filter((otherUserId) => {
+        if (!otherUserId || otherUserId === userId) {
+            return false;
+        }
+
+        const relationship = relationshipMap.get(otherUserId);
+        return !relationship?.blockedByMe && !relationship?.blockedMe;
+    });
+}
