@@ -897,8 +897,8 @@ type FeatureFlag = {
 
 ### Q2 2026 (Apr - Jun)
 
-- 🎯 Message Threads
-- 🎯 Message Pinning
+- ✅ Message Threads
+- ✅ Message Pinning
 - 🎯 Channel Categories
 
 ### Q3 2026 (Jul - Sep)
