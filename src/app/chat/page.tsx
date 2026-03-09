@@ -47,6 +47,7 @@ import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
+import { useNotificationSettings } from "@/hooks/useNotificationSettings";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -245,6 +246,7 @@ export default function ChatPage() {
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
+    const notificationSettingsApi = useNotificationSettings();
     const conversationsApi = useConversations(
         userId,
         viewMode === "dms" ||
@@ -258,6 +260,28 @@ export default function ChatPage() {
             ) || null,
         [conversationsApi.conversations, selectedConversationId],
     );
+    const activeMuteOverride = useMemo(() => {
+        const settings = notificationSettingsApi.settings;
+        if (!settings || !muteDialogState.id) {
+            return undefined;
+        }
+
+        switch (muteDialogState.type) {
+            case "server": {
+                return settings.serverOverrides?.[muteDialogState.id];
+            }
+            case "channel": {
+                return settings.channelOverrides?.[muteDialogState.id];
+            }
+            case "conversation": {
+                return settings.conversationOverrides?.[muteDialogState.id];
+            }
+        }
+    }, [
+        muteDialogState.id,
+        muteDialogState.type,
+        notificationSettingsApi.settings,
+    ]);
 
     const openProfileModal = (
         profileUserId: string,
@@ -1980,6 +2004,10 @@ export default function ChatPage() {
                 targetId={muteDialogState.id}
                 targetName={muteDialogState.name}
                 targetType={muteDialogState.type}
+                initialOverride={activeMuteOverride}
+                onMuteComplete={() => {
+                    void notificationSettingsApi.refetch();
+                }}
             />
             {serversApi.selectedServer && (
                 <RoleSettingsDialog

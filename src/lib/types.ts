@@ -366,6 +366,20 @@ export type NotificationOverride = {
     mutedUntil?: string; // ISO timestamp, undefined means not muted or muted forever
 };
 
+export type NotificationOverrideMap = Record<string, NotificationOverride>;
+
+export type NotificationOverrideLabelEntry = {
+    meta?: string;
+    subtitle?: string;
+    title: string;
+};
+
+export type NotificationOverrideLabelMap = {
+    channelOverrides: Record<string, NotificationOverrideLabelEntry>;
+    conversationOverrides: Record<string, NotificationOverrideLabelEntry>;
+    serverOverrides: Record<string, NotificationOverrideLabelEntry>;
+};
+
 /**
  * User's notification preferences
  */
@@ -384,12 +398,16 @@ export type NotificationSettings = {
     quietHoursTimezone?: string; // IANA timezone (e.g., "America/New_York")
 
     // Per-context overrides (stored as JSON strings in database)
-    serverOverrides?: Record<string, NotificationOverride>;
-    channelOverrides?: Record<string, NotificationOverride>;
-    conversationOverrides?: Record<string, NotificationOverride>;
+    serverOverrides?: NotificationOverrideMap;
+    channelOverrides?: NotificationOverrideMap;
+    conversationOverrides?: NotificationOverrideMap;
 
     $createdAt?: string;
     $updatedAt?: string;
+};
+
+export type NotificationSettingsResponse = NotificationSettings & {
+    overrideLabels?: NotificationOverrideLabelMap;
 };
 
 /**

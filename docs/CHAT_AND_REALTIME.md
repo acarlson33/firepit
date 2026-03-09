@@ -109,6 +109,26 @@ Chat-adjacent discovery is handled by:
 - `/api/notifications/settings` for user notification preferences
 - `/api/memberships` for membership resolution used by navigation and mention features
 
+Current notification capabilities include:
+
+- global notification levels: `all`, `mentions`, or `nothing`
+- per-server, per-channel, and per-conversation overrides
+- mute durations and indefinite mute state through the shared mute flows
+- quiet hours with timezone-aware persistence
+- desktop, push, and notification sound preferences
+- direct-message privacy controls for friend-only DM restrictions
+- server-enriched override labels returned from `/api/notifications/settings` so the client can render readable server, channel, and DM names without extra lookups
+- bulk override management in settings for clearing expired overrides and resetting channel overrides
+
+Override precedence is intentionally deterministic:
+
+1. conversation override
+2. channel override
+3. server override
+4. global default
+
+The settings layer also backfills legacy notification-settings documents when older records are missing newly required attributes, which avoids partial-update failures during schema evolution.
+
 ## Realtime Design Notes
 
 The app uses Appwrite realtime subscriptions with pooled connections. Clients should assume that:

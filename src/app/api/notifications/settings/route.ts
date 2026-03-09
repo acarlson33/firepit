@@ -2,14 +2,60 @@ import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
 import {
+    buildNotificationSettingsResponse,
     getOrCreateNotificationSettings,
     updateNotificationSettings,
 } from "@/lib/notification-settings";
 import type {
     DirectMessagePrivacy,
     NotificationLevel,
+    NotificationOverrideMap,
     NotificationOverride,
 } from "@/lib/types";
+
+const VALID_NOTIFICATION_LEVELS: NotificationLevel[] = [
+    "all",
+    "mentions",
+    "nothing",
+];
+const VALID_DM_PRIVACY: DirectMessagePrivacy[] = ["everyone", "friends"];
+
+function isTimezoneValid(timeZone: string): boolean {
+    try {
+        Intl.DateTimeFormat("en-US", { timeZone });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function isValidOverrideMap(
+    overrides: unknown,
+): overrides is NotificationOverrideMap {
+    if (
+        !overrides ||
+        typeof overrides !== "object" ||
+        Array.isArray(overrides)
+    ) {
+        return false;
+    }
+
+    return Object.values(overrides).every((override) => {
+        if (!override || typeof override !== "object") {
+            return false;
+        }
+
+        const candidate = override as NotificationOverride;
+        const mutedUntilIsValid =
+            candidate.mutedUntil === undefined ||
+            typeof candidate.mutedUntil === "string";
+
+        return (
+            VALID_NOTIFICATION_LEVELS.includes(candidate.level) &&
+            mutedUntilIsValid
+        );
+    });
+}
 
 /**
  * GET /api/notifications/settings
@@ -34,23 +80,9 @@ export async function GET() {
             );
         }
 
-        return NextResponse.json({
-            $id: settings.$id,
-            userId: settings.userId,
-            globalNotifications: settings.globalNotifications,
-            directMessagePrivacy: settings.directMessagePrivacy,
-            desktopNotifications: settings.desktopNotifications,
-            pushNotifications: settings.pushNotifications,
-            notificationSound: settings.notificationSound,
-            quietHoursStart: settings.quietHoursStart,
-            quietHoursEnd: settings.quietHoursEnd,
-            quietHoursTimezone: settings.quietHoursTimezone,
-            serverOverrides: settings.serverOverrides,
-            channelOverrides: settings.channelOverrides,
-            conversationOverrides: settings.conversationOverrides,
-            $createdAt: settings.$createdAt,
-            $updatedAt: settings.$updatedAt,
-        });
+        return NextResponse.json(
+            await buildNotificationSettingsResponse(user.$id, settings),
+        );
     } catch (error) {
         return NextResponse.json(
             {
@@ -73,9 +105,9 @@ interface PatchRequestBody {
     quietHoursStart?: string | null;
     quietHoursEnd?: string | null;
     quietHoursTimezone?: string | null;
-    serverOverrides?: NotificationOverride[];
-    channelOverrides?: NotificationOverride[];
-    conversationOverrides?: NotificationOverride[];
+    serverOverrides?: NotificationOverrideMap;
+    channelOverrides?: NotificationOverrideMap;
+    conversationOverrides?: NotificationOverrideMap;
 }
 
 /**
@@ -97,7 +129,7 @@ export async function PATCH(request: Request) {
         // Validate globalNotifications if provided
         if (
             body.globalNotifications !== undefined &&
-            !["all", "mentions", "nothing"].includes(body.globalNotifications)
+            !VALID_NOTIFICATION_LEVELS.includes(body.globalNotifications)
         ) {
             return NextResponse.json(
                 {
@@ -109,7 +141,7 @@ export async function PATCH(request: Request) {
 
         if (
             body.directMessagePrivacy !== undefined &&
-            !["everyone", "friends"].includes(body.directMessagePrivacy)
+            !VALID_DM_PRIVACY.includes(body.directMessagePrivacy)
         ) {
             return NextResponse.json(
                 {
@@ -134,6 +166,71 @@ export async function PATCH(request: Request) {
                 {
                     error: "Invalid quietHoursEnd format. Must be HH:MM (24-hour)",
                 },
+                { status: 400 },
+            );
+        }
+
+        const quietHoursState = [
+            body.quietHoursStart,
+            body.quietHoursEnd,
+            body.quietHoursTimezone,
+        ];
+        const quietHoursFieldsProvided = quietHoursState.filter(
+            (value) => value !== undefined,
+        ).length;
+
+        if (
+            quietHoursFieldsProvided > 0 &&
+            body.quietHoursStart !== null &&
+            body.quietHoursEnd !== null &&
+            Boolean(body.quietHoursStart) !== Boolean(body.quietHoursEnd)
+        ) {
+            return NextResponse.json(
+                {
+                    error: "quietHoursStart and quietHoursEnd must both be provided together",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.quietHoursTimezone &&
+            !isTimezoneValid(body.quietHoursTimezone)
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid quietHoursTimezone. Must be a valid IANA timezone",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.serverOverrides !== undefined &&
+            !isValidOverrideMap(body.serverOverrides)
+        ) {
+            return NextResponse.json(
+                { error: "Invalid serverOverrides payload" },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.channelOverrides !== undefined &&
+            !isValidOverrideMap(body.channelOverrides)
+        ) {
+            return NextResponse.json(
+                { error: "Invalid channelOverrides payload" },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.conversationOverrides !== undefined &&
+            !isValidOverrideMap(body.conversationOverrides)
+        ) {
+            return NextResponse.json(
+                { error: "Invalid conversationOverrides payload" },
                 { status: 400 },
             );
         }
@@ -168,31 +265,32 @@ export async function PATCH(request: Request) {
             updateData.notificationSound = body.notificationSound;
         }
         if (body.quietHoursStart !== undefined) {
-            updateData.quietHoursStart = body.quietHoursStart ?? "";
+            updateData.quietHoursStart = body.quietHoursStart ?? null;
         }
         if (body.quietHoursEnd !== undefined) {
-            updateData.quietHoursEnd = body.quietHoursEnd ?? "";
+            updateData.quietHoursEnd = body.quietHoursEnd ?? null;
         }
         if (body.quietHoursTimezone !== undefined) {
-            updateData.quietHoursTimezone = body.quietHoursTimezone ?? "";
+            updateData.quietHoursTimezone = body.quietHoursTimezone ?? null;
         }
         if (body.serverOverrides !== undefined) {
-            updateData.serverOverrides = JSON.stringify(body.serverOverrides);
+            updateData.serverOverrides = body.serverOverrides;
         }
         if (body.channelOverrides !== undefined) {
-            updateData.channelOverrides = JSON.stringify(body.channelOverrides);
+            updateData.channelOverrides = body.channelOverrides;
         }
         if (body.conversationOverrides !== undefined) {
-            updateData.conversationOverrides = JSON.stringify(
-                body.conversationOverrides,
-            );
+            updateData.conversationOverrides = body.conversationOverrides;
         }
 
         // Only update if there are changes
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json({
                 message: "No changes provided",
-                settings: existingSettings,
+                settings: await buildNotificationSettingsResponse(
+                    user.$id,
+                    existingSettings,
+                ),
             });
         }
 
@@ -208,23 +306,9 @@ export async function PATCH(request: Request) {
             );
         }
 
-        return NextResponse.json({
-            $id: updatedSettings.$id,
-            userId: updatedSettings.userId,
-            globalNotifications: updatedSettings.globalNotifications,
-            directMessagePrivacy: updatedSettings.directMessagePrivacy,
-            desktopNotifications: updatedSettings.desktopNotifications,
-            pushNotifications: updatedSettings.pushNotifications,
-            notificationSound: updatedSettings.notificationSound,
-            quietHoursStart: updatedSettings.quietHoursStart,
-            quietHoursEnd: updatedSettings.quietHoursEnd,
-            quietHoursTimezone: updatedSettings.quietHoursTimezone,
-            serverOverrides: updatedSettings.serverOverrides,
-            channelOverrides: updatedSettings.channelOverrides,
-            conversationOverrides: updatedSettings.conversationOverrides,
-            $createdAt: updatedSettings.$createdAt,
-            $updatedAt: updatedSettings.$updatedAt,
-        });
+        return NextResponse.json(
+            await buildNotificationSettingsResponse(user.$id, updatedSettings),
+        );
     } catch (error) {
         return NextResponse.json(
             {

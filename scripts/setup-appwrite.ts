@@ -1007,6 +1007,7 @@ async function setupNotificationSettings() {
         ["directMessagePrivacy", 32, true], // "everyone" | "friends"
         ["quietHoursStart", 8, false], // HH:mm format
         ["quietHoursEnd", 8, false], // HH:mm format
+        ["quietHoursTimezone", 64, false], // IANA timezone
         ["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
         ["channelOverrides", LEN_TEXT, false], // JSON string of Record<channelId, NotificationOverride>
         ["conversationOverrides", LEN_TEXT, false], // JSON string of Record<conversationId, NotificationOverride>
