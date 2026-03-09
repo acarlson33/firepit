@@ -1,31 +1,16 @@
 import { NextResponse } from "next/server";
-import { Client, Databases, Query } from "node-appwrite";
+import { Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { getServerClient } from "@/lib/appwrite-server";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 const membershipsCollectionId = env.collections.memberships || "memberships";
 const profilesCollectionId = env.collections.profiles || "profiles";
 const roleAssignmentsCollectionId = "role_assignments";
-
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
-}
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 type RouteContext = {
     params: Promise<{ serverId: string }>;
@@ -34,6 +19,7 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
     try {
         const { serverId } = await context.params;
+        const { databases } = getServerClient();
 
         const session = await getServerSession();
         if (!session?.$id) {
@@ -77,6 +63,27 @@ export async function GET(request: Request, context: RouteContext) {
             );
         }
 
+        const membershipUserIds = memberships.documents.map((membership) =>
+            String(membership.userId),
+        );
+        const profilesResponse =
+            membershipUserIds.length === 0
+                ? { documents: [] }
+                : await databases.listDocuments(
+                      databaseId,
+                      profilesCollectionId,
+                      [
+                          Query.equal("userId", membershipUserIds),
+                          Query.limit(membershipUserIds.length),
+                      ],
+                  );
+        const profilesByUserId = new Map(
+            profilesResponse.documents.map((profile) => [
+                String(profile.userId),
+                profile,
+            ]),
+        );
+
         const members = [] as Array<{
             userId: string;
             userName?: string;
@@ -88,13 +95,7 @@ export async function GET(request: Request, context: RouteContext) {
         for (const membership of memberships.documents) {
             const userId = membership.userId as string;
             try {
-                const profiles = await databases.listDocuments(
-                    databaseId,
-                    profilesCollectionId,
-                    [Query.equal("userId", userId), Query.limit(1)],
-                );
-
-                const profile = profiles.documents[0];
+                const profile = profilesByUserId.get(userId);
 
                 if (!profile) {
                     // User profile is gone (likely account deleted) — remove membership and any role assignments

@@ -157,7 +157,10 @@ function isEmojiRequest(url) {
  * Check if pathname is a static asset
  */
 function isStaticAsset(pathname) {
-    // Avoid caching Next.js build chunks; they change per deploy
+    // Next.js static chunks are content-hashed and safe to cache aggressively.
+    if (pathname.startsWith("/_next/static/")) {
+        return true;
+    }
     if (pathname.startsWith("/_next/")) {
         return false;
     }
@@ -310,7 +313,7 @@ function handleStaticAsset(request) {
             fetch(request)
                 .then(function (response) {
                     if (response.status === 200) {
-                        caches.open(CACHE_NAME).then(function (cache) {
+                        caches.open(STATIC_CACHE_NAME).then(function (cache) {
                             cache.put(request, response.clone());
                         });
                     }
@@ -324,7 +327,7 @@ function handleStaticAsset(request) {
         // Not cached, fetch and cache
         return fetch(request).then(function (response) {
             if (response.status === 200) {
-                caches.open(CACHE_NAME).then(function (cache) {
+                caches.open(STATIC_CACHE_NAME).then(function (cache) {
                     cache.put(request, response.clone());
                 });
             }

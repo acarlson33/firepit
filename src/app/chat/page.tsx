@@ -1213,9 +1213,9 @@ export default function ChatPage() {
             );
         }
 
-        // Use virtual scrolling only for large message lists (50+ messages)
+        // Use virtual scrolling once lists are large enough to start costing layout/paint time.
         // This avoids scrolling issues with small lists
-        const useVirtualScrolling = messages.length >= 50;
+        const useVirtualScrolling = messages.length >= 20;
 
         if (useVirtualScrolling) {
             return (

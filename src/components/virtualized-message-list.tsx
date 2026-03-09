@@ -8,60 +8,75 @@ import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { ThreadIndicator } from "@/components/thread-indicator";
 import { formatMessageTimestamp } from "@/lib/utils";
-import { MessageSquare, MessageSquareMore, Pencil, Trash2, Pin } from "lucide-react";
+import {
+    MessageSquare,
+    MessageSquareMore,
+    Pencil,
+    Trash2,
+    Pin,
+} from "lucide-react";
 
 type VirtualizedMessageListProps = {
-  messages: Message[];
-  userId: string | null;
-  userIdSlice: number;
-  editingMessageId: string | null;
-  deleteConfirmId: string | null;
-  setDeleteConfirmId: (id: string | null) => void;
-  onStartEdit: (message: Message) => void;
-  onStartReply: (message: Message) => void;
-  onRemove: (id: string) => void;
-  onToggleReaction: (messageId: string, emoji: string, isAdding: boolean) => Promise<void>;
-  onOpenProfileModal: (userId: string, userName?: string, displayName?: string, avatarUrl?: string) => void;
-  onOpenImageViewer: (imageUrl: string) => void;
-  customEmojis?: CustomEmoji[];
-  onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
-  shouldShowLoadOlder: boolean;
-  onLoadOlder: () => void;
-  // Threading props
-  onOpenThread?: (message: Message) => void;
-  // Pinning props
-  onTogglePin?: (message: Message) => Promise<void>;
-  onPinMessage?: (messageId: string) => Promise<void>;
-  onUnpinMessage?: (messageId: string) => Promise<void>;
-  canManageMessages?: boolean;
-  messageDensity?: "compact" | "cozy";
-  pinnedMessageIds?: string[];
+    messages: Message[];
+    userId: string | null;
+    userIdSlice: number;
+    editingMessageId: string | null;
+    deleteConfirmId: string | null;
+    setDeleteConfirmId: (id: string | null) => void;
+    onStartEdit: (message: Message) => void;
+    onStartReply: (message: Message) => void;
+    onRemove: (id: string) => void;
+    onToggleReaction: (
+        messageId: string,
+        emoji: string,
+        isAdding: boolean,
+    ) => Promise<void>;
+    onOpenProfileModal: (
+        userId: string,
+        userName?: string,
+        displayName?: string,
+        avatarUrl?: string,
+    ) => void;
+    onOpenImageViewer: (imageUrl: string) => void;
+    customEmojis?: CustomEmoji[];
+    onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
+    shouldShowLoadOlder: boolean;
+    onLoadOlder: () => void;
+    // Threading props
+    onOpenThread?: (message: Message) => void;
+    // Pinning props
+    onTogglePin?: (message: Message) => Promise<void>;
+    onPinMessage?: (messageId: string) => Promise<void>;
+    onUnpinMessage?: (messageId: string) => Promise<void>;
+    canManageMessages?: boolean;
+    messageDensity?: "compact" | "cozy";
+    pinnedMessageIds?: string[];
 };
 
 export function VirtualizedMessageList({
-  messages,
-  userId,
-  userIdSlice,
-  editingMessageId,
-  deleteConfirmId,
-  setDeleteConfirmId,
-  onStartEdit,
-  onStartReply,
-  onRemove,
-  onToggleReaction,
-  onOpenProfileModal,
-  onOpenImageViewer,
-  customEmojis,
-  onUploadCustomEmoji,
-  shouldShowLoadOlder,
-  onLoadOlder,
-  onOpenThread,
-  onTogglePin,
-  onPinMessage,
-  onUnpinMessage,
-  canManageMessages = false,
-  messageDensity = "compact",
-  pinnedMessageIds,
+    messages,
+    userId,
+    userIdSlice,
+    editingMessageId,
+    deleteConfirmId,
+    setDeleteConfirmId,
+    onStartEdit,
+    onStartReply,
+    onRemove,
+    onToggleReaction,
+    onOpenProfileModal,
+    onOpenImageViewer,
+    customEmojis,
+    onUploadCustomEmoji,
+    shouldShowLoadOlder,
+    onLoadOlder,
+    onOpenThread,
+    onTogglePin,
+    onPinMessage,
+    onUnpinMessage,
+    canManageMessages = false,
+    messageDensity = "compact",
+    pinnedMessageIds,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
 
@@ -70,6 +85,7 @@ export function VirtualizedMessageList({
             className={`h-[60vh] ${
                 isCompact ? "rounded-2xl p-3" : "rounded-3xl p-4"
             } border border-border/60 bg-background/70 shadow-inner`}
+            computeItemKey={(_, message) => message.$id}
             data={messages}
             followOutput="smooth"
             initialTopMostItemIndex={messages.length - 1}
@@ -218,171 +234,209 @@ export function VirtualizedMessageList({
                                 </div>
                             )}
 
-              {/* Thread indicator - only show on non-thread messages with replies */}
-              {!m.threadId && m.threadReplyCount && m.threadReplyCount > 0 && onOpenThread && (
-                <ThreadIndicator
-                  replyCount={m.threadReplyCount}
-                  lastReplyAt={m.lastThreadReplyAt}
-                  onClick={() => onOpenThread(m)}
-                />
-              )}
+                            {/* Thread indicator - only show on non-thread messages with replies */}
+                            {!m.threadId &&
+                                m.threadReplyCount &&
+                                m.threadReplyCount > 0 &&
+                                onOpenThread && (
+                                    <ThreadIndicator
+                                        replyCount={m.threadReplyCount}
+                                        lastReplyAt={m.lastThreadReplyAt}
+                                        onClick={() => onOpenThread(m)}
+                                    />
+                                )}
 
-              {/* Pinned indicator */}
-              {m.isPinned && (
-                <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                  <Pin className="h-3 w-3" />
-                  <span>Pinned</span>
-                </div>
-              )}
+                            {/* Pinned indicator */}
+                            {m.isPinned && (
+                                <div className="mt-1 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                    <Pin className="h-3 w-3" />
+                                    <span>Pinned</span>
+                                </div>
+                            )}
 
-              {m.reactions && m.reactions.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {m.reactions.map((reaction) => {
-                    return (
-                      <ReactionButton
-                        currentUserId={userId}
-                        customEmojis={customEmojis}
-                        key={`${m.$id}-${reaction.emoji}`}
-                        onToggle={(e, isAdding) => onToggleReaction(m.$id, e, isAdding)}
-                        reaction={reaction}
-                      />
-                    );
-                  })}
-                </div>
-              )}
+                            {m.reactions && m.reactions.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                    {m.reactions.map((reaction) => {
+                                        return (
+                                            <ReactionButton
+                                                currentUserId={userId}
+                                                customEmojis={customEmojis}
+                                                key={`${m.$id}-${reaction.emoji}`}
+                                                onToggle={(e, isAdding) =>
+                                                    onToggleReaction(
+                                                        m.$id,
+                                                        e,
+                                                        isAdding,
+                                                    )
+                                                }
+                                                reaction={reaction}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            )}
 
-              {!removed && (
-                <div className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}>
-                  <ReactionPicker
-                    customEmojis={customEmojis}
-                    onUploadCustomEmoji={onUploadCustomEmoji}
-                    onSelectEmoji={async (emoji) => {
-                      await onToggleReaction(m.$id, emoji, true);
-                    }}
-                  />
-                  <Button
-                    onClick={() => onStartReply(m)}
-                    size="sm"
-                    title="Reply"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </Button>
-                  {/* Thread button - only show on non-thread messages */}
-                  {!m.threadId && onOpenThread && (
-                    <Button
-                      onClick={() => onOpenThread(m)}
-                      size="sm"
-                      title="Start or view thread"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <MessageSquareMore className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {/* Pin/Unpin button - only show if user can manage messages */}
-                  {canManageMessages && (
-                    m.isPinned ? (
-                      (onTogglePin || onUnpinMessage) && (
-                        <Button
-                          onClick={() => {
-                            if (onTogglePin) {
-                              void onTogglePin(m);
-                              return;
-                            }
-                            if (onUnpinMessage) {
-                              void onUnpinMessage(m.$id);
-                            }
-                          }}
-                          size="sm"
-                          title="Unpin message"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Pin className="h-4 w-4 text-amber-600" />
-                        </Button>
+                            {!removed && (
+                                <div
+                                    className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
+                                >
+                                    <ReactionPicker
+                                        customEmojis={customEmojis}
+                                        onUploadCustomEmoji={
+                                            onUploadCustomEmoji
+                                        }
+                                        onSelectEmoji={async (emoji) => {
+                                            await onToggleReaction(
+                                                m.$id,
+                                                emoji,
+                                                true,
+                                            );
+                                        }}
+                                    />
+                                    <Button
+                                        onClick={() => onStartReply(m)}
+                                        size="sm"
+                                        title="Reply"
+                                        type="button"
+                                        variant="ghost"
+                                    >
+                                        <MessageSquare className="h-4 w-4" />
+                                    </Button>
+                                    {/* Thread button - only show on non-thread messages */}
+                                    {!m.threadId && onOpenThread && (
+                                        <Button
+                                            onClick={() => onOpenThread(m)}
+                                            size="sm"
+                                            title="Start or view thread"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <MessageSquareMore className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                    {/* Pin/Unpin button - only show if user can manage messages */}
+                                    {canManageMessages &&
+                                        (m.isPinned
+                                            ? (onTogglePin ||
+                                                  onUnpinMessage) && (
+                                                  <Button
+                                                      onClick={() => {
+                                                          if (onTogglePin) {
+                                                              void onTogglePin(
+                                                                  m,
+                                                              );
+                                                              return;
+                                                          }
+                                                          if (onUnpinMessage) {
+                                                              void onUnpinMessage(
+                                                                  m.$id,
+                                                              );
+                                                          }
+                                                      }}
+                                                      size="sm"
+                                                      title="Unpin message"
+                                                      type="button"
+                                                      variant="ghost"
+                                                  >
+                                                      <Pin className="h-4 w-4 text-amber-600" />
+                                                  </Button>
+                                              )
+                                            : (onTogglePin || onPinMessage) && (
+                                                  <Button
+                                                      onClick={() => {
+                                                          if (onTogglePin) {
+                                                              void onTogglePin(
+                                                                  m,
+                                                              );
+                                                              return;
+                                                          }
+                                                          if (onPinMessage) {
+                                                              void onPinMessage(
+                                                                  m.$id,
+                                                              );
+                                                          }
+                                                      }}
+                                                      size="sm"
+                                                      title="Pin message"
+                                                      type="button"
+                                                      variant="ghost"
+                                                  >
+                                                      <Pin className="h-4 w-4" />
+                                                  </Button>
+                                              ))}
+                                    {mine && (
+                                        <>
+                                            <Button
+                                                onClick={() => onStartEdit(m)}
+                                                size="sm"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                            </Button>
+                                            {isDeleting ? (
+                                                <>
+                                                    <Button
+                                                        onClick={() =>
+                                                            onRemove(m.$id)
+                                                        }
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="destructive"
+                                                    >
+                                                        Confirm
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() =>
+                                                            setDeleteConfirmId(
+                                                                null,
+                                                            )
+                                                        }
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <Button
+                                                    onClick={() =>
+                                                        setDeleteConfirmId(
+                                                            m.$id,
+                                                        )
+                                                    }
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            }}
+            components={{
+                Header: shouldShowLoadOlder
+                    ? () => (
+                          <div className="flex justify-center p-4">
+                              <Button
+                                  onClick={onLoadOlder}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                              >
+                                  Load older messages
+                              </Button>
+                          </div>
                       )
-                    ) : (
-                      (onTogglePin || onPinMessage) && (
-                        <Button
-                          onClick={() => {
-                            if (onTogglePin) {
-                              void onTogglePin(m);
-                              return;
-                            }
-                            if (onPinMessage) {
-                              void onPinMessage(m.$id);
-                            }
-                          }}
-                          size="sm"
-                          title="Pin message"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Pin className="h-4 w-4" />
-                        </Button>
-                      )
-                    )
-                  )}
-                  {mine && (
-                    <>
-                      <Button
-                        onClick={() => onStartEdit(m)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      {isDeleting ? (
-                        <>
-                          <Button
-                            onClick={() => onRemove(m.$id)}
-                            size="sm"
-                            type="button"
-                            variant="destructive"
-                          >
-                            Confirm
-                          </Button>
-                          <Button
-                            onClick={() => setDeleteConfirmId(null)}
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                          >
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          onClick={() => setDeleteConfirmId(m.$id)}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }}
-      components={{
-        Header: shouldShowLoadOlder
-          ? () => (
-              <div className="flex justify-center p-4">
-                <Button onClick={onLoadOlder} size="sm" type="button" variant="outline">
-                  Load older messages
-                </Button>
-              </div>
-            )
-          : undefined,
-      }}
-    />
-  );
+                    : undefined,
+            }}
+        />
+    );
 }

@@ -1,34 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { getServerClient } from "@/lib/appwrite-server";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 const roleAssignmentsCollectionId = "role_assignments";
 const rolesCollectionId = "roles";
 const membershipsCollectionId = env.collections.memberships || "memberships";
 const profilesCollectionId = env.collections.profiles || "profiles";
 
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 async function requireManageRolesAccess(serverId: string) {
+    const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
         return NextResponse.json(
@@ -57,6 +47,7 @@ async function updateRoleMemberCount(
     serverId: string,
 ): Promise<void> {
     try {
+        const databases = getDatabases();
         // Count members with this role
         const assignments = await databases.listDocuments(
             databaseId,
@@ -85,6 +76,7 @@ async function updateRoleMemberCount(
 // GET: List role assignments
 export async function GET(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const serverId = searchParams.get("serverId");
         const roleId = searchParams.get("roleId");
@@ -117,34 +109,37 @@ export async function GET(request: NextRequest) {
                 (doc.roleIds as string[]).includes(roleId),
             );
 
-            // Enrich with user profiles
-            const members = await Promise.all(
-                roleAssignments.map(async (assignment) => {
-                    try {
-                        const profile = await databases.listDocuments(
-                            databaseId,
-                            profilesCollectionId,
-                            [
-                                Query.equal("userId", assignment.userId),
-                                Query.limit(1),
-                            ],
-                        );
-
-                        return {
-                            userId: assignment.userId,
-                            displayName: profile.documents[0]?.displayName,
-                            userName: profile.documents[0]?.userId,
-                            avatarUrl: profile.documents[0]?.avatarUrl,
-                            roleIds: assignment.roleIds as string[],
-                        };
-                    } catch {
-                        return {
-                            userId: assignment.userId,
-                            roleIds: assignment.roleIds as string[],
-                        };
-                    }
-                }),
+            const profileUserIds = roleAssignments.map((assignment) =>
+                String(assignment.userId),
             );
+            const profiles =
+                profileUserIds.length === 0
+                    ? { documents: [] }
+                    : await databases.listDocuments(
+                          databaseId,
+                          profilesCollectionId,
+                          [
+                              Query.equal("userId", profileUserIds),
+                              Query.limit(profileUserIds.length),
+                          ],
+                      );
+            const profilesByUserId = new Map(
+                profiles.documents.map((profile) => [
+                    String(profile.userId),
+                    profile,
+                ]),
+            );
+
+            const members = roleAssignments.map((assignment) => {
+                const profile = profilesByUserId.get(String(assignment.userId));
+                return {
+                    userId: assignment.userId,
+                    displayName: profile?.displayName,
+                    userName: profile?.userId,
+                    avatarUrl: profile?.avatarUrl,
+                    roleIds: assignment.roleIds as string[],
+                };
+            });
 
             return NextResponse.json({ members });
         }
@@ -184,6 +179,7 @@ export async function GET(request: NextRequest) {
 // POST: Assign role to user
 export async function POST(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = await request.json();
         const { userId, serverId, roleId } = body;
 
@@ -283,6 +279,7 @@ export async function POST(request: NextRequest) {
 // DELETE: Remove role from user
 export async function DELETE(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const userId = searchParams.get("userId");
         const serverId = searchParams.get("serverId");

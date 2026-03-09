@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { Query } from "node-appwrite";
 import { getServerSession } from "@/lib/auth-server";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
-import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
-import { getUserStatus } from "@/lib/appwrite-status";
+import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import {
     logger,
     recordError,
@@ -12,6 +12,11 @@ import {
     addTransactionAttributes,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
+import { normalizeStatus } from "@/lib/status-normalization";
+
+const env = getEnvConfig();
 
 /**
  * POST /api/profiles/batch
@@ -79,57 +84,97 @@ export async function POST(request: NextRequest) {
             count: visibleUserIds.length,
         });
 
-        // Fetch all profiles and statuses in parallel
+        const { databases } = getServerClient();
+
+        // Fetch all visible profiles and statuses in parallel using batched reads.
         const fetchStartTime = Date.now();
-        const results = await Promise.allSettled(
-            visibleUserIds.map(async (userId) => {
-                const [profile, status] = await Promise.all([
-                    getUserProfile(userId).catch(() => null),
-                    getUserStatus(userId).catch(() => null),
-                ]);
-
-                if (!profile) {
-                    return { userId, profile: null };
-                }
-
-                const avatarUrl = profile.avatarFileId
-                    ? getAvatarUrl(profile.avatarFileId)
-                    : undefined;
-
-                return {
-                    userId: profile.userId,
-                    profile: {
-                        userId: profile.userId,
-                        displayName: profile.displayName,
-                        bio: profile.bio,
-                        pronouns: profile.pronouns,
-                        location: profile.location,
-                        website: profile.website,
-                        avatarFileId: profile.avatarFileId,
-                        avatarUrl,
-                        status: status
-                            ? {
-                                  status: status.status,
-                                  customMessage: status.customMessage,
-                                  lastSeenAt: status.lastSeenAt,
-                              }
-                            : undefined,
-                    },
-                };
-            }),
-        );
+        const [profilesResult, statusesResult] =
+            visibleUserIds.length === 0
+                ? [{ documents: [] }, { documents: [] }]
+                : await Promise.all([
+                      databases.listDocuments(
+                          env.databaseId,
+                          env.collections.profiles,
+                          [
+                              Query.equal("userId", visibleUserIds),
+                              Query.limit(visibleUserIds.length),
+                          ],
+                      ),
+                      databases
+                          .listDocuments(
+                              env.databaseId,
+                              env.collections.statuses,
+                              [
+                                  Query.equal("userId", visibleUserIds),
+                                  Query.limit(visibleUserIds.length),
+                              ],
+                          )
+                          .catch(() => ({ documents: [] })),
+                  ]);
 
         const fetchDuration = Date.now() - fetchStartTime;
+        const profilesByUserId = new Map(
+            profilesResult.documents.map((document) => {
+                const profile = document as Record<string, unknown>;
+                return [String(profile.userId), profile] as const;
+            }),
+        );
+        const statusesByUserId = new Map(
+            statusesResult.documents.map((document) => {
+                const status = document as Record<string, unknown>;
+                const { normalized } = normalizeStatus(status);
+                return [normalized.userId, normalized] as const;
+            }),
+        );
 
         // Convert results to a map for easy lookup
         const profilesMap: Record<string, unknown> = {};
         let successCount = 0;
-        results.forEach((result) => {
-            if (result.status === "fulfilled" && result.value.profile) {
-                profilesMap[result.value.userId] = result.value.profile;
-                successCount++;
+        for (const userId of visibleUserIds) {
+            const profile = profilesByUserId.get(userId);
+            if (!profile) {
+                continue;
             }
-        });
+
+            const status = statusesByUserId.get(userId);
+            const avatarFileId =
+                typeof profile.avatarFileId === "string"
+                    ? profile.avatarFileId
+                    : undefined;
+
+            profilesMap[userId] = {
+                userId,
+                displayName:
+                    typeof profile.displayName === "string"
+                        ? profile.displayName
+                        : undefined,
+                bio: typeof profile.bio === "string" ? profile.bio : undefined,
+                pronouns:
+                    typeof profile.pronouns === "string"
+                        ? profile.pronouns
+                        : undefined,
+                location:
+                    typeof profile.location === "string"
+                        ? profile.location
+                        : undefined,
+                website:
+                    typeof profile.website === "string"
+                        ? profile.website
+                        : undefined,
+                avatarFileId,
+                avatarUrl: avatarFileId
+                    ? getAvatarUrl(avatarFileId)
+                    : undefined,
+                status: status
+                    ? {
+                          status: status.status,
+                          customMessage: status.customMessage,
+                          lastSeenAt: status.lastSeenAt,
+                      }
+                    : undefined,
+            };
+            successCount++;
+        }
 
         trackApiCall("/api/profiles/batch", "POST", 200, fetchDuration, {
             operation: "batchFetchProfiles",

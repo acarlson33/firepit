@@ -19,22 +19,22 @@ type MemberCountDatabases = {
 /**
  * Gets the actual member count for a server by querying the memberships collection.
  * This is the single source of truth for member counts.
- * 
+ *
  * @param databases - Appwrite Databases instance
  * @param serverId - Server ID to count members for
  * @returns The actual number of members in the server
  */
 export async function getActualMemberCount(
     databases: MemberCountDatabases,
-    serverId: string
+    serverId: string,
 ): Promise<number> {
     const env = getEnvConfig();
     const membershipsCollectionId = env.collections.memberships;
-    
+
     if (!membershipsCollectionId) {
         return 0;
     }
-    
+
     try {
         const result = await databases.listDocuments(
             env.databaseId,
@@ -45,4 +45,82 @@ export async function getActualMemberCount(
     } catch {
         return 0;
     }
+}
+
+/**
+ * Gets actual member counts for multiple servers with batched membership scans.
+ * Falls back to an empty map if memberships are unavailable.
+ */
+export async function getActualMemberCounts(
+    databases: MemberCountDatabases,
+    serverIds: string[],
+): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    const uniqueServerIds = [...new Set(serverIds.filter(Boolean))];
+    const env = getEnvConfig();
+    const membershipsCollectionId = env.collections.memberships;
+
+    for (const serverId of uniqueServerIds) {
+        counts.set(serverId, 0);
+    }
+
+    if (!membershipsCollectionId || uniqueServerIds.length === 0) {
+        return counts;
+    }
+
+    const pageSize = 1000;
+    let cursorAfter: string | undefined;
+
+    try {
+        while (true) {
+            const queries = [
+                Query.equal("serverId", uniqueServerIds),
+                Query.limit(pageSize),
+                Query.orderAsc("$id"),
+            ];
+
+            if (cursorAfter) {
+                queries.push(Query.cursorAfter(cursorAfter));
+            }
+
+            const result = await databases.listDocuments(
+                env.databaseId,
+                membershipsCollectionId,
+                queries,
+            );
+
+            const documents =
+                (
+                    result as unknown as {
+                        documents?: Array<Record<string, unknown>>;
+                    }
+                ).documents ?? [];
+
+            for (const document of documents) {
+                const serverId =
+                    typeof document.serverId === "string"
+                        ? document.serverId
+                        : undefined;
+                if (!serverId || !counts.has(serverId)) {
+                    continue;
+                }
+                counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
+            }
+
+            if (documents.length < pageSize) {
+                break;
+            }
+
+            const lastDocument = documents.at(-1);
+            if (!lastDocument || typeof lastDocument.$id !== "string") {
+                break;
+            }
+
+            cursorAfter = lastDocument.$id;
+        }
+    } catch {
+        return counts;
+    }
+
+    return counts;
 }

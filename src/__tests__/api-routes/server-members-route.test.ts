@@ -3,27 +3,31 @@ import { NextRequest } from "next/server";
 
 const {
     mockListDocuments,
+    mockDeleteDocument,
     mockGetServerSession,
     mockGetServerPermissionsForUser,
 } = vi.hoisted(() => ({
     mockListDocuments: vi.fn(),
+    mockDeleteDocument: vi.fn(),
     mockGetServerSession: vi.fn(),
     mockGetServerPermissionsForUser: vi.fn(),
 }));
 
 vi.mock("node-appwrite", () => ({
-    Client: vi.fn().mockImplementation(() => ({
-        setEndpoint: vi.fn().mockReturnThis(),
-        setProject: vi.fn().mockReturnThis(),
-        setKey: vi.fn().mockReturnThis(),
-    })),
-    Databases: vi.fn().mockImplementation(() => ({
-        listDocuments: mockListDocuments,
-    })),
     Query: {
-        equal: (field: string, value: string) => `equal(${field},${value})`,
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${Array.isArray(value) ? value.join("|") : value})`,
         limit: (n: number) => `limit(${n})`,
     },
+}));
+
+vi.mock("@/lib/appwrite-server", () => ({
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+            deleteDocument: mockDeleteDocument,
+        },
+    })),
 }));
 
 vi.mock("@/lib/auth-server", () => ({
@@ -54,6 +58,7 @@ const { GET } = await import("../../app/api/servers/[serverId]/members/route");
 describe("server members route", () => {
     beforeEach(() => {
         mockListDocuments.mockReset();
+        mockDeleteDocument.mockReset();
         mockGetServerSession.mockReset();
         mockGetServerPermissionsForUser.mockReset();
 
@@ -111,10 +116,6 @@ describe("server members route", () => {
                         displayName: "User One",
                         avatarUrl: "one.png",
                     },
-                ],
-            })
-            .mockResolvedValueOnce({
-                documents: [
                     {
                         userId: "user-2",
                         displayName: "User Two",
