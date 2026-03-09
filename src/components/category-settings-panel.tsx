@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     ArrowDown,
     ArrowUp,
@@ -70,11 +70,16 @@ export function CategorySettingsPanel({
     const [categories, setCategories] = useState<ChannelCategory[]>([]);
     const [channels, setChannels] = useState<Channel[]>([]);
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [creatingName, setCreatingName] = useState("");
+    const [creatingCategory, setCreatingCategory] = useState(false);
     const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
         null,
     );
     const [editingName, setEditingName] = useState("");
+    const [pendingCategoryIds, setPendingCategoryIds] = useState<string[]>([]);
+    const [pendingChannelIds, setPendingChannelIds] = useState<string[]>([]);
+    const loadRequestId = useRef(0);
 
     useEffect(() => {
         if (!serverId) {
@@ -88,8 +93,34 @@ export function CategorySettingsPanel({
         [channels],
     );
 
-    async function loadData() {
-        setLoading(true);
+    function setCategoryPending(categoryIds: string[], pending: boolean) {
+        setPendingCategoryIds((currentValue) => {
+            if (pending) {
+                return [...new Set([...currentValue, ...categoryIds])];
+            }
+
+            return currentValue.filter((value) => !categoryIds.includes(value));
+        });
+    }
+
+    function setChannelPending(channelIds: string[], pending: boolean) {
+        setPendingChannelIds((currentValue) => {
+            if (pending) {
+                return [...new Set([...currentValue, ...channelIds])];
+            }
+
+            return currentValue.filter((value) => !channelIds.includes(value));
+        });
+    }
+
+    async function loadData(options?: { silent?: boolean }) {
+        const requestId = ++loadRequestId.current;
+        if (options?.silent) {
+            setRefreshing(true);
+        } else {
+            setLoading(true);
+        }
+
         try {
             const [categoriesResponse, channelsResponse] = await Promise.all([
                 fetch(`/api/categories?serverId=${serverId}`),
@@ -105,8 +136,12 @@ export function CategorySettingsPanel({
             const channelsData =
                 (await channelsResponse.json()) as ChannelsResponse;
 
+            if (requestId !== loadRequestId.current) {
+                return;
+            }
+
             setCategories(sortCategories(categoriesData.categories));
-            setChannels(channelsData.channels);
+            setChannels(sortChannels(channelsData.channels));
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -114,7 +149,15 @@ export function CategorySettingsPanel({
                     : "Failed to load categories",
             );
         } finally {
-            setLoading(false);
+            if (requestId !== loadRequestId.current) {
+                return;
+            }
+
+            if (options?.silent) {
+                setRefreshing(false);
+            } else {
+                setLoading(false);
+            }
         }
     }
 
@@ -123,6 +166,11 @@ export function CategorySettingsPanel({
         apiCache.clear(`channels:${serverId}:initial`);
         window.dispatchEvent(new Event("firepit:categories-changed"));
         window.dispatchEvent(new Event("firepit:channels-changed"));
+    }
+
+    function refreshAfterMutation() {
+        notifySidebar();
+        void loadData({ silent: true });
     }
 
     function getChannelsForCategory(categoryId: string) {
@@ -145,10 +193,11 @@ export function CategorySettingsPanel({
 
     async function createCategory() {
         const name = creatingName.trim();
-        if (!name) {
+        if (!name || creatingCategory) {
             return;
         }
 
+        setCreatingCategory(true);
         try {
             const response = await fetch("/api/categories", {
                 method: "POST",
@@ -161,9 +210,15 @@ export function CategorySettingsPanel({
                 throw new Error(data.error || "Failed to create category");
             }
 
+            const data = (await response.json()) as {
+                category: ChannelCategory;
+            };
+
             setCreatingName("");
-            await loadData();
-            notifySidebar();
+            setCategories((currentValue) =>
+                sortCategories([...currentValue, data.category]),
+            );
+            refreshAfterMutation();
             toast.success("Category created");
         } catch (error) {
             toast.error(
@@ -171,6 +226,8 @@ export function CategorySettingsPanel({
                     ? error.message
                     : "Failed to create category",
             );
+        } finally {
+            setCreatingCategory(false);
         }
     }
 
@@ -179,6 +236,16 @@ export function CategorySettingsPanel({
         if (!name) {
             return;
         }
+
+        const previousCategories = categories;
+        setCategoryPending([categoryId], true);
+        setCategories((currentValue) =>
+            currentValue.map((category) =>
+                category.$id === categoryId ? { ...category, name } : category,
+            ),
+        );
+        setEditingCategoryId(null);
+        setEditingName("");
 
         try {
             const response = await fetch("/api/categories", {
@@ -192,17 +259,19 @@ export function CategorySettingsPanel({
                 throw new Error(data.error || "Failed to rename category");
             }
 
-            setEditingCategoryId(null);
-            setEditingName("");
-            await loadData();
-            notifySidebar();
+            refreshAfterMutation();
             toast.success("Category updated");
         } catch (error) {
+            setCategories(previousCategories);
+            setEditingCategoryId(categoryId);
+            setEditingName(name);
             toast.error(
                 error instanceof Error
                     ? error.message
                     : "Failed to rename category",
             );
+        } finally {
+            setCategoryPending([categoryId], false);
         }
     }
 
@@ -222,6 +291,24 @@ export function CategorySettingsPanel({
 
         const current = orderedCategories[currentIndex];
         const target = orderedCategories[targetIndex];
+        const previousCategories = categories;
+
+        setCategoryPending([current.$id, target.$id], true);
+        setCategories(
+            sortCategories(
+                orderedCategories.map((category) => {
+                    if (category.$id === current.$id) {
+                        return { ...category, position: target.position };
+                    }
+
+                    if (category.$id === target.$id) {
+                        return { ...category, position: current.position };
+                    }
+
+                    return category;
+                }),
+            ),
+        );
 
         try {
             await Promise.all([
@@ -243,14 +330,42 @@ export function CategorySettingsPanel({
                 }),
             ]);
 
-            await loadData();
-            notifySidebar();
+            refreshAfterMutation();
         } catch {
+            setCategories(previousCategories);
             toast.error("Failed to reorder category");
+        } finally {
+            setCategoryPending([current.$id, target.$id], false);
         }
     }
 
     async function deleteCategory(categoryId: string) {
+        const previousCategories = categories;
+        const previousChannels = channels;
+        let nextUncategorizedPosition = getNextChannelPosition();
+
+        setCategoryPending([categoryId], true);
+        setCategories((currentValue) =>
+            currentValue.filter((category) => category.$id !== categoryId),
+        );
+        setChannels((currentValue) =>
+            sortChannels(
+                currentValue.map((channel) => {
+                    if (channel.categoryId !== categoryId) {
+                        return channel;
+                    }
+
+                    const updatedChannel = {
+                        ...channel,
+                        categoryId: undefined,
+                        position: nextUncategorizedPosition,
+                    };
+                    nextUncategorizedPosition += 1;
+                    return updatedChannel;
+                }),
+            ),
+        );
+
         try {
             const response = await fetch(
                 `/api/categories?categoryId=${encodeURIComponent(categoryId)}`,
@@ -262,15 +377,18 @@ export function CategorySettingsPanel({
                 throw new Error(data.error || "Failed to delete category");
             }
 
-            await loadData();
-            notifySidebar();
+            refreshAfterMutation();
             toast.success("Category deleted");
         } catch (error) {
+            setCategories(previousCategories);
+            setChannels(previousChannels);
             toast.error(
                 error instanceof Error
                     ? error.message
                     : "Failed to delete category",
             );
+        } finally {
+            setCategoryPending([categoryId], false);
         }
     }
 
@@ -294,22 +412,52 @@ export function CategorySettingsPanel({
     }
 
     async function assignChannel(channelId: string, categoryId: string) {
+        const previousChannels = channels;
+        const normalizedCategoryId =
+            categoryId === "uncategorized" ? undefined : categoryId;
+        const channel = channels.find((item) => item.$id === channelId);
+        if (!channel) {
+            return;
+        }
+
+        if ((channel.categoryId || undefined) === normalizedCategoryId) {
+            return;
+        }
+
+        const nextPosition = normalizedCategoryId
+            ? getNextChannelPosition(normalizedCategoryId)
+            : getNextChannelPosition();
+
+        setChannelPending([channelId], true);
+        setChannels((currentValue) =>
+            sortChannels(
+                currentValue.map((item) =>
+                    item.$id === channelId
+                        ? {
+                              ...item,
+                              categoryId: normalizedCategoryId,
+                              position: nextPosition,
+                          }
+                        : item,
+                ),
+            ),
+        );
+
         try {
             await updateChannel(channelId, {
-                categoryId: categoryId === "uncategorized" ? null : categoryId,
-                position:
-                    categoryId === "uncategorized"
-                        ? getNextChannelPosition()
-                        : getNextChannelPosition(categoryId),
+                categoryId: normalizedCategoryId ?? null,
+                position: nextPosition,
             });
-            await loadData();
-            notifySidebar();
+            refreshAfterMutation();
         } catch (error) {
+            setChannels(previousChannels);
             toast.error(
                 error instanceof Error
                     ? error.message
                     : "Failed to update channel",
             );
+        } finally {
+            setChannelPending([channelId], false);
         }
     }
 
@@ -334,20 +482,40 @@ export function CategorySettingsPanel({
 
         const current = siblingChannels[currentIndex];
         const target = siblingChannels[targetIndex];
+        const previousChannels = channels;
+
+        setChannelPending([current.$id, target.$id], true);
+        setChannels(
+            sortChannels(
+                channels.map((item) => {
+                    if (item.$id === current.$id) {
+                        return { ...item, position: target.position ?? 0 };
+                    }
+
+                    if (item.$id === target.$id) {
+                        return { ...item, position: current.position ?? 0 };
+                    }
+
+                    return item;
+                }),
+            ),
+        );
 
         try {
             await Promise.all([
                 updateChannel(current.$id, { position: target.position ?? 0 }),
                 updateChannel(target.$id, { position: current.position ?? 0 }),
             ]);
-            await loadData();
-            notifySidebar();
+            refreshAfterMutation();
         } catch (error) {
+            setChannels(previousChannels);
             toast.error(
                 error instanceof Error
                     ? error.message
                     : "Failed to reorder channel",
             );
+        } finally {
+            setChannelPending([current.$id, target.$id], false);
         }
     }
 
@@ -367,6 +535,11 @@ export function CategorySettingsPanel({
 
     return (
         <div className="space-y-4">
+            {refreshing && (
+                <p className="px-1 text-xs text-muted-foreground">
+                    Syncing category changes...
+                </p>
+            )}
             <Card>
                 <CardHeader>
                     <CardTitle>Channel Categories</CardTitle>
@@ -379,6 +552,7 @@ export function CategorySettingsPanel({
                     <Label htmlFor="category-name">New category</Label>
                     <div className="flex gap-2">
                         <Input
+                            disabled={creatingCategory}
                             id="category-name"
                             onChange={(event) =>
                                 setCreatingName(event.target.value)
@@ -387,11 +561,12 @@ export function CategorySettingsPanel({
                             value={creatingName}
                         />
                         <Button
+                            disabled={creatingCategory || !creatingName.trim()}
                             onClick={() => void createCategory()}
                             type="button"
                         >
                             <FolderPlus className="h-4 w-4" />
-                            Create
+                            {creatingCategory ? "Creating..." : "Create"}
                         </Button>
                     </div>
                 </CardContent>
@@ -434,7 +609,17 @@ export function CategorySettingsPanel({
                                             {category.name}
                                         </div>
                                     )}
+                                    {pendingCategoryIds.includes(
+                                        category.$id,
+                                    ) && (
+                                        <span className="text-xs text-muted-foreground">
+                                            Saving...
+                                        </span>
+                                    )}
                                     <Button
+                                        disabled={pendingCategoryIds.includes(
+                                            category.$id,
+                                        )}
                                         onClick={() =>
                                             void moveCategory(category.$id, -1)
                                         }
@@ -445,6 +630,9 @@ export function CategorySettingsPanel({
                                         <ArrowUp className="h-4 w-4" />
                                     </Button>
                                     <Button
+                                        disabled={pendingCategoryIds.includes(
+                                            category.$id,
+                                        )}
                                         onClick={() =>
                                             void moveCategory(category.$id, 1)
                                         }
@@ -456,6 +644,11 @@ export function CategorySettingsPanel({
                                     </Button>
                                     {editingCategoryId === category.$id ? (
                                         <Button
+                                            disabled={
+                                                pendingCategoryIds.includes(
+                                                    category.$id,
+                                                ) || !editingName.trim()
+                                            }
                                             onClick={() =>
                                                 void saveCategoryName(
                                                     category.$id,
@@ -469,6 +662,9 @@ export function CategorySettingsPanel({
                                         </Button>
                                     ) : (
                                         <Button
+                                            disabled={pendingCategoryIds.includes(
+                                                category.$id,
+                                            )}
                                             onClick={() => {
                                                 setEditingCategoryId(
                                                     category.$id,
@@ -483,6 +679,9 @@ export function CategorySettingsPanel({
                                         </Button>
                                     )}
                                     <Button
+                                        disabled={pendingCategoryIds.includes(
+                                            category.$id,
+                                        )}
                                         onClick={() =>
                                             void deleteCategory(category.$id)
                                         }
@@ -504,6 +703,9 @@ export function CategorySettingsPanel({
                                                     {channel.name}
                                                 </div>
                                                 <Button
+                                                    disabled={pendingChannelIds.includes(
+                                                        channel.$id,
+                                                    )}
                                                     onClick={() =>
                                                         void moveChannel(
                                                             channel,
@@ -517,6 +719,9 @@ export function CategorySettingsPanel({
                                                     <ArrowUp className="h-4 w-4" />
                                                 </Button>
                                                 <Button
+                                                    disabled={pendingChannelIds.includes(
+                                                        channel.$id,
+                                                    )}
                                                     onClick={() =>
                                                         void moveChannel(
                                                             channel,
@@ -568,6 +773,9 @@ export function CategorySettingsPanel({
                                 </div>
                             </div>
                             <Select
+                                disabled={pendingChannelIds.includes(
+                                    channel.$id,
+                                )}
                                 onValueChange={(value) => {
                                     void assignChannel(channel.$id, value);
                                 }}
