@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.4.3
+    version: 1.5.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -26,7 +26,7 @@ tags:
     - name: Servers
       description: Server lifecycle, discovery, membership, and stats
     - name: Channels
-      description: Channel discovery and pinned-message access
+      description: Channel and category discovery, organization, and pinned-message access
     - name: Messages
       description: Channel message creation and management
     - name: Direct Messages
@@ -175,7 +175,34 @@ components:
                 type:
                     type: string
                     enum: [text, voice, announcement]
+                categoryId:
+                    type: string
+                position:
+                    type: integer
                 $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
+
+        ChannelCategory:
+            type: object
+            properties:
+                $id:
+                    type: string
+                serverId:
+                    type: string
+                name:
+                    type: string
+                position:
+                    type: integer
+                createdBy:
+                    type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
                     type: string
                     format: date-time
 
@@ -816,6 +843,180 @@ paths:
                                         type: array
                                         items:
                                             $ref: "#/components/schemas/Channel"
+                                    nextCursor:
+                                        type: string
+
+    /api/channels/{channelId}:
+        patch:
+            tags: [Channels]
+            summary: Update channel category assignment, order, or name
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                name:
+                                    type: string
+                                categoryId:
+                                    type: string
+                                    nullable: true
+                                position:
+                                    type: integer
+            responses:
+                "200":
+                    description: Updated channel
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    channel:
+                                        $ref: "#/components/schemas/Channel"
+                "400":
+                    description: Invalid update payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/categories:
+        get:
+            tags: [Channels]
+            summary: List channel categories for a server
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Category list
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    categories:
+                                        type: array
+                                        items:
+                                            $ref: "#/components/schemas/ChannelCategory"
+                "400":
+                    description: Missing or invalid serverId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        post:
+            tags: [Channels]
+            summary: Create a new channel category
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [serverId, name]
+                            properties:
+                                serverId:
+                                    type: string
+                                name:
+                                    type: string
+            responses:
+                "201":
+                    description: Created category
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    category:
+                                        $ref: "#/components/schemas/ChannelCategory"
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        put:
+            tags: [Channels]
+            summary: Rename or reorder a channel category
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [categoryId]
+                            properties:
+                                categoryId:
+                                    type: string
+                                name:
+                                    type: string
+                                position:
+                                    type: integer
+            responses:
+                "200":
+                    description: Updated category
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    category:
+                                        $ref: "#/components/schemas/ChannelCategory"
+                "400":
+                    description: Invalid update payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Channels]
+            summary: Delete a channel category and return linked channels to uncategorized
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: categoryId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Category deleted
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing categoryId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/channels/{channelId}/pins:
         get:

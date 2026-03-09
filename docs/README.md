@@ -9,6 +9,7 @@ This directory was consolidated into a smaller set of durable, section-based doc
 - `SERVER_ADMINISTRATION.md`: server creation, invites, roles, permission overrides, moderation, audit logs, and admin workflows
 - `FEATURE_FLAGS.md`: current flags, defaults, admin access, and how to add a new flag
 - `PLATFORM_OPERATIONS.md`: platform architecture, performance strategy, monitoring, releases, and operational notes
+- `ROADMAP_IMPLEMENTATION_SPEC.md`: technical breakdown of active roadmap workstreams and parity implementation plans
 - `openapi-doc.yml`: current HTTP API contract for supported public endpoints
 
 ## Consolidation Notes

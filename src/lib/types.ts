@@ -75,7 +75,20 @@ export type Channel = {
     $id: string;
     serverId: string;
     name: string;
+    categoryId?: string;
+    position?: number;
     $createdAt: string;
+    $updatedAt?: string;
+};
+
+export type ChannelCategory = {
+    $id: string;
+    serverId: string;
+    name: string;
+    position: number;
+    createdBy?: string;
+    $createdAt: string;
+    $updatedAt?: string;
 };
 
 export type InstanceSettings = {

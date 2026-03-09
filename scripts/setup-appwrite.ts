@@ -560,8 +560,22 @@ async function setupChannels() {
     await ensureCollection("channels", "Channels");
     await ensureStringAttribute("channels", "serverId", LEN_ID, true);
     await ensureStringAttribute("channels", "name", LEN_ID, true);
+    await ensureStringAttribute("channels", "categoryId", LEN_ID, false);
+    await ensureIntegerAttribute("channels", "position", false, 0, 0);
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
     await ensureIndex("channels", "idx_serverId", "key", ["serverId"]);
+    await ensureIndex("channels", "idx_categoryId", "key", ["categoryId"]);
+    await ensureIndex("channels", "idx_position", "key", ["position"]);
+}
+
+async function setupCategories() {
+    await ensureCollection("categories", "Categories");
+    await ensureStringAttribute("categories", "serverId", LEN_ID, true);
+    await ensureStringAttribute("categories", "name", LEN_ID, true);
+    await ensureStringAttribute("categories", "createdBy", LEN_ID, false);
+    await ensureIntegerAttribute("categories", "position", true, 0, 0);
+    await ensureIndex("categories", "idx_serverId", "key", ["serverId"]);
+    await ensureIndex("categories", "idx_position", "key", ["position"]);
 }
 
 async function setupMessages() {
@@ -1226,6 +1240,7 @@ async function run() {
     await setupServers();
     info("[setup] Setting up channels...");
     await setupChannels();
+    await setupCategories();
     info("[setup] Setting up messages...");
     await setupMessages();
     info("[setup] Setting up audit...");
