@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
-import type { Conversation } from "@/lib/types";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
