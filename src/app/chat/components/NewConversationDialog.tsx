@@ -6,11 +6,14 @@ import Image from "next/image";
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useRelationship } from "@/hooks/useRelationship";
 import {
     createGroupConversation,
     getOrCreateConversation,
@@ -31,6 +34,143 @@ type NewConversationDialogProps = {
     currentUserId: string;
     onConversationCreated: (conversation: Conversation) => void;
 };
+
+type SearchResultRowProps = {
+    user: UserSearchResult;
+    selected: boolean;
+    onToggle: (user: UserSearchResult) => void;
+};
+
+function SearchResultRow({ user, selected, onToggle }: SearchResultRowProps) {
+    const {
+        relationship,
+        loading,
+        actionLoading,
+        sendFriendRequest,
+        acceptFriendRequest,
+        declineFriendRequest,
+    } = useRelationship(user.userId);
+
+    const busy = loading || actionLoading;
+
+    async function handleAction(action: () => Promise<boolean>) {
+        await action();
+    }
+
+    return (
+        <div className="rounded-sm border border-transparent px-3 py-2 transition-colors hover:border-border/60 hover:bg-accent/60">
+            <div className="flex items-start gap-3">
+                <button
+                    aria-pressed={selected}
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    onClick={() => onToggle(user)}
+                    type="button"
+                >
+                    {user.avatarUrl ? (
+                        <div className="relative size-8 overflow-hidden rounded-full">
+                            <Image
+                                alt={user.displayName || user.userId}
+                                className="object-cover"
+                                fill
+                                sizes="32px"
+                                src={user.avatarUrl}
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex size-8 items-center justify-center rounded-full bg-muted">
+                            <User className="size-4 text-muted-foreground" />
+                        </div>
+                    )}
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                        <p className="truncate text-sm font-medium">
+                            {user.displayName || user.userId}
+                        </p>
+                        {user.displayName ? (
+                            <p className="truncate text-xs text-muted-foreground">
+                                {user.userId}
+                            </p>
+                        ) : null}
+                        {user.pronouns ? (
+                            <p className="truncate text-xs italic text-muted-foreground">
+                                {user.pronouns}
+                            </p>
+                        ) : null}
+                        {relationship ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {relationship.isFriend ? (
+                                    <Badge variant="secondary">Friend</Badge>
+                                ) : null}
+                                {relationship.incomingRequest ? (
+                                    <Badge variant="secondary">
+                                        Incoming request
+                                    </Badge>
+                                ) : null}
+                                {relationship.outgoingRequest ? (
+                                    <Badge variant="outline">
+                                        Request sent
+                                    </Badge>
+                                ) : null}
+                                {relationship.directMessagePrivacy ===
+                                    "friends" && !relationship.isFriend ? (
+                                    <Badge variant="outline">
+                                        Friends-only DMs
+                                    </Badge>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
+                </button>
+
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                    <div className="flex size-6 items-center justify-center rounded-full border border-border bg-background">
+                        {selected ? (
+                            <Users className="size-3" />
+                        ) : (
+                            <User className="size-3" />
+                        )}
+                    </div>
+                    {relationship?.incomingRequest ? (
+                        <div className="flex gap-2">
+                            <Button
+                                disabled={busy}
+                                onClick={() =>
+                                    void handleAction(acceptFriendRequest)
+                                }
+                                size="sm"
+                                type="button"
+                            >
+                                Accept
+                            </Button>
+                            <Button
+                                disabled={busy}
+                                onClick={() =>
+                                    void handleAction(declineFriendRequest)
+                                }
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                            >
+                                Decline
+                            </Button>
+                        </div>
+                    ) : relationship?.canReceiveFriendRequest &&
+                      !relationship.isFriend &&
+                      !relationship.outgoingRequest ? (
+                        <Button
+                            disabled={busy}
+                            onClick={() => void handleAction(sendFriendRequest)}
+                            size="sm"
+                            type="button"
+                            variant="secondary"
+                        >
+                            Add Friend
+                        </Button>
+                    ) : null}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export function NewConversationDialog({
     open,
@@ -222,6 +362,10 @@ export function NewConversationDialog({
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle>Start a Conversation</DialogTitle>
+                    <DialogDescription>
+                        Search for people, add friends, and start a new direct
+                        or group conversation.
+                    </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                     <div className="space-y-2">
@@ -257,59 +401,12 @@ export function NewConversationDialog({
                                                     user.userId,
                                             );
                                             return (
-                                                <button
-                                                    className={`flex w-full items-center gap-3 rounded-sm px-3 py-2 text-left transition-colors ${selected ? "bg-accent" : "hover:bg-accent"}`}
+                                                <SearchResultRow
                                                     key={user.userId}
-                                                    onClick={() =>
-                                                        handleToggleUser(user)
-                                                    }
-                                                    type="button"
-                                                    aria-pressed={selected}
-                                                >
-                                                    {user.avatarUrl ? (
-                                                        <div className="relative size-8 overflow-hidden rounded-full">
-                                                            <Image
-                                                                alt={
-                                                                    user.displayName ||
-                                                                    user.userId
-                                                                }
-                                                                className="object-cover"
-                                                                fill
-                                                                sizes="32px"
-                                                                src={
-                                                                    user.avatarUrl
-                                                                }
-                                                            />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-                                                            <User className="size-4 text-muted-foreground" />
-                                                        </div>
-                                                    )}
-                                                    <div className="flex-1 overflow-hidden">
-                                                        <p className="truncate font-medium text-sm">
-                                                            {user.displayName ||
-                                                                user.userId}
-                                                        </p>
-                                                        {user.displayName && (
-                                                            <p className="truncate text-muted-foreground text-xs">
-                                                                {user.userId}
-                                                            </p>
-                                                        )}
-                                                        {user.pronouns && (
-                                                            <p className="truncate text-muted-foreground text-xs italic">
-                                                                {user.pronouns}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex size-6 items-center justify-center rounded-full border border-border bg-background">
-                                                        {selected ? (
-                                                            <Users className="size-3" />
-                                                        ) : (
-                                                            <User className="size-3" />
-                                                        )}
-                                                    </div>
-                                                </button>
+                                                    onToggle={handleToggleUser}
+                                                    selected={selected}
+                                                    user={user}
+                                                />
                                             );
                                         })}
                                     </div>

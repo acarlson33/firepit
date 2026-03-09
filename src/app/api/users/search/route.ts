@@ -3,55 +3,78 @@ import { Query } from "node-appwrite";
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
+import { getServerSession } from "@/lib/auth-server";
+import { getRelationshipMap } from "@/lib/appwrite-friendships";
 
 export async function GET(request: Request) {
-	try {
-		const { searchParams } = new URL(request.url);
-		const query = searchParams.get("q");
+    try {
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
 
-		if (!query || query.trim().length < 2) {
-			return NextResponse.json(
-				{ error: "Search query must be at least 2 characters" },
-				{ status: 400 },
-			);
-		}
+        const { searchParams } = new URL(request.url);
+        const query = searchParams.get("q");
 
-		const { databases } = getAdminClient();
-		const env = getEnvConfig();
+        if (!query || query.trim().length < 2) {
+            return NextResponse.json(
+                { error: "Search query must be at least 2 characters" },
+                { status: 400 },
+            );
+        }
 
-		// Search by displayName (case-insensitive via contains) or exact userId match
-		const searchTerm = query.trim();
+        const { databases } = getAdminClient();
+        const env = getEnvConfig();
 
-		// First try exact userId match
-		let profiles = await databases.listDocuments(
-			env.databaseId,
-			env.collections.profiles,
-			[Query.equal("userId", searchTerm), Query.limit(25)],
-		);
+        // Search by displayName (case-insensitive via contains) or exact userId match
+        const searchTerm = query.trim();
 
-		// If no exact userId match, search by displayName
-		if (profiles.documents.length === 0) {
-			profiles = await databases.listDocuments(
-				env.databaseId,
-				env.collections.profiles,
-				[Query.search("displayName", searchTerm), Query.limit(25)],
-			);
-		}
+        // First try exact userId match
+        let profiles = await databases.listDocuments(
+            env.databaseId,
+            env.collections.profiles,
+            [Query.equal("userId", searchTerm), Query.limit(25)],
+        );
 
-		const users = profiles.documents.map((doc) => ({
-			userId: String(doc.userId),
-			displayName: doc.displayName ? String(doc.displayName) : undefined,
-			pronouns: doc.pronouns ? String(doc.pronouns) : undefined,
-			avatarUrl: doc.avatarFileId
-				? getAvatarUrl(String(doc.avatarFileId))
-				: undefined,
-		}));
+        // If no exact userId match, search by displayName
+        if (profiles.documents.length === 0) {
+            profiles = await databases.listDocuments(
+                env.databaseId,
+                env.collections.profiles,
+                [Query.search("displayName", searchTerm), Query.limit(25)],
+            );
+        }
 
-		return NextResponse.json({ users });
-	} catch {
-		return NextResponse.json(
-			{ error: "Failed to search users" },
-			{ status: 500 },
-		);
-	}
+        const rawUsers = profiles.documents.map((doc) => ({
+            userId: String(doc.userId),
+            displayName: doc.displayName ? String(doc.displayName) : undefined,
+            pronouns: doc.pronouns ? String(doc.pronouns) : undefined,
+            avatarUrl: doc.avatarFileId
+                ? getAvatarUrl(String(doc.avatarFileId))
+                : undefined,
+        }));
+
+        const relationshipMap = await getRelationshipMap(
+            session.$id,
+            rawUsers.map((user) => user.userId),
+        );
+        const users = rawUsers.filter((user) => {
+            if (user.userId === session.$id) {
+                return false;
+            }
+
+            const relationship = relationshipMap.get(user.userId);
+            return !relationship?.blockedByMe && !relationship?.blockedMe;
+        });
+
+        return NextResponse.json({ users });
+    } catch {
+        return NextResponse.json(
+            { error: "Failed to search users" },
+            { status: 500 },
+        );
+    }
 }

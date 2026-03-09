@@ -63,6 +63,8 @@ export type EnvConfig = {
         memberships: string;
         bannedUsers: string;
         mutedUsers: string;
+        friendships: string;
+        blocks: string;
         profiles: string;
         conversations: string;
         directMessages: string;
@@ -177,6 +179,18 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_MUTED_USERS_COLLECTION_ID,
                 "muted_users",
             ) || "muted_users",
+        friendships:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_FRIENDSHIPS_COLLECTION_ID,
+                process.env.APPWRITE_FRIENDSHIPS_COLLECTION_ID,
+                "friendships",
+            ) || "friendships",
+        blocks:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_BLOCKS_COLLECTION_ID,
+                process.env.APPWRITE_BLOCKS_COLLECTION_ID,
+                "blocks",
+            ) || "blocks",
         profiles:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_PROFILES_COLLECTION_ID,

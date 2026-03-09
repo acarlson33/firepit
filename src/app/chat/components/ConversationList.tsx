@@ -1,10 +1,24 @@
 "use client";
 
-import { MessageSquare, Plus, MoreVertical, BellOff } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+    BellOff,
+    Check,
+    Clock3,
+    Loader2,
+    MessageSquare,
+    MoreVertical,
+    Plus,
+    UserMinus,
+    Users,
+    X,
+} from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
+import { useFriends } from "@/hooks/useFriends";
+import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,11 +26,14 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Conversation } from "@/lib/types";
+import { toast } from "sonner";
 
 type ConversationListProps = {
     conversations: Conversation[];
+    currentUserId?: string;
     loading: boolean;
     selectedConversationId: string | null;
+    onConversationCreated?: (conversation: Conversation) => void;
     onSelectConversation: (conversation: Conversation) => void;
     onNewConversation: () => void;
     onMuteConversation?: (
@@ -27,12 +44,81 @@ type ConversationListProps = {
 
 export function ConversationList({
     conversations,
+    currentUserId,
     loading,
     selectedConversationId,
+    onConversationCreated,
     onSelectConversation,
     onNewConversation,
     onMuteConversation,
 }: ConversationListProps) {
+    const {
+        friends,
+        incoming,
+        loading: friendsLoading,
+        actionLoading,
+        acceptFriendRequest,
+        declineFriendRequest,
+        removeFriendship,
+    } = useFriends(Boolean(currentUserId));
+    const [openingConversationUserId, setOpeningConversationUserId] = useState<
+        string | null
+    >(null);
+
+    const favoriteFriends = useMemo(() => friends.slice(0, 4), [friends]);
+    const incomingRequests = useMemo(() => incoming.slice(0, 3), [incoming]);
+
+    async function handleOpenFriendConversation(friendUserId: string) {
+        if (!currentUserId) {
+            return;
+        }
+
+        const existingConversation = conversations.find((conversation) => {
+            if (conversation.isGroup) {
+                return false;
+            }
+
+            return conversation.otherUser?.userId === friendUserId;
+        });
+
+        if (existingConversation) {
+            onSelectConversation(existingConversation);
+            return;
+        }
+
+        setOpeningConversationUserId(friendUserId);
+        try {
+            const conversation = await getOrCreateConversation(
+                currentUserId,
+                friendUserId,
+            );
+            if (onConversationCreated) {
+                onConversationCreated(conversation);
+                return;
+            }
+
+            onSelectConversation(conversation);
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to start direct message",
+            );
+        } finally {
+            setOpeningConversationUserId(null);
+        }
+    }
+
+    async function handleAction(
+        action: () => Promise<boolean>,
+        successMessage: string,
+    ) {
+        const succeeded = await action();
+        if (succeeded) {
+            toast.success(successMessage);
+        }
+    }
+
     if (loading) {
         return (
             <div className="space-y-2 p-2">
@@ -69,6 +155,210 @@ export function ConversationList({
 
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
+                {currentUserId &&
+                (friendsLoading ||
+                    incomingRequests.length > 0 ||
+                    favoriteFriends.length > 0) ? (
+                    <div className="space-y-4 border-border/60 border-b p-3">
+                        {incomingRequests.length > 0 ? (
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <Clock3 className="size-3.5" />
+                                    Pending Requests
+                                </div>
+                                <div className="space-y-2">
+                                    {incomingRequests.map((entry) => {
+                                        const displayName =
+                                            entry.user.displayName ??
+                                            entry.user.userId;
+
+                                        return (
+                                            <div
+                                                className="rounded-xl border border-border/60 bg-background/70 p-2"
+                                                key={entry.friendship.$id}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar
+                                                        alt={displayName}
+                                                        fallback={displayName}
+                                                        size="sm"
+                                                        src={
+                                                            entry.user.avatarUrl
+                                                        }
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium">
+                                                            {displayName}
+                                                        </p>
+                                                        <p className="truncate text-xs text-muted-foreground">
+                                                            wants to connect
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2 flex gap-2">
+                                                    <Button
+                                                        className="flex-1"
+                                                        disabled={
+                                                            actionLoading ===
+                                                            `accept:${entry.user.userId}`
+                                                        }
+                                                        onClick={() =>
+                                                            void handleAction(
+                                                                () =>
+                                                                    acceptFriendRequest(
+                                                                        entry
+                                                                            .user
+                                                                            .userId,
+                                                                    ),
+                                                                `You are now friends with ${displayName}`,
+                                                            )
+                                                        }
+                                                        size="sm"
+                                                        type="button"
+                                                    >
+                                                        <Check className="mr-2 size-3.5" />
+                                                        Accept
+                                                    </Button>
+                                                    <Button
+                                                        className="flex-1"
+                                                        disabled={
+                                                            actionLoading ===
+                                                            `decline:${entry.user.userId}`
+                                                        }
+                                                        onClick={() =>
+                                                            void handleAction(
+                                                                () =>
+                                                                    declineFriendRequest(
+                                                                        entry
+                                                                            .user
+                                                                            .userId,
+                                                                    ),
+                                                                `Declined request from ${displayName}`,
+                                                            )
+                                                        }
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="outline"
+                                                    >
+                                                        <X className="mr-2 size-3.5" />
+                                                        Decline
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <Users className="size-3.5" />
+                                Friends
+                            </div>
+                            {friendsLoading ? (
+                                <div className="space-y-2">
+                                    {Array.from({ length: 2 }).map(
+                                        (_, index) => (
+                                            <div
+                                                className="flex items-center gap-2"
+                                                key={index}
+                                            >
+                                                <Skeleton className="size-8 rounded-full" />
+                                                <Skeleton className="h-4 flex-1" />
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                            ) : favoriteFriends.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Add friends from profiles or search to keep
+                                    them close.
+                                </p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {favoriteFriends.map((entry) => {
+                                        const displayName =
+                                            entry.user.displayName ??
+                                            entry.user.userId;
+                                        const isOpening =
+                                            openingConversationUserId ===
+                                            entry.user.userId;
+
+                                        return (
+                                            <div
+                                                className="group flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-accent/50"
+                                                key={entry.friendship.$id}
+                                            >
+                                                <button
+                                                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                                    onClick={() =>
+                                                        void handleOpenFriendConversation(
+                                                            entry.user.userId,
+                                                        )
+                                                    }
+                                                    type="button"
+                                                >
+                                                    <Avatar
+                                                        alt={displayName}
+                                                        fallback={displayName}
+                                                        size="sm"
+                                                        src={
+                                                            entry.user.avatarUrl
+                                                        }
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium">
+                                                            {displayName}
+                                                        </p>
+                                                        {entry.user.pronouns ? (
+                                                            <p className="truncate text-xs text-muted-foreground">
+                                                                {
+                                                                    entry.user
+                                                                        .pronouns
+                                                                }
+                                                            </p>
+                                                        ) : null}
+                                                    </div>
+                                                    {isOpening ? (
+                                                        <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                                                    ) : null}
+                                                </button>
+                                                <Button
+                                                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                                                    disabled={
+                                                        actionLoading ===
+                                                        `remove:${entry.user.userId}`
+                                                    }
+                                                    onClick={() =>
+                                                        void handleAction(
+                                                            () =>
+                                                                removeFriendship(
+                                                                    entry.user
+                                                                        .userId,
+                                                                ),
+                                                            `Removed ${displayName} from friends`,
+                                                        )
+                                                    }
+                                                    size="icon"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    <UserMinus className="size-4" />
+                                                    <span className="sr-only">
+                                                        Remove {displayName}{" "}
+                                                        from friends
+                                                    </span>
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : null}
+
                 {conversations.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         <MessageSquare className="mb-2 size-8 text-muted-foreground" />
@@ -106,6 +396,12 @@ export function ConversationList({
                                 : otherUser?.status
                                   ? otherUser.status
                                   : undefined;
+                            const secondaryLine = conversation.readOnly
+                                ? conversation.readOnlyReason || "Read only"
+                                : conversation.lastMessage?.text || subtitle;
+                            const secondaryLineClassName = conversation.readOnly
+                                ? "truncate text-amber-700 dark:text-amber-300 text-xs"
+                                : "truncate text-muted-foreground text-xs";
 
                             return (
                                 <div
@@ -168,11 +464,13 @@ export function ConversationList({
                                                     </span>
                                                 )}
                                             </div>
-                                            {(conversation.lastMessage ||
-                                                subtitle) && (
-                                                <p className="truncate text-muted-foreground text-xs">
-                                                    {conversation.lastMessage
-                                                        ?.text || subtitle}
+                                            {secondaryLine && (
+                                                <p
+                                                    className={
+                                                        secondaryLineClassName
+                                                    }
+                                                >
+                                                    {secondaryLine}
                                                 </p>
                                             )}
                                         </div>

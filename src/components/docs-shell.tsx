@@ -23,9 +23,9 @@ export function DocsShell({
         <div className="mx-auto w-full max-w-7xl px-6 py-10">
             <div className="grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
                 <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-                    <div className="rounded-3xl border border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur-sm">
+                    <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur-sm">
                         <div className="flex items-center gap-3">
-                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                                 <BookOpenText className="h-5 w-5" />
                             </span>
                             <div>
@@ -33,7 +33,7 @@ export function DocsShell({
                                     Firepit Docs
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                    Product and API guidance
+                                    Product &amp; API guidance
                                 </p>
                             </div>
                         </div>
@@ -93,11 +93,12 @@ export function DocsShell({
                 </aside>
 
                 <div className="space-y-6">
-                    <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-8 shadow-xl backdrop-blur-sm">
+                    <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur-sm">
                         <div className="max-w-3xl space-y-3">
-                            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                <BookOpenText className="h-3.5 w-3.5" />
                                 Documentation
-                            </p>
+                            </div>
                             <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
                                 {title}
                             </h1>
@@ -107,9 +108,7 @@ export function DocsShell({
                         </div>
                     </section>
 
-                    <section className="rounded-3xl border border-border/60 bg-card/70 p-8 shadow-sm backdrop-blur-sm">
-                        {children}
-                    </section>
+                    <div className="space-y-6">{children}</div>
                 </div>
             </div>
         </div>

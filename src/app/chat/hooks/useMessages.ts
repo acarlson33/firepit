@@ -177,8 +177,14 @@ export function useMessages({
             return;
         }
 
+        let cleanupFn: (() => void) | undefined;
+        let cancelled = false;
+
         import("@/lib/realtime-pool")
             .then(({ getSharedClient, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
                 const c = getSharedClient();
                 const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
 
@@ -231,6 +237,9 @@ export function useMessages({
                     // Enrich message with profile data before adding to state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (!profileEnriched) {
+                        return;
+                    }
                     setMessages((prev) => {
                         // Check if message already exists to prevent duplicates
                         if (prev.some((m) => m.$id === profileEnriched.$id)) {
@@ -250,6 +259,12 @@ export function useMessages({
                     // Enrich message with profile data before updating state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (!profileEnriched) {
+                        setMessages((prev) =>
+                            prev.filter((message) => message.$id !== base.$id),
+                        );
+                        return;
+                    }
                     setMessages((prev) => {
                         // Enrich with reply context using existing messages
                         const enriched = enrichMessageWithReplyContext(
@@ -295,7 +310,7 @@ export function useMessages({
 
                 const untrack = trackSubscription(messageChannel);
 
-                return () => {
+                cleanupFn = () => {
                     untrack();
                     unsub();
                 };
@@ -303,6 +318,11 @@ export function useMessages({
             .catch(() => {
                 /* failed to set up realtime; ignore silently */
             });
+
+        return () => {
+            cancelled = true;
+            cleanupFn?.();
+        };
     }, [channelId]);
 
     // realtime subscription for typing indicators
@@ -720,6 +740,9 @@ export function useMessages({
                 // Enrich message with profile data and reply context
                 const profileEnriched =
                     await enrichMessageWithProfile(baseMessage);
+                if (!profileEnriched) {
+                    return;
+                }
                 const enriched = enrichMessageWithReplyContext(
                     profileEnriched,
                     messages,

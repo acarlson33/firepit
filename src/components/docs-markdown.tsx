@@ -48,10 +48,18 @@ export function DocsMarkdown({ content }: DocsMarkdownProps) {
 
                         return (
                             <h2
-                                className="scroll-mt-24 border-t border-border/60 pt-8 text-2xl font-semibold tracking-tight"
+                                className="group scroll-mt-24 border-t border-border/60 pt-8 text-2xl font-semibold tracking-tight"
                                 id={id}
                             >
                                 {children}
+                                <a
+                                    aria-hidden="true"
+                                    className="ml-2 text-base font-normal text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/50"
+                                    href={`#${id}`}
+                                    tabIndex={-1}
+                                >
+                                    #
+                                </a>
                             </h2>
                         );
                     },
@@ -60,15 +68,33 @@ export function DocsMarkdown({ content }: DocsMarkdownProps) {
 
                         return (
                             <h3
-                                className="scroll-mt-24 text-lg font-semibold tracking-tight"
+                                className="group scroll-mt-24 text-lg font-semibold tracking-tight"
                                 id={id}
                             >
                                 {children}
+                                <a
+                                    aria-hidden="true"
+                                    className="ml-2 text-sm font-normal text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/50"
+                                    href={`#${id}`}
+                                    tabIndex={-1}
+                                >
+                                    #
+                                </a>
                             </h3>
                         );
                     },
                     p: ({ children }) => (
                         <p className="text-muted-foreground">{children}</p>
+                    ),
+                    strong: ({ children }) => (
+                        <strong className="font-semibold text-foreground">
+                            {children}
+                        </strong>
+                    ),
+                    em: ({ children }) => (
+                        <em className="italic text-foreground/80">
+                            {children}
+                        </em>
                     ),
                     ul: ({ children }) => (
                         <ul className="space-y-2 pl-5 text-muted-foreground marker:text-primary list-disc">
@@ -127,7 +153,7 @@ export function DocsMarkdown({ content }: DocsMarkdownProps) {
                         </a>
                     ),
                     blockquote: ({ children }) => (
-                        <blockquote className="rounded-r-2xl border-l-4 border-primary/50 bg-muted/40 px-4 py-3 text-muted-foreground">
+                        <blockquote className="rounded-r-2xl border-l-4 border-primary/60 bg-primary/5 px-4 py-3 text-muted-foreground">
                             {children}
                         </blockquote>
                     ),

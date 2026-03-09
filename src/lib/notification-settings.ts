@@ -7,63 +7,77 @@ import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig, perms } from "./appwrite-core";
 import type {
-	NotificationSettings,
-	NotificationLevel,
-	NotificationOverride,
-	MuteDuration,
+    NotificationSettings,
+    NotificationLevel,
+    NotificationOverride,
+    MuteDuration,
+    DirectMessagePrivacy,
 } from "./types";
 
-const DEFAULT_SETTINGS: Omit<NotificationSettings, "$id" | "userId" | "$createdAt" | "$updatedAt"> = {
-	globalNotifications: "all",
-	desktopNotifications: true,
-	pushNotifications: true,
-	notificationSound: true,
-	quietHoursStart: undefined,
-	quietHoursEnd: undefined,
-	serverOverrides: {},
-	channelOverrides: {},
-	conversationOverrides: {},
+const DEFAULT_SETTINGS: Omit<
+    NotificationSettings,
+    "$id" | "userId" | "$createdAt" | "$updatedAt"
+> = {
+    globalNotifications: "all",
+    directMessagePrivacy: "everyone",
+    desktopNotifications: true,
+    pushNotifications: true,
+    notificationSound: true,
+    quietHoursStart: undefined,
+    quietHoursEnd: undefined,
+    serverOverrides: {},
+    channelOverrides: {},
+    conversationOverrides: {},
 };
 
 /**
  * Parse JSON string overrides from database into typed objects
  */
 function parseOverrides(value: unknown): Record<string, NotificationOverride> {
-	if (!value) {
-		return {};
-	}
-	if (typeof value === "string") {
-		try {
-			return JSON.parse(value) as Record<string, NotificationOverride>;
-		} catch {
-			return {};
-		}
-	}
-	if (typeof value === "object") {
-		return value as Record<string, NotificationOverride>;
-	}
-	return {};
+    if (!value) {
+        return {};
+    }
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value) as Record<string, NotificationOverride>;
+        } catch {
+            return {};
+        }
+    }
+    if (typeof value === "object") {
+        return value as Record<string, NotificationOverride>;
+    }
+    return {};
 }
 
 /**
  * Convert database document to NotificationSettings type
  */
-function documentToSettings(doc: Record<string, unknown>): NotificationSettings {
-	return {
-		$id: String(doc.$id),
-		userId: String(doc.userId),
-		globalNotifications: (doc.globalNotifications as NotificationLevel) || "all",
-		desktopNotifications: Boolean(doc.desktopNotifications ?? true),
-		pushNotifications: Boolean(doc.pushNotifications ?? true),
-		notificationSound: Boolean(doc.notificationSound ?? true),
-		quietHoursStart: doc.quietHoursStart ? String(doc.quietHoursStart) : undefined,
-		quietHoursEnd: doc.quietHoursEnd ? String(doc.quietHoursEnd) : undefined,
-		serverOverrides: parseOverrides(doc.serverOverrides),
-		channelOverrides: parseOverrides(doc.channelOverrides),
-		conversationOverrides: parseOverrides(doc.conversationOverrides),
-		$createdAt: doc.$createdAt ? String(doc.$createdAt) : undefined,
-		$updatedAt: doc.$updatedAt ? String(doc.$updatedAt) : undefined,
-	};
+function documentToSettings(
+    doc: Record<string, unknown>,
+): NotificationSettings {
+    return {
+        $id: String(doc.$id),
+        userId: String(doc.userId),
+        globalNotifications:
+            (doc.globalNotifications as NotificationLevel) || "all",
+        directMessagePrivacy:
+            (doc.directMessagePrivacy as DirectMessagePrivacy) || "everyone",
+        desktopNotifications: Boolean(doc.desktopNotifications ?? true),
+        pushNotifications: Boolean(doc.pushNotifications ?? true),
+        notificationSound: Boolean(doc.notificationSound ?? true),
+        quietHoursStart: doc.quietHoursStart
+            ? String(doc.quietHoursStart)
+            : undefined,
+        quietHoursEnd: doc.quietHoursEnd
+            ? String(doc.quietHoursEnd)
+            : undefined,
+        serverOverrides: parseOverrides(doc.serverOverrides),
+        channelOverrides: parseOverrides(doc.channelOverrides),
+        conversationOverrides: parseOverrides(doc.conversationOverrides),
+        $createdAt: doc.$createdAt ? String(doc.$createdAt) : undefined,
+        $updatedAt: doc.$updatedAt ? String(doc.$updatedAt) : undefined,
+    };
 }
 
 /**
@@ -71,26 +85,28 @@ function documentToSettings(doc: Record<string, unknown>): NotificationSettings 
  * Returns null if settings don't exist yet
  */
 export async function getNotificationSettings(
-	userId: string
+    userId: string,
 ): Promise<NotificationSettings | null> {
-	try {
-		const { databases } = getAdminClient();
-		const env = getEnvConfig();
+    try {
+        const { databases } = getAdminClient();
+        const env = getEnvConfig();
 
-		const result = await databases.listDocuments(
-			env.databaseId,
-			env.collections.notificationSettings,
-			[Query.equal("userId", userId), Query.limit(1)]
-		);
+        const result = await databases.listDocuments(
+            env.databaseId,
+            env.collections.notificationSettings,
+            [Query.equal("userId", userId), Query.limit(1)],
+        );
 
-		if (result.documents.length === 0) {
-			return null;
-		}
+        if (result.documents.length === 0) {
+            return null;
+        }
 
-		return documentToSettings(result.documents[0] as unknown as Record<string, unknown>);
-	} catch {
-		return null;
-	}
+        return documentToSettings(
+            result.documents[0] as unknown as Record<string, unknown>,
+        );
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -98,233 +114,258 @@ export async function getNotificationSettings(
  * Creates default settings if they don't exist
  */
 export async function getOrCreateNotificationSettings(
-	userId: string
+    userId: string,
 ): Promise<NotificationSettings> {
-	const existing = await getNotificationSettings(userId);
-	if (existing) {
-		return existing;
-	}
+    const existing = await getNotificationSettings(userId);
+    if (existing) {
+        return existing;
+    }
 
-	return createNotificationSettings(userId, DEFAULT_SETTINGS);
+    return createNotificationSettings(userId, DEFAULT_SETTINGS);
 }
 
 /**
  * Create notification settings for a user
  */
 export async function createNotificationSettings(
-	userId: string,
-	data: Partial<Omit<NotificationSettings, "$id" | "userId" | "$createdAt" | "$updatedAt">>
+    userId: string,
+    data: Partial<
+        Omit<
+            NotificationSettings,
+            "$id" | "userId" | "$createdAt" | "$updatedAt"
+        >
+    >,
 ): Promise<NotificationSettings> {
-	const { databases } = getAdminClient();
-	const env = getEnvConfig();
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
 
-	const docData = {
-		userId,
-		globalNotifications: data.globalNotifications ?? DEFAULT_SETTINGS.globalNotifications,
-		desktopNotifications: data.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications,
-		pushNotifications: data.pushNotifications ?? DEFAULT_SETTINGS.pushNotifications,
-		notificationSound: data.notificationSound ?? DEFAULT_SETTINGS.notificationSound,
-		quietHoursStart: data.quietHoursStart !== undefined ? data.quietHoursStart : null,
-		quietHoursEnd: data.quietHoursEnd !== undefined ? data.quietHoursEnd : null,
-		serverOverrides: JSON.stringify(data.serverOverrides ?? {}),
-		channelOverrides: JSON.stringify(data.channelOverrides ?? {}),
-		conversationOverrides: JSON.stringify(data.conversationOverrides ?? {}),
-	};
+    const docData = {
+        userId,
+        globalNotifications:
+            data.globalNotifications ?? DEFAULT_SETTINGS.globalNotifications,
+        directMessagePrivacy:
+            data.directMessagePrivacy ?? DEFAULT_SETTINGS.directMessagePrivacy,
+        desktopNotifications:
+            data.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications,
+        pushNotifications:
+            data.pushNotifications ?? DEFAULT_SETTINGS.pushNotifications,
+        notificationSound:
+            data.notificationSound ?? DEFAULT_SETTINGS.notificationSound,
+        quietHoursStart:
+            data.quietHoursStart !== undefined ? data.quietHoursStart : null,
+        quietHoursEnd:
+            data.quietHoursEnd !== undefined ? data.quietHoursEnd : null,
+        serverOverrides: JSON.stringify(data.serverOverrides ?? {}),
+        channelOverrides: JSON.stringify(data.channelOverrides ?? {}),
+        conversationOverrides: JSON.stringify(data.conversationOverrides ?? {}),
+    };
 
-	const doc = await databases.createDocument(
-		env.databaseId,
-		env.collections.notificationSettings,
-		ID.unique(),
-		docData,
-		perms.serverOwner(userId)
-	);
+    const doc = await databases.createDocument(
+        env.databaseId,
+        env.collections.notificationSettings,
+        ID.unique(),
+        docData,
+        perms.serverOwner(userId),
+    );
 
-	return documentToSettings(doc as unknown as Record<string, unknown>);
+    return documentToSettings(doc as unknown as Record<string, unknown>);
 }
 
 /**
  * Update notification settings for a user
  */
 export async function updateNotificationSettings(
-	settingsId: string,
-	data: Partial<Omit<NotificationSettings, "$id" | "userId" | "$createdAt" | "$updatedAt">>
+    settingsId: string,
+    data: Partial<
+        Omit<
+            NotificationSettings,
+            "$id" | "userId" | "$createdAt" | "$updatedAt"
+        >
+    >,
 ): Promise<NotificationSettings> {
-	const { databases } = getAdminClient();
-	const env = getEnvConfig();
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
 
-	// Build update object, only including defined fields
-	const updateData: Record<string, unknown> = {};
+    // Build update object, only including defined fields
+    const updateData: Record<string, unknown> = {};
 
-	if (data.globalNotifications !== undefined) {
-		updateData.globalNotifications = data.globalNotifications;
-	}
-	if (data.desktopNotifications !== undefined) {
-		updateData.desktopNotifications = data.desktopNotifications;
-	}
-	if (data.pushNotifications !== undefined) {
-		updateData.pushNotifications = data.pushNotifications;
-	}
-	if (data.notificationSound !== undefined) {
-		updateData.notificationSound = data.notificationSound;
-	}
-	if (data.quietHoursStart !== undefined) {
-		updateData.quietHoursStart = data.quietHoursStart ?? null;
-	}
-	if (data.quietHoursEnd !== undefined) {
-		updateData.quietHoursEnd = data.quietHoursEnd ?? null;
-	}
-	if (data.serverOverrides !== undefined) {
-		updateData.serverOverrides = JSON.stringify(data.serverOverrides);
-	}
-	if (data.channelOverrides !== undefined) {
-		updateData.channelOverrides = JSON.stringify(data.channelOverrides);
-	}
-	if (data.conversationOverrides !== undefined) {
-		updateData.conversationOverrides = JSON.stringify(data.conversationOverrides);
-	}
+    if (data.globalNotifications !== undefined) {
+        updateData.globalNotifications = data.globalNotifications;
+    }
+    if (data.directMessagePrivacy !== undefined) {
+        updateData.directMessagePrivacy = data.directMessagePrivacy;
+    }
+    if (data.desktopNotifications !== undefined) {
+        updateData.desktopNotifications = data.desktopNotifications;
+    }
+    if (data.pushNotifications !== undefined) {
+        updateData.pushNotifications = data.pushNotifications;
+    }
+    if (data.notificationSound !== undefined) {
+        updateData.notificationSound = data.notificationSound;
+    }
+    if (data.quietHoursStart !== undefined) {
+        updateData.quietHoursStart = data.quietHoursStart ?? null;
+    }
+    if (data.quietHoursEnd !== undefined) {
+        updateData.quietHoursEnd = data.quietHoursEnd ?? null;
+    }
+    if (data.serverOverrides !== undefined) {
+        updateData.serverOverrides = JSON.stringify(data.serverOverrides);
+    }
+    if (data.channelOverrides !== undefined) {
+        updateData.channelOverrides = JSON.stringify(data.channelOverrides);
+    }
+    if (data.conversationOverrides !== undefined) {
+        updateData.conversationOverrides = JSON.stringify(
+            data.conversationOverrides,
+        );
+    }
 
-	const doc = await databases.updateDocument(
-		env.databaseId,
-		env.collections.notificationSettings,
-		settingsId,
-		updateData
-	);
+    const doc = await databases.updateDocument(
+        env.databaseId,
+        env.collections.notificationSettings,
+        settingsId,
+        updateData,
+    );
 
-	return documentToSettings(doc as unknown as Record<string, unknown>);
+    return documentToSettings(doc as unknown as Record<string, unknown>);
 }
 
 /**
  * Calculate mute expiration timestamp from duration
  */
-export function calculateMuteExpiration(duration: MuteDuration): string | undefined {
-	if (duration === "forever") {
-		return undefined; // No expiration
-	}
+export function calculateMuteExpiration(
+    duration: MuteDuration,
+): string | undefined {
+    if (duration === "forever") {
+        return undefined; // No expiration
+    }
 
-	const now = new Date();
-	const durationMs: Record<Exclude<MuteDuration, "forever">, number> = {
-		"15m": 15 * 60 * 1000,
-		"1h": 60 * 60 * 1000,
-		"8h": 8 * 60 * 60 * 1000,
-		"24h": 24 * 60 * 60 * 1000,
-	};
+    const now = new Date();
+    const durationMs: Record<Exclude<MuteDuration, "forever">, number> = {
+        "15m": 15 * 60 * 1000,
+        "1h": 60 * 60 * 1000,
+        "8h": 8 * 60 * 60 * 1000,
+        "24h": 24 * 60 * 60 * 1000,
+    };
 
-	return new Date(now.getTime() + durationMs[duration]).toISOString();
+    return new Date(now.getTime() + durationMs[duration]).toISOString();
 }
 
 /**
  * Check if a mute has expired
  */
 export function isMuteExpired(mutedUntil: string | undefined): boolean {
-	if (!mutedUntil) {
-		return false; // No expiration means muted forever
-	}
-	return new Date(mutedUntil) < new Date();
+    if (!mutedUntil) {
+        return false; // No expiration means muted forever
+    }
+    return new Date(mutedUntil) < new Date();
 }
 
 /**
  * Mute a server for a user
  */
 export async function muteServer(
-	userId: string,
-	serverId: string,
-	duration: MuteDuration,
-	level: NotificationLevel = "nothing"
+    userId: string,
+    serverId: string,
+    duration: MuteDuration,
+    level: NotificationLevel = "nothing",
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const serverOverrides = { ...settings.serverOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const serverOverrides = { ...settings.serverOverrides };
 
-	serverOverrides[serverId] = {
-		level,
-		mutedUntil: calculateMuteExpiration(duration),
-	};
+    serverOverrides[serverId] = {
+        level,
+        mutedUntil: calculateMuteExpiration(duration),
+    };
 
-	return updateNotificationSettings(settings.$id, { serverOverrides });
+    return updateNotificationSettings(settings.$id, { serverOverrides });
 }
 
 /**
  * Unmute a server for a user
  */
 export async function unmuteServer(
-	userId: string,
-	serverId: string
+    userId: string,
+    serverId: string,
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const serverOverrides = { ...settings.serverOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const serverOverrides = { ...settings.serverOverrides };
 
-	delete serverOverrides[serverId];
+    delete serverOverrides[serverId];
 
-	return updateNotificationSettings(settings.$id, { serverOverrides });
+    return updateNotificationSettings(settings.$id, { serverOverrides });
 }
 
 /**
  * Mute a channel for a user
  */
 export async function muteChannel(
-	userId: string,
-	channelId: string,
-	duration: MuteDuration,
-	level: NotificationLevel = "nothing"
+    userId: string,
+    channelId: string,
+    duration: MuteDuration,
+    level: NotificationLevel = "nothing",
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const channelOverrides = { ...settings.channelOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const channelOverrides = { ...settings.channelOverrides };
 
-	channelOverrides[channelId] = {
-		level,
-		mutedUntil: calculateMuteExpiration(duration),
-	};
+    channelOverrides[channelId] = {
+        level,
+        mutedUntil: calculateMuteExpiration(duration),
+    };
 
-	return updateNotificationSettings(settings.$id, { channelOverrides });
+    return updateNotificationSettings(settings.$id, { channelOverrides });
 }
 
 /**
  * Unmute a channel for a user
  */
 export async function unmuteChannel(
-	userId: string,
-	channelId: string
+    userId: string,
+    channelId: string,
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const channelOverrides = { ...settings.channelOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const channelOverrides = { ...settings.channelOverrides };
 
-	delete channelOverrides[channelId];
+    delete channelOverrides[channelId];
 
-	return updateNotificationSettings(settings.$id, { channelOverrides });
+    return updateNotificationSettings(settings.$id, { channelOverrides });
 }
 
 /**
  * Mute a conversation for a user
  */
 export async function muteConversation(
-	userId: string,
-	conversationId: string,
-	duration: MuteDuration,
-	level: NotificationLevel = "nothing"
+    userId: string,
+    conversationId: string,
+    duration: MuteDuration,
+    level: NotificationLevel = "nothing",
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const conversationOverrides = { ...settings.conversationOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const conversationOverrides = { ...settings.conversationOverrides };
 
-	conversationOverrides[conversationId] = {
-		level,
-		mutedUntil: calculateMuteExpiration(duration),
-	};
+    conversationOverrides[conversationId] = {
+        level,
+        mutedUntil: calculateMuteExpiration(duration),
+    };
 
-	return updateNotificationSettings(settings.$id, { conversationOverrides });
+    return updateNotificationSettings(settings.$id, { conversationOverrides });
 }
 
 /**
  * Unmute a conversation for a user
  */
 export async function unmuteConversation(
-	userId: string,
-	conversationId: string
+    userId: string,
+    conversationId: string,
 ): Promise<NotificationSettings> {
-	const settings = await getOrCreateNotificationSettings(userId);
-	const conversationOverrides = { ...settings.conversationOverrides };
+    const settings = await getOrCreateNotificationSettings(userId);
+    const conversationOverrides = { ...settings.conversationOverrides };
 
-	delete conversationOverrides[conversationId];
+    delete conversationOverrides[conversationId];
 
-	return updateNotificationSettings(settings.$id, { conversationOverrides });
+    return updateNotificationSettings(settings.$id, { conversationOverrides });
 }
 
 /**
@@ -332,63 +373,65 @@ export async function unmuteConversation(
  * Priority: Channel > Server > Global
  */
 export function getEffectiveNotificationLevel(
-	settings: NotificationSettings,
-	context: {
-		channelId?: string;
-		serverId?: string;
-		conversationId?: string;
-	}
+    settings: NotificationSettings,
+    context: {
+        channelId?: string;
+        serverId?: string;
+        conversationId?: string;
+    },
 ): NotificationLevel {
-	// Check conversation override first (for DMs)
-	if (context.conversationId && settings.conversationOverrides) {
-		const override = settings.conversationOverrides[context.conversationId];
-		if (override && !isMuteExpired(override.mutedUntil)) {
-			return override.level;
-		}
-	}
+    // Check conversation override first (for DMs)
+    if (context.conversationId && settings.conversationOverrides) {
+        const override = settings.conversationOverrides[context.conversationId];
+        if (override && !isMuteExpired(override.mutedUntil)) {
+            return override.level;
+        }
+    }
 
-	// Check channel override (most specific for channels)
-	if (context.channelId && settings.channelOverrides) {
-		const override = settings.channelOverrides[context.channelId];
-		if (override && !isMuteExpired(override.mutedUntil)) {
-			return override.level;
-		}
-	}
+    // Check channel override (most specific for channels)
+    if (context.channelId && settings.channelOverrides) {
+        const override = settings.channelOverrides[context.channelId];
+        if (override && !isMuteExpired(override.mutedUntil)) {
+            return override.level;
+        }
+    }
 
-	// Check server override
-	if (context.serverId && settings.serverOverrides) {
-		const override = settings.serverOverrides[context.serverId];
-		if (override && !isMuteExpired(override.mutedUntil)) {
-			return override.level;
-		}
-	}
+    // Check server override
+    if (context.serverId && settings.serverOverrides) {
+        const override = settings.serverOverrides[context.serverId];
+        if (override && !isMuteExpired(override.mutedUntil)) {
+            return override.level;
+        }
+    }
 
-	// Fall back to global setting
-	return settings.globalNotifications;
+    // Fall back to global setting
+    return settings.globalNotifications;
 }
 
 /**
  * Check if current time is within quiet hours
  */
 export function isInQuietHours(settings: NotificationSettings): boolean {
-	if (!settings.quietHoursStart || !settings.quietHoursEnd) {
-		return false;
-	}
+    if (!settings.quietHoursStart || !settings.quietHoursEnd) {
+        return false;
+    }
 
-	const now = new Date();
-	const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-	const [startHour, startMin] = settings.quietHoursStart.split(":").map(Number);
-	const [endHour, endMin] = settings.quietHoursEnd.split(":").map(Number);
+    const [startHour, startMin] = settings.quietHoursStart
+        .split(":")
+        .map(Number);
+    const [endHour, endMin] = settings.quietHoursEnd.split(":").map(Number);
 
-	const startMinutes = startHour * 60 + startMin;
-	const endMinutes = endHour * 60 + endMin;
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
 
-	// Handle overnight quiet hours (e.g., 22:00 - 08:00)
-	if (startMinutes > endMinutes) {
-		return currentMinutes >= startMinutes || currentMinutes < endMinutes;
-	}
+    // Handle overnight quiet hours (e.g., 22:00 - 08:00)
+    if (startMinutes > endMinutes) {
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
 
-	// Normal range (e.g., 00:00 - 08:00)
-	return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    // Normal range (e.g., 00:00 - 08:00)
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
     Loader2,
+    Lock,
     ArrowLeft,
     MessageSquare,
     Reply,
@@ -49,6 +50,8 @@ type DirectMessageViewProps = {
     loading: boolean;
     sending: boolean;
     currentUserId: string;
+    readOnly?: boolean;
+    readOnlyReason?: string | null;
     messageDensity?: "compact" | "cozy";
     onSend: (
         _text: string,
@@ -81,6 +84,8 @@ export function DirectMessageView({
     loading,
     sending,
     currentUserId,
+    readOnly = false,
+    readOnlyReason,
     messageDensity = "compact",
     onSend,
     onEdit,
@@ -130,6 +135,8 @@ export function DirectMessageView({
     const subtitle = isGroup
         ? `${participantCount} participant${participantCount === 1 ? "" : "s"}`
         : otherUser?.status;
+    const composerDisabled = readOnly || sending || uploadingImage;
+    const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
 
     // Use virtual scrolling for large message lists (better performance)
     const useVirtualScrolling = messages.length > VIRTUALIZATION_THRESHOLD;
@@ -361,8 +368,26 @@ export function DirectMessageView({
                             {subtitle}
                         </p>
                     )}
+                    {readOnly ? (
+                        <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                            <Lock className="size-3" />
+                            Read only
+                        </p>
+                    ) : null}
                 </div>
             </div>
+
+            {readOnly ? (
+                <div className="flex items-start gap-2 rounded-2xl border border-amber-300/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-100">
+                    <Lock className="mt-0.5 size-4 shrink-0" />
+                    <div>
+                        <p className="font-medium">Messaging disabled</p>
+                        <p className="text-xs text-amber-800/90 dark:text-amber-200/90">
+                            {readOnlyMessage}
+                        </p>
+                    </div>
+                </div>
+            ) : null}
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-4">
@@ -846,7 +871,11 @@ export function DirectMessageView({
                                                         )}
                                                         {onTogglePinMessage && (
                                                             <Button
-                                                                aria-label={isPinned ? "Unpin message" : "Pin message"}
+                                                                aria-label={
+                                                                    isPinned
+                                                                        ? "Unpin message"
+                                                                        : "Pin message"
+                                                                }
                                                                 onClick={() => {
                                                                     void onTogglePinMessage(
                                                                         message,
@@ -957,7 +986,9 @@ export function DirectMessageView({
                                     aria-live="polite"
                                     className={[
                                         "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
-                                        Object.values(typingUsers).length > 0 ? "bg-muted/50 opacity-100" : "pointer-events-none opacity-0",
+                                        Object.values(typingUsers).length > 0
+                                            ? "bg-muted/50 opacity-100"
+                                            : "pointer-events-none opacity-0",
                                     ].join(" ")}
                                 >
                                     <span
@@ -972,8 +1003,7 @@ export function DirectMessageView({
                                                     t.userId.slice(0, 6),
                                             )
                                             .join(", ")}{" "}
-                                        {Object.values(typingUsers).length >
-                                        1
+                                        {Object.values(typingUsers).length > 1
                                             ? "are"
                                             : "is"}{" "}
                                         typing...
@@ -1067,11 +1097,12 @@ export function DirectMessageView({
                             <div className="flex items-center gap-2">
                                 <Button
                                     disabled={
-                                        sending ||
-                                        uploadingImage ||
+                                        composerDisabled ||
                                         Boolean(editingMessageId)
                                     }
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={() =>
+                                        fileInputRef.current?.click()
+                                    }
                                     size="icon"
                                     type="button"
                                     variant="outline"
@@ -1082,8 +1113,7 @@ export function DirectMessageView({
                                 <FileUploadButton
                                     onFileSelect={handleFileAttachmentSelect}
                                     disabled={
-                                        sending ||
-                                        uploadingImage ||
+                                        composerDisabled ||
                                         Boolean(editingMessageId)
                                     }
                                     className="shrink-0"
@@ -1100,14 +1130,18 @@ export function DirectMessageView({
                                         ? "Edit message"
                                         : "Message"
                                 }
-                                disabled={sending || uploadingImage}
+                                disabled={composerDisabled}
                                 onChange={(newValue) => {
                                     setText(newValue);
                                     if (onTypingChange) {
                                         onTypingChange(newValue);
                                     }
                                 }}
-                                placeholder="Type a message..."
+                                placeholder={
+                                    readOnly
+                                        ? readOnlyMessage
+                                        : "Type a message..."
+                                }
                                 value={text}
                                 className="flex-1 rounded-2xl border-border/60"
                                 onKeyDown={(e) => {
@@ -1124,8 +1158,7 @@ export function DirectMessageView({
                             />
                             <Button
                                 disabled={
-                                    sending ||
-                                    uploadingImage ||
+                                    composerDisabled ||
                                     (!text.trim() &&
                                         !selectedImage &&
                                         fileAttachments.length === 0)
@@ -1167,9 +1200,10 @@ export function DirectMessageView({
                                         className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
                                         key={message.$id}
                                         onClick={() => {
-                                            const target = document.querySelector<HTMLElement>(
-                                                `[data-message-id="${message.$id}"]`,
-                                            );
+                                            const target =
+                                                document.querySelector<HTMLElement>(
+                                                    `[data-message-id="${message.$id}"]`,
+                                                );
                                             if (target) {
                                                 target.scrollIntoView({
                                                     behavior: "smooth",
@@ -1251,12 +1285,20 @@ export function DirectMessageView({
                                 {onSendThreadReply && (
                                     <div className="flex gap-2">
                                         <ChatInput
+                                            disabled={readOnly}
                                             onChange={setThreadReplyText}
-                                            placeholder="Reply in thread"
+                                            placeholder={
+                                                readOnly
+                                                    ? readOnlyMessage
+                                                    : "Reply in thread"
+                                            }
                                             value={threadReplyText}
                                         />
                                         <Button
-                                            disabled={!threadReplyText.trim()}
+                                            disabled={
+                                                readOnly ||
+                                                !threadReplyText.trim()
+                                            }
                                             onClick={() => {
                                                 const value = threadReplyText;
                                                 setThreadReplyText("");

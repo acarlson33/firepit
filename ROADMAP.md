@@ -547,7 +547,7 @@ position: number;         // Position within category
 
 ---
 
-### 10. Friend System & Blocking 📊 **[Q3 2026]**
+### 10. Friend System & Blocking 📊 **[COMPLETED - Q1 2026]**
 
 **Goal:** Add friend requests, friend lists, and user blocking.
 
@@ -903,7 +903,7 @@ type FeatureFlag = {
 
 ### Q3 2026 (Jul - Sep)
 
-- 🎯 Friend System & Blocking
+- ✅ Friend System & Blocking
 - 🎯 Better Notification Controls
 - ✅ User Kick/Ban/Timeout (Completed early in Q1 2026)
 
@@ -1005,5 +1005,5 @@ For questions or suggestions, open a GitHub Discussion or issue.
 
 ---
 
-**Last Updated:** January 14, 2026  
+**Last Updated:** March 9, 2026  
 **Maintained by:** Firepit Core Team

@@ -19,6 +19,8 @@ const {
     mockUpdateDocument,
     mockDeleteDocument,
     mockGetDocument,
+    mockGetRelationshipMap,
+    mockGetRelationshipStatus,
 } = vi.hoisted(() => ({
     mockGetServerSession: vi.fn(),
     mockListDocuments: vi.fn(),
@@ -26,6 +28,8 @@ const {
     mockUpdateDocument: vi.fn(),
     mockDeleteDocument: vi.fn(),
     mockGetDocument: vi.fn(),
+    mockGetRelationshipMap: vi.fn(),
+    mockGetRelationshipStatus: vi.fn(),
 }));
 
 // Mock dependencies
@@ -82,6 +86,11 @@ vi.mock("@/lib/compression-utils", () => ({
     shouldCompress: vi.fn(() => false),
 }));
 
+vi.mock("@/lib/appwrite-friendships", () => ({
+    getRelationshipMap: mockGetRelationshipMap,
+    getRelationshipStatus: mockGetRelationshipStatus,
+}));
+
 vi.mock("node-appwrite", () => ({
     ID: {
         unique: () => "mock-id",
@@ -110,6 +119,36 @@ describe("Direct Messages API", () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+
+        mockGetDocument.mockRejectedValue(new Error("not found"));
+        mockGetRelationshipStatus.mockResolvedValue({
+            blockedByMe: false,
+            blockedMe: false,
+            directMessagePrivacy: "everyone",
+            isFriend: false,
+            incomingRequest: false,
+            outgoingRequest: false,
+            canSendDirectMessage: true,
+            canReceiveFriendRequest: true,
+        });
+        mockGetRelationshipMap.mockImplementation(
+            async (_userId: string, otherUserIds: string[]) =>
+                new Map(
+                    otherUserIds.map((otherUserId) => [
+                        otherUserId,
+                        {
+                            blockedByMe: false,
+                            blockedMe: false,
+                            directMessagePrivacy: "everyone",
+                            isFriend: false,
+                            incomingRequest: false,
+                            outgoingRequest: false,
+                            canSendDirectMessage: true,
+                            canReceiveFriendRequest: true,
+                        },
+                    ]),
+                ),
+        );
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/direct-messages/route");

@@ -55,7 +55,10 @@ beforeEach(() => {
             }
             return {
                 ok: true,
-                json: async () => ({ profiles }),
+                json: async () => ({
+                    profiles,
+                    visibleUserIds: body.userIds as string[],
+                }),
             } as Response;
         }
         // Mock single profile API responses
@@ -247,6 +250,54 @@ describe("Message Enrichment", () => {
             expect(enriched[0].avatarUrl).toBeUndefined();
             expect(enriched[0].pronouns).toBeUndefined();
         });
+
+        it("should filter out messages from blocked users when visibility is provided", async () => {
+            mockFetch.mockImplementationOnce(
+                async (_url: string, options?: RequestInit) => {
+                    const body = JSON.parse(options?.body as string) as {
+                        userIds: string[];
+                    };
+
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            profiles: {
+                                user1: {
+                                    userId: "user1",
+                                    displayName: "Alice",
+                                },
+                            },
+                            visibleUserIds: body.userIds.filter(
+                                (userId) => userId !== "blocked-user",
+                            ),
+                        }),
+                    } as Response;
+                },
+            );
+
+            const { enrichMessagesWithProfiles } =
+                await import("../lib/enrich-messages");
+
+            const messages: Message[] = [
+                {
+                    $id: "msg1",
+                    userId: "user1",
+                    text: "Visible",
+                    $createdAt: new Date().toISOString(),
+                },
+                {
+                    $id: "msg2",
+                    userId: "blocked-user",
+                    text: "Hidden",
+                    $createdAt: new Date().toISOString(),
+                },
+            ];
+
+            const enriched = await enrichMessagesWithProfiles(messages);
+
+            expect(enriched).toHaveLength(1);
+            expect(enriched[0].$id).toBe("msg1");
+        });
     });
 
     describe("Single Message Enrichment", () => {
@@ -310,6 +361,32 @@ describe("Message Enrichment", () => {
             expect(enriched.channelId).toBe("channel1");
             // Plus enriched data
             expect(enriched.displayName).toBe("Bob");
+        });
+
+        it("should return null for a blocked user when visibility excludes them", async () => {
+            mockFetch.mockImplementationOnce(async () => {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        profiles: {},
+                        visibleUserIds: [],
+                    }),
+                } as Response;
+            });
+
+            const { enrichMessageWithProfile } =
+                await import("../lib/enrich-messages");
+
+            const message: Message = {
+                $id: "msg-blocked",
+                userId: "blocked-user",
+                text: "Hidden",
+                $createdAt: new Date().toISOString(),
+            };
+
+            const enriched = await enrichMessageWithProfile(message);
+
+            expect(enriched).toBeNull();
         });
     });
 

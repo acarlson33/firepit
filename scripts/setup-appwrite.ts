@@ -88,14 +88,119 @@ async function tryVariants<T>(variants: Array<() => Promise<T>>): Promise<T> {
     throw lastErr as Error;
 }
 
+const shouldUseAnsi =
+    Boolean(process.stdout.isTTY) &&
+    !/^(1|true)$/i.test(process.env.NO_COLOR ?? "");
+
+const ANSI = {
+    reset: "\u001B[0m",
+    dim: "\u001B[2m",
+    bold: "\u001B[1m",
+    cyan: "\u001B[36m",
+    green: "\u001B[32m",
+    yellow: "\u001B[33m",
+    red: "\u001B[31m",
+    blue: "\u001B[34m",
+} as const;
+
+const logStats = {
+    sections: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    waiting: 0,
+    warnings: 0,
+    errors: 0,
+};
+
+function colorize(text: string, color: string) {
+    if (!shouldUseAnsi) {
+        return text;
+    }
+
+    return `${color}${text}${ANSI.reset}`;
+}
+
+function writeStdout(line = "") {
+    process.stdout.write(`${line}\n`);
+}
+
+function writeStderr(line: string) {
+    process.stderr.write(`${line}\n`);
+}
+
+function normalizeSetupMessage(msg: string) {
+    return msg.replace(/^\[(setup|warn|error)\]\s*/i, "").trim();
+}
+
+function logSection(title: string) {
+    logStats.sections += 1;
+    writeStdout();
+    writeStdout(colorize(`${ANSI.bold}== ${title} ==${ANSI.reset}`, ANSI.cyan));
+}
+
+function logSummary() {
+    writeStdout();
+    writeStdout(colorize(`${ANSI.bold}== Summary ==${ANSI.reset}`, ANSI.cyan));
+    writeStdout(
+        [
+            `sections: ${logStats.sections}`,
+            `created: ${logStats.created}`,
+            `updated: ${logStats.updated}`,
+            `skipped: ${logStats.skipped}`,
+            `waiting: ${logStats.waiting}`,
+            `warnings: ${logStats.warnings}`,
+            `errors: ${logStats.errors}`,
+        ].join(" | "),
+    );
+}
+
 function info(msg: string) {
-    process.stdout.write(`${msg}\n`);
+    const message = normalizeSetupMessage(msg);
+
+    if (message.startsWith("Setting up ")) {
+        logSection(message.replace(/^Setting up /, "").replace(/\.\.\.$/, ""));
+        return;
+    }
+
+    let label = "info";
+    let color = ANSI.blue;
+
+    if (message.includes("created") || message.includes("added")) {
+        label = "ok";
+        color = ANSI.green;
+        logStats.created += 1;
+    } else if (
+        message.includes("already exists") ||
+        message.startsWith("skipping ") ||
+        message.includes("is available")
+    ) {
+        label = "skip";
+        color = ANSI.dim;
+        logStats.skipped += 1;
+    } else if (
+        message.includes("waiting for") ||
+        message.includes("retrying index") ||
+        message.includes("not found yet")
+    ) {
+        label = "wait";
+        color = ANSI.yellow;
+        logStats.waiting += 1;
+    }
+
+    writeStdout(`${colorize(`[${label}]`, color)} ${message}`);
 }
+
 function warn(msg: string) {
-    process.stderr.write(`[warn] ${msg}\n`);
+    logStats.warnings += 1;
+    const message = normalizeSetupMessage(msg);
+    writeStderr(`${colorize("[warn]", ANSI.yellow)} ${message}`);
 }
+
 function err(msg: string) {
-    process.stderr.write(`[error] ${msg}\n`);
+    logStats.errors += 1;
+    const message = normalizeSetupMessage(msg);
+    writeStderr(`${colorize("[error]", ANSI.red)} ${message}`);
 }
 
 // ---- Ensure primitives ----
@@ -588,6 +693,45 @@ async function setupMutedUsers() {
     ]);
 }
 
+async function setupFriendships() {
+    await ensureCollection("friendships", "Friendships");
+    const fields: [string, number, boolean][] = [
+        ["requesterId", LEN_ID, true],
+        ["recipientId", LEN_ID, true],
+        ["pairKey", LEN_ID * 2 + 1, true],
+        ["status", 32, true],
+        ["requestedAt", LEN_TS, true],
+        ["respondedAt", LEN_TS, false],
+        ["acceptedAt", LEN_TS, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("friendships", k, size, req);
+    }
+    await ensureIndex("friendships", "idx_pairKey", "unique", ["pairKey"]);
+    await ensureIndex("friendships", "idx_requester", "key", ["requesterId"]);
+    await ensureIndex("friendships", "idx_recipient", "key", ["recipientId"]);
+    await ensureIndex("friendships", "idx_status", "key", ["status"]);
+}
+
+async function setupBlocks() {
+    await ensureCollection("blocks", "Blocks");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["blockedUserId", LEN_ID, true],
+        ["blockedAt", LEN_TS, true],
+        ["reason", LEN_TEXT, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("blocks", k, size, req);
+    }
+    await ensureIndex("blocks", "idx_user", "key", ["userId"]);
+    await ensureIndex("blocks", "idx_blocked_user", "key", ["blockedUserId"]);
+    await ensureIndex("blocks", "idx_user_blocked", "unique", [
+        "userId",
+        "blockedUserId",
+    ]);
+}
+
 async function setupRoles() {
     await ensureCollection("roles", "Roles");
     const stringFields: [string, number, boolean][] = [
@@ -654,6 +798,7 @@ async function setupProfiles() {
     for (const [k, size, req] of fields) {
         await ensureStringAttribute("profiles", k, size, req);
     }
+    await ensureBooleanAttribute("profiles", "showDocsInNavigation", false);
     await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
     try {
         await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
@@ -845,6 +990,7 @@ async function setupNotificationSettings() {
     const fields: [string, number, boolean][] = [
         ["userId", LEN_ID, true],
         ["globalNotifications", 32, true], // "all" | "mentions" | "nothing"
+        ["directMessagePrivacy", 32, true], // "everyone" | "friends"
         ["quietHoursStart", 8, false], // HH:mm format
         ["quietHoursEnd", 8, false], // HH:mm format
         ["serverOverrides", LEN_TEXT, false], // JSON string of Record<serverId, NotificationOverride>
@@ -1060,6 +1206,18 @@ async function preflight() {
 }
 
 async function run() {
+    writeStdout(
+        colorize(`${ANSI.bold}Firepit Appwrite Setup${ANSI.reset}`, ANSI.cyan),
+    );
+    writeStdout(
+        `${colorize("[env]", ANSI.dim)} endpoint=${endpoint} project=${project} database=${DB_ID}`,
+    );
+    if (skipTeams) {
+        writeStdout(
+            `${colorize("[env]", ANSI.dim)} teams=skipped (SKIP_TEAMS set)`,
+        );
+    }
+
     await preflight();
     await ensureDatabase();
     info("[setup] Setting up storage...");
@@ -1081,6 +1239,10 @@ async function run() {
     }
     info("[setup] Setting up memberships...");
     await setupMemberships();
+    info("[setup] Setting up friendships...");
+    await setupFriendships();
+    info("[setup] Setting up blocks...");
+    await setupBlocks();
     info("[setup] Setting up banned users...");
     await setupBannedUsers();
     info("[setup] Setting up muted users...");
@@ -1109,7 +1271,9 @@ async function run() {
     await setupNotificationSettings();
     info("[setup] Setting up teams...");
     await ensureTeams();
-    info("Setup complete.");
+    writeStdout();
+    writeStdout(`${colorize("[done]", ANSI.green)} Setup complete.`);
+    logSummary();
 }
 
 run().catch((e) => {

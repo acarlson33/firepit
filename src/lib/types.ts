@@ -111,6 +111,9 @@ export type Conversation = {
     avatarUrl?: string; // Optional custom avatar for the group DM
     createdBy?: string; // Creator of the conversation
     participantCount?: number; // Convenience count for UI
+    readOnly?: boolean;
+    readOnlyReason?: string;
+    relationship?: RelationshipStatus;
     // Enriched data
     otherUser?: {
         userId: string;
@@ -180,6 +183,7 @@ export type UserProfileData = {
     location?: string;
     website?: string;
     avatarFileId?: string;
+    showDocsInNavigation?: boolean;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;
@@ -238,6 +242,55 @@ export type InviteUsage = {
     userId: string;
     serverId: string;
     joinedAt: string;
+};
+
+export const FRIENDSHIP_STATUS_VALUES = [
+    "pending",
+    "accepted",
+    "declined",
+] as const;
+
+export type FriendshipStatus = (typeof FRIENDSHIP_STATUS_VALUES)[number];
+
+export type Friendship = {
+    $id: string;
+    requesterId: string;
+    recipientId: string;
+    pairKey: string;
+    status: FriendshipStatus;
+    requestedAt: string;
+    respondedAt?: string;
+    acceptedAt?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
+export type BlockedUser = {
+    $id: string;
+    userId: string;
+    blockedUserId: string;
+    blockedAt: string;
+    reason?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
+export const DIRECT_MESSAGE_PRIVACY_VALUES = ["everyone", "friends"] as const;
+
+export type DirectMessagePrivacy =
+    (typeof DIRECT_MESSAGE_PRIVACY_VALUES)[number];
+
+export type RelationshipStatus = {
+    userId: string;
+    friendshipStatus?: FriendshipStatus;
+    isFriend: boolean;
+    outgoingRequest: boolean;
+    incomingRequest: boolean;
+    blockedByMe: boolean;
+    blockedMe: boolean;
+    directMessagePrivacy: DirectMessagePrivacy;
+    canSendDirectMessage: boolean;
+    canReceiveFriendRequest: boolean;
 };
 
 export type RoleAssignment = {
@@ -309,6 +362,7 @@ export type NotificationSettings = {
 
     // Global settings
     globalNotifications: NotificationLevel;
+    directMessagePrivacy: DirectMessagePrivacy;
     desktopNotifications: boolean;
     pushNotifications: boolean;
     notificationSound: boolean;

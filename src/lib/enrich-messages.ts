@@ -10,16 +10,24 @@ type BatchProfileData = {
     avatarUrl?: string;
 };
 
+type BatchProfileLookup = {
+    profileMap: Map<string, BatchProfileData>;
+    visibleUserIds: Set<string> | null;
+};
+
 /**
  * Batch-fetch profiles via the Next.js API route (client-safe).
  * Uses the /api/profiles/batch endpoint so no server SDK is needed.
  */
 async function fetchProfilesBatch(
     userIds: string[],
-): Promise<Map<string, BatchProfileData>> {
+): Promise<BatchProfileLookup> {
     const profileMap = new Map<string, BatchProfileData>();
     if (userIds.length === 0) {
-        return profileMap;
+        return {
+            profileMap,
+            visibleUserIds: new Set(),
+        };
     }
 
     try {
@@ -30,7 +38,10 @@ async function fetchProfilesBatch(
         });
 
         if (!response.ok) {
-            return profileMap;
+            return {
+                profileMap,
+                visibleUserIds: null,
+            };
         }
 
         const data = (await response.json()) as {
@@ -43,6 +54,7 @@ async function fetchProfilesBatch(
                     avatarUrl?: string;
                 }
             >;
+            visibleUserIds?: string[];
         };
 
         for (const [uid, profile] of Object.entries(data.profiles)) {
@@ -53,10 +65,20 @@ async function fetchProfilesBatch(
                 avatarUrl: profile.avatarUrl,
             });
         }
+
+        return {
+            profileMap,
+            visibleUserIds: Array.isArray(data.visibleUserIds)
+                ? new Set(data.visibleUserIds)
+                : null,
+        };
     } catch {
         // Batch failed — return empty map; callers handle gracefully
     }
-    return profileMap;
+    return {
+        profileMap,
+        visibleUserIds: null,
+    };
 }
 
 /**
@@ -77,14 +99,22 @@ export async function enrichMessagesWithProfiles(
         const userIds = [...new Set(messages.map((m) => m.userId))];
 
         // Batch fetch profiles via API route (client-safe)
-        const profilesMap = await fetchProfilesBatch(userIds);
+        const { profileMap, visibleUserIds } =
+            await fetchProfilesBatch(userIds);
+
+        const visibleMessages =
+            visibleUserIds === null
+                ? messages
+                : messages.filter((message) =>
+                      visibleUserIds.has(message.userId),
+                  );
 
         // Build a map of messages by ID for quick lookup of parent messages
-        const messagesById = new Map(messages.map((m) => [m.$id, m]));
+        const messagesById = new Map(visibleMessages.map((m) => [m.$id, m]));
 
         // Enrich messages with profile data and reply context
-        return messages.map((message) => {
-            const profile = profilesMap.get(message.userId);
+        return visibleMessages.map((message) => {
+            const profile = profileMap.get(message.userId);
             const enriched = {
                 ...message,
                 displayName: profile?.displayName || undefined,
@@ -98,7 +128,7 @@ export async function enrichMessagesWithProfiles(
             if (message.replyToId) {
                 const parentMessage = messagesById.get(message.replyToId);
                 if (parentMessage) {
-                    const parentProfile = profilesMap.get(parentMessage.userId);
+                    const parentProfile = profileMap.get(parentMessage.userId);
                     enriched.replyTo = {
                         text: parentMessage.text,
                         userName: parentMessage.userName,
@@ -124,33 +154,40 @@ export async function enrichMessagesWithProfiles(
  */
 export async function enrichMessageWithProfile(
     message: Message,
-): Promise<Message> {
+): Promise<Message | null> {
     try {
         // Use cache with deduplication to avoid redundant profile fetches
-        const profile = await apiCache.dedupe(
+        const lookup = await apiCache.dedupe(
             `profile:${message.userId}`,
             async () => {
-                const response = await fetch(
-                    `/api/users/${message.userId}/profile`,
+                const { profileMap, visibleUserIds } = await fetchProfilesBatch(
+                    [message.userId],
                 );
-                if (!response.ok) {
-                    return null;
-                }
-                return response.json();
+
+                return {
+                    profile: profileMap.get(message.userId) ?? null,
+                    isVisible: visibleUserIds
+                        ? visibleUserIds.has(message.userId)
+                        : true,
+                };
             },
             CACHE_TTL.PROFILES,
         );
 
-        if (!profile) {
+        if (!lookup.isVisible) {
+            return null;
+        }
+
+        if (!lookup.profile) {
             return message;
         }
 
         return {
             ...message,
-            displayName: profile.displayName || undefined,
-            pronouns: profile.pronouns || undefined,
-            avatarFileId: profile.avatarFileId || undefined,
-            avatarUrl: profile.avatarUrl || undefined,
+            displayName: lookup.profile.displayName || undefined,
+            pronouns: lookup.profile.pronouns || undefined,
+            avatarFileId: lookup.profile.avatarFileId || undefined,
+            avatarUrl: lookup.profile.avatarUrl || undefined,
             // Parse reactions if they're a JSON string
             reactions: parseReactions(message.reactions),
         };

@@ -68,7 +68,9 @@ export default async function DocsDetailPage({ params }: Props) {
             description={page.description}
             title={page.title}
         >
-            <DocsMarkdown content={page.content} />
+            <section className="rounded-3xl border border-border/60 bg-card/70 p-8 shadow-sm backdrop-blur-sm">
+                <DocsMarkdown content={page.content} />
+            </section>
         </DocsShell>
     );
 }

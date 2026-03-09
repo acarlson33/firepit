@@ -227,7 +227,12 @@ export default function ChatPage() {
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
-    const conversationsApi = useConversations(userId);
+    const conversationsApi = useConversations(
+        userId,
+        viewMode === "dms" ||
+            newConversationOpen ||
+            Boolean(selectedConversationId),
+    );
     const selectedConversation = useMemo(
         () =>
             conversationsApi.conversations.find(
@@ -302,6 +307,21 @@ export default function ChatPage() {
                 });
         }
     }, [searchParams, userId, router]);
+
+    useEffect(() => {
+        if (searchParams.get("compose") !== "1") {
+            return;
+        }
+
+        setViewMode("dms");
+        setSelectedChannel(null);
+        setNewConversationOpen(true);
+
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("compose");
+        const query = params.toString();
+        router.replace(query ? `/chat?${query}` : "/chat");
+    }, [router, searchParams]);
     // Check if user server creation is enabled (cached + abortable)
     useEffect(() => {
         if (!userId) {
@@ -1434,6 +1454,7 @@ export default function ChatPage() {
                     ) : (
                         <ConversationList
                             conversations={conversationsApi.conversations}
+                            currentUserId={userId ?? undefined}
                             loading={conversationsApi.loading}
                             onMuteConversation={(
                                 conversationId,
@@ -1449,6 +1470,11 @@ export default function ChatPage() {
                             onNewConversation={() =>
                                 setNewConversationOpen(true)
                             }
+                            onConversationCreated={(conversation) => {
+                                setSelectedConversationId(conversation.$id);
+                                setViewMode("dms");
+                                setSelectedChannel(null);
+                            }}
                             onSelectConversation={selectConversation}
                             selectedConversationId={selectedConversationId}
                         />
@@ -1466,6 +1492,8 @@ export default function ChatPage() {
                             onEdit={dmApi.edit}
                             onSend={dmApi.send}
                             sending={dmApi.sending}
+                            readOnly={dmApi.readOnly}
+                            readOnlyReason={dmApi.readOnlyReason}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
                         />
@@ -1685,7 +1713,9 @@ export default function ChatPage() {
                                                         }
                                                     />
                                                     <EmojiPicker
-                                                        customEmojis={customEmojis}
+                                                        customEmojis={
+                                                            customEmojis
+                                                        }
                                                         onEmojiSelect={
                                                             handleEmojiSelect
                                                         }

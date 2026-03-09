@@ -3,7 +3,12 @@
  * Uses server-side API routes to avoid permission issues
  */
 
-import type { Conversation, DirectMessage, UserProfileData } from "./types";
+import type {
+    Conversation,
+    DirectMessage,
+    RelationshipStatus,
+    UserProfileData,
+} from "./types";
 import { parseReactions } from "./reactions-utils";
 import { extractMentionedUsernames } from "./mention-utils";
 
@@ -366,7 +371,13 @@ export async function listDirectMessages(
     conversationId: string,
     limit = 50,
     cursor?: string,
-): Promise<{ items: DirectMessage[]; nextCursor?: string }> {
+): Promise<{
+    items: DirectMessage[];
+    nextCursor?: string;
+    readOnly: boolean;
+    readOnlyReason?: string;
+    relationship?: RelationshipStatus;
+}> {
     const params = new URLSearchParams({
         type: "messages",
         conversationId,
@@ -423,6 +434,11 @@ export async function listDirectMessages(
     return {
         items: enriched,
         nextCursor: data.nextCursor || undefined,
+        readOnly: Boolean(data.readOnly),
+        readOnlyReason: data.readOnlyReason
+            ? String(data.readOnlyReason)
+            : undefined,
+        relationship: data.relationship as RelationshipStatus | undefined,
     };
 }
 
