@@ -149,14 +149,12 @@ export function CategorySettingsPanel({
                     : "Failed to load categories",
             );
         } finally {
-            if (requestId !== loadRequestId.current) {
-                return;
-            }
-
-            if (options?.silent) {
-                setRefreshing(false);
-            } else {
-                setLoading(false);
+            if (requestId === loadRequestId.current) {
+                if (options?.silent) {
+                    setRefreshing(false);
+                } else {
+                    setLoading(false);
+                }
             }
         }
     }
