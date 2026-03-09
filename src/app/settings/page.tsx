@@ -19,6 +19,7 @@ import {
 } from "./actions";
 import { AvatarUpload } from "./AvatarUpload";
 import { BlockedUsersSettings } from "@/components/blocked-users-settings";
+import { DeveloperModeSettings } from "@/components/developer-mode-settings";
 import { FriendsSettings } from "@/components/friends-settings";
 import { NotificationSettings } from "@/components/notification-settings";
 import { PendingFriendRequestsBadge } from "@/components/pending-friend-requests-badge";
@@ -255,6 +256,19 @@ export default async function SettingsPage() {
                         </p>
                     </div>
                     <BlockedUsersSettings />
+                </section>
+
+                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
+                    <div className="mb-6 space-y-3">
+                        <h2 className="text-2xl font-semibold tracking-tight">
+                            Interface
+                        </h2>
+                        <p className="text-muted-foreground">
+                            Control optional navigation items and keep your main
+                            workspace focused on what you use most.
+                        </p>
+                    </div>
+                    <DeveloperModeSettings />
                 </section>
 
                 <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">

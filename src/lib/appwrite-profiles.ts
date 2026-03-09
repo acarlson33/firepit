@@ -18,6 +18,7 @@ export type UserProfile = {
     avatarFileId?: string;
     location?: string;
     website?: string;
+    showDocsInNavigation?: boolean;
     $createdAt: string;
     $updatedAt: string;
 };

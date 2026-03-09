@@ -12,6 +12,7 @@ import { Button } from "./ui/button";
 
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { useAuth } from "@/contexts/auth-context";
+import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import { useFriends } from "@/hooks/useFriends";
 
 type HeaderProps = {
@@ -23,16 +24,18 @@ export default function Header({ onSearchClick }: HeaderProps) {
     const { userData, userStatus, loading, setUserData, updateUserStatus } =
         useAuth();
     const { incoming, loading: friendsLoading } = useFriends(Boolean(userData));
+    const { developerMode } = useDeveloperMode(userData?.userId ?? null);
     const [loggingOut, setLoggingOut] = useState(false);
 
     const isAuthenticated = Boolean(userData);
     const roles = userData?.roles;
     const incomingRequestCount = friendsLoading ? 0 : incoming.length;
+    const showDocsLink = !isAuthenticated || developerMode;
 
     const baseLinks: Array<{ to: string; label: string }> = [
         { to: "/", label: "Home" },
         { to: "/chat", label: "Chat" },
-        { to: "/docs", label: "Docs" },
+        ...(showDocsLink ? [{ to: "/docs", label: "Docs" }] : []),
     ];
 
     const links: Array<{ to: Route; label: string; count?: number }> = [

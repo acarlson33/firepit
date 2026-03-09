@@ -177,8 +177,14 @@ export function useMessages({
             return;
         }
 
+        let cleanupFn: (() => void) | undefined;
+        let cancelled = false;
+
         import("@/lib/realtime-pool")
             .then(({ getSharedClient, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
                 const c = getSharedClient();
                 const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
 
@@ -295,7 +301,7 @@ export function useMessages({
 
                 const untrack = trackSubscription(messageChannel);
 
-                return () => {
+                cleanupFn = () => {
                     untrack();
                     unsub();
                 };
@@ -303,6 +309,11 @@ export function useMessages({
             .catch(() => {
                 /* failed to set up realtime; ignore silently */
             });
+
+        return () => {
+            cancelled = true;
+            cleanupFn?.();
+        };
     }, [channelId]);
 
     // realtime subscription for typing indicators

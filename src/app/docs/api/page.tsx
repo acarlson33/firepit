@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GitBranch, Layers3, Link2, Tag, Zap } from "lucide-react";
 
 import { ApiSchemaPanel } from "@/components/api-schema-panel";
 import { DocsShell } from "@/components/docs-shell";
@@ -7,20 +8,41 @@ import { getApiReferenceData, getTagAnchorId } from "@/lib/docs";
 function methodClassName(method: string) {
     switch (method) {
         case "GET": {
-            return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+            return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30";
         }
         case "POST": {
-            return "bg-sky-500/10 text-sky-700 dark:text-sky-300";
+            return "bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500/30";
         }
         case "PUT":
         case "PATCH": {
-            return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
+            return "bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30";
         }
         case "DELETE": {
-            return "bg-rose-500/10 text-rose-700 dark:text-rose-300";
+            return "bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30";
         }
         default: {
-            return "bg-primary/10 text-primary";
+            return "bg-primary/10 text-primary ring-1 ring-primary/20";
+        }
+    }
+}
+
+function methodBorderColor(method: string) {
+    switch (method) {
+        case "GET": {
+            return "border-l-emerald-400/70";
+        }
+        case "POST": {
+            return "border-l-sky-400/70";
+        }
+        case "PUT":
+        case "PATCH": {
+            return "border-l-amber-400/70";
+        }
+        case "DELETE": {
+            return "border-l-rose-400/70";
+        }
+        default: {
+            return "border-l-primary/60";
         }
     }
 }
@@ -39,6 +61,38 @@ function authLabel(auth: "public" | "session" | "mixed") {
     }
 }
 
+function authBadgeClass(auth: "public" | "session" | "mixed") {
+    switch (auth) {
+        case "public": {
+            return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/20";
+        }
+        case "mixed": {
+            return "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/20";
+        }
+        default: {
+            return "bg-muted text-muted-foreground ring-1 ring-border/50";
+        }
+    }
+}
+
+function statusClassName(status: string) {
+    const code = Number.parseInt(status, 10);
+
+    if (code >= 200 && code < 300) {
+        return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    }
+
+    if (code >= 400 && code < 500) {
+        return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    }
+
+    if (code >= 500) {
+        return "bg-rose-500/10 text-rose-700 dark:text-rose-300";
+    }
+
+    return "bg-muted text-muted-foreground";
+}
+
 export const metadata: Metadata = {
     title: "API Reference | Docs | firepit",
     description:
@@ -54,18 +108,24 @@ export default async function DocsApiPage() {
     return (
         <DocsShell
             aside={
-                <div className="rounded-3xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur-sm">
-                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                        Jump To Tag
+                <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur-sm">
+                    <div className="mb-3 flex items-center gap-2">
+                        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Jump To Tag
+                        </span>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                         {operationTags.map((tag) => (
                             <a
-                                className="block rounded-xl px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                                className="flex items-center justify-between rounded-xl px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                                 href={`#${String(getTagAnchorId(tag.name))}`}
                                 key={tag.name}
                             >
-                                {tag.name}
+                                <span>{tag.name}</span>
+                                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums">
+                                    {tag.operations.length}
+                                </span>
                             </a>
                         ))}
                     </div>
@@ -76,33 +136,48 @@ export default async function DocsApiPage() {
         >
             <div className="space-y-8">
                 <div className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                            Spec Version
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight">
-                            {apiReference.version}
-                        </div>
-                    </div>
-                    <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                            Operations
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight">
-                            {apiReference.operationCount}
+                    <div className="flex items-center gap-4 rounded-3xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-sm">
+                        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <GitBranch className="h-5 w-5" />
+                        </span>
+                        <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Version
+                            </div>
+                            <div className="mt-1 font-mono text-xl font-semibold tracking-tight">
+                                {apiReference.version}
+                            </div>
                         </div>
                     </div>
-                    <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                            Tags
+                    <div className="flex items-center gap-4 rounded-3xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-sm">
+                        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <Zap className="h-5 w-5" />
+                        </span>
+                        <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Operations
+                            </div>
+                            <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+                                {apiReference.operationCount}
+                            </div>
                         </div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight">
-                            {apiReference.tagCount}
+                    </div>
+                    <div className="flex items-center gap-4 rounded-3xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-sm">
+                        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <Layers3 className="h-5 w-5" />
+                        </span>
+                        <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Tags
+                            </div>
+                            <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+                                {apiReference.tagCount}
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
+                <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 p-6 shadow-sm backdrop-blur-sm">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <h2 className="text-lg font-semibold tracking-tight">
@@ -113,30 +188,30 @@ export default async function DocsApiPage() {
                                 method and path.
                             </p>
                         </div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
                             {apiReference.operationCount} total endpoints
-                        </div>
+                        </span>
                     </div>
 
                     <div className="mt-5 grid gap-4 xl:grid-cols-2">
                         {operationTags.map((tag) => (
                             <div
-                                className="rounded-2xl border border-border/50 bg-card/60 p-4"
+                                className="overflow-hidden rounded-2xl border border-border/50 bg-background/60 p-4"
                                 key={`${tag.name}-index`}
                             >
                                 <div className="flex items-center justify-between gap-3">
                                     <h3 className="font-semibold tracking-tight text-foreground">
                                         {tag.name}
                                     </h3>
-                                    <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
                                         {tag.operations.length}
                                     </span>
                                 </div>
 
-                                <div className="mt-3 space-y-2">
+                                <div className="mt-3 space-y-1.5">
                                     {tag.operations.map((operation) => (
                                         <a
-                                            className="flex items-start gap-2 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-background/70"
+                                            className="flex items-start gap-2 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-card/60"
                                             href={`#${String(operation.anchorId)}`}
                                             key={[
                                                 String(operation.anchorId),
@@ -144,12 +219,12 @@ export default async function DocsApiPage() {
                                             ].join("-")}
                                         >
                                             <span
-                                                className={`inline-flex min-w-14 justify-center rounded-full px-2 py-1 text-[10px] font-semibold tracking-[0.14em] ${methodClassName(operation.method)}`}
+                                                className={`inline-flex min-w-16 justify-center rounded-full px-2 py-1 text-[10px] font-semibold tracking-wide ${methodClassName(operation.method)}`}
                                             >
                                                 {operation.method}
                                             </span>
                                             <span className="min-w-0">
-                                                <span className="block truncate font-mono text-xs text-foreground sm:text-sm">
+                                                <span className="block truncate font-mono text-xs text-foreground">
                                                     {operation.path}
                                                 </span>
                                                 <span className="block text-xs text-muted-foreground">
@@ -164,14 +239,14 @@ export default async function DocsApiPage() {
                     </div>
                 </div>
 
-                <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
+                <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 p-6 shadow-sm backdrop-blur-sm">
                     <h2 className="text-lg font-semibold tracking-tight">
                         Servers
                     </h2>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                         {apiReference.servers.map((server) => (
                             <div
-                                className="rounded-2xl border border-border/50 bg-card/60 px-4 py-3"
+                                className="overflow-hidden rounded-2xl border border-border/50 bg-background/60 px-4 py-3"
                                 key={server.url}
                             >
                                 <div className="font-mono text-sm text-foreground">
@@ -188,31 +263,36 @@ export default async function DocsApiPage() {
                 <div className="space-y-4">
                     {apiReference.tags.map((tag) => (
                         <section
-                            className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm"
+                            className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 p-6 shadow-sm backdrop-blur-sm"
                             id={getTagAnchorId(tag.name)}
                             key={tag.name}
                         >
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                                <div>
-                                    <h2 className="text-lg font-semibold tracking-tight">
-                                        {tag.name}
-                                    </h2>
-                                    {tag.description ? (
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                            {tag.description}
-                                        </p>
-                                    ) : null}
+                                <div className="flex items-center gap-3">
+                                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                        <Layers3 className="h-4 w-4" />
+                                    </span>
+                                    <div>
+                                        <h2 className="text-lg font-semibold tracking-tight">
+                                            {tag.name}
+                                        </h2>
+                                        {tag.description ? (
+                                            <p className="mt-0.5 text-sm text-muted-foreground">
+                                                {tag.description}
+                                            </p>
+                                        ) : null}
+                                    </div>
                                 </div>
-                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold tabular-nums text-muted-foreground">
                                     {tag.operations.length} operations
-                                </div>
+                                </span>
                             </div>
 
                             {tag.operations.length > 0 ? (
                                 <div className="mt-5 space-y-4">
                                     {tag.operations.map((operation) => (
                                         <article
-                                            className="rounded-2xl border border-border/50 bg-card/60 p-5"
+                                            className={`rounded-2xl border border-border/50 border-l-4 ${methodBorderColor(operation.method)} bg-card/60 p-5`}
                                             id={operation.anchorId}
                                             key={`${operation.method}-${operation.path}`}
                                         >
@@ -224,7 +304,9 @@ export default async function DocsApiPage() {
                                                         >
                                                             {operation.method}
                                                         </span>
-                                                        <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-semibold tracking-wide text-muted-foreground">
+                                                        <span
+                                                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold tracking-wide ${authBadgeClass(operation.auth)}`}
+                                                        >
                                                             {authLabel(
                                                                 operation.auth,
                                                             )}
@@ -235,13 +317,16 @@ export default async function DocsApiPage() {
                                                             {operation.summary}
                                                         </h3>
                                                         <a
-                                                            className="text-xs font-semibold uppercase tracking-[0.16em] text-primary hover:underline"
+                                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                                                             href={`#${String(operation.anchorId)}`}
                                                         >
-                                                            Deep link
+                                                            <Link2 className="h-3 w-3" />
+                                                            <span>
+                                                                Permalink
+                                                            </span>
                                                         </a>
                                                     </div>
-                                                    <div className="font-mono text-xs text-foreground sm:text-sm">
+                                                    <div className="inline-flex items-center rounded-lg border border-border/50 bg-muted/50 px-3 py-1.5 font-mono text-xs text-foreground">
                                                         {operation.path}
                                                     </div>
                                                     {operation.description ? (
@@ -422,7 +507,9 @@ export default async function DocsApiPage() {
                                                                     ].join("-")}
                                                                 >
                                                                     <div className="flex flex-wrap items-center gap-2">
-                                                                        <span className="inline-flex rounded-full bg-muted px-2.5 py-1 text-xs font-semibold tracking-wide text-foreground">
+                                                                        <span
+                                                                            className={`inline-flex rounded-full px-2.5 py-1 font-mono text-xs font-semibold tracking-wide ${statusClassName(String(response.status))}`}
+                                                                        >
                                                                             {
                                                                                 response.status
                                                                             }

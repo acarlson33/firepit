@@ -227,7 +227,12 @@ export default function ChatPage() {
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
-    const conversationsApi = useConversations(userId);
+    const conversationsApi = useConversations(
+        userId,
+        viewMode === "dms" ||
+            newConversationOpen ||
+            Boolean(selectedConversationId),
+    );
     const selectedConversation = useMemo(
         () =>
             conversationsApi.conversations.find(

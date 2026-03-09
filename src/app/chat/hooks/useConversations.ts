@@ -1,53 +1,59 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
 import type { Conversation } from "@/lib/types";
+import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+
 import { useStatusSubscription } from "./useStatusSubscription";
 
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 
-export function useConversations(userId: string | null) {
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+function getConversationsQueryKey(userId: string | null) {
+    return ["conversations", userId] as const;
+}
+
+export function useConversations(userId: string | null, enabled = true) {
+    const queryClient = useQueryClient();
+    const isEnabled =
+        enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
 
     const loadConversations = useCallback(async () => {
         if (!userId || !CONVERSATIONS_COLLECTION) {
-            setConversations([]);
-            setLoading(false);
             return;
         }
 
-        try {
-            setLoading(true);
-            setError(null);
-            const convs = await listConversations(userId);
-            setConversations(convs);
-        } catch (err) {
-            setError(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to load conversations",
-            );
-        } finally {
-            setLoading(false);
-        }
+        return listConversations(userId);
     }, [userId]);
 
-    useEffect(() => {
-        void loadConversations();
-    }, [loadConversations]);
+    const {
+        data: conversations = [],
+        isLoading,
+        error,
+        refetch,
+    } = useQuery({
+        queryKey: getConversationsQueryKey(userId),
+        queryFn: async () => (await loadConversations()) ?? [],
+        enabled: isEnabled,
+        staleTime: 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
 
     // Get all other user IDs from conversations
     const otherUserIds = useMemo(() => {
+        if (!isEnabled) {
+            return [] as string[];
+        }
+
         return conversations
             .filter((conv) => !conv.isGroup)
             .map((conv) => conv.participants.find((id) => id !== userId))
             .filter((id): id is string => id !== undefined);
-    }, [conversations, userId]);
+    }, [conversations, isEnabled, userId]);
 
     // Subscribe to status updates for all other users
     const { statuses } = useStatusSubscription(otherUserIds);
@@ -83,48 +89,62 @@ export function useConversations(userId: string | null) {
 
     // Real-time subscription to conversation changes
     useEffect(() => {
-        if (!userId || !CONVERSATIONS_COLLECTION) {
+        if (!isEnabled || !userId || !CONVERSATIONS_COLLECTION) {
             return;
         }
 
-        // Import dynamically to avoid SSR issues
-        import("appwrite")
-            .then(({ Client }) => {
-                const client = new Client()
-                    .setEndpoint(env.endpoint)
-                    .setProject(env.project);
+        let cleanupFn: (() => void) | undefined;
+        let cancelled = false;
 
-                const unsubscribe = client.subscribe(
-                    `databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`,
-                    (response) => {
-                        const payload = response.payload as Record<
-                            string,
-                            unknown
-                        >;
-                        const participants = payload.participants as
-                            | string[]
-                            | undefined;
+        const conversationChannel = `databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`;
 
-                        // Only update if this user is a participant
-                        if (participants?.includes(userId)) {
-                            void loadConversations();
-                        }
-                    },
-                );
+        void Promise.resolve().then(() => {
+            if (cancelled) {
+                return;
+            }
 
-                return () => {
-                    unsubscribe();
-                };
-            })
-            .catch(() => {
-                // Ignore subscription errors
-            });
-    }, [userId, loadConversations]);
+            const client = getSharedClient();
+            const unsubscribe = client.subscribe(
+                conversationChannel,
+                (response) => {
+                    const payload = response.payload as Record<string, unknown>;
+                    const participants = payload.participants as
+                        | string[]
+                        | undefined;
+
+                    if (!participants?.includes(userId)) {
+                        return;
+                    }
+
+                    void queryClient.invalidateQueries({
+                        queryKey: getConversationsQueryKey(userId),
+                        refetchType: "active",
+                    });
+                },
+            );
+            const untrack = trackSubscription(conversationChannel);
+
+            cleanupFn = () => {
+                untrack();
+                unsubscribe();
+            };
+        });
+
+        return () => {
+            cancelled = true;
+            cleanupFn?.();
+        };
+    }, [isEnabled, queryClient, userId]);
 
     return {
         conversations: conversationsWithStatus,
-        loading,
-        error,
-        refresh: loadConversations,
+        loading: isEnabled ? isLoading : false,
+        error:
+            error instanceof Error
+                ? error.message
+                : error
+                  ? "Failed to load conversations"
+                  : null,
+        refresh: refetch,
     };
 }

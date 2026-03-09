@@ -18,6 +18,7 @@ const authState = vi.hoisted(() => ({
 }));
 
 const mockUseFriends = vi.hoisted(() => vi.fn());
+const mockUseDeveloperMode = vi.hoisted(() => vi.fn());
 
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
@@ -33,6 +34,10 @@ vi.mock("@/contexts/auth-context", () => ({
 
 vi.mock("@/hooks/useFriends", () => ({
     useFriends: (enabled: boolean) => mockUseFriends(enabled),
+}));
+
+vi.mock("@/hooks/useDeveloperMode", () => ({
+    useDeveloperMode: (userId: string | null) => mockUseDeveloperMode(userId),
 }));
 
 // Mock theme provider
@@ -68,6 +73,11 @@ describe("Header", () => {
         mockUseFriends.mockReturnValue({
             incoming: [],
             loading: false,
+        });
+        mockUseDeveloperMode.mockReturnValue({
+            developerMode: true,
+            isLoaded: true,
+            setDeveloperMode: vi.fn(),
         });
     });
 
@@ -142,5 +152,28 @@ describe("Header", () => {
         expect(
             screen.getByRole("link", { name: /add friend/i }),
         ).toHaveAttribute("href", "/chat?compose=1");
+    });
+
+    it("hides the docs link for authenticated users when developer mode is disabled", () => {
+        authState.userData = {
+            userId: "user-1",
+            name: "August",
+            email: "august@example.com",
+            roles: {
+                isAdmin: false,
+                isModerator: false,
+            },
+        };
+        mockUseDeveloperMode.mockReturnValue({
+            developerMode: false,
+            isLoaded: true,
+            setDeveloperMode: vi.fn(),
+        });
+
+        renderWithQueryClient(<Header />);
+
+        expect(
+            screen.queryByRole("link", { name: "Docs" }),
+        ).not.toBeInTheDocument();
     });
 });

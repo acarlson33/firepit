@@ -183,6 +183,7 @@ export type UserProfileData = {
     location?: string;
     website?: string;
     avatarFileId?: string;
+    showDocsInNavigation?: boolean;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;
