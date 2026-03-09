@@ -23,6 +23,7 @@ import { DeveloperModeSettings } from "@/components/developer-mode-settings";
 import { FriendsSettings } from "@/components/friends-settings";
 import { NotificationSettings } from "@/components/notification-settings";
 import { PendingFriendRequestsBadge } from "@/components/pending-friend-requests-badge";
+import { SettingsSectionNav } from "@/components/settings-section-nav";
 import { FlushCaches } from "./FlushCaches";
 
 export default async function SettingsPage() {
@@ -41,8 +42,41 @@ export default async function SettingsPage() {
         ? getAvatarUrl(profile.avatarFileId)
         : null;
 
+    const settingsSections = [
+        {
+            description: "Photo, profile details, and account basics.",
+            href: "#profile-picture",
+            title: "Profile",
+        },
+        {
+            description: "How and when Firepit reaches you.",
+            href: "#notification-preferences",
+            title: "Notifications",
+        },
+        {
+            description: "Friends, requests, and social connections.",
+            href: "#connections",
+            title: "Connections",
+        },
+        {
+            description: "Blocked users and DM boundaries.",
+            href: "#privacy-blocking",
+            title: "Privacy",
+        },
+        {
+            description: "Optional navigation and interface controls.",
+            href: "#interface",
+            title: "Interface",
+        },
+        {
+            description: "Cache and notification recovery tools.",
+            href: "#troubleshooting",
+            title: "Troubleshooting",
+        },
+    ] as const;
+
     return (
-        <div className="mx-auto w-full max-w-5xl px-6 py-10">
+        <div className="mx-auto w-full max-w-7xl px-6 py-10">
             <div className="grid gap-8">
                 <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
                     <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -71,218 +105,278 @@ export default async function SettingsPage() {
                     </div>
                 </section>
 
-                <Card className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-lg">
-                    <CardHeader className="space-y-1">
-                        <CardTitle>Profile picture</CardTitle>
-                        <CardDescription>
-                            Upload an image to help your community recognize you
-                            instantly.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                        <AvatarUpload
-                            currentAvatarUrl={avatarUrl}
-                            removeAvatarAction={removeAvatarAction}
-                            uploadAvatarAction={uploadAvatarAction}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                            Tip: square images at 512px or larger look best
-                            across the app.
-                        </p>
-                    </CardContent>
-                </Card>
+                <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
+                    <div className="grid gap-8">
+                        <section className="scroll-mt-24" id="profile-picture">
+                            <Card className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                                <CardHeader className="space-y-1">
+                                    <CardTitle>Profile picture</CardTitle>
+                                    <CardDescription>
+                                        Upload an image to help your community
+                                        recognize you instantly.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <AvatarUpload
+                                        currentAvatarUrl={avatarUrl}
+                                        removeAvatarAction={removeAvatarAction}
+                                        uploadAvatarAction={uploadAvatarAction}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Tip: square images at 512px or larger
+                                        look best across the app.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </section>
 
-                <form action={updateProfileAction} className="space-y-4">
-                    <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
-                        <CardHeader className="space-y-1">
-                            <CardTitle>Profile information</CardTitle>
-                            <CardDescription>
-                                Share a bit more about yourself with every
-                                conversation partner.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-6 md:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="displayName">
-                                    Display name
-                                </Label>
-                                <Input
-                                    className="rounded-2xl border-border/60"
-                                    defaultValue={profile.displayName ?? ""}
-                                    id="displayName"
-                                    name="displayName"
-                                    placeholder="Enter your display name"
-                                    type="text"
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    This is how others will see your name.
-                                </p>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="pronouns">Pronouns</Label>
-                                <Input
-                                    className="rounded-2xl border-border/60"
-                                    defaultValue={profile.pronouns ?? ""}
-                                    id="pronouns"
-                                    name="pronouns"
-                                    placeholder="e.g., she/her, he/him, they/them"
-                                    type="text"
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Let others know how you would like to be
-                                    addressed.
-                                </p>
-                            </div>
-                            <div className="md:col-span-2 space-y-2">
-                                <Label htmlFor="bio">Bio</Label>
-                                <textarea
-                                    className="bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background flex min-h-30 w-full rounded-2xl border border-border/60 px-4 py-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                    defaultValue={profile.bio ?? ""}
-                                    id="bio"
-                                    name="bio"
-                                    placeholder="Tell us about yourself..."
-                                    rows={5}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Share interests, roles, or anything that
-                                    helps others connect.
-                                </p>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="location">Location</Label>
-                                <Input
-                                    className="rounded-2xl border-border/60"
-                                    defaultValue={profile.location ?? ""}
-                                    id="location"
-                                    name="location"
-                                    placeholder="e.g., San Francisco, CA"
-                                    type="text"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="website">Website</Label>
-                                <Input
-                                    className="rounded-2xl border-border/60"
-                                    defaultValue={profile.website ?? ""}
-                                    id="website"
-                                    name="website"
-                                    placeholder="https://example.com"
-                                    type="url"
-                                />
-                            </div>
-                        </CardContent>
-                        <CardFooter className="justify-end">
-                            <Button
-                                className="w-full rounded-2xl sm:w-auto"
-                                type="submit"
+                        <section
+                            className="scroll-mt-24"
+                            id="profile-information"
+                        >
+                            <form
+                                action={updateProfileAction}
+                                className="space-y-4"
                             >
-                                Save changes
-                            </Button>
-                        </CardFooter>
-                    </Card>
-                </form>
+                                <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                                    <CardHeader className="space-y-1">
+                                        <CardTitle>
+                                            Profile information
+                                        </CardTitle>
+                                        <CardDescription>
+                                            Share a bit more about yourself with
+                                            every conversation partner.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="grid gap-6 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="displayName">
+                                                Display name
+                                            </Label>
+                                            <Input
+                                                className="rounded-2xl border-border/60"
+                                                defaultValue={
+                                                    profile.displayName ?? ""
+                                                }
+                                                id="displayName"
+                                                name="displayName"
+                                                placeholder="Enter your display name"
+                                                type="text"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                This is how others will see your
+                                                name.
+                                            </p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="pronouns">
+                                                Pronouns
+                                            </Label>
+                                            <Input
+                                                className="rounded-2xl border-border/60"
+                                                defaultValue={
+                                                    profile.pronouns ?? ""
+                                                }
+                                                id="pronouns"
+                                                name="pronouns"
+                                                placeholder="e.g., she/her, he/him, they/them"
+                                                type="text"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Let others know how you would
+                                                like to be addressed.
+                                            </p>
+                                        </div>
+                                        <div className="md:col-span-2 space-y-2">
+                                            <Label htmlFor="bio">Bio</Label>
+                                            <textarea
+                                                className="bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background flex min-h-30 w-full rounded-2xl border border-border/60 px-4 py-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                defaultValue={profile.bio ?? ""}
+                                                id="bio"
+                                                name="bio"
+                                                placeholder="Tell us about yourself..."
+                                                rows={5}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Share interests, roles, or
+                                                anything that helps others
+                                                connect.
+                                            </p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="location">
+                                                Location
+                                            </Label>
+                                            <Input
+                                                className="rounded-2xl border-border/60"
+                                                defaultValue={
+                                                    profile.location ?? ""
+                                                }
+                                                id="location"
+                                                name="location"
+                                                placeholder="e.g., San Francisco, CA"
+                                                type="text"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="website">
+                                                Website
+                                            </Label>
+                                            <Input
+                                                className="rounded-2xl border-border/60"
+                                                defaultValue={
+                                                    profile.website ?? ""
+                                                }
+                                                id="website"
+                                                name="website"
+                                                placeholder="https://example.com"
+                                                type="url"
+                                            />
+                                        </div>
+                                    </CardContent>
+                                    <CardFooter className="justify-end">
+                                        <Button
+                                            className="w-full rounded-2xl sm:w-auto"
+                                            type="submit"
+                                        >
+                                            Save changes
+                                        </Button>
+                                    </CardFooter>
+                                </Card>
+                            </form>
+                        </section>
 
-                <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
-                    <CardHeader className="space-y-1">
-                        <CardTitle>Account information</CardTitle>
-                        <CardDescription>
-                            Your core account details are read-only for safety.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                Email
-                            </p>
-                            <p className="mt-2 break-all text-sm text-foreground">
-                                {user.email}
-                            </p>
-                        </div>
-                        <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                Account name
-                            </p>
-                            <p className="mt-2 text-sm text-foreground">
-                                {user.name}
-                            </p>
-                        </div>
-                        <div className="md:col-span-2 rounded-2xl border border-border/60 bg-background/70 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                User ID
-                            </p>
-                            <p className="mt-2 break-all font-mono text-xs text-foreground">
-                                {user.$id}
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
+                        <section
+                            className="scroll-mt-24"
+                            id="account-information"
+                        >
+                            <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                                <CardHeader className="space-y-1">
+                                    <CardTitle>Account information</CardTitle>
+                                    <CardDescription>
+                                        Your core account details are read-only
+                                        for safety.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="grid gap-4 md:grid-cols-2">
+                                    <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            Email
+                                        </p>
+                                        <p className="mt-2 break-all text-sm text-foreground">
+                                            {user.email}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            Account name
+                                        </p>
+                                        <p className="mt-2 text-sm text-foreground">
+                                            {user.name}
+                                        </p>
+                                    </div>
+                                    <div className="md:col-span-2 rounded-2xl border border-border/60 bg-background/70 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            User ID
+                                        </p>
+                                        <p className="mt-2 break-all font-mono text-xs text-foreground">
+                                            {user.$id}
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </section>
 
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="space-y-3 mb-6">
-                        <h2 className="text-2xl font-semibold tracking-tight">
-                            Notification Preferences
-                        </h2>
-                        <p className="text-muted-foreground">
-                            Manage how and when you receive notifications from
-                            firepit.
-                        </p>
+                        <section
+                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            id="notification-preferences"
+                        >
+                            <div className="space-y-3 mb-6">
+                                <h2 className="text-2xl font-semibold tracking-tight">
+                                    Notification Preferences
+                                </h2>
+                                <p className="text-muted-foreground">
+                                    Manage how and when you receive
+                                    notifications from firepit.
+                                </p>
+                            </div>
+                            <NotificationSettings />
+                        </section>
+
+                        <section
+                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            id="connections"
+                        >
+                            <div className="mb-6 space-y-3">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <h2 className="text-2xl font-semibold tracking-tight">
+                                        Connections
+                                    </h2>
+                                    <PendingFriendRequestsBadge />
+                                </div>
+                                <p className="text-muted-foreground">
+                                    Manage friends and pending requests from one
+                                    place.
+                                </p>
+                            </div>
+                            <FriendsSettings />
+                        </section>
+
+                        <section
+                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            id="privacy-blocking"
+                        >
+                            <div className="mb-6 space-y-3">
+                                <h2 className="text-2xl font-semibold tracking-tight">
+                                    Privacy & Blocking
+                                </h2>
+                                <p className="text-muted-foreground">
+                                    Review blocked users and keep your
+                                    direct-message boundaries current.
+                                </p>
+                            </div>
+                            <BlockedUsersSettings />
+                        </section>
+
+                        <section
+                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            id="interface"
+                        >
+                            <div className="mb-6 space-y-3">
+                                <h2 className="text-2xl font-semibold tracking-tight">
+                                    Interface
+                                </h2>
+                                <p className="text-muted-foreground">
+                                    Control optional navigation items and keep
+                                    your main workspace focused on what you use
+                                    most.
+                                </p>
+                            </div>
+                            <DeveloperModeSettings />
+                        </section>
+
+                        <section
+                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            id="troubleshooting"
+                        >
+                            <div className="space-y-3 mb-6">
+                                <h2 className="text-2xl font-semibold tracking-tight">
+                                    Troubleshooting
+                                </h2>
+                                <p className="text-muted-foreground">
+                                    Flush cached assets and unregister service
+                                    workers if you are seeing stale data or
+                                    notification issues.
+                                </p>
+                            </div>
+                            <FlushCaches />
+                        </section>
                     </div>
-                    <NotificationSettings />
-                </section>
 
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="mb-6 space-y-3">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <h2 className="text-2xl font-semibold tracking-tight">
-                                Connections
-                            </h2>
-                            <PendingFriendRequestsBadge />
-                        </div>
-                        <p className="text-muted-foreground">
-                            Manage friends and pending requests from one place.
-                        </p>
-                    </div>
-                    <FriendsSettings />
-                </section>
-
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="mb-6 space-y-3">
-                        <h2 className="text-2xl font-semibold tracking-tight">
-                            Privacy & Blocking
-                        </h2>
-                        <p className="text-muted-foreground">
-                            Review blocked users and keep your direct-message
-                            boundaries current.
-                        </p>
-                    </div>
-                    <BlockedUsersSettings />
-                </section>
-
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="mb-6 space-y-3">
-                        <h2 className="text-2xl font-semibold tracking-tight">
-                            Interface
-                        </h2>
-                        <p className="text-muted-foreground">
-                            Control optional navigation items and keep your main
-                            workspace focused on what you use most.
-                        </p>
-                    </div>
-                    <DeveloperModeSettings />
-                </section>
-
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="space-y-3 mb-6">
-                        <h2 className="text-2xl font-semibold tracking-tight">
-                            Troubleshooting
-                        </h2>
-                        <p className="text-muted-foreground">
-                            Flush cached assets and unregister service workers
-                            if you are seeing stale data or notification issues.
-                        </p>
-                    </div>
-                    <FlushCaches />
-                </section>
+                    <aside className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
+                        <SettingsSectionNav sections={settingsSections} />
+                    </aside>
+                </div>
             </div>
         </div>
     );

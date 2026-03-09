@@ -7,12 +7,18 @@ import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig, perms } from "./appwrite-core";
 import type {
+    Conversation,
     NotificationSettings,
     NotificationLevel,
     NotificationOverride,
+    NotificationOverrideLabelMap,
+    NotificationOverrideMap,
+    NotificationSettingsResponse,
     MuteDuration,
     DirectMessagePrivacy,
 } from "./types";
+
+const LABEL_LOOKUP_LIMIT = 500;
 
 const DEFAULT_SETTINGS: Omit<
     NotificationSettings,
@@ -25,29 +31,70 @@ const DEFAULT_SETTINGS: Omit<
     notificationSound: true,
     quietHoursStart: undefined,
     quietHoursEnd: undefined,
+    quietHoursTimezone: undefined,
     serverOverrides: {},
     channelOverrides: {},
     conversationOverrides: {},
 };
 
+function createEmptyOverrideLabels(): NotificationOverrideLabelMap {
+    return {
+        serverOverrides: {},
+        channelOverrides: {},
+        conversationOverrides: {},
+    };
+}
+
 /**
  * Parse JSON string overrides from database into typed objects
  */
-function parseOverrides(value: unknown): Record<string, NotificationOverride> {
+function isNotificationLevel(value: unknown): value is NotificationLevel {
+    return value === "all" || value === "mentions" || value === "nothing";
+}
+
+function isDirectMessagePrivacy(value: unknown): value is DirectMessagePrivacy {
+    return value === "everyone" || value === "friends";
+}
+
+function parseOverrides(value: unknown): NotificationOverrideMap {
     if (!value) {
         return {};
     }
-    if (typeof value === "string") {
-        try {
-            return JSON.parse(value) as Record<string, NotificationOverride>;
-        } catch {
-            return {};
+
+    const candidate =
+        typeof value === "string"
+            ? (() => {
+                  try {
+                      return JSON.parse(value) as unknown;
+                  } catch {
+                      return null;
+                  }
+              })()
+            : value;
+
+    if (!candidate || typeof candidate !== "object") {
+        return {};
+    }
+
+    const normalizedOverrides: NotificationOverrideMap = {};
+    for (const [overrideId, rawOverride] of Object.entries(candidate)) {
+        if (!rawOverride || typeof rawOverride !== "object") {
+            continue;
         }
+
+        const level = (rawOverride as NotificationOverride).level;
+        if (!isNotificationLevel(level)) {
+            continue;
+        }
+
+        const mutedUntil = (rawOverride as NotificationOverride).mutedUntil;
+        normalizedOverrides[overrideId] = {
+            level,
+            mutedUntil: typeof mutedUntil === "string" ? mutedUntil : undefined,
+        };
     }
-    if (typeof value === "object") {
-        return value as Record<string, NotificationOverride>;
-    }
-    return {};
+
+    return normalizedOverrides;
 }
 
 /**
@@ -72,11 +119,329 @@ function documentToSettings(
         quietHoursEnd: doc.quietHoursEnd
             ? String(doc.quietHoursEnd)
             : undefined,
+        quietHoursTimezone: doc.quietHoursTimezone
+            ? String(doc.quietHoursTimezone)
+            : undefined,
         serverOverrides: parseOverrides(doc.serverOverrides),
         channelOverrides: parseOverrides(doc.channelOverrides),
         conversationOverrides: parseOverrides(doc.conversationOverrides),
         $createdAt: doc.$createdAt ? String(doc.$createdAt) : undefined,
         $updatedAt: doc.$updatedAt ? String(doc.$updatedAt) : undefined,
+    };
+}
+
+function getLegacySettingsBackfill(
+    doc: Record<string, unknown>,
+): Record<string, unknown> {
+    const updateData: Record<string, unknown> = {};
+
+    if (!isNotificationLevel(doc.globalNotifications)) {
+        updateData.globalNotifications = DEFAULT_SETTINGS.globalNotifications;
+    }
+
+    if (!isDirectMessagePrivacy(doc.directMessagePrivacy)) {
+        updateData.directMessagePrivacy = DEFAULT_SETTINGS.directMessagePrivacy;
+    }
+
+    if (typeof doc.desktopNotifications !== "boolean") {
+        updateData.desktopNotifications = DEFAULT_SETTINGS.desktopNotifications;
+    }
+
+    if (typeof doc.pushNotifications !== "boolean") {
+        updateData.pushNotifications = DEFAULT_SETTINGS.pushNotifications;
+    }
+
+    if (typeof doc.notificationSound !== "boolean") {
+        updateData.notificationSound = DEFAULT_SETTINGS.notificationSound;
+    }
+
+    if (doc.serverOverrides === undefined) {
+        updateData.serverOverrides = JSON.stringify(
+            DEFAULT_SETTINGS.serverOverrides,
+        );
+    }
+
+    if (doc.channelOverrides === undefined) {
+        updateData.channelOverrides = JSON.stringify(
+            DEFAULT_SETTINGS.channelOverrides,
+        );
+    }
+
+    if (doc.conversationOverrides === undefined) {
+        updateData.conversationOverrides = JSON.stringify(
+            DEFAULT_SETTINGS.conversationOverrides,
+        );
+    }
+
+    return updateData;
+}
+
+async function backfillLegacyNotificationSettingsDocument(
+    doc: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+    const updateData = getLegacySettingsBackfill(doc);
+    if (Object.keys(updateData).length === 0) {
+        return doc;
+    }
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const updated = await databases.updateDocument(
+        env.databaseId,
+        env.collections.notificationSettings,
+        String(doc.$id),
+        updateData,
+    );
+
+    return updated as unknown as Record<string, unknown>;
+}
+
+async function listAccessibleServersById(
+    userId: string,
+    serverIds: string[],
+): Promise<Array<Record<string, unknown>>> {
+    if (serverIds.length === 0) {
+        return [];
+    }
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const memberships = await databases.listDocuments(
+        env.databaseId,
+        env.collections.memberships,
+        [
+            Query.equal("userId", userId),
+            Query.equal("serverId", serverIds),
+            Query.limit(LABEL_LOOKUP_LIMIT),
+        ],
+    );
+
+    const allowedServerIds = memberships.documents
+        .map((membership) => {
+            const record = membership as unknown as Record<string, unknown>;
+            return typeof record.serverId === "string" ? record.serverId : null;
+        })
+        .filter((serverId): serverId is string => Boolean(serverId));
+
+    if (allowedServerIds.length === 0) {
+        return [];
+    }
+
+    const servers = await databases.listDocuments(
+        env.databaseId,
+        env.collections.servers,
+        [Query.equal("$id", allowedServerIds), Query.limit(LABEL_LOOKUP_LIMIT)],
+    );
+
+    return servers.documents as unknown as Array<Record<string, unknown>>;
+}
+
+async function listAccessibleChannelsById(
+    allowedServerIds: string[],
+    channelIds: string[],
+): Promise<Array<Record<string, unknown>>> {
+    if (allowedServerIds.length === 0 || channelIds.length === 0) {
+        return [];
+    }
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const channels = await databases.listDocuments(
+        env.databaseId,
+        env.collections.channels,
+        [
+            Query.equal("$id", channelIds),
+            Query.equal("serverId", allowedServerIds),
+            Query.limit(LABEL_LOOKUP_LIMIT),
+        ],
+    );
+
+    return channels.documents as unknown as Array<Record<string, unknown>>;
+}
+
+async function listAccessibleConversationsById(
+    userId: string,
+    conversationIds: string[],
+): Promise<Conversation[]> {
+    if (conversationIds.length === 0) {
+        return [];
+    }
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const conversations = await databases.listDocuments(
+        env.databaseId,
+        env.collections.conversations,
+        [
+            Query.equal("$id", conversationIds),
+            Query.equal("participants", userId),
+            Query.limit(LABEL_LOOKUP_LIMIT),
+        ],
+    );
+
+    return conversations.documents.map((document) => {
+        const record = document as unknown as Record<string, unknown>;
+        const participants = Array.isArray(record.participants)
+            ? record.participants.filter(
+                  (participant): participant is string =>
+                      typeof participant === "string",
+              )
+            : [];
+
+        return {
+            $id: String(record.$id),
+            participants,
+            $createdAt: String(record.$createdAt ?? ""),
+            isGroup: Boolean(record.isGroup) || participants.length > 2,
+            name: typeof record.name === "string" ? record.name : undefined,
+            participantCount: participants.length,
+        } satisfies Conversation;
+    });
+}
+
+async function listProfilesByUserId(
+    userIds: string[],
+): Promise<Map<string, string>> {
+    if (userIds.length === 0) {
+        return new Map();
+    }
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+    const profiles = await databases.listDocuments(
+        env.databaseId,
+        env.collections.profiles,
+        [Query.equal("userId", userIds), Query.limit(LABEL_LOOKUP_LIMIT)],
+    );
+
+    return new Map(
+        profiles.documents.map((document) => {
+            const record = document as unknown as Record<string, unknown>;
+            const userId = String(record.userId);
+            const displayName =
+                typeof record.displayName === "string"
+                    ? record.displayName
+                    : userId;
+            return [userId, displayName];
+        }),
+    );
+}
+
+export async function resolveNotificationOverrideLabels(
+    userId: string,
+    settings: NotificationSettings,
+): Promise<NotificationOverrideLabelMap> {
+    const labels = createEmptyOverrideLabels();
+    const serverOverrideIds = Object.keys(settings.serverOverrides ?? {});
+    const channelOverrideIds = Object.keys(settings.channelOverrides ?? {});
+    const conversationOverrideIds = Object.keys(
+        settings.conversationOverrides ?? {},
+    );
+
+    if (
+        serverOverrideIds.length === 0 &&
+        channelOverrideIds.length === 0 &&
+        conversationOverrideIds.length === 0
+    ) {
+        return labels;
+    }
+
+    try {
+        const servers = await listAccessibleServersById(
+            userId,
+            serverOverrideIds,
+        );
+        const serverNameById = new Map(
+            servers.map((server) => [String(server.$id), String(server.name)]),
+        );
+        const allowedServerIds = Array.from(serverNameById.keys());
+
+        for (const server of servers) {
+            const serverId = String(server.$id);
+            labels.serverOverrides[serverId] = {
+                title: String(server.name),
+                subtitle: "Server notification override",
+            };
+        }
+
+        const channels = await listAccessibleChannelsById(
+            allowedServerIds,
+            channelOverrideIds,
+        );
+        for (const channel of channels) {
+            const channelId = String(channel.$id);
+            const serverId = String(channel.serverId);
+            labels.channelOverrides[channelId] = {
+                title: `#${String(channel.name)}`,
+                subtitle:
+                    serverNameById.get(serverId) ??
+                    "Channel notification override",
+                meta: `Channel in ${serverNameById.get(serverId) ?? "server"}`,
+            };
+        }
+
+        const conversations = await listAccessibleConversationsById(
+            userId,
+            conversationOverrideIds,
+        );
+        const otherParticipantIds = Array.from(
+            new Set(
+                conversations.flatMap((conversation) =>
+                    conversation.participants.filter(
+                        (participantId) => participantId !== userId,
+                    ),
+                ),
+            ),
+        );
+        const profileNameByUserId =
+            await listProfilesByUserId(otherParticipantIds);
+
+        for (const conversation of conversations) {
+            const otherParticipants = conversation.participants.filter(
+                (participantId) => participantId !== userId,
+            );
+            const participantNames = otherParticipants.map(
+                (participantId) =>
+                    profileNameByUserId.get(participantId) ?? participantId,
+            );
+            const title =
+                conversation.name ||
+                participantNames.at(0) ||
+                (conversation.isGroup ? "Group DM" : "Direct message");
+
+            labels.conversationOverrides[conversation.$id] = {
+                title,
+                subtitle: conversation.isGroup
+                    ? `${conversation.participantCount ?? conversation.participants.length} participants`
+                    : "Direct message override",
+                meta: conversation.isGroup
+                    ? participantNames.slice(0, 3).join(", ")
+                    : participantNames.at(0),
+            };
+        }
+    } catch {
+        return labels;
+    }
+
+    return labels;
+}
+
+export async function buildNotificationSettingsResponse(
+    userId: string,
+    settings: NotificationSettings,
+): Promise<NotificationSettingsResponse> {
+    const overrideLabels = await resolveNotificationOverrideLabels(
+        userId,
+        settings,
+    );
+
+    return {
+        ...settings,
+        overrideLabels,
     };
 }
 
@@ -101,9 +466,11 @@ export async function getNotificationSettings(
             return null;
         }
 
-        return documentToSettings(
+        const document = await backfillLegacyNotificationSettingsDocument(
             result.documents[0] as unknown as Record<string, unknown>,
         );
+
+        return documentToSettings(document);
     } catch {
         return null;
     }
@@ -155,6 +522,10 @@ export async function createNotificationSettings(
             data.quietHoursStart !== undefined ? data.quietHoursStart : null,
         quietHoursEnd:
             data.quietHoursEnd !== undefined ? data.quietHoursEnd : null,
+        quietHoursTimezone:
+            data.quietHoursTimezone !== undefined
+                ? data.quietHoursTimezone
+                : null,
         serverOverrides: JSON.stringify(data.serverOverrides ?? {}),
         channelOverrides: JSON.stringify(data.channelOverrides ?? {}),
         conversationOverrides: JSON.stringify(data.conversationOverrides ?? {}),
@@ -209,6 +580,9 @@ export async function updateNotificationSettings(
     }
     if (data.quietHoursEnd !== undefined) {
         updateData.quietHoursEnd = data.quietHoursEnd ?? null;
+    }
+    if (data.quietHoursTimezone !== undefined) {
+        updateData.quietHoursTimezone = data.quietHoursTimezone ?? null;
     }
     if (data.serverOverrides !== undefined) {
         updateData.serverOverrides = JSON.stringify(data.serverOverrides);
@@ -417,7 +791,28 @@ export function isInQuietHours(settings: NotificationSettings): boolean {
     }
 
     const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    let currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    if (settings.quietHoursTimezone) {
+        try {
+            const formatter = new Intl.DateTimeFormat("en-US", {
+                timeZone: settings.quietHoursTimezone,
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+            });
+            const parts = formatter.formatToParts(now);
+            const hours = Number(
+                parts.find((part) => part.type === "hour")?.value ?? "0",
+            );
+            const minutes = Number(
+                parts.find((part) => part.type === "minute")?.value ?? "0",
+            );
+            currentMinutes = hours * 60 + minutes;
+        } catch {
+            // Fall back to the user's local time if the timezone is invalid.
+        }
+    }
 
     const [startHour, startMin] = settings.quietHoursStart
         .split(":")

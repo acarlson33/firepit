@@ -2,129 +2,228 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { GET, PATCH } from "../../app/api/notifications/settings/route";
 
-const { mockSession, mockGetOrCreate, mockUpdate } = vi.hoisted(() => ({
-  mockSession: vi.fn(),
-  mockGetOrCreate: vi.fn(),
-  mockUpdate: vi.fn(),
-}));
+const { mockSession, mockGetOrCreate, mockUpdate, mockBuildResponse } =
+    vi.hoisted(() => ({
+        mockSession: vi.fn(),
+        mockGetOrCreate: vi.fn(),
+        mockUpdate: vi.fn(),
+        mockBuildResponse: vi.fn(),
+    }));
 
 vi.mock("@/lib/auth-server", () => ({
-  getServerSession: mockSession,
+    getServerSession: mockSession,
 }));
 
 vi.mock("@/lib/notification-settings", () => ({
-  getOrCreateNotificationSettings: mockGetOrCreate,
-  updateNotificationSettings: mockUpdate,
+    buildNotificationSettingsResponse: mockBuildResponse,
+    getOrCreateNotificationSettings: mockGetOrCreate,
+    updateNotificationSettings: mockUpdate,
 }));
 
 describe("Notification settings route", () => {
-  beforeEach(() => {
-    mockSession.mockReset();
-    mockGetOrCreate.mockReset();
-    mockUpdate.mockReset();
-  });
-
-  it("returns 401 when unauthenticated on GET", async () => {
-    mockSession.mockResolvedValue(null);
-
-    const response = await GET();
-    const data = await response.json();
-
-    expect(response.status).toBe(401);
-    expect(data.error).toBe("Authentication required");
-    expect(mockGetOrCreate).not.toHaveBeenCalled();
-  });
-
-  it("returns settings when authenticated", async () => {
-    mockSession.mockResolvedValue({ $id: "user-1" });
-    mockGetOrCreate.mockResolvedValue({
-      $id: "settings-1",
-      userId: "user-1",
-      globalNotifications: "all",
-      desktopNotifications: true,
-      pushNotifications: true,
-      notificationSound: true,
-      quietHoursStart: "22:00",
-      quietHoursEnd: "07:00",
-      quietHoursTimezone: "UTC",
-      serverOverrides: {},
-      channelOverrides: {},
-      conversationOverrides: {},
-      $createdAt: "now",
-      $updatedAt: "later",
+    beforeEach(() => {
+        mockSession.mockReset();
+        mockGetOrCreate.mockReset();
+        mockUpdate.mockReset();
+        mockBuildResponse.mockReset();
     });
 
-    const response = await GET();
-    const data = await response.json();
+    it("returns 401 when unauthenticated on GET", async () => {
+        mockSession.mockResolvedValue(null);
 
-    expect(response.status).toBe(200);
-    expect(data.userId).toBe("user-1");
-    expect(data.globalNotifications).toBe("all");
-    expect(data.quietHoursStart).toBe("22:00");
-  });
+        const response = await GET();
+        const data = await response.json();
 
-  it("rejects invalid global notification level on PATCH", async () => {
-    mockSession.mockResolvedValue({ $id: "user-1" });
-    mockGetOrCreate.mockResolvedValue({ $id: "settings-1", userId: "user-1" });
-
-    const request = new NextRequest("http://localhost/api/notifications/settings", {
-      method: "PATCH",
-      body: JSON.stringify({ globalNotifications: "invalid" }),
+        expect(response.status).toBe(401);
+        expect(data.error).toBe("Authentication required");
+        expect(mockGetOrCreate).not.toHaveBeenCalled();
     });
 
-    const response = await PATCH(request);
-    const data = await response.json();
+    it("returns settings when authenticated", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+            globalNotifications: "all",
+            directMessagePrivacy: "everyone",
+            desktopNotifications: true,
+            pushNotifications: true,
+            notificationSound: true,
+            quietHoursStart: "22:00",
+            quietHoursEnd: "07:00",
+            quietHoursTimezone: "UTC",
+            serverOverrides: {},
+            channelOverrides: {},
+            conversationOverrides: {},
+            $createdAt: "now",
+            $updatedAt: "later",
+        });
+        mockBuildResponse.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+            globalNotifications: "all",
+            directMessagePrivacy: "everyone",
+            desktopNotifications: true,
+            pushNotifications: true,
+            notificationSound: true,
+            quietHoursStart: "22:00",
+            quietHoursEnd: "07:00",
+            quietHoursTimezone: "UTC",
+            serverOverrides: {},
+            channelOverrides: {},
+            conversationOverrides: {},
+            overrideLabels: {
+                serverOverrides: {},
+                channelOverrides: {},
+                conversationOverrides: {},
+            },
+            $createdAt: "now",
+            $updatedAt: "later",
+        });
 
-    expect(response.status).toBe(400);
-    expect(data.error).toContain("Invalid globalNotifications");
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
+        const response = await GET();
+        const data = await response.json();
 
-  it("updates settings when payload is valid", async () => {
-    mockSession.mockResolvedValue({ $id: "user-1" });
-    mockGetOrCreate.mockResolvedValue({ $id: "settings-1", userId: "user-1" });
-
-    const overrides = [{ id: "server-1", level: "mentions" }];
-    const updated = {
-      $id: "settings-1",
-      userId: "user-1",
-      globalNotifications: "mentions",
-      desktopNotifications: false,
-      pushNotifications: true,
-      notificationSound: false,
-      quietHoursStart: null,
-      quietHoursEnd: null,
-      quietHoursTimezone: null,
-      serverOverrides: overrides,
-      channelOverrides: [],
-      conversationOverrides: [],
-      $createdAt: "now",
-      $updatedAt: "later",
-    };
-
-    mockUpdate.mockResolvedValue(updated);
-
-    const request = new NextRequest("http://localhost/api/notifications/settings", {
-      method: "PATCH",
-      body: JSON.stringify({
-        globalNotifications: "mentions",
-        desktopNotifications: false,
-        serverOverrides: overrides,
-      }),
+        expect(response.status).toBe(200);
+        expect(data.userId).toBe("user-1");
+        expect(data.globalNotifications).toBe("all");
+        expect(data.quietHoursStart).toBe("22:00");
+        expect(mockBuildResponse).toHaveBeenCalledWith(
+            "user-1",
+            expect.objectContaining({ $id: "settings-1" }),
+        );
     });
 
-    const response = await PATCH(request);
-    const data = await response.json();
+    it("rejects invalid global notification level on PATCH", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+        });
 
-    expect(response.status).toBe(200);
-    expect(mockUpdate).toHaveBeenCalledWith(
-      "settings-1",
-      expect.objectContaining({
-        globalNotifications: "mentions",
-        serverOverrides: JSON.stringify(overrides),
-      })
-    );
-    expect(data.globalNotifications).toBe("mentions");
-    expect(data.serverOverrides).toEqual(overrides);
-  });
+        const request = new NextRequest(
+            "http://localhost/api/notifications/settings",
+            {
+                method: "PATCH",
+                body: JSON.stringify({ globalNotifications: "invalid" }),
+            },
+        );
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("Invalid globalNotifications");
+        expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("updates settings when payload is valid", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+        });
+
+        const overrides = {
+            "server-1": { level: "mentions" },
+        };
+        const updated = {
+            $id: "settings-1",
+            userId: "user-1",
+            globalNotifications: "mentions",
+            directMessagePrivacy: "everyone",
+            desktopNotifications: false,
+            pushNotifications: true,
+            notificationSound: false,
+            quietHoursStart: null,
+            quietHoursEnd: null,
+            quietHoursTimezone: null,
+            serverOverrides: overrides,
+            channelOverrides: {},
+            conversationOverrides: {},
+            $createdAt: "now",
+            $updatedAt: "later",
+        };
+
+        mockUpdate.mockResolvedValue(updated);
+        mockBuildResponse.mockResolvedValue({
+            ...updated,
+            overrideLabels: {
+                serverOverrides: {
+                    "server-1": {
+                        title: "Alpha Server",
+                    },
+                },
+                channelOverrides: {},
+                conversationOverrides: {},
+            },
+        });
+
+        const request = new NextRequest(
+            "http://localhost/api/notifications/settings",
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    globalNotifications: "mentions",
+                    desktopNotifications: false,
+                    serverOverrides: overrides,
+                }),
+            },
+        );
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockUpdate).toHaveBeenCalledWith(
+            "settings-1",
+            expect.objectContaining({
+                globalNotifications: "mentions",
+                serverOverrides: overrides,
+            }),
+        );
+        expect(data.globalNotifications).toBe("mentions");
+        expect(data.serverOverrides).toEqual(overrides);
+        expect(mockBuildResponse).toHaveBeenCalledWith("user-1", updated);
+    });
+
+    it("rejects quiet hours when only one boundary is provided", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+
+        const request = new NextRequest(
+            "http://localhost/api/notifications/settings",
+            {
+                method: "PATCH",
+                body: JSON.stringify({ quietHoursStart: "22:00" }),
+            },
+        );
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("must both be provided together");
+    });
+
+    it("rejects invalid quiet hours timezone", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+
+        const request = new NextRequest(
+            "http://localhost/api/notifications/settings",
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    quietHoursStart: "22:00",
+                    quietHoursEnd: "07:00",
+                    quietHoursTimezone: "Mars/Phobos",
+                }),
+            },
+        );
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("Invalid quietHoursTimezone");
+    });
 });
