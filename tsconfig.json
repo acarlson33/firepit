@@ -38,6 +38,7 @@
         "**/*.spec.ts",
         "**/*.spec.tsx",
         "./vitest.config.ts",
-        "./coverage"
+        "./coverage",
+        "./scripts/**"
     ]
 }

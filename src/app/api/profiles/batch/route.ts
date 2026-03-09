@@ -147,7 +147,10 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        return compressedResponse({ profiles: profilesMap });
+        return compressedResponse({
+            profiles: profilesMap,
+            visibleUserIds,
+        });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "POST /api/profiles/batch",
