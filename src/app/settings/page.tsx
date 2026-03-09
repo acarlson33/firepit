@@ -107,6 +107,13 @@ export default async function SettingsPage() {
 
                 <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
                     <div className="grid gap-8">
+                        <div className="sticky top-24 z-20 xl:hidden">
+                            <SettingsSectionNav
+                                sections={settingsSections}
+                                variant="compact"
+                            />
+                        </div>
+
                         <section className="scroll-mt-24" id="profile-picture">
                             <Card className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-lg">
                                 <CardHeader className="space-y-1">

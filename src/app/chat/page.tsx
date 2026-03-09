@@ -1027,6 +1027,49 @@ export default function ChatPage() {
             );
         }
 
+        if (channelsApi.initialLoading || categoriesApi.initialLoading) {
+            return (
+                <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                    <div className="space-y-2">
+                        <div className="h-3 w-28 animate-pulse rounded-full bg-muted" />
+                        <div className="space-y-2">
+                            <div className="h-10 animate-pulse rounded-xl bg-muted/70" />
+                            <div className="h-10 animate-pulse rounded-xl bg-muted/70" />
+                            <div className="h-10 animate-pulse rounded-xl bg-muted/70" />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="h-3 w-24 animate-pulse rounded-full bg-muted" />
+                        <div className="space-y-2">
+                            <div className="h-10 animate-pulse rounded-xl bg-muted/60" />
+                            <div className="h-10 animate-pulse rounded-xl bg-muted/60" />
+                        </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Loading channels and categories...
+                    </p>
+                </div>
+            );
+        }
+
+        if (
+            groupedChannels.length === 0 &&
+            uncategorizedChannels.length === 0 &&
+            !channelsApi.loading
+        ) {
+            return (
+                <div className="space-y-2 rounded-2xl border border-dashed border-border/60 bg-muted/30 px-4 py-4 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                        No channels yet
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        This server does not have any visible channels right
+                        now.
+                    </p>
+                </div>
+            );
+        }
+
         const renderChannelItem = (channel: Channel) => {
             const active = channel.$id === selectedChannel;
 

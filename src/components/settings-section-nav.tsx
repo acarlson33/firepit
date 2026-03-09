@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+
 type SettingsSection = {
     description: string;
     href: `#${string}`;
@@ -10,6 +18,7 @@ type SettingsSection = {
 
 interface SettingsSectionNavProps {
     sections: readonly SettingsSection[];
+    variant?: "compact" | "sidebar";
 }
 
 function getInitialActiveHref(sections: readonly SettingsSection[]) {
@@ -22,7 +31,25 @@ function getInitialActiveHref(sections: readonly SettingsSection[]) {
     return matchingSection?.href ?? sections[0]?.href ?? "#";
 }
 
-export function SettingsSectionNav({ sections }: SettingsSectionNavProps) {
+function scrollToSection(href: `#${string}`) {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    const targetId = href.slice(1);
+    const element = document.getElementById(targetId);
+    if (!element) {
+        return;
+    }
+
+    window.history.replaceState(null, "", href);
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+export function SettingsSectionNav({
+    sections,
+    variant = "sidebar",
+}: SettingsSectionNavProps) {
     const [activeHref, setActiveHref] = useState(() =>
         getInitialActiveHref(sections),
     );
@@ -76,6 +103,52 @@ export function SettingsSectionNav({ sections }: SettingsSectionNavProps) {
             observer.disconnect();
         };
     }, [sections]);
+
+    if (variant === "compact") {
+        const activeSection =
+            sections.find((section) => section.href === activeHref) ??
+            sections[0];
+
+        return (
+            <div className="rounded-3xl border border-border/60 bg-card/85 p-3 shadow-lg backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Jump to section
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-foreground">
+                            {activeSection?.title ?? "Settings"}
+                        </p>
+                    </div>
+                    <Select
+                        onValueChange={(value) => {
+                            const href = value as `#${string}`;
+                            setActiveHref(href);
+                            scrollToSection(href);
+                        }}
+                        value={activeHref}
+                    >
+                        <SelectTrigger
+                            aria-label="Jump to settings section"
+                            className="w-[13rem] max-w-full rounded-2xl border-border/60 bg-background/80"
+                        >
+                            <SelectValue placeholder="Choose a section" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {sections.map((section) => (
+                                <SelectItem
+                                    key={section.href}
+                                    value={section.href}
+                                >
+                                    {section.title}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="rounded-3xl border border-border/60 bg-card/75 p-5 shadow-lg backdrop-blur">

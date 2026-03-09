@@ -20,6 +20,13 @@ const authState = vi.hoisted(() => ({
 const mockUseFriends = vi.hoisted(() => vi.fn());
 const mockUseDeveloperMode = vi.hoisted(() => vi.fn());
 
+const defaultNavigationPreferences = {
+    showDocsInNavigation: true,
+    showFriendsInNavigation: true,
+    showSettingsInNavigation: true,
+    navigationItemOrder: ["docs", "friends", "settings"],
+};
+
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
@@ -77,7 +84,9 @@ describe("Header", () => {
         mockUseDeveloperMode.mockReturnValue({
             developerMode: true,
             isLoaded: true,
+            navigationPreferences: defaultNavigationPreferences,
             setDeveloperMode: vi.fn(),
+            updateNavigationPreferences: vi.fn(),
         });
     });
 
@@ -167,13 +176,86 @@ describe("Header", () => {
         mockUseDeveloperMode.mockReturnValue({
             developerMode: false,
             isLoaded: true,
+            navigationPreferences: {
+                ...defaultNavigationPreferences,
+                showDocsInNavigation: false,
+            },
             setDeveloperMode: vi.fn(),
+            updateNavigationPreferences: vi.fn(),
         });
 
         renderWithQueryClient(<Header />);
 
         expect(
             screen.queryByRole("link", { name: "Docs" }),
+        ).not.toBeInTheDocument();
+    });
+
+    it("respects navigation item ordering for authenticated users", () => {
+        authState.userData = {
+            userId: "user-1",
+            name: "August",
+            email: "august@example.com",
+            roles: {
+                isAdmin: false,
+                isModerator: false,
+            },
+        };
+        mockUseDeveloperMode.mockReturnValue({
+            developerMode: true,
+            isLoaded: true,
+            navigationPreferences: {
+                ...defaultNavigationPreferences,
+                navigationItemOrder: ["settings", "docs", "friends"],
+            },
+            setDeveloperMode: vi.fn(),
+            updateNavigationPreferences: vi.fn(),
+        });
+
+        renderWithQueryClient(<Header />);
+
+        const links = screen
+            .getAllByRole("link")
+            .map((link) => link.textContent)
+            .filter((text): text is string => Boolean(text));
+
+        expect(links.indexOf("Settings")).toBeLessThan(links.indexOf("Docs"));
+        expect(links.indexOf("Docs")).toBeLessThan(links.indexOf("Friends"));
+    });
+
+    it("hides optional links when their navigation preferences are disabled", () => {
+        authState.userData = {
+            userId: "user-1",
+            name: "August",
+            email: "august@example.com",
+            roles: {
+                isAdmin: false,
+                isModerator: false,
+            },
+        };
+        mockUseDeveloperMode.mockReturnValue({
+            developerMode: false,
+            isLoaded: true,
+            navigationPreferences: {
+                showDocsInNavigation: false,
+                showFriendsInNavigation: false,
+                showSettingsInNavigation: false,
+                navigationItemOrder: ["docs", "friends", "settings"],
+            },
+            setDeveloperMode: vi.fn(),
+            updateNavigationPreferences: vi.fn(),
+        });
+
+        renderWithQueryClient(<Header />);
+
+        expect(
+            screen.queryByRole("link", { name: "Docs" }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("link", { name: /Friends/i }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("link", { name: "Settings" }),
         ).not.toBeInTheDocument();
     });
 });

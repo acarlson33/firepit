@@ -187,6 +187,15 @@ export type UserStatus = {
     $updatedAt?: string;
 };
 
+export type NavigationItemPreferenceId = "docs" | "friends" | "settings";
+
+export type NavigationPreferences = {
+    showDocsInNavigation: boolean;
+    showFriendsInNavigation: boolean;
+    showSettingsInNavigation: boolean;
+    navigationItemOrder: NavigationItemPreferenceId[];
+};
+
 export type UserProfileData = {
     userId: string;
     displayName?: string;
@@ -197,6 +206,9 @@ export type UserProfileData = {
     website?: string;
     avatarFileId?: string;
     showDocsInNavigation?: boolean;
+    showFriendsInNavigation?: boolean;
+    showSettingsInNavigation?: boolean;
+    navigationItemOrder?: NavigationItemPreferenceId[];
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;

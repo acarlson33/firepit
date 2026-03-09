@@ -226,7 +226,19 @@ describe("Setup Appwrite Script", () => {
 
     describe("Collection Setup - Profiles", () => {
         it("should have profiles collection with required attributes", () => {
-            const requiredAttributes = ["userId", "name", "email", "avatarUrl"];
+            const requiredAttributes = [
+                "userId",
+                "displayName",
+                "bio",
+                "pronouns",
+                "avatarFileId",
+                "location",
+                "website",
+                "showDocsInNavigation",
+                "showFriendsInNavigation",
+                "showSettingsInNavigation",
+                "navigationItemOrder",
+            ];
 
             requiredAttributes.forEach((attr) => {
                 expect(attr).toBeTruthy();
@@ -234,7 +246,7 @@ describe("Setup Appwrite Script", () => {
         });
 
         it("should have profiles collection with proper indexes", () => {
-            const expectedIndexes = ["idx_userId", "idx_email"];
+            const expectedIndexes = ["idx_userId", "idx_displayName_search"];
 
             expectedIndexes.forEach((index) => {
                 expect(index).toBeTruthy();

@@ -5,16 +5,54 @@ import {
     getOrCreateUserProfile,
     updateUserProfile,
 } from "@/lib/appwrite-profiles";
+import type {
+    NavigationItemPreferenceId,
+    NavigationPreferences,
+} from "@/lib/types";
 
-type PreferencesResponse = {
-    showDocsInNavigation: boolean;
-};
+const DEFAULT_NAVIGATION_ITEM_ORDER = [
+    "docs",
+    "friends",
+    "settings",
+] as const satisfies NavigationItemPreferenceId[];
 
-function toPreferencesResponse(
-    showDocsInNavigation: boolean | undefined,
-): PreferencesResponse {
+type PreferencesResponse = NavigationPreferences;
+
+type PatchRequestBody = Partial<NavigationPreferences>;
+
+function normalizeNavigationItemOrder(
+    order: NavigationItemPreferenceId[] | undefined,
+) {
+    const normalizedOrder = Array.isArray(order)
+        ? order.filter(
+              (item, index, items): item is NavigationItemPreferenceId =>
+                  DEFAULT_NAVIGATION_ITEM_ORDER.includes(item) &&
+                  items.indexOf(item) === index,
+          )
+        : [];
+
+    for (const item of DEFAULT_NAVIGATION_ITEM_ORDER) {
+        if (!normalizedOrder.includes(item)) {
+            normalizedOrder.push(item);
+        }
+    }
+
+    return normalizedOrder;
+}
+
+function toPreferencesResponse(profile: {
+    showDocsInNavigation?: boolean;
+    showFriendsInNavigation?: boolean;
+    showSettingsInNavigation?: boolean;
+    navigationItemOrder?: NavigationItemPreferenceId[];
+}): PreferencesResponse {
     return {
-        showDocsInNavigation: showDocsInNavigation ?? true,
+        showDocsInNavigation: profile.showDocsInNavigation ?? true,
+        showFriendsInNavigation: profile.showFriendsInNavigation ?? true,
+        showSettingsInNavigation: profile.showSettingsInNavigation ?? true,
+        navigationItemOrder: normalizeNavigationItemOrder(
+            profile.navigationItemOrder,
+        ),
     };
 }
 
@@ -31,9 +69,7 @@ export async function GET() {
 
         const profile = await getOrCreateUserProfile(user.$id, user.name);
 
-        return NextResponse.json(
-            toPreferencesResponse(profile.showDocsInNavigation),
-        );
+        return NextResponse.json(toPreferencesResponse(profile));
     } catch (error) {
         return NextResponse.json(
             {
@@ -46,10 +82,6 @@ export async function GET() {
         );
     }
 }
-
-type PatchRequestBody = {
-    showDocsInNavigation?: boolean;
-};
 
 export async function PATCH(request: Request) {
     try {
@@ -64,7 +96,10 @@ export async function PATCH(request: Request) {
 
         const body = (await request.json()) as PatchRequestBody;
 
-        if (typeof body.showDocsInNavigation !== "boolean") {
+        if (
+            body.showDocsInNavigation !== undefined &&
+            typeof body.showDocsInNavigation !== "boolean"
+        ) {
             return NextResponse.json(
                 {
                     error: "Invalid showDocsInNavigation value. Must be a boolean",
@@ -73,14 +108,74 @@ export async function PATCH(request: Request) {
             );
         }
 
+        if (
+            body.showFriendsInNavigation !== undefined &&
+            typeof body.showFriendsInNavigation !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid showFriendsInNavigation value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.showSettingsInNavigation !== undefined &&
+            typeof body.showSettingsInNavigation !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid showSettingsInNavigation value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.navigationItemOrder !== undefined &&
+            (!Array.isArray(body.navigationItemOrder) ||
+                body.navigationItemOrder.some(
+                    (item) => !DEFAULT_NAVIGATION_ITEM_ORDER.includes(item),
+                ))
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid navigationItemOrder value. Must contain only supported navigation items",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            body.showDocsInNavigation === undefined &&
+            body.showFriendsInNavigation === undefined &&
+            body.showSettingsInNavigation === undefined &&
+            body.navigationItemOrder === undefined
+        ) {
+            return NextResponse.json(
+                {
+                    error: "At least one navigation preference must be provided",
+                },
+                { status: 400 },
+            );
+        }
+
         const profile = await getOrCreateUserProfile(user.$id, user.name);
-        const updatedProfile = await updateUserProfile(profile.$id, {
-            showDocsInNavigation: body.showDocsInNavigation,
+        const mergedPreferences = toPreferencesResponse({
+            ...profile,
+            ...body,
         });
 
-        return NextResponse.json(
-            toPreferencesResponse(updatedProfile.showDocsInNavigation),
-        );
+        const updatedProfile = await updateUserProfile(profile.$id, {
+            showDocsInNavigation: mergedPreferences.showDocsInNavigation,
+            showFriendsInNavigation: mergedPreferences.showFriendsInNavigation,
+            showSettingsInNavigation:
+                mergedPreferences.showSettingsInNavigation,
+            navigationItemOrder: mergedPreferences.navigationItemOrder,
+        });
+
+        return NextResponse.json(toPreferencesResponse(updatedProfile));
     } catch (error) {
         return NextResponse.json(
             {

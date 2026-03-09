@@ -20,6 +20,7 @@ export function useChannels({
     const [channels, setChannels] = useState<Channel[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(false);
 
     const refresh = useCallback(async () => {
         if (!selectedServer) {
@@ -50,13 +51,17 @@ export function useChannels({
         if (!selectedServer) {
             setChannels([]);
             setCursor(null);
+            setInitialLoading(false);
             return;
         }
         (async () => {
+            const cacheKey = `channels:${selectedServer}:initial`;
             try {
+                setInitialLoading(!apiCache.has(cacheKey));
+
                 // Use SWR pattern for instant cached data (Performance Optimization #3)
                 const data = await apiCache.swr(
-                    `channels:${selectedServer}:initial`,
+                    cacheKey,
                     () =>
                         fetch(
                             `/api/channels?serverId=${selectedServer}&limit=50`,
@@ -84,6 +89,8 @@ export function useChannels({
                         ? err.message
                         : "Failed to load channels",
                 );
+            } finally {
+                setInitialLoading(false);
             }
         })().catch(() => {
             /* ignored initial channel load error already surfaced */
@@ -168,6 +175,7 @@ export function useChannels({
     return {
         channels,
         cursor,
+        initialLoading,
         loading,
         loadMore,
         create,

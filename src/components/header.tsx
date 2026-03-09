@@ -13,6 +13,7 @@ import { Button } from "./ui/button";
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { useAuth } from "@/contexts/auth-context";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
+import type { NavigationItemPreferenceId } from "@/lib/types";
 import { useFriends } from "@/hooks/useFriends";
 
 type HeaderProps = {
@@ -23,56 +24,56 @@ export default function Header({ onSearchClick }: HeaderProps) {
     const router = useRouter();
     const { userData, userStatus, loading, setUserData, updateUserStatus } =
         useAuth();
-    const { incoming, loading: friendsLoading } = useFriends(Boolean(userData));
-    const { developerMode } = useDeveloperMode(userData?.userId ?? null);
+    const { navigationPreferences } = useDeveloperMode(
+        userData?.userId ?? null,
+    );
+    const { incoming, loading: friendsLoading } = useFriends(
+        Boolean(userData && navigationPreferences.showFriendsInNavigation),
+    );
     const [loggingOut, setLoggingOut] = useState(false);
 
     const isAuthenticated = Boolean(userData);
     const roles = userData?.roles;
     const incomingRequestCount = friendsLoading ? 0 : incoming.length;
-    const showDocsLink = !isAuthenticated || developerMode;
-
-    const baseLinks: Array<{ to: string; label: string }> = [
-        { to: "/", label: "Home" },
-        { to: "/chat", label: "Chat" },
-        ...(showDocsLink ? [{ to: "/docs", label: "Docs" }] : []),
-    ];
+    const optionalLinks: Record<
+        NavigationItemPreferenceId,
+        { count?: number; label: string; visible: boolean; to: Route }
+    > = {
+        docs: {
+            label: "Docs",
+            to: "/docs",
+            visible:
+                !isAuthenticated || navigationPreferences.showDocsInNavigation,
+        },
+        friends: {
+            label: "Friends",
+            to: "/friends",
+            count: incomingRequestCount > 0 ? incomingRequestCount : undefined,
+            visible:
+                isAuthenticated &&
+                Boolean(navigationPreferences.showFriendsInNavigation),
+        },
+        settings: {
+            label: "Settings",
+            to: "/settings",
+            visible:
+                isAuthenticated &&
+                Boolean(navigationPreferences.showSettingsInNavigation),
+        },
+    };
 
     const links: Array<{ to: Route; label: string; count?: number }> = [
-        ...baseLinks.map((link) => ({
-            to: link.to as Route,
-            label: link.label,
-        })),
-        ...(isAuthenticated
-            ? [
-                  {
-                      to: "/friends" as Route,
-                      label: "Friends",
-                      count:
-                          incomingRequestCount > 0
-                              ? incomingRequestCount
-                              : undefined,
-                  },
-              ]
-            : []),
-        ...(isAuthenticated
-            ? [{ to: "/settings" as Route, label: "Settings" }]
-            : []),
+        { to: "/" as Route, label: "Home" },
+        { to: "/chat" as Route, label: "Chat" },
+        ...navigationPreferences.navigationItemOrder.flatMap((item) => {
+            const link = optionalLinks[item];
+            return link?.visible ? [link] : [];
+        }),
         ...(roles?.isModerator
             ? [{ to: "/moderation" as Route, label: "Moderation" }]
             : []),
         ...(roles?.isAdmin ? [{ to: "/admin" as Route, label: "Admin" }] : []),
-    ].reduce<Array<{ to: Route; label: string; count?: number }>>(
-        (allLinks, link) => {
-            if (allLinks.some((existingLink) => existingLink.to === link.to)) {
-                return allLinks;
-            }
-
-            allLinks.push(link);
-            return allLinks;
-        },
-        [],
-    );
+    ];
 
     async function handleLogout(e: React.FormEvent) {
         e.preventDefault();
@@ -112,7 +113,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
                             aria-label="Main navigation"
                             className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground"
                         >
-                            {baseLinks.map((link) => (
+                            {links.map((link) => (
                                 <span
                                     className="rounded-full border border-transparent bg-muted/70 px-3 py-1 text-muted-foreground"
                                     key={link.to}

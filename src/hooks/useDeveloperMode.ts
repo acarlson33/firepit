@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-type PreferencesResponse = {
-    showDocsInNavigation: boolean;
-};
+import type { NavigationPreferences } from "@/lib/types";
+
+type PreferencesResponse = NavigationPreferences;
+
+type PreferencesPatch = Partial<NavigationPreferences>;
 
 function getDeveloperModeQueryKey(userId: string | null) {
     return ["developer-mode", userId] as const;
@@ -22,18 +24,18 @@ async function fetchDeveloperModePreference() {
     return (await response.json()) as PreferencesResponse;
 }
 
-async function updateDeveloperModePreference(showDocsInNavigation: boolean) {
+async function updateDeveloperModePreference(patch: PreferencesPatch) {
     const response = await fetch("/api/me/preferences", {
         method: "PATCH",
         headers: {
             "Content-Type": "application/json",
         },
         credentials: "include",
-        body: JSON.stringify({ showDocsInNavigation }),
+        body: JSON.stringify(patch),
     });
 
     if (!response.ok) {
-        throw new Error("Failed to save docs navigation preference");
+        throw new Error("Failed to save navigation preferences");
     }
 
     return (await response.json()) as PreferencesResponse;
@@ -50,18 +52,25 @@ export function useDeveloperMode(userId: string | null) {
         enabled: isEnabled,
         staleTime: 30 * 1000,
         gcTime: 10 * 60 * 1000,
-        refetchOnWindowFocus: true,
     });
 
     const updatePreferenceMutation = useMutation({
         mutationFn: updateDeveloperModePreference,
-        onMutate: async (nextValue) => {
+        onMutate: async (patch) => {
             await queryClient.cancelQueries({ queryKey });
             const previousValue =
                 queryClient.getQueryData<PreferencesResponse>(queryKey);
 
+            if (!previousValue) {
+                return { previousValue };
+            }
+
             queryClient.setQueryData<PreferencesResponse>(queryKey, {
-                showDocsInNavigation: nextValue,
+                ...previousValue,
+                ...patch,
+                navigationItemOrder:
+                    patch.navigationItemOrder ??
+                    previousValue.navigationItemOrder,
             });
 
             return { previousValue };
@@ -76,19 +85,39 @@ export function useDeveloperMode(userId: string | null) {
         },
     });
 
+    const navigationPreferences: NavigationPreferences =
+        preferenceQuery.data ?? {
+            showDocsInNavigation: true,
+            showFriendsInNavigation: true,
+            showSettingsInNavigation: true,
+            navigationItemOrder: ["docs", "friends", "settings"],
+        };
+
     function setDeveloperMode(nextValue: boolean) {
         if (!isEnabled) {
             return;
         }
 
-        updatePreferenceMutation.mutate(nextValue);
+        updatePreferenceMutation.mutate({
+            showDocsInNavigation: nextValue,
+        });
+    }
+
+    function updateNavigationPreferences(patch: PreferencesPatch) {
+        if (!isEnabled) {
+            return;
+        }
+
+        updatePreferenceMutation.mutate(patch);
     }
 
     return {
-        developerMode: preferenceQuery.data?.showDocsInNavigation ?? true,
+        developerMode: navigationPreferences.showDocsInNavigation,
+        navigationPreferences,
         isLoaded:
             !isEnabled || preferenceQuery.isSuccess || preferenceQuery.isError,
         isSaving: updatePreferenceMutation.isPending,
         setDeveloperMode,
+        updateNavigationPreferences,
     };
 }
