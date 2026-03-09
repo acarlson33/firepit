@@ -6,7 +6,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 
 ## Features
 
-- **Servers, channels, and categories** - Discord-style server organization with grouped text channels
+- **Servers, channels, and categories** - Discord-style server organization with grouped text channels and in-app category management
 - **Direct messages and group DMs** - Private 1:1 and multi-user conversations
 - **Server invites and discovery** - Invite links, public server listings, and direct join flows
 - **Roles and permissions** - Per-server roles with channel overrides and moderation-aware access control
@@ -21,7 +21,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Replies, mentions, reactions, threads, and pins** - Core message workflows across channels and DMs
 - **Direct messages and group DMs** - Shared DM infrastructure for 1:1 and multi-user conversations
 - **Search and attachments** - Message search plus image, file, video, audio, and document attachments
-- **Roles, permissions, and moderation** - Server roles, permission overrides, invite management, bans, kicks, mutes, and audit logs
+- **Roles, permissions, categories, and moderation** - Server roles, permission overrides, category management, invite management, bans, kicks, mutes, and audit logs
 - **Profiles and status** - User profile enrichment, avatars, pronouns, bios, and custom status messages
 - **Friend system and blocking** - Social graph controls for safer private messaging
 - **TypeScript** - Full type safety across the entire codebase
@@ -132,7 +132,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instruct
 
 Firepit still has meaningful Discord parity gaps in a few areas:
 
-- Richer community/server organization such as server templates, onboarding screens, and announcement-style surfaces is still in progress
+- Richer community/server organization beyond categories, such as server templates, onboarding screens, and announcement-style surfaces, is still in progress
 - Notification controls need deeper parity across server, channel, and DM scopes
 - Voice/video calls and screen sharing are not implemented
 - Bots, slash commands, and webhooks are not implemented

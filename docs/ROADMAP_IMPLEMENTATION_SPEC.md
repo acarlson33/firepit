@@ -33,7 +33,7 @@ Each roadmap workstream should be described using the same structure:
 
 ## Workstream A: Channel Categories
 
-Status: MVP shipped in March 2026. Remaining work is focused on management polish, richer reordering, and permission UX.
+Status: Shipped in March 2026. Remaining work is follow-on polish, not core delivery.
 
 ### Objective
 
@@ -45,46 +45,49 @@ Close the most visible server-navigation parity gap by allowing channels to be g
 - Categories can be collapsed and expanded
 - Server admins can create, rename, reorder, and delete categories
 - Channels can be assigned into or out of categories and reordered with explicit controls
+- Category changes now update the sidebar and settings UI immediately, with optimistic feedback during sync
 
 ### Backend Scope
 
-- Add a `categories` collection with at least:
+- Shipped scope:
+    - `categories` collection with:
     - `$id`
     - `serverId`
     - `name`
     - `position`
     - `createdBy`
     - timestamps
-- Extend channel records with:
+- Channel records extended with:
     - `categoryId?: string`
     - `position: number`
-- Add endpoints or extend existing server/channel APIs for:
+- Category and channel management APIs support:
     - listing categories by server
     - creating, updating, deleting categories
     - moving channels between categories
     - reordering categories
-- Enforce role and permission checks using the same effective-permission model already used for channel and role administration
-- Preserve compatibility for channels without a category
+- Role and permission checks use the same effective-permission model already used for channel and role administration
+- Channels without a category remain fully supported
 
 ### Frontend Scope
 
 - Sidebar rendering that groups channels under category containers
-- Category collapse state persisted per user, preferably in notification/preferences state or a dedicated lightweight preference store
+- Category collapse state persisted per server in lightweight client storage
 - Server settings UI for category CRUD
 - Explicit move controls for category and channel ordering, with drag-and-drop remaining optional future polish
+- Optimistic updates and in-flight UI states so reassignment and reordering feel immediate instead of refetch-bound
 - Empty and degraded states for servers that have no categories or partially configured data
 
 ### Testing
 
 - API tests for category CRUD and reordering
 - Permission tests for admin versus non-admin role behavior
-- Hook/component tests for collapsed state and ordered rendering
+- Hook/component tests for collapsed state, optimistic rendering, and ordered rendering
 - Regression tests that verify uncategorized channels still render correctly
 
 ### Rollout Notes
 
-- Prefer a feature flag until migration and ordering behavior is stable
-- Instrument category create, reorder, and delete actions for support/debugging
+- Core category delivery is complete and no longer needs feature-flag framing in roadmap status
+- Remaining follow-up work should focus on drag-and-drop, permission polish, and broader server-organization UX
 
 ## Workstream B: Notification Controls Parity
 

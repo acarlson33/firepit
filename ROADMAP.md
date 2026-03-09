@@ -23,14 +23,14 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ## Discord Parity Snapshot
 
-| Parity Area                            | Status         | Summary                                                                                                                           |
-| -------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Server and community layer             | Partial parity | Servers, channels, invites, discovery, roles, and moderation are live; category and community-grade organization still need work. |
-| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.               |
-| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.     |
-| Notifications and attention management | Partial parity | Settings and mute controls exist, but deeper Discord-style notification control is still incomplete.                              |
-| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                 |
-| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                |
+| Parity Area                            | Status         | Summary                                                                                                                               |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Server and community layer             | Strong parity  | Servers, channels, categories, invites, discovery, roles, and moderation are live; deeper community-grade organization is still open. |
+| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.                   |
+| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.         |
+| Notifications and attention management | Partial parity | Settings and mute controls exist, but deeper Discord-style notification control is still incomplete.                                  |
+| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                     |
+| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                    |
 
 ## 1. Server And Community Parity
 
@@ -204,9 +204,9 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ### Q2 2026
 
-- Ship channel categories and make server/channel organization feel closer to Discord server navigation
 - Finish the advanced notification-control work so mute and preference behavior is consistent across servers, channels, and DMs
 - Continue closing parity gaps where a feature exists in one chat surface but not another
+- Continue polishing the newly shipped category-management UX and permissions model
 
 ### Q3 2026
 
