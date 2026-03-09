@@ -214,8 +214,8 @@ export function MuteDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-106.25">
-                <DialogHeader>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+                <DialogHeader className="gap-2">
                     <DialogTitle className="flex items-center gap-2">
                         <BellOff className="h-5 w-5" />
                         Mute {getTargetTypeLabel(targetType)}
@@ -229,18 +229,20 @@ export function MuteDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-3 py-2">
                     <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">
                             How this override behaves
                         </p>
-                        <p className="mt-1">{getPrecedenceHint(targetType)}</p>
+                        <p className="mt-1 text-xs leading-relaxed">
+                            {getPrecedenceHint(targetType)}
+                        </p>
                     </div>
 
                     {/* Duration Selection */}
                     <div className="space-y-2">
                         <Label>Mute for</Label>
-                        <div className="grid gap-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
                             {DURATION_OPTIONS.map((option) => (
                                 <button
                                     key={option.value}
@@ -248,14 +250,14 @@ export function MuteDialog({
                                     onClick={() =>
                                         setSelectedDuration(option.value)
                                     }
-                                    className={`flex items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted ${
+                                    className={`flex min-h-11 items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted ${
                                         selectedDuration === option.value
                                             ? "border-primary bg-primary/5"
                                             : "border-border"
                                     }`}
                                 >
                                     <div
-                                        className={`h-4 w-4 rounded-full border-2 ${
+                                        className={`h-3.5 w-3.5 rounded-full border-2 ${
                                             selectedDuration === option.value
                                                 ? "border-primary bg-primary"
                                                 : "border-muted-foreground"
@@ -280,14 +282,14 @@ export function MuteDialog({
                                     onClick={() =>
                                         setSelectedLevel(option.value)
                                     }
-                                    className={`flex items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-muted ${
+                                    className={`flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-muted ${
                                         selectedLevel === option.value
                                             ? "border-primary bg-primary/5"
                                             : "border-border"
                                     }`}
                                 >
                                     <div
-                                        className={`flex h-8 w-8 items-center justify-center rounded-md ${
+                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
                                             selectedLevel === option.value
                                                 ? "bg-primary text-primary-foreground"
                                                 : "bg-muted"
@@ -296,10 +298,10 @@ export function MuteDialog({
                                         {option.icon}
                                     </div>
                                     <div className="flex-1">
-                                        <span className="text-sm font-medium">
+                                        <span className="text-sm font-medium leading-none">
                                             {option.label}
                                         </span>
-                                        <p className="text-xs text-muted-foreground">
+                                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                                             {option.description}
                                         </p>
                                     </div>
@@ -309,7 +311,7 @@ export function MuteDialog({
                     </div>
                 </div>
 
-                <DialogFooter className="flex-col gap-2 sm:flex-row">
+                <DialogFooter className="flex-col gap-2 pt-2 sm:flex-row">
                     <Button
                         variant="outline"
                         onClick={handleUnmute}

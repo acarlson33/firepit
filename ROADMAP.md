@@ -23,14 +23,14 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ## Discord Parity Snapshot
 
-| Parity Area                            | Status         | Summary                                                                                                                               |
-| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Server and community layer             | Strong parity  | Servers, channels, categories, invites, discovery, roles, and moderation are live; deeper community-grade organization is still open. |
-| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.                   |
-| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.         |
-| Notifications and attention management | Partial parity | Settings and mute controls exist, but deeper Discord-style notification control is still incomplete.                                  |
-| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                     |
-| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                    |
+| Parity Area                            | Status         | Summary                                                                                                                                   |
+| -------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Server and community layer             | Strong parity  | Servers, channels, categories, invites, discovery, roles, and moderation are live; deeper community-grade organization is still open.     |
+| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.                       |
+| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.             |
+| Notifications and attention management | Partial parity | Scoped notification levels, mute durations, quiet hours, and per-context controls are live; inbox, unread, and digest parity remain open. |
+| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                         |
+| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                        |
 
 ## 1. Server And Community Parity
 
@@ -127,17 +127,21 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 ### Live
 
 - Notification settings API foundation
+- Global notification levels: all, mentions only, nothing
 - Per-server mute controls
 - Per-channel mute controls
 - Per-conversation mute controls
+- Quiet hours with timezone-aware schedules
+- Desktop, push, and sound preferences
+- Direct-message privacy controls
+- Shared mute-management flows across server, channel, and DM contexts
+- Settings UI for scoped override review, label enrichment, search, and bulk cleanup actions
 
 ### Planned
 
-- Granular notification levels: all, mentions only, nothing
-- Mute duration presets and better mute UX
-- Quiet hours / notification schedules
-- Desktop and push notification preferences
-- Sound and visual customization for mention-heavy workflows
+- Better unread and badge semantics that stay consistent across servers, channels, and DMs
+- Notification-center or inbox flows for missed activity review
+- Additional polish for high-volume mention workflows and future mobile delivery surfaces
 
 ### Investigating
 
@@ -204,9 +208,9 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ### Q2 2026
 
-- Finish the advanced notification-control work so mute and preference behavior is consistent across servers, channels, and DMs
 - Continue closing parity gaps where a feature exists in one chat surface but not another
 - Continue polishing the newly shipped category-management UX and permissions model
+- Decide whether unread and inbox-style notification follow-up work should stay in Q2 or move behind social-graph polish
 
 ### Q3 2026
 

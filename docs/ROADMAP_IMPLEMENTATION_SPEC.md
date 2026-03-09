@@ -91,6 +91,8 @@ Close the most visible server-navigation parity gap by allowing channels to be g
 
 ## Workstream B: Notification Controls Parity
 
+Status: Shipped in March 2026. Remaining work is follow-on attention-management polish, not core notification-controls delivery.
+
 ### Objective
 
 Move from basic mute controls to Discord-like notification preferences across server, channel, and DM scopes.
@@ -101,44 +103,51 @@ Move from basic mute controls to Discord-like notification preferences across se
 - Users can mute for a duration or indefinitely
 - Users can configure quiet hours and desktop/push behavior
 - Notification preference behavior is consistent across servers, channels, and conversations
+- Users can review scoped overrides with readable labels, filter them, and perform bulk cleanup actions from settings
 
 ### Backend Scope
 
-- Standardize the notification settings document shape used by `/api/notifications/settings`
-- Ensure `serverOverrides`, `channelOverrides`, and `conversationOverrides` support both `level` and `mutedUntil`
-- Reuse existing mute endpoints where possible, but normalize payloads and validation rules across:
+- Shipped scope:
+    - standardized `notification_settings` document handling through `/api/notifications/settings`
+    - normalized override maps for `serverOverrides`, `channelOverrides`, and `conversationOverrides` with `level` and `mutedUntil`
+    - timezone-aware quiet hours persistence
+    - desktop, push, sound, and direct-message privacy preferences
+    - server-side override label enrichment for settings responses using memberships, channels, conversations, and profile lookups
+    - legacy-document backfill for older notification settings records missing newer required fields
+- Reused and aligned mute endpoints across:
     - `/api/servers/{serverId}/mute`
     - `/api/channels/{channelId}/mute`
     - `/api/conversations/{conversationId}/mute`
-- Add or normalize support for:
-    - quiet hours
-    - desktop notifications
-    - push notifications
-    - sound preferences
-- Define precedence clearly:
-    - conversation or channel override
+- Effective precedence remains:
+    - conversation override
+    - channel override
     - server override
     - global default
 
 ### Frontend Scope
 
-- A unified notification settings surface instead of scattered mute-only controls
-- Reusable mute dialog component shared by server, channel, and conversation views
-- UI indicators for muted contexts and effective notification level
-- Clear conflict resolution messaging when global and local settings differ
+- Shipped scope:
+    - unified notification settings surface instead of scattered mute-only controls
+    - reusable mute dialog shared by server, channel, and conversation views
+    - readable scoped override labels in settings
+    - filterable override management with status pills and bulk actions
+    - conflict-resolution and precedence messaging when global and local settings differ
+    - settings-page section navigation to improve discoverability of notification controls inside the broader settings surface
 
 ### Testing
 
 - API tests for settings retrieval and partial updates
 - Precedence tests for override resolution
-- Hook tests for mute and unmute mutations
-- UI tests for settings forms, duration presets, and degraded states
+- Mutation coverage for mute and unmute flows across scopes
+- UI tests for settings forms, bulk actions, duration presets, and degraded states
+- Full repository validation currently passes with the shipped notification-controls work
 
 ### Rollout Notes
 
-- Preserve existing mute state during schema changes
-- Log settings write failures and invalid override payloads
-- Avoid introducing notification regressions in channels that currently depend on mute-only behavior
+- Existing mute state is preserved during schema evolution
+- The Appwrite bootstrap now includes the missing quiet-hours timezone field
+- Legacy notification settings documents are backfilled lazily so partial updates do not fail on newly required attributes
+- Remaining roadmap work should target unread/inbox semantics rather than reworking the core notification settings model
 
 ## Workstream C: Cross-Surface Messaging Consistency
 

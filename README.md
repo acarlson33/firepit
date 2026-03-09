@@ -12,6 +12,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Roles and permissions** - Per-server roles with channel overrides and moderation-aware access control
 - **Messaging parity basics** - Replies, mentions, reactions, threads, pins, search, typing indicators, and file attachments
 - **Profiles, presence, and social** - User profiles, statuses, friend requests, and blocking
+- **Notification controls parity** - Scoped notification levels, quiet hours, mute durations, DM privacy, and bulk override management
 - **Moderation and auditability** - Global and server moderation with audit log support
 - **Custom emoji support** - Standard emoji picker plus uploaded custom emoji assets
 
@@ -24,12 +25,13 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Roles, permissions, categories, and moderation** - Server roles, permission overrides, category management, invite management, bans, kicks, mutes, and audit logs
 - **Profiles and status** - User profile enrichment, avatars, pronouns, bios, and custom status messages
 - **Friend system and blocking** - Social graph controls for safer private messaging
+- **Notification settings and mute controls** - Consistent override behavior across servers, channels, and DMs with server-enriched labels and quiet hours
 - **TypeScript** - Full type safety across the entire codebase
 - **Next.js 16** - App Router with React Server Components
 - **Tailwind CSS** - Modern, responsive UI styling
 - **shadcn/ui** - Accessible UI primitives
 - **PWA ready** - Installable web app support for mobile and desktop browsers
-- **Comprehensive tests** - 1645 passing tests with broad API, hook, and integration coverage
+- **Comprehensive tests** - 1913 passing tests with broad API, hook, and integration coverage
 - **Production hardening** - Error boundaries, rate limiting, security validation, and observability
 
 ## 📋 Prerequisites
@@ -121,7 +123,7 @@ Firepit is production-ready with:
 
 ✅ **Testing & Quality**
 
-- 1644 passing tests
+- 1913 passing tests
 - Comprehensive test coverage
 - Automated CI/CD pipeline
 - Strict ESLint configuration
@@ -133,7 +135,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instruct
 Firepit still has meaningful Discord parity gaps in a few areas:
 
 - Richer community/server organization beyond categories, such as server templates, onboarding screens, and announcement-style surfaces, is still in progress
-- Notification controls need deeper parity across server, channel, and DM scopes
+- Notification-center, unread-management, and digest-style attention flows are still incomplete
 - Voice/video calls and screen sharing are not implemented
 - Bots, slash commands, and webhooks are not implemented
 - Native mobile apps are not implemented, though PWA support exists
@@ -234,7 +236,7 @@ bun run test --watch
 
 Current test coverage: **40.18%** statements (growing)
 
-- 1645 tests passing across 115 test suites
+- 1913 tests passing across 157 test suites
 - Comprehensive API route testing (44 new tests for invite system)
 - Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
