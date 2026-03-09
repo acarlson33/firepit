@@ -750,7 +750,7 @@ export function ServerAdminPanel({
                                             value={auditFilter}
                                             onValueChange={setAuditFilter}
                                         >
-                                            <SelectTrigger className="w-[180px]">
+                                            <SelectTrigger className="w-45">
                                                 <SelectValue placeholder="Filter by action" />
                                             </SelectTrigger>
                                             <SelectContent>

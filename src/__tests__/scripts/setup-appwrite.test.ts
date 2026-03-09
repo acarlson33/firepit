@@ -138,7 +138,13 @@ describe("Setup Appwrite Script", () => {
 
     describe("Collection Setup - Channels", () => {
         it("should have channels collection with required attributes", () => {
-            const requiredAttributes = ["name", "serverId", "createdAt"];
+            const requiredAttributes = [
+                "name",
+                "serverId",
+                "categoryId",
+                "position",
+                "createdAt",
+            ];
 
             requiredAttributes.forEach((attr) => {
                 expect(attr).toBeTruthy();
@@ -146,7 +152,34 @@ describe("Setup Appwrite Script", () => {
         });
 
         it("should have channels collection with proper indexes", () => {
-            const expectedIndexes = ["idx_serverId"];
+            const expectedIndexes = [
+                "idx_serverId",
+                "idx_categoryId",
+                "idx_position",
+            ];
+
+            expectedIndexes.forEach((index) => {
+                expect(index).toBeTruthy();
+            });
+        });
+    });
+
+    describe("Collection Setup - Categories", () => {
+        it("should have categories collection with required attributes", () => {
+            const requiredAttributes = [
+                "serverId",
+                "name",
+                "createdBy",
+                "position",
+            ];
+
+            requiredAttributes.forEach((attr) => {
+                expect(attr).toBeTruthy();
+            });
+        });
+
+        it("should have categories collection with proper indexes", () => {
+            const expectedIndexes = ["idx_serverId", "idx_position"];
 
             expectedIndexes.forEach((index) => {
                 expect(index).toBeTruthy();

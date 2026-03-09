@@ -57,6 +57,7 @@ export type EnvConfig = {
     collections: {
         servers: string;
         channels: string;
+        categories: string;
         messages: string;
         audit: string;
         typing: string;
@@ -143,6 +144,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_CHANNELS_COLLECTION_ID,
                 "channels",
             ) || "channels",
+        categories:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_CATEGORIES_COLLECTION_ID,
+                process.env.APPWRITE_CATEGORIES_COLLECTION_ID,
+                "categories",
+            ) || "categories",
         messages:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID,

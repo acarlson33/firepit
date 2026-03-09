@@ -1,48 +1,46 @@
 # firepit
 
-> **Version 1.0** - Production Ready 🎉
+> **Version 1.0** - Production Ready
 
-A modern, open-source chat platform inspired by Discord, built with Next.js 15, Appwrite, and TypeScript. Features real-time messaging, server organization, role-based permissions, and comprehensive moderation tools.
+A modern, open-source chat platform inspired by Discord, built with Next.js 16, Appwrite, and TypeScript. Firepit includes real-time messaging, servers and channels, direct messages, roles and moderation, social features, and a growing parity roadmap for Discord-like workflows.
 
 ## Features
 
--   **Server support** - support for servers like on discord
--   **Server Invite System** - Create, manage, and use invite links with expiration and usage limits
--   **Channel support** - support for channels like on discord
--   **User profiles and status support** - missing external integration, but support for in app statuses and profiles
--   **Emoji support** - Standard and custom emoji support with upload capabilities
--   **Moderation** - Instance wide moderation and administration
--   **Individual server moderation** - not currently supported, but will come in a later update with roles
+- **Servers, channels, and categories** - Discord-style server organization with grouped text channels
+- **Direct messages and group DMs** - Private 1:1 and multi-user conversations
+- **Server invites and discovery** - Invite links, public server listings, and direct join flows
+- **Roles and permissions** - Per-server roles with channel overrides and moderation-aware access control
+- **Messaging parity basics** - Replies, mentions, reactions, threads, pins, search, typing indicators, and file attachments
+- **Profiles, presence, and social** - User profiles, statuses, friend requests, and blocking
+- **Moderation and auditability** - Global and server moderation with audit log support
+- **Custom emoji support** - Standard emoji picker plus uploaded custom emoji assets
 
 ## Codebase Features
 
--   **Real-time Chat** - WebSocket-based messaging with typing indicators
--   **Message Replies** - Reply to specific messages to maintain conversation context
--   **Server & Channels** - Discord-like server organization with multiple channels
--   **Server Invites** - Shareable invite links with expiration dates, usage limits, and revocation
--   **Direct Messages** - Private conversations between users
--   **User Status** - Online/offline presence with custom status messages
--   **Emoji Support** - Standard emoji picker and custom emoji upload (up to 10MB)
--   **Moderation Tools** - Soft delete, restore, and hard delete messages with full audit trails
--   **Role-Based Access** - Admin, moderator, and user roles with granular permissions
--   **User Profiles** - Customizable profiles with avatar support
--   **TypeScript** - Full type safety across the entire codebase
--   **Next.js 15** - App Router with React Server Components
--   **TailwindCSS** - Modern, responsive UI design
--   **shadcn/ui** - High-quality, accessible UI components
--   **PWA Ready** - Progressive Web App support for mobile installation
--   **Comprehensive Tests** - 1645 passing tests with extensive coverage
--   **Production Ready** - Error boundaries, rate limiting, and security hardening
+- **Real-time chat** - Appwrite-backed realtime messaging with typing indicators and presence updates
+- **Replies, mentions, reactions, threads, and pins** - Core message workflows across channels and DMs
+- **Direct messages and group DMs** - Shared DM infrastructure for 1:1 and multi-user conversations
+- **Search and attachments** - Message search plus image, file, video, audio, and document attachments
+- **Roles, permissions, and moderation** - Server roles, permission overrides, invite management, bans, kicks, mutes, and audit logs
+- **Profiles and status** - User profile enrichment, avatars, pronouns, bios, and custom status messages
+- **Friend system and blocking** - Social graph controls for safer private messaging
+- **TypeScript** - Full type safety across the entire codebase
+- **Next.js 16** - App Router with React Server Components
+- **Tailwind CSS** - Modern, responsive UI styling
+- **shadcn/ui** - Accessible UI primitives
+- **PWA ready** - Installable web app support for mobile and desktop browsers
+- **Comprehensive tests** - 1645 passing tests with broad API, hook, and integration coverage
+- **Production hardening** - Error boundaries, rate limiting, security validation, and observability
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 
--   **Node.js 18+** or **Bun 1.2+** installed
--   An **Appwrite instance** (cloud or self-hosted):
-    -   Cloud: [appwrite.io](https://appwrite.io) (free tier available)
-    -   Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
--   **Git** for cloning the repository
+- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preffered for perf. improvements) installed
+- An **Appwrite instance** (cloud or self-hosted):
+    - Cloud: [appwrite.io](https://appwrite.io) (free tier available)
+    - Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
+- **Git** for cloning the repository
 
 ## 🚀 Quick Start
 
@@ -72,26 +70,25 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 
 **Development Commands:**
 
--   `bun dev` - Start with Turbopack (recommended, ~1.5s cold start)
--   `bun dev:webpack` - Start with Webpack (fallback, ~12s cold start)
--   `bun build` - Production build with Turbopack
--   `bun build:webpack` - Production build with Webpack (fallback)
+- `bun dev` - Start with Turbopack (recommended, ~1.5s cold start)
+- `bun dev:webpack` - Start with Webpack (fallback, ~12s cold start)
+- `bun build` - Production build with Turbopack
+- `bun build:webpack` - Production build with Webpack (fallback)
 
 ## 📚 Documentation
 
 See the `/docs` folder for detailed guides:
 
--   [Deployment Guide](./DEPLOYMENT.md) - Production deployment instructions
--   [Performance Guide](./docs/PERFORMANCE.md) - Performance optimization details
--   **[Performance Optimizations](./docs/PERFORMANCE_OPTIMIZATIONS.md) - NEW! First load time improvements**
--   **[Performance Summary](./docs/PERFORMANCE_SUMMARY.md) - NEW! Quick reference guide**
--   [Turbopack Configuration](./TURBOPACK_CONFIG.md) - Build tool configuration
--   [Admin Guide](./docs/ADMIN_GUIDE.md) - Moderation and administration
--   [Roles & Permissions](./docs/ROLES_AND_PERMISSIONS.md) - Permission system
--   [New Relic Integration](./docs/NEW_RELIC.md) - APM and monitoring setup
--   [Typing Indicators](./docs/TYPING_INDICATORS.md) - Real-time presence
--   [Roadmap](./ROADMAP.md) - Planned features and timeline
--   [Changelog](./CHANGELOG.md) - Version history and release notes
+- [Deployment Guide](./DEPLOYMENT.md) - Production deployment instructions
+- [Documentation Index](./docs/README.md) - Durable product and platform documentation map
+- [Product And Onboarding](./docs/PRODUCT_AND_ONBOARDING.md) - Product shell, onboarding, discovery, and profile flows
+- [Chat And Realtime](./docs/CHAT_AND_REALTIME.md) - Messaging, DMs, pins, threads, search, emoji, typing, status, and notifications
+- [Server Administration](./docs/SERVER_ADMINISTRATION.md) - Roles, invites, permissions, moderation, and audit logging
+- [Feature Flags](./docs/FEATURE_FLAGS.md) - Flag behavior and rollout notes
+- [Platform Operations](./docs/PLATFORM_OPERATIONS.md) - Performance, monitoring, releases, and operations
+- [Roadmap](./ROADMAP.md) - Discord parity roadmap and product priorities
+- [Roadmap Implementation Spec](./docs/ROADMAP_IMPLEMENTATION_SPEC.md) - Technical breakdown of roadmap workstreams
+- [Changelog](./CHANGELOG.md) - Version history and release notes
 
 ## 🚀 Production Deployment
 
@@ -99,46 +96,47 @@ Firepit is production-ready with:
 
 ✅ **Security Hardening**
 
--   Global error boundaries
--   Rate limiting on uploads and API endpoints
--   Secure session management
--   Input validation and sanitization
+- Global error boundaries
+- Rate limiting on uploads and API endpoints
+- Secure session management
+- Input validation and sanitization
 
 ✅ **Performance Optimization**
 
--   **90%+ improvement in first load times** (from 30+ seconds to 2-3 seconds)
--   **85% faster First Contentful Paint** (8s → 0.8-1.2s)
--   **50% smaller bundle size** (2.5MB → 800KB-1.2MB)
--   Response compression (60-70% bandwidth reduction)
--   Virtual scrolling for large lists
--   Optimized bundle size with code splitting
--   Partial Prerendering (PPR) for instant page loads
--   Aggressive caching for repeat visits (~100ms)
+- **90%+ improvement in first load times** (from 30+ seconds to 2-3 seconds)
+- **85% faster First Contentful Paint** (8s → 0.8-1.2s)
+- **50% smaller bundle size** (2.5MB → 800KB-1.2MB)
+- Response compression (60-70% bandwidth reduction)
+- Virtual scrolling for large lists
+- Optimized bundle size with code splitting
+- Partial Prerendering (PPR) for instant page loads
+- Aggressive caching for repeat visits (~100ms)
 
 ✅ **Monitoring & Observability**
 
--   New Relic APM integration
--   Comprehensive error tracking
--   Performance metrics
--   Audit logging
+- New Relic APM integration
+- Comprehensive error tracking
+- Performance metrics
+- Audit logging
 
 ✅ **Testing & Quality**
 
--   1644 passing tests
--   Comprehensive test coverage
--   Automated CI/CD pipeline
--   Strict ESLint configuration
+- 1644 passing tests
+- Comprehensive test coverage
+- Automated CI/CD pipeline
+- Strict ESLint configuration
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed production deployment instructions.
 
 ## ⚠️ Known Limitations
 
-Version 1.3 does not include:
+Firepit still has meaningful Discord parity gaps in a few areas:
 
--   Message threading (planned for v1.4)
--   Message pinning (planned for v1.4)
--   Voice/video calls (not currently planned)
--   Native mobile apps (PWA supported)
+- Richer community/server organization such as server templates, onboarding screens, and announcement-style surfaces is still in progress
+- Notification controls need deeper parity across server, channel, and DM scopes
+- Voice/video calls and screen sharing are not implemented
+- Bots, slash commands, and webhooks are not implemented
+- Native mobile apps are not implemented, though PWA support exists
 
 See [ROADMAP.md](./ROADMAP.md) for the complete feature roadmap.
 
@@ -146,11 +144,11 @@ See [ROADMAP.md](./ROADMAP.md) for the complete feature roadmap.
 
 We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
--   Development workflow
--   Code style guidelines
--   Testing requirements
--   Pull request process
--   Issue reporting templates
+- Development workflow
+- Code style guidelines
+- Testing requirements
+- Pull request process
+- Issue reporting templates
 
 ## 🗂️ Project Structure
 
@@ -189,9 +187,9 @@ firepit/
 
 The application requires several environment variables. Copy `.env.local.example` to `.env.local` and configure:
 
--   `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
--   `APPWRITE_PROJECT_ID` - Your Appwrite project ID
--   `APPWRITE_API_KEY` - Server-side API key with full permissions
+- `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
+- `APPWRITE_PROJECT_ID` - Your Appwrite project ID
+- `APPWRITE_API_KEY` - Server-side API key with full permissions
 
 For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
 
@@ -212,10 +210,10 @@ For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ### Common Issues
 
--   **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
--   **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
--   **"Missing scope" errors** - Regenerate your API key with all required permissions
--   **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
+- **"Appwrite endpoint not configured"** - Check your `.env.local` file exists and has the correct values
+- **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
+- **"Missing scope" errors** - Regenerate your API key with all required permissions
+- **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
 
 For more solutions, see [DEPLOYMENT.md - Troubleshooting](./DEPLOYMENT.md#troubleshooting).
 
@@ -236,9 +234,9 @@ bun run test --watch
 
 Current test coverage: **40.18%** statements (growing)
 
--   1645 tests passing across 115 test suites
--   Comprehensive API route testing (44 new tests for invite system)
--   Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
+- 1645 tests passing across 115 test suites
+- Comprehensive API route testing (44 new tests for invite system)
+- Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
 ## 📦 Deployment
 
@@ -265,11 +263,11 @@ For production deployment with Nginx, Docker, or other platforms, see [DEPLOYMEN
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 
--   Development workflow
--   Code style guidelines
--   Testing requirements
--   Pull request process
--   Issue reporting templates
+- Development workflow
+- Code style guidelines
+- Testing requirements
+- Pull request process
+- Issue reporting templates
 
 ## 📄 License
 
@@ -283,11 +281,11 @@ the Free Software Foundation, either version 3 of the License, or
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 Licensed under the GNU General Public License (GPL) v3.
 You can find the License here: [License](./LICENSE)
@@ -296,14 +294,14 @@ You can find the License here: [License](./LICENSE)
 
 Built with:
 
--   [Next.js](https://nextjs.org/)
--   [Appwrite](https://appwrite.io/)
--   [TailwindCSS](https://tailwindcss.com/)
--   [shadcn/ui](https://ui.shadcn.com/)
--   [Vitest](https://vitest.dev/)
+- [Next.js](https://nextjs.org/)
+- [Appwrite](https://appwrite.io/)
+- [TailwindCSS](https://tailwindcss.com/)
+- [shadcn/ui](https://ui.shadcn.com/)
+- [Vitest](https://vitest.dev/)
 
 ## 📧 Support
 
--   **Documentation**: [DEPLOYMENT.md](./DEPLOYMENT.md)
--   **Issues**: [GitHub Issues](https://github.com/your-org/firepit/issues)
--   **Discussions**: [GitHub Discussions](https://github.com/your-org/firepit/discussions)
+- **Documentation**: [DEPLOYMENT.md](./DEPLOYMENT.md)
+- **Issues**: [GitHub Issues](https://github.com/your-org/firepit/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/firepit/discussions)

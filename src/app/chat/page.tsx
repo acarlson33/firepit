@@ -15,6 +15,8 @@ import {
     MoreVertical,
     Pin,
     Reply,
+    ChevronDown,
+    ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +42,7 @@ import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
 import { useChannels } from "./hooks/useChannels";
+import { useCategories } from "./hooks/useCategories";
 import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
@@ -171,6 +174,18 @@ const ImageViewer = dynamic(
 
 // Lazy load dialogs and modals only when needed
 
+function sortSidebarChannels(channels: Channel[]) {
+    return [...channels].sort((left, right) => {
+        const leftPosition = left.position ?? 0;
+        const rightPosition = right.position ?? 0;
+        if (leftPosition !== rightPosition) {
+            return leftPosition - rightPosition;
+        }
+
+        return left.name.localeCompare(right.name);
+    });
+}
+
 export default function ChatPage() {
     const { userData, loading: _authLoading } = useAuth();
     const userId = userData?.userId ?? null;
@@ -220,6 +235,9 @@ export default function ChatPage() {
     }>({ open: false, type: "channel", id: "", name: "" });
     const [showPinnedPanel, setShowPinnedPanel] = useState(false);
     const [canManageMessages, setCanManageMessages] = useState(false);
+    const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<string[]>(
+        [],
+    );
     const _messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -377,6 +395,73 @@ export default function ChatPage() {
         userId,
         servers: serversApi.servers,
     });
+    const categoriesApi = useCategories(serversApi.selectedServer);
+
+    useEffect(() => {
+        if (!serversApi.selectedServer) {
+            setCollapsedCategoryIds([]);
+            return;
+        }
+
+        try {
+            const storedValue = window.localStorage.getItem(
+                `firepit:collapsed-categories:${serversApi.selectedServer}`,
+            );
+            if (!storedValue) {
+                setCollapsedCategoryIds([]);
+                return;
+            }
+
+            const parsedValue = JSON.parse(storedValue) as unknown;
+            setCollapsedCategoryIds(
+                Array.isArray(parsedValue)
+                    ? parsedValue.filter(
+                          (value): value is string => typeof value === "string",
+                      )
+                    : [],
+            );
+        } catch {
+            setCollapsedCategoryIds([]);
+        }
+    }, [serversApi.selectedServer]);
+
+    useEffect(() => {
+        if (!serversApi.selectedServer) {
+            return;
+        }
+
+        window.localStorage.setItem(
+            `firepit:collapsed-categories:${serversApi.selectedServer}`,
+            JSON.stringify(collapsedCategoryIds),
+        );
+    }, [collapsedCategoryIds, serversApi.selectedServer]);
+
+    const groupedChannels = useMemo(() => {
+        const categories = [...categoriesApi.categories].sort((left, right) => {
+            if (left.position !== right.position) {
+                return left.position - right.position;
+            }
+
+            return left.name.localeCompare(right.name);
+        });
+
+        return categories.map((category) => ({
+            category,
+            channels: sortSidebarChannels(
+                channelsApi.channels.filter(
+                    (channel) => channel.categoryId === category.$id,
+                ),
+            ),
+        }));
+    }, [categoriesApi.categories, channelsApi.channels]);
+
+    const uncategorizedChannels = useMemo(
+        () =>
+            sortSidebarChannels(
+                channelsApi.channels.filter((channel) => !channel.categoryId),
+            ),
+        [channelsApi.channels],
+    );
 
     const resolvedChannelId = useMemo(
         () =>
@@ -590,6 +675,14 @@ export default function ChatPage() {
         setSelectedChannel(c.$id);
         setViewMode("channels");
         setSelectedConversationId(null);
+    }, []);
+
+    const toggleCategoryCollapse = useCallback((categoryId: string) => {
+        setCollapsedCategoryIds((currentValue) =>
+            currentValue.includes(categoryId)
+                ? currentValue.filter((value) => value !== categoryId)
+                : [...currentValue, categoryId],
+        );
     }, []);
 
     const selectConversation = useCallback((conversation: { $id: string }) => {
@@ -909,67 +1002,122 @@ export default function ChatPage() {
                 </p>
             );
         }
+
+        const renderChannelItem = (channel: Channel) => {
+            const active = channel.$id === selectedChannel;
+
+            return (
+                <li key={channel.$id} className="group relative">
+                    <div className="flex items-center gap-1">
+                        <Button
+                            aria-pressed={active}
+                            className={`min-w-0 flex-1 justify-between overflow-hidden rounded-xl transition-colors ${
+                                active
+                                    ? ""
+                                    : "border border-border/60 bg-background"
+                            }`}
+                            onClick={() => selectChannel(channel)}
+                            type="button"
+                            variant={active ? "default" : "outline"}
+                        >
+                            <span className="min-w-0 truncate text-left font-medium">
+                                {channel.name}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                                #{channel.$id.slice(0, 4)}
+                            </span>
+                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    className="h-9 w-9 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                                    size="icon"
+                                    type="button"
+                                    variant="ghost"
+                                >
+                                    <MoreVertical className="h-4 w-4" />
+                                    <span className="sr-only">
+                                        Channel options
+                                    </span>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                    onClick={() =>
+                                        setMuteDialogState({
+                                            open: true,
+                                            type: "channel",
+                                            id: channel.$id,
+                                            name: channel.name,
+                                        })
+                                    }
+                                >
+                                    <BellOff className="mr-2 h-4 w-4" />
+                                    Mute Channel
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </li>
+            );
+        };
+
         return (
             <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
-                <ul className="space-y-2">
-                    {channelsApi.channels.map((c) => {
-                        const active = c.$id === selectedChannel;
+                <div className="space-y-3">
+                    {groupedChannels.map(({ category, channels }) => {
+                        const collapsed = collapsedCategoryIds.includes(
+                            category.$id,
+                        );
+
                         return (
-                            <li key={c.$id} className="group relative">
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        aria-pressed={active}
-                                        className={`min-w-0 flex-1 justify-between overflow-hidden rounded-xl transition-colors ${
-                                            active
-                                                ? ""
-                                                : "border border-border/60 bg-background"
-                                        }`}
-                                        onClick={() => selectChannel(c)}
-                                        type="button"
-                                        variant={active ? "default" : "outline"}
-                                    >
-                                        <span className="min-w-0 truncate text-left font-medium">
-                                            {c.name}
-                                        </span>
-                                        <span className="shrink-0 text-xs text-muted-foreground">
-                                            #{c.$id.slice(0, 4)}
-                                        </span>
-                                    </Button>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                className="h-9 w-9 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                                                size="icon"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                <MoreVertical className="h-4 w-4" />
-                                                <span className="sr-only">
-                                                    Channel options
-                                                </span>
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                                onClick={() =>
-                                                    setMuteDialogState({
-                                                        open: true,
-                                                        type: "channel",
-                                                        id: c.$id,
-                                                        name: c.name,
-                                                    })
-                                                }
-                                            >
-                                                <BellOff className="mr-2 h-4 w-4" />
-                                                Mute Channel
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
-                            </li>
+                            <section key={category.$id} className="space-y-2">
+                                <button
+                                    className="flex w-full items-center justify-between rounded-xl px-2 py-1 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                                    onClick={() =>
+                                        toggleCategoryCollapse(category.$id)
+                                    }
+                                    type="button"
+                                >
+                                    <span className="flex items-center gap-2">
+                                        {collapsed ? (
+                                            <ChevronRight className="h-3.5 w-3.5" />
+                                        ) : (
+                                            <ChevronDown className="h-3.5 w-3.5" />
+                                        )}
+                                        {category.name}
+                                    </span>
+                                    <span>{channels.length}</span>
+                                </button>
+                                {!collapsed && (
+                                    <ul className="space-y-2">
+                                        {channels.length > 0 ? (
+                                            channels.map(renderChannelItem)
+                                        ) : (
+                                            <li className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                                                No channels in this category
+                                                yet.
+                                            </li>
+                                        )}
+                                    </ul>
+                                )}
+                            </section>
                         );
                     })}
-                </ul>
+
+                    {(uncategorizedChannels.length > 0 ||
+                        groupedChannels.length === 0) && (
+                        <section className="space-y-2">
+                            <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                <span>Uncategorized</span>
+                                <span>{uncategorizedChannels.length}</span>
+                            </div>
+                            <ul className="space-y-2">
+                                {uncategorizedChannels.map(renderChannelItem)}
+                            </ul>
+                        </section>
+                    )}
+                </div>
                 {channelsApi.cursor && (
                     <div className="pt-2">
                         <Button

@@ -9,6 +9,25 @@ import { getEffectivePermissions } from "@/lib/permissions";
 import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
 
+function sortChannels(channels: Channel[]) {
+    return [...channels].sort((left, right) => {
+        const leftCategory = left.categoryId ?? "~uncategorized";
+        const rightCategory = right.categoryId ?? "~uncategorized";
+
+        if (leftCategory !== rightCategory) {
+            return leftCategory.localeCompare(rightCategory);
+        }
+
+        const leftPosition = left.position ?? 0;
+        const rightPosition = right.position ?? 0;
+        if (leftPosition !== rightPosition) {
+            return leftPosition - rightPosition;
+        }
+
+        return left.$createdAt.localeCompare(right.$createdAt);
+    });
+}
+
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
@@ -84,7 +103,6 @@ export async function GET(request: NextRequest) {
         const queries: string[] = [
             Query.equal("serverId", serverId),
             Query.limit(limit),
-            Query.orderAsc("$createdAt"),
         ];
 
         if (cursor) {
@@ -103,12 +121,21 @@ export async function GET(request: NextRequest) {
                 $id: String(d.$id),
                 serverId: String(d.serverId),
                 name: String(d.name),
+                categoryId:
+                    typeof d.categoryId === "string" && d.categoryId.length > 0
+                        ? d.categoryId
+                        : undefined,
+                position:
+                    typeof d.position === "number" ? d.position : undefined,
                 $createdAt: String(d.$createdAt ?? ""),
+                $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
             } satisfies Channel;
         });
 
-        let channels = allChannels;
-        if (!isServerOwner && allChannels.length > 0) {
+        const orderedChannels = sortChannels(allChannels);
+
+        let channels = orderedChannels;
+        if (!isServerOwner && orderedChannels.length > 0) {
             const roleAssignmentRes = await databases.listDocuments(
                 env.databaseId,
                 ROLE_ASSIGNMENTS_COLLECTION_ID,
@@ -166,7 +193,7 @@ export async function GET(request: NextRequest) {
                       })
                     : [];
 
-            const channelIds = allChannels.map((channel) => channel.$id);
+            const channelIds = orderedChannels.map((channel) => channel.$id);
             const overridesRes = await databases.listDocuments(
                 env.databaseId,
                 CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
@@ -208,7 +235,7 @@ export async function GET(request: NextRequest) {
             }
 
             const hasAnyOverrides = overridesRes.documents.length > 0;
-            channels = allChannels.filter((channel) => {
+            channels = orderedChannels.filter((channel) => {
                 const channelOverrides =
                     overridesByChannel.get(channel.$id) ?? [];
                 if (roles.length === 0 && !hasAnyOverrides) {
