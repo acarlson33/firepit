@@ -2,6 +2,7 @@ import { ID, Query } from "appwrite";
 
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
+import { parseReactionsWithMetadata } from "./reactions-utils";
 
 // Environment derived identifiers (centralized)
 const env = getEnvConfig();
@@ -9,6 +10,7 @@ const DATABASE_ID = env.databaseId;
 const COLLECTION_ID = env.collections.messages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const migratedReactionDocuments = new Set<string>();
 
 /**
  * Fetch attachments for multiple messages and enrich them
@@ -103,6 +105,32 @@ export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
     return enrichMessagesWithAttachments(messages, "channel");
 }
 
+function scheduleReactionMigration(messageId: string, reactions: unknown) {
+    const key = `${COLLECTION_ID}:${messageId}`;
+    if (migratedReactionDocuments.has(key)) {
+        return;
+    }
+
+    const parsed = parseReactionsWithMetadata(reactions);
+    if (!parsed.didNormalize) {
+        return;
+    }
+
+    migratedReactionDocuments.add(key);
+    void getDatabases()
+        .updateDocument({
+            databaseId: DATABASE_ID,
+            collectionId: COLLECTION_ID,
+            documentId: messageId,
+            data: {
+                reactions: JSON.stringify(parsed.reactions),
+            },
+        })
+        .catch(() => {
+            migratedReactionDocuments.delete(key);
+        });
+}
+
 function buildMessageListQueries(opts: ListOptions) {
     const q: string[] = [];
     if (opts.limit) {
@@ -139,26 +167,8 @@ function coerceMessage(raw: unknown): Message | null {
     }
     const d = raw as Record<string, unknown> & { $id: string };
 
-    // Handle reactions - can be string (JSON) or already parsed array from database
-    let reactions:
-        | Array<{ emoji: string; userIds: string[]; count: number }>
-        | undefined;
-    if (d.reactions) {
-        if (typeof d.reactions === "string") {
-            try {
-                const parsed = JSON.parse(d.reactions);
-                reactions = Array.isArray(parsed) ? parsed : undefined;
-            } catch {
-                reactions = undefined;
-            }
-        } else if (Array.isArray(d.reactions)) {
-            reactions = d.reactions as Array<{
-                emoji: string;
-                userIds: string[];
-                count: number;
-            }>;
-        }
-    }
+    const parsedReactions = parseReactionsWithMetadata(d.reactions);
+    scheduleReactionMigration(String(d.$id), d.reactions);
 
     return {
         $id: String(d.$id),
@@ -184,7 +194,10 @@ function coerceMessage(raw: unknown): Message | null {
             typeof d.lastThreadReplyAt === "string"
                 ? d.lastThreadReplyAt
                 : undefined,
-        reactions,
+        reactions:
+            parsedReactions.reactions.length > 0
+                ? parsedReactions.reactions
+                : undefined,
         imageFileId:
             typeof d.imageFileId === "string" ? d.imageFileId : undefined,
         imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,

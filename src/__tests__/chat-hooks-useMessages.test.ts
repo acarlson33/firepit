@@ -337,7 +337,7 @@ describe("useMessages", () => {
 
             const { result } = renderHook(() =>
                 useMessages({
-                    channelId: mockChannelId,
+                    channelId: null,
                     userId: mockUserId,
                     userName: mockUserName,
                 }),
