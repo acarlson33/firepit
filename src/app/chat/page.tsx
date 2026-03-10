@@ -5,8 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
     MessageSquare,
     Hash,
-    Image as ImageIcon,
-    X,
     Settings,
     Shield,
     BellOff,
@@ -16,9 +14,8 @@ import {
     ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
+import { ChatSurfacePanel } from "@/components/chat-surface-panel";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -27,9 +24,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
 import type { Channel, FileAttachment } from "@/lib/types";
-import { ChatInput } from "@/components/chat-input";
-import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
-import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
@@ -45,6 +39,7 @@ import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 import { toggleReaction } from "@/lib/reactions-client";
+import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
 import { toast } from "sonner";
 
 // Lazy load heavy components
@@ -532,19 +527,6 @@ export default function ChatPage() {
         setMentionedNames,
     } = messagesApi;
 
-    const typingUsersList = useMemo(
-        () => Object.values(_typingUsers ?? {}),
-        [_typingUsers],
-    );
-
-    const typingDisplayNames = useMemo(
-        () =>
-            typingUsersList
-                .slice(0, _maxTypingDisplay ?? typingUsersList.length)
-                .map((t) => t.userName || t.userId.slice(0, userIdSlice)),
-        [typingUsersList, _maxTypingDisplay, userIdSlice],
-    );
-
     const pinnedMessageIds = useMemo(
         () => channelPins.map((item) => item.message.$id),
         [channelPins],
@@ -711,13 +693,16 @@ export default function ChatPage() {
         setDeleteConfirmId(messageId);
     }, []);
 
-    const handleDelete = useCallback(async () => {
-        if (!deleteConfirmId) {
-            return;
-        }
-        await removeMessage(deleteConfirmId);
-        setDeleteConfirmId(null);
-    }, [deleteConfirmId, removeMessage]);
+    const handleDelete = useCallback(
+        async (messageId: string) => {
+            if (!messageId) {
+                return;
+            }
+            await removeMessage(messageId);
+            setDeleteConfirmId(null);
+        },
+        [deleteConfirmId, removeMessage],
+    );
 
     const handleImageSelect = useCallback(
         (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -759,8 +744,8 @@ export default function ChatPage() {
     }, []);
 
     const handleSendWithImage = useCallback(
-        async (e: React.FormEvent) => {
-            e.preventDefault();
+        async (e?: React.FormEvent) => {
+            e?.preventDefault();
 
             let imageFileId: string | undefined;
             let imageUrl: string | undefined;
@@ -852,6 +837,24 @@ export default function ChatPage() {
             }
         }
     }, []);
+
+    const surfaceController = useChatSurfaceController({
+        rawMessages: messages,
+        onOpenThreadRaw: openThread,
+        onRemove: (messageId) => {
+            void handleDelete(messageId);
+        },
+        onStartEditRaw: startEdit,
+        onStartReplyRaw: startReply,
+        onTogglePinRaw: togglePin,
+        onToggleReaction: async (messageId, emoji, isAdding) => {
+            try {
+                await toggleReaction(messageId, emoji, isAdding, false);
+            } catch {
+                // Error already logged by reaction handler.
+            }
+        },
+    });
 
     // Derived helpers
     const showChat = useMemo(
@@ -1195,198 +1198,82 @@ export default function ChatPage() {
     }
 
     function renderMessages() {
-        const compactMessages = messageDensity === "compact";
-        if (!showChat) {
-            return (
-                <div className="flex h-[60vh] items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center text-sm text-muted-foreground">
-                    Pick a channel or direct conversation to get started. Your
-                    messages will appear here.
-                </div>
-            );
-        }
-
-        // Use virtual scrolling once lists are large enough to start costing layout/paint time.
-        // This avoids scrolling issues with small lists
-        const useVirtualScrolling = messages.length >= 20;
-
-        if (useVirtualScrolling) {
-            return (
-                <VirtualizedMessageList
-                    customEmojis={customEmojis}
-                    deleteConfirmId={deleteConfirmId}
-                    editingMessageId={editingMessageId}
-                    messageDensity={messageDensity}
-                    messages={messagesApi.surfaceMessages}
-                    onLoadOlder={loadOlder}
-                    onOpenImageViewer={(imageUrl: string) => {
-                        setViewingImage({
-                            url: imageUrl,
-                            alt: "Image",
-                        });
-                    }}
-                    onOpenProfileModal={openProfileModal}
-                    onRemove={handleDelete}
-                    onOpenThread={async (message) => {
-                        const rawMessage = messages.find(
-                            (candidate) =>
-                                candidate.$id === message.sourceMessageId,
-                        );
-                        if (rawMessage) {
-                            await openThread(rawMessage);
-                        }
-                    }}
-                    onStartEdit={(message) => {
-                        const rawMessage = messages.find(
-                            (candidate) =>
-                                candidate.$id === message.sourceMessageId,
-                        );
-                        if (rawMessage) {
-                            startEdit(rawMessage);
-                        }
-                    }}
-                    onStartReply={(message) => {
-                        const rawMessage = messages.find(
-                            (candidate) =>
-                                candidate.$id === message.sourceMessageId,
-                        );
-                        if (rawMessage) {
-                            startReply(rawMessage);
-                        }
-                    }}
-                    onTogglePin={async (message) => {
-                        const rawMessage = messages.find(
-                            (candidate) =>
-                                candidate.$id === message.sourceMessageId,
-                        );
-                        if (rawMessage) {
-                            await togglePin(rawMessage);
-                        }
-                    }}
-                    onToggleReaction={async (
-                        messageId: string,
-                        emoji: string,
-                        isAdding: boolean,
-                    ) => {
-                        try {
-                            await toggleReaction(
-                                messageId,
-                                emoji,
-                                isAdding,
-                                false,
-                            );
-                        } catch (error) {
-                            // Error already logged by reaction handler
-                        }
-                    }}
-                    onUploadCustomEmoji={uploadEmoji}
-                    setDeleteConfirmId={setDeleteConfirmId}
-                    shouldShowLoadOlder={shouldShowLoadOlder()}
-                    userId={userId}
-                    userIdSlice={userIdSlice}
-                    pinnedMessageIds={pinnedMessageIds}
-                />
-            );
-        }
-
-        // Regular rendering for smaller lists
         return (
-            <div
-                className={`h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
-                    compactMessages ? "space-y-2 p-3" : "space-y-3 p-4"
-                }`}
-                ref={messagesContainerRef}
-            >
-                {shouldShowLoadOlder() && (
-                    <div className="flex justify-center pb-4">
-                        <Button
-                            onClick={loadOlder}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                        >
-                            Load older messages
-                        </Button>
-                    </div>
-                )}
-                {messagesApi.surfaceMessages.map((message) => (
-                    <ChatSurfaceMessageItem
-                        canManageMessages={canManageMessages}
-                        currentUserId={userId}
-                        customEmojis={customEmojis}
-                        deleteConfirmId={deleteConfirmId}
-                        editingMessageId={editingMessageId}
-                        key={message.id}
-                        message={message}
-                        messageDensity={messageDensity}
-                        onOpenImageViewer={(imageUrl) => {
-                            setViewingImage({
-                                url: imageUrl,
-                                alt: "Attached image",
-                            });
-                        }}
-                        onOpenProfileModal={openProfileModal}
-                        onOpenThread={async (surfaceMessage) => {
-                            const rawMessage = messages.find(
-                                (candidate) =>
-                                    candidate.$id ===
-                                    surfaceMessage.sourceMessageId,
-                            );
-                            if (rawMessage) {
-                                await openThread(rawMessage);
-                            }
-                        }}
-                        onRemove={() => {
-                            void handleDelete();
-                        }}
-                        onStartEdit={(surfaceMessage) => {
-                            const rawMessage = messages.find(
-                                (candidate) =>
-                                    candidate.$id ===
-                                    surfaceMessage.sourceMessageId,
-                            );
-                            if (rawMessage) {
-                                startEdit(rawMessage);
-                            }
-                        }}
-                        onStartReply={(surfaceMessage) => {
-                            const rawMessage = messages.find(
-                                (candidate) =>
-                                    candidate.$id ===
-                                    surfaceMessage.sourceMessageId,
-                            );
-                            if (rawMessage) {
-                                startReply(rawMessage);
-                            }
-                        }}
-                        onTogglePin={async (surfaceMessage) => {
-                            const rawMessage = messages.find(
-                                (candidate) =>
-                                    candidate.$id ===
-                                    surfaceMessage.sourceMessageId,
-                            );
-                            if (rawMessage) {
-                                await togglePin(rawMessage);
-                            }
-                        }}
-                        onToggleReaction={async (
-                            messageId,
-                            emoji,
-                            isAdding,
-                        ) => {
-                            await toggleReaction(
-                                messageId,
-                                emoji,
-                                isAdding,
-                                false,
-                            );
-                        }}
-                        onUploadCustomEmoji={uploadEmoji}
-                        pinnedMessageIds={pinnedMessageIds}
-                        setDeleteConfirmId={setDeleteConfirmId}
-                        userIdSlice={userIdSlice}
-                    />
-                ))}
-            </div>
+            <ChatSurfacePanel
+                canManageMessages={canManageMessages}
+                composer={
+                    selectedChannel
+                        ? {
+                              disabled: !showChat || uploadingImage,
+                              fileAttachments,
+                              fileInputRef,
+                              onCancelEdit: cancelEdit,
+                              onCancelReply: cancelReply,
+                              onEmojiSelect: handleEmojiSelect,
+                              onFileAttachmentSelect:
+                                  handleFileAttachmentSelect,
+                              onMentionsChange: setMentionedNames,
+                              onPaste: handlePaste,
+                              onRemoveFileAttachment: removeFileAttachment,
+                              onRemoveImage: removeImage,
+                              onSelectImageFile: handleImageSelect,
+                              onSubmit: handleSendWithImage,
+                              onTextChange: (newValue) => {
+                                  onChangeText({
+                                      target: { value: newValue },
+                                  } as React.ChangeEvent<HTMLInputElement>);
+                              },
+                              placeholder: showChat
+                                  ? "Type a message"
+                                  : "Select a channel",
+                              replyingTo: replyingToMessage
+                                  ? {
+                                        authorLabel:
+                                            replyingToMessage.displayName ||
+                                            replyingToMessage.userName ||
+                                            "User",
+                                        text: replyingToMessage.content,
+                                    }
+                                  : null,
+                              selectedImagePreview: imagePreview,
+                              sending: false,
+                              text,
+                              uploadingImage,
+                          }
+                        : undefined
+                }
+                currentUserId={userId}
+                customEmojis={customEmojis}
+                deleteConfirmId={deleteConfirmId}
+                editingMessageId={editingMessageId}
+                emptyDescription="Start the conversation by sending a message."
+                emptyTitle="No messages yet"
+                loading={false}
+                messageContainerRef={messagesContainerRef}
+                messageDensity={messageDensity}
+                onLoadOlder={loadOlder}
+                onOpenImageViewer={(imageUrl) => {
+                    setViewingImage({
+                        alt: "Attached image",
+                        url: imageUrl,
+                    });
+                }}
+                onOpenProfileModal={openProfileModal}
+                onOpenThread={surfaceController.onOpenThread}
+                onRemove={surfaceController.onRemove}
+                onStartEdit={surfaceController.onStartEdit}
+                onStartReply={surfaceController.onStartReply}
+                onTogglePin={surfaceController.onTogglePin}
+                onToggleReaction={surfaceController.onToggleReaction}
+                onUploadCustomEmoji={uploadEmoji}
+                pinnedMessageIds={pinnedMessageIds}
+                setDeleteConfirmId={setDeleteConfirmId}
+                shouldShowLoadOlder={shouldShowLoadOlder()}
+                showSurface={Boolean(selectedChannel)}
+                surfaceMessages={messagesApi.surfaceMessages}
+                typingUsers={_typingUsers}
+                userIdSlice={userIdSlice}
+            />
         );
     }
 
@@ -1543,241 +1430,6 @@ export default function ChatPage() {
                                 </div>
                             )}
                             {renderMessages()}
-                            {selectedChannel && (
-                                <div className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-4">
-                                    {replyingToMessage && (
-                                        <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm">
-                                            <div className="truncate">
-                                                Replying to{" "}
-                                                <span className="font-medium">
-                                                    {replyingToMessage.displayName ||
-                                                        replyingToMessage.userName ||
-                                                        "User"}
-                                                </span>
-                                            </div>
-                                            <Button
-                                                onClick={cancelReply}
-                                                size="sm"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                Cancel
-                                            </Button>
-                                        </div>
-                                    )}
-
-                                    {editingMessageId ? (
-                                        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                                            <Input
-                                                aria-label="Edit message"
-                                                className="flex-1 rounded-2xl border-border/60 ring-2 ring-blue-500/40"
-                                                onChange={onChangeText}
-                                                onKeyDown={(e) => {
-                                                    if (
-                                                        e.key === "Enter" &&
-                                                        !e.shiftKey
-                                                    ) {
-                                                        e.preventDefault();
-                                                        void send(e);
-                                                    }
-                                                    if (e.key === "Escape") {
-                                                        cancelEdit();
-                                                    }
-                                                }}
-                                                placeholder="Edit your message..."
-                                                value={text}
-                                            />
-                                            <div className="flex gap-2">
-                                                <Button
-                                                    onClick={(e) => {
-                                                        void send(e);
-                                                    }}
-                                                    type="button"
-                                                    variant="default"
-                                                >
-                                                    Save
-                                                </Button>
-                                                <Button
-                                                    onClick={cancelEdit}
-                                                    type="button"
-                                                    variant="outline"
-                                                >
-                                                    Cancel
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {typingUsersList.length > 0 && (
-                                                <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
-                                                    <span
-                                                        aria-hidden="true"
-                                                        className="inline-flex size-2 animate-pulse rounded-full bg-primary"
-                                                    />
-                                                    <span>
-                                                        {typingDisplayNames.join(
-                                                            ", ",
-                                                        )}{" "}
-                                                        {typingUsersList.length >
-                                                        1
-                                                            ? "are"
-                                                            : "is"}{" "}
-                                                        typing...
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            {imagePreview && (
-                                                <div className="relative inline-block">
-                                                    <img
-                                                        alt="Upload preview"
-                                                        className="h-32 rounded-lg object-cover"
-                                                        src={imagePreview}
-                                                    />
-                                                    <Button
-                                                        className="absolute -right-2 -top-2"
-                                                        onClick={removeImage}
-                                                        size="icon"
-                                                        type="button"
-                                                        variant="destructive"
-                                                    >
-                                                        <X className="size-4" />
-                                                    </Button>
-                                                </div>
-                                            )}
-
-                                            {fileAttachments.length > 0 && (
-                                                <div className="flex flex-col gap-2">
-                                                    {fileAttachments.map(
-                                                        (attachment, index) => (
-                                                            <FilePreview
-                                                                key={`${attachment.fileId}-${index}`}
-                                                                attachment={
-                                                                    attachment
-                                                                }
-                                                                onRemove={() =>
-                                                                    removeFileAttachment(
-                                                                        index,
-                                                                    )
-                                                                }
-                                                            />
-                                                        ),
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            <form
-                                                className="flex flex-col gap-3 sm:flex-row sm:items-center"
-                                                onSubmit={handleSendWithImage}
-                                            >
-                                                <input
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                    onChange={handleImageSelect}
-                                                    ref={fileInputRef}
-                                                    type="file"
-                                                />
-                                                <div className="flex items-center gap-2">
-                                                    <Button
-                                                        className="shrink-0"
-                                                        disabled={
-                                                            !showChat ||
-                                                            uploadingImage ||
-                                                            Boolean(
-                                                                editingMessageId,
-                                                            )
-                                                        }
-                                                        onClick={() =>
-                                                            fileInputRef.current?.click()
-                                                        }
-                                                        size="icon"
-                                                        type="button"
-                                                        variant="outline"
-                                                    >
-                                                        <ImageIcon className="size-4" />
-                                                    </Button>
-                                                    <FileUploadButton
-                                                        className="shrink-0"
-                                                        disabled={
-                                                            !showChat ||
-                                                            uploadingImage ||
-                                                            Boolean(
-                                                                editingMessageId,
-                                                            )
-                                                        }
-                                                        onFileSelect={
-                                                            handleFileAttachmentSelect
-                                                        }
-                                                    />
-                                                    <EmojiPicker
-                                                        customEmojis={
-                                                            customEmojis
-                                                        }
-                                                        onEmojiSelect={
-                                                            handleEmojiSelect
-                                                        }
-                                                        onUploadCustomEmoji={
-                                                            uploadEmoji
-                                                        }
-                                                    />
-                                                </div>
-                                                <ChatInput
-                                                    aria-label="Message"
-                                                    className="flex-1 rounded-2xl border-border/60"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage
-                                                    }
-                                                    onChange={(newValue) => {
-                                                        onChangeText({
-                                                            target: {
-                                                                value: newValue,
-                                                            },
-                                                        } as React.ChangeEvent<HTMLInputElement>);
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                        if (
-                                                            e.key === "Enter" &&
-                                                            !e.shiftKey
-                                                        ) {
-                                                            e.preventDefault();
-                                                            void handleSendWithImage(
-                                                                e as unknown as React.FormEvent,
-                                                            );
-                                                        }
-                                                    }}
-                                                    onMentionsChange={
-                                                        setMentionedNames
-                                                    }
-                                                    onPaste={handlePaste}
-                                                    placeholder={
-                                                        showChat
-                                                            ? "Type a message"
-                                                            : "Select a channel"
-                                                    }
-                                                    value={text}
-                                                />
-                                                <Button
-                                                    className="shrink-0 rounded-2xl"
-                                                    disabled={
-                                                        !showChat ||
-                                                        uploadingImage ||
-                                                        (!text.trim() &&
-                                                            !selectedImage &&
-                                                            fileAttachments.length ===
-                                                                0)
-                                                    }
-                                                    type="submit"
-                                                >
-                                                    {uploadingImage
-                                                        ? "Uploading..."
-                                                        : "Send"}
-                                                </Button>
-                                            </form>
-                                        </>
-                                    )}
-                                </div>
-                            )}
                         </>
                     )}
                 </div>

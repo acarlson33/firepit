@@ -19,20 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
-import { ImageWithSkeleton } from "@/components/image-with-skeleton";
-import { EmojiPicker } from "@/components/emoji-picker";
 import { ChatInput } from "@/components/chat-input";
-import { useCustomEmojis } from "@/hooks/useCustomEmojis";
-import { ReactionButton } from "@/components/reaction-button";
-import { ReactionPicker } from "@/components/reaction-picker";
-import { MessageWithMentions } from "@/components/message-with-mentions";
+import { ChatSurfacePanel } from "@/components/chat-surface-panel";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
-import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
-import { FileAttachmentDisplay } from "@/components/file-attachment-display";
-import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
-import { VirtualizedDMList } from "@/components/virtualized-dm-list";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import type { ChatSurfaceMessage } from "@/lib/chat-surface";
 import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
+import { useChatSurfaceController } from "@/app/chat/hooks/useChatSurfaceController";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
@@ -126,7 +119,6 @@ export function DirectMessageView({
         [],
     );
     const [threadReplyText, setThreadReplyText] = useState("");
-    const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isGroup =
@@ -142,10 +134,6 @@ export function DirectMessageView({
         : otherUser?.status;
     const composerDisabled = readOnly || sending || uploadingImage;
     const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
-
-    // Use virtual scrolling for large message lists (better performance)
-    const useVirtualScrolling =
-        surfaceMessages.length > VIRTUALIZATION_THRESHOLD;
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -173,11 +161,6 @@ export function DirectMessageView({
             .map((messageId) => byId.get(messageId))
             .filter((message): message is DirectMessage => Boolean(message));
     }, [messages, pinnedMessageIds]);
-    const messagesById = useMemo(
-        () => new Map(messages.map((message) => [message.$id, message])),
-        [messages],
-    );
-
     useEffect(() => {
         setThreadReplyText("");
     }, [activeThreadParent?.$id]);
@@ -191,8 +174,8 @@ export function DirectMessageView({
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-    const handleSend = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSend = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         if (
             (!text.trim() && !selectedImage && fileAttachments.length === 0) ||
             sending
@@ -335,6 +318,20 @@ export function DirectMessageView({
         setFileAttachments((prev) => prev.filter((_, i) => i !== index));
     }, []);
 
+    const surfaceController = useChatSurfaceController({
+        rawMessages: messages,
+        onStartEditRaw: startEdit,
+        onStartReplyRaw: startReply,
+        onRemove: (messageId) => {
+            void handleDelete(messageId);
+        },
+        onToggleReaction: async (messageId, emoji, isAdding) => {
+            await toggleReaction(messageId, emoji, isAdding, true);
+        },
+        onOpenThreadRaw: onOpenThread,
+        onTogglePinRaw: onTogglePinMessage,
+    });
+
     return (
         <div className="space-y-4">
             {/* Header */}
@@ -401,403 +398,74 @@ export function DirectMessageView({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="space-y-4">
-                    {/* Messages */}
-                    <div
-                        ref={messagesContainerRef}
-                        className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
-                    >
-                        {loading ? (
-                            <div className="space-y-3">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                    <div className="flex gap-3" key={i}>
-                                        <Skeleton className="size-8 rounded-full" />
-                                        <div className="flex-1 space-y-2">
-                                            <Skeleton className="h-4 w-32" />
-                                            <Skeleton className="h-16 w-full" />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : messages.length === 0 ? (
-                            <div className="flex h-full flex-col items-center justify-center space-y-2 text-center">
-                                <MessageSquare className="mb-2 size-12 text-muted-foreground" />
-                                <p className="font-medium text-muted-foreground text-sm">
-                                    No messages yet
-                                </p>
-                                <p className="max-w-xs text-muted-foreground/70 text-xs">
-                                    Start the conversation! Send a message to
-                                    begin chatting.
-                                </p>
-                            </div>
-                        ) : useVirtualScrolling ? (
-                            <VirtualizedDMList
-                                messages={messages}
-                                userId={currentUserId}
-                                userIdSlice={6}
-                                editingMessageId={editingMessageId}
-                                deleteConfirmId={deleteConfirmId}
-                                setDeleteConfirmId={setDeleteConfirmId}
-                                messageDensity={messageDensity}
-                                onStartEdit={(msg) => {
-                                    const dmMessage = messagesById.get(
-                                        msg.sourceMessageId,
-                                    );
-                                    if (dmMessage) {
-                                        startEdit(dmMessage);
-                                    }
-                                }}
-                                onStartReply={(msg) => {
-                                    const dmMessage = messagesById.get(
-                                        msg.sourceMessageId,
-                                    );
-                                    if (dmMessage) {
-                                        startReply(dmMessage);
-                                    }
-                                }}
-                                onRemove={(id: string) => {
-                                    void onDelete(id);
-                                    setDeleteConfirmId(null);
-                                }}
-                                onTogglePin={
-                                    onTogglePinMessage
-                                        ? async (msg) => {
-                                              const dmMessage =
-                                                  messagesById.get(
-                                                      msg.sourceMessageId,
-                                                  );
-                                              if (dmMessage) {
-                                                  await onTogglePinMessage(
-                                                      dmMessage,
-                                                  );
-                                              }
-                                          }
-                                        : undefined
-                                }
-                                onOpenThread={
-                                    onOpenThread
-                                        ? async (msg) => {
-                                              const dmMessage =
-                                                  messagesById.get(
-                                                      msg.sourceMessageId,
-                                                  );
-                                              if (dmMessage) {
-                                                  await onOpenThread(dmMessage);
-                                              }
-                                          }
-                                        : undefined
-                                }
-                                onToggleReaction={async (
-                                    messageId: string,
-                                    emoji: string,
-                                    isAdding: boolean,
-                                ) => {
-                                    await toggleReaction(
-                                        messageId,
-                                        emoji,
-                                        isAdding,
-                                        true,
-                                    );
-                                }}
-                                onOpenProfileModal={onOpenProfileModal}
-                                onOpenImageViewer={(imageUrl: string) => {
-                                    setViewingImage({
-                                        url: imageUrl,
-                                        alt: "Direct message image",
-                                    });
-                                }}
-                                customEmojis={customEmojis}
-                                onUploadCustomEmoji={uploadEmoji}
-                                shouldShowLoadOlder={false}
-                                onLoadOlder={() => {
-                                    // Load older messages handler - implement if pagination is added
-                                }}
-                                conversationId={conversation.$id}
-                                pinnedMessageIds={pinnedMessageIds}
-                            />
-                        ) : (
-                            <>
-                                {surfaceMessages.map((message) => (
-                                    <ChatSurfaceMessageItem
-                                        currentUserId={currentUserId}
-                                        customEmojis={customEmojis}
-                                        deleteConfirmId={deleteConfirmId}
-                                        editingMessageId={editingMessageId}
-                                        key={message.id}
-                                        knownNames={knownDisplayNames}
-                                        message={message}
-                                        messageDensity={messageDensity}
-                                        onOpenImageViewer={(imageUrl) => {
-                                            setViewingImage({
-                                                url: imageUrl,
-                                                alt: `Image from ${message.authorLabel}`,
-                                            });
-                                        }}
-                                        onOpenProfileModal={onOpenProfileModal}
-                                        onOpenThread={
-                                            onOpenThread
-                                                ? async (surfaceMessage) => {
-                                                      const dmMessage =
-                                                          messagesById.get(
-                                                              surfaceMessage.sourceMessageId,
-                                                          );
-                                                      if (dmMessage) {
-                                                          await onOpenThread(
-                                                              dmMessage,
-                                                          );
-                                                      }
-                                                  }
-                                                : undefined
-                                        }
-                                        onRemove={(id) => {
-                                            void handleDelete(id);
-                                        }}
-                                        onStartEdit={(surfaceMessage) => {
-                                            const dmMessage = messagesById.get(
-                                                surfaceMessage.sourceMessageId,
-                                            );
-                                            if (dmMessage) {
-                                                startEdit(dmMessage);
-                                            }
-                                        }}
-                                        onStartReply={(surfaceMessage) => {
-                                            const dmMessage = messagesById.get(
-                                                surfaceMessage.sourceMessageId,
-                                            );
-                                            if (dmMessage) {
-                                                startReply(dmMessage);
-                                            }
-                                        }}
-                                        onTogglePin={
-                                            onTogglePinMessage
-                                                ? async (surfaceMessage) => {
-                                                      const dmMessage =
-                                                          messagesById.get(
-                                                              surfaceMessage.sourceMessageId,
-                                                          );
-                                                      if (dmMessage) {
-                                                          await onTogglePinMessage(
-                                                              dmMessage,
-                                                          );
-                                                      }
-                                                  }
-                                                : undefined
-                                        }
-                                        onToggleReaction={async (
-                                            messageId,
-                                            emoji,
-                                            isAdding,
-                                        ) => {
-                                            await toggleReaction(
-                                                messageId,
-                                                emoji,
-                                                isAdding,
-                                                true,
-                                            );
-                                        }}
-                                        onUploadCustomEmoji={uploadEmoji}
-                                        pinnedMessageIds={pinnedMessageIds}
-                                        setDeleteConfirmId={setDeleteConfirmId}
-                                    />
-                                ))}
-                                <div
-                                    aria-live="polite"
-                                    className={[
-                                        "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
-                                        Object.values(typingUsers).length > 0
-                                            ? "bg-muted/50 opacity-100"
-                                            : "pointer-events-none opacity-0",
-                                    ].join(" ")}
-                                >
-                                    <span
-                                        className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="truncate">
-                                        {Object.values(typingUsers)
-                                            .map(
-                                                (t) =>
-                                                    t.userName ||
-                                                    t.userId.slice(0, 6),
-                                            )
-                                            .join(", ")}{" "}
-                                        {Object.values(typingUsers).length > 1
-                                            ? "are"
-                                            : "is"}{" "}
-                                        typing...
-                                    </span>
-                                </div>
-                            </>
-                        )}
-                        <div ref={messagesEndRef} />
-                    </div>
-
-                    {/* Input */}
-                    <div className="space-y-3">
-                        <MentionHelpTooltip />
-                        {replyingToMessage && (
-                            <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                                <div className="flex-1">
-                                    <div className="font-medium">
-                                        Replying to{" "}
-                                        {replyingToMessage.senderDisplayName ||
-                                            "Unknown"}
-                                    </div>
-                                    <div className="line-clamp-1 text-xs text-muted-foreground">
-                                        {replyingToMessage.text}
-                                    </div>
-                                </div>
-                                <Button
-                                    onClick={cancelReply}
-                                    size="sm"
-                                    variant="ghost"
-                                >
-                                    Cancel
-                                </Button>
-                            </div>
-                        )}
-                        {editingMessageId && (
-                            <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
-                                <span className="text-blue-700 dark:text-blue-300">
-                                    Editing message
-                                </span>
-                                <Button
-                                    onClick={cancelEdit}
-                                    size="sm"
-                                    variant="ghost"
-                                >
-                                    Cancel
-                                </Button>
-                            </div>
-                        )}
-                        {imagePreview && (
-                            <div className="relative mb-2 inline-block">
-                                <img
-                                    alt="Upload preview"
-                                    className="h-32 rounded-lg object-cover"
-                                    src={imagePreview}
-                                />
-                                <Button
-                                    className="absolute -right-2 -top-2"
-                                    onClick={removeImage}
-                                    size="icon"
-                                    type="button"
-                                    variant="destructive"
-                                >
-                                    <X className="size-4" />
-                                </Button>
-                            </div>
-                        )}
-                        {fileAttachments.length > 0 && (
-                            <div className="flex flex-col gap-2 mb-2">
-                                {fileAttachments.map((attachment, index) => (
-                                    <FilePreview
-                                        key={`${attachment.fileId}-${index}`}
-                                        attachment={attachment}
-                                        onRemove={() =>
-                                            removeFileAttachment(index)
-                                        }
-                                    />
-                                ))}
-                            </div>
-                        )}
-                        <form
-                            className="flex flex-col gap-3 sm:flex-row sm:items-center"
-                            onSubmit={handleSend}
-                        >
-                            <input
-                                accept="image/*"
-                                className="hidden"
-                                onChange={handleImageSelect}
-                                ref={fileInputRef}
-                                type="file"
-                            />
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    disabled={
-                                        composerDisabled ||
-                                        Boolean(editingMessageId)
-                                    }
-                                    onClick={() =>
-                                        fileInputRef.current?.click()
-                                    }
-                                    size="icon"
-                                    type="button"
-                                    variant="outline"
-                                    className="shrink-0"
-                                >
-                                    <ImageIcon className="size-4" />
-                                </Button>
-                                <FileUploadButton
-                                    onFileSelect={handleFileAttachmentSelect}
-                                    disabled={
-                                        composerDisabled ||
-                                        Boolean(editingMessageId)
-                                    }
-                                    className="shrink-0"
-                                />
-                                <EmojiPicker
-                                    onEmojiSelect={handleEmojiSelect}
-                                    customEmojis={customEmojis}
-                                    onUploadCustomEmoji={uploadEmoji}
-                                />
-                            </div>
-                            <ChatInput
-                                aria-label={
-                                    editingMessageId
-                                        ? "Edit message"
-                                        : "Message"
-                                }
-                                disabled={composerDisabled}
-                                onChange={(newValue) => {
-                                    setText(newValue);
-                                    if (onTypingChange) {
-                                        onTypingChange(newValue);
-                                    }
-                                }}
-                                placeholder={
-                                    readOnly
-                                        ? readOnlyMessage
-                                        : "Type a message..."
-                                }
-                                value={text}
-                                className="flex-1 rounded-2xl border-border/60"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        void handleSend(
-                                            e as unknown as React.FormEvent,
-                                        );
-                                    }
-                                    if (e.key === "Escape") {
-                                        cancelEdit();
-                                    }
-                                }}
-                            />
-                            <Button
-                                disabled={
-                                    composerDisabled ||
-                                    (!text.trim() &&
-                                        !selectedImage &&
-                                        fileAttachments.length === 0)
-                                }
-                                type="submit"
-                                className="rounded-2xl shrink-0"
-                            >
-                                {sending || uploadingImage ? (
-                                    <>
-                                        <Loader2 className="mr-2 size-4 animate-spin" />
-                                        {uploadingImage
-                                            ? "Uploading..."
-                                            : "Sending..."}
-                                    </>
-                                ) : editingMessageId ? (
-                                    "Save"
-                                ) : (
-                                    "Send"
-                                )}
-                            </Button>
-                        </form>
-                    </div>
+                    <MentionHelpTooltip />
+                    <ChatSurfacePanel
+                        currentUserId={currentUserId}
+                        customEmojis={customEmojis}
+                        deleteConfirmId={deleteConfirmId}
+                        editingMessageId={editingMessageId}
+                        emptyDescription="Start the conversation! Send a message to begin chatting."
+                        emptyTitle="No messages yet"
+                        knownNames={knownDisplayNames}
+                        loading={loading}
+                        messageContainerRef={messagesContainerRef}
+                        messageDensity={messageDensity}
+                        onOpenImageViewer={(imageUrl) => {
+                            setViewingImage({
+                                url: imageUrl,
+                                alt: "Direct message image",
+                            });
+                        }}
+                        onOpenProfileModal={onOpenProfileModal}
+                        onOpenThread={surfaceController.onOpenThread}
+                        onRemove={surfaceController.onRemove}
+                        onStartEdit={surfaceController.onStartEdit}
+                        onStartReply={surfaceController.onStartReply}
+                        onTogglePin={surfaceController.onTogglePin}
+                        onToggleReaction={surfaceController.onToggleReaction}
+                        onUploadCustomEmoji={uploadEmoji}
+                        pinnedMessageIds={pinnedMessageIds}
+                        setDeleteConfirmId={setDeleteConfirmId}
+                        surfaceMessages={surfaceMessages}
+                        typingUsers={typingUsers}
+                        userIdSlice={6}
+                        virtualizationThreshold={VIRTUALIZATION_THRESHOLD}
+                        composer={{
+                            disabled: composerDisabled,
+                            fileAttachments,
+                            fileInputRef,
+                            onCancelEdit: cancelEdit,
+                            onCancelReply: cancelReply,
+                            onEmojiSelect: handleEmojiSelect,
+                            onFileAttachmentSelect: handleFileAttachmentSelect,
+                            onMentionsChange: undefined,
+                            onRemoveFileAttachment: removeFileAttachment,
+                            onRemoveImage: removeImage,
+                            onSelectImageFile: handleImageSelect,
+                            onSubmit: handleSend,
+                            onTextChange: (newValue) => {
+                                setText(newValue);
+                                onTypingChange?.(newValue);
+                            },
+                            placeholder: readOnly
+                                ? readOnlyMessage
+                                : "Type a message...",
+                            readOnly,
+                            readOnlyMessage,
+                            replyingTo: replyingToMessage
+                                ? {
+                                      authorLabel:
+                                          replyingToMessage.senderDisplayName ||
+                                          "Unknown",
+                                      text: replyingToMessage.text,
+                                  }
+                                : null,
+                            selectedImagePreview: imagePreview,
+                            sending,
+                            text,
+                            uploadingImage,
+                        }}
+                    />
                 </div>
 
                 <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
