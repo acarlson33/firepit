@@ -51,12 +51,12 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Role polish that improves parity with Discord server admin workflows:
   role mentions, default role assignment, presets/templates, and clearer hierarchy management
 - Better server onboarding flows after invite redemption or discovery joins
+- Announcement-style and community-oriented server surfaces (Announcement channel types)
 
 ### Investigating
 
 - Server templates for repeatable community setup
 - Welcome/safety screens for newly joined members
-- Announcement-style and community-oriented server surfaces
 - Better discovery ranking and server profile presentation
 
 ### Deferred
@@ -110,11 +110,11 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Friend-only DM controls and other social-boundary settings
 - Better onboarding that makes profile setup, first server join, and first conversation start feel closer to a complete Discord-style first-run flow
 - Stronger parity between profile data shown in chat, member lists, moderation views, and discovery surfaces
+- Richer member cards and profile popovers
 
 ### Investigating
 
 - Mutual server and mutual friend visibility
-- Richer member cards and profile popovers
 - Linked account and external identity integrations
 - Activity-style presence beyond basic status text
 
