@@ -12,6 +12,7 @@ type CategoriesResponse = {
 
 export function useCategories(selectedServer: string | null) {
     const [categories, setCategories] = useState<ChannelCategory[]>([]);
+    const [initialLoading, setInitialLoading] = useState(false);
 
     async function refresh() {
         if (!selectedServer) {
@@ -42,13 +43,17 @@ export function useCategories(selectedServer: string | null) {
     useEffect(() => {
         if (!selectedServer) {
             setCategories([]);
+            setInitialLoading(false);
             return;
         }
 
         void (async () => {
+            const cacheKey = `categories:${selectedServer}:initial`;
             try {
+                setInitialLoading(!apiCache.has(cacheKey));
+
                 const data = await apiCache.swr(
-                    `categories:${selectedServer}:initial`,
+                    cacheKey,
                     async () => {
                         const response = await fetch(
                             `/api/categories?serverId=${selectedServer}`,
@@ -73,6 +78,8 @@ export function useCategories(selectedServer: string | null) {
                         ? error.message
                         : "Failed to load categories",
                 );
+            } finally {
+                setInitialLoading(false);
             }
         })();
     }, [selectedServer]);
@@ -91,5 +98,5 @@ export function useCategories(selectedServer: string | null) {
         };
     }, [selectedServer]);
 
-    return { categories, refresh };
+    return { categories, initialLoading, refresh };
 }

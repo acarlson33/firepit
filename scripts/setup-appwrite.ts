@@ -813,6 +813,15 @@ async function setupProfiles() {
         await ensureStringAttribute("profiles", k, size, req);
     }
     await ensureBooleanAttribute("profiles", "showDocsInNavigation", false);
+    await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
+    await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
+    await ensureStringAttribute(
+        "profiles",
+        "navigationItemOrder",
+        255,
+        false,
+        true,
+    );
     await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
     try {
         await ensureIndex("profiles", "idx_displayName_search", "fulltext", [

@@ -1,33 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, ID, Query } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 const categoriesCollectionId = env.collections.categories;
 const channelsCollectionId = env.collections.channels;
 
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (key: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (key: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 async function requireServerMembership(serverId: string) {
+    const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
         return {
@@ -76,6 +66,7 @@ async function requireManageChannelsAccess(serverId: string) {
 }
 
 async function getNextCategoryPosition(serverId: string) {
+    const databases = getDatabases();
     const result = await databases.listDocuments(
         databaseId,
         categoriesCollectionId,
@@ -92,6 +83,7 @@ async function getNextCategoryPosition(serverId: string) {
 
 export async function GET(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const serverId = searchParams.get("serverId");
 
@@ -131,6 +123,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = (await request.json()) as {
             serverId?: string;
             name?: string;
@@ -176,6 +169,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = (await request.json()) as {
             categoryId?: string;
             name?: string;
@@ -251,6 +245,7 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const categoryId = searchParams.get("categoryId");
 

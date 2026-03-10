@@ -1,13 +1,22 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
-import { getEnvConfig } from "@/lib/appwrite-core"; 
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+    type ReactNode,
+} from "react";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import type { UserStatus } from "@/lib/types";
 import {
     getUserStatus,
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
+import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 
@@ -38,45 +47,44 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+    const [userData, setUserData] = useState<UserData | null>(null);
+    const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
+    const [loading, setLoading] = useState(true);
 
+    const fetchUserData = useCallback(async () => {
+        try {
+            const res = await fetch("/api/me");
 
-  const fetchUserData = useCallback(async () => {
-    try {
-      const res = await fetch("/api/me");
+            // If not authorized, clear state and redirect users to the home page
+            // only when they are not currently on an auth page (login/register).
+            if (res.status === 401) {
+                // Clear user state on 401; navigation should be handled by middleware
+                // or by the calling UI to avoid interfering with auth flows (e.g. the
+                // user trying to navigate from home -> /login). This avoids races
+                // caused by concurrent client-side navigation.
+                setUserData(null);
+                setUserStatusState(null);
+                return;
+            }
 
-      // If not authorized, clear state and redirect users to the home page
-      // only when they are not currently on an auth page (login/register).
-      if (res.status === 401) {
-        // Clear user state on 401; navigation should be handled by middleware
-        // or by the calling UI to avoid interfering with auth flows (e.g. the
-        // user trying to navigate from home -> /login). This avoids races
-        // caused by concurrent client-side navigation.
-        setUserData(null);
-        setUserStatusState(null);
-        return;
-      }
+            if (res.ok) {
+                const data = (await res.json()) as UserData;
+                setUserData(data);
 
-      if (res.ok) {
-        const data = await res.json() as UserData;
-        setUserData(data);
-        
-        // Fetch user status
-        if (data.userId) {
-          const status = await getUserStatus(data.userId);
-          if (status) {
-            setUserStatusState(status);
-          }
+                // Fetch user status
+                if (data.userId) {
+                    const status = await getUserStatus(data.userId);
+                    if (status) {
+                        setUserStatusState(status);
+                    }
+                }
+            }
+        } catch {
+            // ignore
+        } finally {
+            setLoading(false);
         }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    }, []);
 
     useEffect(() => {
         void fetchUserData();
@@ -102,47 +110,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const timeoutId = setTimeout(() => {
             void (async () => {
                 try {
-                    const { Client } = await import("appwrite");
                     if (cancelled) {
                         return;
                     }
 
-                    const client = new Client()
-                        .setEndpoint(env.endpoint)
-                        .setProject(env.project);
+                    const client = getSharedClient();
+                    const channel = `databases.${env.databaseId}.collections.${statusesCollection}.documents`;
 
-                    cleanup = client.subscribe(
-                        `databases.${env.databaseId}.collections.${statusesCollection}.documents`,
-                        (response) => {
-                            try {
-                                const payload = response.payload as
-                                    | Record<string, unknown>
-                                    | null
-                                    | undefined;
-                                if (!payload) {
-                                    return;
-                                }
-                                const statusUserId = payload.userId as
-                                    | string
-                                    | undefined;
-
-                                // Only update if this is our user's status
-                                if (statusUserId === userData.userId) {
-                                    const { normalized } =
-                                        normalizeStatus(payload);
-                                    setUserStatusState(normalized);
-                                }
-                            } catch (err) {
-                                if (process.env.NODE_ENV !== "production") {
-                                    // biome-ignore lint: development-only diagnostics
-                                    console.error(
-                                        "Status subscription handler failed:",
-                                        err,
-                                    );
-                                }
+                    cleanup = client.subscribe(channel, (response) => {
+                        try {
+                            const payload = response.payload as
+                                | Record<string, unknown>
+                                | null
+                                | undefined;
+                            if (!payload) {
+                                return;
                             }
-                        },
-                    );
+                            const statusUserId = payload.userId as
+                                | string
+                                | undefined;
+
+                            // Only update if this is our user's status
+                            if (statusUserId === userData.userId) {
+                                const { normalized } = normalizeStatus(payload);
+                                setUserStatusState(normalized);
+                            }
+                        } catch (err) {
+                            if (process.env.NODE_ENV !== "production") {
+                                // biome-ignore lint: development-only diagnostics
+                                console.error(
+                                    "Status subscription handler failed:",
+                                    err,
+                                );
+                            }
+                        }
+                    });
+                    const untrack = trackSubscription(channel);
+                    const unsubscribe = cleanup;
+                    cleanup = () => {
+                        untrack();
+                        unsubscribe();
+                    };
                 } catch (err) {
                     if (process.env.NODE_ENV !== "production") {
                         console.error("Status subscription failed:", err);
@@ -191,15 +199,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         [userData?.userId],
     );
 
-    const value: AuthContextType = {
-        userData,
-        userStatus,
-        loading,
-        refreshUser: fetchUserData,
-        setUserData,
-        setUserStatusState,
-        updateUserStatus,
-    };
+    const value = useMemo<AuthContextType>(
+        () => ({
+            userData,
+            userStatus,
+            loading,
+            refreshUser: fetchUserData,
+            setUserData,
+            setUserStatusState,
+            updateUserStatus,
+        }),
+        [userData, userStatus, loading, fetchUserData, updateUserStatus],
+    );
 
     return (
         <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

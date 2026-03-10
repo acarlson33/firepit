@@ -136,15 +136,23 @@ export async function GET(request: NextRequest) {
 
         let channels = orderedChannels;
         if (!isServerOwner && orderedChannels.length > 0) {
-            const roleAssignmentRes = await databases.listDocuments(
-                env.databaseId,
-                ROLE_ASSIGNMENTS_COLLECTION_ID,
-                [
-                    Query.equal("serverId", serverId),
-                    Query.equal("userId", userId),
-                    Query.limit(1),
-                ],
-            );
+            const channelIds = orderedChannels.map((channel) => channel.$id);
+            const [roleAssignmentRes, overridesRes] = await Promise.all([
+                databases.listDocuments(
+                    env.databaseId,
+                    ROLE_ASSIGNMENTS_COLLECTION_ID,
+                    [
+                        Query.equal("serverId", serverId),
+                        Query.equal("userId", userId),
+                        Query.limit(1),
+                    ],
+                ),
+                databases.listDocuments(
+                    env.databaseId,
+                    CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
+                    [Query.equal("channelId", channelIds), Query.limit(1000)],
+                ),
+            ]);
 
             const roleIds =
                 roleAssignmentRes.documents.length > 0 &&
@@ -192,13 +200,6 @@ export async function GET(request: NextRequest) {
                           } satisfies Role;
                       })
                     : [];
-
-            const channelIds = orderedChannels.map((channel) => channel.$id);
-            const overridesRes = await databases.listDocuments(
-                env.databaseId,
-                CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
-                [Query.equal("channelId", channelIds), Query.limit(1000)],
-            );
 
             const overridesByChannel = new Map<
                 string,

@@ -5,19 +5,47 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/profiles/batch/route";
 import { NextRequest } from "next/server";
 
-const { mockGetServerSession, mockGetRelationshipMap } = vi.hoisted(() => ({
-    mockGetServerSession: vi.fn(),
-    mockGetRelationshipMap: vi.fn(),
-}));
+const { mockGetServerSession, mockGetRelationshipMap, mockListDocuments } =
+    vi.hoisted(() => ({
+        mockGetServerSession: vi.fn(),
+        mockGetRelationshipMap: vi.fn(),
+        mockListDocuments: vi.fn(),
+    }));
 
 // Mock dependencies
+vi.mock("node-appwrite", () => ({
+    Query: {
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${Array.isArray(value) ? value.join("|") : value})`,
+        limit: (value: number) => `limit(${value})`,
+    },
+}));
+
 vi.mock("@/lib/appwrite-profiles", () => ({
-    getUserProfile: vi.fn(),
     getAvatarUrl: vi.fn(),
 }));
 
-vi.mock("@/lib/appwrite-status", () => ({
-    getUserStatus: vi.fn(),
+vi.mock("@/lib/appwrite-server", () => ({
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+        },
+    })),
+}));
+
+vi.mock("@/lib/appwrite-core", () => ({
+    getEnvConfig: vi.fn(() => ({
+        endpoint: "https://example.com",
+        project: "test-project",
+        databaseId: "test-db",
+        collections: {
+            profiles: "profiles",
+            statuses: "statuses",
+        },
+        buckets: {
+            avatars: "avatars",
+        },
+    })),
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
@@ -45,15 +73,13 @@ vi.mock("@/lib/api-compression", () => ({
 }));
 
 import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
-import { getUserStatus } from "@/lib/appwrite-status";
 
 describe("POST /api/profiles/batch", () => {
-    let mockGetUserProfile: any;
-    let mockGetUserStatus: any;
     let mockGetAvatarUrl: any;
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        mockListDocuments.mockReset();
         mockGetServerSession.mockResolvedValue({
             $id: "current-user",
             name: "Current User",
@@ -71,11 +97,11 @@ describe("POST /api/profiles/batch", () => {
                 ),
         );
         const profiles = await import("@/lib/appwrite-profiles");
-        const status = await import("@/lib/appwrite-status");
-        mockGetUserProfile = profiles.getUserProfile;
-        mockGetUserStatus = status.getUserStatus;
         mockGetAvatarUrl = profiles.getAvatarUrl;
         mockGetAvatarUrl.mockReturnValue("https://example.com/avatar.png");
+        mockListDocuments
+            .mockResolvedValue({ documents: [] })
+            .mockResolvedValue({ documents: [] });
     });
 
     const createRequest = (body: unknown) => {
@@ -129,20 +155,31 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should fetch profiles for valid userIds", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-            bio: "Test bio",
-            pronouns: "they/them",
-            location: "Test City",
-            website: "https://test.com",
-            avatarFileId: "avatar123",
-        });
-        mockGetUserStatus.mockResolvedValue({
-            status: "online",
-            customMessage: "Working",
-            lastSeenAt: "2024-01-01T00:00:00.000Z",
-        });
+        const lastSeenAt = new Date().toISOString();
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        bio: "Test bio",
+                        pronouns: "they/them",
+                        location: "Test City",
+                        website: "https://test.com",
+                        avatarFileId: "avatar123",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        status: "online",
+                        customMessage: "Working",
+                        lastSeenAt,
+                    },
+                ],
+            });
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -153,35 +190,34 @@ describe("POST /api/profiles/batch", () => {
         expect(data.profiles.user1.displayName).toBe("Test User");
         expect(data.profiles.user1.bio).toBe("Test bio");
         expect(data.profiles.user1.status?.status).toBe("online");
+        expect(data.profiles.user1.status?.lastSeenAt).toBe(lastSeenAt);
     });
 
     it("should deduplicate userIds", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-        });
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [{ userId: "user1", displayName: "Test User" }],
+            })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({
             userIds: ["user1", "user1", "user1"],
         });
         await POST(request);
 
-        // Should only call getUserProfile once despite 3 duplicate IDs
-        expect(mockGetUserProfile).toHaveBeenCalledTimes(1);
+        expect(mockListDocuments).toHaveBeenCalledTimes(2);
+        expect(mockListDocuments.mock.calls[0]?.[2]?.[0]).toContain("user1");
     });
 
     it("should handle multiple users in parallel", async () => {
-        mockGetUserProfile
+        mockListDocuments
             .mockResolvedValueOnce({
-                userId: "user1",
-                displayName: "User 1",
+                documents: [
+                    { userId: "user1", displayName: "User 1" },
+                    { userId: "user2", displayName: "User 2" },
+                ],
             })
-            .mockResolvedValueOnce({
-                userId: "user2",
-                displayName: "User 2",
-            });
-        mockGetUserStatus.mockResolvedValue(null);
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1", "user2"] });
         const response = await POST(request);
@@ -190,12 +226,13 @@ describe("POST /api/profiles/batch", () => {
         expect(response.status).toBe(200);
         expect(data.profiles.user1).toBeDefined();
         expect(data.profiles.user2).toBeDefined();
-        expect(mockGetUserProfile).toHaveBeenCalledTimes(2);
+        expect(mockListDocuments).toHaveBeenCalledTimes(2);
     });
 
     it("should handle missing profiles gracefully", async () => {
-        mockGetUserProfile.mockRejectedValue(new Error("Profile not found"));
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({ documents: [] })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -206,11 +243,11 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should handle missing status gracefully", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-        });
-        mockGetUserStatus.mockRejectedValue(new Error("Status not found"));
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [{ userId: "user1", displayName: "Test User" }],
+            })
+            .mockRejectedValueOnce(new Error("Status not found"));
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -222,12 +259,17 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should include avatarUrl when avatarFileId exists", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-            avatarFileId: "avatar123",
-        });
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        avatarFileId: "avatar123",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
         mockGetAvatarUrl.mockReturnValue(
             "https://example.com/avatar/avatar123.png",
         );
@@ -243,12 +285,17 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should not include avatarUrl when avatarFileId is missing", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-            avatarFileId: undefined,
-        });
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        avatarFileId: undefined,
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -259,16 +306,21 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should include all profile fields", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-            bio: "Test bio",
-            pronouns: "they/them",
-            location: "Test City",
-            website: "https://test.com",
-            avatarFileId: "avatar123",
-        });
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        bio: "Test bio",
+                        pronouns: "they/them",
+                        location: "Test City",
+                        website: "https://test.com",
+                        avatarFileId: "avatar123",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -285,15 +337,21 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should include status fields when present", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-        });
-        mockGetUserStatus.mockResolvedValue({
-            status: "away",
-            customMessage: "On break",
-            lastSeenAt: "2024-01-01T12:00:00.000Z",
-        });
+        const lastSeenAt = new Date().toISOString();
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [{ userId: "user1", displayName: "Test User" }],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        status: "away",
+                        customMessage: "On break",
+                        lastSeenAt,
+                    },
+                ],
+            });
 
         const request = createRequest({ userIds: ["user1"] });
         const response = await POST(request);
@@ -302,21 +360,18 @@ describe("POST /api/profiles/batch", () => {
         const status = data.profiles.user1.status;
         expect(status?.status).toBe("away");
         expect(status?.customMessage).toBe("On break");
-        expect(status?.lastSeenAt).toBe("2024-01-01T12:00:00.000Z");
+        expect(status?.lastSeenAt).toBe(lastSeenAt);
     });
 
     it("should handle mixed success and failure", async () => {
-        mockGetUserProfile
+        mockListDocuments
             .mockResolvedValueOnce({
-                userId: "user1",
-                displayName: "User 1",
+                documents: [
+                    { userId: "user1", displayName: "User 1" },
+                    { userId: "user3", displayName: "User 3" },
+                ],
             })
-            .mockRejectedValueOnce(new Error("Not found"))
-            .mockResolvedValueOnce({
-                userId: "user3",
-                displayName: "User 3",
-            });
-        mockGetUserStatus.mockResolvedValue(null);
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1", "user2", "user3"] });
         const response = await POST(request);
@@ -329,18 +384,21 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should handle maximum batch size (100 items)", async () => {
-        mockGetUserProfile.mockResolvedValue({
-            userId: "user1",
-            displayName: "Test User",
-        });
-        mockGetUserStatus.mockResolvedValue(null);
-
         const userIds = Array.from({ length: 100 }, (_, i) => `user${i}`);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: userIds.map((userId) => ({
+                    userId,
+                    displayName: `User ${userId}`,
+                })),
+            })
+            .mockResolvedValueOnce({ documents: [] });
+
         const request = createRequest({ userIds });
         const response = await POST(request);
 
         expect(response.status).toBe(200);
-        expect(mockGetUserProfile).toHaveBeenCalledTimes(100);
+        expect(mockListDocuments).toHaveBeenCalledTimes(2);
     });
 
     it("should handle general errors with 500 status", async () => {
@@ -356,8 +414,9 @@ describe("POST /api/profiles/batch", () => {
     });
 
     it("should return empty profiles object when all fetches fail", async () => {
-        mockGetUserProfile.mockRejectedValue(new Error("Not found"));
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({ documents: [] })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({ userIds: ["user1", "user2"] });
         const response = await POST(request);
@@ -384,11 +443,13 @@ describe("POST /api/profiles/batch", () => {
                 ["blocked-user", { blockedByMe: true, blockedMe: false }],
             ]),
         );
-        mockGetUserProfile.mockResolvedValue({
-            userId: "allowed-user",
-            displayName: "Allowed User",
-        });
-        mockGetUserStatus.mockResolvedValue(null);
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    { userId: "allowed-user", displayName: "Allowed User" },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
 
         const request = createRequest({
             userIds: ["allowed-user", "blocked-user"],
@@ -399,7 +460,12 @@ describe("POST /api/profiles/batch", () => {
         expect(response.status).toBe(200);
         expect(data.profiles["allowed-user"]).toBeDefined();
         expect(data.profiles["blocked-user"]).toBeUndefined();
-        expect(mockGetUserProfile).toHaveBeenCalledTimes(1);
-        expect(mockGetUserProfile).toHaveBeenCalledWith("allowed-user");
+        expect(mockListDocuments).toHaveBeenCalledTimes(2);
+        expect(mockListDocuments.mock.calls[0]?.[2]?.[0]).toContain(
+            "allowed-user",
+        );
+        expect(mockListDocuments.mock.calls[0]?.[2]?.[0]).not.toContain(
+            "blocked-user",
+        );
     });
 });

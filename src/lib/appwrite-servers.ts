@@ -9,7 +9,10 @@ import {
 } from "./appwrite-core";
 import type { Channel, ChannelCategory, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
-import { getActualMemberCount } from "./membership-count";
+import {
+    getActualMemberCount,
+    getActualMemberCounts,
+} from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -31,7 +34,8 @@ function getDatabases() {
 }
 
 export async function listServers(limit = 25): Promise<Server[]> {
-    const res = await getDatabases().listDocuments({
+    const databases = getDatabases();
+    const res = await databases.listDocuments({
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,
         // Use system attribute $createdAt for ordering to avoid schema attribute requirement
@@ -41,23 +45,21 @@ export async function listServers(limit = 25): Promise<Server[]> {
         ],
     });
 
-    // Enrich with actual member counts from memberships
-    const servers = await Promise.all(
-        res.documents.map(async (doc) => {
-            const d = doc as unknown as Record<string, unknown>;
-            const actualCount = await getActualMemberCount(
-                getDatabases(),
-                String(d.$id),
-            );
-            return {
-                $id: String(d.$id),
-                name: String(d.name),
-                $createdAt: String(d.$createdAt ?? ""),
-                ownerId: String(d.ownerId),
-                memberCount: actualCount,
-            } satisfies Server;
-        }),
+    const memberCounts = await getActualMemberCounts(
+        databases,
+        res.documents.map((doc) => String(doc.$id)),
     );
+
+    const servers = res.documents.map((doc) => {
+        const d = doc as unknown as Record<string, unknown>;
+        return {
+            $id: String(d.$id),
+            name: String(d.name),
+            $createdAt: String(d.$createdAt ?? ""),
+            ownerId: String(d.ownerId),
+            memberCount: memberCounts.get(String(d.$id)) ?? 0,
+        } satisfies Server;
+    });
 
     return servers;
 }
@@ -73,29 +75,28 @@ export async function listServersPage(
     if (cursorAfter) {
         queries.push(Query.cursorAfter(cursorAfter));
     }
-    const res = await getDatabases().listDocuments({
+    const databases = getDatabases();
+    const res = await databases.listDocuments({
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,
         queries,
     });
 
-    // Enrich with actual member counts from memberships
-    const items = await Promise.all(
-        res.documents.map(async (doc) => {
-            const d = doc as unknown as Record<string, unknown>;
-            const actualCount = await getActualMemberCount(
-                getDatabases(),
-                String(d.$id),
-            );
-            return {
-                $id: String(d.$id),
-                name: String(d.name),
-                $createdAt: String(d.$createdAt ?? ""),
-                ownerId: String(d.ownerId),
-                memberCount: actualCount,
-            } satisfies Server;
-        }),
+    const memberCounts = await getActualMemberCounts(
+        databases,
+        res.documents.map((doc) => String(doc.$id)),
     );
+
+    const items = res.documents.map((doc) => {
+        const d = doc as unknown as Record<string, unknown>;
+        return {
+            $id: String(d.$id),
+            name: String(d.name),
+            $createdAt: String(d.$createdAt ?? ""),
+            ownerId: String(d.ownerId),
+            memberCount: memberCounts.get(String(d.$id)) ?? 0,
+        } satisfies Server;
+    });
 
     const last = items.at(-1);
     const nextCursor = items.length === limit && last ? last.$id : null;

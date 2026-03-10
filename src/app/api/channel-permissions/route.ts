@@ -1,32 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 import type { Permission } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 const overridesCollectionId = "channel_permission_overrides";
 
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 async function requireManageChannelsAccessByServerId(serverId: string) {
+    const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
         return NextResponse.json(
@@ -50,6 +40,7 @@ async function requireManageChannelsAccessByServerId(serverId: string) {
 }
 
 async function requireManageChannelsAccessByChannelId(channelId: string) {
+    const databases = getDatabases();
     const channel = await databases.getDocument(
         databaseId,
         env.collections.channels,
@@ -61,6 +52,7 @@ async function requireManageChannelsAccessByChannelId(channelId: string) {
 // GET: List permission overrides for a channel
 export async function GET(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const channelId = searchParams.get("channelId");
 
@@ -98,6 +90,7 @@ export async function GET(request: NextRequest) {
 // POST: Create permission override
 export async function POST(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = await request.json();
         const { channelId, roleId, userId, allow, deny } = body;
 
@@ -219,6 +212,7 @@ export async function POST(request: NextRequest) {
 // PUT: Update permission override
 export async function PUT(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = await request.json();
         const { overrideId, allow, deny } = body;
 
@@ -295,6 +289,7 @@ export async function PUT(request: NextRequest) {
 // DELETE: Delete permission override
 export async function DELETE(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const overrideId = searchParams.get("overrideId");
 

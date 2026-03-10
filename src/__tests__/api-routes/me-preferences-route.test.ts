@@ -43,6 +43,9 @@ describe("Me preferences route", () => {
             $id: "profile-1",
             userId: "user-1",
             showDocsInNavigation: false,
+            showFriendsInNavigation: true,
+            showSettingsInNavigation: false,
+            navigationItemOrder: ["settings", "docs", "friends"],
         });
 
         const response = await GET();
@@ -50,6 +53,13 @@ describe("Me preferences route", () => {
 
         expect(response.status).toBe(200);
         expect(data.showDocsInNavigation).toBe(false);
+        expect(data.showFriendsInNavigation).toBe(true);
+        expect(data.showSettingsInNavigation).toBe(false);
+        expect(data.navigationItemOrder).toEqual([
+            "settings",
+            "docs",
+            "friends",
+        ]);
     });
 
     it("defaults docs navigation preference to true when not set", async () => {
@@ -64,6 +74,13 @@ describe("Me preferences route", () => {
 
         expect(response.status).toBe(200);
         expect(data.showDocsInNavigation).toBe(true);
+        expect(data.showFriendsInNavigation).toBe(true);
+        expect(data.showSettingsInNavigation).toBe(true);
+        expect(data.navigationItemOrder).toEqual([
+            "docs",
+            "friends",
+            "settings",
+        ]);
     });
 
     it("rejects invalid PATCH payloads", async () => {
@@ -82,21 +99,48 @@ describe("Me preferences route", () => {
         expect(mockUpdateProfile).not.toHaveBeenCalled();
     });
 
+    it("rejects invalid navigation order payloads", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
+
+        const request = new NextRequest("http://localhost/api/me/preferences", {
+            method: "PATCH",
+            body: JSON.stringify({ navigationItemOrder: ["docs", "admin"] }),
+        });
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("navigationItemOrder");
+        expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
     it("updates the persisted docs navigation preference", async () => {
         mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
         mockGetOrCreateProfile.mockResolvedValue({
             $id: "profile-1",
             userId: "user-1",
+            showDocsInNavigation: true,
+            showFriendsInNavigation: true,
+            showSettingsInNavigation: true,
+            navigationItemOrder: ["docs", "friends", "settings"],
         });
         mockUpdateProfile.mockResolvedValue({
             $id: "profile-1",
             userId: "user-1",
             showDocsInNavigation: false,
+            showFriendsInNavigation: true,
+            showSettingsInNavigation: false,
+            navigationItemOrder: ["settings", "docs", "friends"],
         });
 
         const request = new NextRequest("http://localhost/api/me/preferences", {
             method: "PATCH",
-            body: JSON.stringify({ showDocsInNavigation: false }),
+            body: JSON.stringify({
+                showDocsInNavigation: false,
+                showSettingsInNavigation: false,
+                navigationItemOrder: ["settings", "docs", "friends"],
+            }),
         });
 
         const response = await PATCH(request);
@@ -105,7 +149,16 @@ describe("Me preferences route", () => {
         expect(response.status).toBe(200);
         expect(mockUpdateProfile).toHaveBeenCalledWith("profile-1", {
             showDocsInNavigation: false,
+            showFriendsInNavigation: true,
+            showSettingsInNavigation: false,
+            navigationItemOrder: ["settings", "docs", "friends"],
         });
         expect(data.showDocsInNavigation).toBe(false);
+        expect(data.showSettingsInNavigation).toBe(false);
+        expect(data.navigationItemOrder).toEqual([
+            "settings",
+            "docs",
+            "friends",
+        ]);
     });
 });

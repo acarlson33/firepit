@@ -52,19 +52,19 @@ vi.mock("@/lib/appwrite-core", () => ({
     })),
 }));
 
+vi.mock("@/lib/appwrite-server", () => ({
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+            getDocument: mockGetDocument,
+            createDocument: mockCreateDocument,
+            updateDocument: mockUpdateDocument,
+            deleteDocument: mockDeleteDocument,
+        },
+    })),
+}));
+
 vi.mock("node-appwrite", () => ({
-    Client: vi.fn().mockImplementation(() => ({
-        setEndpoint: vi.fn().mockReturnThis(),
-        setProject: vi.fn().mockReturnThis(),
-        setKey: vi.fn().mockReturnThis(),
-    })),
-    Databases: vi.fn().mockImplementation(() => ({
-        listDocuments: mockListDocuments,
-        getDocument: mockGetDocument,
-        createDocument: mockCreateDocument,
-        updateDocument: mockUpdateDocument,
-        deleteDocument: mockDeleteDocument,
-    })),
     ID: {
         unique: vi.fn(() => "category-new"),
     },

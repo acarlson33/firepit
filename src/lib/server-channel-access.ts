@@ -27,6 +27,8 @@ type ServerAccess = {
     isServerOwner: boolean;
     isMember: boolean;
     permissions: EffectivePermissions;
+    roleIds: string[];
+    roles: Role[];
 };
 
 function mapRoleDocument(doc: Record<string, unknown>): Role {
@@ -62,47 +64,12 @@ const NO_PERMISSIONS: EffectivePermissions = {
     administrator: false,
 };
 
-export async function getServerPermissionsForUser(
+async function getRoleIdsForUser(
     databases: Databases,
     env: EnvConfig,
     serverId: string,
     userId: string,
-): Promise<ServerAccess> {
-    const server = await databases.getDocument(
-        env.databaseId,
-        env.collections.servers,
-        serverId,
-    );
-
-    const isServerOwner = String(server.ownerId) === userId;
-    if (isServerOwner) {
-        return {
-            serverId,
-            isServerOwner: true,
-            isMember: true,
-            permissions: getEffectivePermissions([], [], true),
-        };
-    }
-
-    const membership = await databases.listDocuments(
-        env.databaseId,
-        env.collections.memberships,
-        [
-            Query.equal("serverId", serverId),
-            Query.equal("userId", userId),
-            Query.limit(1),
-        ],
-    );
-
-    if (membership.documents.length === 0) {
-        return {
-            serverId,
-            isServerOwner: false,
-            isMember: false,
-            permissions: NO_PERMISSIONS,
-        };
-    }
-
+): Promise<string[]> {
     const roleAssignment = await databases.listDocuments(
         env.databaseId,
         ROLE_ASSIGNMENTS_COLLECTION_ID,
@@ -113,34 +80,133 @@ export async function getServerPermissionsForUser(
         ],
     );
 
-    const roleIds =
-        roleAssignment.documents.length > 0 &&
+    return roleAssignment.documents.length > 0 &&
         Array.isArray(roleAssignment.documents[0].roleIds)
-            ? (roleAssignment.documents[0].roleIds as string[])
-            : [];
+        ? (roleAssignment.documents[0].roleIds as string[])
+        : [];
+}
 
-    const roles: Role[] =
-        roleIds.length > 0
-            ? (
-                  await databases.listDocuments(
-                      env.databaseId,
-                      ROLES_COLLECTION_ID,
-                      [
-                          Query.equal("serverId", serverId),
-                          Query.equal("$id", roleIds),
-                          Query.limit(100),
-                      ],
-                  )
-              ).documents.map((doc) =>
-                  mapRoleDocument(doc as Record<string, unknown>),
-              )
-            : [];
+async function getRolesByIds(
+    databases: Databases,
+    env: EnvConfig,
+    serverId: string,
+    roleIds: string[],
+): Promise<Role[]> {
+    if (roleIds.length === 0) {
+        return [];
+    }
+
+    const roles = await databases.listDocuments(
+        env.databaseId,
+        ROLES_COLLECTION_ID,
+        [
+            Query.equal("serverId", serverId),
+            Query.equal("$id", roleIds),
+            Query.limit(100),
+        ],
+    );
+
+    return roles.documents.map((doc) =>
+        mapRoleDocument(doc as Record<string, unknown>),
+    );
+}
+
+async function getBaseServerAccess(
+    databases: Databases,
+    env: EnvConfig,
+    serverId: string,
+    userId: string,
+): Promise<{
+    isServerOwner: boolean;
+    isMember: boolean;
+    roleIds: string[];
+    roles: Role[];
+}> {
+    const [server, membership] = await Promise.all([
+        databases.getDocument(
+            env.databaseId,
+            env.collections.servers,
+            serverId,
+        ),
+        databases.listDocuments(env.databaseId, env.collections.memberships, [
+            Query.equal("serverId", serverId),
+            Query.equal("userId", userId),
+            Query.limit(1),
+        ]),
+    ]);
+
+    const isServerOwner = String(server.ownerId) === userId;
+    if (isServerOwner) {
+        return {
+            isServerOwner: true,
+            isMember: true,
+            roleIds: [],
+            roles: [],
+        };
+    }
+
+    if (membership.documents.length === 0) {
+        return {
+            isServerOwner: false,
+            isMember: false,
+            roleIds: [],
+            roles: [],
+        };
+    }
+
+    const roleIds = await getRoleIdsForUser(databases, env, serverId, userId);
+    const roles = await getRolesByIds(databases, env, serverId, roleIds);
+
+    return {
+        isServerOwner: false,
+        isMember: true,
+        roleIds,
+        roles,
+    };
+}
+
+export async function getServerPermissionsForUser(
+    databases: Databases,
+    env: EnvConfig,
+    serverId: string,
+    userId: string,
+): Promise<ServerAccess> {
+    const baseAccess = await getBaseServerAccess(
+        databases,
+        env,
+        serverId,
+        userId,
+    );
+
+    if (baseAccess.isServerOwner) {
+        return {
+            serverId,
+            isServerOwner: true,
+            isMember: true,
+            permissions: getEffectivePermissions([], [], true),
+            roleIds: [],
+            roles: [],
+        };
+    }
+
+    if (!baseAccess.isMember) {
+        return {
+            serverId,
+            isServerOwner: false,
+            isMember: false,
+            permissions: NO_PERMISSIONS,
+            roleIds: [],
+            roles: [],
+        };
+    }
 
     return {
         serverId,
         isServerOwner: false,
         isMember: true,
-        permissions: getEffectivePermissions(roles, [], false),
+        permissions: getEffectivePermissions(baseAccess.roles, [], false),
+        roleIds: baseAccess.roleIds,
+        roles: baseAccess.roles,
     };
 }
 
@@ -184,22 +250,6 @@ export async function getChannelAccessForUser(
         };
     }
 
-    const roleAssignment = await databases.listDocuments(
-        env.databaseId,
-        ROLE_ASSIGNMENTS_COLLECTION_ID,
-        [
-            Query.equal("serverId", serverId),
-            Query.equal("userId", userId),
-            Query.limit(1),
-        ],
-    );
-
-    const roleIds =
-        roleAssignment.documents.length > 0 &&
-        Array.isArray(roleAssignment.documents[0].roleIds)
-            ? (roleAssignment.documents[0].roleIds as string[])
-            : [];
-
     const overrides = await databases.listDocuments(
         env.databaseId,
         CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
@@ -213,7 +263,8 @@ export async function getChannelAccessForUser(
         const overrideUserId = typeof d.userId === "string" ? d.userId : "";
 
         const appliesToUser = overrideUserId === userId;
-        const appliesToRole = roleId !== "" && roleIds.includes(roleId);
+        const appliesToRole =
+            roleId !== "" && serverAccess.roleIds.includes(roleId);
         if (!appliesToUser && !appliesToRole) {
             continue;
         }
@@ -234,21 +285,7 @@ export async function getChannelAccessForUser(
     }
 
     const effective = getEffectivePermissions(
-        roleIds.length > 0
-            ? (
-                  await databases.listDocuments(
-                      env.databaseId,
-                      ROLES_COLLECTION_ID,
-                      [
-                          Query.equal("serverId", serverId),
-                          Query.equal("$id", roleIds),
-                          Query.limit(100),
-                      ],
-                  )
-              ).documents.map((doc) =>
-                  mapRoleDocument(doc as Record<string, unknown>),
-              )
-            : [],
+        serverAccess.roles,
         applicableOverrides,
         false,
     );

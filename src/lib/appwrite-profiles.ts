@@ -8,6 +8,8 @@ import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
 
+import type { NavigationItemPreferenceId } from "./types";
+
 export type UserProfile = {
     $id: string;
     userId: string;
@@ -19,6 +21,9 @@ export type UserProfile = {
     location?: string;
     website?: string;
     showDocsInNavigation?: boolean;
+    showFriendsInNavigation?: boolean;
+    showSettingsInNavigation?: boolean;
+    navigationItemOrder?: NavigationItemPreferenceId[];
     $createdAt: string;
     $updatedAt: string;
 };

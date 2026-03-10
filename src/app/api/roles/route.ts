@@ -1,34 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query, ID } from "node-appwrite";
+import { Query, ID } from "node-appwrite";
 import type { Role } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import { enforceSingleDefaultRole } from "@/lib/default-role";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 const rolesCollectionId = "roles";
 
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
-
-// Initialize Appwrite client
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 async function requireManageRolesAccess(serverId: string) {
+    const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
         return NextResponse.json(
@@ -54,6 +43,7 @@ async function requireManageRolesAccess(serverId: string) {
 // GET: List roles for a server
 export async function GET(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const serverId = searchParams.get("serverId");
 
@@ -94,6 +84,7 @@ export async function GET(request: NextRequest) {
 // POST: Create a new role
 export async function POST(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = await request.json();
         const {
             serverId,
@@ -173,6 +164,7 @@ export async function POST(request: NextRequest) {
 // PUT: Update an existing role
 export async function PUT(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const body = await request.json();
         const {
             $id,
@@ -282,6 +274,7 @@ export async function PUT(request: NextRequest) {
 // DELETE: Delete a role
 export async function DELETE(request: NextRequest) {
     try {
+        const databases = getDatabases();
         const { searchParams } = new URL(request.url);
         const roleId = searchParams.get("roleId");
 

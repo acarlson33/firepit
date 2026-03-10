@@ -41,25 +41,21 @@ vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
 }));
 
+vi.mock("@/lib/appwrite-server", () => ({
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+            createDocument: mockCreateDocument,
+            updateDocument: mockUpdateDocument,
+            deleteDocument: mockDeleteDocument,
+            getDocument: mockGetDocument,
+        },
+    })),
+}));
+
 // Mock node-appwrite Client and Databases
 vi.mock("node-appwrite", () => {
-    const Client = vi.fn().mockImplementation(() => ({
-        setEndpoint: vi.fn().mockReturnThis(),
-        setProject: vi.fn().mockReturnThis(),
-        setKey: vi.fn().mockReturnThis(),
-    }));
-
-    const Databases = vi.fn().mockImplementation(() => ({
-        listDocuments: mockListDocuments,
-        createDocument: mockCreateDocument,
-        updateDocument: mockUpdateDocument,
-        deleteDocument: mockDeleteDocument,
-        getDocument: mockGetDocument,
-    }));
-
     return {
-        Client,
-        Databases,
         Query: {
             equal: (field: string, value: string) => `equal(${field},${value})`,
             orderDesc: (field: string) => `orderDesc(${field})`,

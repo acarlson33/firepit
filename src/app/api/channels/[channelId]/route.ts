@@ -1,31 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
-const endpoint = env.endpoint;
-const project = env.project;
-const apiKey = process.env.APPWRITE_API_KEY;
 const databaseId = env.databaseId || "main";
 
-if (!endpoint || !project || !apiKey) {
-    throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
-
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-    typeof (client as unknown as { setKey?: (key: string) => void }).setKey ===
-    "function"
-) {
-    (client as unknown as { setKey: (key: string) => void }).setKey(apiKey);
-}
-const databases = new Databases(client);
 
 async function requireManageChannelsAccess(channelId: string) {
+    const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
         return NextResponse.json(
@@ -58,6 +47,7 @@ export async function PATCH(
     context: { params: Promise<{ channelId: string }> },
 ) {
     try {
+        const databases = getDatabases();
         const { channelId } = await context.params;
         if (!channelId) {
             return NextResponse.json(

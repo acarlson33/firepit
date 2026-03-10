@@ -161,6 +161,19 @@ describe("GET /api/channels", () => {
             .mockResolvedValueOnce({
                 documents: [{ roleIds: ["role-member"] }],
             })
+            // channel overrides lookup
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "ov1",
+                        channelId: "channel2",
+                        roleId: "role-member",
+                        allow: ["readMessages"],
+                        deny: [],
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                ],
+            })
             // roles lookup
             .mockResolvedValueOnce({
                 documents: [
@@ -178,19 +191,6 @@ describe("GET /api/channels", () => {
                         mentionEveryone: false,
                         administrator: false,
                         mentionable: true,
-                        $createdAt: "2024-01-01T00:00:00.000Z",
-                    },
-                ],
-            })
-            // channel overrides lookup
-            .mockResolvedValueOnce({
-                documents: [
-                    {
-                        $id: "ov1",
-                        channelId: "channel2",
-                        roleId: "role-member",
-                        allow: ["readMessages"],
-                        deny: [],
                         $createdAt: "2024-01-01T00:00:00.000Z",
                     },
                 ],

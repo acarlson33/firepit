@@ -113,8 +113,6 @@ export function getEnvConfig(): EnvConfig {
         process.env.APPWRITE_PROJECT_ID,
         process.env.APPWRITE_PROJECT,
     );
-    console.log("Appwrite Endpoint:", endpoint);
-    console.log("Appwrite Project ID:", project);
     if (!endpoint) {
         throw new AppwriteIntegrationError(
             "Appwrite endpoint not configured. Please set NEXT_PUBLIC_APPWRITE_ENDPOINT in your .env.local file. See .env.local.example for reference.",
