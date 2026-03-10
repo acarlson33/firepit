@@ -1,22 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import {
-    Loader2,
-    Lock,
-    ArrowLeft,
-    MessageSquare,
-    Reply,
-    Pencil,
-    Trash2,
-    Image as ImageIcon,
-    X,
-    Users,
-    Pin,
-} from "lucide-react";
+import { Lock, ArrowLeft, Users, Pin } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
 import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
@@ -107,7 +94,6 @@ export function DirectMessageView({
     onSendThreadReply,
     onOpenProfileModal,
 }: DirectMessageViewProps) {
-    const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
     const [editingMessageId, setEditingMessageId] = useState<string | null>(
         null,
@@ -312,10 +298,6 @@ export function DirectMessageView({
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
-    };
-
-    const confirmDelete = (messageId: string) => {
-        setDeleteConfirmId(messageId);
     };
 
     const handleDelete = async (messageId: string) => {

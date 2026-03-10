@@ -104,7 +104,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             );
         }
 
-        let reactions = parseReactions(message.reactions);
+        const reactions = parseReactions(message.reactions);
 
         // Find existing reaction for this emoji
         const existingReaction = reactions.find((r) => r.emoji === emoji);

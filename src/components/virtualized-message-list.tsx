@@ -39,8 +39,6 @@ type VirtualizedMessageListProps = {
     onOpenThread?: (message: ChatSurfaceMessage) => void;
     // Pinning props
     onTogglePin?: (message: ChatSurfaceMessage) => Promise<void>;
-    onPinMessage?: (messageId: string) => Promise<void>;
-    onUnpinMessage?: (messageId: string) => Promise<void>;
     canManageMessages?: boolean;
     messageDensity?: "compact" | "cozy";
     pinnedMessageIds?: string[];
@@ -70,8 +68,6 @@ export function VirtualizedMessageList({
     onLoadOlder,
     onOpenThread,
     onTogglePin,
-    onPinMessage,
-    onUnpinMessage,
     canManageMessages = false,
     messageDensity = "compact",
     pinnedMessageIds,

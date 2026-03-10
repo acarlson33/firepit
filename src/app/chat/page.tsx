@@ -119,16 +119,6 @@ const MuteDialog = dynamic(
     },
 );
 // Lazy load interactive components that aren't always visible (Performance Optimization)
-const EmojiPicker = dynamic(
-    () =>
-        import("@/components/emoji-picker").then((mod) => ({
-            default: mod.EmojiPicker,
-        })),
-    {
-        ssr: false,
-        loading: () => <div className="h-96 w-96" />, // Placeholder to prevent layout shift
-    },
-);
 const ImageViewer = dynamic(
     () =>
         import("@/components/image-viewer").then((mod) => ({
