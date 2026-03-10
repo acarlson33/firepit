@@ -6,16 +6,43 @@ vi.mock("next/dynamic", () => ({
     default: () => () => null,
 }));
 
+const {
+    mockConversations,
+    mockJumpToMessage,
+    mockJumpToMessageWhenReady,
+    mockReplace,
+    mockSearchParams,
+    mockSetSelectedServer,
+} = vi.hoisted(() => ({
+    mockConversations: [] as Array<{
+        $id: string;
+        participants: string[];
+        $createdAt: string;
+    }>,
+    mockJumpToMessage: vi.fn(),
+    mockJumpToMessageWhenReady: vi.fn(() => vi.fn()),
+    mockReplace: vi.fn(),
+    mockSearchParams: new URLSearchParams(),
+    mockSetSelectedServer: vi.fn(),
+}));
+
 const mockPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
         push: mockPush,
-        replace: vi.fn(),
+        replace: mockReplace,
     }),
     useSearchParams: () => ({
-        get: () => null,
+        get: (key: string) => mockSearchParams.get(key),
+        toString: () => mockSearchParams.toString(),
     }),
+}));
+
+vi.mock("@/lib/message-navigation", () => ({
+    jumpToMessage: (...args: unknown[]) => mockJumpToMessage(...args),
+    jumpToMessageWhenReady: (...args: unknown[]) =>
+        mockJumpToMessageWhenReady(...args),
 }));
 
 vi.mock("@/contexts/auth-context", () => ({
@@ -83,6 +110,7 @@ vi.mock("../app/chat/hooks/useServers", () => ({
         initialLoading: false,
         refresh: vi.fn(),
         selectedServer: "server-1",
+        setSelectedServer: mockSetSelectedServer,
         servers: [
             {
                 $id: "server-1",
@@ -173,7 +201,7 @@ vi.mock("../app/chat/hooks/useMessages", () => ({
 
 vi.mock("../app/chat/hooks/useConversations", () => ({
     useConversations: () => ({
-        conversations: [],
+        conversations: mockConversations,
         loading: false,
     }),
 }));
@@ -214,7 +242,19 @@ const ChatPage = (await import("../app/chat/page")).default;
 describe("ChatPage", () => {
     beforeEach(() => {
         mockPush.mockReset();
+        mockReplace.mockReset();
         mockUseMessages.mockClear();
+        mockJumpToMessage.mockReset();
+        mockJumpToMessageWhenReady.mockReset();
+        mockJumpToMessageWhenReady.mockReturnValue(vi.fn());
+        mockSearchParams.delete("channel");
+        mockSearchParams.delete("compose");
+        mockSearchParams.delete("conversation");
+        mockSearchParams.delete("highlight");
+        mockSearchParams.delete("invite");
+        mockSearchParams.delete("server");
+        mockConversations.splice(0, mockConversations.length);
+        mockSetSelectedServer.mockReset();
         vi.stubGlobal(
             "fetch",
             vi.fn(async (input: RequestInfo | URL) => {
@@ -263,5 +303,132 @@ describe("ChatPage", () => {
             "1",
         );
         expect(screen.getByText("Hello channel")).toBeInTheDocument();
+    });
+
+    it("consumes channel deep links and schedules a highlighted jump", async () => {
+        mockSearchParams.set("channel", "channel-1");
+        mockSearchParams.set("server", "server-1");
+        mockSearchParams.set("highlight", "msg-1");
+
+        render(<ChatPage />);
+
+        expect(
+            await screen.findByRole("heading", { name: "general" }),
+        ).toBeInTheDocument();
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "msg-1",
+            expect.objectContaining({
+                retryAttempts: 12,
+                retryDelayMs: 200,
+            }),
+        );
+    });
+
+    it("consumes dm deep links and schedules a highlighted jump", async () => {
+        mockConversations.push({
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conversation-1",
+            participants: ["user-1", "user-2"],
+        });
+        mockSearchParams.set("conversation", "conversation-1");
+        mockSearchParams.set("highlight", "dm-1");
+
+        render(<ChatPage />);
+
+        expect(
+            await screen.findByText("direct-message-view"),
+        ).toBeInTheDocument();
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "dm-1",
+            expect.objectContaining({
+                retryAttempts: 12,
+                retryDelayMs: 200,
+            }),
+        );
+    });
+
+    it("uses the shared jump helper for pinned channel messages", async () => {
+        mockUseMessages.mockReturnValue({
+            activeThreadParent: null,
+            applyEdit: vi.fn(),
+            cancelEdit: vi.fn(),
+            cancelReply: vi.fn(),
+            channelPins: [
+                {
+                    message: {
+                        $createdAt: "2026-03-10T12:00:00.000Z",
+                        $id: "msg-1",
+                        channelId: "channel-1",
+                        pinnedAt: "2026-03-10T12:10:00.000Z",
+                        text: "Pinned hello",
+                        userId: "user-1",
+                    },
+                    pin: {
+                        $id: "pin-1",
+                        contextId: "channel-1",
+                        contextType: "channel",
+                        messageId: "msg-1",
+                        pinnedAt: "2026-03-10T12:10:00.000Z",
+                        pinnedBy: "user-1",
+                    },
+                },
+            ],
+            closeThread: vi.fn(),
+            editingMessageId: null,
+            loadOlder: vi.fn(),
+            loading: false,
+            maxTypingDisplay: 3,
+            messages: [
+                {
+                    $createdAt: "2026-03-10T12:00:00.000Z",
+                    $id: "msg-1",
+                    channelId: "channel-1",
+                    text: "Pinned hello",
+                    userId: "user-1",
+                },
+            ],
+            onChangeText: vi.fn(),
+            openThread: vi.fn(),
+            refreshPins: vi.fn(),
+            remove: vi.fn(),
+            replyingToMessage: null,
+            send: vi.fn(),
+            sending: false,
+            sendThreadReply: vi.fn(),
+            setMentionedNames: vi.fn(),
+            shouldShowLoadOlder: () => false,
+            startEdit: vi.fn(),
+            startReply: vi.fn(),
+            surfaceMessages: [
+                {
+                    authorId: "user-1",
+                    authorLabel: "User One",
+                    context: { channelId: "channel-1", kind: "channel" },
+                    createdAt: "2026-03-10T12:00:00.000Z",
+                    id: "msg-1",
+                    isPinned: true,
+                    pinnedAt: "2026-03-10T12:10:00.000Z",
+                    sourceMessageId: "msg-1",
+                    sourceType: "channel",
+                    text: "Pinned hello",
+                },
+            ],
+            text: "",
+            threadLoading: false,
+            threadMessages: [],
+            togglePin: vi.fn(),
+            typingUsers: {},
+            userIdSlice: 6,
+        });
+
+        const user = userEvent.setup();
+
+        render(<ChatPage />);
+        await user.click(screen.getByRole("button", { name: /general/i }));
+        await user.click(
+            await screen.findByRole("button", { name: "Jump to message" }),
+        );
+
+        expect(mockJumpToMessage).toHaveBeenCalledWith("msg-1");
     });
 });

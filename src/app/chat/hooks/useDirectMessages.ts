@@ -26,6 +26,7 @@ import {
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
@@ -60,13 +61,6 @@ export function useDirectMessages({
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
     >({});
-    const [conversationPins, setConversationPins] = useState<
-        Array<{ pin: PinnedMessage; message: DirectMessage }>
-    >([]);
-    const [activeThreadParent, setActiveThreadParent] =
-        useState<DirectMessage | null>(null);
-    const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
-    const [threadLoading, setThreadLoading] = useState(false);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastTypingSentState = useRef<boolean>(false);
@@ -148,22 +142,26 @@ export function useDirectMessages({
         void loadMessages();
     }, [loadMessages]);
 
-    useEffect(() => {
-        if (!conversationId) {
-            setConversationPins([]);
-            setActiveThreadParent(null);
-            setThreadMessages([]);
-            return;
-        }
-
-        listConversationPins(conversationId)
-            .then((items) => {
-                setConversationPins(items);
-            })
-            .catch(() => {
-                setConversationPins([]);
-            });
-    }, [conversationId]);
+    const {
+        activeThreadParent,
+        closeThread,
+        openThread,
+        pins: conversationPins,
+        refreshPins,
+        sendThreadReply,
+        threadLoading,
+        threadMessages,
+        togglePin,
+    } = useThreadPinState<DirectMessage>({
+        contextId: conversationId,
+        currentUserId: userId,
+        createThreadReply: createDMThreadReply,
+        listPins: listConversationPins,
+        listThreadMessages: listDMThreadMessages,
+        pinMessage: pinDMMessage,
+        setMessages,
+        unpinMessage: unpinDMMessage,
+    });
 
     // Real-time subscription
     useEffect(() => {
@@ -643,121 +641,6 @@ export function useDirectMessages({
             sendTypingState(false);
         };
     }, [sendTypingState]);
-
-    const refreshPins = useCallback(async () => {
-        if (!conversationId) {
-            setConversationPins([]);
-            return;
-        }
-
-        const items = await listConversationPins(conversationId);
-        setConversationPins(items);
-    }, [conversationId]);
-
-    const togglePin = useCallback(
-        async (message: DirectMessage) => {
-            try {
-                const isPinned = conversationPins.some(
-                    (item) => item.message.$id === message.$id,
-                );
-                if (isPinned) {
-                    await unpinDMMessage(message.$id);
-                } else {
-                    await pinDMMessage(message.$id);
-                }
-                await refreshPins();
-            } catch (err) {
-                toast.error(
-                    err instanceof Error ? err.message : "Pin action failed",
-                );
-            }
-        },
-        [conversationPins, refreshPins],
-    );
-
-    const openThread = useCallback(async (parent: DirectMessage) => {
-        setActiveThreadParent(parent);
-        setThreadLoading(true);
-        try {
-            const items = await listDMThreadMessages(parent.$id);
-            setThreadMessages(items);
-        } catch (err) {
-            toast.error(
-                err instanceof Error ? err.message : "Failed to load thread",
-            );
-            setThreadMessages([]);
-        } finally {
-            setThreadLoading(false);
-        }
-    }, []);
-
-    const closeThread = useCallback(() => {
-        setActiveThreadParent(null);
-        setThreadMessages([]);
-    }, []);
-
-    const sendThreadReply = useCallback(
-        async (textValue: string) => {
-            if (!activeThreadParent) {
-                return;
-            }
-
-            const value = textValue.trim();
-            if (!value) {
-                return;
-            }
-            if (value.length > MAX_MESSAGE_LENGTH) {
-                toast.error(MESSAGE_TOO_LONG_ERROR);
-                return;
-            }
-
-            try {
-                const reply = await createDMThreadReply(
-                    activeThreadParent.$id,
-                    {
-                        text: value,
-                    },
-                );
-
-                setThreadMessages((prev) =>
-                    [...prev, reply].sort((a, b) =>
-                        a.$createdAt.localeCompare(b.$createdAt),
-                    ),
-                );
-
-                setMessages((prev) =>
-                    prev.map((msg) => {
-                        if (msg.$id !== activeThreadParent.$id) {
-                            return msg;
-                        }
-                        const currentCount = msg.threadMessageCount || 0;
-                        const participants = Array.isArray(
-                            msg.threadParticipants,
-                        )
-                            ? msg.threadParticipants
-                            : [];
-                        const nextParticipants =
-                            userId && !participants.includes(userId)
-                                ? [...participants, userId]
-                                : participants;
-                        return {
-                            ...msg,
-                            threadMessageCount: currentCount + 1,
-                            threadParticipants: nextParticipants,
-                            lastThreadReplyAt: new Date().toISOString(),
-                        };
-                    }),
-                );
-            } catch (err) {
-                toast.error(
-                    err instanceof Error
-                        ? err.message
-                        : "Failed to send thread reply",
-                );
-            }
-        },
-        [activeThreadParent, userId],
-    );
 
     const surfaceMessages = useMemo(
         () =>

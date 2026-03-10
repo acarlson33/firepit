@@ -16,6 +16,7 @@ import {
     fromDirectMessage,
     type ChatSurfaceMessage,
 } from "@/lib/chat-surface";
+import { jumpToMessage } from "@/lib/message-navigation";
 import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { useChatSurfaceController } from "@/app/chat/hooks/useChatSurfaceController";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -483,30 +484,7 @@ export function DirectMessageView({
                         <ChatPinnedMessagesContent
                             canManageMessages={Boolean(onTogglePinMessage)}
                             messages={pinnedSurfaceMessages}
-                            onJumpToMessage={(messageId) => {
-                                const target =
-                                    document.querySelector<HTMLElement>(
-                                        `[data-message-id="${messageId}"]`,
-                                    );
-                                if (target) {
-                                    target.scrollIntoView({
-                                        behavior: "smooth",
-                                        block: "center",
-                                    });
-                                    target.classList.add(
-                                        "ring-2",
-                                        "ring-amber-400",
-                                    );
-                                    window.setTimeout(() => {
-                                        if (target.isConnected) {
-                                            target.classList.remove(
-                                                "ring-2",
-                                                "ring-amber-400",
-                                            );
-                                        }
-                                    }, 2000);
-                                }
-                            }}
+                            onJumpToMessage={jumpToMessage}
                             onUnpin={
                                 onTogglePinMessage
                                     ? async (surfaceMessage) => {

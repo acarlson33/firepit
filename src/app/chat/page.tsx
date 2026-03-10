@@ -26,6 +26,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
 import { adaptChannelMessages, fromChannelMessage } from "@/lib/chat-surface";
+import {
+    jumpToMessage,
+    jumpToMessageWhenReady,
+} from "@/lib/message-navigation";
 import type { Channel, FileAttachment } from "@/lib/types";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -153,7 +157,12 @@ export default function ChatPage() {
     const userId = userData?.userId ?? null;
     const userName = userData?.name ?? null;
     const searchParams = useSearchParams();
+    const searchParamsString = searchParams.toString();
     const router = useRouter();
+    const routeServerId = searchParams.get("server");
+    const routeChannelId = searchParams.get("channel");
+    const routeConversationId = searchParams.get("conversation");
+    const routeHighlightMessageId = searchParams.get("highlight");
 
     // Automatic status tracking removed to preserve manual status settings
     // Users can manually set their status via the profile/settings UI
@@ -325,6 +334,7 @@ export default function ChatPage() {
         const query = params.toString();
         router.replace(query ? `/chat?${query}` : "/chat");
     }, [router, searchParams]);
+
     // Check if user server creation is enabled (cached + abortable)
     useEffect(() => {
         if (!userId) {
@@ -381,6 +391,87 @@ export default function ChatPage() {
         servers: serversApi.servers,
     });
     const categoriesApi = useCategories(serversApi.selectedServer);
+
+    useEffect(() => {
+        if (routeConversationId) {
+            setViewMode("dms");
+            setSelectedConversationId((currentValue) =>
+                currentValue === routeConversationId
+                    ? currentValue
+                    : routeConversationId,
+            );
+            setSelectedChannel(null);
+            return;
+        }
+
+        if (!routeChannelId) {
+            return;
+        }
+
+        setViewMode("channels");
+        setSelectedConversationId(null);
+        if (routeServerId && serversApi.selectedServer !== routeServerId) {
+            serversApi.setSelectedServer(routeServerId);
+        }
+        setSelectedChannel((currentValue) =>
+            currentValue === routeChannelId ? currentValue : routeChannelId,
+        );
+    }, [
+        routeChannelId,
+        routeConversationId,
+        routeServerId,
+        serversApi.selectedServer,
+        serversApi.setSelectedServer,
+    ]);
+
+    useEffect(() => {
+        if (!routeHighlightMessageId) {
+            return;
+        }
+
+        const channelReady =
+            Boolean(routeChannelId) &&
+            viewMode === "channels" &&
+            selectedChannel === routeChannelId &&
+            (!routeServerId || serversApi.selectedServer === routeServerId);
+        const conversationReady =
+            Boolean(routeConversationId) &&
+            viewMode === "dms" &&
+            selectedConversationId === routeConversationId;
+
+        if (!channelReady && !conversationReady) {
+            return;
+        }
+
+        return jumpToMessageWhenReady(routeHighlightMessageId, {
+            retryAttempts: 12,
+            retryDelayMs: 200,
+            onComplete: (found) => {
+                if (!found) {
+                    return;
+                }
+
+                const params = new URLSearchParams(searchParamsString);
+                params.delete("highlight");
+                const query = params.toString();
+                window.history.replaceState(
+                    null,
+                    "",
+                    query ? `/chat?${query}` : "/chat",
+                );
+            },
+        });
+    }, [
+        routeChannelId,
+        routeConversationId,
+        routeHighlightMessageId,
+        routeServerId,
+        searchParamsString,
+        selectedChannel,
+        selectedConversationId,
+        serversApi.selectedServer,
+        viewMode,
+    ]);
 
     useEffect(() => {
         if (!serversApi.selectedServer) {
@@ -459,10 +550,20 @@ export default function ChatPage() {
     );
 
     useEffect(() => {
-        if (selectedChannel && !resolvedChannelId) {
+        if (
+            selectedChannel &&
+            !resolvedChannelId &&
+            serversApi.selectedServer &&
+            !channelsApi.initialLoading
+        ) {
             setSelectedChannel(null);
         }
-    }, [selectedChannel, resolvedChannelId]);
+    }, [
+        channelsApi.initialLoading,
+        resolvedChannelId,
+        selectedChannel,
+        serversApi.selectedServer,
+    ]);
 
     const messagesApi = useMessages({
         channelId: resolvedChannelId,
@@ -537,26 +638,8 @@ export default function ChatPage() {
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-    // Pin handlers
-    const jumpToMessage = useCallback((messageId: string) => {
-        const target = document.querySelector<HTMLElement>(
-            `[data-message-id="${messageId}"]`,
-        );
-        if (!target) {
-            return;
-        }
-
-        target.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-        });
-        target.classList.add("ring-2", "ring-amber-400");
-
-        window.setTimeout(() => {
-            if (target.isConnected) {
-                target.classList.remove("ring-2", "ring-amber-400");
-            }
-        }, 2000);
+    const jumpToPinnedMessage = useCallback((messageId: string) => {
+        jumpToMessage(messageId);
     }, []);
 
     const dmApi = useDirectMessages({
@@ -1436,7 +1519,9 @@ export default function ChatPage() {
                                                 messages={
                                                     pinnedChannelSurfaceMessages
                                                 }
-                                                onJumpToMessage={jumpToMessage}
+                                                onJumpToMessage={
+                                                    jumpToPinnedMessage
+                                                }
                                                 onUnpin={async (
                                                     surfaceMessage,
                                                 ) => {
