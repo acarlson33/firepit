@@ -574,6 +574,27 @@ export default function ChatPage() {
         }
     }, []);
 
+    const jumpToMessage = useCallback((messageId: string) => {
+        const target = document.querySelector<HTMLElement>(
+            `[data-message-id="${messageId}"]`,
+        );
+        if (!target) {
+            return;
+        }
+
+        target.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+        });
+        target.classList.add("ring-2", "ring-amber-400");
+
+        window.setTimeout(() => {
+            if (target.isConnected) {
+                target.classList.remove("ring-2", "ring-amber-400");
+            }
+        }, 2000);
+    }, []);
+
     const dmApi = useDirectMessages({
         conversationId: selectedConversationId || "",
         userId,
@@ -746,6 +767,8 @@ export default function ChatPage() {
     const handleSendWithImage = useCallback(
         async (e?: React.FormEvent) => {
             e?.preventDefault();
+            const submitEvent =
+                e ?? ({ preventDefault() {} } as React.FormEvent);
 
             let imageFileId: string | undefined;
             let imageUrl: string | undefined;
@@ -780,7 +803,7 @@ export default function ChatPage() {
             setFileAttachments([]);
 
             // Send message with image data and file attachments
-            await send(e, imageFileId, imageUrl, attachmentsToSend);
+            await send(submitEvent, imageFileId, imageUrl, attachmentsToSend);
         },
         [selectedImage, fileAttachments, send],
     );
@@ -1232,7 +1255,7 @@ export default function ChatPage() {
                                             replyingToMessage.displayName ||
                                             replyingToMessage.userName ||
                                             "User",
-                                        text: replyingToMessage.content,
+                                        text: replyingToMessage.text,
                                     }
                                   : null,
                               selectedImagePreview: imagePreview,
@@ -1373,11 +1396,24 @@ export default function ChatPage() {
                             surfaceMessages={dmApi.surfaceMessages}
                             onDelete={dmApi.deleteMsg}
                             onEdit={dmApi.edit}
+                            activeThreadParent={dmApi.activeThreadParent}
+                            onCloseThread={dmApi.closeThread}
                             onOpenProfileModal={openProfileModal}
+                            onOpenThread={dmApi.openThread}
                             onSend={dmApi.send}
+                            onSendThreadReply={dmApi.sendThreadReply}
+                            onTogglePinMessage={dmApi.togglePin}
+                            pinnedMessageIds={dmApi.conversationPins.map(
+                                (item) => item.message.$id,
+                            )}
+                            pinnedMessages={dmApi.conversationPins.map(
+                                (item) => item.message,
+                            )}
                             sending={dmApi.sending}
                             readOnly={dmApi.readOnly}
                             readOnlyReason={dmApi.readOnlyReason}
+                            threadLoading={dmApi.threadLoading}
+                            threadMessages={dmApi.threadMessages}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
                         />
@@ -1542,6 +1578,7 @@ export default function ChatPage() {
                         }
                     }}
                     open={Boolean(activeThreadParent)}
+                    onToggleReaction={surfaceController.onToggleReaction}
                     parentMessage={activeThreadParent}
                     userId={userId}
                 />
@@ -1555,6 +1592,7 @@ export default function ChatPage() {
                             (c) => c.$id === selectedChannel,
                         )?.name
                     }
+                    onJumpToMessage={jumpToMessage}
                     onOpenChange={setShowPinnedPanel}
                     onUnpin={handleUnpinMessage}
                     open={showPinnedPanel}

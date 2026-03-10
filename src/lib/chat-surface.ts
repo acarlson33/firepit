@@ -68,7 +68,9 @@ function cloneReactions(
     }));
 }
 
-function createChannelContext(message: Message): ChatSurfaceContext {
+function createChannelContext(
+    message: Message,
+): Extract<ChatSurfaceContext, { kind: "channel" }> {
     return {
         kind: "channel",
         channelId: message.channelId ?? "",
@@ -82,7 +84,7 @@ function createDmContext(
         Extract<ChatSurfaceContext, { kind: "dm" }>,
         "kind" | "conversationId"
     >,
-): ChatSurfaceContext {
+): Extract<ChatSurfaceContext, { kind: "dm" }> {
     return {
         kind: "dm",
         conversationId: message.conversationId,

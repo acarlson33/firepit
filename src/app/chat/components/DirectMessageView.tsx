@@ -19,11 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { ImageViewer } from "@/components/image-viewer";
-import { ChatInput } from "@/components/chat-input";
+import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
 import { ChatSurfacePanel } from "@/components/chat-surface-panel";
+import { ChatThreadContent } from "@/components/chat-thread-content";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
-import type { ChatSurfaceMessage } from "@/lib/chat-surface";
+import {
+    adaptDirectMessages,
+    fromDirectMessage,
+    type ChatSurfaceMessage,
+} from "@/lib/chat-surface";
 import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { useChatSurfaceController } from "@/app/chat/hooks/useChatSurfaceController";
 import { uploadImage } from "@/lib/appwrite-dms-client";
@@ -58,6 +63,7 @@ type DirectMessageViewProps = {
         { userId: string; userName?: string; updatedAt: string }
     >;
     onTypingChange?: (_text: string) => void;
+    pinnedMessages?: DirectMessage[];
     pinnedMessageIds?: string[];
     onTogglePinMessage?: (_message: DirectMessage) => Promise<void>;
     onOpenThread?: (_message: DirectMessage) => Promise<void>;
@@ -90,6 +96,7 @@ export function DirectMessageView({
     onBack,
     typingUsers = {},
     onTypingChange,
+    pinnedMessages: providedPinnedMessages,
     pinnedMessageIds,
     onTogglePinMessage,
     onOpenThread,
@@ -152,6 +159,10 @@ export function DirectMessageView({
     );
 
     const pinnedMessages = useMemo(() => {
+        if (providedPinnedMessages) {
+            return providedPinnedMessages;
+        }
+
         if (!Array.isArray(pinnedMessageIds) || pinnedMessageIds.length === 0) {
             return [] as DirectMessage[];
         }
@@ -160,7 +171,20 @@ export function DirectMessageView({
         return pinnedMessageIds
             .map((messageId) => byId.get(messageId))
             .filter((message): message is DirectMessage => Boolean(message));
-    }, [messages, pinnedMessageIds]);
+    }, [messages, pinnedMessageIds, providedPinnedMessages]);
+    const pinnedSurfaceMessages = useMemo(
+        () => adaptDirectMessages(pinnedMessages),
+        [pinnedMessages],
+    );
+    const threadParentSurfaceMessage = useMemo(
+        () =>
+            activeThreadParent ? fromDirectMessage(activeThreadParent) : null,
+        [activeThreadParent],
+    );
+    const threadSurfaceMessages = useMemo(
+        () => adaptDirectMessages(threadMessages),
+        [threadMessages],
+    );
     useEffect(() => {
         setThreadReplyText("");
     }, [activeThreadParent?.$id]);
@@ -474,47 +498,51 @@ export function DirectMessageView({
                             <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                             Pinned Messages
                         </div>
-                        {pinnedMessages.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                                No pinned messages yet.
-                            </p>
-                        ) : (
-                            <div className="space-y-1">
-                                {pinnedMessages.slice(0, 10).map((message) => (
-                                    <button
-                                        className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
-                                        key={message.$id}
-                                        onClick={() => {
-                                            const target =
-                                                document.querySelector<HTMLElement>(
-                                                    `[data-message-id="${message.$id}"]`,
-                                                );
-                                            if (target) {
-                                                target.scrollIntoView({
-                                                    behavior: "smooth",
-                                                    block: "center",
-                                                });
-                                                target.classList.add(
-                                                    "ring-2",
-                                                    "ring-amber-400",
-                                                );
-                                                window.setTimeout(() => {
-                                                    if (target.isConnected) {
-                                                        target.classList.remove(
-                                                            "ring-2",
-                                                            "ring-amber-400",
-                                                        );
-                                                    }
-                                                }, 2000);
-                                            }
-                                        }}
-                                        type="button"
-                                    >
-                                        {message.text || "(attachment)"}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <ChatPinnedMessagesContent
+                            canManageMessages={Boolean(onTogglePinMessage)}
+                            messages={pinnedSurfaceMessages}
+                            onJumpToMessage={(messageId) => {
+                                const target =
+                                    document.querySelector<HTMLElement>(
+                                        `[data-message-id="${messageId}"]`,
+                                    );
+                                if (target) {
+                                    target.scrollIntoView({
+                                        behavior: "smooth",
+                                        block: "center",
+                                    });
+                                    target.classList.add(
+                                        "ring-2",
+                                        "ring-amber-400",
+                                    );
+                                    window.setTimeout(() => {
+                                        if (target.isConnected) {
+                                            target.classList.remove(
+                                                "ring-2",
+                                                "ring-amber-400",
+                                            );
+                                        }
+                                    }, 2000);
+                                }
+                            }}
+                            onUnpin={
+                                onTogglePinMessage
+                                    ? async (surfaceMessage) => {
+                                          const rawMessage =
+                                              pinnedMessages.find(
+                                                  (message) =>
+                                                      message.$id ===
+                                                      surfaceMessage.id,
+                                              );
+                                          if (rawMessage) {
+                                              await onTogglePinMessage(
+                                                  rawMessage,
+                                              );
+                                          }
+                                      }
+                                    : undefined
+                            }
+                        />
                     </div>
 
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
@@ -536,66 +564,37 @@ export function DirectMessageView({
                                 Open a message thread to view replies here.
                             </p>
                         ) : (
-                            <div className="space-y-3">
-                                <p className="line-clamp-2 text-xs text-muted-foreground">
-                                    {activeThreadParent.text || "(attachment)"}
-                                </p>
-                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/60 p-2">
-                                    {threadLoading ? (
-                                        <p className="text-xs text-muted-foreground">
-                                            Loading thread...
-                                        </p>
-                                    ) : threadMessages.length === 0 ? (
-                                        <p className="text-xs text-muted-foreground">
-                                            No replies yet.
-                                        </p>
-                                    ) : (
-                                        threadMessages.map((threadMessage) => (
-                                            <div
-                                                className="rounded-md bg-background/80 px-2 py-1.5"
-                                                key={threadMessage.$id}
-                                            >
-                                                <div className="mb-1 text-[11px] text-muted-foreground">
-                                                    {threadMessage.senderDisplayName ||
-                                                        threadMessage.senderId}
-                                                </div>
-                                                <div className="text-xs">
-                                                    {threadMessage.text ||
-                                                        "(attachment)"}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                                {onSendThreadReply && (
-                                    <div className="flex gap-2">
-                                        <ChatInput
-                                            disabled={readOnly}
-                                            onChange={setThreadReplyText}
-                                            placeholder={
-                                                readOnly
-                                                    ? readOnlyMessage
-                                                    : "Reply in thread"
-                                            }
-                                            value={threadReplyText}
-                                        />
-                                        <Button
-                                            disabled={
-                                                readOnly ||
-                                                !threadReplyText.trim()
-                                            }
-                                            onClick={() => {
-                                                const value = threadReplyText;
-                                                setThreadReplyText("");
-                                                void onSendThreadReply(value);
-                                            }}
-                                            type="button"
-                                        >
-                                            Reply
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
+                            <ChatThreadContent
+                                currentUserId={currentUserId}
+                                customEmojis={customEmojis}
+                                loading={threadLoading}
+                                onReplyTextChange={
+                                    onSendThreadReply
+                                        ? setThreadReplyText
+                                        : undefined
+                                }
+                                onSendReply={
+                                    onSendThreadReply
+                                        ? async () => {
+                                              const value = threadReplyText;
+                                              setThreadReplyText("");
+                                              await onSendThreadReply(value);
+                                          }
+                                        : undefined
+                                }
+                                onToggleReaction={
+                                    surfaceController.onToggleReaction
+                                }
+                                parentMessage={threadParentSurfaceMessage}
+                                replies={threadSurfaceMessages}
+                                replyDisabled={readOnly}
+                                replyPlaceholder={
+                                    readOnly
+                                        ? readOnlyMessage
+                                        : "Reply in thread"
+                                }
+                                replyText={threadReplyText}
+                            />
                         )}
                     </div>
                 </aside>
