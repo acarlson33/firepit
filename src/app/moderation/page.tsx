@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Filter, Hash, MessageSquare, Server, ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
+import type { FileAttachment } from "@/lib/types";
 import {
     getBasicStats,
     listAllChannelsPage,
@@ -158,6 +159,8 @@ async function buildBadgeMapSimple(
 
 type ModerationMessage = {
     $id: string;
+    attachments?: FileAttachment[];
+    imageUrl?: string;
     removedAt?: string;
     removedBy?: string;
     serverId?: string;
