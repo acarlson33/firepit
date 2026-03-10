@@ -50,6 +50,7 @@ type ChatSurfaceMessageItemProps = {
     messageDensity?: "compact" | "cozy";
     pinnedMessageIds?: string[];
     knownNames?: string[];
+    onMediaLoad?: (message: ChatSurfaceMessage) => void;
 };
 
 export function ChatSurfaceMessageItem({
@@ -73,6 +74,7 @@ export function ChatSurfaceMessageItem({
     messageDensity = "compact",
     pinnedMessageIds,
     knownNames,
+    onMediaLoad,
 }: ChatSurfaceMessageItemProps) {
     const compactMessages = messageDensity === "compact";
     const mine = message.authorId === currentUserId;
@@ -222,6 +224,7 @@ export function ChatSurfaceMessageItem({
                                 className="max-h-64 w-auto"
                                 decoding="async"
                                 loading="lazy"
+                                onLoad={() => onMediaLoad?.(message)}
                                 src={message.imageUrl}
                             />
                         </button>
@@ -236,6 +239,7 @@ export function ChatSurfaceMessageItem({
                                 <FileAttachmentDisplay
                                     key={`${message.id}-${attachment.fileId}-${idx}`}
                                     attachment={attachment}
+                                    onMediaLoad={() => onMediaLoad?.(message)}
                                 />
                             ))}
                         </div>

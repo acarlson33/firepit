@@ -1,32 +1,54 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import React from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import type { ChatSurfaceMessage } from "@/lib/chat-surface";
 
+const { mockScrollToIndex } = vi.hoisted(() => ({
+    mockScrollToIndex: vi.fn(),
+}));
+
 // Mock react-virtuoso since we're just testing the item renderer
 vi.mock("react-virtuoso", () => ({
-    Virtuoso: ({
-        itemContent,
-        data,
-    }: {
-        itemContent: (
-            index: number,
-            item: ChatSurfaceMessage,
-        ) => React.ReactNode;
-        data: ChatSurfaceMessage[];
-    }) => (
-        <div data-testid="virtuoso-container">
-            {data.map((item, index) => (
-                <div key={item.id} data-testid={`message-${item.id}`}>
-                    {itemContent(index, item)}
+    Virtuoso: React.forwardRef(
+        (
+            {
+                itemContent,
+                data,
+            }: {
+                itemContent: (
+                    index: number,
+                    item: ChatSurfaceMessage,
+                ) => React.ReactNode;
+                data: ChatSurfaceMessage[];
+            },
+            ref: React.ForwardedRef<{
+                scrollToIndex: typeof mockScrollToIndex;
+            }>,
+        ) => {
+            React.useImperativeHandle(ref, () => ({
+                scrollToIndex: mockScrollToIndex,
+            }));
+
+            return (
+                <div data-testid="virtuoso-container">
+                    {data.map((item, index) => (
+                        <div key={item.id} data-testid={`message-${item.id}`}>
+                            {itemContent(index, item)}
+                        </div>
+                    ))}
                 </div>
-            ))}
-        </div>
+            );
+        },
     ),
 }));
 
 describe("VirtualizedMessageList", () => {
+    beforeEach(() => {
+        mockScrollToIndex.mockClear();
+    });
+
     const mockMessages: ChatSurfaceMessage[] = [
         {
             id: "msg-1",
@@ -142,6 +164,46 @@ describe("VirtualizedMessageList", () => {
 
         expect(screen.getByTestId("virtuoso-container")).toBeDefined();
         expect(screen.getByTestId("message-msg-1")).toBeDefined();
+    });
+
+    it("scrolls to the bottom when requested", async () => {
+        const { rerender } = render(
+            <VirtualizedMessageList
+                {...defaultProps}
+                scrollToBottomRequest={{ behavior: "auto", id: 1 }}
+            />,
+        );
+
+        await waitFor(() => {
+            expect(mockScrollToIndex).toHaveBeenCalledWith({
+                align: "end",
+                behavior: "auto",
+                index: 0,
+            });
+        });
+
+        rerender(
+            <VirtualizedMessageList
+                {...defaultProps}
+                messages={[
+                    ...mockMessages,
+                    {
+                        ...mockMessages[0],
+                        id: "msg-2",
+                        sourceMessageId: "msg-2",
+                    },
+                ]}
+                scrollToBottomRequest={{ behavior: "smooth", id: 2 }}
+            />,
+        );
+
+        await waitFor(() => {
+            expect(mockScrollToIndex).toHaveBeenLastCalledWith({
+                align: "end",
+                behavior: "smooth",
+                index: 1,
+            });
+        });
     });
 
     it("should render action buttons with mobile-friendly classes", () => {

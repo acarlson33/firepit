@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
     ClipboardEvent,
     FormEvent,
@@ -17,6 +17,7 @@ import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
+import type { VirtualizedScrollBehavior } from "@/components/virtualized-message-list";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -134,6 +135,13 @@ export function ChatSurfacePanel({
     const composerContainerRef = useRef<HTMLDivElement>(null);
     const previousSendingRef = useRef(false);
     const shouldScrollAfterSubmitRef = useRef(false);
+    const previousLoadingRef = useRef(loading);
+    const previousMessageCountRef = useRef(surfaceMessages.length);
+    const mediaSettlingDeadlineRef = useRef(0);
+    const [virtualScrollRequest, setVirtualScrollRequest] = useState<{
+        behavior: VirtualizedScrollBehavior;
+        id: number;
+    } | null>(null);
     const typingUserList = Object.values(typingUsers ?? {});
     const typingLabel = typingUserList
         .map(
@@ -144,11 +152,42 @@ export function ChatSurfacePanel({
     const useVirtualScrolling =
         showSurface && surfaceMessages.length >= virtualizationThreshold;
 
-    function scrollMessageListToBottom() {
+    function requestMessageListBottomScroll(
+        behavior: VirtualizedScrollBehavior = "smooth",
+    ) {
+        mediaSettlingDeadlineRef.current = Date.now() + 4_000;
+
+        if (useVirtualScrolling) {
+            setVirtualScrollRequest((current) => ({
+                behavior,
+                id: (current?.id ?? 0) + 1,
+            }));
+            return;
+        }
+
         if (messageContainerRef?.current) {
             messageContainerRef.current.scrollTop =
                 messageContainerRef.current.scrollHeight;
         }
+    }
+
+    function handleMessageMediaLoad(message: ChatSurfaceMessage) {
+        if (Date.now() > mediaSettlingDeadlineRef.current) {
+            return;
+        }
+
+        const trailingMessages = surfaceMessages.slice(-3);
+        const isTrailingMessage = trailingMessages.some(
+            (surfaceMessage) => surfaceMessage.id === message.id,
+        );
+
+        if (!isTrailingMessage) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            requestMessageListBottomScroll("auto");
+        });
     }
 
     function scrollComposerIntoView(behavior: ScrollBehavior = "smooth") {
@@ -184,10 +223,30 @@ export function ChatSurfacePanel({
 
         shouldScrollAfterSubmitRef.current = false;
         requestAnimationFrame(() => {
-            scrollMessageListToBottom();
+            requestMessageListBottomScroll();
             scrollComposerIntoView();
         });
     }, [surfaceMessages.length]);
+
+    useEffect(() => {
+        const wasLoading = previousLoadingRef.current;
+        const previousMessageCount = previousMessageCountRef.current;
+
+        previousLoadingRef.current = loading;
+        previousMessageCountRef.current = surfaceMessages.length;
+
+        if (!showSurface || loading || surfaceMessages.length === 0) {
+            return;
+        }
+
+        if (!wasLoading && previousMessageCount > 0) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            requestMessageListBottomScroll("auto");
+        });
+    }, [loading, showSurface, surfaceMessages.length, useVirtualScrolling]);
 
     useEffect(() => {
         const isSending = Boolean(
@@ -202,7 +261,7 @@ export function ChatSurfacePanel({
         }
 
         requestAnimationFrame(() => {
-            scrollMessageListToBottom();
+            requestMessageListBottomScroll();
             scrollComposerIntoView();
         });
     }, [composer?.sending, composer?.uploadingImage]);
@@ -217,7 +276,7 @@ export function ChatSurfacePanel({
         await composer.onSubmit();
 
         requestAnimationFrame(() => {
-            scrollMessageListToBottom();
+            requestMessageListBottomScroll();
             scrollComposerIntoView();
         });
     }
@@ -238,9 +297,15 @@ export function ChatSurfacePanel({
     return (
         <div className="space-y-3">
             <div
-                className={`h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
-                    compactMessages ? "space-y-2 p-3" : "space-y-3 p-4"
-                }`}
+                className={
+                    useVirtualScrolling
+                        ? ""
+                        : `h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
+                              compactMessages
+                                  ? "space-y-2 p-3"
+                                  : "space-y-3 p-4"
+                          }`
+                }
                 ref={messageContainerRef}
             >
                 {loading ? (
@@ -279,6 +344,7 @@ export function ChatSurfacePanel({
                             onOpenProfileModal || (() => undefined)
                         }
                         onOpenThread={onOpenThread}
+                        onMediaLoad={handleMessageMediaLoad}
                         onRemove={onRemove}
                         onStartEdit={onStartEdit}
                         onStartReply={onStartReply}
@@ -287,6 +353,7 @@ export function ChatSurfacePanel({
                         onUploadCustomEmoji={onUploadCustomEmoji}
                         pinnedMessageIds={pinnedMessageIds}
                         setDeleteConfirmId={setDeleteConfirmId}
+                        scrollToBottomRequest={virtualScrollRequest}
                         shouldShowLoadOlder={shouldShowLoadOlder}
                         userId={currentUserId}
                         userIdSlice={userIdSlice}
@@ -319,6 +386,7 @@ export function ChatSurfacePanel({
                                 onOpenImageViewer={onOpenImageViewer}
                                 onOpenProfileModal={onOpenProfileModal}
                                 onOpenThread={onOpenThread}
+                                onMediaLoad={handleMessageMediaLoad}
                                 onRemove={onRemove}
                                 onStartEdit={onStartEdit}
                                 onStartReply={onStartReply}

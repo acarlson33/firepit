@@ -5,13 +5,48 @@ import { ChatSurfacePanel } from "@/components/chat-surface-panel";
 import type { ChatSurfaceMessage } from "@/lib/chat-surface";
 
 vi.mock("@/components/chat-surface-message-item", () => ({
-    ChatSurfaceMessageItem: ({ message }: { message: ChatSurfaceMessage }) => (
-        <div>{message.text}</div>
+    ChatSurfaceMessageItem: ({
+        message,
+        onMediaLoad,
+    }: {
+        message: ChatSurfaceMessage;
+        onMediaLoad?: (message: ChatSurfaceMessage) => void;
+    }) => (
+        <div>
+            <div>{message.text}</div>
+            {onMediaLoad ? (
+                <button onClick={() => onMediaLoad(message)} type="button">
+                    media-loaded-{message.id}
+                </button>
+            ) : null}
+        </div>
     ),
 }));
 
 vi.mock("@/components/virtualized-message-list", () => ({
-    VirtualizedMessageList: () => <div>virtualized-list</div>,
+    VirtualizedMessageList: ({
+        messages,
+        onMediaLoad,
+        scrollToBottomRequest,
+    }: {
+        messages: ChatSurfaceMessage[];
+        onMediaLoad?: (message: ChatSurfaceMessage) => void;
+        scrollToBottomRequest?: { id: number } | null;
+    }) => (
+        <div>
+            <div>virtualized-list-{scrollToBottomRequest?.id ?? 0}</div>
+            {messages.at(-1) && onMediaLoad ? (
+                <button
+                    onClick={() =>
+                        onMediaLoad(messages.at(-1) as ChatSurfaceMessage)
+                    }
+                    type="button"
+                >
+                    virtual-media-loaded
+                </button>
+            ) : null}
+        </div>
+    ),
 }));
 
 vi.mock("@/components/chat-input", () => ({
@@ -279,5 +314,83 @@ describe("ChatSurfacePanel", () => {
         });
 
         HTMLElement.prototype.scrollIntoView = original;
+    });
+
+    it("re-requests bottom scroll when trailing virtualized media finishes loading", async () => {
+        const { rerender } = render(
+            <ChatSurfacePanel
+                currentUserId="user-1"
+                deleteConfirmId={null}
+                editingMessageId={null}
+                emptyDescription="No messages"
+                emptyTitle="Nothing here"
+                loading
+                onOpenImageViewer={vi.fn()}
+                onRemove={vi.fn()}
+                onStartEdit={vi.fn()}
+                onStartReply={vi.fn()}
+                onToggleReaction={vi.fn().mockResolvedValue(undefined)}
+                setDeleteConfirmId={vi.fn()}
+                surfaceMessages={[
+                    {
+                        ...baseMessage,
+                        imageUrl: "https://example.com/first.png",
+                    },
+                    {
+                        ...baseMessage,
+                        createdAt: "2026-03-10T12:01:00.000Z",
+                        id: "msg-2",
+                        imageUrl: "https://example.com/second.png",
+                        sourceMessageId: "msg-2",
+                        text: "Latest image",
+                    },
+                ]}
+                virtualizationThreshold={1}
+            />,
+        );
+
+        rerender(
+            <ChatSurfacePanel
+                currentUserId="user-1"
+                deleteConfirmId={null}
+                editingMessageId={null}
+                emptyDescription="No messages"
+                emptyTitle="Nothing here"
+                loading={false}
+                onOpenImageViewer={vi.fn()}
+                onRemove={vi.fn()}
+                onStartEdit={vi.fn()}
+                onStartReply={vi.fn()}
+                onToggleReaction={vi.fn().mockResolvedValue(undefined)}
+                setDeleteConfirmId={vi.fn()}
+                surfaceMessages={[
+                    {
+                        ...baseMessage,
+                        imageUrl: "https://example.com/first.png",
+                    },
+                    {
+                        ...baseMessage,
+                        createdAt: "2026-03-10T12:01:00.000Z",
+                        id: "msg-2",
+                        imageUrl: "https://example.com/second.png",
+                        sourceMessageId: "msg-2",
+                        text: "Latest image",
+                    },
+                ]}
+                virtualizationThreshold={1}
+            />,
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText("virtualized-list-1")).toBeInTheDocument();
+        });
+
+        fireEvent.click(
+            screen.getByRole("button", { name: "virtual-media-loaded" }),
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText("virtualized-list-2")).toBeInTheDocument();
+        });
     });
 });

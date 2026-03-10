@@ -1,9 +1,13 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { Virtuoso } from "react-virtuoso";
+import type { VirtuosoHandle } from "react-virtuoso";
 import type { ChatSurfaceMessage } from "@/lib/chat-surface";
 import type { CustomEmoji } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
+
+export type VirtualizedScrollBehavior = "auto" | "smooth";
 
 type VirtualizedMessageListProps = {
     messages: ChatSurfaceMessage[];
@@ -40,6 +44,11 @@ type VirtualizedMessageListProps = {
     canManageMessages?: boolean;
     messageDensity?: "compact" | "cozy";
     pinnedMessageIds?: string[];
+    scrollToBottomRequest?: {
+        behavior: VirtualizedScrollBehavior;
+        id: number;
+    } | null;
+    onMediaLoad?: (message: ChatSurfaceMessage) => void;
 };
 
 export function VirtualizedMessageList({
@@ -66,8 +75,25 @@ export function VirtualizedMessageList({
     canManageMessages = false,
     messageDensity = "compact",
     pinnedMessageIds,
+    scrollToBottomRequest,
+    onMediaLoad,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
+    const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+
+    useEffect(() => {
+        if (!scrollToBottomRequest || messages.length === 0) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            virtuosoRef.current?.scrollToIndex({
+                align: "end",
+                behavior: scrollToBottomRequest.behavior,
+                index: messages.length - 1,
+            });
+        });
+    }, [messages.length, scrollToBottomRequest]);
 
     return (
         <Virtuoso
@@ -78,6 +104,7 @@ export function VirtualizedMessageList({
             data={messages}
             followOutput="smooth"
             initialTopMostItemIndex={messages.length - 1}
+            ref={virtuosoRef}
             itemContent={(_, message) => (
                 <div className={isCompact ? "mx-4 mb-3" : "mx-4 mb-4"}>
                     <ChatSurfaceMessageItem
@@ -94,6 +121,7 @@ export function VirtualizedMessageList({
                         onRemove={onRemove}
                         onStartEdit={onStartEdit}
                         onStartReply={onStartReply}
+                        onMediaLoad={onMediaLoad}
                         onTogglePin={onTogglePin ? onTogglePin : undefined}
                         onToggleReaction={onToggleReaction}
                         onUploadCustomEmoji={onUploadCustomEmoji}
