@@ -1,8 +1,9 @@
 "use client";
 import type { RealtimeResponseEvent } from "appwrite";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { adaptChannelMessages } from "@/lib/chat-surface";
 import { canSend, setTyping } from "@/lib/appwrite-messages";
 import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -51,6 +52,7 @@ export function useMessages({
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
+    const [sending, setSending] = useState<boolean>(false);
     const [oldestCursor, setOldestCursor] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState<boolean>(false);
     const [text, setText] = useState("");
@@ -688,6 +690,7 @@ export function useMessages({
             return;
         }
         try {
+            setSending(true);
             setText("");
             const replyToId = replyingToMessage?.$id;
             setReplyingToMessage(null);
@@ -760,6 +763,8 @@ export function useMessages({
             }
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to send");
+        } finally {
+            setSending(false);
         }
     }
 
@@ -890,9 +895,26 @@ export function useMessages({
         }
     }
 
+    const surfaceMessages = useMemo(
+        () =>
+            adaptChannelMessages(
+                messages,
+                channelId
+                    ? {
+                          kind: "channel",
+                          channelId,
+                          serverId: serverId ?? undefined,
+                      }
+                    : undefined,
+            ),
+        [messages, channelId, serverId],
+    );
+
     return {
         messages,
+        surfaceMessages,
         loading,
+        sending,
         oldestCursor,
         hasMore,
         text,

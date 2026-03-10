@@ -2,12 +2,14 @@ import { ID, Query, Permission, Role } from "appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
+import { parseReactionsWithMetadata } from "./reactions-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const migratedReactionDocuments = new Set<string>();
 
 type ProfileData = {
     displayName?: string;
@@ -48,6 +50,36 @@ async function fetchProfilesBatch(
 
 function getDatabases() {
     return getBrowserDatabases();
+}
+
+function scheduleReactionMigration(messageId: string, reactions: unknown) {
+    if (!DIRECT_MESSAGES_COLLECTION) {
+        return;
+    }
+
+    const key = `${DIRECT_MESSAGES_COLLECTION}:${messageId}`;
+    if (migratedReactionDocuments.has(key)) {
+        return;
+    }
+
+    const parsed = parseReactionsWithMetadata(reactions);
+    if (!parsed.didNormalize) {
+        return;
+    }
+
+    migratedReactionDocuments.add(key);
+    void getDatabases()
+        .updateDocument({
+            databaseId: DATABASE_ID,
+            collectionId: DIRECT_MESSAGES_COLLECTION,
+            documentId: messageId,
+            data: {
+                reactions: JSON.stringify(parsed.reactions),
+            },
+        })
+        .catch(() => {
+            migratedReactionDocuments.delete(key);
+        });
 }
 
 /**
@@ -450,6 +482,8 @@ export async function listDirectMessages(
 
         const items = response.documents.map((doc) => {
             const d = doc as Record<string, unknown>;
+            const parsedReactions = parseReactionsWithMetadata(d.reactions);
+            scheduleReactionMigration(String(d.$id), d.reactions);
             return {
                 $id: String(d.$id),
                 conversationId: String(d.conversationId),
@@ -460,6 +494,10 @@ export async function listDirectMessages(
                 editedAt: d.editedAt ? String(d.editedAt) : undefined,
                 removedAt: d.removedAt ? String(d.removedAt) : undefined,
                 removedBy: d.removedBy ? String(d.removedBy) : undefined,
+                reactions:
+                    parsedReactions.reactions.length > 0
+                        ? parsedReactions.reactions
+                        : undefined,
             };
         });
 

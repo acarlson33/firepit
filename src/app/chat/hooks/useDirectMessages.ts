@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { adaptDirectMessages } from "@/lib/chat-surface";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import {
     listDirectMessages,
@@ -758,8 +759,25 @@ export function useDirectMessages({
         [activeThreadParent, userId],
     );
 
+    const surfaceMessages = useMemo(
+        () =>
+            adaptDirectMessages(
+                messages,
+                conversationId
+                    ? {
+                          kind: "dm",
+                          conversationId,
+                          readOnly,
+                          readOnlyReason,
+                      }
+                    : undefined,
+            ),
+        [messages, conversationId, readOnly, readOnlyReason],
+    );
+
     return {
         messages,
+        surfaceMessages,
         loading,
         error,
         sending,

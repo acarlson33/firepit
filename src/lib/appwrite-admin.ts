@@ -2,6 +2,7 @@ import { Query, Storage } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
+import type { FileAttachment } from "./types";
 
 function getCollectionIds() {
     const { collections } = getEnvConfig();
@@ -9,6 +10,7 @@ function getCollectionIds() {
         servers: collections.servers,
         channels: collections.channels,
         messages: collections.messages,
+        messageAttachments: collections.messageAttachments,
     };
 }
 
@@ -128,6 +130,8 @@ export async function listGlobalMessages(
 ): Promise<
     PageResult<{
         $id: string;
+        attachments?: FileAttachment[];
+        imageUrl?: string;
         removedAt?: string;
         text?: string;
         userId?: string;
@@ -139,12 +143,17 @@ export async function listGlobalMessages(
 > {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
-    const { messages } = getCollectionIds();
+    const { messages, messageAttachments } = getCollectionIds();
     const queries = buildMessageQueries(filters, filters.limit);
     try {
         const res = await databases.listDocuments(dbId, messages, queries);
-        const items = mapMessageDocuments(
-            (res as unknown as { documents?: unknown[] }).documents || [],
+        const items = await enrichMessagesWithAttachments(
+            databases,
+            dbId,
+            messageAttachments,
+            mapMessageDocuments(
+                (res as unknown as { documents?: unknown[] }).documents || [],
+            ),
         );
         const last = items.at(-1);
         return {
@@ -159,6 +168,8 @@ export async function listGlobalMessages(
 
 type MappedMessage = {
     $id: string;
+    attachments?: FileAttachment[];
+    imageUrl?: string;
     removedAt?: string;
     text?: string;
     userId?: string;
@@ -179,6 +190,7 @@ function coerceMessage(raw: unknown): MappedMessage | null {
             : undefined;
     return {
         $id: String(obj.$id),
+        imageUrl: pick("imageUrl"),
         removedAt: pick("removedAt"),
         text: pick("text"),
         userId: pick("userId"),
@@ -198,6 +210,69 @@ function mapMessageDocuments(rawList: unknown[]) {
         }
     }
     return out;
+}
+
+async function enrichMessagesWithAttachments(
+    databases: ReturnType<typeof getAdminClient>["databases"],
+    databaseId: string,
+    attachmentsCollectionId: string,
+    messages: MappedMessage[],
+) {
+    if (!attachmentsCollectionId || messages.length === 0) {
+        return messages;
+    }
+
+    try {
+        const messageIds = messages.map((message) => message.$id);
+        const response = await databases.listDocuments(
+            databaseId,
+            attachmentsCollectionId,
+            [
+                Query.equal("messageId", messageIds),
+                Query.equal("messageType", "channel"),
+                Query.limit(1000),
+            ],
+        );
+
+        const attachmentsByMessageId = new Map<string, FileAttachment[]>();
+
+        for (const raw of response.documents) {
+            const attachmentDoc = raw as Record<string, unknown>;
+            const messageId = String(attachmentDoc.messageId ?? "");
+
+            if (!messageId) {
+                continue;
+            }
+
+            const attachment: FileAttachment = {
+                fileId: String(attachmentDoc.fileId ?? ""),
+                fileName: String(attachmentDoc.fileName ?? ""),
+                fileSize: Number(attachmentDoc.fileSize ?? 0),
+                fileType: String(attachmentDoc.fileType ?? ""),
+                fileUrl: String(attachmentDoc.fileUrl ?? ""),
+                thumbnailUrl:
+                    typeof attachmentDoc.thumbnailUrl === "string"
+                        ? attachmentDoc.thumbnailUrl
+                        : undefined,
+            };
+
+            const existingAttachments =
+                attachmentsByMessageId.get(messageId) ?? [];
+            existingAttachments.push(attachment);
+            attachmentsByMessageId.set(messageId, existingAttachments);
+        }
+
+        return messages.map((message) => {
+            const attachments = attachmentsByMessageId.get(message.$id);
+            if (!attachments || attachments.length === 0) {
+                return message;
+            }
+
+            return { ...message, attachments };
+        });
+    } catch {
+        return messages;
+    }
 }
 
 export async function getAdminMessageAuditContext(messageId: string) {
