@@ -151,6 +151,8 @@ Move from basic mute controls to Discord-like notification preferences across se
 
 ## Workstream C: Cross-Surface Messaging Consistency
 
+Status: In progress. The shared navigation and pin-thread state slice shipped in March 2026; broader history-affordance parity is still follow-on work.
+
 ### Objective
 
 Ensure that parity features that already exist behave consistently across channel chat, DM chat, threads, pinned views, and search navigation.
@@ -159,6 +161,7 @@ Ensure that parity features that already exist behave consistently across channe
 
 - Users should not find a feature in channels that behaves differently or disappears in DMs without an intentional reason
 - Search results, pins, and thread views should land users in predictable message state
+- Channel and DM surfaces should share the same deep-link and highlight behavior when a user opens a message from search or pinned history
 
 ### Backend Scope
 
@@ -172,23 +175,33 @@ Ensure that parity features that already exist behave consistently across channe
     - mute state interactions
 - Normalize serialization and enrichment fields where the same concept exists in both message types
 - Document intentional differences instead of letting them emerge by accident
+- No new REST endpoints are required for the shipped slice; existing search, pin, thread, and typing APIs already expose the identifiers needed for shared client navigation
 
 ### Frontend Scope
 
-- Shared component behavior for message actions where feasible
-- Shared navigation helpers for jump-to-message flows from search, pins, and threads
-- Consistent optimistic-update behavior and failure recovery across chat surfaces
-- Consistent unread and active-thread indicators where supported
+- Shipped slice:
+    - shared navigation helpers for jump-to-message flows from search results, pinned items, and message highlight deep links
+    - shared pin and thread client helpers across channel and DM surfaces
+    - shared hook state for pin and thread behavior in `useMessages` and `useDirectMessages`
+    - route-driven context selection and highlight behavior for both channel and DM chat landings
+- Remaining follow-on scope:
+    - shared component behavior for remaining message actions where feasible
+    - consistent optimistic-update behavior and failure recovery across chat surfaces
+    - consistent unread and active-thread indicators where supported
 
 ### Testing
 
-- Cross-surface regression suite that runs the same assertions for channels and DMs where parity is expected
-- Search-to-message navigation tests
-- Pinned-item and thread-entry tests
+- Shipped slice coverage:
+    - search-to-message navigation tests
+    - pinned-item and thread-entry tests for channel and DM surfaces
+    - shared client and shared hook regression coverage for pin-thread state
+    - dedicated hook coverage for both `useMessages` and `useDirectMessages`
+- Remaining parity work should continue extending cross-surface regression coverage where the same affordance exists in both surfaces
 
 ### Rollout Notes
 
 - This workstream should generally ship incrementally with no separate feature flag unless a behavioral change is high risk
+- The March 2026 slice was delivered without backend contract changes; documentation updates should stay focused on shared client behavior unless later parity work changes API responses
 
 ## Workstream D: Onboarding And Social Graph Polish
 

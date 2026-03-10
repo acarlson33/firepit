@@ -1022,6 +1022,7 @@ paths:
         get:
             tags: [Channels, Messages]
             summary: List pinned messages for a channel
+            description: Returns pinned channel messages with their existing message identifiers so clients can reopen the channel context and jump to the pinned message.
             security:
                 - sessionCookie: []
             parameters:
@@ -1214,6 +1215,7 @@ paths:
         get:
             tags: [Messages]
             summary: List thread messages for a channel message
+            description: Returns the thread rooted at the specified channel message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
             parameters:
@@ -1464,6 +1466,7 @@ paths:
         get:
             tags: [Direct Messages]
             summary: List thread messages for a direct message
+            description: Returns the thread rooted at the specified direct message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
             parameters:
@@ -1555,6 +1558,7 @@ paths:
         get:
             tags: [Direct Messages]
             summary: List pinned messages for a conversation
+            description: Returns pinned direct messages with the conversation context needed for consistent jump-to-message flows in DM chat.
             security:
                 - sessionCookie: []
             parameters:
@@ -1913,6 +1917,7 @@ paths:
         get:
             tags: [Search]
             summary: Search messages across accessible contexts
+            description: Returns message matches with enough channel or conversation context for the client to deep-link into the correct chat surface and highlight the selected message.
             security:
                 - sessionCookie: []
             parameters:

@@ -51,6 +51,19 @@ Pinning is split across two levels:
 
 For channel views, pinned history is available at `/api/channels/{channelId}/pins`.
 
+## Cross-Surface Navigation
+
+Search results, pinned items, and thread-entry affordances now resolve through the same client-side message navigation flow in both channels and DMs.
+
+Current navigation behavior:
+
+- search results build routeable chat URLs that preserve the message context through `server`, `channel`, `conversation`, and `highlight` query parameters
+- channel and DM chat surfaces consume those query parameters to select the correct context before attempting a message jump
+- jump-to-message highlighting is shared across channel chat, DM chat, and pinned-message entry points
+- the client relies on existing message identifiers and context identifiers from current APIs rather than a separate navigation endpoint
+
+This keeps search, pins, and thread access behavior aligned across message surfaces without changing the underlying channel and DM REST contracts.
+
 ## Typing Indicators
 
 Typing state is managed through `/api/typing`.
@@ -108,6 +121,8 @@ Chat-adjacent discovery is handled by:
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
 - `/api/memberships` for membership resolution used by navigation and mention features
+
+Message search responses are expected to provide the context identifiers needed for client navigation so results can deep-link back into either channel or DM chat with a consistent highlight state.
 
 Current notification capabilities include:
 
