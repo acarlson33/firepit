@@ -9,19 +9,16 @@ import {
     X,
     Settings,
     Shield,
-    Pencil,
-    Trash2,
     BellOff,
     MoreVertical,
     Pin,
-    Reply,
     ChevronDown,
     ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar } from "@/components/ui/avatar";
+import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -32,12 +29,7 @@ import Loader from "@/components/loader";
 import type { Channel, FileAttachment } from "@/lib/types";
 import { ChatInput } from "@/components/chat-input";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
-import { FileAttachmentDisplay } from "@/components/file-attachment-display";
-import { ReactionButton } from "@/components/reaction-button";
-import { MessageWithMentions } from "@/components/message-with-mentions";
-import { formatMessageTimestamp } from "@/lib/utils";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
-import { ReactionPicker } from "@/components/reaction-picker";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
@@ -1224,7 +1216,7 @@ export default function ChatPage() {
                     deleteConfirmId={deleteConfirmId}
                     editingMessageId={editingMessageId}
                     messageDensity={messageDensity}
-                    messages={messages}
+                    messages={messagesApi.surfaceMessages}
                     onLoadOlder={loadOlder}
                     onOpenImageViewer={(imageUrl: string) => {
                         setViewingImage({
@@ -1234,13 +1226,42 @@ export default function ChatPage() {
                     }}
                     onOpenProfileModal={openProfileModal}
                     onRemove={handleDelete}
-                    onPinMessage={handlePinMessage}
-                    onUnpinMessage={handleUnpinMessage}
                     onOpenThread={async (message) => {
-                        await openThread(message);
+                        const rawMessage = messages.find(
+                            (candidate) =>
+                                candidate.$id === message.sourceMessageId,
+                        );
+                        if (rawMessage) {
+                            await openThread(rawMessage);
+                        }
                     }}
-                    onStartEdit={startEdit}
-                    onStartReply={startReply}
+                    onStartEdit={(message) => {
+                        const rawMessage = messages.find(
+                            (candidate) =>
+                                candidate.$id === message.sourceMessageId,
+                        );
+                        if (rawMessage) {
+                            startEdit(rawMessage);
+                        }
+                    }}
+                    onStartReply={(message) => {
+                        const rawMessage = messages.find(
+                            (candidate) =>
+                                candidate.$id === message.sourceMessageId,
+                        );
+                        if (rawMessage) {
+                            startReply(rawMessage);
+                        }
+                    }}
+                    onTogglePin={async (message) => {
+                        const rawMessage = messages.find(
+                            (candidate) =>
+                                candidate.$id === message.sourceMessageId,
+                        );
+                        if (rawMessage) {
+                            await togglePin(rawMessage);
+                        }
+                    }}
                     onToggleReaction={async (
                         messageId: string,
                         emoji: string,
@@ -1287,325 +1308,84 @@ export default function ChatPage() {
                         </Button>
                     </div>
                 )}
-                {messages.map((m) => {
-                    const mine = m.userId === userId;
-                    const isEditing = editingMessageId === m.$id;
-                    const removed = Boolean(m.removedAt);
-                    const isDeleting = deleteConfirmId === m.$id;
-                    const isPinned = pinnedMessageIds.includes(m.$id);
-                    const displayName =
-                        m.displayName ||
-                        m.userName ||
-                        m.userId.slice(0, userIdSlice);
-
-                    return (
-                        <div
-                            className={`group flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
-                                mine
-                                    ? "ml-auto max-w-[85%] flex-row-reverse text-right"
-                                    : "mr-auto max-w-[85%]"
-                            } ${
-                                isEditing
-                                    ? "border-blue-400/50 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-950/30"
-                                    : "hover:border-border/80"
-                            } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
-                            key={m.$id}
-                        >
-                            <button
-                                className="shrink-0 cursor-pointer rounded-full border border-transparent transition hover:border-border"
-                                onClick={() =>
-                                    openProfileModal(
-                                        m.userId,
-                                        m.userName,
-                                        m.displayName,
-                                        m.avatarUrl,
-                                    )
-                                }
-                                type="button"
-                            >
-                                <Avatar
-                                    alt={displayName}
-                                    fallback={displayName}
-                                    size="md"
-                                    src={m.avatarUrl}
-                                />
-                            </button>
-                            <div className="min-w-0 flex-1 space-y-2">
-                                <div
-                                    className={`flex flex-wrap items-baseline gap-2 ${
-                                        mine ? "justify-end" : ""
-                                    } text-muted-foreground ${
-                                        compactMessages
-                                            ? "text-[11px]"
-                                            : "text-xs"
-                                    }`}
-                                >
-                                    <span className="font-medium text-foreground">
-                                        {displayName}
-                                    </span>
-                                    {m.pronouns && (
-                                        <span className="italic text-muted-foreground">
-                                            ({m.pronouns})
-                                        </span>
-                                    )}
-                                    <span>
-                                        {formatMessageTimestamp(m.$createdAt)}
-                                    </span>
-                                    {m.editedAt && (
-                                        <span className="italic">(edited)</span>
-                                    )}
-                                    {removed && (
-                                        <span className="text-destructive">
-                                            (removed)
-                                        </span>
-                                    )}
-                                    {isPinned && (
-                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                                            <Pin className="h-3 w-3" />
-                                            Pinned
-                                        </span>
-                                    )}
-                                </div>
-
-                                {m.replyTo && (
-                                    <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs">
-                                        <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                        <div className="min-w-0 flex-1">
-                                            <span className="font-medium text-foreground">
-                                                {m.replyTo.displayName ||
-                                                    m.replyTo.userName ||
-                                                    "User"}
-                                            </span>
-                                            <span className="ml-1 text-muted-foreground">
-                                                {m.replyTo.text?.length > 50
-                                                    ? `${m.replyTo.text.slice(0, 50)}...`
-                                                    : m.replyTo.text}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {!removed && (
-                                    <div
-                                        className={`wrap-break-word ${
-                                            compactMessages
-                                                ? "text-xs"
-                                                : "text-sm"
-                                        }`}
-                                    >
-                                        <MessageWithMentions
-                                            text={m.text}
-                                            mentions={m.mentions}
-                                            currentUserId={userId ?? undefined}
-                                            customEmojis={customEmojis}
-                                        />
-                                    </div>
-                                )}
-                                {removed && m.removedBy && (
-                                    <div
-                                        className={`italic text-muted-foreground ${
-                                            compactMessages
-                                                ? "text-[11px]"
-                                                : "text-xs"
-                                        }`}
-                                    >
-                                        Removed by moderator
-                                    </div>
-                                )}
-
-                                {m.imageUrl && !removed && (
-                                    <div className="mt-2">
-                                        <button
-                                            className="overflow-hidden rounded-lg border border-border transition hover:opacity-90"
-                                            onClick={() => {
-                                                if (m.imageUrl) {
-                                                    setViewingImage({
-                                                        url: m.imageUrl,
-                                                        alt: "Attached image",
-                                                    });
-                                                }
-                                            }}
-                                            type="button"
-                                        >
-                                            <img
-                                                alt="Attached"
-                                                className="max-h-64 w-auto"
-                                                decoding="async"
-                                                loading="lazy"
-                                                src={m.imageUrl}
-                                            />
-                                        </button>
-                                    </div>
-                                )}
-
-                                {m.attachments &&
-                                    m.attachments.length > 0 &&
-                                    !removed && (
-                                        <div className="mt-2 space-y-2">
-                                            {m.attachments.map(
-                                                (attachment, idx) => (
-                                                    <FileAttachmentDisplay
-                                                        key={`${m.$id}-${attachment.fileId}-${idx}`}
-                                                        attachment={attachment}
-                                                    />
-                                                ),
-                                            )}
-                                        </div>
-                                    )}
-
-                                {m.reactions && m.reactions.length > 0 && (
-                                    <div className="flex flex-wrap gap-1">
-                                        {m.reactions.map((reaction) => {
-                                            return (
-                                                <ReactionButton
-                                                    currentUserId={userId}
-                                                    customEmojis={customEmojis}
-                                                    key={`${m.$id}-${reaction.emoji}`}
-                                                    onToggle={async (
-                                                        e: string,
-                                                        isAdding: boolean,
-                                                    ) => {
-                                                        await toggleReaction(
-                                                            m.$id,
-                                                            e,
-                                                            isAdding,
-                                                            false,
-                                                        );
-                                                    }}
-                                                    reaction={reaction}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                )}
-
-                                {typeof m.threadMessageCount === "number" &&
-                                    m.threadMessageCount > 0 && (
-                                        <button
-                                            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                                            onClick={() => {
-                                                void openThread(m);
-                                            }}
-                                            type="button"
-                                        >
-                                            <MessageSquare className="h-3 w-3" />
-                                            {m.threadMessageCount}{" "}
-                                            {m.threadMessageCount === 1
-                                                ? "reply"
-                                                : "replies"}
-                                        </button>
-                                    )}
-
-                                {!removed && (
-                                    <div
-                                        className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
-                                    >
-                                        <ReactionPicker
-                                            customEmojis={customEmojis}
-                                            onSelectEmoji={async (emoji) => {
-                                                await toggleReaction(
-                                                    m.$id,
-                                                    emoji,
-                                                    true,
-                                                    false,
-                                                );
-                                            }}
-                                            onUploadCustomEmoji={uploadEmoji}
-                                        />
-                                        <Button
-                                            aria-label="Reply"
-                                            onClick={() => startReply(m)}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Reply className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            aria-label="Start thread"
-                                            onClick={() => {
-                                                void openThread(m);
-                                            }}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <MessageSquare className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            aria-label={
-                                                isPinned
-                                                    ? "Unpin message"
-                                                    : "Pin message"
-                                            }
-                                            onClick={() => {
-                                                void togglePin(m);
-                                            }}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Pin
-                                                className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
-                                            />
-                                        </Button>
-                                        {mine && (
-                                            <>
-                                                <Button
-                                                    onClick={() => startEdit(m)}
-                                                    size="sm"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <Pencil className="h-4 w-4" />
-                                                </Button>
-                                                {isDeleting ? (
-                                                    <>
-                                                        <Button
-                                                            onClick={() => {
-                                                                void handleDelete();
-                                                            }}
-                                                            size="sm"
-                                                            type="button"
-                                                            variant="destructive"
-                                                        >
-                                                            Confirm
-                                                        </Button>
-                                                        <Button
-                                                            onClick={() =>
-                                                                setDeleteConfirmId(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            type="button"
-                                                            variant="ghost"
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </>
-                                                ) : (
-                                                    <Button
-                                                        onClick={() =>
-                                                            setDeleteConfirmId(
-                                                                m.$id,
-                                                            )
-                                                        }
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="ghost"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+                {messagesApi.surfaceMessages.map((message) => (
+                    <ChatSurfaceMessageItem
+                        canManageMessages={canManageMessages}
+                        currentUserId={userId}
+                        customEmojis={customEmojis}
+                        deleteConfirmId={deleteConfirmId}
+                        editingMessageId={editingMessageId}
+                        key={message.id}
+                        message={message}
+                        messageDensity={messageDensity}
+                        onOpenImageViewer={(imageUrl) => {
+                            setViewingImage({
+                                url: imageUrl,
+                                alt: "Attached image",
+                            });
+                        }}
+                        onOpenProfileModal={openProfileModal}
+                        onOpenThread={async (surfaceMessage) => {
+                            const rawMessage = messages.find(
+                                (candidate) =>
+                                    candidate.$id ===
+                                    surfaceMessage.sourceMessageId,
+                            );
+                            if (rawMessage) {
+                                await openThread(rawMessage);
+                            }
+                        }}
+                        onRemove={() => {
+                            void handleDelete();
+                        }}
+                        onStartEdit={(surfaceMessage) => {
+                            const rawMessage = messages.find(
+                                (candidate) =>
+                                    candidate.$id ===
+                                    surfaceMessage.sourceMessageId,
+                            );
+                            if (rawMessage) {
+                                startEdit(rawMessage);
+                            }
+                        }}
+                        onStartReply={(surfaceMessage) => {
+                            const rawMessage = messages.find(
+                                (candidate) =>
+                                    candidate.$id ===
+                                    surfaceMessage.sourceMessageId,
+                            );
+                            if (rawMessage) {
+                                startReply(rawMessage);
+                            }
+                        }}
+                        onTogglePin={async (surfaceMessage) => {
+                            const rawMessage = messages.find(
+                                (candidate) =>
+                                    candidate.$id ===
+                                    surfaceMessage.sourceMessageId,
+                            );
+                            if (rawMessage) {
+                                await togglePin(rawMessage);
+                            }
+                        }}
+                        onToggleReaction={async (
+                            messageId,
+                            emoji,
+                            isAdding,
+                        ) => {
+                            await toggleReaction(
+                                messageId,
+                                emoji,
+                                isAdding,
+                                false,
+                            );
+                        }}
+                        onUploadCustomEmoji={uploadEmoji}
+                        pinnedMessageIds={pinnedMessageIds}
+                        setDeleteConfirmId={setDeleteConfirmId}
+                        userIdSlice={userIdSlice}
+                    />
+                ))}
             </div>
         );
     }
@@ -1703,8 +1483,10 @@ export default function ChatPage() {
                             currentUserId={userId}
                             loading={dmApi.loading}
                             messages={dmApi.messages}
+                            surfaceMessages={dmApi.surfaceMessages}
                             onDelete={dmApi.deleteMsg}
                             onEdit={dmApi.edit}
+                            onOpenProfileModal={openProfileModal}
                             onSend={dmApi.send}
                             sending={dmApi.sending}
                             readOnly={dmApi.readOnly}

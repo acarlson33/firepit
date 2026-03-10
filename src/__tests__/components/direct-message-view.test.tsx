@@ -84,6 +84,7 @@ describe("DirectMessageView", () => {
                 currentUserId="current-user"
                 loading={false}
                 messages={[]}
+                surfaceMessages={[]}
                 onDelete={vi.fn()}
                 onEdit={vi.fn()}
                 onSend={vi.fn()}

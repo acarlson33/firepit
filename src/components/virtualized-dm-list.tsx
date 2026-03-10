@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import {
+    adaptDirectMessages,
+    type ChatSurfaceMessage,
+} from "@/lib/chat-surface";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
-import type { DirectMessage, Message, CustomEmoji } from "@/lib/types";
+import type { DirectMessage, CustomEmoji } from "@/lib/types";
 
 type VirtualizedDMListProps = {
     messages: DirectMessage[];
@@ -11,12 +15,16 @@ type VirtualizedDMListProps = {
     editingMessageId: string | null;
     deleteConfirmId: string | null;
     setDeleteConfirmId: (id: string | null) => void;
-    onStartEdit: (message: Message) => void;
-    onStartReply: (message: Message) => void;
+    onStartEdit: (message: ChatSurfaceMessage) => void;
+    onStartReply: (message: ChatSurfaceMessage) => void;
     onRemove: (id: string) => void;
-    onTogglePin?: (message: Message) => Promise<void>;
-    onOpenThread?: (message: Message) => Promise<void>;
-    onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
+    onTogglePin?: (message: ChatSurfaceMessage) => Promise<void>;
+    onOpenThread?: (message: ChatSurfaceMessage) => Promise<void>;
+    onToggleReaction: (
+        messageId: string,
+        emoji: string,
+        isAdding: boolean,
+    ) => Promise<void>;
     onOpenProfileModal: (
         userId: string,
         userName?: string,
@@ -34,16 +42,8 @@ type VirtualizedDMListProps = {
 };
 
 /**
- * Adapter component that converts DirectMessage[] to Message[] format
- * for use with VirtualizedMessageList
- *
- * This bridges the type incompatibility between DirectMessage (DM-specific)
- * and Message (channel-specific) to enable virtual scrolling in DMs.
- *
- * Key mappings:
- * - senderId → userId
- * - conversationId → channelId
- * - senderDisplayName → userName/displayName
+ * Adapter component that projects DirectMessage[] into the shared
+ * chat-surface contract for use with VirtualizedMessageList.
  */
 export function VirtualizedDMList({
     messages,
@@ -68,46 +68,14 @@ export function VirtualizedDMList({
     messageDensity = "compact",
     pinnedMessageIds,
 }: VirtualizedDMListProps) {
-    // Convert DirectMessage[] to Message[] format
-    const adaptedMessages = useMemo<Message[]>(() => {
-        return messages.map((dm) => ({
-            $id: dm.$id,
-            // Map senderId to userId (VirtualizedMessageList expects userId)
-            userId: dm.senderId,
-            userName: dm.senderDisplayName || dm.senderId,
-            text: dm.text,
-            $createdAt: dm.$createdAt,
-            // Use conversationId as channelId for compatibility
-            channelId: conversationId,
-            // No serverId for DMs
-            serverId: undefined,
-            editedAt: dm.editedAt,
-            removedAt: dm.removedAt,
-            removedBy: dm.removedBy,
-            imageFileId: dm.imageFileId,
-            imageUrl: dm.imageUrl,
-            attachments: dm.attachments,
-            replyToId: dm.replyToId,
-            threadId: dm.threadId,
-            threadMessageCount: dm.threadMessageCount,
-            threadParticipants: dm.threadParticipants,
-            lastThreadReplyAt: dm.lastThreadReplyAt,
-            mentions: dm.mentions,
-            reactions: dm.reactions,
-            // Map enriched profile data
-            displayName: dm.senderDisplayName,
-            pronouns: dm.senderPronouns,
-            avatarUrl: dm.senderAvatarUrl,
-            // Map reply context
-            replyTo: dm.replyTo
-                ? {
-                      text: dm.replyTo.text,
-                      userName: dm.replyTo.senderDisplayName,
-                      displayName: dm.replyTo.senderDisplayName,
-                  }
-                : undefined,
-        }));
-    }, [messages, conversationId]);
+    const adaptedMessages = useMemo(
+        () =>
+            adaptDirectMessages(messages, {
+                kind: "dm",
+                conversationId,
+            }),
+        [messages, conversationId],
+    );
 
     return (
         <VirtualizedMessageList

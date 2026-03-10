@@ -29,14 +29,10 @@ import { MessageWithMentions } from "@/components/message-with-mentions";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
+import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import { VirtualizedDMList } from "@/components/virtualized-dm-list";
-import type {
-    DirectMessage,
-    Conversation,
-    FileAttachment,
-    Message,
-} from "@/lib/types";
-import { formatMessageTimestamp } from "@/lib/utils";
+import type { ChatSurfaceMessage } from "@/lib/chat-surface";
+import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
@@ -47,6 +43,7 @@ const VIRTUALIZATION_THRESHOLD = 50;
 type DirectMessageViewProps = {
     conversation: Conversation;
     messages: DirectMessage[];
+    surfaceMessages: ChatSurfaceMessage[];
     loading: boolean;
     sending: boolean;
     currentUserId: string;
@@ -76,11 +73,18 @@ type DirectMessageViewProps = {
     threadLoading?: boolean;
     onCloseThread?: () => void;
     onSendThreadReply?: (_text: string) => Promise<void> | void;
+    onOpenProfileModal?: (
+        userId: string,
+        userName?: string,
+        displayName?: string,
+        avatarUrl?: string,
+    ) => void;
 };
 
 export function DirectMessageView({
     conversation,
     messages,
+    surfaceMessages,
     loading,
     sending,
     currentUserId,
@@ -101,6 +105,7 @@ export function DirectMessageView({
     threadLoading = false,
     onCloseThread,
     onSendThreadReply,
+    onOpenProfileModal,
 }: DirectMessageViewProps) {
     const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
@@ -139,7 +144,8 @@ export function DirectMessageView({
     const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
 
     // Use virtual scrolling for large message lists (better performance)
-    const useVirtualScrolling = messages.length > VIRTUALIZATION_THRESHOLD;
+    const useVirtualScrolling =
+        surfaceMessages.length > VIRTUALIZATION_THRESHOLD;
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -167,6 +173,10 @@ export function DirectMessageView({
             .map((messageId) => byId.get(messageId))
             .filter((message): message is DirectMessage => Boolean(message));
     }, [messages, pinnedMessageIds]);
+    const messagesById = useMemo(
+        () => new Map(messages.map((message) => [message.$id, message])),
+        [messages],
+    );
 
     useEffect(() => {
         setThreadReplyText("");
@@ -428,17 +438,17 @@ export function DirectMessageView({
                                 deleteConfirmId={deleteConfirmId}
                                 setDeleteConfirmId={setDeleteConfirmId}
                                 messageDensity={messageDensity}
-                                onStartEdit={(msg: Message) => {
-                                    const dmMessage = messages.find(
-                                        (m) => m.$id === msg.$id,
+                                onStartEdit={(msg) => {
+                                    const dmMessage = messagesById.get(
+                                        msg.sourceMessageId,
                                     );
                                     if (dmMessage) {
                                         startEdit(dmMessage);
                                     }
                                 }}
-                                onStartReply={(msg: Message) => {
-                                    const dmMessage = messages.find(
-                                        (m) => m.$id === msg.$id,
+                                onStartReply={(msg) => {
+                                    const dmMessage = messagesById.get(
+                                        msg.sourceMessageId,
                                     );
                                     if (dmMessage) {
                                         startReply(dmMessage);
@@ -450,10 +460,11 @@ export function DirectMessageView({
                                 }}
                                 onTogglePin={
                                     onTogglePinMessage
-                                        ? async (msg: Message) => {
-                                              const dmMessage = messages.find(
-                                                  (m) => m.$id === msg.$id,
-                                              );
+                                        ? async (msg) => {
+                                              const dmMessage =
+                                                  messagesById.get(
+                                                      msg.sourceMessageId,
+                                                  );
                                               if (dmMessage) {
                                                   await onTogglePinMessage(
                                                       dmMessage,
@@ -464,10 +475,11 @@ export function DirectMessageView({
                                 }
                                 onOpenThread={
                                     onOpenThread
-                                        ? async (msg: Message) => {
-                                              const dmMessage = messages.find(
-                                                  (m) => m.$id === msg.$id,
-                                              );
+                                        ? async (msg) => {
+                                              const dmMessage =
+                                                  messagesById.get(
+                                                      msg.sourceMessageId,
+                                                  );
                                               if (dmMessage) {
                                                   await onOpenThread(dmMessage);
                                               }
@@ -477,30 +489,16 @@ export function DirectMessageView({
                                 onToggleReaction={async (
                                     messageId: string,
                                     emoji: string,
+                                    isAdding: boolean,
                                 ) => {
-                                    const message = messages.find(
-                                        (m) => m.$id === messageId,
-                                    );
-                                    const hasReacted = message?.reactions?.some(
-                                        (r) =>
-                                            r.emoji === emoji &&
-                                            r.userIds.includes(currentUserId),
-                                    );
                                     await toggleReaction(
                                         messageId,
                                         emoji,
-                                        !hasReacted,
+                                        isAdding,
                                         true,
                                     );
                                 }}
-                                onOpenProfileModal={(
-                                    _userId: string,
-                                    _userName?: string,
-                                    _displayName?: string,
-                                    _avatarUrl?: string,
-                                ) => {
-                                    // Profile modal handler - can be implemented later
-                                }}
+                                onOpenProfileModal={onOpenProfileModal}
                                 onOpenImageViewer={(imageUrl: string) => {
                                     setViewingImage({
                                         url: imageUrl,
@@ -518,470 +516,89 @@ export function DirectMessageView({
                             />
                         ) : (
                             <>
-                                {messages.map((message) => {
-                                    const isMine =
-                                        message.senderId === currentUserId;
-                                    const isEditing =
-                                        editingMessageId === message.$id;
-                                    const isDeleting =
-                                        deleteConfirmId === message.$id;
-                                    const removed = Boolean(message.removedAt);
-                                    const isPinned =
-                                        Array.isArray(pinnedMessageIds) &&
-                                        pinnedMessageIds.includes(message.$id);
-                                    const msgDisplayName =
-                                        message.senderDisplayName ||
-                                        message.senderId;
-
-                                    return (
-                                        <div
-                                            data-message-id={message.$id}
-                                            className={`group flex ${
-                                                isEditing
-                                                    ? "rounded-lg bg-blue-50 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
-                                                    : ""
-                                            } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
-                                            key={message.$id}
-                                        >
-                                            <Avatar
-                                                alt={msgDisplayName}
-                                                fallback={msgDisplayName}
-                                                size="sm"
-                                                src={message.senderAvatarUrl}
-                                            />
-                                            <div className="min-w-0 flex-1">
-                                                <div
-                                                    className={`flex flex-wrap items-baseline gap-2 text-muted-foreground ${
-                                                        compactMessages
-                                                            ? "text-[11px]"
-                                                            : "text-xs"
-                                                    }`}
-                                                >
-                                                    <span className="font-medium text-foreground">
-                                                        {msgDisplayName}
-                                                    </span>
-                                                    {message.senderPronouns && (
-                                                        <span className="italic">
-                                                            (
-                                                            {
-                                                                message.senderPronouns
-                                                            }
-                                                            )
-                                                        </span>
-                                                    )}
-                                                    <span>
-                                                        {formatMessageTimestamp(
-                                                            message.$createdAt,
-                                                        )}
-                                                    </span>
-                                                    {message.editedAt && (
-                                                        <span className="italic">
-                                                            (edited)
-                                                        </span>
-                                                    )}
-                                                    {removed && (
-                                                        <span className="text-destructive">
-                                                            (removed)
-                                                        </span>
-                                                    )}
-                                                    {isPinned && (
-                                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                                                            <Pin className="h-3 w-3" />
-                                                            Pinned
-                                                        </span>
-                                                    )}
-                                                    {isEditing && (
-                                                        <span className="font-medium text-blue-600 dark:text-blue-400">
-                                                            Editing...
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {message.replyTo && (
-                                                    <div
-                                                        className={`mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 ${
-                                                            compactMessages
-                                                                ? "px-2 py-1 text-[11px]"
-                                                                : "px-3 py-1.5 text-xs"
-                                                        }`}
-                                                    >
-                                                        <div className="font-medium text-muted-foreground">
-                                                            Replying to{" "}
-                                                            {message.replyTo
-                                                                .senderDisplayName ||
-                                                                "Unknown"}
-                                                        </div>
-                                                        <div className="line-clamp-1 text-muted-foreground/80">
-                                                            {
-                                                                message.replyTo
-                                                                    .text
-                                                            }
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className="flex items-start gap-2">
-                                                    <div
-                                                        className={`flex-1 wrap-break-word ${
-                                                            compactMessages
-                                                                ? "space-y-1 text-xs"
-                                                                : "space-y-2 text-sm"
-                                                        }`}
-                                                    >
-                                                        {message.imageUrl &&
-                                                            !removed && (
-                                                                <div className="mt-1">
-                                                                    <ImageWithSkeleton
-                                                                        alt="Uploaded image"
-                                                                        className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
-                                                                        onClick={() => {
-                                                                            if (
-                                                                                message.imageUrl
-                                                                            ) {
-                                                                                setViewingImage(
-                                                                                    {
-                                                                                        url: message.imageUrl,
-                                                                                        alt: `Image from ${msgDisplayName}`,
-                                                                                    },
-                                                                                );
-                                                                            }
-                                                                        }}
-                                                                        onKeyDown={(
-                                                                            e,
-                                                                        ) => {
-                                                                            if (
-                                                                                e.key ===
-                                                                                    "Enter" ||
-                                                                                e.key ===
-                                                                                    " "
-                                                                            ) {
-                                                                                e.preventDefault();
-                                                                                if (
-                                                                                    message.imageUrl
-                                                                                ) {
-                                                                                    setViewingImage(
-                                                                                        {
-                                                                                            url: message.imageUrl,
-                                                                                            alt: `Image from ${msgDisplayName}`,
-                                                                                        },
-                                                                                    );
-                                                                                }
-                                                                            }
-                                                                        }}
-                                                                        role="button"
-                                                                        src={
-                                                                            message.imageUrl
-                                                                        }
-                                                                        tabIndex={
-                                                                            0
-                                                                        }
-                                                                    />
-                                                                </div>
-                                                            )}
-                                                        {message.attachments &&
-                                                            message.attachments
-                                                                .length > 0 &&
-                                                            !removed && (
-                                                                <div className="mt-1 space-y-2">
-                                                                    {message.attachments.map(
-                                                                        (
-                                                                            attachment,
-                                                                            idx,
-                                                                        ) => (
-                                                                            <FileAttachmentDisplay
-                                                                                key={`${message.$id}-${attachment.fileId}-${idx}`}
-                                                                                attachment={
-                                                                                    attachment
-                                                                                }
-                                                                            />
-                                                                        ),
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        {removed ? (
-                                                            <span className="italic opacity-70">
-                                                                Message removed
-                                                            </span>
-                                                        ) : message.text ? (
-                                                            <p
-                                                                className={
-                                                                    compactMessages
-                                                                        ? "text-xs"
-                                                                        : "text-sm"
-                                                                }
-                                                            >
-                                                                <MessageWithMentions
-                                                                    text={
-                                                                        message.text
-                                                                    }
-                                                                    mentions={
-                                                                        message.mentions
-                                                                    }
-                                                                    knownNames={
-                                                                        knownDisplayNames
-                                                                    }
-                                                                    currentUserId={
-                                                                        currentUserId
-                                                                    }
-                                                                    customEmojis={
-                                                                        customEmojis
-                                                                    }
-                                                                />
-                                                            </p>
-                                                        ) : null}
-                                                    </div>
-                                                </div>
-                                                {!removed &&
-                                                    message.reactions &&
-                                                    message.reactions.length >
-                                                        0 && (
-                                                        <div className="mt-1 flex flex-wrap gap-1">
-                                                            {message.reactions.map(
-                                                                (reaction) => (
-                                                                    <ReactionButton
-                                                                        key={
-                                                                            reaction.emoji
-                                                                        }
-                                                                        currentUserId={
-                                                                            currentUserId
-                                                                        }
-                                                                        reaction={
-                                                                            reaction
-                                                                        }
-                                                                        customEmojis={
-                                                                            customEmojis
-                                                                        }
-                                                                        onToggle={async (
-                                                                            emoji,
-                                                                            isAdding,
-                                                                        ) => {
-                                                                            try {
-                                                                                await toggleReaction(
-                                                                                    message.$id,
-                                                                                    emoji,
-                                                                                    isAdding,
-                                                                                    true,
-                                                                                );
-                                                                            } catch (error) {
-                                                                                if (
-                                                                                    process
-                                                                                        .env
-                                                                                        .NODE_ENV ===
-                                                                                    "development"
-                                                                                ) {
-                                                                                    console.error(
-                                                                                        "Failed to toggle DM reaction:",
-                                                                                        error,
-                                                                                    );
-                                                                                }
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                {typeof message.threadMessageCount ===
-                                                    "number" &&
-                                                    message.threadMessageCount >
-                                                        0 &&
-                                                    onOpenThread && (
-                                                        <button
-                                                            className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                                                            onClick={() => {
-                                                                void onOpenThread(
-                                                                    message,
-                                                                );
-                                                            }}
-                                                            type="button"
-                                                        >
-                                                            <MessageSquare className="h-3 w-3" />
-                                                            {
-                                                                message.threadMessageCount
-                                                            }{" "}
-                                                            {message.threadMessageCount ===
-                                                            1
-                                                                ? "reply"
-                                                                : "replies"}
-                                                        </button>
-                                                    )}
-
-                                                {!removed && (
-                                                    <div
-                                                        className={`mt-1 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMine ? "justify-end" : ""}`}
-                                                    >
-                                                        <ReactionPicker
-                                                            customEmojis={
-                                                                customEmojis
-                                                            }
-                                                            onUploadCustomEmoji={
-                                                                uploadEmoji
-                                                            }
-                                                            onSelectEmoji={async (
-                                                                emoji,
-                                                            ) => {
-                                                                try {
-                                                                    await toggleReaction(
-                                                                        message.$id,
-                                                                        emoji,
-                                                                        true,
-                                                                        true,
-                                                                    );
-                                                                } catch (error) {
-                                                                    if (
-                                                                        process
-                                                                            .env
-                                                                            .NODE_ENV ===
-                                                                        "development"
-                                                                    ) {
-                                                                        console.error(
-                                                                            "Failed to add DM reaction:",
-                                                                            error,
-                                                                        );
-                                                                    }
-                                                                }
-                                                            }}
-                                                        />
-                                                        <Button
-                                                            aria-label="Reply"
-                                                            onClick={() =>
-                                                                startReply(
-                                                                    message,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            type="button"
-                                                            variant="ghost"
-                                                        >
-                                                            <Reply className="h-4 w-4" />
-                                                        </Button>
-                                                        {onOpenThread && (
-                                                            <Button
-                                                                aria-label="Start thread"
-                                                                onClick={() => {
-                                                                    void onOpenThread(
-                                                                        message,
-                                                                    );
-                                                                }}
-                                                                size="sm"
-                                                                type="button"
-                                                                variant="ghost"
-                                                            >
-                                                                <MessageSquare className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                        {onTogglePinMessage && (
-                                                            <Button
-                                                                aria-label={
-                                                                    isPinned
-                                                                        ? "Unpin message"
-                                                                        : "Pin message"
-                                                                }
-                                                                onClick={() => {
-                                                                    void onTogglePinMessage(
-                                                                        message,
-                                                                    );
-                                                                }}
-                                                                size="sm"
-                                                                type="button"
-                                                                variant="ghost"
-                                                            >
-                                                                <Pin
-                                                                    className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
-                                                                />
-                                                            </Button>
-                                                        )}
-                                                        {isMine && (
-                                                            <>
-                                                                <Button
-                                                                    onClick={() =>
-                                                                        startEdit(
-                                                                            message,
-                                                                        )
-                                                                    }
-                                                                    size="sm"
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                >
-                                                                    <Pencil className="h-4 w-4" />
-                                                                </Button>
-                                                                {isDeleting ? (
-                                                                    <>
-                                                                        <Button
-                                                                            onClick={() => {
-                                                                                void handleDelete(
-                                                                                    message.$id,
-                                                                                );
-                                                                            }}
-                                                                            size="sm"
-                                                                            type="button"
-                                                                            variant="destructive"
-                                                                        >
-                                                                            Confirm
-                                                                        </Button>
-                                                                        <Button
-                                                                            onClick={() =>
-                                                                                setDeleteConfirmId(
-                                                                                    null,
-                                                                                )
-                                                                            }
-                                                                            size="sm"
-                                                                            type="button"
-                                                                            variant="ghost"
-                                                                        >
-                                                                            Cancel
-                                                                        </Button>
-                                                                    </>
-                                                                ) : (
-                                                                    <Button
-                                                                        onClick={() =>
-                                                                            confirmDelete(
-                                                                                message.$id,
-                                                                            )
-                                                                        }
-                                                                        size="sm"
-                                                                        type="button"
-                                                                        variant="ghost"
-                                                                    >
-                                                                        <Trash2 className="h-4 w-4" />
-                                                                    </Button>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {isDeleting && (
-                                                    <div className="mt-2 flex items-center gap-2 rounded border border-destructive bg-destructive/10 p-2">
-                                                        <span className="flex-1 text-sm">
-                                                            Delete this message?
-                                                        </span>
-                                                        <Button
-                                                            onClick={() =>
-                                                                void handleDelete(
-                                                                    message.$id,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            variant="destructive"
-                                                        >
-                                                            Delete
-                                                        </Button>
-                                                        <Button
-                                                            onClick={() =>
-                                                                setDeleteConfirmId(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            variant="outline"
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                {surfaceMessages.map((message) => (
+                                    <ChatSurfaceMessageItem
+                                        currentUserId={currentUserId}
+                                        customEmojis={customEmojis}
+                                        deleteConfirmId={deleteConfirmId}
+                                        editingMessageId={editingMessageId}
+                                        key={message.id}
+                                        knownNames={knownDisplayNames}
+                                        message={message}
+                                        messageDensity={messageDensity}
+                                        onOpenImageViewer={(imageUrl) => {
+                                            setViewingImage({
+                                                url: imageUrl,
+                                                alt: `Image from ${message.authorLabel}`,
+                                            });
+                                        }}
+                                        onOpenProfileModal={onOpenProfileModal}
+                                        onOpenThread={
+                                            onOpenThread
+                                                ? async (surfaceMessage) => {
+                                                      const dmMessage =
+                                                          messagesById.get(
+                                                              surfaceMessage.sourceMessageId,
+                                                          );
+                                                      if (dmMessage) {
+                                                          await onOpenThread(
+                                                              dmMessage,
+                                                          );
+                                                      }
+                                                  }
+                                                : undefined
+                                        }
+                                        onRemove={(id) => {
+                                            void handleDelete(id);
+                                        }}
+                                        onStartEdit={(surfaceMessage) => {
+                                            const dmMessage = messagesById.get(
+                                                surfaceMessage.sourceMessageId,
+                                            );
+                                            if (dmMessage) {
+                                                startEdit(dmMessage);
+                                            }
+                                        }}
+                                        onStartReply={(surfaceMessage) => {
+                                            const dmMessage = messagesById.get(
+                                                surfaceMessage.sourceMessageId,
+                                            );
+                                            if (dmMessage) {
+                                                startReply(dmMessage);
+                                            }
+                                        }}
+                                        onTogglePin={
+                                            onTogglePinMessage
+                                                ? async (surfaceMessage) => {
+                                                      const dmMessage =
+                                                          messagesById.get(
+                                                              surfaceMessage.sourceMessageId,
+                                                          );
+                                                      if (dmMessage) {
+                                                          await onTogglePinMessage(
+                                                              dmMessage,
+                                                          );
+                                                      }
+                                                  }
+                                                : undefined
+                                        }
+                                        onToggleReaction={async (
+                                            messageId,
+                                            emoji,
+                                            isAdding,
+                                        ) => {
+                                            await toggleReaction(
+                                                messageId,
+                                                emoji,
+                                                isAdding,
+                                                true,
+                                            );
+                                        }}
+                                        onUploadCustomEmoji={uploadEmoji}
+                                        pinnedMessageIds={pinnedMessageIds}
+                                        setDeleteConfirmId={setDeleteConfirmId}
+                                    />
+                                ))}
                                 <div
                                     aria-live="polite"
                                     className={[
