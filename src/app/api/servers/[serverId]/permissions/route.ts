@@ -1,107 +1,120 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Client, Databases, Query } from "node-appwrite";
-import { getEffectivePermissions } from "@/lib/permissions";
-import type { Role, ChannelPermissionOverride } from "@/lib/types";
+import { Query } from "node-appwrite";
 
-const endpoint = process.env.APPWRITE_ENDPOINT;
-const project = process.env.APPWRITE_PROJECT_ID;
-const apiKey = process.env.APPWRITE_API_KEY;
-const databaseId = process.env.APPWRITE_DATABASE_ID || "main";
-const rolesCollectionId = "roles";
-const roleAssignmentsCollectionId = "role_assignments";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
+import { getEffectivePermissions } from "@/lib/permissions";
+import type { ChannelPermissionOverride } from "@/lib/types";
+import { logger } from "@/lib/newrelic-utils";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+
+const env = getEnvConfig();
+const databaseId = env.databaseId || "main";
 const channelPermissionOverridesCollectionId = "channel_permission_overrides";
 
-if (!endpoint || !project || !apiKey) {
-	throw new Error("Missing Appwrite configuration");
+function getDatabases() {
+    return getServerClient().databases;
 }
 
-// Initialize Appwrite client
-const client = new Client().setEndpoint(endpoint).setProject(project);
-if (
-	typeof (client as unknown as { setKey?: (k: string) => void }).setKey ===
-	"function"
-) {
-	(client as unknown as { setKey: (k: string) => void }).setKey(apiKey);
+function mapOverride(
+    doc: Record<string, unknown>,
+    channelId: string,
+): ChannelPermissionOverride {
+    return {
+        $id: String(doc.$id),
+        channelId,
+        roleId: typeof doc.roleId === "string" ? doc.roleId : "",
+        userId: typeof doc.userId === "string" ? doc.userId : "",
+        allow: Array.isArray(doc.allow)
+            ? (doc.allow as ChannelPermissionOverride["allow"])
+            : [],
+        deny: Array.isArray(doc.deny)
+            ? (doc.deny as ChannelPermissionOverride["deny"])
+            : [],
+        $createdAt: String(doc.$createdAt ?? ""),
+    };
 }
-const databases = new Databases(client);
 
 // GET: Get user's effective permissions for a server/channel
 export async function GET(
-	request: NextRequest,
-	{ params }: { params: Promise<{ serverId: string }> }
+    request: NextRequest,
+    { params }: { params: Promise<{ serverId: string }> },
 ) {
-	try {
-		const { serverId } = await params;
-		const { searchParams } = new URL(request.url);
-		const channelId = searchParams.get("channelId");
-		const userId = searchParams.get("userId");
+    try {
+        const databases = getDatabases();
+        const { serverId } = await params;
+        const { searchParams } = new URL(request.url);
+        const channelId = searchParams.get("channelId");
+        const userId = searchParams.get("userId");
 
-		if (!serverId) {
-			return NextResponse.json(
-				{ error: "serverId is required" },
-				{ status: 400 }
-			);
-		}
+        if (!serverId) {
+            return NextResponse.json(
+                { error: "serverId is required" },
+                { status: 400 },
+            );
+        }
 
-		if (!userId) {
-			return NextResponse.json(
-				{ error: "userId is required" },
-				{ status: 400 }
-			);
-		}
+        if (!userId) {
+            return NextResponse.json(
+                { error: "userId is required" },
+                { status: 400 },
+            );
+        }
 
-		// Get user's role assignments for this server
-		const assignmentsResponse = await databases.listDocuments(
-			databaseId,
-			roleAssignmentsCollectionId,
-			[
-				Query.equal("serverId", serverId),
-				Query.equal("userId", userId),
-				Query.limit(100),
-			]
-		);
+        const serverAccess = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            userId,
+        );
 
-		const roleIds = assignmentsResponse.documents.map(
-			(a) => a.roleId as string
-		);
+        if (!channelId || !serverAccess.isMember) {
+            return NextResponse.json(serverAccess.permissions);
+        }
 
-		// Get the role definitions
-		let roles: Role[] = [];
-		if (roleIds.length > 0) {
-			const rolesResponse = await databases.listDocuments(
-				databaseId,
-				rolesCollectionId,
-				[Query.equal("$id", roleIds), Query.limit(100)]
-			);
-			roles = rolesResponse.documents as unknown as Role[];
-		}
+        if (
+            serverAccess.isServerOwner ||
+            serverAccess.permissions.administrator
+        ) {
+            return NextResponse.json(serverAccess.permissions);
+        }
 
-		// Get channel permission overrides if channelId is provided
-		let channelOverrides: ChannelPermissionOverride[] = [];
-		if (channelId && roleIds.length > 0) {
-			const overridesResponse = await databases.listDocuments(
-				databaseId,
-				channelPermissionOverridesCollectionId,
-				[
-					Query.equal("channelId", channelId),
-					Query.equal("roleId", roleIds),
-					Query.limit(100),
-				]
-			);
-			channelOverrides =
-				overridesResponse.documents as unknown as ChannelPermissionOverride[];
-		}
+        const overridesResponse = await databases.listDocuments(
+            databaseId,
+            channelPermissionOverridesCollectionId,
+            [Query.equal("channelId", channelId), Query.limit(1000)],
+        );
 
-		// Calculate effective permissions
-		const effectivePerms = getEffectivePermissions(roles, channelOverrides);
+        const applicableOverrides: ChannelPermissionOverride[] = [];
+        for (const document of overridesResponse.documents) {
+            const override = mapOverride(
+                document as Record<string, unknown>,
+                channelId,
+            );
+            const appliesToUser = override.userId === userId;
+            const roleId = override.roleId ?? "";
+            const appliesToRole =
+                roleId !== "" && serverAccess.roleIds.includes(roleId);
 
-		// Return all permissions directly from effectivePerms
-		return NextResponse.json(effectivePerms);
-	} catch (error) {
-		console.error("Failed to get permissions:", error);
-		return NextResponse.json(
-			{ error: "Failed to get permissions" },
-			{ status: 500 }
-		);
-	}
+            if (appliesToUser || appliesToRole) {
+                applicableOverrides.push(override);
+            }
+        }
+
+        const effectivePerms = getEffectivePermissions(
+            serverAccess.roles,
+            applicableOverrides,
+            serverAccess.isServerOwner,
+        );
+
+        return NextResponse.json(effectivePerms);
+    } catch (error) {
+        logger.error("Failed to get permissions", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            { error: "Failed to get permissions" },
+            { status: 500 },
+        );
+    }
 }

@@ -6,235 +6,262 @@ import { GlobalSearch } from "../../components/global-search";
 
 // Mock fetch
 global.fetch = vi.fn((url: string | URL) => {
-	// Mock custom emojis endpoint
-	if (typeof url === 'string' && url.includes('/api/custom-emojis')) {
-		return Promise.resolve({
-			ok: true,
-			json: () => Promise.resolve([]),
-		} as Response);
-	}
-	// Default mock for other endpoints
-	return Promise.resolve({
-		ok: true,
-		json: () => Promise.resolve({}),
-	} as Response);
+    // Mock custom emojis endpoint
+    if (typeof url === "string" && url.includes("/api/custom-emojis")) {
+        return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+        } as Response);
+    }
+    // Default mock for other endpoints
+    return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+    } as Response);
 });
 
 // Helper to render with QueryClientProvider
 function renderWithQueryClient(component: React.ReactElement<any>) {
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				retry: false,
-			},
-		},
-	});
-	
-	return render(
-		<QueryClientProvider client={queryClient}>
-			{component}
-		</QueryClientProvider>
-	);
+    const queryClient = new QueryClient({
+        defaultOptions: {
+            queries: {
+                retry: false,
+            },
+        },
+    });
+
+    return render(
+        <QueryClientProvider client={queryClient}>
+            {component}
+        </QueryClientProvider>,
+    );
 }
 
 describe("GlobalSearch", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
 
-	it("should render search dialog when open", () => {
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+    it("should render search dialog when open", () => {
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		expect(screen.getByText("Search Messages")).toBeInTheDocument();
-		expect(
-			screen.getByPlaceholderText(/Search\.\.\./i),
-		).toBeInTheDocument();
-	});
+        expect(screen.getByText("Search Messages")).toBeInTheDocument();
+        expect(
+            screen.getByPlaceholderText(/Search\.\.\./i),
+        ).toBeInTheDocument();
+    });
 
-	it("should not render when closed", () => {
-		renderWithQueryClient(<GlobalSearch open={false} onOpenChange={vi.fn()} />);
+    it("should not render when closed", () => {
+        renderWithQueryClient(
+            <GlobalSearch open={false} onOpenChange={vi.fn()} />,
+        );
 
-		expect(screen.queryByText("Search Messages")).not.toBeInTheDocument();
-	});
+        expect(screen.queryByText("Search Messages")).not.toBeInTheDocument();
+    });
 
-	it("should display filter hints", () => {
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+    it("should display filter hints", () => {
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		expect(screen.getByText("from:@username")).toBeInTheDocument();
-		expect(screen.getByText("in:#channel")).toBeInTheDocument();
-		expect(screen.getByText("has:image")).toBeInTheDocument();
-		expect(screen.getByText("mentions:me")).toBeInTheDocument();
-	});
+        expect(screen.getByText("from:@username")).toBeInTheDocument();
+        expect(screen.getByText("in:#channel")).toBeInTheDocument();
+        expect(screen.getByText("has:image")).toBeInTheDocument();
+        expect(screen.getByText("mentions:me")).toBeInTheDocument();
+    });
 
-	it("should show validation message for short queries", async () => {
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+    it("should show validation message for short queries", async () => {
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "a");
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "a");
 
-		expect(
-			screen.getByText("Type at least 2 characters to search"),
-		).toBeInTheDocument();
-	});
+        expect(
+            screen.getByText("Type at least 2 characters to search"),
+        ).toBeInTheDocument();
+    });
 
-	it("should search when typing 2+ characters", async () => {
-		vi.mocked(global.fetch).mockResolvedValueOnce({
-			ok: true,
-			json: async () => ({ results: [] }),
-		} as Response);
+    it("should search when typing 2+ characters", async () => {
+        vi.mocked(global.fetch).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ results: [] }),
+        } as Response);
 
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "test");
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "test");
 
-		await waitFor(() => {
-			expect(global.fetch).toHaveBeenCalledWith(
-				expect.stringContaining("/api/search/messages?q=test"),
-			);
-		});
-	});
+        await waitFor(() => {
+            expect(vi.mocked(global.fetch).mock.calls).toEqual(
+                expect.arrayContaining([
+                    [
+                        expect.stringContaining("/api/search/messages?q=test"),
+                        expect.objectContaining({
+                            signal: expect.any(AbortSignal),
+                        }),
+                    ],
+                ]),
+            );
+        });
+    });
 
-	it("should display search results", async () => {
-		vi.mocked(global.fetch).mockImplementation((url: string | URL) => {
-			const urlString = typeof url === 'string' ? url : url.toString();
-			
-			// Mock custom emojis endpoint
-			if (urlString.includes('/api/custom-emojis')) {
-				return Promise.resolve({
-					ok: true,
-					json: () => Promise.resolve([]),
-				} as Response);
-			}
-			
-			// Mock search endpoint
-			if (urlString.includes('/api/search/messages')) {
-				return Promise.resolve({
-					ok: true,
-					json: async () => ({
-						results: [
-							{
-								type: "channel",
-								message: {
-									$id: "msg-1",
-									userId: "user-1",
-									text: "Test message",
-									$createdAt: new Date().toISOString(),
-									channelId: "channel-1",
-									displayName: "Test User",
-								},
-							},
-						],
-					}),
-				} as Response);
-			}
-			
-			// Default fallback
-			return Promise.resolve({
-				ok: true,
-				json: () => Promise.resolve({}),
-			} as Response);
-		});
+    it("should display search results", async () => {
+        vi.mocked(global.fetch).mockImplementation((url: string | URL) => {
+            const urlString = typeof url === "string" ? url : url.toString();
 
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+            // Mock custom emojis endpoint
+            if (urlString.includes("/api/custom-emojis")) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve([]),
+                } as Response);
+            }
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "test");
+            // Mock search endpoint
+            if (urlString.includes("/api/search/messages")) {
+                return Promise.resolve({
+                    ok: true,
+                    json: async () => ({
+                        results: [
+                            {
+                                type: "channel",
+                                message: {
+                                    $id: "msg-1",
+                                    userId: "user-1",
+                                    text: "Test message",
+                                    $createdAt: new Date().toISOString(),
+                                    channelId: "channel-1",
+                                    displayName: "Test User",
+                                },
+                            },
+                        ],
+                    }),
+                } as Response);
+            }
 
-		await waitFor(() => {
-			expect(screen.getByText("Test message")).toBeInTheDocument();
-		});
-	});
+            // Default fallback
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({}),
+            } as Response);
+        });
 
-	it("should show 'No results found' when no matches", async () => {
-		vi.mocked(global.fetch).mockResolvedValueOnce({
-			ok: true,
-			json: async () => ({ results: [] }),
-		} as Response);
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "test");
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "nonexistent");
+        await waitFor(() => {
+            expect(screen.getByText("Test message")).toBeInTheDocument();
+        });
+    });
 
-		await waitFor(() => {
-			expect(screen.getByText("No results found")).toBeInTheDocument();
-		});
-	});
+    it("should show 'No results found' when no matches", async () => {
+        vi.mocked(global.fetch).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ results: [] }),
+        } as Response);
 
-	// Note: Error display test removed due to timing issues with debouncing
-	// The error handling logic is tested in API tests
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-	it("should clear search when clear button is clicked", async () => {
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "nonexistent");
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "test");
+        await waitFor(() => {
+            expect(screen.getByText("No results found")).toBeInTheDocument();
+        });
+    });
 
-		expect(input).toHaveValue("test");
+    // Note: Error display test removed due to timing issues with debouncing
+    // The error handling logic is tested in API tests
 
-		const clearButton = screen.getByRole("button", { name: /clear search/i });
-		await userEvent.click(clearButton);
+    it("should clear search when clear button is clicked", async () => {
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		expect(input).toHaveValue("");
-	});
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "test");
 
-	it("should debounce search queries", async () => {
-		vi.mocked(global.fetch).mockResolvedValue({
-			ok: true,
-			json: async () => ({ results: [] }),
-		} as Response);
+        expect(input).toHaveValue("test");
 
-		renderWithQueryClient(<GlobalSearch open={true} onOpenChange={vi.fn()} />);
+        const clearButton = screen.getByRole("button", {
+            name: /clear search/i,
+        });
+        await userEvent.click(clearButton);
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		
-		// Type quickly
-		await userEvent.type(input, "test", { delay: 50 });
+        expect(input).toHaveValue("");
+    });
 
-		// Should only call fetch once after debounce
-		await waitFor(
-			() => {
-				expect(global.fetch).toHaveBeenCalledTimes(1);
-			},
-			{ timeout: 500 },
-		);
-	});
+    it("should debounce search queries", async () => {
+        vi.mocked(global.fetch).mockResolvedValue({
+            ok: true,
+            json: async () => ({ results: [] }),
+        } as Response);
 
-	it("should reset state when dialog closes", async () => {
-		const onOpenChange = vi.fn();
-		const queryClient = new QueryClient({
-			defaultOptions: {
-				queries: {
-					retry: false,
-				},
-			},
-		});
-		
-		const { rerender } = render(
-			<QueryClientProvider client={queryClient}>
-				<GlobalSearch open={true} onOpenChange={onOpenChange} />
-			</QueryClientProvider>
-		);
+        renderWithQueryClient(
+            <GlobalSearch open={true} onOpenChange={vi.fn()} />,
+        );
 
-		const input = screen.getByPlaceholderText(/Search\.\.\./i);
-		await userEvent.type(input, "test");
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
 
-		// Close the dialog
-		rerender(
-			<QueryClientProvider client={queryClient}>
-				<GlobalSearch open={false} onOpenChange={onOpenChange} />
-			</QueryClientProvider>
-		);
+        // Type quickly
+        await userEvent.type(input, "test", { delay: 50 });
 
-		// Reopen the dialog
-		rerender(
-			<QueryClientProvider client={queryClient}>
-				<GlobalSearch open={true} onOpenChange={onOpenChange} />
-			</QueryClientProvider>
-		);
+        // Should only call fetch once after debounce
+        await waitFor(
+            () => {
+                expect(global.fetch).toHaveBeenCalledTimes(1);
+            },
+            { timeout: 500 },
+        );
+    });
 
-		const newInput = screen.getByPlaceholderText(/Search\.\.\./i);
-		expect(newInput).toHaveValue("");
-	});
+    it("should reset state when dialog closes", async () => {
+        const onOpenChange = vi.fn();
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    retry: false,
+                },
+            },
+        });
+
+        const { rerender } = render(
+            <QueryClientProvider client={queryClient}>
+                <GlobalSearch open={true} onOpenChange={onOpenChange} />
+            </QueryClientProvider>,
+        );
+
+        const input = screen.getByPlaceholderText(/Search\.\.\./i);
+        await userEvent.type(input, "test");
+
+        // Close the dialog
+        rerender(
+            <QueryClientProvider client={queryClient}>
+                <GlobalSearch open={false} onOpenChange={onOpenChange} />
+            </QueryClientProvider>,
+        );
+
+        // Reopen the dialog
+        rerender(
+            <QueryClientProvider client={queryClient}>
+                <GlobalSearch open={true} onOpenChange={onOpenChange} />
+            </QueryClientProvider>,
+        );
+
+        const newInput = screen.getByPlaceholderText(/Search\.\.\./i);
+        expect(newInput).toHaveValue("");
+    });
 });

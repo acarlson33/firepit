@@ -9,7 +9,10 @@ import {
 } from "./appwrite-core";
 import type { Channel, ChannelCategory, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
-import { getActualMemberCounts } from "./membership-count";
+import {
+    getActualMemberCount,
+    getActualMemberCounts,
+} from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;

@@ -130,7 +130,7 @@ export function SettingsSectionNav({
                     >
                         <SelectTrigger
                             aria-label="Jump to settings section"
-                            className="w-[13rem] max-w-full rounded-2xl border-border/60 bg-background/80"
+                            className="w-52 max-w-full rounded-2xl border-border/60 bg-background/80"
                         >
                             <SelectValue placeholder="Choose a section" />
                         </SelectTrigger>

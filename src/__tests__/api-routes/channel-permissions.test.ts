@@ -4,12 +4,23 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockGetServerSession, mockGetServerPermissionsForUser } = vi.hoisted(
-    () => ({
-        mockGetServerSession: vi.fn(),
-        mockGetServerPermissionsForUser: vi.fn(),
-    }),
-);
+const {
+    mockGetServerSession,
+    mockGetServerPermissionsForUser,
+    mockListDocuments,
+    mockCreateDocument,
+    mockUpdateDocument,
+    mockDeleteDocument,
+    mockGetDocument,
+} = vi.hoisted(() => ({
+    mockGetServerSession: vi.fn(),
+    mockGetServerPermissionsForUser: vi.fn(),
+    mockListDocuments: vi.fn(),
+    mockCreateDocument: vi.fn(),
+    mockUpdateDocument: vi.fn(),
+    mockDeleteDocument: vi.fn(),
+    mockGetDocument: vi.fn(),
+}));
 
 vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
@@ -19,23 +30,21 @@ vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
 }));
 
+vi.mock("@/lib/appwrite-server", () => ({
+    getServerClient: vi.fn(() => ({
+        databases: {
+            listDocuments: mockListDocuments,
+            createDocument: mockCreateDocument,
+            updateDocument: mockUpdateDocument,
+            deleteDocument: mockDeleteDocument,
+            getDocument: mockGetDocument,
+        },
+    })),
+}));
+
 // Mock node-appwrite
 vi.mock("node-appwrite", () => {
-    const mockDatabases = {
-        listDocuments: vi.fn(),
-        createDocument: vi.fn(),
-        updateDocument: vi.fn(),
-        deleteDocument: vi.fn(),
-        getDocument: vi.fn(),
-    };
-
     return {
-        Client: vi.fn(() => ({
-            setEndpoint: vi.fn().mockReturnThis(),
-            setProject: vi.fn().mockReturnThis(),
-            setKey: vi.fn().mockReturnThis(),
-        })),
-        Databases: vi.fn(() => mockDatabases),
         Query: {
             equal: vi.fn((field, value) => `equal(${field},${value})`),
             limit: vi.fn((value) => `limit(${value})`),
@@ -45,8 +54,6 @@ vi.mock("node-appwrite", () => {
         },
     };
 });
-
-import { Databases } from "node-appwrite";
 
 let GET: typeof import("@/app/api/channel-permissions/route").GET;
 let POST: typeof import("@/app/api/channel-permissions/route").POST;
@@ -74,9 +81,6 @@ beforeAll(async () => {
 });
 
 describe("GET /api/channel-permissions", () => {
-    let mockListDocuments: any;
-    let mockGetDocument: any;
-
     beforeEach(async () => {
         vi.clearAllMocks();
         ensureEnv();
@@ -85,9 +89,6 @@ describe("GET /api/channel-permissions", () => {
             isMember: true,
             permissions: { manageChannels: true },
         });
-        const databases = new Databases({} as any);
-        mockListDocuments = databases.listDocuments as any;
-        mockGetDocument = databases.getDocument as any;
         mockGetDocument.mockResolvedValue({
             $id: "channel1",
             serverId: "server-1",
@@ -179,10 +180,6 @@ describe("GET /api/channel-permissions", () => {
 });
 
 describe("POST /api/channel-permissions", () => {
-    let mockCreateDocument: any;
-    let mockListDocuments: any;
-    let mockGetDocument: any;
-
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
@@ -191,10 +188,6 @@ describe("POST /api/channel-permissions", () => {
             isMember: true,
             permissions: { manageChannels: true },
         });
-        const databases = new Databases({} as any);
-        mockCreateDocument = databases.createDocument as any;
-        mockListDocuments = databases.listDocuments as any;
-        mockGetDocument = databases.getDocument as any;
         mockGetDocument.mockResolvedValue({
             $id: "channel1",
             serverId: "server-1",
@@ -344,9 +337,6 @@ describe("POST /api/channel-permissions", () => {
 });
 
 describe("PUT /api/channel-permissions", () => {
-    let mockUpdateDocument: any;
-    let mockGetDocument: any;
-
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
@@ -355,9 +345,6 @@ describe("PUT /api/channel-permissions", () => {
             isMember: true,
             permissions: { manageChannels: true },
         });
-        const databases = new Databases({} as any);
-        mockUpdateDocument = databases.updateDocument as any;
-        mockGetDocument = databases.getDocument as any;
         mockGetDocument
             .mockResolvedValueOnce({
                 $id: "override1",
@@ -417,9 +404,6 @@ describe("PUT /api/channel-permissions", () => {
 });
 
 describe("DELETE /api/channel-permissions", () => {
-    let mockDeleteDocument: any;
-    let mockGetDocument: any;
-
     beforeEach(() => {
         vi.clearAllMocks();
         ensureEnv();
@@ -428,9 +412,6 @@ describe("DELETE /api/channel-permissions", () => {
             isMember: true,
             permissions: { manageChannels: true },
         });
-        const databases = new Databases({} as any);
-        mockDeleteDocument = databases.deleteDocument as any;
-        mockGetDocument = databases.getDocument as any;
         mockGetDocument
             .mockResolvedValueOnce({
                 $id: "override1",
