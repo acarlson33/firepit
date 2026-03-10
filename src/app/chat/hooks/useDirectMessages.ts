@@ -11,7 +11,6 @@ import {
     deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
 import type { DirectMessage, RelationshipStatus } from "@/lib/types";
-import type { PinnedMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {

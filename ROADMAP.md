@@ -77,11 +77,10 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Rich file attachments beyond images
 - Message search across channels and DMs
 - Typing indicators across channels and conversations
-- Closed remaining UX gaps by merging chat clients
+- Consistent deep-link navigation from search results, pinned messages, and thread entry points across channel and DM chat
 
 ### Planned
 
-- Continue improving navigation into search results, pinned items, and thread state so parity holds across all message surfaces
 - Add clearer parity tracking for message-history affordances that users expect in Discord-like products
 
 ### Investigating
