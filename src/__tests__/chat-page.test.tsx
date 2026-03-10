@@ -141,6 +141,7 @@ const mockUseMessages = vi.fn(() => ({
     remove: vi.fn(),
     replyingToMessage: null,
     send: vi.fn(),
+    sending: false,
     sendThreadReply: vi.fn(),
     setMentionedNames: vi.fn(),
     shouldShowLoadOlder: () => false,
@@ -249,8 +250,9 @@ describe("ChatPage", () => {
         expect(
             screen.getByRole("heading", { name: "general" }),
         ).toBeInTheDocument();
+        expect(screen.getByText("Pinned Messages")).toBeInTheDocument();
         expect(
-            screen.getByRole("button", { name: "View pinned messages" }),
+            screen.getByRole("heading", { name: "Thread" }),
         ).toBeInTheDocument();
         expect(screen.getByTestId("chat-surface-panel")).toHaveAttribute(
             "data-show-surface",

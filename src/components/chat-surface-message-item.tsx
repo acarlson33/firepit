@@ -5,6 +5,7 @@ import {
     MessageSquareMore,
     Pencil,
     Pin,
+    Reply,
     Trash2,
 } from "lucide-react";
 
@@ -241,7 +242,7 @@ export function ChatSurfaceMessageItem({
                     )}
 
                 {!message.threadId &&
-                    message.threadReplyCount &&
+                    typeof message.threadReplyCount === "number" &&
                     message.threadReplyCount > 0 &&
                     onOpenThread && (
                         <ThreadIndicator
@@ -291,7 +292,7 @@ export function ChatSurfaceMessageItem({
                             type="button"
                             variant="ghost"
                         >
-                            <MessageSquare className="h-4 w-4" />
+                            <Reply className="h-4 w-4" />
                         </Button>
                         {!message.threadId && onOpenThread && (
                             <Button

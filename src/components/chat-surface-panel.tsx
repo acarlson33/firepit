@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type {
     ClipboardEvent,
     FormEvent,
@@ -130,6 +131,9 @@ export function ChatSurfacePanel({
     composer,
 }: ChatSurfacePanelProps) {
     const compactMessages = messageDensity === "compact";
+    const composerContainerRef = useRef<HTMLDivElement>(null);
+    const previousSendingRef = useRef(false);
+    const shouldScrollAfterSubmitRef = useRef(false);
     const typingUserList = Object.values(typingUsers ?? {});
     const typingLabel = typingUserList
         .map(
@@ -140,12 +144,82 @@ export function ChatSurfacePanel({
     const useVirtualScrolling =
         showSurface && surfaceMessages.length >= virtualizationThreshold;
 
+    function scrollMessageListToBottom() {
+        if (messageContainerRef?.current) {
+            messageContainerRef.current.scrollTop =
+                messageContainerRef.current.scrollHeight;
+        }
+    }
+
+    function scrollComposerIntoView(behavior: ScrollBehavior = "smooth") {
+        composerContainerRef.current?.scrollIntoView({
+            behavior,
+            block: "end",
+        });
+    }
+
+    useEffect(() => {
+        if (!composer) {
+            return;
+        }
+
+        if (
+            composer.selectedImagePreview ||
+            composer.fileAttachments.length > 0
+        ) {
+            requestAnimationFrame(() => {
+                scrollComposerIntoView();
+            });
+        }
+    }, [
+        composer,
+        composer?.fileAttachments.length,
+        composer?.selectedImagePreview,
+    ]);
+
+    useEffect(() => {
+        if (!shouldScrollAfterSubmitRef.current) {
+            return;
+        }
+
+        shouldScrollAfterSubmitRef.current = false;
+        requestAnimationFrame(() => {
+            scrollMessageListToBottom();
+            scrollComposerIntoView();
+        });
+    }, [surfaceMessages.length]);
+
+    useEffect(() => {
+        const isSending = Boolean(
+            composer?.sending || composer?.uploadingImage,
+        );
+        const wasSending = previousSendingRef.current;
+
+        previousSendingRef.current = isSending;
+
+        if (!wasSending || isSending) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            scrollMessageListToBottom();
+            scrollComposerIntoView();
+        });
+    }, [composer?.sending, composer?.uploadingImage]);
+
     async function handleSubmit(event?: FormEvent | KeyboardEvent) {
         event?.preventDefault?.();
         if (!composer) {
             return;
         }
+
+        shouldScrollAfterSubmitRef.current = true;
         await composer.onSubmit();
+
+        requestAnimationFrame(() => {
+            scrollMessageListToBottom();
+            scrollComposerIntoView();
+        });
     }
 
     if (!showSurface) {
@@ -274,7 +348,10 @@ export function ChatSurfacePanel({
             )}
 
             {composer && (
-                <div className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-4">
+                <div
+                    className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-4"
+                    ref={composerContainerRef}
+                >
                     {composer.replyingTo && (
                         <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm">
                             <div className="truncate">

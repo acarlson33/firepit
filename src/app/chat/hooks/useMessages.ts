@@ -52,6 +52,7 @@ export function useMessages({
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
+    const [sending, setSending] = useState<boolean>(false);
     const [oldestCursor, setOldestCursor] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState<boolean>(false);
     const [text, setText] = useState("");
@@ -689,6 +690,7 @@ export function useMessages({
             return;
         }
         try {
+            setSending(true);
             setText("");
             const replyToId = replyingToMessage?.$id;
             setReplyingToMessage(null);
@@ -761,6 +763,8 @@ export function useMessages({
             }
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to send");
+        } finally {
+            setSending(false);
         }
     }
 
@@ -910,6 +914,7 @@ export function useMessages({
         messages,
         surfaceMessages,
         loading,
+        sending,
         oldestCursor,
         hasMore,
         text,

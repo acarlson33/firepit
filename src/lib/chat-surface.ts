@@ -57,15 +57,25 @@ export type ChatSurfaceMessage = {
 function cloneReactions(
     reactions: Message["reactions"] | DirectMessage["reactions"],
 ): MessageReaction[] | undefined {
-    if (!reactions) {
+    if (!reactions || !Array.isArray(reactions)) {
         return undefined;
     }
 
-    return reactions.map((reaction) => ({
-        emoji: reaction.emoji,
-        userIds: [...reaction.userIds],
-        count: reaction.count,
-    }));
+    return reactions
+        .filter(
+            (reaction): reaction is MessageReaction =>
+                Boolean(
+                    reaction &&
+                        typeof reaction.emoji === "string" &&
+                        Array.isArray(reaction.userIds) &&
+                        typeof reaction.count === "number",
+                ),
+        )
+        .map((reaction) => ({
+            emoji: reaction.emoji,
+            userIds: [...reaction.userIds],
+            count: reaction.count,
+        }));
 }
 
 function createChannelContext(

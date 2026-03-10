@@ -218,4 +218,19 @@ describe("chat-surface adapters", () => {
         expect(channelMessage.threadParticipants).toEqual(["user-1"]);
         expect(channelMessage.reactions?.[0]?.userIds).toEqual(["user-2"]);
     });
+
+    it("tolerates malformed legacy reaction payloads", () => {
+        const legacyMessage = {
+            $id: "legacy-message",
+            userId: "user-1",
+            text: "Hello",
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            channelId: "channel-1",
+            reactions: {} as Message["reactions"],
+        } satisfies Omit<Message, "reactions"> & {
+            reactions: Message["reactions"];
+        };
+
+        expect(fromChannelMessage(legacyMessage).reactions).toBeUndefined();
+    });
 });

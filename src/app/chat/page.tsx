@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
 import { ChatSurfacePanel } from "@/components/chat-surface-panel";
+import { ChatThreadContent } from "@/components/chat-thread-content";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -23,6 +25,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
+import { adaptChannelMessages, fromChannelMessage } from "@/lib/chat-surface";
 import type { Channel, FileAttachment } from "@/lib/types";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
@@ -115,25 +118,6 @@ const MuteDialog = dynamic(
         ssr: false,
     },
 );
-const ThreadPanel = dynamic(
-    () =>
-        import("@/components/thread-panel").then((mod) => ({
-            default: mod.ThreadPanel,
-        })),
-    {
-        ssr: false,
-    },
-);
-const PinnedMessagesPanel = dynamic(
-    () =>
-        import("@/components/pinned-messages-panel").then((mod) => ({
-            default: mod.PinnedMessagesPanel,
-        })),
-    {
-        ssr: false,
-    },
-);
-
 // Lazy load interactive components that aren't always visible (Performance Optimization)
 const EmojiPicker = dynamic(
     () =>
@@ -221,11 +205,11 @@ export default function ChatPage() {
         id: string;
         name: string;
     }>({ open: false, type: "channel", id: "", name: "" });
-    const [showPinnedPanel, setShowPinnedPanel] = useState(false);
     const [canManageMessages, setCanManageMessages] = useState(false);
     const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<string[]>(
         [],
     );
+    const [threadReplyText, setThreadReplyText] = useState("");
     const _messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -500,6 +484,7 @@ export default function ChatPage() {
     const {
         messages,
         loading: _messagesLoading,
+        sending: channelSending,
         text,
         editingMessageId,
         replyingToMessage,
@@ -531,6 +516,27 @@ export default function ChatPage() {
         () => channelPins.map((item) => item.message.$id),
         [channelPins],
     );
+    const pinnedChannelMessages = useMemo(
+        () => channelPins.map((item) => item.message),
+        [channelPins],
+    );
+    const pinnedChannelSurfaceMessages = useMemo(
+        () => adaptChannelMessages(pinnedChannelMessages),
+        [pinnedChannelMessages],
+    );
+    const threadParentSurfaceMessage = useMemo(
+        () =>
+            activeThreadParent ? fromChannelMessage(activeThreadParent) : null,
+        [activeThreadParent],
+    );
+    const threadSurfaceMessages = useMemo(
+        () => adaptChannelMessages(_threadMessages),
+        [_threadMessages],
+    );
+
+    useEffect(() => {
+        setThreadReplyText("");
+    }, [activeThreadParent?.$id]);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -542,38 +548,6 @@ export default function ChatPage() {
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
     // Pin handlers
-    const handlePinMessage = useCallback(async (messageId: string) => {
-        try {
-            const res = await fetch(`/api/messages/${messageId}/pin`, {
-                method: "POST",
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                toast.error(data.error || "Failed to pin message");
-            } else {
-                toast.success("Message pinned");
-            }
-        } catch {
-            toast.error("Failed to pin message");
-        }
-    }, []);
-
-    const handleUnpinMessage = useCallback(async (messageId: string) => {
-        try {
-            const res = await fetch(`/api/messages/${messageId}/pin`, {
-                method: "DELETE",
-            });
-            if (!res.ok) {
-                const data = await res.json();
-                toast.error(data.error || "Failed to unpin message");
-            } else {
-                toast.success("Message unpinned");
-            }
-        } catch {
-            toast.error("Failed to unpin message");
-        }
-    }, []);
-
     const jumpToMessage = useCallback((messageId: string) => {
         const target = document.querySelector<HTMLElement>(
             `[data-message-id="${messageId}"]`,
@@ -1259,7 +1233,7 @@ export default function ChatPage() {
                                     }
                                   : null,
                               selectedImagePreview: imagePreview,
-                              sending: false,
+                              sending: channelSending,
                               text,
                               uploadingImage,
                           }
@@ -1419,53 +1393,133 @@ export default function ChatPage() {
                         />
                     ) : (
                         <>
-                            {selectedChannel && (
-                                <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                        <Hash className="h-5 w-5 text-muted-foreground" />
-                                        <h2 className="truncate font-semibold">
-                                            {channelsApi.channels.find(
-                                                (c) =>
-                                                    c.$id === selectedChannel,
-                                            )?.name || "Channel"}
-                                        </h2>
+                            {selectedChannel ? (
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <Hash className="h-5 w-5 text-muted-foreground" />
+                                                <h2 className="truncate font-semibold">
+                                                    {channelsApi.channels.find(
+                                                        (c) =>
+                                                            c.$id ===
+                                                            selectedChannel,
+                                                    )?.name || "Channel"}
+                                                </h2>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {serversApi.selectedServer &&
+                                                    serversApi.servers.find(
+                                                        (s) =>
+                                                            s.$id ===
+                                                            serversApi.selectedServer,
+                                                    )?.ownerId === userId && (
+                                                        <Button
+                                                            onClick={() =>
+                                                                setChannelPermissionsOpen(
+                                                                    true,
+                                                                )
+                                                            }
+                                                            size="sm"
+                                                            title="Channel permissions"
+                                                            type="button"
+                                                            variant="ghost"
+                                                        >
+                                                            <Settings className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                            </div>
+                                        </div>
+                                        {renderMessages()}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            onClick={() =>
-                                                setShowPinnedPanel(true)
-                                            }
-                                            size="sm"
-                                            title="View pinned messages"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Pin className="h-4 w-4" />
-                                        </Button>
-                                        {serversApi.selectedServer &&
-                                            serversApi.servers.find(
-                                                (s) =>
-                                                    s.$id ===
-                                                    serversApi.selectedServer,
-                                            )?.ownerId === userId && (
-                                                <Button
-                                                    onClick={() =>
-                                                        setChannelPermissionsOpen(
-                                                            true,
-                                                        )
+
+                                    <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
+                                        <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                                            <div className="mb-2 flex items-center gap-2 font-medium text-sm">
+                                                <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                                Pinned Messages
+                                            </div>
+                                            <ChatPinnedMessagesContent
+                                                canManageMessages={
+                                                    canManageMessages
+                                                }
+                                                messages={
+                                                    pinnedChannelSurfaceMessages
+                                                }
+                                                onJumpToMessage={jumpToMessage}
+                                                onUnpin={async (
+                                                    surfaceMessage,
+                                                ) => {
+                                                    const rawMessage =
+                                                        pinnedChannelMessages.find(
+                                                            (message) =>
+                                                                message.$id ===
+                                                                surfaceMessage.id,
+                                                        );
+                                                    if (rawMessage) {
+                                                        await togglePin(
+                                                            rawMessage,
+                                                        );
                                                     }
-                                                    size="sm"
-                                                    title="Channel permissions"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <Settings className="h-4 w-4" />
-                                                </Button>
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <h3 className="font-medium text-sm">
+                                                    Thread
+                                                </h3>
+                                                {activeThreadParent ? (
+                                                    <Button
+                                                        onClick={closeThread}
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        Close
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                            {!activeThreadParent ? (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Open a message thread to
+                                                    view replies here.
+                                                </p>
+                                            ) : (
+                                                <ChatThreadContent
+                                                    currentUserId={userId}
+                                                    customEmojis={customEmojis}
+                                                    loading={_threadLoading}
+                                                    onReplyTextChange={
+                                                        setThreadReplyText
+                                                    }
+                                                    onSendReply={async () => {
+                                                        const value =
+                                                            threadReplyText;
+                                                        setThreadReplyText("");
+                                                        await _sendThreadReply(
+                                                            value,
+                                                        );
+                                                    }}
+                                                    onToggleReaction={
+                                                        surfaceController.onToggleReaction
+                                                    }
+                                                    parentMessage={
+                                                        threadParentSurfaceMessage
+                                                    }
+                                                    replies={
+                                                        threadSurfaceMessages
+                                                    }
+                                                    replyText={threadReplyText}
+                                                />
                                             )}
-                                    </div>
+                                        </div>
+                                    </aside>
                                 </div>
+                            ) : (
+                                renderMessages()
                             )}
-                            {renderMessages()}
                         </>
                     )}
                 </div>
@@ -1567,35 +1621,6 @@ export default function ChatPage() {
                             (s) => s.$id === serversApi.selectedServer,
                         )?.ownerId === userId
                     }
-                />
-            )}
-            {activeThreadParent && userId && (
-                <ThreadPanel
-                    customEmojis={customEmojis}
-                    onOpenChange={(open) => {
-                        if (!open) {
-                            closeThread();
-                        }
-                    }}
-                    open={Boolean(activeThreadParent)}
-                    onToggleReaction={surfaceController.onToggleReaction}
-                    parentMessage={activeThreadParent}
-                    userId={userId}
-                />
-            )}
-            {selectedChannel && (
-                <PinnedMessagesPanel
-                    canManageMessages={canManageMessages}
-                    channelId={selectedChannel}
-                    channelName={
-                        channelsApi.channels.find(
-                            (c) => c.$id === selectedChannel,
-                        )?.name
-                    }
-                    onJumpToMessage={jumpToMessage}
-                    onOpenChange={setShowPinnedPanel}
-                    onUnpin={handleUnpinMessage}
-                    open={showPinnedPanel}
                 />
             )}
         </div>
