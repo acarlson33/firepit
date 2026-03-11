@@ -37,6 +37,28 @@ describe("thread-pin-client", () => {
         );
     });
 
+    it("accepts legacy thread response keys during route normalization", async () => {
+        const fetchMock = vi.mocked(fetch);
+        fetchMock
+            .mockResolvedValueOnce({
+                json: async () => ({ replies: [{ $id: "reply-legacy" }] }),
+                ok: true,
+            } as Response)
+            .mockResolvedValueOnce({
+                json: async () => ({ reply: { $id: "reply-legacy-post" } }),
+                ok: true,
+            } as Response);
+
+        await expect(
+            listThreadMessages<{ $id: string }>("channel", "message-legacy"),
+        ).resolves.toEqual([{ $id: "reply-legacy" }]);
+        await expect(
+            createThreadReply<{ $id: string }>("channel", "message-legacy", {
+                text: "legacy",
+            }),
+        ).resolves.toEqual({ $id: "reply-legacy-post" });
+    });
+
     it("creates DM thread replies through the shared thread endpoint builder", async () => {
         const fetchMock = vi.mocked(fetch);
         fetchMock.mockResolvedValue({

@@ -56,6 +56,7 @@ vi.mock("node-appwrite", () => ({
             `equal(${field},${Array.isArray(value) ? value.join(",") : value})`,
         limit: (value: number) => `limit(${value})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
+        cursorAfter: (value: string) => `cursorAfter(${value})`,
     },
 }));
 
@@ -69,9 +70,7 @@ describe("DM Thread API", () => {
             mockGetServerSession.mockResolvedValue(null);
 
             const { GET } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -102,9 +101,7 @@ describe("DM Thread API", () => {
                 });
 
             const { GET } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -161,9 +158,7 @@ describe("DM Thread API", () => {
             });
 
             const { GET } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -179,6 +174,9 @@ describe("DM Thread API", () => {
             expect(response.status).toBe(200);
             expect(data.items).toBeDefined();
             expect(data.items).toHaveLength(2);
+            expect(data.parentMessage.$id).toBe("msg-1");
+            expect(data.replies).toHaveLength(2);
+            expect(data.total).toBe(2);
             expect(data.items[0].text).toBe("Reply 1");
         });
     });
@@ -188,9 +186,7 @@ describe("DM Thread API", () => {
             mockGetServerSession.mockResolvedValue(null);
 
             const { POST } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -212,9 +208,7 @@ describe("DM Thread API", () => {
             mockGetServerSession.mockResolvedValue({ $id: "user-1" });
 
             const { POST } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -268,9 +262,7 @@ describe("DM Thread API", () => {
             });
 
             const { POST } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {
@@ -284,10 +276,83 @@ describe("DM Thread API", () => {
             });
             const data = await response.json();
 
-            expect(response.status).toBe(200);
+            expect(response.status).toBe(201);
             expect(data.message).toBeDefined();
+            expect(data.reply).toBeDefined();
+            expect(data.threadId).toBe("msg-1");
             expect(mockCreateDocument).toHaveBeenCalledOnce();
             expect(mockUpdateDocument).toHaveBeenCalledOnce();
+        });
+
+        it("flattens nested DM thread replies onto the root thread", async () => {
+            mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+            const now = new Date().toISOString();
+
+            mockGetDocument
+                .mockResolvedValueOnce({
+                    $id: "reply-99",
+                    conversationId: "conv-1",
+                    senderId: "user-2",
+                    text: "Nested reply",
+                    threadId: "msg-1",
+                    $createdAt: now,
+                })
+                .mockResolvedValueOnce({
+                    $id: "msg-1",
+                    conversationId: "conv-1",
+                    senderId: "user-2",
+                    text: "Parent message",
+                    threadMessageCount: 1,
+                    threadParticipants: ["user-2"],
+                    $createdAt: now,
+                })
+                .mockResolvedValueOnce({
+                    $id: "conv-1",
+                    participants: ["user-1", "user-2"],
+                });
+
+            mockCreateDocument.mockResolvedValue({
+                $id: "reply-2",
+                conversationId: "conv-1",
+                senderId: "user-1",
+                text: "Nested reply text",
+                threadId: "msg-1",
+                $createdAt: now,
+            });
+
+            const { POST } =
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
+            const request = new NextRequest(
+                "http://localhost/api/direct-messages/reply-99/thread",
+                {
+                    method: "POST",
+                    body: JSON.stringify({ text: "Nested reply text" }),
+                },
+            );
+
+            const response = await POST(request, {
+                params: Promise.resolve({ messageId: "reply-99" }),
+            });
+            const data = await response.json();
+
+            expect(response.status).toBe(201);
+            expect(data.threadId).toBe("msg-1");
+            expect(mockCreateDocument).toHaveBeenCalledWith(
+                "test-db",
+                "direct_messages",
+                "reply-1",
+                expect.objectContaining({ threadId: "msg-1" }),
+                expect.any(Array),
+            );
+            expect(mockUpdateDocument).toHaveBeenCalledWith(
+                "test-db",
+                "direct_messages",
+                "msg-1",
+                expect.objectContaining({
+                    threadMessageCount: 2,
+                    threadParticipants: ["user-2", "user-1"],
+                }),
+            );
         });
 
         it("returns 403 when user is not a conversation participant", async () => {
@@ -304,9 +369,7 @@ describe("DM Thread API", () => {
                 });
 
             const { POST } =
-                await import(
-                    "../../app/api/direct-messages/[messageId]/thread/route"
-                );
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
             const request = new NextRequest(
                 "http://localhost/api/direct-messages/msg-1/thread",
                 {

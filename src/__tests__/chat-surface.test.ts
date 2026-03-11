@@ -80,6 +80,9 @@ describe("chat-surface adapters", () => {
             senderDisplayName: "Alice",
             senderAvatarUrl: "https://example.com/alice.png",
             senderPronouns: "she/her",
+            isPinned: true,
+            pinnedAt: "2026-03-10T12:03:00.000Z",
+            pinnedBy: "user-9",
         };
 
         const normalizedChannel = fromChannelMessage(channelMessage);
@@ -113,7 +116,9 @@ describe("chat-surface adapters", () => {
         expect(normalizedChannel.mentions).toEqual(normalizedDm.mentions);
         expect(normalizedChannel.reactions).toEqual(normalizedDm.reactions);
         expect(normalizedChannel.isPinned).toBe(true);
-        expect(normalizedDm.isPinned).toBe(false);
+        expect(normalizedDm.isPinned).toBe(true);
+        expect(normalizedChannel.pinnedAt).toBe(normalizedDm.pinnedAt);
+        expect(normalizedChannel.pinnedBy).toBe(normalizedDm.pinnedBy);
     });
 
     it("preserves context-specific metadata in the normalized message", () => {

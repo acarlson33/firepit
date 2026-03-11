@@ -174,6 +174,10 @@ export type DirectMessage = {
         text: string;
         senderDisplayName?: string;
     };
+    // Pinning fields
+    isPinned?: boolean;
+    pinnedAt?: string;
+    pinnedBy?: string;
 };
 
 export type UserStatus = {

@@ -62,6 +62,11 @@ function parseLimit(url: string): number {
     return Math.min(raw, 100);
 }
 
+function parseCursor(url: string): string | null {
+    const { searchParams } = new URL(url);
+    return searchParams.get("cursor");
+}
+
 async function getConversationParticipants(
     conversationId: string,
 ): Promise<string[]> {
@@ -99,12 +104,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
         const limit = parseLimit(request.url);
+        const cursor = parseCursor(request.url);
 
         const parent = (await databases.getDocument(
             env.databaseId,
             env.collections.directMessages,
             messageId,
         )) as unknown as DirectMessage;
+
+        const actualThreadId = parent.threadId ?? messageId;
+        const actualParent = parent.threadId
+            ? ((await databases.getDocument(
+                  env.databaseId,
+                  env.collections.directMessages,
+                  actualThreadId,
+              )) as unknown as DirectMessage)
+            : parent;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -125,35 +140,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
             env.collections.directMessages,
             [
                 Query.equal("conversationId", parent.conversationId),
-                Query.equal("threadId", messageId),
+                Query.equal("threadId", actualThreadId),
                 Query.orderAsc("$createdAt"),
                 Query.limit(limit),
+                ...(cursor ? [Query.cursorAfter(cursor)] : []),
             ],
         );
 
         const items = docs.documents.map((doc) => {
-            const d = doc as Record<string, unknown>;
-            return {
-                $id: String(d.$id),
-                conversationId: String(d.conversationId),
-                senderId: String(d.senderId),
-                receiverId: d.receiverId as string | undefined,
-                text: String(d.text || ""),
-                imageFileId: d.imageFileId as string | undefined,
-                imageUrl: d.imageUrl as string | undefined,
-                $createdAt: String(d.$createdAt || ""),
-                editedAt: d.editedAt as string | undefined,
-                removedAt: d.removedAt as string | undefined,
-                removedBy: d.removedBy as string | undefined,
-                replyToId: d.replyToId as string | undefined,
-                threadId: d.threadId as string | undefined,
-                mentions: Array.isArray(d.mentions)
-                    ? (d.mentions as string[])
-                    : undefined,
-            } satisfies DirectMessage;
+            return doc as unknown as DirectMessage;
         });
 
-        return NextResponse.json({ items });
+        return NextResponse.json({
+            items,
+            parentMessage: actualParent,
+            replies: items,
+            total: docs.total,
+            hasMore: docs.documents.length === limit,
+        });
     } catch (error) {
         return NextResponse.json(
             {
@@ -223,6 +227,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
             messageId,
         )) as unknown as DirectMessage;
 
+        const actualThreadId = parent.threadId ?? messageId;
+        const actualParent = parent.threadId
+            ? ((await databases.getDocument(
+                  env.databaseId,
+                  env.collections.directMessages,
+                  actualThreadId,
+              )) as unknown as DirectMessage)
+            : parent;
+
         if (!parent.conversationId) {
             return NextResponse.json(
                 { error: "Parent message has no conversation context" },
@@ -253,7 +266,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             senderId: user.$id,
             receiverId,
             text: text?.trim() || "",
-            threadId: messageId,
+            threadId: actualThreadId,
         };
 
         if (imageFileId) {
@@ -278,22 +291,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
             await createAttachments(String(created.$id), attachments);
         }
 
-        const existingParticipants = Array.isArray(parent.threadParticipants)
-            ? parent.threadParticipants
+        const existingParticipants = Array.isArray(
+            actualParent.threadParticipants,
+        )
+            ? actualParent.threadParticipants
             : [];
         const nextParticipants = Array.from(
             new Set([...existingParticipants, user.$id]),
         );
-        const nextCount = (parent.threadMessageCount || 0) + 1;
+        const nextCount = (actualParent.threadMessageCount || 0) + 1;
+        const replyCreatedAt = new Date().toISOString();
 
         await databases.updateDocument(
             env.databaseId,
             env.collections.directMessages,
-            messageId,
+            actualThreadId,
             {
                 threadMessageCount: nextCount,
                 threadParticipants: nextParticipants,
-                lastThreadReplyAt: new Date().toISOString(),
+                lastThreadReplyAt: replyCreatedAt,
             },
         );
 
@@ -312,13 +328,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
             removedBy: d.removedBy as string | undefined,
             replyToId: d.replyToId as string | undefined,
             threadId: d.threadId as string | undefined,
+            threadMessageCount:
+                typeof d.threadMessageCount === "number"
+                    ? d.threadMessageCount
+                    : undefined,
+            threadParticipants: Array.isArray(d.threadParticipants)
+                ? (d.threadParticipants as string[])
+                : undefined,
+            lastThreadReplyAt: d.lastThreadReplyAt as string | undefined,
             mentions: Array.isArray(d.mentions)
                 ? (d.mentions as string[])
                 : undefined,
             attachments,
         };
 
-        return NextResponse.json({ message });
+        return NextResponse.json(
+            {
+                success: true,
+                message,
+                reply: message,
+                threadId: actualThreadId,
+            },
+            { status: 201 },
+        );
     } catch (error) {
         return NextResponse.json(
             {

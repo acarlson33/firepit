@@ -62,14 +62,13 @@ function cloneReactions(
     }
 
     return reactions
-        .filter(
-            (reaction): reaction is MessageReaction =>
-                Boolean(
-                    reaction &&
-                        typeof reaction.emoji === "string" &&
-                        Array.isArray(reaction.userIds) &&
-                        typeof reaction.count === "number",
-                ),
+        .filter((reaction): reaction is MessageReaction =>
+            Boolean(
+                reaction &&
+                typeof reaction.emoji === "string" &&
+                Array.isArray(reaction.userIds) &&
+                typeof reaction.count === "number",
+            ),
         )
         .map((reaction) => ({
             emoji: reaction.emoji,
@@ -203,7 +202,9 @@ export function fromDirectMessage(
         lastThreadReplyAt: message.lastThreadReplyAt,
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
-        isPinned: false,
+        isPinned: message.isPinned ?? false,
+        pinnedAt: message.pinnedAt,
+        pinnedBy: message.pinnedBy,
     };
 }
 
