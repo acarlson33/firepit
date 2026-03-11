@@ -5,6 +5,7 @@ import { Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { buildPinsResponse } from "@/lib/pin-response";
 import type { Message, PinnedMessage } from "@/lib/types";
 import {
     logger,
@@ -106,28 +107,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             messagesById.set(String(message.$id), message);
         }
 
-        const items = pins
-            .map((pin) => {
-                const message = messagesById.get(pin.messageId);
-                if (!message) {
-                    return null;
-                }
-
-                const enrichedMessage: Message = {
-                    ...message,
-                    isPinned: true,
-                    pinnedAt: pin.pinnedAt,
-                    pinnedBy: pin.pinnedBy,
-                };
-
-                return {
-                    pin,
-                    message: enrichedMessage,
-                };
-            })
-            .filter(Boolean) as Array<{ pin: PinnedMessage; message: Message }>;
-
-        const pinnedMessages = items.map((item) => item.message);
+        const response = buildPinsResponse(pins, messagesById);
 
         const duration = Date.now() - startTime;
         trackApiCall("/api/channels/[channelId]/pins", "GET", 200, duration);
@@ -135,14 +115,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         logger.info("Pinned messages fetched successfully", {
             channelId,
             userId: user.$id,
-            count: pinnedMessages.length,
+            count: response.total,
         });
 
-        return NextResponse.json({
-            items,
-            pins: pinnedMessages,
-            total: pinnedMessages.length,
-        });
+        return NextResponse.json(response);
     } catch (error) {
         const duration = Date.now() - startTime;
         logger.error("Failed to fetch pinned messages", {

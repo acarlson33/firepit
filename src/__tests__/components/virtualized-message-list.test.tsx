@@ -110,6 +110,29 @@ describe("VirtualizedMessageList", () => {
         );
     });
 
+    it("shows an unread badge on thread indicators with unread replies", async () => {
+        const threadMessage: ChatSurfaceMessage = {
+            ...mockMessages[0],
+            id: "thread-parent-unread",
+            sourceMessageId: "thread-parent-unread",
+            threadHasUnread: true,
+            threadReplyCount: 2,
+        };
+
+        render(
+            <VirtualizedMessageList
+                {...defaultProps}
+                messages={[threadMessage]}
+                onOpenThread={vi.fn()}
+            />,
+        );
+
+        expect(await screen.findByText("New")).toBeDefined();
+        expect(
+            screen.getByLabelText("2 replies, unread updates"),
+        ).toBeDefined();
+    });
+
     it("renders pin and unpin buttons when user can manage messages", async () => {
         const onTogglePin = vi.fn();
         const user = userEvent.setup();

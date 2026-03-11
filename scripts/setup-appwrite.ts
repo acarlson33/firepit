@@ -815,6 +815,7 @@ async function setupProfiles() {
     await ensureBooleanAttribute("profiles", "showDocsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
+    await ensureBooleanAttribute("profiles", "showAddFriendInHeader", false);
     await ensureStringAttribute(
         "profiles",
         "navigationItemOrder",
@@ -1041,6 +1042,19 @@ async function setupNotificationSettings() {
     );
     await ensureIndex("notification_settings", "idx_userId", "unique", [
         "userId",
+    ]);
+}
+
+async function setupThreadReads() {
+    await ensureCollection("thread_reads", "Thread Reads");
+    await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
+    await ensureStringAttribute("thread_reads", "contextType", 32, true);
+    await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
+    await ensureStringAttribute("thread_reads", "reads", LEN_TEXT, true);
+    await ensureIndex("thread_reads", "idx_user_context", "unique", [
+        "userId",
+        "contextType",
+        "contextId",
     ]);
 }
 
@@ -1294,6 +1308,8 @@ async function run() {
     await setupPinnedMessages();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
+    info("[setup] Setting up thread reads...");
+    await setupThreadReads();
     info("[setup] Setting up teams...");
     await ensureTeams();
     writeStdout();

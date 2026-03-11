@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useMessages } from "@/app/chat/hooks/useMessages";
 import * as appwriteMessages from "@/lib/appwrite-messages";
 import * as appwriteMessagesEnriched from "@/lib/appwrite-messages-enriched";
+import * as threadPinClient from "@/lib/thread-pin-client";
 import type { Message } from "@/lib/types";
 
 // Mock dependencies
@@ -414,6 +415,50 @@ describe("useMessages", () => {
     });
 
     describe("Reply State", () => {
+        it("marks thread surface messages as read after opening the thread", async () => {
+            const threadParent: Message = {
+                ...mockMessage1,
+                $id: "thread-parent",
+                lastThreadReplyAt: "2024-01-01T00:05:00.000Z",
+                threadMessageCount: 2,
+            };
+
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([threadParent]);
+            (
+                threadPinClient.listChannelThreadMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([]);
+
+            const { result } = renderHook(() =>
+                useMessages({
+                    channelId: mockChannelId,
+                    userId: mockUserId,
+                    userName: mockUserName,
+                }),
+            );
+
+            await waitFor(() => {
+                expect(result.current.surfaceMessages[0]?.threadHasUnread).toBe(
+                    true,
+                );
+            });
+
+            await act(async () => {
+                await result.current.openThread(threadParent);
+            });
+
+            await waitFor(() => {
+                expect(result.current.surfaceMessages[0]?.threadHasUnread).toBe(
+                    false,
+                );
+            });
+        });
+
         it("should set replying to message", async () => {
             (
                 appwriteMessagesEnriched.getEnrichedMessages as ReturnType<

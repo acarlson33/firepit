@@ -230,6 +230,15 @@ export default function ChatPage() {
             ) || null,
         [conversationsApi.conversations, selectedConversationId],
     );
+    const unreadDirectMessageCount = useMemo(
+        () =>
+            conversationsApi.conversations.reduce(
+                (total, conversation) =>
+                    total + (conversation.unreadThreadCount ?? 0),
+                0,
+            ),
+        [conversationsApi.conversations],
+    );
     const activeMuteOverride = useMemo(() => {
         const settings = notificationSettingsApi.settings;
         if (!settings || !muteDialogState.id) {
@@ -597,6 +606,7 @@ export default function ChatPage() {
         activeThreadParent,
         threadMessages: _threadMessages,
         threadLoading: _threadLoading,
+        threadReplySending: _threadReplySending,
         openThread,
         closeThread,
         sendThreadReply: _sendThreadReply,
@@ -1395,6 +1405,11 @@ export default function ChatPage() {
                             >
                                 <MessageSquare className="mr-2 h-4 w-4" />
                                 DMs
+                                {unreadDirectMessageCount > 0 ? (
+                                    <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                        {unreadDirectMessageCount}
+                                    </span>
+                                ) : null}
                             </Button>
                         </div>
                     </div>
@@ -1460,6 +1475,7 @@ export default function ChatPage() {
                             readOnly={dmApi.readOnly}
                             readOnlyReason={dmApi.readOnlyReason}
                             threadLoading={dmApi.threadLoading}
+                            threadReplySending={dmApi.threadReplySending}
                             threadMessages={dmApi.threadMessages}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
@@ -1585,6 +1601,9 @@ export default function ChatPage() {
                                                     }
                                                     replies={
                                                         threadSurfaceMessages
+                                                    }
+                                                    sendingReply={
+                                                        _threadReplySending
                                                     }
                                                     replyText={threadReplyText}
                                                 />

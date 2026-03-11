@@ -9,6 +9,8 @@ import {
     getRelationshipMap,
     getRelationshipStatus,
 } from "@/lib/appwrite-friendships";
+import { listThreadReadsByContext } from "@/lib/thread-read-store";
+import { isThreadUnread } from "@/lib/thread-read-states";
 import {
     logger,
     recordError,
@@ -222,6 +224,68 @@ export async function GET(request: NextRequest) {
                     conversation.participants.find((id) => id !== session.$id),
                 )
                 .filter((value): value is string => Boolean(value));
+            const unreadThreadsByConversationId = new Map<string, number>();
+            const readStatesByConversationId = await listThreadReadsByContext({
+                contextIds: conversations.map(
+                    (conversation) => conversation.$id,
+                ),
+                contextType: "conversation",
+                userId: session.$id,
+            });
+
+            if (conversations.length > 0) {
+                try {
+                    const threadParents = await databases.listDocuments(
+                        DATABASE_ID,
+                        DIRECT_MESSAGES_COLLECTION,
+                        [
+                            Query.equal(
+                                "conversationId",
+                                conversations.map(
+                                    (conversation) => conversation.$id,
+                                ),
+                            ),
+                            Query.greaterThan("threadMessageCount", 0),
+                            Query.limit(500),
+                        ],
+                    );
+
+                    for (const document of threadParents.documents) {
+                        const conversationId = String(document.conversationId);
+                        const messageId = String(document.$id);
+                        const lastThreadReplyAt =
+                            typeof document.lastThreadReplyAt === "string"
+                                ? document.lastThreadReplyAt
+                                : undefined;
+                        const threadMessageCount =
+                            typeof document.threadMessageCount === "number"
+                                ? document.threadMessageCount
+                                : undefined;
+                        const lastReadAt =
+                            readStatesByConversationId.get(conversationId)?.[
+                                messageId
+                            ];
+
+                        if (
+                            isThreadUnread({
+                                lastReadAt,
+                                lastThreadReplyAt,
+                                threadMessageCount,
+                            })
+                        ) {
+                            unreadThreadsByConversationId.set(
+                                conversationId,
+                                (unreadThreadsByConversationId.get(
+                                    conversationId,
+                                ) ?? 0) + 1,
+                            );
+                        }
+                    }
+                } catch {
+                    // Skip unread aggregates if the supporting query fails.
+                }
+            }
+
             const relationshipMap = await getRelationshipMap(
                 session.$id,
                 oneToOneOtherUserIds,
@@ -246,11 +310,17 @@ export async function GET(request: NextRequest) {
 
                 return {
                     ...conversation,
+                    hasUnread:
+                        (unreadThreadsByConversationId.get(conversation.$id) ??
+                            0) > 0,
                     readOnly,
                     readOnlyReason: relationship
                         ? getReadOnlyReason(relationship)
                         : undefined,
                     relationship,
+                    unreadThreadCount:
+                        unreadThreadsByConversationId.get(conversation.$id) ??
+                        0,
                 };
             });
 

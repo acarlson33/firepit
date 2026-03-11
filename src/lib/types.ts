@@ -127,6 +127,8 @@ export type Conversation = {
     readOnly?: boolean;
     readOnlyReason?: string;
     relationship?: RelationshipStatus;
+    unreadThreadCount?: number;
+    hasUnread?: boolean;
     // Enriched data
     otherUser?: {
         userId: string;
@@ -174,6 +176,10 @@ export type DirectMessage = {
         text: string;
         senderDisplayName?: string;
     };
+    // Pinning fields
+    isPinned?: boolean;
+    pinnedAt?: string;
+    pinnedBy?: string;
 };
 
 export type UserStatus = {
@@ -193,6 +199,7 @@ export type NavigationPreferences = {
     showDocsInNavigation: boolean;
     showFriendsInNavigation: boolean;
     showSettingsInNavigation: boolean;
+    showAddFriendInHeader: boolean;
     navigationItemOrder: NavigationItemPreferenceId[];
 };
 
@@ -208,6 +215,7 @@ export type UserProfileData = {
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
+    showAddFriendInHeader?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
     status?: {
         status: "online" | "away" | "busy" | "offline";

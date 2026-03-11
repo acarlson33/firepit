@@ -237,6 +237,7 @@ describe("Setup Appwrite Script", () => {
                 "showDocsInNavigation",
                 "showFriendsInNavigation",
                 "showSettingsInNavigation",
+                "showAddFriendInHeader",
                 "navigationItemOrder",
             ];
 

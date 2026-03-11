@@ -24,6 +24,7 @@ import {
     pinDMMessage,
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
+import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
@@ -144,20 +145,49 @@ export function useDirectMessages({
     const {
         activeThreadParent,
         closeThread,
+        isThreadUnread,
         openThread,
         pins: conversationPins,
         refreshPins,
         sendThreadReply,
         threadLoading,
         threadMessages,
+        threadReadByMessageId,
+        threadReplySending,
         togglePin,
     } = useThreadPinState<DirectMessage>({
+        buildOptimisticThreadReply: ({
+            createdAt,
+            currentUserId,
+            parentMessage,
+            tempId,
+            text,
+        }) => ({
+            $createdAt: createdAt,
+            $id: tempId,
+            conversationId: parentMessage.conversationId,
+            receiverId: parentMessage.receiverId,
+            senderDisplayName: userName ?? undefined,
+            senderId: currentUserId ?? "unknown",
+            text,
+            threadId: parentMessage.threadId ?? parentMessage.$id,
+        }),
         contextId: conversationId,
         currentUserId: userId,
         createThreadReply: createDMThreadReply,
         listPins: listConversationPins,
+        listThreadReads: (currentContextId) =>
+            listThreadReads("conversation", currentContextId),
         listThreadMessages: listDMThreadMessages,
+        messages,
+        pinContextType: "conversation",
         pinMessage: pinDMMessage,
+        persistThreadReads: ({ contextId: currentContextId, reads }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "conversation",
+                reads,
+            }),
         setMessages,
         unpinMessage: unpinDMMessage,
     });
@@ -641,21 +671,40 @@ export function useDirectMessages({
         };
     }, [sendTypingState]);
 
-    const surfaceMessages = useMemo(
-        () =>
-            adaptDirectMessages(
-                messages,
-                conversationId
-                    ? {
-                          kind: "dm",
-                          conversationId,
-                          readOnly,
-                          readOnlyReason,
-                      }
-                    : undefined,
-            ),
-        [messages, conversationId, readOnly, readOnlyReason],
-    );
+    const surfaceMessages = useMemo(() => {
+        const messagesById = new Map(
+            messages.map((message) => [message.$id, message]),
+        );
+
+        return adaptDirectMessages(
+            messages,
+            conversationId
+                ? {
+                      kind: "dm",
+                      conversationId,
+                      readOnly,
+                      readOnlyReason,
+                  }
+                : undefined,
+        ).map((message) => {
+            const sourceMessage = messagesById.get(message.id);
+
+            return {
+                ...message,
+                threadHasUnread: sourceMessage
+                    ? isThreadUnread(sourceMessage)
+                    : false,
+                threadLastReadAt: threadReadByMessageId[message.id],
+            };
+        });
+    }, [
+        conversationId,
+        isThreadUnread,
+        messages,
+        readOnly,
+        readOnlyReason,
+        threadReadByMessageId,
+    ]);
 
     return {
         messages,
@@ -678,6 +727,7 @@ export function useDirectMessages({
         activeThreadParent,
         threadMessages,
         threadLoading,
+        threadReplySending,
         openThread,
         closeThread,
         sendThreadReply,

@@ -1,16 +1,19 @@
 import type { DirectMessage, Message, PinnedMessage } from "@/lib/types";
 
-export type PinItem<TMessage> = {
-    pin: PinnedMessage;
-    message: TMessage;
-};
+import type {
+    PinItem,
+    PinnableMessage,
+    PinsResponse,
+} from "@/lib/pin-response";
 
 type ThreadResponse<TMessage> = {
-    items: TMessage[];
+    items?: TMessage[];
+    replies?: TMessage[];
 };
 
-type PinsResponse<TMessage> = {
-    items: Array<PinItem<TMessage>>;
+type CreateThreadReplyResponse<TMessage> = {
+    message?: TMessage;
+    reply?: TMessage;
 };
 
 export type ThreadPinSurface = "channel" | "dm";
@@ -85,7 +88,7 @@ export async function listThreadMessages<TMessage>(
         response,
         config.listThreadError,
     );
-    return data.items;
+    return data.items ?? data.replies ?? [];
 }
 
 export async function createChannelThreadReply(
@@ -120,7 +123,15 @@ export async function createThreadReply<TMessage>(
         response,
         config.createThreadError,
     );
-    return data.message;
+    const message =
+        (data as CreateThreadReplyResponse<TMessage>).message ??
+        (data as CreateThreadReplyResponse<TMessage>).reply;
+
+    if (!message) {
+        throw new Error(config.createThreadError);
+    }
+
+    return message;
 }
 
 export async function createDMThreadReply(
@@ -192,7 +203,7 @@ export async function unpinMessage(
     await parseJsonResponse<{ success: boolean }>(response, config.unpinError);
 }
 
-export async function listPins<TMessage>(
+export async function listPins<TMessage extends PinnableMessage>(
     surface: ThreadPinSurface,
     contextId: string,
 ): Promise<Array<PinItem<TMessage>>> {

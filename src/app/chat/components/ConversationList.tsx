@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import {
+    AtSign,
     BellOff,
     Check,
     Clock3,
+    Inbox,
     Loader2,
     MessageSquare,
     MoreVertical,
@@ -20,6 +24,10 @@ import { StatusIndicator } from "@/components/status-indicator";
 import { useFriends } from "@/hooks/useFriends";
 import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import {
+    buildChatMessageHref,
+    type ChatMessageDestination,
+} from "@/lib/message-navigation";
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -27,6 +35,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Conversation } from "@/lib/types";
 import { toast } from "sonner";
+
+type SidebarMode = "chats" | "inbox" | "mentions";
+
+type MentionItem = {
+    authorAvatarUrl?: string;
+    authorLabel: string;
+    createdAt: string;
+    destination: ChatMessageDestination;
+    id: string;
+    text: string;
+};
 
 type ConversationListProps = {
     conversations: Conversation[];
@@ -52,6 +71,7 @@ export function ConversationList({
     onNewConversation,
     onMuteConversation,
 }: ConversationListProps) {
+    const router = useRouter();
     const {
         friends,
         incoming,
@@ -64,9 +84,299 @@ export function ConversationList({
     const [openingConversationUserId, setOpeningConversationUserId] = useState<
         string | null
     >(null);
+    const [sidebarMode, setSidebarMode] = useState<SidebarMode>("chats");
+    const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
+    const [mentionsLoading, setMentionsLoading] = useState(false);
 
     const favoriteFriends = useMemo(() => friends.slice(0, 4), [friends]);
     const incomingRequests = useMemo(() => incoming.slice(0, 3), [incoming]);
+    const unreadConversations = useMemo(
+        () =>
+            conversations.filter(
+                (conversation) => (conversation.unreadThreadCount ?? 0) > 0,
+            ),
+        [conversations],
+    );
+    const unreadThreadTotal = useMemo(
+        () =>
+            conversations.reduce(
+                (total, conversation) =>
+                    total + (conversation.unreadThreadCount ?? 0),
+                0,
+            ),
+        [conversations],
+    );
+
+    useEffect(() => {
+        if (!currentUserId || sidebarMode !== "mentions") {
+            return;
+        }
+
+        let cancelled = false;
+        setMentionsLoading(true);
+
+        void fetch("/api/search/messages?q=mentions:me")
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to load mentions");
+                }
+
+                const data = (await response.json()) as {
+                    results?: Array<{
+                        message: Record<string, unknown>;
+                        type: "channel" | "dm";
+                    }>;
+                };
+
+                const nextItems = (data.results ?? []).flatMap((result) => {
+                    const message = result.message;
+                    const messageId =
+                        typeof message.$id === "string" ? message.$id : null;
+
+                    if (!messageId) {
+                        return [] as MentionItem[];
+                    }
+
+                    if (result.type === "channel") {
+                        const channelId =
+                            typeof message.channelId === "string"
+                                ? message.channelId
+                                : null;
+                        if (!channelId) {
+                            return [] as MentionItem[];
+                        }
+
+                        const item: MentionItem = {
+                            authorAvatarUrl:
+                                typeof message.avatarUrl === "string"
+                                    ? message.avatarUrl
+                                    : undefined,
+                            authorLabel:
+                                (typeof message.displayName === "string"
+                                    ? message.displayName
+                                    : undefined) ||
+                                (typeof message.userName === "string"
+                                    ? message.userName
+                                    : undefined) ||
+                                (typeof message.userId === "string"
+                                    ? message.userId
+                                    : "Unknown user"),
+                            createdAt:
+                                typeof message.$createdAt === "string"
+                                    ? message.$createdAt
+                                    : new Date().toISOString(),
+                            destination: {
+                                kind: "channel",
+                                channelId,
+                                messageId,
+                                serverId:
+                                    typeof message.serverId === "string"
+                                        ? message.serverId
+                                        : undefined,
+                            },
+                            id: `channel-${messageId}`,
+                            text:
+                                typeof message.text === "string"
+                                    ? message.text
+                                    : "",
+                        };
+
+                        return [item];
+                    }
+
+                    const conversationId =
+                        typeof message.conversationId === "string"
+                            ? message.conversationId
+                            : null;
+                    if (!conversationId) {
+                        return [] as MentionItem[];
+                    }
+
+                    const item: MentionItem = {
+                        authorAvatarUrl:
+                            typeof message.senderAvatarUrl === "string"
+                                ? message.senderAvatarUrl
+                                : undefined,
+                        authorLabel:
+                            (typeof message.senderDisplayName === "string"
+                                ? message.senderDisplayName
+                                : undefined) ||
+                            (typeof message.senderId === "string"
+                                ? message.senderId
+                                : "Unknown user"),
+                        createdAt:
+                            typeof message.$createdAt === "string"
+                                ? message.$createdAt
+                                : new Date().toISOString(),
+                        destination: {
+                            kind: "dm",
+                            conversationId,
+                            messageId,
+                        },
+                        id: `dm-${messageId}`,
+                        text:
+                            typeof message.text === "string"
+                                ? message.text
+                                : "",
+                    };
+
+                    return [item];
+                });
+
+                if (!cancelled) {
+                    setMentionItems(nextItems);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setMentionItems([]);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setMentionsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUserId, sidebarMode]);
+
+    function renderUnreadBadge(count: number | undefined) {
+        if (!count || count <= 0) {
+            return null;
+        }
+
+        return (
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                {count}
+            </span>
+        );
+    }
+
+    function renderConversationRow(conversation: Conversation) {
+        const isSelected = conversation.$id === selectedConversationId;
+        const isGroup =
+            conversation.isGroup ||
+            (conversation.participants?.length ?? 0) > 2;
+        const otherUser = conversation.otherUser;
+        const participantCount =
+            conversation.participantCount ?? conversation.participants.length;
+        const displayName = isGroup
+            ? conversation.name || "Group DM"
+            : otherUser?.displayName || otherUser?.userId || "Unknown User";
+        const subtitle = isGroup
+            ? `${participantCount} participants`
+            : otherUser?.status
+              ? otherUser.status
+              : undefined;
+        const secondaryLine = conversation.readOnly
+            ? conversation.readOnlyReason || "Read only"
+            : conversation.lastMessage?.text || subtitle;
+        const secondaryLineClassName = conversation.readOnly
+            ? "truncate text-amber-700 dark:text-amber-300 text-xs"
+            : "truncate text-muted-foreground text-xs";
+
+        return (
+            <div
+                className="group relative flex items-center gap-1"
+                key={conversation.$id}
+            >
+                <button
+                    className={`flex flex-1 items-center gap-3 rounded-lg p-3 text-left transition-colors ${
+                        isSelected ? "bg-accent" : "hover:bg-accent/50"
+                    }`}
+                    onClick={() => onSelectConversation(conversation)}
+                    type="button"
+                >
+                    <div className="relative">
+                        <Avatar
+                            alt={displayName}
+                            fallback={displayName}
+                            size="md"
+                            src={
+                                isGroup
+                                    ? conversation.avatarUrl
+                                    : otherUser?.avatarUrl
+                            }
+                        />
+                        {!isGroup && otherUser?.status && (
+                            <div className="absolute -bottom-0.5 -right-0.5">
+                                <StatusIndicator
+                                    size="sm"
+                                    status={
+                                        otherUser.status as
+                                            | "online"
+                                            | "away"
+                                            | "busy"
+                                            | "offline"
+                                    }
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                                <p className="truncate font-medium text-sm">
+                                    {displayName}
+                                </p>
+                                {renderUnreadBadge(
+                                    conversation.unreadThreadCount,
+                                )}
+                            </div>
+                            {conversation.lastMessageAt && (
+                                <span className="text-muted-foreground text-xs">
+                                    {new Date(
+                                        conversation.lastMessageAt,
+                                    ).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                    })}
+                                </span>
+                            )}
+                        </div>
+                        {secondaryLine && (
+                            <p className={secondaryLineClassName}>
+                                {secondaryLine}
+                            </p>
+                        )}
+                    </div>
+                </button>
+                {onMuteConversation && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                                size="icon"
+                                type="button"
+                                variant="ghost"
+                            >
+                                <MoreVertical className="h-4 w-4" />
+                                <span className="sr-only">
+                                    Conversation options
+                                </span>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                                onClick={() =>
+                                    onMuteConversation(
+                                        conversation.$id,
+                                        displayName,
+                                    )
+                                }
+                            >
+                                <BellOff className="mr-2 h-4 w-4" />
+                                Mute Conversation
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
+            </div>
+        );
+    }
 
     async function handleOpenFriendConversation(friendUserId: string) {
         if (!currentUserId) {
@@ -153,9 +463,49 @@ export function ConversationList({
                 </Button>
             </div>
 
+            <div className="grid grid-cols-3 gap-1 border-border border-b p-2">
+                <Button
+                    className="justify-start gap-2 rounded-lg"
+                    onClick={() => setSidebarMode("chats")}
+                    size="sm"
+                    type="button"
+                    variant={sidebarMode === "chats" ? "default" : "ghost"}
+                >
+                    <MessageSquare className="size-3.5" />
+                    Chats
+                </Button>
+                <Button
+                    className="justify-between gap-2 rounded-lg"
+                    onClick={() => setSidebarMode("inbox")}
+                    size="sm"
+                    type="button"
+                    variant={sidebarMode === "inbox" ? "default" : "ghost"}
+                >
+                    <span className="flex items-center gap-2">
+                        <Inbox className="size-3.5" />
+                        Inbox
+                    </span>
+                    {renderUnreadBadge(unreadThreadTotal)}
+                </Button>
+                <Button
+                    className="justify-between gap-2 rounded-lg"
+                    onClick={() => setSidebarMode("mentions")}
+                    size="sm"
+                    type="button"
+                    variant={sidebarMode === "mentions" ? "default" : "ghost"}
+                >
+                    <span className="flex items-center gap-2">
+                        <AtSign className="size-3.5" />
+                        Mentions
+                    </span>
+                    {renderUnreadBadge(mentionItems.length)}
+                </Button>
+            </div>
+
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
-                {currentUserId &&
+                {sidebarMode === "chats" &&
+                currentUserId &&
                 (friendsLoading ||
                     incomingRequests.length > 0 ||
                     favoriteFriends.length > 0) ? (
@@ -359,155 +709,103 @@ export function ConversationList({
                     </div>
                 ) : null}
 
-                {conversations.length === 0 ? (
+                {sidebarMode === "mentions" ? (
+                    <div className="space-y-1 p-2">
+                        {mentionsLoading ? (
+                            <div className="space-y-2 p-2">
+                                {Array.from({ length: 3 }).map((_, index) => (
+                                    <div
+                                        className="rounded-lg border border-border/60 p-3"
+                                        key={index}
+                                    >
+                                        <Skeleton className="h-4 w-24" />
+                                        <Skeleton className="mt-2 h-3 w-full" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : mentionItems.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center p-6 text-center">
+                                <AtSign className="mb-2 size-8 text-muted-foreground" />
+                                <p className="text-muted-foreground text-sm">
+                                    No recent mentions
+                                </p>
+                            </div>
+                        ) : (
+                            mentionItems.map((mention) => (
+                                <button
+                                    className="flex w-full items-start gap-3 rounded-lg border border-border/60 p-3 text-left transition hover:bg-accent/40"
+                                    key={mention.id}
+                                    onClick={() =>
+                                        router.push(
+                                            buildChatMessageHref(
+                                                mention.destination,
+                                            ) as Route,
+                                        )
+                                    }
+                                    type="button"
+                                >
+                                    <Avatar
+                                        alt={mention.authorLabel}
+                                        fallback={mention.authorLabel}
+                                        size="sm"
+                                        src={mention.authorAvatarUrl}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="truncate font-medium text-sm">
+                                                {mention.authorLabel}
+                                            </p>
+                                            <span className="text-muted-foreground text-xs">
+                                                {new Date(
+                                                    mention.createdAt,
+                                                ).toLocaleDateString([], {
+                                                    day: "numeric",
+                                                    month: "short",
+                                                })}
+                                            </span>
+                                        </div>
+                                        <p className="line-clamp-2 text-muted-foreground text-xs">
+                                            {mention.text}
+                                        </p>
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                ) : (sidebarMode === "inbox"
+                      ? unreadConversations
+                      : conversations
+                  ).length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center">
-                        <MessageSquare className="mb-2 size-8 text-muted-foreground" />
+                        {sidebarMode === "inbox" ? (
+                            <Inbox className="mb-2 size-8 text-muted-foreground" />
+                        ) : (
+                            <MessageSquare className="mb-2 size-8 text-muted-foreground" />
+                        )}
                         <p className="text-muted-foreground text-sm">
-                            No conversations yet
+                            {sidebarMode === "inbox"
+                                ? "No unread threads"
+                                : "No conversations yet"}
                         </p>
-                        <Button
-                            className="mt-3"
-                            onClick={onNewConversation}
-                            size="sm"
-                            variant="outline"
-                        >
-                            Start a conversation
-                        </Button>
+                        {sidebarMode === "chats" ? (
+                            <Button
+                                className="mt-3"
+                                onClick={onNewConversation}
+                                size="sm"
+                                variant="outline"
+                            >
+                                Start a conversation
+                            </Button>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="space-y-1 p-2">
-                        {conversations.map((conversation) => {
-                            const isSelected =
-                                conversation.$id === selectedConversationId;
-                            const isGroup =
-                                conversation.isGroup ||
-                                (conversation.participants?.length ?? 0) > 2;
-                            const otherUser = conversation.otherUser;
-                            const participantCount =
-                                conversation.participantCount ??
-                                conversation.participants.length;
-                            const displayName = isGroup
-                                ? conversation.name || "Group DM"
-                                : otherUser?.displayName ||
-                                  otherUser?.userId ||
-                                  "Unknown User";
-                            const subtitle = isGroup
-                                ? `${participantCount} participants`
-                                : otherUser?.status
-                                  ? otherUser.status
-                                  : undefined;
-                            const secondaryLine = conversation.readOnly
-                                ? conversation.readOnlyReason || "Read only"
-                                : conversation.lastMessage?.text || subtitle;
-                            const secondaryLineClassName = conversation.readOnly
-                                ? "truncate text-amber-700 dark:text-amber-300 text-xs"
-                                : "truncate text-muted-foreground text-xs";
-
-                            return (
-                                <div
-                                    className="group relative flex items-center gap-1"
-                                    key={conversation.$id}
-                                >
-                                    <button
-                                        className={`flex flex-1 items-center gap-3 rounded-lg p-3 text-left transition-colors ${
-                                            isSelected
-                                                ? "bg-accent"
-                                                : "hover:bg-accent/50"
-                                        }`}
-                                        onClick={() =>
-                                            onSelectConversation(conversation)
-                                        }
-                                        type="button"
-                                    >
-                                        <div className="relative">
-                                            <Avatar
-                                                alt={displayName}
-                                                fallback={displayName}
-                                                size="md"
-                                                src={
-                                                    isGroup
-                                                        ? conversation.avatarUrl
-                                                        : otherUser?.avatarUrl
-                                                }
-                                            />
-                                            {!isGroup && otherUser?.status && (
-                                                <div className="absolute -bottom-0.5 -right-0.5">
-                                                    <StatusIndicator
-                                                        size="sm"
-                                                        status={
-                                                            otherUser.status as
-                                                                | "online"
-                                                                | "away"
-                                                                | "busy"
-                                                                | "offline"
-                                                        }
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-baseline justify-between gap-2">
-                                                <p className="truncate font-medium text-sm">
-                                                    {displayName}
-                                                </p>
-                                                {conversation.lastMessageAt && (
-                                                    <span className="text-muted-foreground text-xs">
-                                                        {new Date(
-                                                            conversation.lastMessageAt,
-                                                        ).toLocaleTimeString(
-                                                            [],
-                                                            {
-                                                                hour: "2-digit",
-                                                                minute: "2-digit",
-                                                            },
-                                                        )}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {secondaryLine && (
-                                                <p
-                                                    className={
-                                                        secondaryLineClassName
-                                                    }
-                                                >
-                                                    {secondaryLine}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </button>
-                                    {onMuteConversation && (
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button
-                                                    className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                                                    size="icon"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <MoreVertical className="h-4 w-4" />
-                                                    <span className="sr-only">
-                                                        Conversation options
-                                                    </span>
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem
-                                                    onClick={() =>
-                                                        onMuteConversation(
-                                                            conversation.$id,
-                                                            displayName,
-                                                        )
-                                                    }
-                                                >
-                                                    <BellOff className="mr-2 h-4 w-4" />
-                                                    Mute Conversation
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    )}
-                                </div>
-                            );
-                        })}
+                        {(sidebarMode === "inbox"
+                            ? unreadConversations
+                            : conversations
+                        ).map((conversation) =>
+                            renderConversationRow(conversation),
+                        )}
                     </div>
                 )}
             </div>

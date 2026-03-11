@@ -30,12 +30,15 @@ const {
     mockThreadPinState: {
         activeThreadParent: null,
         closeThread: vi.fn(),
+        isThreadUnread: vi.fn(() => false),
         openThread: vi.fn(),
         pins: [],
         refreshPins: vi.fn(),
         sendThreadReply: vi.fn(),
         threadLoading: false,
         threadMessages: [],
+        threadReadByMessageId: {},
+        threadReplySending: false,
         togglePin: vi.fn(),
     },
     mockUnpinMessage: vi.fn(),
@@ -139,6 +142,7 @@ describe("useDirectMessages", () => {
         });
         mockThreadPinState.activeThreadParent = null;
         mockThreadPinState.closeThread = vi.fn();
+        mockThreadPinState.isThreadUnread = vi.fn(() => false);
         mockThreadPinState.openThread = vi.fn();
         mockThreadPinState.pins = [
             {
@@ -163,6 +167,8 @@ describe("useDirectMessages", () => {
         mockThreadPinState.sendThreadReply = vi.fn();
         mockThreadPinState.threadLoading = false;
         mockThreadPinState.threadMessages = [];
+        mockThreadPinState.threadReadByMessageId = {};
+        mockThreadPinState.threadReplySending = false;
         mockThreadPinState.togglePin = vi.fn();
         const fetchMock = vi.fn(
             async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -252,6 +258,49 @@ describe("useDirectMessages", () => {
                 currentUserId: "user-1",
             }),
         );
+    });
+
+    it("projects unread thread state onto normalized surface messages", async () => {
+        mockListDirectMessages.mockResolvedValue(
+            createListResult({
+                items: [
+                    {
+                        $createdAt: "2026-03-10T12:00:00.000Z",
+                        $id: "dm-thread-1",
+                        conversationId: "conversation-1",
+                        lastThreadReplyAt: "2026-03-10T12:20:00.000Z",
+                        senderDisplayName: "User Two",
+                        senderId: "user-2",
+                        text: "Hello",
+                        threadMessageCount: 3,
+                    },
+                ],
+            }),
+        );
+        mockThreadPinState.isThreadUnread = vi.fn(
+            (message) => message.$id === "dm-thread-1",
+        );
+        mockThreadPinState.threadReadByMessageId = {
+            "dm-thread-1": "2026-03-10T12:10:00.000Z",
+        };
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.surfaceMessages[0]).toEqual(
+                expect.objectContaining({
+                    id: "dm-thread-1",
+                    threadHasUnread: true,
+                    threadLastReadAt: "2026-03-10T12:10:00.000Z",
+                }),
+            );
+        });
     });
 
     it("clears messages when the conversation id becomes null", async () => {

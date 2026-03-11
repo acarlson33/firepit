@@ -23,7 +23,8 @@ export type UserProfile = {
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
-    navigationItemOrder?: NavigationItemPreferenceId[];
+    showAddFriendInHeader?: boolean;
+    navigationItemOrder?: NavigationItemPreferenceId[] | string;
     $createdAt: string;
     $updatedAt: string;
 };
