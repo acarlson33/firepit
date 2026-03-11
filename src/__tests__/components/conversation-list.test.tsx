@@ -83,6 +83,7 @@ describe("ConversationList", () => {
             <ConversationList
                 conversations={[]}
                 currentUserId="current-user"
+                inboxItems={[]}
                 loading={false}
                 onConversationCreated={onConversationCreated}
                 onNewConversation={vi.fn()}
@@ -115,6 +116,7 @@ describe("ConversationList", () => {
             <ConversationList
                 conversations={[conversation] as never[]}
                 currentUserId="current-user"
+                inboxItems={[]}
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}
@@ -129,32 +131,42 @@ describe("ConversationList", () => {
         expect(onSelectConversation).toHaveBeenCalledWith(conversation);
     });
 
-    it("filters the inbox view to unread conversations", async () => {
+    it("renders unified inbox items across direct messages and channels", async () => {
         render(
             <ConversationList
-                conversations={
+                conversations={[]}
+                currentUserId="current-user"
+                inboxItems={
                     [
                         {
-                            $id: "conv-unread",
-                            otherUser: {
-                                displayName: "Unread Friend",
-                                userId: "unread-friend",
-                            },
-                            participants: ["current-user", "unread-friend"],
-                            unreadThreadCount: 2,
+                            authorLabel: "Unread Friend",
+                            authorUserId: "unread-friend",
+                            contextId: "conv-unread",
+                            contextKind: "conversation",
+                            id: "thread:conversation:conv-unread:message-1",
+                            kind: "thread",
+                            latestActivityAt: "2026-03-11T12:00:00.000Z",
+                            messageId: "message-1",
+                            muted: false,
+                            previewText: "Unread thread reply",
+                            unreadCount: 2,
                         },
                         {
-                            $id: "conv-read",
-                            otherUser: {
-                                displayName: "Read Friend",
-                                userId: "read-friend",
-                            },
-                            participants: ["current-user", "read-friend"],
-                            unreadThreadCount: 0,
+                            authorLabel: "Channel Author",
+                            authorUserId: "channel-user",
+                            contextId: "channel-1",
+                            contextKind: "channel",
+                            id: "mention:channel:channel-1:message-2",
+                            kind: "mention",
+                            latestActivityAt: "2026-03-11T12:01:00.000Z",
+                            messageId: "message-2",
+                            muted: true,
+                            previewText: "hello @current-user",
+                            serverId: "server-1",
+                            unreadCount: 1,
                         },
                     ] as never[]
                 }
-                currentUserId="current-user"
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}
@@ -166,33 +178,33 @@ describe("ConversationList", () => {
         fireEvent.click(screen.getByRole("button", { name: /inbox/i }));
 
         expect(screen.getByText("Unread Friend")).toBeInTheDocument();
-        expect(screen.queryByText("Read Friend")).not.toBeInTheDocument();
-        expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+        expect(screen.getByText("Channel Author")).toBeInTheDocument();
+        expect(screen.getByText("Direct message")).toBeInTheDocument();
+        expect(screen.getByText("Channel")).toBeInTheDocument();
     });
 
-    it("loads mentions and routes to the highlighted message", async () => {
-        vi.mocked(fetch).mockResolvedValue({
-            json: vi.fn().mockResolvedValue({
-                results: [
-                    {
-                        message: {
-                            $createdAt: "2026-03-10T12:00:00.000Z",
-                            $id: "message-1",
-                            conversationId: "conv-mention",
-                            senderDisplayName: "Mention Author",
-                            text: "hello @current-user",
-                        },
-                        type: "dm",
-                    },
-                ],
-            }),
-            ok: true,
-        } as Response);
-
+    it("renders mention inbox items and routes using unread entry links", async () => {
         render(
             <ConversationList
                 conversations={[]}
                 currentUserId="current-user"
+                inboxItems={
+                    [
+                        {
+                            authorLabel: "Mention Author",
+                            authorUserId: "mention-author",
+                            contextId: "conv-mention",
+                            contextKind: "conversation",
+                            id: "mention:conversation:conv-mention:message-1",
+                            kind: "mention",
+                            latestActivityAt: "2026-03-10T12:00:00.000Z",
+                            messageId: "message-1",
+                            muted: false,
+                            previewText: "hello @current-user",
+                            unreadCount: 1,
+                        },
+                    ] as never[]
+                }
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}
@@ -203,16 +215,12 @@ describe("ConversationList", () => {
 
         fireEvent.click(screen.getByRole("button", { name: /mentions/i }));
 
-        await waitFor(() => {
-            expect(screen.getByText("Mention Author")).toBeInTheDocument();
-        });
-
         fireEvent.click(
             screen.getByRole("button", { name: /mention author/i }),
         );
 
         expect(mockPush).toHaveBeenCalledWith(
-            "/chat?conversation=conv-mention&highlight=message-1",
+            "/chat?conversation=conv-mention&unread=message-1",
         );
     });
 });

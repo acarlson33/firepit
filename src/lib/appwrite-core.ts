@@ -74,6 +74,7 @@ export type EnvConfig = {
         pinnedMessages: string;
         featureFlags: string;
         notificationSettings: string;
+        inboxItems: string;
         threadReads: string;
     };
     buckets: {
@@ -247,6 +248,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID,
                 "notification_settings",
             ) || "notification_settings",
+        inboxItems:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_INBOX_ITEMS_COLLECTION_ID,
+                process.env.APPWRITE_INBOX_ITEMS_COLLECTION_ID,
+                "inbox_items",
+            ) || "inbox_items",
         threadReads:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_THREAD_READS_COLLECTION_ID,

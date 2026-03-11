@@ -47,7 +47,18 @@ type VirtualizedMessageListProps = {
         id: number;
     } | null;
     onMediaLoad?: (message: ChatSurfaceMessage) => void;
+    unreadAnchorMessageId?: string | null;
 };
+
+function UnreadBoundary() {
+    return (
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+            <span className="h-px flex-1 bg-primary/30" />
+            First unread
+            <span className="h-px flex-1 bg-primary/30" />
+        </div>
+    );
+}
 
 export function VirtualizedMessageList({
     messages,
@@ -73,6 +84,7 @@ export function VirtualizedMessageList({
     pinnedMessageIds,
     scrollToBottomRequest,
     onMediaLoad,
+    unreadAnchorMessageId,
 }: VirtualizedMessageListProps) {
     const isCompact = messageDensity === "compact";
     const virtuosoRef = useRef<VirtuosoHandle | null>(null);
@@ -93,16 +105,25 @@ export function VirtualizedMessageList({
 
     return (
         <Virtuoso
-            className={`h-[60vh] ${
+            className={`min-w-0 w-full ${
                 isCompact ? "rounded-2xl p-3" : "rounded-3xl p-4"
             } border border-border/60 bg-background/70 shadow-inner`}
+            style={{ height: "60vh" }}
             computeItemKey={(_, message) => message.id}
             data={messages}
+            data-message-scroll-container="true"
             followOutput="smooth"
             initialTopMostItemIndex={messages.length - 1}
             ref={virtuosoRef}
             itemContent={(_, message) => (
-                <div className={isCompact ? "mx-4 mb-3" : "mx-4 mb-4"}>
+                <div
+                    className={`min-w-0 ${
+                        isCompact ? "mx-4 mb-3" : "mx-4 mb-4"
+                    }`}
+                >
+                    {unreadAnchorMessageId === message.id ? (
+                        <UnreadBoundary />
+                    ) : null}
                     <ChatSurfaceMessageItem
                         canManageMessages={canManageMessages}
                         currentUserId={userId}

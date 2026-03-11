@@ -14,9 +14,11 @@ vi.mock("react-virtuoso", () => ({
     Virtuoso: React.forwardRef(
         (
             {
+                className,
                 itemContent,
                 data,
             }: {
+                className?: string;
                 itemContent: (
                     index: number,
                     item: ChatSurfaceMessage,
@@ -32,7 +34,7 @@ vi.mock("react-virtuoso", () => ({
             }));
 
             return (
-                <div data-testid="virtuoso-container">
+                <div className={className} data-testid="virtuoso-container">
                     {data.map((item, index) => (
                         <div key={item.id} data-testid={`message-${item.id}`}>
                             {itemContent(index, item)}
@@ -187,6 +189,17 @@ describe("VirtualizedMessageList", () => {
 
         expect(screen.getByTestId("virtuoso-container")).toBeDefined();
         expect(screen.getByTestId("message-msg-1")).toBeDefined();
+    });
+
+    it("keeps the virtualized container pinned to full width", () => {
+        render(<VirtualizedMessageList {...defaultProps} />);
+
+        expect(screen.getByTestId("virtuoso-container").className).toContain(
+            "w-full",
+        );
+        expect(screen.getByTestId("virtuoso-container").className).toContain(
+            "min-w-0",
+        );
     });
 
     it("scrolls to the bottom when requested", async () => {

@@ -82,13 +82,14 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 ### Planned
 
 - Add clearer parity tracking for message-history affordances that users expect in Discord-like products
+- Expand the unified inbox model toward fuller per-message unread coverage and digest-style follow-on work
 
 ### Investigating
 
 - Polls
 - Voice messages
 - Message bookmarks or saved items
-- Better unread and catch-up flows for high-volume channels
+- Better unread and catch-up flows for high-volume channels once the shared inbox and unread model settle
 
 ### Deferred
 
@@ -138,13 +139,12 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ### Planned
 
-- Better unread and badge semantics that stay consistent across servers, channels, and DMs
-- Notification-center or inbox flows for missed activity review
+- Better unread and badge semantics for future full-message unread and digest-style workflows
 - Additional polish for high-volume mention workflows and future mobile delivery surfaces
 
 ### Investigating
 
-- Mention inbox or notification center
+- Full per-message unread and digest-style inbox extensions beyond the current thread-and-mention unread model
 - Unread-count consistency across servers, channels, and DMs
 - Digest-style summaries for missed activity
 
@@ -209,6 +209,7 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 - Continue closing parity gaps where a feature exists in one chat surface but not another
 - Continue polishing the newly shipped category-management UX and permissions model
+- Harden and extend the newly shipped unread-history implementation: unified inbox, jump-to-unread, catch-up affordances, and badge semantics across channels and DMs
 - Decide whether unread and inbox-style notification follow-up work should stay in Q2 or move behind social-graph polish
 
 ### Q3 2026

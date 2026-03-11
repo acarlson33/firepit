@@ -13,6 +13,10 @@ const { mockJumpToMessage } = vi.hoisted(() => ({
     mockJumpToMessage: vi.fn(),
 }));
 
+const { mockChatSurfacePanel } = vi.hoisted(() => ({
+    mockChatSurfacePanel: vi.fn(),
+}));
+
 vi.mock("@/lib/message-navigation", () => ({
     jumpToMessage: (...args: unknown[]) => mockJumpToMessage(...args),
 }));
@@ -49,7 +53,10 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/components/chat-surface-panel", () => ({
-    ChatSurfacePanel: () => <div>chat-surface-panel</div>,
+    ChatSurfacePanel: (props: Record<string, unknown>) => {
+        mockChatSurfacePanel(props);
+        return <div>chat-surface-panel</div>;
+    },
 }));
 
 vi.mock("@/components/chat-thread-content", () => ({
@@ -65,6 +72,37 @@ vi.mock("@/components/mention-help-tooltip", () => ({
 }));
 
 describe("DirectMessageView", () => {
+    it("keeps DM virtualization aligned with the shared surface threshold", () => {
+        const conversation: Conversation = {
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conversation-1",
+            otherUser: {
+                displayName: "User Two",
+                userId: "user-2",
+            },
+            participantCount: 2,
+            participants: ["user-1", "user-2"],
+        };
+
+        render(
+            <DirectMessageView
+                conversation={conversation}
+                currentUserId="user-1"
+                loading={false}
+                messages={[]}
+                onDelete={vi.fn()}
+                onEdit={vi.fn()}
+                onSend={vi.fn()}
+                sending={false}
+                surfaceMessages={[]}
+            />,
+        );
+
+        expect(mockChatSurfacePanel).toHaveBeenCalledWith(
+            expect.objectContaining({ virtualizationThreshold: 20 }),
+        );
+    });
+
     it("uses the shared jump helper for pinned DM messages", async () => {
         const user = userEvent.setup();
         const conversation: Conversation = {

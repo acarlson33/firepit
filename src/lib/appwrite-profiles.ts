@@ -91,6 +91,69 @@ export async function resolveProfileUserId(identifier: string) {
     }
 }
 
+export async function resolveProfileIdentifiers(identifiers: string[]) {
+    const trimmedIdentifiers = Array.from(
+        new Set(
+            identifiers.map((identifier) => identifier.trim()).filter(Boolean),
+        ),
+    );
+
+    if (trimmedIdentifiers.length === 0) {
+        return new Map<string, string>();
+    }
+
+    try {
+        const { databases } = getAdminClient();
+        const env = getEnvConfig();
+        const [byUserId, byUserName, byDisplayName] = await Promise.all([
+            databases.listDocuments(env.databaseId, env.collections.profiles, [
+                Query.equal("userId", trimmedIdentifiers),
+                Query.limit(100),
+            ]),
+            databases.listDocuments(env.databaseId, env.collections.profiles, [
+                Query.equal("userName", trimmedIdentifiers),
+                Query.limit(100),
+            ]),
+            databases.listDocuments(env.databaseId, env.collections.profiles, [
+                Query.equal("displayName", trimmedIdentifiers),
+                Query.limit(100),
+            ]),
+        ]);
+
+        const resolved = new Map<string, string>();
+        for (const document of [
+            ...byUserId.documents,
+            ...byUserName.documents,
+            ...byDisplayName.documents,
+        ]) {
+            const profile = document as unknown as UserProfile;
+            const userId = profile.userId;
+
+            if (trimmedIdentifiers.includes(userId)) {
+                resolved.set(userId, userId);
+            }
+
+            if (
+                profile.userName &&
+                trimmedIdentifiers.includes(profile.userName)
+            ) {
+                resolved.set(profile.userName, userId);
+            }
+
+            if (
+                profile.displayName &&
+                trimmedIdentifiers.includes(profile.displayName)
+            ) {
+                resolved.set(profile.displayName, userId);
+            }
+        }
+
+        return resolved;
+    } catch {
+        return new Map<string, string>();
+    }
+}
+
 /**
  * Create a new user profile
  */

@@ -23,8 +23,8 @@ import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
 
-// Use virtual scrolling when message count exceeds this threshold
-const VIRTUALIZATION_THRESHOLD = 50;
+// Keep DM rendering parity with the shared chat surface threshold.
+const VIRTUALIZATION_THRESHOLD = 20;
 
 type DirectMessageViewProps = {
     conversation: Conversation;
@@ -67,6 +67,12 @@ type DirectMessageViewProps = {
         displayName?: string,
         avatarUrl?: string,
     ) => void;
+    onCatchUpUnread?: () => void;
+    onJumpToUnread?: () => void;
+    onLoadOlder?: () => Promise<void> | void;
+    shouldShowLoadOlder?: boolean;
+    unreadAnchorMessageId?: string | null;
+    unreadSummaryLabel?: string | null;
 };
 
 export function DirectMessageView({
@@ -96,6 +102,12 @@ export function DirectMessageView({
     onCloseThread,
     onSendThreadReply,
     onOpenProfileModal,
+    onCatchUpUnread,
+    onJumpToUnread,
+    onLoadOlder,
+    shouldShowLoadOlder = false,
+    unreadAnchorMessageId,
+    unreadSummaryLabel,
 }: DirectMessageViewProps) {
     const [text, setText] = useState("");
     const [editingMessageId, setEditingMessageId] = useState<string | null>(
@@ -405,8 +417,8 @@ export function DirectMessageView({
                 </div>
             ) : null}
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="min-w-0 space-y-4">
                     <MentionHelpTooltip />
                     <ChatSurfacePanel
                         currentUserId={currentUserId}
@@ -433,10 +445,16 @@ export function DirectMessageView({
                         onTogglePin={surfaceController.onTogglePin}
                         onToggleReaction={surfaceController.onToggleReaction}
                         onUploadCustomEmoji={uploadEmoji}
+                        onCatchUpUnread={onCatchUpUnread}
+                        onJumpToUnread={onJumpToUnread}
+                        onLoadOlder={onLoadOlder}
                         pinnedMessageIds={pinnedMessageIds}
                         setDeleteConfirmId={setDeleteConfirmId}
+                        shouldShowLoadOlder={shouldShowLoadOlder}
                         surfaceMessages={surfaceMessages}
                         typingUsers={typingUsers}
+                        unreadAnchorMessageId={unreadAnchorMessageId}
+                        unreadSummaryLabel={unreadSummaryLabel}
                         userIdSlice={6}
                         virtualizationThreshold={VIRTUALIZATION_THRESHOLD}
                         composer={{
@@ -477,7 +495,7 @@ export function DirectMessageView({
                     />
                 </div>
 
-                <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
+                <aside className="min-w-0 space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
                         <div className="mb-2 flex items-center gap-2 font-medium text-sm">
                             <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />

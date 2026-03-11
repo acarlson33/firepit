@@ -230,6 +230,21 @@ vi.mock("../app/chat/hooks/useDirectMessages", () => ({
     }),
 }));
 
+vi.mock("../app/chat/hooks/useInbox", () => ({
+    useInbox: () => ({
+        counts: { mention: 0, thread: 0 },
+        error: null,
+        getContextSummary: vi.fn(() => null),
+        items: [],
+        loading: false,
+        markContextRead: vi.fn(),
+        markItemRead: vi.fn(),
+        refresh: vi.fn(),
+        summaries: [],
+        unreadCount: 0,
+    }),
+}));
+
 vi.mock("sonner", () => ({
     toast: {
         error: vi.fn(),
@@ -340,6 +355,29 @@ describe("ChatPage", () => {
         ).toBeInTheDocument();
         expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
             "dm-1",
+            expect.objectContaining({
+                retryAttempts: 12,
+                retryDelayMs: 200,
+            }),
+        );
+    });
+
+    it("consumes unread-entry deep links distinctly from highlight links", async () => {
+        mockConversations.push({
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conversation-1",
+            participants: ["user-1", "user-2"],
+        });
+        mockSearchParams.set("conversation", "conversation-1");
+        mockSearchParams.set("unread", "dm-2");
+
+        render(<ChatPage />);
+
+        expect(
+            await screen.findByText("direct-message-view"),
+        ).toBeInTheDocument();
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "dm-2",
             expect.objectContaining({
                 retryAttempts: 12,
                 retryDelayMs: 200,

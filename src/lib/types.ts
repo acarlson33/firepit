@@ -143,6 +143,33 @@ export type Conversation = {
     };
 };
 
+export type InboxItemKind = "mention" | "thread";
+
+export type InboxContextKind = "channel" | "conversation";
+
+export type InboxItem = {
+    id: string;
+    kind: InboxItemKind;
+    contextKind: InboxContextKind;
+    contextId: string;
+    serverId?: string;
+    messageId: string;
+    parentMessageId?: string;
+    latestActivityAt: string;
+    unreadCount: number;
+    previewText: string;
+    authorUserId: string;
+    authorLabel: string;
+    authorAvatarUrl?: string;
+    muted: boolean;
+};
+
+export type InboxListResponse = {
+    items: InboxItem[];
+    unreadCount: number;
+    counts: Record<InboxItemKind, number>;
+};
+
 export type DirectMessage = {
     $id: string;
     conversationId: string;

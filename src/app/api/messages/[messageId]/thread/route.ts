@@ -13,6 +13,7 @@ import {
     trackApiCall,
     addTransactionAttributes,
 } from "@/lib/newrelic-utils";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
 
 type RouteContext = {
     params: Promise<{
@@ -256,17 +257,38 @@ export async function POST(request: NextRequest, context: RouteContext) {
             participants.push(user.$id);
         }
 
+        const nextCount =
+            (actualParent.threadMessageCount ??
+                actualParent.threadReplyCount ??
+                0) + 1;
+
         // Update parent message with thread metadata
         await databases.updateDocument(
             env.databaseId,
             env.collections.messages,
             actualParentId,
             {
-                threadReplyCount: (actualParent.threadReplyCount ?? 0) + 1,
-                threadParticipants: JSON.stringify(participants),
+                threadMessageCount: nextCount,
+                threadParticipants: participants,
                 lastThreadReplyAt: new Date().toISOString(),
             },
         );
+
+        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+            await upsertMentionInboxItems({
+                authorUserId: user.$id,
+                contextId: String(parentMessage.channelId),
+                contextKind: "channel",
+                latestActivityAt: String(
+                    newReply.$createdAt ?? new Date().toISOString(),
+                ),
+                mentions,
+                messageId: String(newReply.$id),
+                parentMessageId: actualThreadId,
+                previewText: text || "",
+                serverId: parentMessage.serverId,
+            });
+        }
 
         const duration = Date.now() - startTime;
         trackApiCall("/api/messages/[messageId]/thread", "POST", 201, duration);

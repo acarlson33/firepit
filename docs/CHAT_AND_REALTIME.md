@@ -118,6 +118,7 @@ Client expectations:
 Chat-adjacent discovery is handled by:
 
 - `/api/search/messages` for message search
+- `/api/inbox` for the first unified unread-history aggregation pass across unread threads and mentions
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
 - `/api/thread-reads` for persisted per-thread read state across channels and DMs
@@ -136,6 +137,14 @@ Current notification capabilities include:
 - server-enriched override labels returned from `/api/notifications/settings` so the client can render readable server, channel, and DM names without extra lookups
 - bulk override management in settings for clearing expired overrides and resetting channel overrides
 - dedicated unread-thread persistence through the `thread_reads` collection so inbox and unread state survive across sessions without expanding the `notification_settings` schema
+
+Current unread-history implementation is intentionally incremental:
+
+- unread thread state is durable today through `/api/thread-reads`
+- the first inbox contract aggregates unread conversation and channel thread activity plus mentions into one normalized API shape
+- the chat client now uses that inbox contract for DM inbox, mentions, channel badges, DM badges, jump-to-unread, catch-up affordances, and unread boundary markers across both channels and DMs
+- `PATCH /api/inbox` marks mention-backed inbox items as read, while thread read state remains durable through `/api/thread-reads`
+- full per-message unread and digest-style delivery remain follow-on work on top of the shared inbox model
 
 Override precedence is intentionally deterministic:
 

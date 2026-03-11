@@ -20,6 +20,7 @@ const {
     mockGetDocument,
     mockGetServerSession,
     mockGetChannelAccessForUser,
+    mockUpsertMentionInboxItems,
 } = vi.hoisted(() => ({
     mockCreateDocument: vi.fn(),
     mockUpdateDocument: vi.fn(),
@@ -27,6 +28,7 @@ const {
     mockGetDocument: vi.fn(),
     mockGetServerSession: vi.fn(),
     mockGetChannelAccessForUser: vi.fn(),
+    mockUpsertMentionInboxItems: vi.fn(),
 }));
 
 // Mock dependencies
@@ -47,6 +49,10 @@ vi.mock("@/lib/appwrite-server", () => ({
 
 vi.mock("@/lib/server-channel-access", () => ({
     getChannelAccessForUser: mockGetChannelAccessForUser,
+}));
+
+vi.mock("@/lib/inbox-items", () => ({
+    upsertMentionInboxItems: mockUpsertMentionInboxItems,
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
@@ -76,6 +82,7 @@ describe("Messages API Routes", () => {
         mockDeleteDocument.mockClear();
         mockGetDocument.mockClear();
         mockGetChannelAccessForUser.mockClear();
+        mockUpsertMentionInboxItems.mockClear();
 
         mockGetChannelAccessForUser.mockResolvedValue({
             serverId: "server-1",
@@ -233,6 +240,48 @@ describe("Messages API Routes", () => {
             expect(response.status).toBe(403);
             expect(data.error).toBe("Forbidden");
             expect(mockCreateDocument).not.toHaveBeenCalled();
+        });
+
+        it("persists mention inbox items when mentions are present", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockCreateDocument.mockResolvedValue({
+                $id: "msg-mention",
+                userId: "user-1",
+                userName: "Test User",
+                text: "Hello @alice",
+                channelId: "channel-1",
+                serverId: "server-1",
+                $createdAt: "2026-03-11T12:00:00.000Z",
+                mentions: ["alice"],
+            });
+
+            const response = await POST(
+                new NextRequest("http://localhost/api/messages", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        text: "Hello @alice",
+                        channelId: "channel-1",
+                        mentions: ["alice"],
+                        serverId: "server-1",
+                    }),
+                }),
+            );
+
+            expect(response.status).toBe(200);
+            expect(mockUpsertMentionInboxItems).toHaveBeenCalledWith({
+                authorUserId: "user-1",
+                contextId: "channel-1",
+                contextKind: "channel",
+                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                mentions: ["alice"],
+                messageId: "msg-mention",
+                previewText: "Hello @alice",
+                serverId: "server-1",
+            });
         });
     });
 

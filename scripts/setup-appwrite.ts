@@ -1058,6 +1058,41 @@ async function setupThreadReads() {
     ]);
 }
 
+async function setupInboxItems() {
+    await ensureCollection("inbox_items", "Inbox Items");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["kind", 32, true],
+        ["contextKind", 32, true],
+        ["contextId", LEN_ID, true],
+        ["serverId", LEN_ID, false],
+        ["messageId", LEN_ID, true],
+        ["parentMessageId", LEN_ID, false],
+        ["latestActivityAt", LEN_TS, true],
+        ["previewText", LEN_TEXT, false],
+        ["authorUserId", LEN_ID, true],
+        ["readAt", LEN_TS, false],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute("inbox_items", key, size, required);
+    }
+    await ensureIndex("inbox_items", "idx_user_kind", "key", [
+        "userId",
+        "kind",
+    ]);
+    await ensureIndex("inbox_items", "idx_user_activity", "key", [
+        "userId",
+        "latestActivityAt",
+    ]);
+    await ensureIndex("inbox_items", "idx_user_item", "unique", [
+        "userId",
+        "kind",
+        "contextKind",
+        "contextId",
+        "messageId",
+    ]);
+}
+
 async function ensureBucket(
     id: string,
     name: string,
@@ -1308,6 +1343,8 @@ async function run() {
     await setupPinnedMessages();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
+    info("[setup] Setting up inbox items...");
+    await setupInboxItems();
     info("[setup] Setting up thread reads...");
     await setupThreadReads();
     info("[setup] Setting up teams...");

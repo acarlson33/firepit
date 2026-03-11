@@ -1,24 +1,30 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+const PUBLIC_FILE_PATTERN = /\.[a-z0-9]+$/i;
+
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = [
     "/",
     "/login",
     "/register",
     "/docs",
+    "/manifest.json",
     "/manifest.webmanifest",
     "/favicon.ico",
     "/robots.txt",
+    "/sw.js",
 ];
 
 const PUBLIC_ROUTE_PREFIXES = ["/docs/"];
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
+    const isPublicFile = PUBLIC_FILE_PATTERN.test(pathname);
 
     // Check if route is public (doesn't need authentication)
     const isPublicRoute =
+        isPublicFile ||
         PUBLIC_ROUTES.some((route) => pathname === route) ||
         PUBLIC_ROUTE_PREFIXES.some((routePrefix) =>
             pathname.startsWith(routePrefix),
@@ -61,9 +67,9 @@ export const config = {
          * Match all request paths except:
          * - _next/static (static files)
          * - _next/image (image optimization files)
-         * - favicon.ico, etc (static assets)
+         * - well-known static assets in the public directory
          * - api routes (handle auth separately if needed)
          */
-        "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+        "/((?!api/|_next/static|_next/image|.*\\.[a-z0-9]+$).*)",
     ],
 };

@@ -102,6 +102,7 @@ vi.mock("sonner", () => ({
 
 type DirectMessagesResult = {
     items: DirectMessage[];
+    nextCursor?: string | null;
     readOnly: boolean;
     readOnlyReason?: string | null;
     relationship?: RelationshipStatus | null;
@@ -260,6 +261,63 @@ describe("useDirectMessages", () => {
         );
     });
 
+    it("keeps previous direct messages visible while the next conversation is loading", async () => {
+        let resolveNextLoad:
+            | ((value: DirectMessagesResult) => void)
+            | undefined;
+
+        mockListDirectMessages
+            .mockResolvedValueOnce(createListResult())
+            .mockImplementationOnce(
+                () =>
+                    new Promise<DirectMessagesResult>((resolve) => {
+                        resolveNextLoad = resolve;
+                    }),
+            );
+
+        const { result, rerender } = renderHook(
+            ({ conversationId }: { conversationId: string | null }) =>
+                useDirectMessages({
+                    conversationId,
+                    userId: "user-1",
+                    userName: "User One",
+                }),
+            {
+                initialProps: { conversationId: "conversation-1" },
+            },
+        );
+
+        await waitFor(() => {
+            expect(result.current.messages).toHaveLength(1);
+        });
+
+        rerender({ conversationId: "conversation-2" });
+
+        expect(result.current.loading).toBe(true);
+        expect(result.current.messages).toHaveLength(1);
+        expect(result.current.messages[0]?.$id).toBe("dm-1");
+
+        await act(async () => {
+            resolveNextLoad?.(
+                createListResult({
+                    items: [
+                        {
+                            $createdAt: "2026-03-10T12:10:00.000Z",
+                            $id: "dm-2",
+                            conversationId: "conversation-2",
+                            senderId: "user-2",
+                            text: "New conversation",
+                        },
+                    ],
+                }),
+            );
+        });
+
+        await waitFor(() => {
+            expect(result.current.messages[0]?.$id).toBe("dm-2");
+        });
+    });
+
     it("projects unread thread state onto normalized surface messages", async () => {
         mockListDirectMessages.mockResolvedValue(
             createListResult({
@@ -326,6 +384,60 @@ describe("useDirectMessages", () => {
         });
         expect(result.current.readOnly).toBe(false);
         expect(result.current.readOnlyReason).toBeNull();
+    });
+
+    it("loads older direct messages when pagination is available", async () => {
+        mockListDirectMessages
+            .mockResolvedValueOnce({
+                ...createListResult({
+                    items: [
+                        {
+                            $createdAt: "2026-03-10T12:02:00.000Z",
+                            $id: "dm-newer",
+                            conversationId: "conversation-1",
+                            senderId: "user-2",
+                            text: "Newer",
+                        },
+                    ],
+                }),
+                nextCursor: "cursor-1",
+            })
+            .mockResolvedValueOnce({
+                ...createListResult({
+                    items: [
+                        {
+                            $createdAt: "2026-03-10T12:01:00.000Z",
+                            $id: "dm-older",
+                            conversationId: "conversation-1",
+                            senderId: "user-2",
+                            text: "Older",
+                        },
+                    ],
+                }),
+                nextCursor: null,
+            });
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.shouldShowLoadOlder).toBe(true);
+        });
+
+        await act(async () => {
+            await result.current.loadOlder();
+        });
+
+        expect(result.current.messages.map((message) => message.$id)).toEqual([
+            "dm-older",
+            "dm-newer",
+        ]);
+        expect(result.current.shouldShowLoadOlder).toBe(false);
     });
 
     it("sends a direct message and enriches it with the sender profile", async () => {

@@ -1,6 +1,6 @@
 "use client";
 import type { RealtimeResponseEvent } from "appwrite";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { adaptChannelMessages } from "@/lib/chat-surface";
@@ -113,6 +113,26 @@ export function useMessages({
     const typingStartDebounceMs = 400; // debounce for consecutive "started" events
     const userIdSlice = 6;
     const maxTypingDisplay = 3;
+    const listChannelThreadReads = useCallback(
+        (currentContextId: string) =>
+            listThreadReads("channel", currentContextId),
+        [],
+    );
+    const persistChannelThreadReads = useCallback(
+        ({
+            contextId: currentContextId,
+            reads,
+        }: {
+            contextId: string;
+            reads: Record<string, string>;
+        }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "channel",
+                reads,
+            }),
+        [],
+    );
 
     // load messages when channel changes
     useEffect(() => {
@@ -124,11 +144,8 @@ export function useMessages({
             return;
         }
 
-        // Clear messages and show loading immediately when channel changes
-        setMessages([]);
-        setOldestCursor(null);
-        setHasMore(false);
         setLoading(true);
+        let cancelled = false;
 
         (async () => {
             try {
@@ -137,6 +154,9 @@ export function useMessages({
                     undefined,
                     channelId,
                 );
+                if (cancelled) {
+                    return;
+                }
                 const initialTopLevel = initial.filter(isTopLevelMessage);
                 setMessages(initialTopLevel);
                 if (initial.length) {
@@ -148,17 +168,26 @@ export function useMessages({
                     setHasMore(false);
                 }
             } catch (err) {
+                if (cancelled) {
+                    return;
+                }
                 toast.error(
                     err instanceof Error
                         ? err.message
                         : "Failed to load messages",
                 );
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         })().catch(() => {
             /* error already surfaced via toast */
         });
+
+        return () => {
+            cancelled = true;
+        };
     }, [channelId, pageSize]);
 
     // realtime subscription for messages
@@ -451,18 +480,12 @@ export function useMessages({
         currentUserId: userId,
         createThreadReply: createChannelThreadReply,
         listPins: listChannelPins,
-        listThreadReads: (currentContextId) =>
-            listThreadReads("channel", currentContextId),
+        listThreadReads: listChannelThreadReads,
         listThreadMessages: listChannelThreadMessages,
         messages,
         pinContextType: "channel",
         pinMessage: pinChannelMessage,
-        persistThreadReads: ({ contextId: currentContextId, reads }) =>
-            persistThreadReads({
-                contextId: currentContextId,
-                contextType: "channel",
-                reads,
-            }),
+        persistThreadReads: persistChannelThreadReads,
         setMessages,
         unpinMessage: unpinChannelMessage,
     });

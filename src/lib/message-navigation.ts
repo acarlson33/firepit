@@ -11,6 +11,14 @@ export type ChatMessageDestination =
           messageId: string;
       };
 
+type BuildChatMessageHrefOptions =
+    | {
+          entry?: "highlight";
+      }
+    | {
+          entry: "unread";
+      };
+
 type JumpToMessageOptions = {
     behavior?: ScrollBehavior;
     block?: ScrollLogicalPosition;
@@ -22,9 +30,100 @@ type DeferredJumpToMessageOptions = JumpToMessageOptions & {
     retryAttempts?: number;
     retryDelayMs?: number;
     onComplete?: (found: boolean) => void;
+    onRetry?: (attempt: number) => void;
 };
 
 const MESSAGE_HIGHLIGHT_CLASSES = ["ring-2", "ring-amber-400"] as const;
+const MESSAGE_SCROLL_CONTAINER_SELECTOR = "[data-message-scroll-container]";
+
+function findMarkedScrollContainer(
+    element: HTMLElement,
+    boundary: ParentNode,
+): HTMLElement | null {
+    let currentElement: HTMLElement | null = element;
+
+    while (currentElement && currentElement !== boundary) {
+        if (currentElement.matches(MESSAGE_SCROLL_CONTAINER_SELECTOR)) {
+            return currentElement;
+        }
+
+        currentElement = currentElement.parentElement;
+    }
+
+    return null;
+}
+
+function findScrollableAncestor(
+    element: HTMLElement,
+    boundary: ParentNode,
+): HTMLElement | null {
+    const markedContainer = findMarkedScrollContainer(element, boundary);
+    if (markedContainer) {
+        return markedContainer;
+    }
+
+    let currentElement = element.parentElement;
+
+    while (currentElement && currentElement !== boundary) {
+        const styles = window.getComputedStyle(currentElement);
+        const overflowY = styles.overflowY;
+        const canScroll =
+            (overflowY === "auto" || overflowY === "scroll") &&
+            currentElement.scrollHeight > currentElement.clientHeight;
+
+        if (canScroll) {
+            return currentElement;
+        }
+
+        currentElement = currentElement.parentElement;
+    }
+
+    return null;
+}
+
+function scrollMessageWithinContainer(params: {
+    behavior: ScrollBehavior;
+    block: ScrollLogicalPosition;
+    container: HTMLElement;
+    target: HTMLElement;
+}) {
+    const { behavior, block, container, target } = params;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const relativeTop =
+        targetRect.top - containerRect.top + container.scrollTop;
+
+    let nextScrollTop = relativeTop;
+    if (block === "center") {
+        nextScrollTop =
+            relativeTop - container.clientHeight / 2 + target.clientHeight / 2;
+    }
+
+    if (block === "end") {
+        nextScrollTop =
+            relativeTop - container.clientHeight + target.clientHeight;
+    }
+
+    if (block === "nearest") {
+        const currentTop = container.scrollTop;
+        const currentBottom = currentTop + container.clientHeight;
+        const targetTop = relativeTop;
+        const targetBottom = relativeTop + target.clientHeight;
+
+        if (targetTop < currentTop) {
+            nextScrollTop = targetTop;
+        } else if (targetBottom > currentBottom) {
+            nextScrollTop = targetBottom - container.clientHeight;
+        } else {
+            nextScrollTop = currentTop;
+        }
+    }
+
+    container.scrollTo({
+        behavior,
+        top: Math.max(nextScrollTop, 0),
+    });
+}
 
 function findMessageElement(
     messageId: string,
@@ -33,7 +132,10 @@ function findMessageElement(
     return root.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
 }
 
-export function buildChatMessageHref(destination: ChatMessageDestination) {
+export function buildChatMessageHref(
+    destination: ChatMessageDestination,
+    options: BuildChatMessageHrefOptions = { entry: "highlight" },
+) {
     const params = new URLSearchParams();
 
     if (destination.kind === "channel") {
@@ -45,7 +147,10 @@ export function buildChatMessageHref(destination: ChatMessageDestination) {
         params.set("conversation", destination.conversationId);
     }
 
-    params.set("highlight", destination.messageId);
+    params.set(
+        options.entry === "unread" ? "unread" : "highlight",
+        destination.messageId,
+    );
 
     return `/chat?${params.toString()}`;
 }
@@ -66,7 +171,17 @@ export function jumpToMessage(
         return false;
     }
 
-    target.scrollIntoView({ behavior, block });
+    const scrollContainer = findScrollableAncestor(target, root);
+    if (scrollContainer) {
+        scrollMessageWithinContainer({
+            behavior,
+            block,
+            container: scrollContainer,
+            target,
+        });
+    } else {
+        target.scrollIntoView({ behavior, block });
+    }
     target.classList.add(...MESSAGE_HIGHLIGHT_CLASSES);
 
     window.setTimeout(() => {
@@ -86,6 +201,7 @@ export function jumpToMessageWhenReady(
         retryAttempts = 10,
         retryDelayMs = 150,
         onComplete,
+        onRetry,
         ...jumpOptions
     } = options;
 
@@ -109,6 +225,8 @@ export function jumpToMessageWhenReady(
             onComplete?.(false);
             return;
         }
+
+        onRetry?.(attempts);
 
         timeoutId = window.setTimeout(tryJump, retryDelayMs);
     };

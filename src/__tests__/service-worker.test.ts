@@ -81,6 +81,17 @@ describe("Service Worker", () => {
     });
 
     describe("Fetch Event - Emoji Requests", () => {
+        it("should bypass non-emoji localhost requests in development", () => {
+            const fetchSection = swCode.match(
+                /addEventListener\("fetch"[\s\S]*?}\);/,
+            );
+            expect(fetchSection).toBeTruthy();
+            expect(fetchSection?.[0]).toContain(
+                "if (isDevelopmentHost() && !isEmojiRequest(url)) {",
+            );
+            expect(fetchSection?.[0]).toContain("return;");
+        });
+
         it("should handle emoji requests with isEmojiRequest helper", () => {
             expect(swCode).toContain("function isEmojiRequest(url)");
             expect(swCode).toContain('"/storage/buckets/emojis/files/"');
