@@ -151,7 +151,7 @@ Move from basic mute controls to Discord-like notification preferences across se
 
 ## Workstream C: Cross-Surface Messaging Consistency
 
-Status: In progress. The shared navigation and pin-thread state slice shipped in March 2026; broader history-affordance parity is still follow-on work.
+Status: In progress. The shared navigation, normalized pin-thread contracts, optimistic pin-thread state slice, and minimal unread-thread foundation shipped in March 2026; broader history-affordance parity is still follow-on work.
 
 ### Objective
 
@@ -176,6 +176,9 @@ Ensure that parity features that already exist behave consistently across channe
 - Normalize serialization and enrichment fields where the same concept exists in both message types
 - Document intentional differences instead of letting them emerge by accident
 - No new REST endpoints are required for the shipped slice; existing search, pin, thread, and typing APIs already expose the identifiers needed for shared client navigation
+- The shipped follow-on slice normalized channel and DM pin-list responses around the same shape, ordering, and enriched pin metadata
+- The shipped follow-on slice normalized channel and DM thread responses around the same item-oriented contract while preserving legacy keys during client transition
+- DM thread replies now flatten onto the root thread for metadata updates, matching channel-side thread-parent behavior
 
 ### Frontend Scope
 
@@ -184,10 +187,12 @@ Ensure that parity features that already exist behave consistently across channe
     - shared pin and thread client helpers across channel and DM surfaces
     - shared hook state for pin and thread behavior in `useMessages` and `useDirectMessages`
     - route-driven context selection and highlight behavior for both channel and DM chat landings
+    - normalized pin-list payload handling across channel and DM surfaces, including shared pinned metadata in the normalized message model
+    - optimistic pin and thread-reply behavior in the shared hook layer with rollback and reply-pending UI support across channel and DM thread views
+    - session-scoped unread-thread tracking in the shared hook layer, with thread-open read reconciliation and shared unread indicator projection across channel and DM message lists
 - Remaining follow-on scope:
     - shared component behavior for remaining message actions where feasible
-    - consistent optimistic-update behavior and failure recovery across chat surfaces
-    - consistent unread and active-thread indicators where supported
+    - broader unread and inbox semantics beyond the current per-thread foundation
 
 ### Testing
 
@@ -196,12 +201,15 @@ Ensure that parity features that already exist behave consistently across channe
     - pinned-item and thread-entry tests for channel and DM surfaces
     - shared client and shared hook regression coverage for pin-thread state
     - dedicated hook coverage for both `useMessages` and `useDirectMessages`
+    - parity regression coverage for normalized channel and DM pin-list and thread response contracts
+    - optimistic pin-toggle and thread-reply regression coverage in the shared hook layer, including rollback behavior
+    - unread-thread regression coverage for the shared hook, channel and DM hook projections, and thread indicator rendering
 - Remaining parity work should continue extending cross-surface regression coverage where the same affordance exists in both surfaces
 
 ### Rollout Notes
 
 - This workstream should generally ship incrementally with no separate feature flag unless a behavioral change is high risk
-- The March 2026 slice was delivered without backend contract changes; documentation updates should stay focused on shared client behavior unless later parity work changes API responses
+- The March 2026 slice began without backend contract changes, but later parity follow-up normalized existing channel and DM pin-thread response contracts while retaining legacy keys needed by older client paths during rollout
 
 ## Workstream D: Onboarding And Social Graph Polish
 

@@ -419,19 +419,40 @@ export function useMessages({
     const {
         activeThreadParent,
         closeThread,
+        isThreadUnread,
         openThread,
         pins: channelPins,
         refreshPins,
         sendThreadReply,
         threadLoading,
         threadMessages,
+        threadReadByMessageId,
+        threadReplySending,
         togglePin,
     } = useThreadPinState<Message>({
+        buildOptimisticThreadReply: ({
+            createdAt,
+            currentUserId,
+            parentMessage,
+            tempId,
+            text,
+        }) => ({
+            $createdAt: createdAt,
+            $id: tempId,
+            channelId: parentMessage.channelId,
+            serverId: parentMessage.serverId,
+            text,
+            threadId: parentMessage.threadId ?? parentMessage.$id,
+            userId: currentUserId ?? "unknown",
+            userName: userName ?? undefined,
+        }),
         contextId: channelId,
         currentUserId: userId,
         createThreadReply: createChannelThreadReply,
         listPins: listChannelPins,
         listThreadMessages: listChannelThreadMessages,
+        messages,
+        pinContextType: "channel",
         pinMessage: pinChannelMessage,
         setMessages,
         unpinMessage: unpinChannelMessage,
@@ -785,20 +806,32 @@ export function useMessages({
         return false;
     }
 
-    const surfaceMessages = useMemo(
-        () =>
-            adaptChannelMessages(
-                messages,
-                channelId
-                    ? {
-                          kind: "channel",
-                          channelId,
-                          serverId: serverId ?? undefined,
-                      }
-                    : undefined,
-            ),
-        [messages, channelId, serverId],
-    );
+    const surfaceMessages = useMemo(() => {
+        const messagesById = new Map(
+            messages.map((message) => [message.$id, message]),
+        );
+
+        return adaptChannelMessages(
+            messages,
+            channelId
+                ? {
+                      kind: "channel",
+                      channelId,
+                      serverId: serverId ?? undefined,
+                  }
+                : undefined,
+        ).map((message) => {
+            const sourceMessage = messagesById.get(message.id);
+
+            return {
+                ...message,
+                threadHasUnread: sourceMessage
+                    ? isThreadUnread(sourceMessage)
+                    : false,
+                threadLastReadAt: threadReadByMessageId[message.id],
+            };
+        });
+    }, [channelId, isThreadUnread, messages, serverId, threadReadByMessageId]);
 
     return {
         messages,
@@ -831,6 +864,7 @@ export function useMessages({
         activeThreadParent,
         threadMessages,
         threadLoading,
+        threadReplySending,
         openThread,
         closeThread,
         sendThreadReply,

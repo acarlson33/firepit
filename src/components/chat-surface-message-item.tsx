@@ -250,6 +250,7 @@ export function ChatSurfaceMessageItem({
                     message.threadReplyCount > 0 &&
                     onOpenThread && (
                         <ThreadIndicator
+                            hasUnread={message.threadHasUnread}
                             replyCount={message.threadReplyCount}
                             lastReplyAt={message.lastThreadReplyAt}
                             onClick={() => {

@@ -597,6 +597,7 @@ export default function ChatPage() {
         activeThreadParent,
         threadMessages: _threadMessages,
         threadLoading: _threadLoading,
+        threadReplySending: _threadReplySending,
         openThread,
         closeThread,
         sendThreadReply: _sendThreadReply,
@@ -1460,6 +1461,7 @@ export default function ChatPage() {
                             readOnly={dmApi.readOnly}
                             readOnlyReason={dmApi.readOnlyReason}
                             threadLoading={dmApi.threadLoading}
+                            threadReplySending={dmApi.threadReplySending}
                             threadMessages={dmApi.threadMessages}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
@@ -1585,6 +1587,9 @@ export default function ChatPage() {
                                                     }
                                                     replies={
                                                         threadSurfaceMessages
+                                                    }
+                                                    sendingReply={
+                                                        _threadReplySending
                                                     }
                                                     replyText={threadReplyText}
                                                 />

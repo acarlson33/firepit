@@ -52,6 +52,8 @@ export type ChatSurfaceMessage = {
     isPinned?: boolean;
     pinnedAt?: string;
     pinnedBy?: string;
+    threadHasUnread?: boolean;
+    threadLastReadAt?: string;
 };
 
 function cloneReactions(

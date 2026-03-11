@@ -58,6 +58,7 @@ type DirectMessageViewProps = {
     activeThreadParent?: DirectMessage | null;
     threadMessages?: DirectMessage[];
     threadLoading?: boolean;
+    threadReplySending?: boolean;
     onCloseThread?: () => void;
     onSendThreadReply?: (_text: string) => Promise<void> | void;
     onOpenProfileModal?: (
@@ -91,6 +92,7 @@ export function DirectMessageView({
     activeThreadParent,
     threadMessages = [],
     threadLoading = false,
+    threadReplySending = false,
     onCloseThread,
     onSendThreadReply,
     onOpenProfileModal,
@@ -553,6 +555,7 @@ export function DirectMessageView({
                                         ? readOnlyMessage
                                         : "Reply in thread"
                                 }
+                                sendingReply={threadReplySending}
                                 replyText={threadReplyText}
                             />
                         )}
