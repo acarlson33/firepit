@@ -1044,6 +1044,19 @@ async function setupNotificationSettings() {
     ]);
 }
 
+async function setupThreadReads() {
+    await ensureCollection("thread_reads", "Thread Reads");
+    await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
+    await ensureStringAttribute("thread_reads", "contextType", 32, true);
+    await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
+    await ensureStringAttribute("thread_reads", "reads", LEN_TEXT, true);
+    await ensureIndex("thread_reads", "idx_user_context", "unique", [
+        "userId",
+        "contextType",
+        "contextId",
+    ]);
+}
+
 async function ensureBucket(
     id: string,
     name: string,
@@ -1294,6 +1307,8 @@ async function run() {
     await setupPinnedMessages();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
+    info("[setup] Setting up thread reads...");
+    await setupThreadReads();
     info("[setup] Setting up teams...");
     await ensureTeams();
     writeStdout();

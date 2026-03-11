@@ -1,6 +1,10 @@
 import type { DirectMessage, Message, PinnedMessage } from "@/lib/types";
 
-import type { PinItem, PinsResponse } from "@/lib/pin-response";
+import type {
+    PinItem,
+    PinnableMessage,
+    PinsResponse,
+} from "@/lib/pin-response";
 
 type ThreadResponse<TMessage> = {
     items?: TMessage[];
@@ -199,7 +203,7 @@ export async function unpinMessage(
     await parseJsonResponse<{ success: boolean }>(response, config.unpinError);
 }
 
-export async function listPins<TMessage>(
+export async function listPins<TMessage extends PinnableMessage>(
     surface: ThreadPinSurface,
     contextId: string,
 ): Promise<Array<PinItem<TMessage>>> {

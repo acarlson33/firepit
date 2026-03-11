@@ -29,6 +29,7 @@ import {
     pinChannelMessage,
     unpinChannelMessage,
 } from "@/lib/thread-pin-client";
+import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -450,10 +451,18 @@ export function useMessages({
         currentUserId: userId,
         createThreadReply: createChannelThreadReply,
         listPins: listChannelPins,
+        listThreadReads: (currentContextId) =>
+            listThreadReads("channel", currentContextId),
         listThreadMessages: listChannelThreadMessages,
         messages,
         pinContextType: "channel",
         pinMessage: pinChannelMessage,
+        persistThreadReads: ({ contextId: currentContextId, reads }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "channel",
+                reads,
+            }),
         setMessages,
         unpinMessage: unpinChannelMessage,
     });

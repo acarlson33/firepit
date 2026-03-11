@@ -24,6 +24,7 @@ import {
     pinDMMessage,
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
+import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
@@ -175,10 +176,18 @@ export function useDirectMessages({
         currentUserId: userId,
         createThreadReply: createDMThreadReply,
         listPins: listConversationPins,
+        listThreadReads: (currentContextId) =>
+            listThreadReads("conversation", currentContextId),
         listThreadMessages: listDMThreadMessages,
         messages,
         pinContextType: "conversation",
         pinMessage: pinDMMessage,
+        persistThreadReads: ({ contextId: currentContextId, reads }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "conversation",
+                reads,
+            }),
         setMessages,
         unpinMessage: unpinDMMessage,
     });

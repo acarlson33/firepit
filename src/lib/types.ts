@@ -127,6 +127,8 @@ export type Conversation = {
     readOnly?: boolean;
     readOnlyReason?: string;
     relationship?: RelationshipStatus;
+    unreadThreadCount?: number;
+    hasUnread?: boolean;
     // Enriched data
     otherUser?: {
         userId: string;

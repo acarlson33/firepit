@@ -73,6 +73,8 @@ describe("useThreadPinState", () => {
                 }),
         );
         const unpinMessage = vi.fn().mockResolvedValue(undefined);
+        const listThreadReads = vi.fn().mockResolvedValue({});
+        const persistThreadReads = vi.fn().mockResolvedValue({});
 
         const { result } = renderHook(() => {
             const [messages, setMessages] = useState<TestMessage[]>([
@@ -91,10 +93,12 @@ describe("useThreadPinState", () => {
                     createThreadReply: vi.fn(),
                     currentUserId: "user-1",
                     listPins,
+                    listThreadReads,
                     listThreadMessages: vi.fn(),
                     messages,
                     pinContextType: "channel",
                     pinMessage,
+                    persistThreadReads,
                     setMessages,
                     unpinMessage,
                 }),
@@ -158,6 +162,8 @@ describe("useThreadPinState", () => {
         };
         const listThreadMessages = vi.fn().mockResolvedValue([]);
         const listPins = vi.fn().mockResolvedValue([]);
+        const listThreadReads = vi.fn().mockResolvedValue({});
+        const persistThreadReads = vi.fn().mockResolvedValue({});
 
         let resolveReply: (() => void) | undefined;
         const createThreadReply = vi.fn(
@@ -180,10 +186,12 @@ describe("useThreadPinState", () => {
                     createThreadReply,
                     currentUserId: "user-1",
                     listPins,
+                    listThreadReads,
                     listThreadMessages,
                     messages,
                     pinContextType: "channel",
                     pinMessage: vi.fn(),
+                    persistThreadReads,
                     setMessages,
                     unpinMessage: vi.fn(),
                 }),
@@ -244,6 +252,8 @@ describe("useThreadPinState", () => {
         };
         const listPins = vi.fn().mockResolvedValue([]);
         const listThreadMessages = vi.fn().mockResolvedValue([]);
+        const listThreadReads = vi.fn().mockResolvedValue({});
+        const persistThreadReads = vi.fn().mockResolvedValue({});
         const createThreadReply = vi
             .fn()
             .mockRejectedValue(new Error("send failed"));
@@ -260,10 +270,12 @@ describe("useThreadPinState", () => {
                     createThreadReply,
                     currentUserId: "user-1",
                     listPins,
+                    listThreadReads,
                     listThreadMessages,
                     messages,
                     pinContextType: "channel",
                     pinMessage: vi.fn(),
+                    persistThreadReads,
                     setMessages,
                     unpinMessage: vi.fn(),
                 }),

@@ -5,6 +5,7 @@ import { ConversationList } from "@/app/chat/components/ConversationList";
 
 const mockUseFriends = vi.fn();
 const mockGetOrCreateConversation = vi.fn();
+const mockPush = vi.fn();
 
 vi.mock("sonner", () => ({
     toast: {
@@ -22,6 +23,12 @@ vi.mock("@/lib/appwrite-dms-client", () => ({
         mockGetOrCreateConversation(...args),
 }));
 
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({
+        push: mockPush,
+    }),
+}));
+
 describe("ConversationList", () => {
     function clickFriendShortcut(name: string) {
         const label = screen.getAllByText(name)[0];
@@ -35,6 +42,7 @@ describe("ConversationList", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal("fetch", vi.fn());
         mockUseFriends.mockReturnValue({
             friends: [
                 {
@@ -119,5 +127,92 @@ describe("ConversationList", () => {
 
         expect(mockGetOrCreateConversation).not.toHaveBeenCalled();
         expect(onSelectConversation).toHaveBeenCalledWith(conversation);
+    });
+
+    it("filters the inbox view to unread conversations", async () => {
+        render(
+            <ConversationList
+                conversations={
+                    [
+                        {
+                            $id: "conv-unread",
+                            otherUser: {
+                                displayName: "Unread Friend",
+                                userId: "unread-friend",
+                            },
+                            participants: ["current-user", "unread-friend"],
+                            unreadThreadCount: 2,
+                        },
+                        {
+                            $id: "conv-read",
+                            otherUser: {
+                                displayName: "Read Friend",
+                                userId: "read-friend",
+                            },
+                            participants: ["current-user", "read-friend"],
+                            unreadThreadCount: 0,
+                        },
+                    ] as never[]
+                }
+                currentUserId="current-user"
+                loading={false}
+                onConversationCreated={vi.fn()}
+                onNewConversation={vi.fn()}
+                onSelectConversation={vi.fn()}
+                selectedConversationId={null}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: /inbox/i }));
+
+        expect(screen.getByText("Unread Friend")).toBeInTheDocument();
+        expect(screen.queryByText("Read Friend")).not.toBeInTheDocument();
+        expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+    });
+
+    it("loads mentions and routes to the highlighted message", async () => {
+        vi.mocked(fetch).mockResolvedValue({
+            json: vi.fn().mockResolvedValue({
+                results: [
+                    {
+                        message: {
+                            $createdAt: "2026-03-10T12:00:00.000Z",
+                            $id: "message-1",
+                            conversationId: "conv-mention",
+                            senderDisplayName: "Mention Author",
+                            text: "hello @current-user",
+                        },
+                        type: "dm",
+                    },
+                ],
+            }),
+            ok: true,
+        } as Response);
+
+        render(
+            <ConversationList
+                conversations={[]}
+                currentUserId="current-user"
+                loading={false}
+                onConversationCreated={vi.fn()}
+                onNewConversation={vi.fn()}
+                onSelectConversation={vi.fn()}
+                selectedConversationId={null}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: /mentions/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText("Mention Author")).toBeInTheDocument();
+        });
+
+        fireEvent.click(
+            screen.getByRole("button", { name: /mention author/i }),
+        );
+
+        expect(mockPush).toHaveBeenCalledWith(
+            "/chat?conversation=conv-mention&highlight=message-1",
+        );
     });
 });

@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
-import type { PinItem, ThreadReplyPayload } from "@/lib/thread-pin-client";
+import { isThreadUnread as getThreadUnreadState } from "@/lib/thread-read-states";
+import type { ThreadReplyPayload } from "@/lib/thread-pin-client";
 import type { PinnedMessage } from "@/lib/types";
 
 type ThreadableMessage = {
@@ -19,6 +20,11 @@ type ThreadableMessage = {
     isPinned?: boolean;
     pinnedAt?: string;
     pinnedBy?: string;
+};
+
+type ThreadPinItem<TMessage extends ThreadableMessage> = {
+    pin: PinnedMessage;
+    message: TMessage;
 };
 
 type UseThreadPinStateOptions<TMessage extends ThreadableMessage> = {
@@ -35,12 +41,17 @@ type UseThreadPinStateOptions<TMessage extends ThreadableMessage> = {
         messageId: string,
         payload: ThreadReplyPayload,
     ) => Promise<TMessage>;
-    listPins: (contextId: string) => Promise<Array<PinItem<TMessage>>>;
+    listPins: (contextId: string) => Promise<Array<ThreadPinItem<TMessage>>>;
+    listThreadReads: (contextId: string) => Promise<Record<string, string>>;
     listThreadMessages: (messageId: string) => Promise<TMessage[]>;
     messages: TMessage[];
     pinActionErrorMessage?: string;
     pinContextType: PinnedMessage["contextType"];
     pinMessage: (messageId: string) => Promise<unknown>;
+    persistThreadReads: (params: {
+        contextId: string;
+        reads: Record<string, string>;
+    }) => Promise<Record<string, string>>;
     setMessages: React.Dispatch<React.SetStateAction<TMessage[]>>;
     threadLoadErrorMessage?: string;
     threadReplyErrorMessage?: string;
@@ -98,7 +109,7 @@ function createOptimisticPinItem<TMessage extends ThreadableMessage>(params: {
     currentUserId: string | null;
     message: TMessage;
     pinnedAt: string;
-}): PinItem<TMessage> {
+}): ThreadPinItem<TMessage> {
     const { contextId, contextType, currentUserId, message, pinnedAt } = params;
 
     return {
@@ -142,7 +153,7 @@ function replaceThreadReply<TMessage extends ThreadableMessage>(
 }
 
 function sortPinsByPinnedAt<TMessage extends ThreadableMessage>(
-    items: Array<PinItem<TMessage>>,
+    items: Array<ThreadPinItem<TMessage>>,
 ) {
     return [...items].sort((left, right) => {
         const pinnedAtOrder = right.pin.pinnedAt.localeCompare(
@@ -218,17 +229,19 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
     currentUserId,
     createThreadReply,
     listPins,
+    listThreadReads,
     listThreadMessages,
     messages,
     pinActionErrorMessage = "Pin action failed",
     pinContextType,
     pinMessage,
+    persistThreadReads,
     setMessages,
     threadLoadErrorMessage = "Failed to load thread",
     threadReplyErrorMessage = "Failed to send thread reply",
     unpinMessage,
 }: UseThreadPinStateOptions<TMessage>) {
-    const [pins, setPins] = useState<Array<PinItem<TMessage>>>([]);
+    const [pins, setPins] = useState<Array<ThreadPinItem<TMessage>>>([]);
     const [activeThreadParent, setActiveThreadParent] =
         useState<TMessage | null>(null);
     const [threadMessages, setThreadMessages] = useState<TMessage[]>([]);
@@ -237,9 +250,13 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
     const [threadReadByMessageId, setThreadReadByMessageId] = useState<
         Record<string, string>
     >({});
+    const hasHydratedThreadReadsRef = useRef(false);
+    const lastPersistedThreadReadsRef = useRef("{}");
 
     useEffect(() => {
         if (!contextId || typeof window === "undefined") {
+            hasHydratedThreadReadsRef.current = false;
+            lastPersistedThreadReadsRef.current = "{}";
             setThreadReadByMessageId({});
             return;
         }
@@ -263,19 +280,72 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
                 return;
             }
 
-            const nextState = Object.fromEntries(
-                Object.entries(parsedValue).filter(
-                    ([messageId, readAt]) =>
-                        typeof messageId === "string" &&
-                        typeof readAt === "string" &&
-                        readAt.length > 0,
-                ),
-            );
+            const nextState = Object.entries(parsedValue).reduce<
+                Record<string, string>
+            >((accumulator, [messageId, readAt]) => {
+                if (
+                    typeof messageId === "string" &&
+                    typeof readAt === "string" &&
+                    readAt.length > 0
+                ) {
+                    accumulator[messageId] = readAt;
+                }
+
+                return accumulator;
+            }, {});
             setThreadReadByMessageId(nextState);
+            lastPersistedThreadReadsRef.current = JSON.stringify(nextState);
         } catch {
             setThreadReadByMessageId({});
+            lastPersistedThreadReadsRef.current = "{}";
         }
     }, [contextId, currentUserId, pinContextType]);
+
+    useEffect(() => {
+        if (!contextId) {
+            return;
+        }
+
+        let cancelled = false;
+
+        void listThreadReads(contextId)
+            .then((serverReads) => {
+                if (cancelled) {
+                    return;
+                }
+
+                setThreadReadByMessageId((currentValue) => {
+                    const mergedState: Record<string, string> = {
+                        ...serverReads,
+                    };
+
+                    for (const [messageId, readAt] of Object.entries(
+                        currentValue,
+                    )) {
+                        const existingValue = mergedState[messageId];
+                        mergedState[messageId] =
+                            existingValue &&
+                            existingValue.localeCompare(readAt) >= 0
+                                ? existingValue
+                                : readAt;
+                    }
+
+                    lastPersistedThreadReadsRef.current =
+                        JSON.stringify(mergedState);
+                    hasHydratedThreadReadsRef.current = true;
+                    return mergedState;
+                });
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    hasHydratedThreadReadsRef.current = true;
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [contextId, listThreadReads]);
 
     useEffect(() => {
         if (!contextId || typeof window === "undefined") {
@@ -303,6 +373,35 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
         }
     }, [contextId, currentUserId, pinContextType, threadReadByMessageId]);
 
+    useEffect(() => {
+        if (!contextId || !hasHydratedThreadReadsRef.current) {
+            return;
+        }
+
+        const serializedReads = JSON.stringify(threadReadByMessageId);
+        if (serializedReads === lastPersistedThreadReadsRef.current) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            void persistThreadReads({
+                contextId,
+                reads: threadReadByMessageId,
+            })
+                .then((persistedReads) => {
+                    lastPersistedThreadReadsRef.current =
+                        JSON.stringify(persistedReads);
+                })
+                .catch(() => {
+                    // Keep local read state even if sync fails.
+                });
+        }, 250);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [contextId, persistThreadReads, threadReadByMessageId]);
+
     const markThreadRead = useCallback((messageId: string, readAt?: string) => {
         if (!readAt) {
             return;
@@ -323,16 +422,11 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
 
     const isThreadUnread = useCallback(
         (message: TMessage) => {
-            if (!message.threadMessageCount || !message.lastThreadReplyAt) {
-                return false;
-            }
-
-            const lastReadAt = threadReadByMessageId[message.$id];
-            if (!lastReadAt) {
-                return true;
-            }
-
-            return lastReadAt.localeCompare(message.lastThreadReplyAt) < 0;
+            return getThreadUnreadState({
+                lastReadAt: threadReadByMessageId[message.$id],
+                lastThreadReplyAt: message.lastThreadReplyAt,
+                threadMessageCount: message.threadMessageCount,
+            });
         },
         [threadReadByMessageId],
     );
