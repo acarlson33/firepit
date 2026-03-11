@@ -185,17 +185,19 @@ export default function Header({ onSearchClick }: HeaderProps) {
                 <div className="flex min-w-42 items-center gap-3 self-end sm:self-auto">
                     {isAuthenticated && userData ? (
                         <div className="flex items-center gap-3">
-                            <Button asChild size="sm" variant="secondary">
-                                <Link href="/chat?compose=1">
-                                    <UserPlus className="h-4 w-4" />
-                                    <span className="hidden sm:inline">
-                                        Add Friend
-                                    </span>
-                                    <span className="sr-only sm:hidden">
-                                        Add Friend
-                                    </span>
-                                </Link>
-                            </Button>
+                            {navigationPreferences.showAddFriendInHeader ? (
+                                <Button asChild size="sm" variant="secondary">
+                                    <Link href="/chat?compose=1">
+                                        <UserPlus className="h-4 w-4" />
+                                        <span className="hidden sm:inline">
+                                            Add Friend
+                                        </span>
+                                        <span className="sr-only sm:hidden">
+                                            Add Friend
+                                        </span>
+                                    </Link>
+                                </Button>
+                            ) : null}
                             {userData.name && (
                                 <span className="hidden text-muted-foreground text-sm sm:inline">
                                     {userData.name}

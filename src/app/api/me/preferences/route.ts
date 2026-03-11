@@ -44,12 +44,14 @@ function toPreferencesResponse(profile: {
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
+    showAddFriendInHeader?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
 }): PreferencesResponse {
     return {
         showDocsInNavigation: profile.showDocsInNavigation ?? true,
         showFriendsInNavigation: profile.showFriendsInNavigation ?? true,
         showSettingsInNavigation: profile.showSettingsInNavigation ?? true,
+        showAddFriendInHeader: profile.showAddFriendInHeader ?? true,
         navigationItemOrder: normalizeNavigationItemOrder(
             profile.navigationItemOrder,
         ),
@@ -133,6 +135,18 @@ export async function PATCH(request: Request) {
         }
 
         if (
+            body.showAddFriendInHeader !== undefined &&
+            typeof body.showAddFriendInHeader !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid showAddFriendInHeader value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
             body.navigationItemOrder !== undefined &&
             (!Array.isArray(body.navigationItemOrder) ||
                 body.navigationItemOrder.some(
@@ -151,6 +165,7 @@ export async function PATCH(request: Request) {
             body.showDocsInNavigation === undefined &&
             body.showFriendsInNavigation === undefined &&
             body.showSettingsInNavigation === undefined &&
+            body.showAddFriendInHeader === undefined &&
             body.navigationItemOrder === undefined
         ) {
             return NextResponse.json(
@@ -172,6 +187,7 @@ export async function PATCH(request: Request) {
             showFriendsInNavigation: mergedPreferences.showFriendsInNavigation,
             showSettingsInNavigation:
                 mergedPreferences.showSettingsInNavigation,
+            showAddFriendInHeader: mergedPreferences.showAddFriendInHeader,
             navigationItemOrder: mergedPreferences.navigationItemOrder,
         });
 

@@ -24,6 +24,7 @@ const defaultNavigationPreferences = {
     showDocsInNavigation: true,
     showFriendsInNavigation: true,
     showSettingsInNavigation: true,
+    showAddFriendInHeader: true,
     navigationItemOrder: ["docs", "friends", "settings"],
 };
 
@@ -163,6 +164,34 @@ describe("Header", () => {
         ).toHaveAttribute("href", "/chat?compose=1");
     });
 
+    it("hides the add friend button when the header preference is disabled", () => {
+        authState.userData = {
+            userId: "user-1",
+            name: "August",
+            email: "august@example.com",
+            roles: {
+                isAdmin: false,
+                isModerator: false,
+            },
+        };
+        mockUseDeveloperMode.mockReturnValue({
+            developerMode: true,
+            isLoaded: true,
+            navigationPreferences: {
+                ...defaultNavigationPreferences,
+                showAddFriendInHeader: false,
+            },
+            setDeveloperMode: vi.fn(),
+            updateNavigationPreferences: vi.fn(),
+        });
+
+        renderWithQueryClient(<Header />);
+
+        expect(
+            screen.queryByRole("link", { name: /add friend/i }),
+        ).not.toBeInTheDocument();
+    });
+
     it("hides the docs link for authenticated users when developer mode is disabled", () => {
         authState.userData = {
             userId: "user-1",
@@ -240,6 +269,7 @@ describe("Header", () => {
                 showDocsInNavigation: false,
                 showFriendsInNavigation: false,
                 showSettingsInNavigation: false,
+                showAddFriendInHeader: false,
                 navigationItemOrder: ["docs", "friends", "settings"],
             },
             setDeveloperMode: vi.fn(),

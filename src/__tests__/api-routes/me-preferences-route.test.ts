@@ -45,6 +45,7 @@ describe("Me preferences route", () => {
             showDocsInNavigation: false,
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
+            showAddFriendInHeader: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
 
@@ -55,6 +56,7 @@ describe("Me preferences route", () => {
         expect(data.showDocsInNavigation).toBe(false);
         expect(data.showFriendsInNavigation).toBe(true);
         expect(data.showSettingsInNavigation).toBe(false);
+        expect(data.showAddFriendInHeader).toBe(false);
         expect(data.navigationItemOrder).toEqual([
             "settings",
             "docs",
@@ -76,6 +78,7 @@ describe("Me preferences route", () => {
         expect(data.showDocsInNavigation).toBe(true);
         expect(data.showFriendsInNavigation).toBe(true);
         expect(data.showSettingsInNavigation).toBe(true);
+        expect(data.showAddFriendInHeader).toBe(true);
         expect(data.navigationItemOrder).toEqual([
             "docs",
             "friends",
@@ -96,6 +99,22 @@ describe("Me preferences route", () => {
 
         expect(response.status).toBe(400);
         expect(data.error).toContain("showDocsInNavigation");
+        expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid add friend header preference payloads", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
+
+        const request = new NextRequest("http://localhost/api/me/preferences", {
+            method: "PATCH",
+            body: JSON.stringify({ showAddFriendInHeader: "nope" }),
+        });
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("showAddFriendInHeader");
         expect(mockUpdateProfile).not.toHaveBeenCalled();
     });
 
@@ -123,6 +142,7 @@ describe("Me preferences route", () => {
             showDocsInNavigation: true,
             showFriendsInNavigation: true,
             showSettingsInNavigation: true,
+            showAddFriendInHeader: true,
             navigationItemOrder: ["docs", "friends", "settings"],
         });
         mockUpdateProfile.mockResolvedValue({
@@ -131,6 +151,7 @@ describe("Me preferences route", () => {
             showDocsInNavigation: false,
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
+            showAddFriendInHeader: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
 
@@ -139,6 +160,7 @@ describe("Me preferences route", () => {
             body: JSON.stringify({
                 showDocsInNavigation: false,
                 showSettingsInNavigation: false,
+                showAddFriendInHeader: false,
                 navigationItemOrder: ["settings", "docs", "friends"],
             }),
         });
@@ -151,10 +173,12 @@ describe("Me preferences route", () => {
             showDocsInNavigation: false,
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
+            showAddFriendInHeader: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
         expect(data.showDocsInNavigation).toBe(false);
         expect(data.showSettingsInNavigation).toBe(false);
+        expect(data.showAddFriendInHeader).toBe(false);
         expect(data.navigationItemOrder).toEqual([
             "settings",
             "docs",

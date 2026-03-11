@@ -199,6 +199,7 @@ export type NavigationPreferences = {
     showDocsInNavigation: boolean;
     showFriendsInNavigation: boolean;
     showSettingsInNavigation: boolean;
+    showAddFriendInHeader: boolean;
     navigationItemOrder: NavigationItemPreferenceId[];
 };
 
@@ -214,6 +215,7 @@ export type UserProfileData = {
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
+    showAddFriendInHeader?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
     status?: {
         status: "online" | "away" | "busy" | "offline";

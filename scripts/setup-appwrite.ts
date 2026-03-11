@@ -815,6 +815,7 @@ async function setupProfiles() {
     await ensureBooleanAttribute("profiles", "showDocsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
+    await ensureBooleanAttribute("profiles", "showAddFriendInHeader", false);
     await ensureStringAttribute(
         "profiles",
         "navigationItemOrder",
