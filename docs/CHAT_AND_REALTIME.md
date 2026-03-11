@@ -120,6 +120,7 @@ Chat-adjacent discovery is handled by:
 - `/api/search/messages` for message search
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
+- `/api/thread-reads` for persisted per-thread read state across channels and DMs
 - `/api/memberships` for membership resolution used by navigation and mention features
 
 Message search responses are expected to provide the context identifiers needed for client navigation so results can deep-link back into either channel or DM chat with a consistent highlight state.
@@ -134,6 +135,7 @@ Current notification capabilities include:
 - direct-message privacy controls for friend-only DM restrictions
 - server-enriched override labels returned from `/api/notifications/settings` so the client can render readable server, channel, and DM names without extra lookups
 - bulk override management in settings for clearing expired overrides and resetting channel overrides
+- dedicated unread-thread persistence through the `thread_reads` collection so inbox and unread state survive across sessions without expanding the `notification_settings` schema
 
 Override precedence is intentionally deterministic:
 

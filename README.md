@@ -216,6 +216,7 @@ For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 - **"Project not found"** - Verify your `APPWRITE_PROJECT_ID` matches your Appwrite Console
 - **"Missing scope" errors** - Regenerate your API key with all required permissions
 - **Setup script fails** - Ensure your API key has databases, collections, attributes, and indexes permissions
+- **Setup script reports an attribute limit on `notification_settings`** - Update to the latest code and rerun `bun run setup`; unread persistence now uses a dedicated `thread_reads` collection instead of adding another notification-settings attribute
 
 For more solutions, see [DEPLOYMENT.md - Troubleshooting](./DEPLOYMENT.md#troubleshooting).
 
