@@ -26,6 +26,7 @@ type InboxContextSummary = {
 };
 
 const EMPTY_INBOX: InboxListResponse = {
+    contractVersion: "thread_v1",
     counts: { mention: 0, thread: 0 },
     items: [],
     unreadCount: 0,
@@ -62,6 +63,7 @@ function removeItemsFromInbox(
     const items = inbox.items.filter((item) => !predicate(item));
 
     return {
+        contractVersion: inbox.contractVersion,
         counts: items.reduce(
             (accumulator, item) => {
                 accumulator[item.kind] += item.unreadCount;

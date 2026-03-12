@@ -10,6 +10,13 @@ The live flag definitions are:
 
 - `allow_user_servers`: default `false`; controls whether regular users can create their own servers
 - `enable_audit_logging`: default `true`; controls whether moderation actions should be recorded for audit visibility
+- `enable_per_message_unread`: default `false`; gates the phase rollout from thread-level unread semantics to per-message unread semantics
+
+Rollout note for `enable_per_message_unread`:
+
+- Keep disabled until message-level unread persistence and parity tests are complete.
+- Enable first in internal environments, then ramp gradually in production.
+- Keep the current thread-based inbox contract as the stable fallback while disabled.
 
 ## How Flags Work
 

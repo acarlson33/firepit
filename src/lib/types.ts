@@ -147,6 +147,8 @@ export type InboxItemKind = "mention" | "thread";
 
 export type InboxContextKind = "channel" | "conversation";
 
+export type InboxContractVersion = "thread_v1" | "message_v2";
+
 export type InboxItem = {
     id: string;
     kind: InboxItemKind;
@@ -165,6 +167,7 @@ export type InboxItem = {
 };
 
 export type InboxListResponse = {
+    contractVersion: InboxContractVersion;
     items: InboxItem[];
     unreadCount: number;
     counts: Record<InboxItemKind, number>;

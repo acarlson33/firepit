@@ -219,6 +219,21 @@ Ensure that parity features that already exist behave consistently across channe
 - This workstream should generally ship incrementally with no separate feature flag unless a behavioral change is high risk
 - The March 2026 slice began without backend contract changes, but later parity follow-up normalized existing channel and DM pin-thread response contracts while retaining legacy keys needed by older client paths during rollout
 
+### Phase 1 (March 2026): Unread Contract Lock
+
+Phase 1 for the per-message unread follow-on is complete once these constraints are documented and treated as implementation guardrails:
+
+- Introduce an explicit inbox contract version marker in inbox responses so clients can branch safely during rollout.
+- Preserve `thread_v1` behavior as the default and backward-compatible read model until per-message persistence is fully validated.
+- Keep unread semantics deterministic across channel and DM surfaces:
+    - read state reconciliation remains server authoritative
+    - unread anchors must always target a valid message or degrade to context-level catch-up
+    - unread counts and badge semantics must derive from the same inbox aggregation source
+- Gate per-message unread behavior behind a dedicated feature flag so rollout can be staged without forcing a migration cutover.
+- Keep mention-read behavior (`PATCH /api/inbox`) and thread-read persistence (`/api/thread-reads`) stable while phase 2 data-model work is underway.
+
+Phase 1 does not change the persistence model. It locks API expectations, rollout strategy, and compatibility behavior so phase 2 can ship with lower regression risk.
+
 ## Workstream D: Onboarding And Social Graph Polish
 
 ### Objective

@@ -4,6 +4,7 @@ import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerClient } from "@/lib/appwrite-server";
+import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import {
     getEffectiveNotificationLevel,
     getNotificationSettings,
@@ -43,6 +44,15 @@ type InboxItemDocument = {
     userId: string;
 };
 
+type UnreadThreadParentInput = {
+    contextId: string;
+    lastReadAt?: string;
+    parentMessageId: string;
+    threadMessageCount?: number;
+};
+
+type ThreadContextField = "channelId" | "conversationId";
+
 function isBlockedRelationship(value: {
     blockedByMe?: boolean;
     blockedMe?: boolean;
@@ -71,6 +81,84 @@ function sortInboxItems(items: InboxItem[]) {
 
         return left.id.localeCompare(right.id);
     });
+}
+
+async function runInBatches<T>(params: {
+    batchSize: number;
+    items: T[];
+    worker: (item: T) => Promise<void>;
+}) {
+    const { batchSize, items, worker } = params;
+    if (items.length === 0) {
+        return;
+    }
+
+    const currentBatch = items.slice(0, batchSize);
+    await Promise.all(currentBatch.map((item) => worker(item)));
+
+    await runInBatches({
+        batchSize,
+        items: items.slice(batchSize),
+        worker,
+    });
+}
+
+async function countUnreadRepliesByParent(params: {
+    collectionId: string;
+    contextField: ThreadContextField;
+    parents: UnreadThreadParentInput[];
+}) {
+    const { collectionId, contextField, parents } = params;
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+
+    const countsByParentId = new Map<string, number>();
+    const parentsThatNeedQuery: UnreadThreadParentInput[] = [];
+
+    for (const parent of parents) {
+        const fallbackCount =
+            typeof parent.threadMessageCount === "number" &&
+            parent.threadMessageCount > 0
+                ? parent.threadMessageCount
+                : 1;
+
+        if (!parent.lastReadAt) {
+            countsByParentId.set(parent.parentMessageId, fallbackCount);
+            continue;
+        }
+
+        parentsThatNeedQuery.push(parent);
+    }
+
+    await runInBatches({
+        batchSize: 25,
+        items: parentsThatNeedQuery,
+        worker: async (parent) => {
+            const lastReadAt = parent.lastReadAt;
+            if (!lastReadAt) {
+                countsByParentId.set(parent.parentMessageId, 1);
+                return;
+            }
+
+            const result = await databases.listDocuments(
+                env.databaseId,
+                collectionId,
+                [
+                    Query.equal(contextField, parent.contextId),
+                    Query.equal("threadId", parent.parentMessageId),
+                    Query.greaterThan("$createdAt", lastReadAt),
+                    Query.limit(1),
+                ],
+            );
+
+            countsByParentId.set(
+                parent.parentMessageId,
+                Math.max(1, result.total || 0),
+            );
+        },
+    });
+
+    return countsByParentId;
 }
 
 async function listConversationDocuments(userId: string) {
@@ -200,6 +288,7 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
 
 async function listUnreadConversationThreadItems(
     userId: string,
+    usePerMessageUnread: boolean,
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const { databases } = getServerClient();
@@ -246,6 +335,30 @@ async function listUnreadConversationThreadItems(
         });
     });
 
+    const unreadCountsByParent = usePerMessageUnread
+        ? await countUnreadRepliesByParent({
+              collectionId: env.collections.directMessages,
+              contextField: "conversationId",
+              parents: unreadDocuments.map((document) => {
+                  const conversationId = String(document.conversationId);
+                  const parentMessageId = String(document.$id);
+
+                  return {
+                      contextId: conversationId,
+                      lastReadAt:
+                          readStatesByConversationId.get(conversationId)?.[
+                              parentMessageId
+                          ],
+                      parentMessageId,
+                      threadMessageCount:
+                          typeof document.threadMessageCount === "number"
+                              ? document.threadMessageCount
+                              : undefined,
+                  } satisfies UnreadThreadParentInput;
+              }),
+          })
+        : null;
+
     const authorIds = Array.from(
         new Set(unreadDocuments.map((document) => String(document.senderId))),
     );
@@ -286,7 +399,8 @@ async function listUnreadConversationThreadItems(
                 parentMessageId: String(document.$id),
                 previewText:
                     typeof document.text === "string" ? document.text : "",
-                unreadCount: 1,
+                unreadCount:
+                    unreadCountsByParent?.get(String(document.$id)) ?? 1,
             } satisfies InboxItem,
         ];
     });
@@ -294,6 +408,7 @@ async function listUnreadConversationThreadItems(
 
 async function listUnreadChannelThreadItems(
     userId: string,
+    usePerMessageUnread: boolean,
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const { databases } = getServerClient();
@@ -351,6 +466,30 @@ async function listUnreadChannelThreadItems(
             typeof document.channelId === "string" ? document.channelId : null,
     );
 
+    const unreadCountsByParent = usePerMessageUnread
+        ? await countUnreadRepliesByParent({
+              collectionId: env.collections.messages,
+              contextField: "channelId",
+              parents: readableDocuments.map((document) => {
+                  const channelId = String(document.channelId);
+                  const parentMessageId = String(document.$id);
+
+                  return {
+                      contextId: channelId,
+                      lastReadAt:
+                          readStatesByChannelId.get(channelId)?.[
+                              parentMessageId
+                          ],
+                      parentMessageId,
+                      threadMessageCount:
+                          typeof document.threadMessageCount === "number"
+                              ? document.threadMessageCount
+                              : undefined,
+                  } satisfies UnreadThreadParentInput;
+              }),
+          })
+        : null;
+
     const authorIds = Array.from(
         new Set(readableDocuments.map((document) => String(document.userId))),
     );
@@ -395,7 +534,8 @@ async function listUnreadChannelThreadItems(
                     typeof document.serverId === "string"
                         ? document.serverId
                         : undefined,
-                unreadCount: 1,
+                unreadCount:
+                    unreadCountsByParent?.get(String(document.$id)) ?? 1,
             } satisfies InboxItem,
         ];
     });
@@ -464,12 +604,19 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
 }
 
 export async function listInboxItems({ kinds, limit, userId }: InboxFilters) {
+    const usePerMessageUnread = await getFeatureFlag(
+        FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD,
+    ).catch(() => false);
+
     const requestedKinds = new Set(kinds);
     const itemGroups = await Promise.all([
         requestedKinds.has("thread")
             ? Promise.all([
-                  listUnreadChannelThreadItems(userId),
-                  listUnreadConversationThreadItems(userId),
+                  listUnreadChannelThreadItems(userId, usePerMessageUnread),
+                  listUnreadConversationThreadItems(
+                      userId,
+                      usePerMessageUnread,
+                  ),
               ]).then(([channelItems, conversationItems]) => [
                   ...channelItems,
                   ...conversationItems,
@@ -485,6 +632,7 @@ export async function listInboxItems({ kinds, limit, userId }: InboxFilters) {
     const counts = toCountMap(sortedItems);
 
     return {
+        contractVersion: usePerMessageUnread ? "message_v2" : "thread_v1",
         counts,
         items: sortedItems.slice(0, limit),
         unreadCount: sortedItems.reduce(

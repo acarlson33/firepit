@@ -8,6 +8,7 @@ import type { FeatureFlag } from "./types";
 export const FEATURE_FLAGS = {
     ALLOW_USER_SERVERS: "allow_user_servers",
     ENABLE_AUDIT_LOGGING: "enable_audit_logging",
+    ENABLE_PER_MESSAGE_UNREAD: "enable_per_message_unread",
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
@@ -16,6 +17,7 @@ export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: false,
     [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: true,
+    [FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD]: false,
 };
 
 // Cache for feature flags to reduce database calls
@@ -149,6 +151,8 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
             "Allow members to create their own servers",
         [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
             "Enable audit logging for moderation actions",
+        [FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD]:
+            "Enable per-message unread model and message-level inbox semantics",
     };
 
     return descriptions[key] || "";
