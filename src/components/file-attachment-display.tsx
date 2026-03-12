@@ -22,13 +22,14 @@ export function FileAttachmentDisplay({
         return (
             <div className="mt-2 max-w-md">
                 <a
+                    className="block max-w-full"
                     href={attachment.fileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                 >
                     <img
                         alt={attachment.fileName}
-                        className="rounded-lg border"
+                        className="h-auto max-w-full rounded-lg border"
                         loading="lazy"
                         onLoad={onMediaLoad}
                         src={attachment.fileUrl}
@@ -47,7 +48,7 @@ export function FileAttachmentDisplay({
         return (
             <div className="mt-2 max-w-md">
                 <video
-                    className="rounded-lg border"
+                    className="block h-auto max-w-full rounded-lg border"
                     controls
                     preload="metadata"
                     src={attachment.fileUrl}

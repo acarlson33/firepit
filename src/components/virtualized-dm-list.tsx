@@ -39,6 +39,7 @@ type VirtualizedDMListProps = {
     conversationId: string;
     messageDensity?: "compact" | "cozy";
     pinnedMessageIds?: string[];
+    unreadAnchorMessageId?: string | null;
 };
 
 /**
@@ -67,6 +68,7 @@ export function VirtualizedDMList({
     conversationId,
     messageDensity = "compact",
     pinnedMessageIds,
+    unreadAnchorMessageId,
 }: VirtualizedDMListProps) {
     const adaptedMessages = useMemo(
         () =>
@@ -96,6 +98,7 @@ export function VirtualizedDMList({
             onUploadCustomEmoji={onUploadCustomEmoji}
             setDeleteConfirmId={setDeleteConfirmId}
             shouldShowLoadOlder={shouldShowLoadOlder}
+            unreadAnchorMessageId={unreadAnchorMessageId}
             userId={userId}
             userIdSlice={userIdSlice}
             pinnedMessageIds={pinnedMessageIds}

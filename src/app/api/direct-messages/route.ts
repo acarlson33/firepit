@@ -23,6 +23,7 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
@@ -966,6 +967,19 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+            await upsertMentionInboxItems({
+                authorUserId: senderId,
+                contextId: conversationId,
+                contextKind: "conversation",
+                latestActivityAt: String(
+                    message.$createdAt ?? new Date().toISOString(),
+                ),
+                mentions,
+                messageId: String(message.$id),
+                previewText: text || "",
+            });
+        }
         // Update conversation's lastMessageAt
         try {
             await databases.updateDocument(

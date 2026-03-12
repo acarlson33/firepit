@@ -31,6 +31,8 @@ tags:
       description: Channel message creation and management
     - name: Direct Messages
       description: Conversation and direct-message operations
+        - name: Notifications
+            description: Notification settings and unread inbox aggregation
     - name: Presence
       description: Status and typing state
     - name: Users
@@ -297,6 +299,59 @@ components:
                   properties:
                       conversationId:
                           type: string
+
+        InboxItem:
+            type: object
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+                    enum: [mention, thread]
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                serverId:
+                    type: string
+                messageId:
+                    type: string
+                parentMessageId:
+                    type: string
+                latestActivityAt:
+                    type: string
+                    format: date-time
+                unreadCount:
+                    type: integer
+                previewText:
+                    type: string
+                authorUserId:
+                    type: string
+                authorLabel:
+                    type: string
+                authorAvatarUrl:
+                    type: string
+                    format: uri
+                muted:
+                    type: boolean
+
+        InboxResponse:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxItem"
+                unreadCount:
+                    type: integer
+                counts:
+                    type: object
+                    properties:
+                        mention:
+                            type: integer
+                        thread:
+                            type: integer
 
         Invite:
             type: object

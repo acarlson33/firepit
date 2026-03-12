@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
@@ -33,7 +33,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Conversation } from "@/lib/types";
+import type { Conversation, InboxItem } from "@/lib/types";
 import { toast } from "sonner";
 
 type SidebarMode = "chats" | "inbox" | "mentions";
@@ -44,7 +44,14 @@ type MentionItem = {
     createdAt: string;
     destination: ChatMessageDestination;
     id: string;
+    kind: "mention" | "thread";
+    muted: boolean;
     text: string;
+};
+
+type ConversationUnreadState = {
+    count: number;
+    muted: boolean;
 };
 
 type ConversationListProps = {
@@ -59,6 +66,9 @@ type ConversationListProps = {
         conversationId: string,
         conversationName: string,
     ) => void;
+    inboxItems?: InboxItem[];
+    inboxLoading?: boolean;
+    conversationUnreadStateById?: Record<string, ConversationUnreadState>;
 };
 
 export function ConversationList({
@@ -70,6 +80,9 @@ export function ConversationList({
     onSelectConversation,
     onNewConversation,
     onMuteConversation,
+    inboxItems = [],
+    inboxLoading = false,
+    conversationUnreadStateById = {},
 }: ConversationListProps) {
     const router = useRouter();
     const {
@@ -85,171 +98,67 @@ export function ConversationList({
         string | null
     >(null);
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>("chats");
-    const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
-    const [mentionsLoading, setMentionsLoading] = useState(false);
 
     const favoriteFriends = useMemo(() => friends.slice(0, 4), [friends]);
     const incomingRequests = useMemo(() => incoming.slice(0, 3), [incoming]);
     const unreadConversations = useMemo(
         () =>
             conversations.filter(
-                (conversation) => (conversation.unreadThreadCount ?? 0) > 0,
+                (conversation) =>
+                    (conversationUnreadStateById[conversation.$id]?.count ??
+                        conversation.unreadThreadCount ??
+                        0) > 0,
             ),
-        [conversations],
+        [conversationUnreadStateById, conversations],
     );
-    const unreadThreadTotal = useMemo(
+    const sidebarItems = useMemo(
         () =>
-            conversations.reduce(
-                (total, conversation) =>
-                    total + (conversation.unreadThreadCount ?? 0),
-                0,
-            ),
-        [conversations],
+            inboxItems.map((item) => {
+                const destination: ChatMessageDestination =
+                    item.contextKind === "channel"
+                        ? {
+                              kind: "channel",
+                              channelId: item.contextId,
+                              messageId: item.messageId,
+                              serverId: item.serverId,
+                          }
+                        : {
+                              kind: "dm",
+                              conversationId: item.contextId,
+                              messageId: item.messageId,
+                          };
+
+                return {
+                    authorAvatarUrl: item.authorAvatarUrl,
+                    authorLabel: item.authorLabel,
+                    createdAt: item.latestActivityAt,
+                    destination,
+                    id: item.id,
+                    kind: item.kind,
+                    muted: item.muted,
+                    text: item.previewText,
+                } satisfies MentionItem;
+            }),
+        [inboxItems],
+    );
+    const mentionItems = useMemo(
+        () => sidebarItems.filter((item) => item.kind === "mention"),
+        [sidebarItems],
     );
 
-    useEffect(() => {
-        if (!currentUserId || sidebarMode !== "mentions") {
-            return;
-        }
-
-        let cancelled = false;
-        setMentionsLoading(true);
-
-        void fetch("/api/search/messages?q=mentions:me")
-            .then(async (response) => {
-                if (!response.ok) {
-                    throw new Error("Failed to load mentions");
-                }
-
-                const data = (await response.json()) as {
-                    results?: Array<{
-                        message: Record<string, unknown>;
-                        type: "channel" | "dm";
-                    }>;
-                };
-
-                const nextItems = (data.results ?? []).flatMap((result) => {
-                    const message = result.message;
-                    const messageId =
-                        typeof message.$id === "string" ? message.$id : null;
-
-                    if (!messageId) {
-                        return [] as MentionItem[];
-                    }
-
-                    if (result.type === "channel") {
-                        const channelId =
-                            typeof message.channelId === "string"
-                                ? message.channelId
-                                : null;
-                        if (!channelId) {
-                            return [] as MentionItem[];
-                        }
-
-                        const item: MentionItem = {
-                            authorAvatarUrl:
-                                typeof message.avatarUrl === "string"
-                                    ? message.avatarUrl
-                                    : undefined,
-                            authorLabel:
-                                (typeof message.displayName === "string"
-                                    ? message.displayName
-                                    : undefined) ||
-                                (typeof message.userName === "string"
-                                    ? message.userName
-                                    : undefined) ||
-                                (typeof message.userId === "string"
-                                    ? message.userId
-                                    : "Unknown user"),
-                            createdAt:
-                                typeof message.$createdAt === "string"
-                                    ? message.$createdAt
-                                    : new Date().toISOString(),
-                            destination: {
-                                kind: "channel",
-                                channelId,
-                                messageId,
-                                serverId:
-                                    typeof message.serverId === "string"
-                                        ? message.serverId
-                                        : undefined,
-                            },
-                            id: `channel-${messageId}`,
-                            text:
-                                typeof message.text === "string"
-                                    ? message.text
-                                    : "",
-                        };
-
-                        return [item];
-                    }
-
-                    const conversationId =
-                        typeof message.conversationId === "string"
-                            ? message.conversationId
-                            : null;
-                    if (!conversationId) {
-                        return [] as MentionItem[];
-                    }
-
-                    const item: MentionItem = {
-                        authorAvatarUrl:
-                            typeof message.senderAvatarUrl === "string"
-                                ? message.senderAvatarUrl
-                                : undefined,
-                        authorLabel:
-                            (typeof message.senderDisplayName === "string"
-                                ? message.senderDisplayName
-                                : undefined) ||
-                            (typeof message.senderId === "string"
-                                ? message.senderId
-                                : "Unknown user"),
-                        createdAt:
-                            typeof message.$createdAt === "string"
-                                ? message.$createdAt
-                                : new Date().toISOString(),
-                        destination: {
-                            kind: "dm",
-                            conversationId,
-                            messageId,
-                        },
-                        id: `dm-${messageId}`,
-                        text:
-                            typeof message.text === "string"
-                                ? message.text
-                                : "",
-                    };
-
-                    return [item];
-                });
-
-                if (!cancelled) {
-                    setMentionItems(nextItems);
-                }
-            })
-            .catch(() => {
-                if (!cancelled) {
-                    setMentionItems([]);
-                }
-            })
-            .finally(() => {
-                if (!cancelled) {
-                    setMentionsLoading(false);
-                }
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [currentUserId, sidebarMode]);
-
-    function renderUnreadBadge(count: number | undefined) {
+    function renderUnreadBadge(count: number | undefined, muted = false) {
         if (!count || count <= 0) {
             return null;
         }
 
         return (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+            <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    muted
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-primary text-primary-foreground"
+                }`}
+            >
                 {count}
             </span>
         );
@@ -274,6 +183,7 @@ export function ConversationList({
         const secondaryLine = conversation.readOnly
             ? conversation.readOnlyReason || "Read only"
             : conversation.lastMessage?.text || subtitle;
+        const unreadState = conversationUnreadStateById[conversation.$id];
         const secondaryLineClassName = conversation.readOnly
             ? "truncate text-amber-700 dark:text-amber-300 text-xs"
             : "truncate text-muted-foreground text-xs";
@@ -323,7 +233,9 @@ export function ConversationList({
                                     {displayName}
                                 </p>
                                 {renderUnreadBadge(
-                                    conversation.unreadThreadCount,
+                                    unreadState?.count ??
+                                        conversation.unreadThreadCount,
+                                    unreadState?.muted ?? false,
                                 )}
                             </div>
                             {conversation.lastMessageAt && (
@@ -485,7 +397,7 @@ export function ConversationList({
                         <Inbox className="size-3.5" />
                         Inbox
                     </span>
-                    {renderUnreadBadge(unreadThreadTotal)}
+                    {renderUnreadBadge(inboxItems.length)}
                 </Button>
                 <Button
                     className="justify-between gap-2 rounded-lg"
@@ -711,7 +623,7 @@ export function ConversationList({
 
                 {sidebarMode === "mentions" ? (
                     <div className="space-y-1 p-2">
-                        {mentionsLoading ? (
+                        {inboxLoading ? (
                             <div className="space-y-2 p-2">
                                 {Array.from({ length: 3 }).map((_, index) => (
                                     <div
@@ -739,6 +651,7 @@ export function ConversationList({
                                         router.push(
                                             buildChatMessageHref(
                                                 mention.destination,
+                                                { entry: "unread" },
                                             ) as Route,
                                         )
                                     }
@@ -764,6 +677,16 @@ export function ConversationList({
                                                 })}
                                             </span>
                                         </div>
+                                        <div className="mt-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                            <span>
+                                                {mention.kind === "mention"
+                                                    ? "Mention"
+                                                    : "Thread"}
+                                            </span>
+                                            {mention.muted ? (
+                                                <span>Muted</span>
+                                            ) : null}
+                                        </div>
                                         <p className="line-clamp-2 text-muted-foreground text-xs">
                                             {mention.text}
                                         </p>
@@ -773,8 +696,10 @@ export function ConversationList({
                         )}
                     </div>
                 ) : (sidebarMode === "inbox"
-                      ? unreadConversations
-                      : conversations
+                      ? sidebarItems
+                      : unreadConversations.length > 0
+                        ? unreadConversations
+                        : conversations
                   ).length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         {sidebarMode === "inbox" ? (
@@ -800,12 +725,69 @@ export function ConversationList({
                     </div>
                 ) : (
                     <div className="space-y-1 p-2">
-                        {(sidebarMode === "inbox"
-                            ? unreadConversations
-                            : conversations
-                        ).map((conversation) =>
-                            renderConversationRow(conversation),
-                        )}
+                        {sidebarMode === "inbox"
+                            ? sidebarItems.map((item) => (
+                                  <button
+                                      className="flex w-full items-start gap-3 rounded-lg border border-border/60 p-3 text-left transition hover:bg-accent/40"
+                                      key={item.id}
+                                      onClick={() =>
+                                          router.push(
+                                              buildChatMessageHref(
+                                                  item.destination,
+                                                  { entry: "unread" },
+                                              ) as Route,
+                                          )
+                                      }
+                                      type="button"
+                                  >
+                                      <Avatar
+                                          alt={item.authorLabel}
+                                          fallback={item.authorLabel}
+                                          size="sm"
+                                          src={item.authorAvatarUrl}
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                              <p className="truncate font-medium text-sm">
+                                                  {item.authorLabel}
+                                              </p>
+                                              <span className="text-muted-foreground text-xs">
+                                                  {new Date(
+                                                      item.createdAt,
+                                                  ).toLocaleDateString([], {
+                                                      day: "numeric",
+                                                      month: "short",
+                                                  })}
+                                              </span>
+                                          </div>
+                                          <div className="mt-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                                              <span>
+                                                  {item.kind === "mention"
+                                                      ? "Mention"
+                                                      : "Thread"}
+                                              </span>
+                                              <span>
+                                                  {item.destination.kind ===
+                                                  "channel"
+                                                      ? "Channel"
+                                                      : "Direct message"}
+                                              </span>
+                                              {item.muted ? (
+                                                  <span>Muted</span>
+                                              ) : null}
+                                          </div>
+                                          <p className="line-clamp-2 text-muted-foreground text-xs">
+                                              {item.text}
+                                          </p>
+                                      </div>
+                                  </button>
+                              ))
+                            : (sidebarMode === "chats"
+                                  ? conversations
+                                  : unreadConversations
+                              ).map((conversation) =>
+                                  renderConversationRow(conversation),
+                              )}
                     </div>
                 )}
             </div>

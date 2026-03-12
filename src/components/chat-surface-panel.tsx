@@ -17,7 +17,10 @@ import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
-import type { VirtualizedScrollBehavior } from "@/components/virtualized-message-list";
+import {
+    MESSAGE_LIST_VIEWPORT_HEIGHT,
+    type VirtualizedScrollBehavior,
+} from "@/components/virtualized-message-list";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -95,7 +98,21 @@ type ChatSurfacePanelProps = {
         onPaste?: (event: ClipboardEvent) => void;
         onMentionsChange?: (names: string[]) => void;
     };
+    unreadAnchorMessageId?: string | null;
+    unreadSummaryLabel?: string | null;
+    onCatchUpUnread?: () => void;
+    onJumpToUnread?: () => void;
 };
+
+function UnreadBoundary() {
+    return (
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+            <span className="h-px flex-1 bg-primary/30" />
+            First unread
+            <span className="h-px flex-1 bg-primary/30" />
+        </div>
+    );
+}
 
 export function ChatSurfacePanel({
     showSurface = true,
@@ -130,8 +147,13 @@ export function ChatSurfacePanel({
     messageContainerRef,
     virtualizationThreshold = 20,
     composer,
+    unreadAnchorMessageId,
+    unreadSummaryLabel,
+    onCatchUpUnread,
+    onJumpToUnread,
 }: ChatSurfacePanelProps) {
     const compactMessages = messageDensity === "compact";
+    const showLoadingOverlay = loading && surfaceMessages.length > 0;
     const composerContainerRef = useRef<HTMLDivElement>(null);
     const previousSendingRef = useRef(false);
     const shouldScrollAfterSubmitRef = useRef(false);
@@ -193,7 +215,8 @@ export function ChatSurfacePanel({
     function scrollComposerIntoView(behavior: ScrollBehavior = "smooth") {
         composerContainerRef.current?.scrollIntoView({
             behavior,
-            block: "end",
+            block: "nearest",
+            inline: "nearest",
         });
     }
 
@@ -296,19 +319,59 @@ export function ChatSurfacePanel({
 
     return (
         <div className="space-y-3">
+            {unreadAnchorMessageId && (onJumpToUnread || onCatchUpUnread) ? (
+                <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+                    <div>
+                        <p className="font-medium text-foreground">
+                            Unread activity available
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                            {unreadSummaryLabel ||
+                                "Jump to the first unread item or catch up from the latest messages."}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {onJumpToUnread ? (
+                            <Button
+                                onClick={onJumpToUnread}
+                                size="sm"
+                                type="button"
+                            >
+                                Jump to unread
+                            </Button>
+                        ) : null}
+                        {onCatchUpUnread ? (
+                            <Button
+                                onClick={onCatchUpUnread}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                            >
+                                Catch up
+                            </Button>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
             <div
                 className={
                     useVirtualScrolling
-                        ? ""
-                        : `h-[60vh] overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
+                        ? "relative min-w-0 w-full"
+                        : `relative min-w-0 w-full overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
                               compactMessages
                                   ? "space-y-2 p-3"
                                   : "space-y-3 p-4"
                           }`
                 }
+                style={
+                    useVirtualScrolling
+                        ? undefined
+                        : { height: MESSAGE_LIST_VIEWPORT_HEIGHT }
+                }
+                data-message-scroll-container="true"
                 ref={messageContainerRef}
             >
-                {loading ? (
+                {loading && surfaceMessages.length === 0 ? (
                     <div className="space-y-3">
                         {Array.from({ length: 5 }).map((_, index) => (
                             <div className="flex gap-3" key={index}>
@@ -355,6 +418,7 @@ export function ChatSurfacePanel({
                         setDeleteConfirmId={setDeleteConfirmId}
                         scrollToBottomRequest={virtualScrollRequest}
                         shouldShowLoadOlder={shouldShowLoadOlder}
+                        unreadAnchorMessageId={unreadAnchorMessageId}
                         userId={currentUserId}
                         userIdSlice={userIdSlice}
                     />
@@ -373,33 +437,47 @@ export function ChatSurfacePanel({
                             </div>
                         )}
                         {surfaceMessages.map((message) => (
-                            <ChatSurfaceMessageItem
-                                canManageMessages={canManageMessages}
-                                currentUserId={currentUserId}
-                                customEmojis={customEmojis}
-                                deleteConfirmId={deleteConfirmId}
-                                editingMessageId={editingMessageId}
-                                key={message.id}
-                                knownNames={knownNames}
-                                message={message}
-                                messageDensity={messageDensity}
-                                onOpenImageViewer={onOpenImageViewer}
-                                onOpenProfileModal={onOpenProfileModal}
-                                onOpenThread={onOpenThread}
-                                onMediaLoad={handleMessageMediaLoad}
-                                onRemove={onRemove}
-                                onStartEdit={onStartEdit}
-                                onStartReply={onStartReply}
-                                onTogglePin={onTogglePin}
-                                onToggleReaction={onToggleReaction}
-                                onUploadCustomEmoji={onUploadCustomEmoji}
-                                pinnedMessageIds={pinnedMessageIds}
-                                setDeleteConfirmId={setDeleteConfirmId}
-                                userIdSlice={userIdSlice}
-                            />
+                            <div key={message.id}>
+                                {unreadAnchorMessageId === message.id ? (
+                                    <UnreadBoundary />
+                                ) : null}
+                                <ChatSurfaceMessageItem
+                                    canManageMessages={canManageMessages}
+                                    currentUserId={currentUserId}
+                                    customEmojis={customEmojis}
+                                    deleteConfirmId={deleteConfirmId}
+                                    editingMessageId={editingMessageId}
+                                    knownNames={knownNames}
+                                    message={message}
+                                    messageDensity={messageDensity}
+                                    onOpenImageViewer={onOpenImageViewer}
+                                    onOpenProfileModal={onOpenProfileModal}
+                                    onOpenThread={onOpenThread}
+                                    onMediaLoad={handleMessageMediaLoad}
+                                    onRemove={onRemove}
+                                    onStartEdit={onStartEdit}
+                                    onStartReply={onStartReply}
+                                    onTogglePin={onTogglePin}
+                                    onToggleReaction={onToggleReaction}
+                                    onUploadCustomEmoji={onUploadCustomEmoji}
+                                    pinnedMessageIds={pinnedMessageIds}
+                                    setDeleteConfirmId={setDeleteConfirmId}
+                                    userIdSlice={userIdSlice}
+                                />
+                            </div>
                         ))}
                     </>
                 )}
+                {showLoadingOverlay ? (
+                    <div className="pointer-events-none absolute inset-0 rounded-3xl bg-background/80 backdrop-blur-[1px]">
+                        <div className="flex h-full items-start justify-center pt-6">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+                                <Loader2 className="size-3.5 animate-spin" />
+                                Updating messages...
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </div>
 
             {typingUserList.length > 0 && (

@@ -23,10 +23,32 @@ var STATIC_ASSETS = ["/favicon.ico", "/manifest.json", "/manifest.webmanifest"];
 // Reference to service worker scope
 var sw = self;
 
+function isDevelopmentHost() {
+    return (
+        sw.location.hostname === "localhost" ||
+        sw.location.hostname === "127.0.0.1" ||
+        sw.location.hostname === "0.0.0.0"
+    );
+}
+
 // ============================================
 // INSTALL EVENT
 // ============================================
 sw.addEventListener("install", function (event) {
+    if (isDevelopmentHost()) {
+        event.waitUntil(
+            caches.keys().then(function (cacheNames) {
+                return Promise.all(
+                    cacheNames.map(function (cacheName) {
+                        return caches.delete(cacheName);
+                    }),
+                );
+            }),
+        );
+        sw.skipWaiting();
+        return;
+    }
+
     event.waitUntil(
         Promise.all([
             // Pre-create named caches so they appear in DevTools immediately
@@ -74,6 +96,20 @@ sw.addEventListener("install", function (event) {
 // ACTIVATE EVENT
 // ============================================
 sw.addEventListener("activate", function (event) {
+    if (isDevelopmentHost()) {
+        event.waitUntil(
+            caches.keys().then(function (cacheNames) {
+                return Promise.all(
+                    cacheNames.map(function (cacheName) {
+                        return caches.delete(cacheName);
+                    }),
+                );
+            }),
+        );
+        sw.clients.claim();
+        return;
+    }
+
     event.waitUntil(
         caches.keys().then(function (cacheNames) {
             return Promise.all(
@@ -101,12 +137,16 @@ sw.addEventListener("activate", function (event) {
 // FETCH EVENT
 // ============================================
 sw.addEventListener("fetch", function (event) {
+    var request = event.request;
+    var url = new URL(request.url);
+
+    if (isDevelopmentHost() && !isEmojiRequest(url)) {
+        return;
+    }
+
     event.respondWith(
         (async function () {
             try {
-                var request = event.request;
-                var url = new URL(request.url);
-
                 // Handle emoji requests with aggressive caching
                 if (isEmojiRequest(url)) {
                     return await handleEmojiRequest(request);

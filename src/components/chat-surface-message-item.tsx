@@ -95,7 +95,7 @@ export function ChatSurfaceMessageItem({
 
     return (
         <div
-            className={`group flex rounded-2xl border border-transparent bg-background/60 transition-colors ${
+            className={`group flex min-w-0 overflow-hidden rounded-2xl border border-transparent bg-background/60 transition-colors ${
                 mine
                     ? "ml-auto max-w-[85%] flex-row-reverse text-right"
                     : "mr-auto max-w-[85%]"
@@ -185,7 +185,7 @@ export function ChatSurfaceMessageItem({
 
                 {!removed && (
                     <div
-                        className={`wrap-break-word ${
+                        className={`min-w-0 whitespace-pre-wrap wrap-anywhere ${
                             compactMessages ? "text-xs" : "text-sm"
                         }`}
                     >
@@ -213,7 +213,7 @@ export function ChatSurfaceMessageItem({
                 {message.imageUrl && !removed && (
                     <div className="mt-2">
                         <button
-                            className="overflow-hidden rounded-lg border border-border transition hover:opacity-90"
+                            className="max-w-full overflow-hidden rounded-lg border border-border transition hover:opacity-90"
                             onClick={() =>
                                 onOpenImageViewer(message.imageUrl || "")
                             }
@@ -221,7 +221,7 @@ export function ChatSurfaceMessageItem({
                         >
                             <img
                                 alt="Attached"
-                                className="max-h-64 w-auto"
+                                className="max-h-64 max-w-full h-auto"
                                 decoding="async"
                                 loading="lazy"
                                 onLoad={() => onMediaLoad?.(message)}

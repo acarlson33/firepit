@@ -18,6 +18,7 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { getChannelAccessForUser } from "@/lib/server-channel-access";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
@@ -194,6 +195,21 @@ export async function POST(request: NextRequest) {
                 "channel",
                 attachments as FileAttachment[],
             );
+        }
+
+        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+            await upsertMentionInboxItems({
+                authorUserId: userId,
+                contextId: String(channelId),
+                contextKind: "channel",
+                latestActivityAt: String(
+                    res.$createdAt ?? new Date().toISOString(),
+                ),
+                mentions,
+                messageId: String(res.$id),
+                previewText: text || "",
+                serverId: serverId || undefined,
+            });
         }
 
         const doc = res as unknown as Record<string, unknown>;

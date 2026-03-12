@@ -51,6 +51,8 @@ export function useDirectMessages({
 
     const [messages, setMessages] = useState<DirectMessage[]>([]);
     const [loading, setLoading] = useState(true);
+    const [oldestCursor, setOldestCursor] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [readOnly, setReadOnly] = useState(false);
     const [readOnlyReason, setReadOnlyReason] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export function useDirectMessages({
     const lastTypingSentState = useRef<boolean>(false);
     const lastTypingSentAt = useRef<number>(0);
     const currentConversationIdRef = useRef<string | null>(conversationId);
+    const loadRequestIdRef = useRef(0);
     const userProfileCache = useRef<
         Record<
             string,
@@ -75,6 +78,28 @@ export function useDirectMessages({
 
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
+    const initialPageSize = 50;
+    const loadMoreSize = 50;
+    const listConversationThreadReads = useCallback(
+        (currentContextId: string) =>
+            listThreadReads("conversation", currentContextId),
+        [],
+    );
+    const persistConversationThreadReads = useCallback(
+        ({
+            contextId: currentContextId,
+            reads,
+        }: {
+            contextId: string;
+            reads: Record<string, string>;
+        }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "conversation",
+                reads,
+            }),
+        [],
+    );
 
     // Debounced batch update for typing state changes (reduces re-renders by 70-80%)
     const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
@@ -101,8 +126,12 @@ export function useDirectMessages({
     }, 150);
 
     const loadMessages = useCallback(async () => {
+        const requestId = ++loadRequestIdRef.current;
+
         if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
             setMessages([]);
+            setOldestCursor(null);
+            setHasMore(false);
             setReadOnly(false);
             setReadOnlyReason(null);
             setRelationship(null);
@@ -117,11 +146,20 @@ export function useDirectMessages({
             // Optimized: Batch query all messages at once
             // User profiles are fetched in batches (5 at a time) to reduce API calls
             // Images are already included in the response with URLs
-            const result = await listDirectMessages(conversationId);
+            const result = await listDirectMessages(
+                conversationId,
+                initialPageSize,
+            );
+
+            if (requestId !== loadRequestIdRef.current) {
+                return;
+            }
 
             // Reverse to show oldest first
             const orderedItems = result.items.reverse();
             setMessages(orderedItems.filter(isTopLevelMessage));
+            setOldestCursor(result.nextCursor ?? null);
+            setHasMore(Boolean(result.nextCursor));
             setReadOnly(result.readOnly);
             setReadOnlyReason(result.readOnlyReason ?? null);
             setRelationship(result.relationship ?? null);
@@ -130,9 +168,36 @@ export function useDirectMessages({
                 err instanceof Error ? err.message : "Failed to load messages",
             );
         } finally {
-            setLoading(false);
+            if (requestId === loadRequestIdRef.current) {
+                setLoading(false);
+            }
         }
-    }, [conversationId]);
+    }, [conversationId, initialPageSize]);
+
+    const loadOlder = useCallback(async () => {
+        if (!conversationId || !oldestCursor) {
+            return;
+        }
+
+        try {
+            const result = await listDirectMessages(
+                conversationId,
+                loadMoreSize,
+                oldestCursor,
+            );
+            const olderItems = result.items.reverse().filter(isTopLevelMessage);
+
+            setMessages((currentValue) => [...olderItems, ...currentValue]);
+            setOldestCursor(result.nextCursor ?? null);
+            setHasMore(Boolean(result.nextCursor));
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to load older messages",
+            );
+        }
+    }, [conversationId, oldestCursor]);
 
     useEffect(() => {
         currentConversationIdRef.current = conversationId;
@@ -176,18 +241,12 @@ export function useDirectMessages({
         currentUserId: userId,
         createThreadReply: createDMThreadReply,
         listPins: listConversationPins,
-        listThreadReads: (currentContextId) =>
-            listThreadReads("conversation", currentContextId),
+        listThreadReads: listConversationThreadReads,
         listThreadMessages: listDMThreadMessages,
         messages,
         pinContextType: "conversation",
         pinMessage: pinDMMessage,
-        persistThreadReads: ({ contextId: currentContextId, reads }) =>
-            persistThreadReads({
-                contextId: currentContextId,
-                contextType: "conversation",
-                reads,
-            }),
+        persistThreadReads: persistConversationThreadReads,
         setMessages,
         unpinMessage: unpinDMMessage,
     });
@@ -707,7 +766,9 @@ export function useDirectMessages({
     ]);
 
     return {
+        hasMore,
         messages,
+        oldestCursor,
         surfaceMessages,
         loading,
         error,
@@ -715,7 +776,11 @@ export function useDirectMessages({
         send,
         edit,
         deleteMsg,
+        loadOlder,
         refresh: loadMessages,
+        shouldShowLoadOlder: Boolean(
+            hasMore && oldestCursor && messages.length,
+        ),
         typingUsers,
         handleTypingChange,
         conversationPins,

@@ -164,8 +164,8 @@ describe("Message Thread API", () => {
             "messages",
             "msg-1",
             expect.objectContaining({
-                threadReplyCount: 1,
-                threadParticipants: JSON.stringify(["user-2", "user-1"]),
+                threadMessageCount: 2,
+                threadParticipants: ["user-2", "user-1"],
             }),
         );
     });

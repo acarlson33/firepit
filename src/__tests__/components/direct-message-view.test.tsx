@@ -69,7 +69,7 @@ vi.mock("@/components/virtualized-dm-list", () => ({
 
 describe("DirectMessageView", () => {
     it("shows a read-only banner and disables composer controls", () => {
-        render(
+        const { container } = render(
             <DirectMessageView
                 conversation={{
                     $id: "conv-1",
@@ -100,5 +100,14 @@ describe("DirectMessageView", () => {
             screen.getByPlaceholderText("This user blocked you"),
         ).toBeDisabled();
         expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+
+        const scrollContainer = container.querySelector(
+            '[data-message-scroll-container="true"]',
+        ) as HTMLDivElement | null;
+
+        expect(scrollContainer).toBeTruthy();
+        expect(scrollContainer?.className).toContain("w-full");
+        expect(scrollContainer?.className).toContain("min-w-0");
+        expect(scrollContainer?.style.height).toBe("60vh");
     });
 });

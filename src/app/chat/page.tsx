@@ -40,6 +40,7 @@ import { useMessages } from "./hooks/useMessages";
 import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
+import { useInbox } from "./hooks/useInbox";
 import { useNotificationSettings } from "@/hooks/useNotificationSettings";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
@@ -163,6 +164,7 @@ export default function ChatPage() {
     const routeChannelId = searchParams.get("channel");
     const routeConversationId = searchParams.get("conversation");
     const routeHighlightMessageId = searchParams.get("highlight");
+    const routeUnreadMessageId = searchParams.get("unread");
 
     // Automatic status tracking removed to preserve manual status settings
     // Users can manually set their status via the profile/settings UI
@@ -209,14 +211,20 @@ export default function ChatPage() {
         [],
     );
     const [threadReplyText, setThreadReplyText] = useState("");
+    const [activeUnreadAnchor, setActiveUnreadAnchor] = useState<{
+        contextKey: string;
+        messageId: string;
+    } | null>(null);
     const _messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isWindowFocused, setIsWindowFocused] = useState(true);
+    const loadingOlderUnreadRef = useRef(false);
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
     const notificationSettingsApi = useNotificationSettings();
+    const inboxApi = useInbox(userId);
     const conversationsApi = useConversations(
         userId,
         viewMode === "dms" ||
@@ -230,14 +238,51 @@ export default function ChatPage() {
             ) || null,
         [conversationsApi.conversations, selectedConversationId],
     );
+    const unreadChannelCount = useMemo(
+        () =>
+            inboxApi.summaries
+                .filter((summary) => summary.contextKind === "channel")
+                .reduce((total, summary) => total + summary.totalCount, 0),
+        [inboxApi.summaries],
+    );
     const unreadDirectMessageCount = useMemo(
         () =>
-            conversationsApi.conversations.reduce(
-                (total, conversation) =>
-                    total + (conversation.unreadThreadCount ?? 0),
-                0,
-            ),
-        [conversationsApi.conversations],
+            inboxApi.summaries
+                .filter((summary) => summary.contextKind === "conversation")
+                .reduce((total, summary) => total + summary.totalCount, 0),
+        [inboxApi.summaries],
+    );
+    const conversationUnreadStateById = useMemo(
+        () =>
+            inboxApi.summaries
+                .filter((summary) => summary.contextKind === "conversation")
+                .reduce<Record<string, { count: number; muted: boolean }>>(
+                    (accumulator, summary) => {
+                        accumulator[summary.contextId] = {
+                            count: summary.totalCount,
+                            muted: summary.muted,
+                        };
+                        return accumulator;
+                    },
+                    {},
+                ),
+        [inboxApi.summaries],
+    );
+    const channelUnreadStateById = useMemo(
+        () =>
+            inboxApi.summaries
+                .filter((summary) => summary.contextKind === "channel")
+                .reduce<Record<string, { count: number; muted: boolean }>>(
+                    (accumulator, summary) => {
+                        accumulator[summary.contextId] = {
+                            count: summary.totalCount,
+                            muted: summary.muted,
+                        };
+                        return accumulator;
+                    },
+                    {},
+                ),
+        [inboxApi.summaries],
     );
     const activeMuteOverride = useMemo(() => {
         const settings = notificationSettingsApi.settings;
@@ -400,6 +445,25 @@ export default function ChatPage() {
         servers: serversApi.servers,
     });
     const categoriesApi = useCategories(serversApi.selectedServer);
+    const currentContextKey = selectedChannel
+        ? `channel:${selectedChannel}`
+        : selectedConversationId
+          ? `conversation:${selectedConversationId}`
+          : null;
+    const currentContextSummary = useMemo(() => {
+        if (selectedChannel) {
+            return inboxApi.getContextSummary("channel", selectedChannel);
+        }
+
+        if (selectedConversationId) {
+            return inboxApi.getContextSummary(
+                "conversation",
+                selectedConversationId,
+            );
+        }
+
+        return null;
+    }, [inboxApi, selectedChannel, selectedConversationId]);
 
     useEffect(() => {
         if (routeConversationId) {
@@ -433,8 +497,62 @@ export default function ChatPage() {
         serversApi.setSelectedServer,
     ]);
 
+    const messagesApi = useMessages({
+        channelId: selectedChannel,
+        serverId: serversApi.selectedServer,
+        userId,
+        userName,
+    });
+
+    const dmApi = useDirectMessages({
+        conversationId: selectedConversationId || "",
+        userId,
+        userName,
+    });
+
+    const loadOlderAroundUnread = useCallback(async () => {
+        if (loadingOlderUnreadRef.current) {
+            return;
+        }
+
+        loadingOlderUnreadRef.current = true;
+        try {
+            if (selectedChannel) {
+                if (messagesApi.shouldShowLoadOlder()) {
+                    await messagesApi.loadOlder();
+                }
+                return;
+            }
+
+            if (selectedConversationId && dmApi.shouldShowLoadOlder) {
+                await dmApi.loadOlder();
+            }
+        } finally {
+            loadingOlderUnreadRef.current = false;
+        }
+    }, [
+        dmApi.loadOlder,
+        dmApi.shouldShowLoadOlder,
+        messagesApi,
+        selectedChannel,
+        selectedConversationId,
+    ]);
+
+    const jumpToUnreadEntry = useCallback(
+        (messageId: string) => {
+            return jumpToMessageWhenReady(messageId, {
+                retryAttempts: 12,
+                retryDelayMs: 200,
+                onRetry: () => {
+                    void loadOlderAroundUnread();
+                },
+            });
+        },
+        [loadOlderAroundUnread],
+    );
+
     useEffect(() => {
-        if (!routeHighlightMessageId) {
+        if (!routeHighlightMessageId && !routeUnreadMessageId) {
             return;
         }
 
@@ -452,9 +570,19 @@ export default function ChatPage() {
             return;
         }
 
-        return jumpToMessageWhenReady(routeHighlightMessageId, {
+        const targetMessageId = routeUnreadMessageId || routeHighlightMessageId;
+        if (!targetMessageId) {
+            return;
+        }
+
+        return jumpToMessageWhenReady(targetMessageId, {
             retryAttempts: 12,
             retryDelayMs: 200,
+            onRetry: () => {
+                if (routeUnreadMessageId) {
+                    void loadOlderAroundUnread();
+                }
+            },
             onComplete: (found) => {
                 if (!found) {
                     return;
@@ -462,6 +590,7 @@ export default function ChatPage() {
 
                 const params = new URLSearchParams(searchParamsString);
                 params.delete("highlight");
+                params.delete("unread");
                 const query = params.toString();
                 window.history.replaceState(
                     null,
@@ -474,13 +603,56 @@ export default function ChatPage() {
         routeChannelId,
         routeConversationId,
         routeHighlightMessageId,
+        routeUnreadMessageId,
         routeServerId,
+        loadOlderAroundUnread,
         searchParamsString,
         selectedChannel,
         selectedConversationId,
         serversApi.selectedServer,
         viewMode,
     ]);
+
+    useEffect(() => {
+        if (!currentContextKey) {
+            setActiveUnreadAnchor(null);
+            return;
+        }
+
+        setActiveUnreadAnchor((currentValue) => {
+            if (currentValue?.contextKey === currentContextKey) {
+                return currentValue;
+            }
+
+            const nextMessageId =
+                currentContextSummary?.firstUnreadItem?.messageId;
+            if (!nextMessageId) {
+                return null;
+            }
+
+            return {
+                contextKey: currentContextKey,
+                messageId: nextMessageId,
+            };
+        });
+    }, [currentContextKey, currentContextSummary?.firstUnreadItem?.messageId]);
+
+    useEffect(() => {
+        if (!currentContextKey || !currentContextSummary) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            void inboxApi.markContextRead(
+                currentContextSummary.contextKind,
+                currentContextSummary.contextId,
+            );
+        }, 800);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [currentContextKey, currentContextSummary, inboxApi]);
 
     useEffect(() => {
         if (!serversApi.selectedServer) {
@@ -574,13 +746,6 @@ export default function ChatPage() {
         serversApi.selectedServer,
     ]);
 
-    const messagesApi = useMessages({
-        channelId: resolvedChannelId,
-        serverId: serversApi.selectedServer,
-        userId,
-        userName,
-    });
-
     const {
         messages,
         loading: _messagesLoading,
@@ -651,12 +816,37 @@ export default function ChatPage() {
     const jumpToPinnedMessage = useCallback((messageId: string) => {
         jumpToMessage(messageId);
     }, []);
+    const handleJumpToCurrentUnread = useCallback(() => {
+        const targetMessageId = activeUnreadAnchor?.messageId;
+        if (!targetMessageId) {
+            return;
+        }
 
-    const dmApi = useDirectMessages({
-        conversationId: selectedConversationId || "",
-        userId,
-        userName,
-    });
+        jumpToUnreadEntry(targetMessageId);
+    }, [activeUnreadAnchor?.messageId, jumpToUnreadEntry]);
+
+    const handleCatchUpCurrentContext = useCallback(() => {
+        setActiveUnreadAnchor(null);
+        if (selectedChannel) {
+            if (messagesApi.surfaceMessages.length > 0) {
+                jumpToMessage(messagesApi.surfaceMessages.at(-1)?.id || "", {
+                    block: "end",
+                });
+            }
+            return;
+        }
+
+        if (selectedConversationId && dmApi.surfaceMessages.length > 0) {
+            jumpToMessage(dmApi.surfaceMessages.at(-1)?.id || "", {
+                block: "end",
+            });
+        }
+    }, [
+        dmApi.surfaceMessages,
+        messagesApi.surfaceMessages,
+        selectedChannel,
+        selectedConversationId,
+    ]);
 
     // Check manageMessages permission when channel changes
     useEffect(() => {
@@ -1147,6 +1337,7 @@ export default function ChatPage() {
 
         const renderChannelItem = (channel: Channel) => {
             const active = channel.$id === selectedChannel;
+            const unreadState = channelUnreadStateById[channel.$id];
 
             return (
                 <li key={channel.$id} className="group relative">
@@ -1165,8 +1356,21 @@ export default function ChatPage() {
                             <span className="min-w-0 truncate text-left font-medium">
                                 {channel.name}
                             </span>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                                #{channel.$id.slice(0, 4)}
+                            <span className="flex shrink-0 items-center gap-2">
+                                {unreadState?.count ? (
+                                    <span
+                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                            unreadState.muted
+                                                ? "bg-muted text-muted-foreground"
+                                                : "bg-primary text-primary-foreground"
+                                        }`}
+                                    >
+                                        {unreadState.count}
+                                    </span>
+                                ) : null}
+                                <span className="text-xs text-muted-foreground">
+                                    #{channel.$id.slice(0, 4)}
+                                </span>
                             </span>
                         </Button>
                         <DropdownMenu>
@@ -1328,7 +1532,7 @@ export default function ChatPage() {
                 editingMessageId={editingMessageId}
                 emptyDescription="Start the conversation by sending a message."
                 emptyTitle="No messages yet"
-                loading={false}
+                loading={messagesApi.loading}
                 messageContainerRef={messagesContainerRef}
                 messageDensity={messageDensity}
                 onLoadOlder={loadOlder}
@@ -1346,12 +1550,30 @@ export default function ChatPage() {
                 onTogglePin={surfaceController.onTogglePin}
                 onToggleReaction={surfaceController.onToggleReaction}
                 onUploadCustomEmoji={uploadEmoji}
+                onCatchUpUnread={handleCatchUpCurrentContext}
+                onJumpToUnread={handleJumpToCurrentUnread}
                 pinnedMessageIds={pinnedMessageIds}
                 setDeleteConfirmId={setDeleteConfirmId}
                 shouldShowLoadOlder={shouldShowLoadOlder()}
                 showSurface={Boolean(selectedChannel)}
                 surfaceMessages={messagesApi.surfaceMessages}
                 typingUsers={_typingUsers}
+                unreadAnchorMessageId={
+                    activeUnreadAnchor?.contextKey === currentContextKey
+                        ? activeUnreadAnchor.messageId
+                        : null
+                }
+                unreadSummaryLabel={
+                    currentContextSummary
+                        ? `${currentContextSummary.totalCount} unread item${
+                              currentContextSummary.totalCount === 1 ? "" : "s"
+                          } in this ${
+                              currentContextSummary.contextKind === "channel"
+                                  ? "channel"
+                                  : "conversation"
+                          }`
+                        : null
+                }
                 userIdSlice={userIdSlice}
             />
         );
@@ -1389,6 +1611,11 @@ export default function ChatPage() {
                             >
                                 <Hash className="mr-2 h-4 w-4" />
                                 Channels
+                                {unreadChannelCount > 0 ? (
+                                    <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                        {unreadChannelCount}
+                                    </span>
+                                ) : null}
                             </Button>
                             <Button
                                 aria-pressed={viewMode === "dms"}
@@ -1423,6 +1650,8 @@ export default function ChatPage() {
                             conversations={conversationsApi.conversations}
                             currentUserId={userId ?? undefined}
                             loading={conversationsApi.loading}
+                            inboxItems={inboxApi.items}
+                            inboxLoading={inboxApi.loading}
                             onMuteConversation={(
                                 conversationId,
                                 conversationName,
@@ -1443,12 +1672,15 @@ export default function ChatPage() {
                                 setSelectedChannel(null);
                             }}
                             onSelectConversation={selectConversation}
+                            conversationUnreadStateById={
+                                conversationUnreadStateById
+                            }
                             selectedConversationId={selectedConversationId}
                         />
                     )}
                 </aside>
 
-                <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+                <div className="min-w-0 space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
                     {viewMode === "dms" && selectedConversation && userId ? (
                         <DirectMessageView
                             conversation={selectedConversation}
@@ -1465,6 +1697,7 @@ export default function ChatPage() {
                             onSend={dmApi.send}
                             onSendThreadReply={dmApi.sendThreadReply}
                             onTogglePinMessage={dmApi.togglePin}
+                            onLoadOlder={dmApi.loadOlder}
                             pinnedMessageIds={dmApi.conversationPins.map(
                                 (item) => item.message.$id,
                             )}
@@ -1479,6 +1712,29 @@ export default function ChatPage() {
                             threadMessages={dmApi.threadMessages}
                             typingUsers={dmApi.typingUsers}
                             onTypingChange={dmApi.handleTypingChange}
+                            shouldShowLoadOlder={dmApi.shouldShowLoadOlder}
+                            onCatchUpUnread={handleCatchUpCurrentContext}
+                            onJumpToUnread={handleJumpToCurrentUnread}
+                            unreadAnchorMessageId={
+                                activeUnreadAnchor?.contextKey ===
+                                currentContextKey
+                                    ? activeUnreadAnchor.messageId
+                                    : null
+                            }
+                            unreadSummaryLabel={
+                                currentContextSummary
+                                    ? `${currentContextSummary.totalCount} unread item${
+                                          currentContextSummary.totalCount === 1
+                                              ? ""
+                                              : "s"
+                                      } in this ${
+                                          currentContextSummary.contextKind ===
+                                          "channel"
+                                              ? "channel"
+                                              : "conversation"
+                                      }`
+                                    : null
+                            }
                         />
                     ) : (
                         <>

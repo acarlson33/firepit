@@ -11,40 +11,78 @@ export function ServiceWorkerRegistration() {
         const shouldRegister =
             process.env.NODE_ENV === "production" || enableInDev;
 
-        if (
-            typeof window !== "undefined" &&
-            "serviceWorker" in navigator &&
-            shouldRegister
-        ) {
-            // Register service worker
-            navigator.serviceWorker
-                .register("/sw.js")
-                .then((registration) => {
-                    console.log(
-                        "Service Worker registered with scope:",
-                        registration.scope,
-                    );
-
-                    // Check for updates periodically
-                    setInterval(
-                        () => {
-                            registration.update().catch(() => {
-                                /* Ignore update errors */
-                            });
-                        },
-                        60 * 60 * 1000,
-                    ); // Check every hour
-                })
-                .catch((error) => {
-                    console.error("Service Worker registration failed:", error);
-                });
-
-            // Handle service worker updates
-            navigator.serviceWorker.addEventListener("controllerchange", () => {
-                console.log("Service Worker updated, reloading page...");
-                window.location.reload();
-            });
+        if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+            return;
         }
+
+        let updateIntervalId: number | undefined;
+        let didCancel = false;
+
+        async function unregisterWorkersAndClearCaches() {
+            const registrations =
+                await navigator.serviceWorker.getRegistrations();
+            await Promise.all(
+                registrations.map((registration) => registration.unregister()),
+            );
+
+            if (typeof caches === "undefined") {
+                return;
+            }
+
+            const cacheKeys = await caches.keys();
+            await Promise.all(
+                cacheKeys.map((cacheKey) => caches.delete(cacheKey)),
+            );
+        }
+
+        if (!shouldRegister) {
+            void unregisterWorkersAndClearCaches().catch(() => {
+                // Ignore cleanup failures in development.
+            });
+
+            return;
+        }
+
+        function handleControllerChange() {
+            if (didCancel) {
+                return;
+            }
+
+            window.location.reload();
+        }
+
+        navigator.serviceWorker
+            .register("/sw.js", { updateViaCache: "none" })
+            .then((registration) => {
+                // Check for updates periodically
+                updateIntervalId = window.setInterval(
+                    () => {
+                        registration.update().catch(() => {
+                            /* Ignore update errors */
+                        });
+                    },
+                    60 * 60 * 1000,
+                ); // Check every hour
+            })
+            .catch((error) => {
+                console.error("Service Worker registration failed:", error);
+            });
+
+        navigator.serviceWorker.addEventListener(
+            "controllerchange",
+            handleControllerChange,
+        );
+
+        return () => {
+            didCancel = true;
+            if (updateIntervalId !== undefined) {
+                window.clearInterval(updateIntervalId);
+            }
+            navigator.serviceWorker.removeEventListener(
+                "controllerchange",
+                handleControllerChange,
+            );
+        };
     }, []);
 
     return null; // This component doesn't render anything

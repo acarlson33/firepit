@@ -203,6 +203,63 @@ describe("useMessages", () => {
             });
         });
 
+        it("should keep previous messages visible while the next channel is loading", async () => {
+            const mockMessage3: Message = {
+                $id: "msg3",
+                channelId: "channel456",
+                userId: mockUserId,
+                userName: mockUserName,
+                text: "New channel",
+                $createdAt: "2024-01-01T00:02:00.000Z",
+                $updatedAt: "2024-01-01T00:02:00.000Z",
+                reactions: [],
+            };
+
+            let resolveNextLoad: ((messages: Message[]) => void) | undefined;
+
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            )
+                .mockResolvedValueOnce([mockMessage1])
+                .mockImplementationOnce(
+                    () =>
+                        new Promise<Message[]>((resolve) => {
+                            resolveNextLoad = resolve;
+                        }),
+                );
+
+            const { result, rerender } = renderHook(
+                ({ channelId }: { channelId: string | null }) =>
+                    useMessages({
+                        channelId,
+                        userId: mockUserId,
+                        userName: mockUserName,
+                    }),
+                {
+                    initialProps: { channelId: mockChannelId as string | null },
+                },
+            );
+
+            await waitFor(() => {
+                expect(result.current.messages).toEqual([mockMessage1]);
+            });
+
+            rerender({ channelId: "channel456" });
+
+            expect(result.current.loading).toBe(true);
+            expect(result.current.messages).toEqual([mockMessage1]);
+
+            await act(async () => {
+                resolveNextLoad?.([mockMessage3]);
+            });
+
+            await waitFor(() => {
+                expect(result.current.messages).toEqual([mockMessage3]);
+            });
+        });
+
         it("should set hasMore when full page of messages is loaded", async () => {
             // pageSize is now 15, so a full page should have 15 messages
             const fullPage = Array.from({ length: 15 }, (_, i) => ({
@@ -281,7 +338,7 @@ describe("useMessages", () => {
             expect(result.current.messages).toEqual([mockMessage1]);
         });
 
-        it("should clear messages and show loading when switching channels", async () => {
+        it("should keep previous messages visible and show loading when switching channels", async () => {
             (
                 appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
                     typeof vi.fn
@@ -316,8 +373,8 @@ describe("useMessages", () => {
             // Switch to a new channel
             rerender({ channelId: "channel456" });
 
-            // Messages should be cleared immediately and loading should be true
-            expect(result.current.messages).toEqual([]);
+            // Previous messages should stay visible while the next channel loads
+            expect(result.current.messages).toEqual([mockMessage1]);
             expect(result.current.loading).toBe(true);
 
             // Wait for new messages to load

@@ -5,6 +5,7 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
 import {
     MAX_MESSAGE_LENGTH,
@@ -312,6 +313,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 lastThreadReplyAt: replyCreatedAt,
             },
         );
+
+        if (mentions && mentions.length > 0) {
+            await upsertMentionInboxItems({
+                authorUserId: user.$id,
+                contextId: parent.conversationId,
+                contextKind: "conversation",
+                latestActivityAt: String(
+                    created.$createdAt || new Date().toISOString(),
+                ),
+                mentions,
+                messageId: String(created.$id),
+                parentMessageId: actualThreadId,
+                previewText: text?.trim() || "",
+            });
+        }
 
         const d = created as unknown as Record<string, unknown>;
         const message: DirectMessage = {

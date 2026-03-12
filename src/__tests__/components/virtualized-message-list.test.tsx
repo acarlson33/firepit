@@ -14,14 +14,18 @@ vi.mock("react-virtuoso", () => ({
     Virtuoso: React.forwardRef(
         (
             {
+                className,
                 itemContent,
                 data,
+                style,
             }: {
+                className?: string;
                 itemContent: (
                     index: number,
                     item: ChatSurfaceMessage,
                 ) => React.ReactNode;
                 data: ChatSurfaceMessage[];
+                style?: React.CSSProperties;
             },
             ref: React.ForwardedRef<{
                 scrollToIndex: typeof mockScrollToIndex;
@@ -32,7 +36,11 @@ vi.mock("react-virtuoso", () => ({
             }));
 
             return (
-                <div data-testid="virtuoso-container">
+                <div
+                    className={className}
+                    data-testid="virtuoso-container"
+                    style={style}
+                >
                     {data.map((item, index) => (
                         <div key={item.id} data-testid={`message-${item.id}`}>
                             {itemContent(index, item)}
@@ -187,6 +195,20 @@ describe("VirtualizedMessageList", () => {
 
         expect(screen.getByTestId("virtuoso-container")).toBeDefined();
         expect(screen.getByTestId("message-msg-1")).toBeDefined();
+    });
+
+    it("keeps the virtualized container pinned to full width", () => {
+        render(<VirtualizedMessageList {...defaultProps} />);
+
+        expect(screen.getByTestId("virtuoso-container").className).toContain(
+            "w-full",
+        );
+        expect(screen.getByTestId("virtuoso-container").className).toContain(
+            "min-w-0",
+        );
+        expect(screen.getByTestId("virtuoso-container").style.height).toBe(
+            "60vh",
+        );
     });
 
     it("scrolls to the bottom when requested", async () => {

@@ -13,6 +13,10 @@ const { mockJumpToMessage } = vi.hoisted(() => ({
     mockJumpToMessage: vi.fn(),
 }));
 
+const { mockVirtualizedDMList } = vi.hoisted(() => ({
+    mockVirtualizedDMList: vi.fn(),
+}));
+
 vi.mock("@/lib/message-navigation", () => ({
     jumpToMessage: (...args: unknown[]) => mockJumpToMessage(...args),
 }));
@@ -21,15 +25,6 @@ vi.mock("@/hooks/useCustomEmojis", () => ({
     useCustomEmojis: () => ({
         customEmojis: [],
         uploadEmoji: vi.fn(),
-    }),
-}));
-
-vi.mock("@/app/chat/hooks/useChatSurfaceController", () => ({
-    useChatSurfaceController: () => ({
-        handleDeleteSurfaceMessage: vi.fn(),
-        handleStartEditSurfaceMessage: vi.fn(),
-        handleStartReplySurfaceMessage: vi.fn(),
-        onToggleReaction: vi.fn(),
     }),
 }));
 
@@ -48,8 +43,11 @@ vi.mock("sonner", () => ({
     },
 }));
 
-vi.mock("@/components/chat-surface-panel", () => ({
-    ChatSurfacePanel: () => <div>chat-surface-panel</div>,
+vi.mock("@/components/virtualized-dm-list", () => ({
+    VirtualizedDMList: (props: Record<string, unknown>) => {
+        mockVirtualizedDMList(props);
+        return <div>virtualized-dm-list</div>;
+    },
 }));
 
 vi.mock("@/components/chat-thread-content", () => ({
@@ -65,6 +63,48 @@ vi.mock("@/components/mention-help-tooltip", () => ({
 }));
 
 describe("DirectMessageView", () => {
+    it("uses the virtualized DM list when message count reaches the DM threshold", () => {
+        const conversation: Conversation = {
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conversation-1",
+            otherUser: {
+                displayName: "User Two",
+                userId: "user-2",
+            },
+            participantCount: 2,
+            participants: ["user-1", "user-2"],
+        };
+
+        render(
+            <DirectMessageView
+                conversation={conversation}
+                currentUserId="user-1"
+                loading={false}
+                messages={Array.from({ length: 20 }, (_, index) => ({
+                    $createdAt: `2026-03-10T12:${String(index).padStart(2, "0")}:00.000Z`,
+                    $id: `dm-${index}`,
+                    conversationId: "conversation-1",
+                    senderDisplayName: "User Two",
+                    senderId: "user-2",
+                    text: `Message ${index}`,
+                }))}
+                onDelete={vi.fn()}
+                onEdit={vi.fn()}
+                onSend={vi.fn()}
+                sending={false}
+                surfaceMessages={[]}
+            />,
+        );
+
+        expect(mockVirtualizedDMList).toHaveBeenCalledWith(
+            expect.objectContaining({
+                conversationId: "conversation-1",
+                shouldShowLoadOlder: false,
+                userId: "user-1",
+            }),
+        );
+    });
+
     it("uses the shared jump helper for pinned DM messages", async () => {
         const user = userEvent.setup();
         const conversation: Conversation = {
