@@ -1680,7 +1680,7 @@ export default function ChatPage() {
                     )}
                 </aside>
 
-                <div className="space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+                <div className="min-w-0 space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
                     {viewMode === "dms" && selectedConversation && userId ? (
                         <DirectMessageView
                             conversation={selectedConversation}

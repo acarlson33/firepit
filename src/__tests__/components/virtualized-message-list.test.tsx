@@ -17,6 +17,7 @@ vi.mock("react-virtuoso", () => ({
                 className,
                 itemContent,
                 data,
+                style,
             }: {
                 className?: string;
                 itemContent: (
@@ -24,6 +25,7 @@ vi.mock("react-virtuoso", () => ({
                     item: ChatSurfaceMessage,
                 ) => React.ReactNode;
                 data: ChatSurfaceMessage[];
+                style?: React.CSSProperties;
             },
             ref: React.ForwardedRef<{
                 scrollToIndex: typeof mockScrollToIndex;
@@ -34,7 +36,11 @@ vi.mock("react-virtuoso", () => ({
             }));
 
             return (
-                <div className={className} data-testid="virtuoso-container">
+                <div
+                    className={className}
+                    data-testid="virtuoso-container"
+                    style={style}
+                >
                     {data.map((item, index) => (
                         <div key={item.id} data-testid={`message-${item.id}`}>
                             {itemContent(index, item)}
@@ -199,6 +205,9 @@ describe("VirtualizedMessageList", () => {
         );
         expect(screen.getByTestId("virtuoso-container").className).toContain(
             "min-w-0",
+        );
+        expect(screen.getByTestId("virtuoso-container").style.height).toBe(
+            "60vh",
         );
     });
 

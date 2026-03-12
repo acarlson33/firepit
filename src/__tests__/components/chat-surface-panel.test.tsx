@@ -24,6 +24,7 @@ vi.mock("@/components/chat-surface-message-item", () => ({
 }));
 
 vi.mock("@/components/virtualized-message-list", () => ({
+    MESSAGE_LIST_VIEWPORT_HEIGHT: "60vh",
     VirtualizedMessageList: ({
         messages,
         onMediaLoad,
@@ -241,6 +242,36 @@ describe("ChatSurfacePanel", () => {
         expect(screen.getByText("Hello from the surface")).toBeInTheDocument();
         expect(screen.getByText("Updating messages...")).toBeInTheDocument();
         expect(screen.queryByText("Nothing here")).not.toBeInTheDocument();
+    });
+
+    it("pins the non-virtualized surface to a stable width and height", () => {
+        const { container } = render(
+            <ChatSurfacePanel
+                currentUserId="user-1"
+                deleteConfirmId={null}
+                editingMessageId={null}
+                emptyDescription="No messages"
+                emptyTitle="Nothing here"
+                loading={false}
+                onOpenImageViewer={vi.fn()}
+                onRemove={vi.fn()}
+                onStartEdit={vi.fn()}
+                onStartReply={vi.fn()}
+                onToggleReaction={vi.fn().mockResolvedValue(undefined)}
+                setDeleteConfirmId={vi.fn()}
+                surfaceMessages={[baseMessage]}
+                virtualizationThreshold={10}
+            />,
+        );
+
+        const scrollContainer = container.querySelector(
+            '[data-message-scroll-container="true"]',
+        ) as HTMLDivElement | null;
+
+        expect(scrollContainer).toBeTruthy();
+        expect(scrollContainer?.className).toContain("w-full");
+        expect(scrollContainer?.className).toContain("min-w-0");
+        expect(scrollContainer?.style.height).toBe("60vh");
     });
 
     it("scrolls the composer into view for large previews and after submit", async () => {

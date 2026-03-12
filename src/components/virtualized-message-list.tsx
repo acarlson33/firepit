@@ -9,6 +9,8 @@ import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 
 export type VirtualizedScrollBehavior = "auto" | "smooth";
 
+export const MESSAGE_LIST_VIEWPORT_HEIGHT = "60vh";
+
 type VirtualizedMessageListProps = {
     messages: ChatSurfaceMessage[];
     userId: string | null;
@@ -108,7 +110,7 @@ export function VirtualizedMessageList({
             className={`min-w-0 w-full ${
                 isCompact ? "rounded-2xl p-3" : "rounded-3xl p-4"
             } border border-border/60 bg-background/70 shadow-inner`}
-            style={{ height: "60vh" }}
+            style={{ height: MESSAGE_LIST_VIEWPORT_HEIGHT }}
             computeItemKey={(_, message) => message.id}
             data={messages}
             data-message-scroll-container="true"

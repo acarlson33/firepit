@@ -17,7 +17,10 @@ import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
-import type { VirtualizedScrollBehavior } from "@/components/virtualized-message-list";
+import {
+    MESSAGE_LIST_VIEWPORT_HEIGHT,
+    type VirtualizedScrollBehavior,
+} from "@/components/virtualized-message-list";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -353,14 +356,18 @@ export function ChatSurfacePanel({
             <div
                 className={
                     useVirtualScrolling
-                        ? "relative min-w-0"
-                        : `relative overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
+                        ? "relative min-w-0 w-full"
+                        : `relative min-w-0 w-full overflow-y-auto rounded-3xl border border-border/60 bg-background/70 shadow-inner ${
                               compactMessages
                                   ? "space-y-2 p-3"
                                   : "space-y-3 p-4"
                           }`
                 }
-                style={useVirtualScrolling ? undefined : { height: "60vh" }}
+                style={
+                    useVirtualScrolling
+                        ? undefined
+                        : { height: MESSAGE_LIST_VIEWPORT_HEIGHT }
+                }
                 data-message-scroll-container="true"
                 ref={messageContainerRef}
             >

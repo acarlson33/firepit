@@ -13,8 +13,8 @@ const { mockJumpToMessage } = vi.hoisted(() => ({
     mockJumpToMessage: vi.fn(),
 }));
 
-const { mockChatSurfacePanel } = vi.hoisted(() => ({
-    mockChatSurfacePanel: vi.fn(),
+const { mockVirtualizedDMList } = vi.hoisted(() => ({
+    mockVirtualizedDMList: vi.fn(),
 }));
 
 vi.mock("@/lib/message-navigation", () => ({
@@ -25,15 +25,6 @@ vi.mock("@/hooks/useCustomEmojis", () => ({
     useCustomEmojis: () => ({
         customEmojis: [],
         uploadEmoji: vi.fn(),
-    }),
-}));
-
-vi.mock("@/app/chat/hooks/useChatSurfaceController", () => ({
-    useChatSurfaceController: () => ({
-        handleDeleteSurfaceMessage: vi.fn(),
-        handleStartEditSurfaceMessage: vi.fn(),
-        handleStartReplySurfaceMessage: vi.fn(),
-        onToggleReaction: vi.fn(),
     }),
 }));
 
@@ -52,10 +43,10 @@ vi.mock("sonner", () => ({
     },
 }));
 
-vi.mock("@/components/chat-surface-panel", () => ({
-    ChatSurfacePanel: (props: Record<string, unknown>) => {
-        mockChatSurfacePanel(props);
-        return <div>chat-surface-panel</div>;
+vi.mock("@/components/virtualized-dm-list", () => ({
+    VirtualizedDMList: (props: Record<string, unknown>) => {
+        mockVirtualizedDMList(props);
+        return <div>virtualized-dm-list</div>;
     },
 }));
 
@@ -72,7 +63,7 @@ vi.mock("@/components/mention-help-tooltip", () => ({
 }));
 
 describe("DirectMessageView", () => {
-    it("keeps DM virtualization aligned with the shared surface threshold", () => {
+    it("uses the virtualized DM list when message count reaches the DM threshold", () => {
         const conversation: Conversation = {
             $createdAt: "2026-03-10T12:00:00.000Z",
             $id: "conversation-1",
@@ -89,7 +80,14 @@ describe("DirectMessageView", () => {
                 conversation={conversation}
                 currentUserId="user-1"
                 loading={false}
-                messages={[]}
+                messages={Array.from({ length: 20 }, (_, index) => ({
+                    $createdAt: `2026-03-10T12:${String(index).padStart(2, "0")}:00.000Z`,
+                    $id: `dm-${index}`,
+                    conversationId: "conversation-1",
+                    senderDisplayName: "User Two",
+                    senderId: "user-2",
+                    text: `Message ${index}`,
+                }))}
                 onDelete={vi.fn()}
                 onEdit={vi.fn()}
                 onSend={vi.fn()}
@@ -98,8 +96,12 @@ describe("DirectMessageView", () => {
             />,
         );
 
-        expect(mockChatSurfacePanel).toHaveBeenCalledWith(
-            expect.objectContaining({ virtualizationThreshold: 20 }),
+        expect(mockVirtualizedDMList).toHaveBeenCalledWith(
+            expect.objectContaining({
+                conversationId: "conversation-1",
+                shouldShowLoadOlder: false,
+                userId: "user-1",
+            }),
         );
     });
 
