@@ -41,6 +41,7 @@ import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useInbox } from "./hooks/useInbox";
+import { useInboxDigest } from "./hooks/useInboxDigest";
 import { useNotificationSettings } from "@/hooks/useNotificationSettings";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
@@ -225,6 +226,20 @@ export default function ChatPage() {
     const { customEmojis, uploadEmoji } = useCustomEmojis();
     const notificationSettingsApi = useNotificationSettings();
     const inboxApi = useInbox(userId);
+    const digestContextKind = selectedChannel
+        ? "channel"
+        : selectedConversationId
+          ? "conversation"
+          : undefined;
+    const digestContextId =
+        selectedChannel || selectedConversationId || undefined;
+    const inboxDigestApi = useInboxDigest({
+        contextId: digestContextId,
+        contextKind: digestContextKind,
+        enabled: Boolean(digestContextId && digestContextKind),
+        limit: 100,
+        userId,
+    });
     const conversationsApi = useConversations(
         userId,
         viewMode === "dms" ||
@@ -268,6 +283,8 @@ export default function ChatPage() {
                 ),
         [inboxApi.summaries],
     );
+    const unreadSummaryUnitLabel =
+        inboxApi.contractVersion === "message_v2" ? "message" : "item";
     const channelUnreadStateById = useMemo(
         () =>
             inboxApi.summaries
@@ -464,6 +481,12 @@ export default function ChatPage() {
 
         return null;
     }, [inboxApi, selectedChannel, selectedConversationId]);
+    const currentContextUnreadCount =
+        inboxApi.contractVersion === "message_v2"
+            ? inboxDigestApi.totalUnreadCount ||
+              currentContextSummary?.totalCount ||
+              0
+            : currentContextSummary?.totalCount || 0;
 
     useEffect(() => {
         if (routeConversationId) {
@@ -546,9 +569,21 @@ export default function ChatPage() {
                 onRetry: () => {
                     void loadOlderAroundUnread();
                 },
+                onComplete: (found) => {
+                    if (found) {
+                        return;
+                    }
+
+                    setActiveUnreadAnchor((currentValue) =>
+                        currentValue?.messageId === messageId
+                            ? null
+                            : currentValue,
+                    );
+                    void inboxApi.refresh();
+                },
             });
         },
-        [loadOlderAroundUnread],
+        [inboxApi, loadOlderAroundUnread],
     );
 
     useEffect(() => {
@@ -625,7 +660,8 @@ export default function ChatPage() {
             }
 
             const nextMessageId =
-                currentContextSummary?.firstUnreadItem?.messageId;
+                currentContextSummary?.firstUnreadItem?.messageId ??
+                inboxDigestApi.items.at(0)?.messageId;
             if (!nextMessageId) {
                 return null;
             }
@@ -635,7 +671,11 @@ export default function ChatPage() {
                 messageId: nextMessageId,
             };
         });
-    }, [currentContextKey, currentContextSummary?.firstUnreadItem?.messageId]);
+    }, [
+        currentContextKey,
+        currentContextSummary?.firstUnreadItem?.messageId,
+        inboxDigestApi.items,
+    ]);
 
     useEffect(() => {
         if (!currentContextKey || !currentContextSummary) {
@@ -817,13 +857,21 @@ export default function ChatPage() {
         jumpToMessage(messageId);
     }, []);
     const handleJumpToCurrentUnread = useCallback(() => {
-        const targetMessageId = activeUnreadAnchor?.messageId;
+        const targetMessageId =
+            activeUnreadAnchor?.messageId ??
+            currentContextSummary?.firstUnreadItem?.messageId ??
+            inboxDigestApi.items.at(0)?.messageId;
         if (!targetMessageId) {
             return;
         }
 
         jumpToUnreadEntry(targetMessageId);
-    }, [activeUnreadAnchor?.messageId, jumpToUnreadEntry]);
+    }, [
+        activeUnreadAnchor?.messageId,
+        currentContextSummary?.firstUnreadItem?.messageId,
+        inboxDigestApi.items,
+        jumpToUnreadEntry,
+    ]);
 
     const handleCatchUpCurrentContext = useCallback(() => {
         setActiveUnreadAnchor(null);
@@ -1565,8 +1613,8 @@ export default function ChatPage() {
                 }
                 unreadSummaryLabel={
                     currentContextSummary
-                        ? `${currentContextSummary.totalCount} unread item${
-                              currentContextSummary.totalCount === 1 ? "" : "s"
+                        ? `${currentContextUnreadCount} unread ${unreadSummaryUnitLabel}${
+                              currentContextUnreadCount === 1 ? "" : "s"
                           } in this ${
                               currentContextSummary.contextKind === "channel"
                                   ? "channel"
@@ -1649,6 +1697,7 @@ export default function ChatPage() {
                         <ConversationList
                             conversations={conversationsApi.conversations}
                             currentUserId={userId ?? undefined}
+                            inboxContractVersion={inboxApi.contractVersion}
                             loading={conversationsApi.loading}
                             inboxItems={inboxApi.items}
                             inboxLoading={inboxApi.loading}
@@ -1723,8 +1772,8 @@ export default function ChatPage() {
                             }
                             unreadSummaryLabel={
                                 currentContextSummary
-                                    ? `${currentContextSummary.totalCount} unread item${
-                                          currentContextSummary.totalCount === 1
+                                    ? `${currentContextUnreadCount} unread ${unreadSummaryUnitLabel}${
+                                          currentContextUnreadCount === 1
                                               ? ""
                                               : "s"
                                       } in this ${

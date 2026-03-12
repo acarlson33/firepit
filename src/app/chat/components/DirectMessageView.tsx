@@ -100,7 +100,7 @@ type DirectMessageViewProps = {
 export function DirectMessageView({
     conversation,
     messages,
-    surfaceMessages,
+    surfaceMessages: _surfaceMessages,
     loading,
     sending,
     currentUserId,

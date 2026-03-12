@@ -11,12 +11,19 @@ The live flag definitions are:
 - `allow_user_servers`: default `false`; controls whether regular users can create their own servers
 - `enable_audit_logging`: default `true`; controls whether moderation actions should be recorded for audit visibility
 - `enable_per_message_unread`: default `false`; gates the phase rollout from thread-level unread semantics to per-message unread semantics
+- `enable_inbox_digest`: default `false`; gates the phase-4 digest endpoint and hook scaffolding rollout
 
 Rollout note for `enable_per_message_unread`:
 
 - Keep disabled until message-level unread persistence and parity tests are complete.
 - Enable first in internal environments, then ramp gradually in production.
 - Keep the current thread-based inbox contract as the stable fallback while disabled.
+
+Rollout note for `enable_inbox_digest`:
+
+- Keep disabled until digest endpoint validation and hook-level regression tests are stable.
+- Enable in internal environments first, then ramp gradually.
+- Use digest payloads as additive support for unread workflows, not as a replacement for existing inbox contracts during rollout.
 
 ## How Flags Work
 

@@ -357,6 +357,61 @@ components:
                         thread:
                             type: integer
 
+        InboxDigestItem:
+            type: object
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+                    enum: [mention, thread]
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                serverId:
+                    type: string
+                messageId:
+                    type: string
+                parentMessageId:
+                    type: string
+                activityAt:
+                    type: string
+                    format: date-time
+                previewText:
+                    type: string
+                unreadCount:
+                    type: integer
+                authorUserId:
+                    type: string
+                authorLabel:
+                    type: string
+                authorAvatarUrl:
+                    type: string
+                    format: uri
+                muted:
+                    type: boolean
+
+        InboxDigestResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxDigestItem"
+                totalUnreadCount:
+                    type: integer
+
         ThreadReadsResponse:
             type: object
             properties:
@@ -2192,6 +2247,48 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/InboxResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/inbox/digest:
+        get:
+            tags: [Users]
+            summary: Get chronological unread digest foundation payload
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextKind
+                  in: query
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+                - name: contextId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Inbox digest response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxDigestResponse"
                 "400":
                     description: Invalid query parameters
                     content:

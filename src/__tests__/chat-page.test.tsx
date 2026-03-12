@@ -8,6 +8,9 @@ vi.mock("next/dynamic", () => ({
 
 const {
     mockConversations,
+    mockInboxRefresh,
+    mockUseInbox,
+    mockUseInboxDigest,
     mockJumpToMessage,
     mockJumpToMessageWhenReady,
     mockReplace,
@@ -19,6 +22,9 @@ const {
         participants: string[];
         $createdAt: string;
     }>,
+    mockInboxRefresh: vi.fn(),
+    mockUseInbox: vi.fn(),
+    mockUseInboxDigest: vi.fn(),
     mockJumpToMessage: vi.fn(),
     mockJumpToMessageWhenReady: vi.fn(() => vi.fn()),
     mockReplace: vi.fn(),
@@ -77,18 +83,25 @@ vi.mock("@/hooks/useCustomEmojis", () => ({
 
 vi.mock("@/components/chat-surface-panel", () => ({
     ChatSurfacePanel: ({
+        onJumpToUnread,
         showSurface,
         surfaceMessages,
     }: {
+        onJumpToUnread?: () => void;
         showSurface?: boolean;
         surfaceMessages: Array<{ text: string }>;
     }) => (
-        <div
-            data-message-count={surfaceMessages.length}
-            data-show-surface={String(Boolean(showSurface))}
-            data-testid="chat-surface-panel"
-        >
-            {surfaceMessages.map((message) => message.text).join(",")}
+        <div>
+            <div
+                data-message-count={surfaceMessages.length}
+                data-show-surface={String(Boolean(showSurface))}
+                data-testid="chat-surface-panel"
+            >
+                {surfaceMessages.map((message) => message.text).join(",")}
+            </div>
+            <button onClick={() => onJumpToUnread?.()} type="button">
+                jump-unread-channel
+            </button>
         </div>
     ),
 }));
@@ -102,7 +115,18 @@ vi.mock("../app/chat/components/ConversationList", () => ({
 }));
 
 vi.mock("../app/chat/components/DirectMessageView", () => ({
-    DirectMessageView: () => <div>direct-message-view</div>,
+    DirectMessageView: ({
+        onJumpToUnread,
+    }: {
+        onJumpToUnread?: () => void;
+    }) => (
+        <div>
+            <div>direct-message-view</div>
+            <button onClick={() => onJumpToUnread?.()} type="button">
+                jump-unread
+            </button>
+        </div>
+    ),
 }));
 
 vi.mock("../app/chat/hooks/useServers", () => ({
@@ -231,18 +255,11 @@ vi.mock("../app/chat/hooks/useDirectMessages", () => ({
 }));
 
 vi.mock("../app/chat/hooks/useInbox", () => ({
-    useInbox: () => ({
-        counts: { mention: 0, thread: 0 },
-        error: null,
-        getContextSummary: vi.fn(() => null),
-        items: [],
-        loading: false,
-        markContextRead: vi.fn(),
-        markItemRead: vi.fn(),
-        refresh: vi.fn(),
-        summaries: [],
-        unreadCount: 0,
-    }),
+    useInbox: (...args: unknown[]) => mockUseInbox(...args),
+}));
+
+vi.mock("../app/chat/hooks/useInboxDigest", () => ({
+    useInboxDigest: (...args: unknown[]) => mockUseInboxDigest(...args),
 }));
 
 vi.mock("sonner", () => ({
@@ -259,6 +276,9 @@ describe("ChatPage", () => {
         mockPush.mockReset();
         mockReplace.mockReset();
         mockUseMessages.mockClear();
+        mockUseInbox.mockReset();
+        mockUseInboxDigest.mockReset();
+        mockInboxRefresh.mockReset();
         mockJumpToMessage.mockReset();
         mockJumpToMessageWhenReady.mockReset();
         mockJumpToMessageWhenReady.mockReturnValue(vi.fn());
@@ -270,6 +290,30 @@ describe("ChatPage", () => {
         mockSearchParams.delete("server");
         mockConversations.splice(0, mockConversations.length);
         mockSetSelectedServer.mockReset();
+        mockUseInbox.mockReturnValue({
+            contractVersion: "thread_v1",
+            counts: { mention: 0, thread: 0 },
+            error: null,
+            getContextSummary: vi.fn(() => null),
+            items: [],
+            loading: false,
+            markContextRead: vi.fn(),
+            markItemRead: vi.fn(),
+            refresh: mockInboxRefresh,
+            summaries: [],
+            unreadCount: 0,
+        });
+        mockUseInboxDigest.mockReturnValue({
+            contractVersion: "thread_v1",
+            contextId: undefined,
+            contextKind: undefined,
+            error: null,
+            items: [],
+            loading: false,
+            refresh: vi.fn(),
+            totalUnreadCount: 0,
+            unreadByKind: { mention: 0, thread: 0 },
+        });
         vi.stubGlobal(
             "fetch",
             vi.fn(async (input: RequestInfo | URL) => {
@@ -468,5 +512,192 @@ describe("ChatPage", () => {
         );
 
         expect(mockJumpToMessage).toHaveBeenCalledWith("msg-1");
+    });
+
+    it("refreshes inbox when jump-to-unread cannot resolve the target message", async () => {
+        mockConversations.push({
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conversation-1",
+            participants: ["user-1", "user-2"],
+        });
+        mockSearchParams.set("conversation", "conversation-1");
+
+        mockUseInbox.mockReturnValue({
+            contractVersion: "message_v2",
+            counts: { mention: 0, thread: 1 },
+            error: null,
+            getContextSummary: vi.fn(() => ({
+                contextId: "conversation-1",
+                contextKind: "conversation",
+                firstUnreadItem: {
+                    contextId: "conversation-1",
+                    contextKind: "conversation",
+                    id: "thread:conversation:conversation-1:missing-1",
+                    kind: "thread",
+                    latestActivityAt: "2026-03-12T10:00:00.000Z",
+                    messageId: "missing-1",
+                    muted: false,
+                    previewText: "Missing unread target",
+                    unreadCount: 1,
+                    authorLabel: "User Two",
+                    authorUserId: "user-2",
+                },
+                latestItem: null,
+                mentionCount: 0,
+                muted: false,
+                threadCount: 1,
+                totalCount: 1,
+            })),
+            items: [],
+            loading: false,
+            markContextRead: vi.fn(),
+            markItemRead: vi.fn(),
+            refresh: mockInboxRefresh,
+            summaries: [
+                {
+                    contextId: "conversation-1",
+                    contextKind: "conversation",
+                    firstUnreadItem: {
+                        contextId: "conversation-1",
+                        contextKind: "conversation",
+                        id: "thread:conversation:conversation-1:missing-1",
+                        kind: "thread",
+                        latestActivityAt: "2026-03-12T10:00:00.000Z",
+                        messageId: "missing-1",
+                        muted: false,
+                        previewText: "Missing unread target",
+                        unreadCount: 1,
+                        authorLabel: "User Two",
+                        authorUserId: "user-2",
+                    },
+                    latestItem: null,
+                    mentionCount: 0,
+                    muted: false,
+                    threadCount: 1,
+                    totalCount: 1,
+                },
+            ],
+            unreadCount: 1,
+        });
+
+        mockJumpToMessageWhenReady.mockImplementation(
+            (
+                _messageId: string,
+                options?: { onComplete?: (found: boolean) => void },
+            ) => {
+                options?.onComplete?.(false);
+                return vi.fn();
+            },
+        );
+
+        const user = userEvent.setup();
+        render(<ChatPage />);
+
+        await screen.findByText("direct-message-view");
+        await user.click(screen.getByRole("button", { name: "jump-unread" }));
+
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "missing-1",
+            expect.objectContaining({
+                retryAttempts: 12,
+                retryDelayMs: 200,
+            }),
+        );
+        expect(mockInboxRefresh).toHaveBeenCalled();
+    });
+
+    it("refreshes inbox when channel jump-to-unread cannot resolve the target message", async () => {
+        mockSearchParams.set("channel", "channel-1");
+        mockSearchParams.set("server", "server-1");
+
+        mockUseInbox.mockReturnValue({
+            contractVersion: "message_v2",
+            counts: { mention: 0, thread: 1 },
+            error: null,
+            getContextSummary: vi.fn(
+                (contextKind: string, contextId: string) =>
+                    contextKind === "channel" && contextId === "channel-1"
+                        ? {
+                              contextId: "channel-1",
+                              contextKind: "channel",
+                              firstUnreadItem: {
+                                  contextId: "channel-1",
+                                  contextKind: "channel",
+                                  id: "thread:channel:channel-1:missing-channel-1",
+                                  kind: "thread",
+                                  latestActivityAt: "2026-03-12T10:00:00.000Z",
+                                  messageId: "missing-channel-1",
+                                  muted: false,
+                                  previewText: "Missing channel unread target",
+                                  unreadCount: 1,
+                                  authorLabel: "User Two",
+                                  authorUserId: "user-2",
+                              },
+                              latestItem: null,
+                              mentionCount: 0,
+                              muted: false,
+                              threadCount: 1,
+                              totalCount: 1,
+                          }
+                        : null,
+            ),
+            items: [],
+            loading: false,
+            markContextRead: vi.fn(),
+            markItemRead: vi.fn(),
+            refresh: mockInboxRefresh,
+            summaries: [
+                {
+                    contextId: "channel-1",
+                    contextKind: "channel",
+                    firstUnreadItem: {
+                        contextId: "channel-1",
+                        contextKind: "channel",
+                        id: "thread:channel:channel-1:missing-channel-1",
+                        kind: "thread",
+                        latestActivityAt: "2026-03-12T10:00:00.000Z",
+                        messageId: "missing-channel-1",
+                        muted: false,
+                        previewText: "Missing channel unread target",
+                        unreadCount: 1,
+                        authorLabel: "User Two",
+                        authorUserId: "user-2",
+                    },
+                    latestItem: null,
+                    mentionCount: 0,
+                    muted: false,
+                    threadCount: 1,
+                    totalCount: 1,
+                },
+            ],
+            unreadCount: 1,
+        });
+
+        mockJumpToMessageWhenReady.mockImplementation(
+            (
+                _messageId: string,
+                options?: { onComplete?: (found: boolean) => void },
+            ) => {
+                options?.onComplete?.(false);
+                return vi.fn();
+            },
+        );
+
+        const user = userEvent.setup();
+        render(<ChatPage />);
+
+        await screen.findByRole("heading", { name: "general" });
+        await user.click(
+            screen.getByRole("button", { name: "jump-unread-channel" }),
+        );
+
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "missing-channel-1",
+            expect.objectContaining({
+                retryAttempts: 12,
+                retryDelayMs: 200,
+            }),
+        );
+        expect(mockInboxRefresh).toHaveBeenCalled();
     });
 });

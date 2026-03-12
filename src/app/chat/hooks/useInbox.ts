@@ -299,6 +299,7 @@ export function useInbox(userId: string | null) {
     );
 
     return {
+        contractVersion: data.contractVersion,
         counts: data.counts,
         error:
             error instanceof Error

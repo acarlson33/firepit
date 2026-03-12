@@ -181,6 +181,44 @@ describe("ConversationList", () => {
         expect(screen.getByText("Channel Author")).toBeInTheDocument();
         expect(screen.getByText("Direct message")).toBeInTheDocument();
         expect(screen.getByText("Channel")).toBeInTheDocument();
+        expect(
+            screen.getByRole("button", { name: /inbox/i }),
+        ).toHaveTextContent("3");
+    });
+
+    it("ignores legacy unreadThreadCount fallback under message_v2 contract", async () => {
+        render(
+            <ConversationList
+                conversations={
+                    [
+                        {
+                            $createdAt: "2026-03-10T12:00:00.000Z",
+                            $id: "conv-legacy",
+                            otherUser: {
+                                displayName: "Legacy Friend",
+                                userId: "legacy-friend",
+                            },
+                            participants: ["current-user", "legacy-friend"],
+                            unreadThreadCount: 5,
+                        },
+                    ] as never[]
+                }
+                currentUserId="current-user"
+                inboxContractVersion="message_v2"
+                inboxItems={[]}
+                loading={false}
+                onConversationCreated={vi.fn()}
+                onNewConversation={vi.fn()}
+                onSelectConversation={vi.fn()}
+                selectedConversationId={null}
+            />,
+        );
+
+        const conversationButton = screen.getByRole("button", {
+            name: /legacy friend/i,
+        });
+
+        expect(conversationButton).not.toHaveTextContent("5");
     });
 
     it("renders mention inbox items and routes using unread entry links", async () => {

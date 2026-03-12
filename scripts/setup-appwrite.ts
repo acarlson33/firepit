@@ -8,7 +8,7 @@ import { config as loadDotenv } from "dotenv";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client, Databases, Storage, Teams } from "node-appwrite";
+import { Client, Databases, Query, Storage, Teams } from "node-appwrite";
 
 const envFiles = [".env", ".env.local"];
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -164,7 +164,7 @@ function info(msg: string) {
     }
 
     let label = "info";
-    let color = ANSI.blue;
+    let color: string = ANSI.blue;
 
     if (message.includes("created") || message.includes("added")) {
         label = "ok";
@@ -816,13 +816,7 @@ async function setupProfiles() {
     await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showAddFriendInHeader", false);
-    await ensureStringAttribute(
-        "profiles",
-        "navigationItemOrder",
-        255,
-        false,
-        true,
-    );
+    await ensureStringAttribute("profiles", "navigationItemOrder", 255, false);
     await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
     try {
         await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
@@ -846,6 +840,104 @@ async function setupFeatureFlags() {
     }
     await ensureBooleanAttribute("feature_flags", "enabled", true);
     await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
+
+    await ensureFeatureFlagDocument({
+        description: "Allow members to create their own servers",
+        enabled: false,
+        key: "allow_user_servers",
+    });
+    await ensureFeatureFlagDocument({
+        description: "Enable audit logging for moderation actions",
+        enabled: true,
+        key: "enable_audit_logging",
+    });
+    await ensureFeatureFlagDocument({
+        description:
+            "Enable per-message unread model and message-level inbox semantics",
+        enabled: false,
+        key: "enable_per_message_unread",
+    });
+    await ensureFeatureFlagDocument({
+        description:
+            "Enable inbox digest API foundation for chronological unread payloads",
+        enabled: false,
+        key: "enable_inbox_digest",
+    });
+}
+
+async function ensureFeatureFlagDocument(params: {
+    description: string;
+    enabled: boolean;
+    key: string;
+}) {
+    const { description, enabled, key } = params;
+
+    const existing = await tryVariants([
+        () =>
+            dbAny.listDocuments(DB_ID, "feature_flags", [
+                Query.equal("key", key),
+                Query.limit(1),
+            ]),
+        () =>
+            dbAny.listDocuments?.({
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                queries: [Query.equal("key", key), Query.limit(1)],
+            }),
+    ]);
+
+    const existingResponse = existing as {
+        documents?: Array<{ $id?: string }>;
+    };
+    const now = new Date().toISOString();
+    const document = existingResponse.documents?.[0];
+
+    if (document?.$id) {
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(DB_ID, "feature_flags", document.$id, {
+                    description,
+                    enabled,
+                    updatedAt: now,
+                }),
+            () =>
+                dbAny.updateDocument?.({
+                    data: {
+                        description,
+                        enabled,
+                        updatedAt: now,
+                    },
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    documentId: document.$id,
+                }),
+        ]);
+        info(`[setup] updated feature flag '${key}'`);
+        return;
+    }
+
+    await tryVariants([
+        () =>
+            dbAny.createDocument(DB_ID, "feature_flags", "unique()", {
+                description,
+                enabled,
+                key,
+                updatedAt: now,
+            }),
+        () =>
+            dbAny.createDocument?.({
+                data: {
+                    description,
+                    enabled,
+                    key,
+                    updatedAt: now,
+                },
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                documentId: "unique()",
+            }),
+    ]);
+    info(`[setup] added feature flag '${key}'`);
 }
 
 async function setupInvites() {

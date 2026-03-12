@@ -14,6 +14,8 @@ import { listThreadReadsByContext } from "@/lib/thread-read-store";
 import { isThreadUnread } from "@/lib/thread-read-states";
 import type {
     DirectMessage,
+    InboxContextKind,
+    InboxDigestResponse,
     InboxItem,
     InboxItemKind,
     Message,
@@ -603,7 +605,16 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
     });
 }
 
-export async function listInboxItems({ kinds, limit, userId }: InboxFilters) {
+export async function listInboxItems({
+    kinds,
+    limit,
+    userId,
+}: InboxFilters): Promise<{
+    contractVersion: InboxDigestResponse["contractVersion"];
+    counts: Record<InboxItemKind, number>;
+    items: InboxItem[];
+    unreadCount: number;
+}> {
     const usePerMessageUnread = await getFeatureFlag(
         FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD,
     ).catch(() => false);
@@ -636,6 +647,62 @@ export async function listInboxItems({ kinds, limit, userId }: InboxFilters) {
         counts,
         items: sortedItems.slice(0, limit),
         unreadCount: sortedItems.reduce(
+            (total, item) => total + item.unreadCount,
+            0,
+        ),
+    };
+}
+
+export async function listInboxDigest(params: {
+    contextId?: string;
+    contextKind?: InboxContextKind;
+    limit: number;
+    userId: string;
+}): Promise<InboxDigestResponse> {
+    const { contextId, contextKind, limit, userId } = params;
+    const inbox = await listInboxItems({
+        kinds: ["mention", "thread"],
+        limit: Math.max(1, limit),
+        userId,
+    });
+
+    const scopedItems =
+        contextId && contextKind
+            ? inbox.items.filter(
+                  (item) =>
+                      item.contextId === contextId &&
+                      item.contextKind === contextKind,
+              )
+            : inbox.items;
+
+    const sortedItems = [...scopedItems]
+        .sort((left, right) =>
+            left.latestActivityAt.localeCompare(right.latestActivityAt),
+        )
+        .slice(0, limit)
+        .map((item) => ({
+            activityAt: item.latestActivityAt,
+            authorAvatarUrl: item.authorAvatarUrl,
+            authorLabel: item.authorLabel,
+            authorUserId: item.authorUserId,
+            contextId: item.contextId,
+            contextKind: item.contextKind,
+            id: item.id,
+            kind: item.kind,
+            messageId: item.messageId,
+            muted: item.muted,
+            parentMessageId: item.parentMessageId,
+            previewText: item.previewText,
+            serverId: item.serverId,
+            unreadCount: item.unreadCount,
+        }));
+
+    return {
+        contractVersion: inbox.contractVersion,
+        contextId,
+        contextKind,
+        items: sortedItems,
+        totalUnreadCount: sortedItems.reduce(
             (total, item) => total + item.unreadCount,
             0,
         ),

@@ -119,6 +119,7 @@ Chat-adjacent discovery is handled by:
 
 - `/api/search/messages` for message search
 - `/api/inbox` for the first unified unread-history aggregation pass across unread threads and mentions
+- `/api/inbox/digest` for phase-4 chronological unread digest foundation payloads
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
 - `/api/thread-reads` for persisted per-thread read state across channels and DMs
