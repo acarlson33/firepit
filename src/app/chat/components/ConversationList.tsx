@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
@@ -33,7 +33,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Conversation, InboxItem } from "@/lib/types";
+import type { Conversation, InboxItem, InboxListResponse } from "@/lib/types";
 import { toast } from "sonner";
 
 type SidebarMode = "chats" | "inbox" | "mentions";
@@ -47,6 +47,7 @@ type MentionItem = {
     kind: "mention" | "thread";
     muted: boolean;
     text: string;
+    unreadCount: number;
 };
 
 type ConversationUnreadState = {
@@ -68,6 +69,7 @@ type ConversationListProps = {
     ) => void;
     inboxItems?: InboxItem[];
     inboxLoading?: boolean;
+    inboxContractVersion?: InboxListResponse["contractVersion"];
     conversationUnreadStateById?: Record<string, ConversationUnreadState>;
 };
 
@@ -82,6 +84,7 @@ export function ConversationList({
     onMuteConversation,
     inboxItems = [],
     inboxLoading = false,
+    inboxContractVersion = "thread_v1",
     conversationUnreadStateById = {},
 }: ConversationListProps) {
     const router = useRouter();
@@ -98,18 +101,33 @@ export function ConversationList({
         string | null
     >(null);
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>("chats");
+    const isMessageContract = inboxContractVersion === "message_v2";
+
+    const getConversationUnreadCount = useCallback(
+        (conversation: Conversation) => {
+            const inboxCount =
+                conversationUnreadStateById[conversation.$id]?.count;
+            if (typeof inboxCount === "number") {
+                return inboxCount;
+            }
+
+            if (isMessageContract) {
+                return 0;
+            }
+
+            return conversation.unreadThreadCount ?? 0;
+        },
+        [conversationUnreadStateById, isMessageContract],
+    );
 
     const favoriteFriends = useMemo(() => friends.slice(0, 4), [friends]);
     const incomingRequests = useMemo(() => incoming.slice(0, 3), [incoming]);
     const unreadConversations = useMemo(
         () =>
             conversations.filter(
-                (conversation) =>
-                    (conversationUnreadStateById[conversation.$id]?.count ??
-                        conversation.unreadThreadCount ??
-                        0) > 0,
+                (conversation) => getConversationUnreadCount(conversation) > 0,
             ),
-        [conversationUnreadStateById, conversations],
+        [conversations, getConversationUnreadCount],
     );
     const sidebarItems = useMemo(
         () =>
@@ -137,6 +155,7 @@ export function ConversationList({
                     kind: item.kind,
                     muted: item.muted,
                     text: item.previewText,
+                    unreadCount: item.unreadCount,
                 } satisfies MentionItem;
             }),
         [inboxItems],
@@ -144,6 +163,22 @@ export function ConversationList({
     const mentionItems = useMemo(
         () => sidebarItems.filter((item) => item.kind === "mention"),
         [sidebarItems],
+    );
+    const inboxUnreadCount = useMemo(
+        () =>
+            sidebarItems.reduce(
+                (total, item) => total + Math.max(0, item.unreadCount),
+                0,
+            ),
+        [sidebarItems],
+    );
+    const mentionUnreadCount = useMemo(
+        () =>
+            mentionItems.reduce(
+                (total, item) => total + Math.max(0, item.unreadCount),
+                0,
+            ),
+        [mentionItems],
     );
 
     function renderUnreadBadge(count: number | undefined, muted = false) {
@@ -234,7 +269,9 @@ export function ConversationList({
                                 </p>
                                 {renderUnreadBadge(
                                     unreadState?.count ??
-                                        conversation.unreadThreadCount,
+                                        getConversationUnreadCount(
+                                            conversation,
+                                        ),
                                     unreadState?.muted ?? false,
                                 )}
                             </div>
@@ -397,7 +434,7 @@ export function ConversationList({
                         <Inbox className="size-3.5" />
                         Inbox
                     </span>
-                    {renderUnreadBadge(inboxItems.length)}
+                    {renderUnreadBadge(inboxUnreadCount)}
                 </Button>
                 <Button
                     className="justify-between gap-2 rounded-lg"
@@ -410,7 +447,7 @@ export function ConversationList({
                         <AtSign className="size-3.5" />
                         Mentions
                     </span>
-                    {renderUnreadBadge(mentionItems.length)}
+                    {renderUnreadBadge(mentionUnreadCount)}
                 </Button>
             </div>
 

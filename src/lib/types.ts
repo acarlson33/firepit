@@ -147,6 +147,8 @@ export type InboxItemKind = "mention" | "thread";
 
 export type InboxContextKind = "channel" | "conversation";
 
+export type InboxContractVersion = "thread_v1" | "message_v2";
+
 export type InboxItem = {
     id: string;
     kind: InboxItemKind;
@@ -165,9 +167,35 @@ export type InboxItem = {
 };
 
 export type InboxListResponse = {
+    contractVersion: InboxContractVersion;
     items: InboxItem[];
     unreadCount: number;
     counts: Record<InboxItemKind, number>;
+};
+
+export type InboxDigestItem = {
+    id: string;
+    kind: InboxItemKind;
+    contextKind: InboxContextKind;
+    contextId: string;
+    serverId?: string;
+    messageId: string;
+    parentMessageId?: string;
+    activityAt: string;
+    previewText: string;
+    unreadCount: number;
+    authorUserId: string;
+    authorLabel: string;
+    authorAvatarUrl?: string;
+    muted: boolean;
+};
+
+export type InboxDigestResponse = {
+    contractVersion: InboxContractVersion;
+    contextId?: string;
+    contextKind?: InboxContextKind;
+    items: InboxDigestItem[];
+    totalUnreadCount: number;
 };
 
 export type DirectMessage = {

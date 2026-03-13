@@ -339,6 +339,10 @@ components:
         InboxResponse:
             type: object
             properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
                 items:
                     type: array
                     items:
@@ -352,6 +356,90 @@ components:
                             type: integer
                         thread:
                             type: integer
+
+        InboxDigestItem:
+            type: object
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+                    enum: [mention, thread]
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                serverId:
+                    type: string
+                messageId:
+                    type: string
+                parentMessageId:
+                    type: string
+                activityAt:
+                    type: string
+                    format: date-time
+                previewText:
+                    type: string
+                unreadCount:
+                    type: integer
+                authorUserId:
+                    type: string
+                authorLabel:
+                    type: string
+                authorAvatarUrl:
+                    type: string
+                    format: uri
+                muted:
+                    type: boolean
+
+        InboxDigestResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxDigestItem"
+                totalUnreadCount:
+                    type: integer
+
+        ThreadReadsResponse:
+            type: object
+            properties:
+                contextId:
+                    type: string
+                contextType:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
+
+        ThreadReadsPatchRequest:
+            type: object
+            required: [contextId, contextType, reads]
+            properties:
+                contextId:
+                    type: string
+                contextType:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
 
         Invite:
             type: object
@@ -2132,6 +2220,198 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/NotificationSettings"
+
+    /api/inbox:
+        get:
+            tags: [Users]
+            summary: Get unified unread inbox items and counts
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: kind
+                  in: query
+                  description: Comma-separated list of inbox kinds
+                  schema:
+                      type: string
+                      example: mention,thread
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+            responses:
+                "200":
+                    description: Inbox list response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/inbox/digest:
+        get:
+            tags: [Users]
+            summary: Get chronological unread digest foundation payload
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextKind
+                  in: query
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+                - name: contextId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Inbox digest response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxDigestResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Users]
+            summary: Mark mention-backed inbox items as read
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            required: [itemIds]
+                            properties:
+                                itemIds:
+                                    type: array
+                                    minItems: 1
+                                    items:
+                                        type: string
+            responses:
+                "200":
+                    description: Read state updated
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    ok:
+                                        type: boolean
+                                    readAt:
+                                        type: string
+                                        format: date-time
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/thread-reads:
+        get:
+            tags: [Users]
+            summary: Get persisted thread read state for a context
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: contextId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: contextType
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+            responses:
+                "200":
+                    description: Thread reads response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Users]
+            summary: Persist thread read state updates for a context
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ThreadReadsPatchRequest"
+            responses:
+                "200":
+                    description: Thread reads updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/roles:
         get:

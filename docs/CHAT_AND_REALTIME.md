@@ -119,6 +119,7 @@ Chat-adjacent discovery is handled by:
 
 - `/api/search/messages` for message search
 - `/api/inbox` for the first unified unread-history aggregation pass across unread threads and mentions
+- `/api/inbox/digest` for phase-4 chronological unread digest foundation payloads
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
 - `/api/thread-reads` for persisted per-thread read state across channels and DMs
@@ -145,6 +146,18 @@ Current unread-history implementation is intentionally incremental:
 - the chat client now uses that inbox contract for DM inbox, mentions, channel badges, DM badges, jump-to-unread, catch-up affordances, and unread boundary markers across both channels and DMs
 - `PATCH /api/inbox` marks mention-backed inbox items as read, while thread read state remains durable through `/api/thread-reads`
 - full per-message unread and digest-style delivery remain follow-on work on top of the shared inbox model
+
+## Unread Semantics Contract (Phase 1)
+
+To support the v1.6 per-message unread rollout safely, unread behavior now follows explicit phase-1 contract rules:
+
+- Inbox responses include a `contractVersion` marker.
+- `thread_v1` remains the default contract while per-message unread is gated and rolling out.
+- Clients must treat server responses as authoritative for unread reconciliation and anchor targets.
+- If an unread anchor references a removed or inaccessible message, clients should degrade to context-level catch-up behavior instead of failing navigation.
+- Badge counts, unread boundary markers, and jump-to-unread affordances must all derive from the same inbox aggregation source to avoid cross-surface drift.
+
+This phase is intentionally compatibility-first. It does not yet switch persistence from per-thread to per-message reads by default.
 
 Override precedence is intentionally deterministic:
 
