@@ -3,22 +3,22 @@
 import { getEnvConfig } from "./appwrite-core";
 
 export type AppwriteIds = ReturnType<typeof getEnvConfig>["collections"] & {
-  databaseId: string;
+    databaseId: string;
 };
 
 /**
  * Returns appwrite ids.
- * @returns { servers: string; channels: string; categories: string; messages: string; audit: string; typing: string; memberships: string; bannedUsers: string; mutedUsers: string; friendships: string; blocks: string; profiles: string; conversations: string; directMessages: string; statuses: string; messageAttachments: string; pinnedMessages: string; featureFlags: string; notificationSettings: string; inboxItems: string; threadReads: string; } & { databaseId: string; }.
+ * @returns {AppwriteIds} Appwrite collection ids plus databaseId.
  */
 export function getAppwriteIds(): AppwriteIds {
-  const env = getEnvConfig();
-  return { databaseId: env.databaseId, ...env.collections } as AppwriteIds;
+    const env = getEnvConfig();
+    return { databaseId: env.databaseId, ...env.collections } as AppwriteIds;
 }
 
 /**
- * Handles reset appwrite ids cache.
- * @returns {void} The return value.
+ * Compatibility shim: this function is intentionally a no-op and does not reset any cache.
+ * Use resetEnvCache from appwrite-core when a real env/cache reset is required.
  */
 export function resetAppwriteIdsCache() {
-  // No-op; env cache reset handled via resetEnvCache in core (not re-exported here).
+    // No-op; env cache reset handled via resetEnvCache in core (not re-exported here).
 }

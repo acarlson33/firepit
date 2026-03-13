@@ -20,8 +20,10 @@ vi.mock("node-appwrite", () => ({
             `equal(${field},${JSON.stringify(value)})`,
         greaterThan: (field: string, value: unknown) =>
             `greaterThan(${field},${String(value)})`,
+        isNull: (field: string) => `isNull(${field})`,
         limit: (value: number) => `limit(${value})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
+        cursorAfter: (documentId: string) => `cursorAfter(${documentId})`,
     },
 }));
 

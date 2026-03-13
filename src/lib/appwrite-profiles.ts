@@ -29,6 +29,16 @@ export type UserProfile = {
     $updatedAt: string;
 };
 
+function chunkValues<T>(values: T[], size: number) {
+    const chunks: T[][] = [];
+
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+
+    return chunks;
+}
+
 /**
  * Get a user's profile by userId
  *
@@ -117,45 +127,49 @@ export async function resolveProfileIdentifiers(identifiers: string[]) {
     try {
         const { databases } = getAdminClient();
         const env = getEnvConfig();
-        const [byUserId, byUserName, byDisplayName] = await Promise.all([
-            databases.listDocuments(env.databaseId, env.collections.profiles, [
-                Query.equal("userId", trimmedIdentifiers),
-                Query.limit(100),
-            ]),
-            databases.listDocuments(env.databaseId, env.collections.profiles, [
-                Query.equal("userName", trimmedIdentifiers),
-                Query.limit(100),
-            ]),
-            databases.listDocuments(env.databaseId, env.collections.profiles, [
-                Query.equal("displayName", trimmedIdentifiers),
-                Query.limit(100),
-            ]),
-        ]);
+        const identifierSet = new Set(trimmedIdentifiers);
+        const identifierChunks = chunkValues(trimmedIdentifiers, 100);
+        const documents: UserProfile[] = [];
+
+        for (const chunk of identifierChunks) {
+            const [byUserId, byUserName, byDisplayName] = await Promise.all([
+                databases.listDocuments(
+                    env.databaseId,
+                    env.collections.profiles,
+                    [Query.equal("userId", chunk), Query.limit(100)],
+                ),
+                databases.listDocuments(
+                    env.databaseId,
+                    env.collections.profiles,
+                    [Query.equal("userName", chunk), Query.limit(100)],
+                ),
+                databases.listDocuments(
+                    env.databaseId,
+                    env.collections.profiles,
+                    [Query.equal("displayName", chunk), Query.limit(100)],
+                ),
+            ]);
+
+            documents.push(
+                ...(byUserId.documents as unknown as UserProfile[]),
+                ...(byUserName.documents as unknown as UserProfile[]),
+                ...(byDisplayName.documents as unknown as UserProfile[]),
+            );
+        }
 
         const resolved = new Map<string, string>();
-        for (const document of [
-            ...byUserId.documents,
-            ...byUserName.documents,
-            ...byDisplayName.documents,
-        ]) {
-            const profile = document as unknown as UserProfile;
+        for (const profile of documents) {
             const userId = profile.userId;
 
-            if (trimmedIdentifiers.includes(userId)) {
+            if (identifierSet.has(userId)) {
                 resolved.set(userId, userId);
             }
 
-            if (
-                profile.userName &&
-                trimmedIdentifiers.includes(profile.userName)
-            ) {
+            if (profile.userName && identifierSet.has(profile.userName)) {
                 resolved.set(profile.userName, userId);
             }
 
-            if (
-                profile.displayName &&
-                trimmedIdentifiers.includes(profile.displayName)
-            ) {
+            if (profile.displayName && identifierSet.has(profile.displayName)) {
                 resolved.set(profile.displayName, userId);
             }
         }

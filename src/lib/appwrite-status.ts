@@ -125,16 +125,31 @@ export async function getUsersStatuses(
     }
 
     try {
-        const response = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: STATUSES_COLLECTION,
-            queries: [Query.equal("userId", userIds), Query.limit(100)],
-        });
+        const uniqueUserIds = [...new Set(userIds)];
+        const chunks: string[][] = [];
+
+        for (let index = 0; index < uniqueUserIds.length; index += 100) {
+            chunks.push(uniqueUserIds.slice(index, index + 100));
+        }
+
+        const responses = await Promise.all(
+            chunks.map((chunk) =>
+                getDatabases().listDocuments({
+                    databaseId: DATABASE_ID,
+                    collectionId: STATUSES_COLLECTION,
+                    queries: [Query.equal("userId", chunk), Query.limit(100)],
+                }),
+            ),
+        );
 
         const statusMap = new Map<string, UserStatus>();
-        for (const doc of response.documents) {
-            const { normalized } = normalizeStatus(doc);
-            statusMap.set(normalized.userId, normalized);
+        for (const response of responses) {
+            for (const doc of response.documents) {
+                const { normalized } = normalizeStatus(doc);
+                if (!statusMap.has(normalized.userId)) {
+                    statusMap.set(normalized.userId, normalized);
+                }
+            }
         }
 
         return statusMap;

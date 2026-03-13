@@ -541,7 +541,12 @@ export default function ChatPage() {
         return () => {
             cancelled = true;
         };
-    }, [activeContext, inboxApi.items.length, inboxApi.unreadCount, userId]);
+    }, [
+        activeContext,
+        currentContextSummary?.firstUnreadItem?.id,
+        currentContextSummary?.totalCount,
+        userId,
+    ]);
 
     const scopedFirstUnreadItem = useMemo(
         () =>

@@ -57,10 +57,11 @@ export type ChatSurfaceMessage = {
 };
 
 /**
- * Handles clone reactions.
+ * Normalizes reaction payloads into a cloned MessageReaction array.
+ * Returns undefined when reactions are absent or not in an array shape.
  *
- * @param {any} reactions - The reactions value.
- * @returns {any[] | undefined} The return value.
+ * @param {Message["reactions"] | DirectMessage["reactions"]} reactions - Source reactions from a message payload.
+ * @returns {MessageReaction[] | undefined} Normalized reaction entries, or undefined when no valid reactions exist.
  */
 function cloneReactions(
     reactions: Message["reactions"] | DirectMessage["reactions"],

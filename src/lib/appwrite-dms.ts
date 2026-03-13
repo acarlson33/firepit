@@ -2,7 +2,7 @@ import { ID, Query, Permission, Role } from "appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
-import { parseReactionsWithMetadata } from "./reactions-utils";
+import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -16,6 +16,13 @@ type ProfileData = {
     avatarUrl?: string;
     pronouns?: string;
 };
+
+type ReactionsInput =
+    | string
+    | Reaction[]
+    | Record<string, unknown>
+    | null
+    | undefined;
 
 /**
  * Batch-fetch user profiles through the Next.js API route (client-safe).
@@ -60,13 +67,20 @@ function getDatabases() {
 }
 
 /**
- * Handles schedule reaction migration.
+ * Normalizes and persists legacy reaction payloads when needed.
+ * Accepts the same input formats supported by parseReactionsWithMetadata:
+ * JSON string, parsed reaction array, or legacy reaction map object.
+ * Example accepted payloads: '[{"emoji":"🔥","userIds":["u1"],"count":1}]' or
+ * {"🔥": ["u1", "u2"]}.
  *
  * @param {string} messageId - The message id value.
- * @param {unknown} reactions - The reactions value.
+ * @param {ReactionsInput} reactions - Raw or parsed reaction payload to normalize.
  * @returns {void} The return value.
  */
-function scheduleReactionMigration(messageId: string, reactions: unknown) {
+function scheduleReactionMigration(
+    messageId: string,
+    reactions: ReactionsInput,
+) {
     if (!DIRECT_MESSAGES_COLLECTION) {
         return;
     }
@@ -249,7 +263,7 @@ export async function getOrCreateConversation(
  * Create a group DM conversation with 3+ participants
  *
  * @param {string[]} participantIds - The participant ids value.
- * @param {{ name?: string | undefined; avatarUrl?: string | undefined; } | undefined} options - The options value, if provided.
+ * @param {object} [options] - Optional settings: name?: string, avatarUrl?: string.
  * @returns {Promise<Conversation>} The return value.
  */
 export async function createGroupConversation(
@@ -522,7 +536,10 @@ export async function listDirectMessages(
         const items = response.documents.map((doc) => {
             const d = doc as Record<string, unknown>;
             const parsedReactions = parseReactionsWithMetadata(d.reactions);
-            scheduleReactionMigration(String(d.$id), d.reactions);
+            scheduleReactionMigration(
+                String(d.$id),
+                d.reactions as ReactionsInput,
+            );
             return {
                 $id: String(d.$id),
                 conversationId: String(d.conversationId),

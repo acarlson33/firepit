@@ -12,6 +12,8 @@ import type {
 import { parseReactions } from "./reactions-utils";
 import { extractMentionedUsernames } from "./mention-utils";
 
+type FetchedUserProfile = Partial<UserProfileData>;
+
 /**
  * Upload an image to Appwrite Storage
  *
@@ -62,9 +64,11 @@ export async function deleteImage(fileId: string): Promise<void> {
  * Fetch a user profile from the existing profile API
  *
  * @param {string} userId - The user id value.
- * @returns {Promise<any>} The return value.
+ * @returns {Promise<FetchedUserProfile | null>} The return value.
  */
-async function fetchUserProfile(userId: string) {
+async function fetchUserProfile(
+    userId: string,
+): Promise<FetchedUserProfile | null> {
     try {
         const response = await fetch(
             `/api/profile/${encodeURIComponent(userId)}`,
@@ -72,7 +76,7 @@ async function fetchUserProfile(userId: string) {
         if (!response.ok) {
             return null;
         }
-        const data = await response.json();
+        const data = (await response.json()) as FetchedUserProfile;
         return data;
     } catch {
         return null;

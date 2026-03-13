@@ -1,4 +1,4 @@
-import { Query, Storage } from "node-appwrite";
+import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
@@ -478,8 +478,7 @@ export function postFilterMessages<
  * @returns {{ databases: Databases; teams: Teams; storage: Storage; }} The return value.
  */
 export function getAdminClient() {
-    const { client, databases, teams } = getServerClient();
-    const storage = new Storage(client);
+    const { databases, teams, storage } = getServerClient();
     return { databases, teams, storage };
 }
 

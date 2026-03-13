@@ -587,8 +587,13 @@ export function ConversationList({
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
                 {sidebarMode === "inbox" ? (
-                    <div className="grid grid-cols-4 gap-1 border-border border-b p-2">
+                    <div
+                        aria-label="Inbox filter"
+                        className="grid grid-cols-4 gap-1 border-border border-b p-2"
+                        role="group"
+                    >
                         <Button
+                            aria-pressed={inboxFilter === "all"}
                             className="rounded-lg"
                             onClick={() => setInboxFilter("all")}
                             size="sm"
@@ -600,6 +605,7 @@ export function ConversationList({
                             All
                         </Button>
                         <Button
+                            aria-pressed={inboxFilter === "mentions"}
                             className="rounded-lg"
                             onClick={() => setInboxFilter("mentions")}
                             size="sm"
@@ -611,6 +617,7 @@ export function ConversationList({
                             Mentions
                         </Button>
                         <Button
+                            aria-pressed={inboxFilter === "direct"}
                             className="rounded-lg"
                             onClick={() => setInboxFilter("direct")}
                             size="sm"
@@ -622,6 +629,7 @@ export function ConversationList({
                             Direct
                         </Button>
                         <Button
+                            aria-pressed={inboxFilter === "server"}
                             className="rounded-lg"
                             onClick={() => setInboxFilter("server")}
                             size="sm"

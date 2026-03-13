@@ -121,14 +121,23 @@ export async function enrichMessagesWithProfiles(
         // Enrich messages with profile data and reply context
         return visibleMessages.map((message) => {
             const profile = profileMap.get(message.userId);
-            const enriched = {
+            const enriched: Message = {
                 ...message,
-                displayName: profile?.displayName || undefined,
-                pronouns: profile?.pronouns || undefined,
-                avatarUrl: profile?.avatarUrl || undefined,
                 // Parse reactions if they're a JSON string
                 reactions: parseReactions(message.reactions),
             };
+
+            if (profile?.displayName !== undefined) {
+                enriched.displayName = profile.displayName;
+            }
+
+            if (profile?.pronouns !== undefined) {
+                enriched.pronouns = profile.pronouns;
+            }
+
+            if (profile?.avatarUrl !== undefined) {
+                enriched.avatarUrl = profile.avatarUrl;
+            }
 
             // Add reply context if this message is a reply
             if (message.replyToId) {
@@ -191,15 +200,29 @@ export async function enrichMessageWithProfile(
             return message;
         }
 
-        return {
+        const enriched: Message = {
             ...message,
-            displayName: lookup.profile.displayName || undefined,
-            pronouns: lookup.profile.pronouns || undefined,
-            avatarFileId: lookup.profile.avatarFileId || undefined,
-            avatarUrl: lookup.profile.avatarUrl || undefined,
             // Parse reactions if they're a JSON string
             reactions: parseReactions(message.reactions),
         };
+
+        if (lookup.profile.displayName !== undefined) {
+            enriched.displayName = lookup.profile.displayName;
+        }
+
+        if (lookup.profile.pronouns !== undefined) {
+            enriched.pronouns = lookup.profile.pronouns;
+        }
+
+        if (lookup.profile.avatarFileId !== undefined) {
+            enriched.avatarFileId = lookup.profile.avatarFileId;
+        }
+
+        if (lookup.profile.avatarUrl !== undefined) {
+            enriched.avatarUrl = lookup.profile.avatarUrl;
+        }
+
+        return enriched;
     } catch (error) {
         // If enrichment fails, return original message
         return message;

@@ -156,7 +156,10 @@ function findMessageElement(
     messageId: string,
     root: ParentNode = document,
 ): HTMLElement | null {
-    return root.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+    const escapedMessageId = CSS.escape(messageId);
+    return root.querySelector<HTMLElement>(
+        `[data-message-id="${escapedMessageId}"]`,
+    );
 }
 
 /**

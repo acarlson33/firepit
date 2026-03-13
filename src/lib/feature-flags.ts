@@ -27,10 +27,9 @@ const flagCache = new Map<string, { value: boolean; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute
 
 /**
- * Get a feature flag value from the database
- *
- * @param {'allow_user_servers' | 'enable_audit_logging' | 'enable_per_message_unread' | 'enable_inbox_digest'} key - The key value.
- * @returns {Promise<boolean>} The return value.
+ * Returns the effective enabled state for a feature flag.
+ * Checks the in-memory cache first (1-minute TTL), then queries the database,
+ * and falls back to configured defaults when the flag is not present.
  */
 export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
     // Check cache first
@@ -67,8 +66,12 @@ export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
 }
 
 /**
- * Get all feature flags from the database
- * @returns {Promise<FeatureFlag[]>} The return value.
+ * Fetches all stored feature flags from Appwrite.
+ * The Promise resolves to an array of FeatureFlag objects.
+ * On query or connectivity failures (for example network errors or an unavailable
+ * Appwrite connection), this function logs the error and resolves to an empty array.
+ *
+ * @returns {Promise<FeatureFlag[]>} Resolves to all known flags; resolves to [] when loading fails.
  */
 export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
     const { databases } = getServerClient();
@@ -89,12 +92,14 @@ export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
 }
 
 /**
- * Set a feature flag value (admin only - should be called from server actions)
+ * Creates or updates a feature flag (server/admin path) and invalidates its cache entry.
+ * Returns true when the flag write succeeds, or false when persistence fails.
+ * The userId is required to record who performed the change in audit fields.
  *
- * @param {'allow_user_servers' | 'enable_audit_logging' | 'enable_per_message_unread' | 'enable_inbox_digest'} key - The key value.
- * @param {boolean} enabled - The enabled value.
- * @param {string} userId - The user id value.
- * @returns {Promise<boolean>} The return value.
+ * @param key - Feature flag key to create or update.
+ * @param enabled - Desired enabled state for the flag.
+ * @param userId - Identifier of the actor used for updatedBy audit tracking.
+ * @returns Resolves to true on successful create/update, otherwise false.
  */
 export async function setFeatureFlag(
     key: FeatureFlagKey,
@@ -154,10 +159,16 @@ export async function setFeatureFlag(
 }
 
 /**
- * Get description for a feature flag key
+ * Returns a human-readable description for getFeatureFlagDescription keys.
+ * Key descriptions:
+ * - allow_user_servers: Allow members to create their own servers.
+ * - enable_audit_logging: Enable audit logging for moderation actions.
+ * - enable_per_message_unread: Enable per-message unread inbox semantics.
+ * - enable_inbox_digest: Enable inbox digest API payloads.
+ * Unknown keys return an empty string.
  *
- * @param {'allow_user_servers' | 'enable_audit_logging' | 'enable_per_message_unread' | 'enable_inbox_digest'} key - The key value.
- * @returns {string} The return value.
+ * @param {FeatureFlagKey} key - Feature key to describe.
+ * @returns {string} Human-readable description, or an empty string for unknown keys.
  */
 export function getFeatureFlagDescription(key: FeatureFlagKey): string {
     const descriptions: Record<FeatureFlagKey, string> = {
@@ -175,10 +186,10 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
 }
 
 /**
- * Initialize feature flags with default values if they don't exist
+ * Initializes missing feature flags with default values for the current deployment.
  *
- * @param {string} userId - The user id value.
- * @returns {Promise<void>} The return value.
+ * @param {string} userId - Unique identifier of the user recorded as the creator/updater during initialization.
+ * @returns {Promise<void>} Resolves when initialization and any required upserts complete.
  */
 export async function initializeFeatureFlags(userId: string): Promise<void> {
     const existingFlags = await getAllFeatureFlags();
@@ -194,7 +205,6 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
 
 /**
  * Clear the feature flags cache
- * @returns {void} The return value.
  */
 export function clearFeatureFlagsCache(): void {
     flagCache.clear();
