@@ -38,6 +38,8 @@ import { toast } from "sonner";
 
 type SidebarMode = "chats" | "inbox" | "mentions";
 
+type InboxFilter = "all" | "mentions" | "direct" | "server";
+
 type MentionItem = {
     authorAvatarUrl?: string;
     authorLabel: string;
@@ -101,6 +103,7 @@ export function ConversationList({
         string | null
     >(null);
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>("chats");
+    const [inboxFilter, setInboxFilter] = useState<InboxFilter>("all");
     const isMessageContract = inboxContractVersion === "message_v2";
 
     const getConversationUnreadCount = useCallback(
@@ -164,6 +167,25 @@ export function ConversationList({
         () => sidebarItems.filter((item) => item.kind === "mention"),
         [sidebarItems],
     );
+    const filteredInboxItems = useMemo(() => {
+        if (inboxFilter === "mentions") {
+            return sidebarItems.filter((item) => item.kind === "mention");
+        }
+
+        if (inboxFilter === "direct") {
+            return sidebarItems.filter(
+                (item) => item.destination.kind === "dm",
+            );
+        }
+
+        if (inboxFilter === "server") {
+            return sidebarItems.filter(
+                (item) => item.destination.kind === "channel",
+            );
+        }
+
+        return sidebarItems;
+    }, [inboxFilter, sidebarItems]);
     const inboxUnreadCount = useMemo(
         () =>
             sidebarItems.reduce(
@@ -453,6 +475,55 @@ export function ConversationList({
 
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
+                {sidebarMode === "inbox" ? (
+                    <div className="grid grid-cols-4 gap-1 border-border border-b p-2">
+                        <Button
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("all")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "all" ? "default" : "ghost"
+                            }
+                        >
+                            All
+                        </Button>
+                        <Button
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("mentions")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "mentions" ? "default" : "ghost"
+                            }
+                        >
+                            Mentions
+                        </Button>
+                        <Button
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("direct")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "direct" ? "default" : "ghost"
+                            }
+                        >
+                            Direct
+                        </Button>
+                        <Button
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("server")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "server" ? "default" : "ghost"
+                            }
+                        >
+                            Servers
+                        </Button>
+                    </div>
+                ) : null}
+
                 {sidebarMode === "chats" &&
                 currentUserId &&
                 (friendsLoading ||
@@ -733,7 +804,7 @@ export function ConversationList({
                         )}
                     </div>
                 ) : (sidebarMode === "inbox"
-                      ? sidebarItems
+                      ? filteredInboxItems
                       : unreadConversations.length > 0
                         ? unreadConversations
                         : conversations
@@ -746,7 +817,7 @@ export function ConversationList({
                         )}
                         <p className="text-muted-foreground text-sm">
                             {sidebarMode === "inbox"
-                                ? "No unread threads"
+                                ? "No unread items for this filter"
                                 : "No conversations yet"}
                         </p>
                         {sidebarMode === "chats" ? (
@@ -763,7 +834,7 @@ export function ConversationList({
                 ) : (
                     <div className="space-y-1 p-2">
                         {sidebarMode === "inbox"
-                            ? sidebarItems.map((item) => (
+                            ? filteredInboxItems.map((item) => (
                                   <button
                                       className="flex w-full items-start gap-3 rounded-lg border border-border/60 p-3 text-left transition hover:bg-accent/40"
                                       key={item.id}

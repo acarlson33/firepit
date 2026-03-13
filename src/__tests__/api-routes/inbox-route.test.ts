@@ -4,14 +4,18 @@ import { NextRequest } from "next/server";
 import { GET, PATCH } from "@/app/api/inbox/route";
 
 const {
+    mockGetThreadReads,
     mockListDocuments,
     mockListInboxItems,
     mockSession,
+    mockUpsertThreadReads,
     mockUpdateDocument,
 } = vi.hoisted(() => ({
+    mockGetThreadReads: vi.fn(),
     mockListDocuments: vi.fn(),
     mockListInboxItems: vi.fn(),
     mockSession: vi.fn(),
+    mockUpsertThreadReads: vi.fn(),
     mockUpdateDocument: vi.fn(),
 }));
 
@@ -39,6 +43,11 @@ vi.mock("@/lib/appwrite-core", () => ({
 
 vi.mock("@/lib/inbox", () => ({
     listInboxItems: mockListInboxItems,
+}));
+
+vi.mock("@/lib/thread-read-store", () => ({
+    getThreadReads: mockGetThreadReads,
+    upsertThreadReads: mockUpsertThreadReads,
 }));
 
 describe("inbox route", () => {
@@ -116,12 +125,35 @@ describe("inbox route", () => {
 
         expect(response.status).toBe(200);
         expect(mockListInboxItems).toHaveBeenCalledWith({
+            contextKinds: undefined,
             kinds: ["mention", "thread"],
             limit: 25,
             userId: "user-1",
         });
         expect(data.items).toHaveLength(1);
         expect(data.counts.mention).toBe(1);
+    });
+
+    it("maps direct scope to conversation context filtering", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxItems.mockResolvedValue({
+            contractVersion: "thread_v1",
+            counts: { mention: 0, thread: 0 },
+            items: [],
+            unreadCount: 0,
+        });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox?scope=direct"),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxItems).toHaveBeenCalledWith({
+            contextKinds: ["conversation"],
+            kinds: ["mention", "thread"],
+            limit: 50,
+            userId: "user-1",
+        });
     });
 
     it("marks inbox items as read for the authenticated user", async () => {
@@ -142,6 +174,96 @@ describe("inbox route", () => {
         expect(mockListDocuments).toHaveBeenCalled();
         expect(mockUpdateDocument).toHaveBeenCalledTimes(2);
         expect(data.ok).toBe(true);
+    });
+
+    it("rejects invalid scope values", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox?scope=invalid"),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("scope");
+        expect(mockListInboxItems).not.toHaveBeenCalled();
+    });
+
+    it("marks all unread items read for a specific context", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxItems.mockResolvedValue({
+            contractVersion: "message_v2",
+            counts: { mention: 1, thread: 2 },
+            items: [
+                {
+                    id: "item-mention-1",
+                    kind: "mention",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-1",
+                    latestActivityAt: "2026-03-13T00:00:00.000Z",
+                    unreadCount: 1,
+                    previewText: "mention",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+                {
+                    id: "thread:channel:channel-1:message-2",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-2",
+                    parentMessageId: "message-2",
+                    latestActivityAt: "2026-03-13T01:00:00.000Z",
+                    unreadCount: 2,
+                    previewText: "thread",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+            ],
+            unreadCount: 3,
+        });
+        mockListDocuments.mockResolvedValue({
+            documents: [{ $id: "item-mention-1" }],
+        });
+        mockGetThreadReads.mockResolvedValue({
+            reads: { "message-0": "2026-03-10T00:00:00.000Z" },
+        });
+
+        const response = await PATCH(
+            new NextRequest("http://localhost/api/inbox", {
+                body: JSON.stringify({
+                    action: "mark-all-read",
+                    contextId: "channel-1",
+                    contextKind: "channel",
+                }),
+                method: "PATCH",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxItems).toHaveBeenCalledWith({
+            contextKinds: ["channel"],
+            kinds: ["mention", "thread"],
+            limit: Number.POSITIVE_INFINITY,
+            userId: "user-1",
+        });
+        expect(mockUpdateDocument).toHaveBeenCalledTimes(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledWith({
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: {
+                "message-0": "2026-03-10T00:00:00.000Z",
+                "message-2": "2026-03-13T01:00:00.000Z",
+            },
+            userId: "user-1",
+        });
+        expect(data.ok).toBe(true);
+        expect(data.updatedMentionCount).toBe(1);
+        expect(data.updatedThreadContextCount).toBe(1);
     });
 
     it("rejects empty inbox read updates", async () => {

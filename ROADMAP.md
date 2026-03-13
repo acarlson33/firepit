@@ -1,6 +1,6 @@
 # Firepit Roadmap
 
-> Last Updated: March 9, 2026
+> Last Updated: March 13, 2026
 
 This roadmap is now organized around Discord parity areas instead of a historical milestone list. The goal is to make it obvious which Discord-like surfaces already exist in Firepit, which parity gaps are still open, and which areas are intentionally deferred.
 
@@ -204,6 +204,49 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Full Discord bot-platform parity
 
 ## Near-Term Priorities
+
+## Version 1.6 Scope (Canary To Stable)
+
+Version 1.6 should finalize unread and attention-management parity work that already has a canary base. The release should prioritize consistency across channels, DMs, and threads over adding net-new feature surfaces.
+
+### Must Ship
+
+- Per-message unread parity across channels, DMs, and threads, including consistent read cursor behavior after message send, read, and navigation events
+- Unified inbox v1 covering unread and mentions across server and DM contexts with stable sorting and clear read-state transitions
+- Jump-to-unread and catch-up actions in every major message surface (channel, DM, thread, inbox)
+- Unified unread and badge semantics across server list, channel list, conversation list, and inbox
+- Mention-workflow controls for high-volume contexts, including per-context mention muting and bulk mark-read actions
+
+### Should Ship
+
+- Inbox filters that improve triage speed (all, mentions, direct, server channels)
+- Better empty, loading, and error states for unread and inbox flows
+- Keyboard-first navigation and focus management parity for unread and inbox actions
+- Improved diagnostics and analytics for unread mismatches and badge drift
+
+### Could Ship (If Capacity Allows)
+
+- Digest-style summary experiments for missed activity windows
+- Additional onboarding copy that explains unread semantics to new users
+- Moderator-facing visibility into unread pressure in high-volume public servers
+
+### Acceptance Criteria
+
+- Cross-surface consistency: unread state transitions match between channel, DM, thread, and inbox views for equivalent events
+- Badge correctness: global and scoped badges match server-side unread totals with no known deterministic drift scenarios
+- Jump reliability: jump-to-unread lands on the expected first unread message in parity-critical surfaces
+- Catch-up reliability: mark-read and mark-all actions are idempotent and converge quickly under concurrent realtime events
+- Mention accuracy: mention-only users are not over-notified by non-mention activity in muted or mentions-only contexts
+- Accessibility: unread and inbox controls are keyboard reachable, screen-reader labeled, and do not regress existing a11y baselines
+- Performance: no material regression in message-list render or inbox query latency relative to current canary baseline
+- Test coverage: parity-critical unread, badge, and inbox flows have automated coverage for channel, DM, and thread paths
+
+### Release Gates
+
+- Complete canary hardening with parity test pass and no unresolved P0/P1 unread correctness defects
+- Validate telemetry dashboards for unread mismatch rate, jump-to-unread success, and badge consistency before promotion
+- Confirm docs and settings copy reflect shipped unread semantics, especially for mentions-only and mute combinations
+- Roll out with feature flags and staged exposure, with explicit rollback criteria for badge drift or read-state corruption
 
 ### Q2 2026
 

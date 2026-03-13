@@ -261,4 +261,60 @@ describe("ConversationList", () => {
             "/chat?conversation=conv-mention&unread=message-1",
         );
     });
+
+    it("filters inbox items by all, direct, and server views", async () => {
+        render(
+            <ConversationList
+                conversations={[]}
+                currentUserId="current-user"
+                inboxItems={
+                    [
+                        {
+                            authorLabel: "Direct Author",
+                            authorUserId: "user-direct",
+                            contextId: "conv-1",
+                            contextKind: "conversation",
+                            id: "thread:conversation:conv-1:message-1",
+                            kind: "thread",
+                            latestActivityAt: "2026-03-11T12:00:00.000Z",
+                            messageId: "message-1",
+                            muted: false,
+                            previewText: "direct unread",
+                            unreadCount: 1,
+                        },
+                        {
+                            authorLabel: "Server Author",
+                            authorUserId: "user-server",
+                            contextId: "channel-1",
+                            contextKind: "channel",
+                            id: "mention-item-1",
+                            kind: "mention",
+                            latestActivityAt: "2026-03-11T12:01:00.000Z",
+                            messageId: "message-2",
+                            muted: false,
+                            previewText: "server mention",
+                            unreadCount: 1,
+                        },
+                    ] as never[]
+                }
+                loading={false}
+                onConversationCreated={vi.fn()}
+                onNewConversation={vi.fn()}
+                onSelectConversation={vi.fn()}
+                selectedConversationId={null}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: /inbox/i }));
+        expect(screen.getByText("Direct Author")).toBeInTheDocument();
+        expect(screen.getByText("Server Author")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: /^Direct$/i }));
+        expect(screen.getByText("Direct Author")).toBeInTheDocument();
+        expect(screen.queryByText("Server Author")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: /^Servers$/i }));
+        expect(screen.getByText("Server Author")).toBeInTheDocument();
+        expect(screen.queryByText("Direct Author")).not.toBeInTheDocument();
+    });
 });

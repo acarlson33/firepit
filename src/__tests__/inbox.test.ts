@@ -85,6 +85,7 @@ describe("inbox", () => {
                     return {
                         documents: [
                             {
+                                $id: "inbox-item-1",
                                 userId: "user-1",
                                 kind: "mention",
                                 contextKind: "conversation",
@@ -124,9 +125,58 @@ describe("inbox", () => {
         });
 
         expect(result.items).toHaveLength(1);
+        expect(result.items[0]?.id).toBe("inbox-item-1");
         expect(result.items[0]?.authorLabel).toBe("Alice");
         expect(result.items[0]?.muted).toBe(true);
         expect(result.counts.mention).toBe(1);
+    });
+
+    it("filters inbox items by context kind", async () => {
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "inbox-item-1",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-1",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "Hello @user-1",
+                                authorUserId: "user-2",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                userId: "user-2",
+                                displayName: "Alice",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const result = await listInboxItems({
+            contextKinds: ["channel"],
+            kinds: ["mention"],
+            limit: 10,
+            userId: "user-1",
+        });
+
+        expect(result.items).toHaveLength(0);
+        expect(result.unreadCount).toBe(0);
     });
 
     it("filters unread channel thread items when the user cannot read the channel", async () => {

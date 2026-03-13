@@ -1,4 +1,11 @@
-import type { InboxDigestResponse, InboxListResponse } from "@/lib/types";
+import type {
+    InboxContextKind,
+    InboxDigestResponse,
+    InboxListResponse,
+    InboxItemKind,
+} from "@/lib/types";
+
+export type InboxScope = "all" | "direct" | "server";
 
 type MarkInboxItemsReadInput = {
     itemIds: string[];
@@ -31,6 +38,29 @@ export async function listInbox(): Promise<InboxListResponse> {
     return parseInboxResponse(response);
 }
 
+export async function listInboxWithFilters(params?: {
+    kinds?: InboxItemKind[];
+    limit?: number;
+    scope?: InboxScope;
+}): Promise<InboxListResponse> {
+    const query = new URLSearchParams();
+    if (params?.kinds && params.kinds.length > 0) {
+        for (const kind of params.kinds) {
+            query.append("kind", kind);
+        }
+    }
+    if (typeof params?.limit === "number") {
+        query.set("limit", String(params.limit));
+    }
+    if (params?.scope) {
+        query.set("scope", params.scope);
+    }
+
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const response = await fetch(`/api/inbox${suffix}`);
+    return parseInboxResponse(response);
+}
+
 export async function markInboxItemsRead({ itemIds }: MarkInboxItemsReadInput) {
     if (itemIds.length === 0) {
         return;
@@ -49,6 +79,30 @@ export async function markInboxItemsRead({ itemIds }: MarkInboxItemsReadInput) {
             error?: string;
         } | null;
         throw new Error(error?.error || "Failed to update inbox items");
+    }
+}
+
+export async function markInboxContextRead(params?: {
+    contextId?: string;
+    contextKind?: InboxContextKind;
+}) {
+    const response = await fetch("/api/inbox", {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            action: "mark-all-read",
+            contextId: params?.contextId,
+            contextKind: params?.contextKind,
+        }),
+    });
+
+    if (!response.ok) {
+        const error = (await response.json().catch(() => null)) as {
+            error?: string;
+        } | null;
+        throw new Error(error?.error || "Failed to mark inbox context read");
     }
 }
 

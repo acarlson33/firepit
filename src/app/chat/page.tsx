@@ -41,7 +41,6 @@ import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useInbox } from "./hooks/useInbox";
-import { useInboxDigest } from "./hooks/useInboxDigest";
 import { useNotificationSettings } from "@/hooks/useNotificationSettings";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
@@ -226,20 +225,6 @@ export default function ChatPage() {
     const { customEmojis, uploadEmoji } = useCustomEmojis();
     const notificationSettingsApi = useNotificationSettings();
     const inboxApi = useInbox(userId);
-    const digestContextKind = selectedChannel
-        ? "channel"
-        : selectedConversationId
-          ? "conversation"
-          : undefined;
-    const digestContextId =
-        selectedChannel || selectedConversationId || undefined;
-    const inboxDigestApi = useInboxDigest({
-        contextId: digestContextId,
-        contextKind: digestContextKind,
-        enabled: Boolean(digestContextId && digestContextKind),
-        limit: 100,
-        userId,
-    });
     const conversationsApi = useConversations(
         userId,
         viewMode === "dms" ||
@@ -481,12 +466,7 @@ export default function ChatPage() {
 
         return null;
     }, [inboxApi, selectedChannel, selectedConversationId]);
-    const currentContextUnreadCount =
-        inboxApi.contractVersion === "message_v2"
-            ? (inboxDigestApi.totalUnreadCount ??
-              currentContextSummary?.totalCount ??
-              0)
-            : (currentContextSummary?.totalCount ?? 0);
+    const currentContextUnreadCount = currentContextSummary?.totalCount ?? 0;
 
     useEffect(() => {
         if (routeConversationId) {
@@ -660,8 +640,7 @@ export default function ChatPage() {
             }
 
             const nextMessageId =
-                currentContextSummary?.firstUnreadItem?.messageId ??
-                inboxDigestApi.items.at(0)?.messageId;
+                currentContextSummary?.firstUnreadItem?.messageId;
             if (!nextMessageId) {
                 return null;
             }
@@ -671,11 +650,7 @@ export default function ChatPage() {
                 messageId: nextMessageId,
             };
         });
-    }, [
-        currentContextKey,
-        currentContextSummary?.firstUnreadItem?.messageId,
-        inboxDigestApi.items,
-    ]);
+    }, [currentContextKey, currentContextSummary?.firstUnreadItem?.messageId]);
 
     useEffect(() => {
         if (!currentContextKey || !currentContextSummary) {
@@ -859,8 +834,7 @@ export default function ChatPage() {
     const handleJumpToCurrentUnread = useCallback(() => {
         const targetMessageId =
             activeUnreadAnchor?.messageId ??
-            currentContextSummary?.firstUnreadItem?.messageId ??
-            inboxDigestApi.items.at(0)?.messageId;
+            currentContextSummary?.firstUnreadItem?.messageId;
         if (!targetMessageId) {
             return;
         }
@@ -869,13 +843,13 @@ export default function ChatPage() {
     }, [
         activeUnreadAnchor?.messageId,
         currentContextSummary?.firstUnreadItem?.messageId,
-        inboxDigestApi.items,
         jumpToUnreadEntry,
     ]);
 
     const handleCatchUpCurrentContext = useCallback(() => {
         setActiveUnreadAnchor(null);
         if (selectedChannel) {
+            void inboxApi.markContextRead("channel", selectedChannel);
             if (messagesApi.surfaceMessages.length > 0) {
                 jumpToMessage(messagesApi.surfaceMessages.at(-1)?.id || "", {
                     block: "end",
@@ -885,11 +859,16 @@ export default function ChatPage() {
         }
 
         if (selectedConversationId && dmApi.surfaceMessages.length > 0) {
+            void inboxApi.markContextRead(
+                "conversation",
+                selectedConversationId,
+            );
             jumpToMessage(dmApi.surfaceMessages.at(-1)?.id || "", {
                 block: "end",
             });
         }
     }, [
+        inboxApi,
         dmApi.surfaceMessages,
         messagesApi.surfaceMessages,
         selectedChannel,

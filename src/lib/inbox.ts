@@ -22,6 +22,7 @@ import type {
 } from "@/lib/types";
 
 type InboxFilters = {
+    contextKinds?: InboxContextKind[];
     kinds: InboxItemKind[];
     limit: number;
     userId: string;
@@ -33,6 +34,7 @@ type AuthorProfile = {
 };
 
 type InboxItemDocument = {
+    $id: string;
     authorUserId: string;
     contextId: string;
     contextKind: "channel" | "conversation";
@@ -602,7 +604,7 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
                 authorUserId,
                 contextId: document.contextId,
                 contextKind: document.contextKind,
-                id: `${document.kind}:${document.contextKind}:${document.contextId}:${document.messageId}`,
+                id: document.$id,
                 kind: "mention",
                 latestActivityAt: document.latestActivityAt,
                 messageId: document.messageId,
@@ -617,6 +619,7 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
 }
 
 export async function listInboxItems({
+    contextKinds,
     kinds,
     limit,
     userId,
@@ -650,7 +653,14 @@ export async function listInboxItems({
     ]);
 
     const itemsWithMuteState = await applyMuteState(userId, itemGroups.flat());
-    const sortedItems = sortInboxItems(itemsWithMuteState);
+    const contextKindFilter =
+        contextKinds && contextKinds.length > 0 ? new Set(contextKinds) : null;
+    const filteredItems = contextKindFilter
+        ? itemsWithMuteState.filter((item) =>
+              contextKindFilter.has(item.contextKind),
+          )
+        : itemsWithMuteState;
+    const sortedItems = sortInboxItems(filteredItems);
     const counts = toCountMap(sortedItems);
 
     return {
