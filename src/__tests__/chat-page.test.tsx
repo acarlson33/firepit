@@ -8,6 +8,7 @@ vi.mock("next/dynamic", () => ({
 
 const {
     mockConversations,
+    mockContextInboxItems,
     mockInboxRefresh,
     mockUseInbox,
     mockUseInboxDigest,
@@ -21,6 +22,19 @@ const {
         $id: string;
         participants: string[];
         $createdAt: string;
+    }>,
+    mockContextInboxItems: [] as Array<{
+        authorLabel: string;
+        authorUserId: string;
+        contextId: string;
+        contextKind: "channel" | "conversation";
+        id: string;
+        kind: "mention" | "thread";
+        latestActivityAt: string;
+        messageId: string;
+        muted: boolean;
+        previewText: string;
+        unreadCount: number;
     }>,
     mockInboxRefresh: vi.fn(),
     mockUseInbox: vi.fn(),
@@ -289,6 +303,7 @@ describe("ChatPage", () => {
         mockSearchParams.delete("invite");
         mockSearchParams.delete("server");
         mockConversations.splice(0, mockConversations.length);
+        mockContextInboxItems.splice(0, mockContextInboxItems.length);
         mockSetSelectedServer.mockReset();
         mockUseInbox.mockReturnValue({
             contractVersion: "thread_v1",
@@ -322,6 +337,27 @@ describe("ChatPage", () => {
                 if (url.includes("/permissions")) {
                     return {
                         json: async () => ({ manageMessages: true }),
+                        ok: true,
+                    } as Response;
+                }
+
+                if (url.includes("/api/inbox") && url.includes("contextId=")) {
+                    return {
+                        json: async () => ({
+                            contractVersion: "message_v2",
+                            counts: mockContextInboxItems.reduce(
+                                (accumulator, item) => {
+                                    accumulator[item.kind] += item.unreadCount;
+                                    return accumulator;
+                                },
+                                { mention: 0, thread: 0 },
+                            ),
+                            items: mockContextInboxItems,
+                            unreadCount: mockContextInboxItems.reduce(
+                                (total, item) => total + item.unreadCount,
+                                0,
+                            ),
+                        }),
                         ok: true,
                     } as Response;
                 }
@@ -579,6 +615,19 @@ describe("ChatPage", () => {
             ],
             unreadCount: 1,
         });
+        mockContextInboxItems.push({
+            authorLabel: "User Two",
+            authorUserId: "user-2",
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            id: "thread:conversation:conversation-1:missing-1",
+            kind: "thread",
+            latestActivityAt: "2026-03-12T10:00:00.000Z",
+            messageId: "missing-1",
+            muted: false,
+            previewText: "Missing unread target",
+            unreadCount: 1,
+        });
 
         mockJumpToMessageWhenReady.mockImplementation(
             (
@@ -670,6 +719,19 @@ describe("ChatPage", () => {
                     totalCount: 1,
                 },
             ],
+            unreadCount: 1,
+        });
+        mockContextInboxItems.push({
+            authorLabel: "User Two",
+            authorUserId: "user-2",
+            contextId: "channel-1",
+            contextKind: "channel",
+            id: "thread:channel:channel-1:missing-channel-1",
+            kind: "thread",
+            latestActivityAt: "2026-03-12T10:00:00.000Z",
+            messageId: "missing-channel-1",
+            muted: false,
+            previewText: "Missing channel unread target",
             unreadCount: 1,
         });
 

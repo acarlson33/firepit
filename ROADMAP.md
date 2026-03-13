@@ -209,11 +209,11 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ## Near-Term Priorities
 
-## Version 1.6 Scope (Canary To Stable)
+### Version 1.6 Scope (Canary To Stable)
 
 Status: Shipped. Version 1.6 finalized unread and attention-management parity work that started in canary, with backend and frontend parity now live across channels and DMs.
 
-### Must Ship
+#### Must Ship
 
 - Per-message unread parity across channels, DMs, and threads, including consistent read cursor behavior after message send, read, and navigation events
 - Unified inbox v1 covering unread and mentions across server and DM contexts with stable sorting and clear read-state transitions
@@ -223,19 +223,19 @@ Status: Shipped. Version 1.6 finalized unread and attention-management parity wo
 
 All Must Ship items are complete and represented in the current API, docs, and product surfaces.
 
-### Should Ship
+#### Should Ship
 
 - Better empty, loading, and error states for unread and inbox flows
 - Keyboard-first navigation and focus management parity for unread and inbox actions
 - Improved diagnostics and analytics for unread mismatches and badge drift
 
-### Could Ship (If Capacity Allows)
+#### Could Ship (If Capacity Allows)
 
 - Digest-style summary experiments for missed activity windows
 - Additional onboarding copy that explains unread semantics to new users
 - Moderator-facing visibility into unread pressure in high-volume public servers
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
 - Cross-surface consistency: unread state transitions match between channel, DM, thread, and inbox views for equivalent events
 - Badge correctness: global and scoped badges match server-side unread totals with no known deterministic drift scenarios

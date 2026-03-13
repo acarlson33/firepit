@@ -39,11 +39,19 @@ export async function listInbox(): Promise<InboxListResponse> {
 }
 
 export async function listInboxWithFilters(params?: {
+    contextId?: string;
+    contextKind?: InboxContextKind;
     kinds?: InboxItemKind[];
     limit?: number;
     scope?: InboxScope;
 }): Promise<InboxListResponse> {
     const query = new URLSearchParams();
+    if (params?.contextId) {
+        query.set("contextId", params.contextId);
+    }
+    if (params?.contextKind) {
+        query.set("contextKind", params.contextKind);
+    }
     if (params?.kinds && params.kinds.length > 0) {
         for (const kind of params.kinds) {
             query.append("kind", kind);

@@ -6,7 +6,7 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxItems } from "@/lib/inbox";
 import { recordEvent } from "@/lib/newrelic-utils";
-import { getThreadReads, upsertThreadReads } from "@/lib/thread-read-store";
+import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
 import { Query } from "node-appwrite";
 
@@ -83,6 +83,16 @@ function parseKinds(searchParams: URLSearchParams) {
     return Array.from(new Set(requested)) as InboxItemKind[];
 }
 
+function toCounts(items: Array<{ kind: InboxItemKind; unreadCount: number }>) {
+    return items.reduce<Record<InboxItemKind, number>>(
+        (accumulator, item) => {
+            accumulator[item.kind] += item.unreadCount;
+            return accumulator;
+        },
+        { mention: 0, thread: 0 },
+    );
+}
+
 function parseLimit(value: string | null) {
     if (!value) {
         return DEFAULT_LIMIT;
@@ -108,6 +118,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const kinds = parseKinds(searchParams);
     const scope = parseScope(searchParams.get("scope"));
+    const contextId = searchParams.get("contextId")?.trim() || undefined;
+    const contextKindParam = searchParams.get("contextKind");
+    const contextKind = isValidContextKind(contextKindParam)
+        ? contextKindParam
+        : contextKindParam
+          ? null
+          : undefined;
     if (!kinds) {
         return NextResponse.json(
             { error: "kind must be one or more of mention,thread" },
@@ -122,6 +139,22 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    if ((contextId && !contextKind) || (!contextId && contextKind)) {
+        return NextResponse.json(
+            {
+                error: "contextId and contextKind must be provided together",
+            },
+            { status: 400 },
+        );
+    }
+
+    if (contextKind === null) {
+        return NextResponse.json(
+            { error: "contextKind must be one of channel,conversation" },
+            { status: 400 },
+        );
+    }
+
     const limit = parseLimit(searchParams.get("limit"));
     if (!limit) {
         return NextResponse.json(
@@ -130,12 +163,35 @@ export async function GET(request: NextRequest) {
         );
     }
 
+    const isContextScoped = Boolean(contextId && contextKind);
+    const contextKinds = contextKind
+        ? [contextKind]
+        : scopeToContextKinds(scope);
+
     const inbox = await listInboxItems({
-        contextKinds: scopeToContextKinds(scope),
+        contextKinds,
         kinds,
-        limit,
+        limit: isContextScoped ? Number.POSITIVE_INFINITY : limit,
         userId: session.$id,
     });
+
+    if (isContextScoped) {
+        const items = inbox.items.filter(
+            (item) =>
+                item.contextId === contextId &&
+                item.contextKind === contextKind,
+        );
+
+        return NextResponse.json({
+            contractVersion: inbox.contractVersion,
+            counts: toCounts(items),
+            items,
+            unreadCount: items.reduce(
+                (total, item) => total + item.unreadCount,
+                0,
+            ),
+        });
+    }
 
     return NextResponse.json(inbox);
 }
@@ -252,19 +308,10 @@ export async function PATCH(request: NextRequest) {
 
         await Promise.all(
             Array.from(threadReadWrites.values()).map(async (entry) => {
-                const existing = await getThreadReads({
-                    contextId: entry.contextId,
-                    contextType: entry.contextType,
-                    userId: session.$id,
-                });
-
                 await upsertThreadReads({
                     contextId: entry.contextId,
                     contextType: entry.contextType,
-                    reads: {
-                        ...(existing?.reads ?? {}),
-                        ...entry.reads,
-                    },
+                    reads: entry.reads,
                     userId: session.$id,
                 });
             }),
@@ -286,8 +333,10 @@ export async function PATCH(request: NextRequest) {
         });
     }
 
-    const itemIds = Array.isArray(body?.itemIds)
-        ? body.itemIds.filter(
+    const requestedItemIds =
+        body && "itemIds" in body ? body.itemIds : undefined;
+    const itemIds = Array.isArray(requestedItemIds)
+        ? requestedItemIds.filter(
               (value): value is string =>
                   typeof value === "string" && value.trim().length > 0,
           )

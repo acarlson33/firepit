@@ -15,6 +15,24 @@ type ThreadReadDocument = {
     userId: string;
 };
 
+export function mergeThreadReadsByMax(params: {
+    existingReads: Record<string, string>;
+    incomingReads: Record<string, string>;
+}) {
+    const mergedReads = { ...params.existingReads };
+
+    for (const [messageId, incomingTimestamp] of Object.entries(
+        params.incomingReads,
+    )) {
+        const existingTimestamp = mergedReads[messageId];
+        if (!existingTimestamp || existingTimestamp < incomingTimestamp) {
+            mergedReads[messageId] = incomingTimestamp;
+        }
+    }
+
+    return mergedReads;
+}
+
 function mapThreadReadDocument(
     document: Record<string, unknown>,
 ): ThreadReadDocument {
@@ -94,10 +112,14 @@ export async function upsertThreadReads(params: {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
     const existing = await getThreadReads(params);
+    const mergedReads = mergeThreadReadsByMax({
+        existingReads: existing?.reads ?? {},
+        incomingReads: params.reads,
+    });
     const payload = {
         contextId: params.contextId,
         contextType: params.contextType,
-        reads: JSON.stringify(normalizeThreadReads(params.reads)),
+        reads: JSON.stringify(normalizeThreadReads(mergedReads)),
         userId: params.userId,
     };
 

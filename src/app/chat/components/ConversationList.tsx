@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { useFriends } from "@/hooks/useFriends";
 import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
+import { listInboxWithFilters } from "@/lib/inbox-client";
 import {
     buildChatMessageHref,
     type ChatMessageDestination,
@@ -50,6 +51,11 @@ type MentionItem = {
     muted: boolean;
     text: string;
     unreadCount: number;
+};
+
+type InboxFilterQuery = {
+    kinds?: Array<"mention" | "thread">;
+    scope?: "all" | "direct" | "server";
 };
 
 type ConversationUnreadState = {
@@ -167,7 +173,8 @@ export function ConversationList({
         () => sidebarItems.filter((item) => item.kind === "mention"),
         [sidebarItems],
     );
-    const filteredInboxItems = useMemo(() => {
+
+    const fallbackFilteredInboxItems = useMemo(() => {
         if (inboxFilter === "mentions") {
             return sidebarItems.filter((item) => item.kind === "mention");
         }
@@ -186,6 +193,109 @@ export function ConversationList({
 
         return sidebarItems;
     }, [inboxFilter, sidebarItems]);
+
+    const [serverFilteredInboxItems, setServerFilteredInboxItems] =
+        useState<MentionItem[]>(sidebarItems);
+    const [serverFilteredInboxLoading, setServerFilteredInboxLoading] =
+        useState(false);
+
+    const inboxFilterQuery = useMemo<InboxFilterQuery>(() => {
+        if (inboxFilter === "mentions") {
+            return { kinds: ["mention"] };
+        }
+
+        if (inboxFilter === "direct") {
+            return { scope: "direct" };
+        }
+
+        if (inboxFilter === "server") {
+            return { scope: "server" };
+        }
+
+        return { scope: "all" };
+    }, [inboxFilter]);
+
+    const inboxFilterCacheKey = useMemo(
+        () =>
+            JSON.stringify({
+                kinds: inboxFilterQuery.kinds ?? [],
+                scope: inboxFilterQuery.scope ?? "all",
+            }),
+        [inboxFilterQuery.kinds, inboxFilterQuery.scope],
+    );
+
+    useEffect(() => {
+        if (sidebarMode !== "inbox") {
+            return;
+        }
+
+        let cancelled = false;
+        setServerFilteredInboxLoading(true);
+
+        void listInboxWithFilters({
+            kinds: inboxFilterQuery.kinds,
+            scope: inboxFilterQuery.scope,
+        })
+            .then((response) => {
+                if (cancelled) {
+                    return;
+                }
+
+                const nextItems = response.items.map((item) => {
+                    const destination: ChatMessageDestination =
+                        item.contextKind === "channel"
+                            ? {
+                                  kind: "channel",
+                                  channelId: item.contextId,
+                                  messageId: item.messageId,
+                                  serverId: item.serverId,
+                              }
+                            : {
+                                  kind: "dm",
+                                  conversationId: item.contextId,
+                                  messageId: item.messageId,
+                              };
+
+                    return {
+                        authorAvatarUrl: item.authorAvatarUrl,
+                        authorLabel: item.authorLabel,
+                        createdAt: item.latestActivityAt,
+                        destination,
+                        id: item.id,
+                        kind: item.kind,
+                        muted: item.muted,
+                        text: item.previewText,
+                        unreadCount: item.unreadCount,
+                    } satisfies MentionItem;
+                });
+
+                setServerFilteredInboxItems(nextItems);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    // Local filtering remains as a fallback for transient failures.
+                    setServerFilteredInboxItems(fallbackFilteredInboxItems);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setServerFilteredInboxLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        fallbackFilteredInboxItems,
+        inboxFilterCacheKey,
+        inboxFilterQuery.kinds,
+        inboxFilterQuery.scope,
+        sidebarMode,
+    ]);
+
+    const displayedInboxItems =
+        sidebarMode === "inbox" ? serverFilteredInboxItems : sidebarItems;
     const inboxUnreadCount = useMemo(
         () =>
             sidebarItems.reduce(
@@ -804,7 +914,7 @@ export function ConversationList({
                         )}
                     </div>
                 ) : (sidebarMode === "inbox"
-                      ? filteredInboxItems
+                      ? displayedInboxItems
                       : unreadConversations.length > 0
                         ? unreadConversations
                         : conversations
@@ -817,7 +927,9 @@ export function ConversationList({
                         )}
                         <p className="text-muted-foreground text-sm">
                             {sidebarMode === "inbox"
-                                ? "No unread items for this filter"
+                                ? serverFilteredInboxLoading
+                                    ? "Loading inbox items..."
+                                    : "No unread items for this filter"
                                 : "No conversations yet"}
                         </p>
                         {sidebarMode === "chats" ? (
@@ -834,7 +946,7 @@ export function ConversationList({
                 ) : (
                     <div className="space-y-1 p-2">
                         {sidebarMode === "inbox"
-                            ? filteredInboxItems.map((item) => (
+                            ? displayedInboxItems.map((item) => (
                                   <button
                                       className="flex w-full items-start gap-3 rounded-lg border border-border/60 p-3 text-left transition hover:bg-accent/40"
                                       key={item.id}

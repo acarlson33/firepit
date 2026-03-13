@@ -4,14 +4,12 @@ import { NextRequest } from "next/server";
 import { GET, PATCH } from "@/app/api/inbox/route";
 
 const {
-    mockGetThreadReads,
     mockListDocuments,
     mockListInboxItems,
     mockSession,
     mockUpsertThreadReads,
     mockUpdateDocument,
 } = vi.hoisted(() => ({
-    mockGetThreadReads: vi.fn(),
     mockListDocuments: vi.fn(),
     mockListInboxItems: vi.fn(),
     mockSession: vi.fn(),
@@ -46,7 +44,6 @@ vi.mock("@/lib/inbox", () => ({
 }));
 
 vi.mock("@/lib/thread-read-store", () => ({
-    getThreadReads: mockGetThreadReads,
     upsertThreadReads: mockUpsertThreadReads,
 }));
 
@@ -156,6 +153,74 @@ describe("inbox route", () => {
         });
     });
 
+    it("returns a full context-scoped inbox when contextId/contextKind are provided", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxItems.mockResolvedValue({
+            contractVersion: "message_v2",
+            counts: { mention: 1, thread: 1 },
+            items: [
+                {
+                    authorLabel: "Alice",
+                    authorUserId: "user-2",
+                    contextId: "channel-1",
+                    contextKind: "channel",
+                    id: "mention-1",
+                    kind: "mention",
+                    latestActivityAt: "2026-03-11T12:00:00.000Z",
+                    messageId: "message-1",
+                    muted: false,
+                    previewText: "mention",
+                    unreadCount: 1,
+                },
+                {
+                    authorLabel: "Bob",
+                    authorUserId: "user-3",
+                    contextId: "channel-2",
+                    contextKind: "channel",
+                    id: "thread-2",
+                    kind: "thread",
+                    latestActivityAt: "2026-03-11T12:01:00.000Z",
+                    messageId: "message-2",
+                    muted: false,
+                    previewText: "thread",
+                    unreadCount: 2,
+                },
+            ],
+            unreadCount: 3,
+        });
+
+        const response = await GET(
+            new NextRequest(
+                "http://localhost/api/inbox?contextId=channel-1&contextKind=channel",
+            ),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxItems).toHaveBeenCalledWith({
+            contextKinds: ["channel"],
+            kinds: ["mention", "thread"],
+            limit: Number.POSITIVE_INFINITY,
+            userId: "user-1",
+        });
+        expect(data.items).toHaveLength(1);
+        expect(data.items[0].contextId).toBe("channel-1");
+        expect(data.unreadCount).toBe(1);
+    });
+
+    it("rejects incomplete context scope parameters", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox?contextId=channel-1"),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("contextId and contextKind");
+        expect(mockListInboxItems).not.toHaveBeenCalled();
+    });
+
     it("marks inbox items as read for the authenticated user", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListDocuments.mockResolvedValue({
@@ -228,10 +293,6 @@ describe("inbox route", () => {
         mockListDocuments.mockResolvedValue({
             documents: [{ $id: "item-mention-1" }],
         });
-        mockGetThreadReads.mockResolvedValue({
-            reads: { "message-0": "2026-03-10T00:00:00.000Z" },
-        });
-
         const response = await PATCH(
             new NextRequest("http://localhost/api/inbox", {
                 body: JSON.stringify({
@@ -256,7 +317,6 @@ describe("inbox route", () => {
             contextId: "channel-1",
             contextType: "channel",
             reads: {
-                "message-0": "2026-03-10T00:00:00.000Z",
                 "message-2": "2026-03-13T01:00:00.000Z",
             },
             userId: "user-1",
@@ -303,8 +363,6 @@ describe("inbox route", () => {
             ],
             unreadCount: 5,
         });
-        mockGetThreadReads.mockResolvedValue({ reads: {} });
-
         const response = await PATCH(
             new NextRequest("http://localhost/api/inbox", {
                 body: JSON.stringify({ action: "mark-all-read" }),
