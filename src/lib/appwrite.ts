@@ -6,6 +6,10 @@ export {
 
 import { ensureSession } from "./appwrite-core";
 
+/**
+ * Handles ensure browser session.
+ * @returns {Promise<{ ok: true; userId: string; } | { ok: false; error: string; }>} The return value.
+ */
 export async function ensureBrowserSession(): Promise<
 	{ ok: true; userId: string } | { ok: false; error: string }
 > {

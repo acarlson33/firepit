@@ -37,6 +37,10 @@ const DEFAULT_SETTINGS: Omit<
     conversationOverrides: {},
 };
 
+/**
+ * Creates empty override labels.
+ * @returns {{ channelOverrides: Record<string, NotificationOverrideLabelEntry>; conversationOverrides: Record<string, NotificationOverrideLabelEntry>; serverOverrides: Record<string, NotificationOverrideLabelEntry>; }} The return value.
+ */
 function createEmptyOverrideLabels(): NotificationOverrideLabelMap {
     return {
         serverOverrides: {},
@@ -47,15 +51,30 @@ function createEmptyOverrideLabels(): NotificationOverrideLabelMap {
 
 /**
  * Parse JSON string overrides from database into typed objects
+ *
+ * @param {unknown} value - The value value.
+ * @returns {boolean} The return value.
  */
 function isNotificationLevel(value: unknown): value is NotificationLevel {
     return value === "all" || value === "mentions" || value === "nothing";
 }
 
+/**
+ * Determines whether is direct message privacy.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {boolean} The return value.
+ */
 function isDirectMessagePrivacy(value: unknown): value is DirectMessagePrivacy {
     return value === "everyone" || value === "friends";
 }
 
+/**
+ * Parses overrides.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {{ [x: string]: NotificationOverride; }} The return value.
+ */
 function parseOverrides(value: unknown): NotificationOverrideMap {
     if (!value) {
         return {};
@@ -99,6 +118,9 @@ function parseOverrides(value: unknown): NotificationOverrideMap {
 
 /**
  * Convert database document to NotificationSettings type
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} The return value.
  */
 function documentToSettings(
     doc: Record<string, unknown>,
@@ -130,6 +152,12 @@ function documentToSettings(
     };
 }
 
+/**
+ * Returns legacy settings backfill.
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {{ [x: string]: unknown; }} The return value.
+ */
 function getLegacySettingsBackfill(
     doc: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -176,6 +204,12 @@ function getLegacySettingsBackfill(
     return updateData;
 }
 
+/**
+ * Handles backfill legacy notification settings document.
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {Promise<Record<string, unknown>>} The return value.
+ */
 async function backfillLegacyNotificationSettingsDocument(
     doc: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
@@ -197,6 +231,13 @@ async function backfillLegacyNotificationSettingsDocument(
     return updated as unknown as Record<string, unknown>;
 }
 
+/**
+ * Lists accessible servers by id.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string[]} serverIds - The server ids value.
+ * @returns {Promise<Record<string, unknown>[]>} The return value.
+ */
 async function listAccessibleServersById(
     userId: string,
     serverIds: string[],
@@ -238,6 +279,13 @@ async function listAccessibleServersById(
     return servers.documents as unknown as Array<Record<string, unknown>>;
 }
 
+/**
+ * Lists accessible channels by id.
+ *
+ * @param {string[]} allowedServerIds - The allowed server ids value.
+ * @param {string[]} channelIds - The channel ids value.
+ * @returns {Promise<Record<string, unknown>[]>} The return value.
+ */
 async function listAccessibleChannelsById(
     allowedServerIds: string[],
     channelIds: string[],
@@ -262,6 +310,13 @@ async function listAccessibleChannelsById(
     return channels.documents as unknown as Array<Record<string, unknown>>;
 }
 
+/**
+ * Lists accessible conversations by id.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string[]} conversationIds - The conversation ids value.
+ * @returns {Promise<Conversation[]>} The return value.
+ */
 async function listAccessibleConversationsById(
     userId: string,
     conversationIds: string[],
@@ -303,6 +358,12 @@ async function listAccessibleConversationsById(
     });
 }
 
+/**
+ * Lists profiles by user id.
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, string>>} The return value.
+ */
 async function listProfilesByUserId(
     userIds: string[],
 ): Promise<Map<string, string>> {
@@ -331,6 +392,13 @@ async function listProfilesByUserId(
     );
 }
 
+/**
+ * Handles resolve notification override labels.
+ *
+ * @param {string} userId - The user id value.
+ * @param {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} settings - The settings value.
+ * @returns {Promise<NotificationOverrideLabelMap>} The return value.
+ */
 export async function resolveNotificationOverrideLabels(
     userId: string,
     settings: NotificationSettings,
@@ -430,6 +498,13 @@ export async function resolveNotificationOverrideLabels(
     return labels;
 }
 
+/**
+ * Builds notification settings response.
+ *
+ * @param {string} userId - The user id value.
+ * @param {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} settings - The settings value.
+ * @returns {Promise<NotificationSettingsResponse>} The return value.
+ */
 export async function buildNotificationSettingsResponse(
     userId: string,
     settings: NotificationSettings,
@@ -448,6 +523,9 @@ export async function buildNotificationSettingsResponse(
 /**
  * Get notification settings for a user
  * Returns null if settings don't exist yet
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<NotificationSettings | null>} The return value.
  */
 export async function getNotificationSettings(
     userId: string,
@@ -479,6 +557,9 @@ export async function getNotificationSettings(
 /**
  * Get or create notification settings for a user
  * Creates default settings if they don't exist
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function getOrCreateNotificationSettings(
     userId: string,
@@ -493,6 +574,10 @@ export async function getOrCreateNotificationSettings(
 
 /**
  * Create notification settings for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {{ globalNotifications?: NotificationLevel | undefined; directMessagePrivacy?: 'everyone' | 'friends' | undefined; desktopNotifications?: boolean | undefined; pushNotifications?: boolean | undefined; notificationSound?: boolean | undefined; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; }} data - The data value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function createNotificationSettings(
     userId: string,
@@ -544,6 +629,10 @@ export async function createNotificationSettings(
 
 /**
  * Update notification settings for a user
+ *
+ * @param {string} settingsId - The settings id value.
+ * @param {{ globalNotifications?: NotificationLevel | undefined; directMessagePrivacy?: 'everyone' | 'friends' | undefined; desktopNotifications?: boolean | undefined; pushNotifications?: boolean | undefined; notificationSound?: boolean | undefined; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; }} data - The data value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function updateNotificationSettings(
     settingsId: string,
@@ -608,6 +697,9 @@ export async function updateNotificationSettings(
 
 /**
  * Calculate mute expiration timestamp from duration
+ *
+ * @param {'15m' | '1h' | '8h' | '24h' | 'forever'} duration - The duration value.
+ * @returns {string | undefined} The return value.
  */
 export function calculateMuteExpiration(
     duration: MuteDuration,
@@ -629,6 +721,9 @@ export function calculateMuteExpiration(
 
 /**
  * Check if a mute has expired
+ *
+ * @param {string | undefined} mutedUntil - The muted until value.
+ * @returns {boolean} The return value.
  */
 export function isMuteExpired(mutedUntil: string | undefined): boolean {
     if (!mutedUntil) {
@@ -639,6 +734,12 @@ export function isMuteExpired(mutedUntil: string | undefined): boolean {
 
 /**
  * Mute a server for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} serverId - The server id value.
+ * @param {'15m' | '1h' | '8h' | '24h' | 'forever'} duration - The duration value.
+ * @param {'all' | 'mentions' | 'nothing'} level - The level value, if provided.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function muteServer(
     userId: string,
@@ -659,6 +760,10 @@ export async function muteServer(
 
 /**
  * Unmute a server for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function unmuteServer(
     userId: string,
@@ -674,6 +779,12 @@ export async function unmuteServer(
 
 /**
  * Mute a channel for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} channelId - The channel id value.
+ * @param {'15m' | '1h' | '8h' | '24h' | 'forever'} duration - The duration value.
+ * @param {'all' | 'mentions' | 'nothing'} level - The level value, if provided.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function muteChannel(
     userId: string,
@@ -694,6 +805,10 @@ export async function muteChannel(
 
 /**
  * Unmute a channel for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} channelId - The channel id value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function unmuteChannel(
     userId: string,
@@ -709,6 +824,12 @@ export async function unmuteChannel(
 
 /**
  * Mute a conversation for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} conversationId - The conversation id value.
+ * @param {'15m' | '1h' | '8h' | '24h' | 'forever'} duration - The duration value.
+ * @param {'all' | 'mentions' | 'nothing'} level - The level value, if provided.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function muteConversation(
     userId: string,
@@ -729,6 +850,10 @@ export async function muteConversation(
 
 /**
  * Unmute a conversation for a user
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} conversationId - The conversation id value.
+ * @returns {Promise<NotificationSettings>} The return value.
  */
 export async function unmuteConversation(
     userId: string,
@@ -745,6 +870,10 @@ export async function unmuteConversation(
 /**
  * Get the effective notification level for a specific context
  * Priority: Channel > Server > Global
+ *
+ * @param {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} settings - The settings value.
+ * @param {{ channelId?: string | undefined; serverId?: string | undefined; conversationId?: string | undefined; }} context - The context value.
+ * @returns {'all' | 'mentions' | 'nothing'} The return value.
  */
 export function getEffectiveNotificationLevel(
     settings: NotificationSettings,
@@ -784,6 +913,9 @@ export function getEffectiveNotificationLevel(
 
 /**
  * Check if current time is within quiet hours
+ *
+ * @param {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} settings - The settings value.
+ * @returns {boolean} The return value.
  */
 export function isInQuietHours(settings: NotificationSettings): boolean {
     if (!settings.quietHoursStart || !settings.quietHoursEnd) {

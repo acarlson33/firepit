@@ -56,6 +56,12 @@ export type ChatSurfaceMessage = {
     threadLastReadAt?: string;
 };
 
+/**
+ * Handles clone reactions.
+ *
+ * @param {any} reactions - The reactions value.
+ * @returns {any[] | undefined} The return value.
+ */
 function cloneReactions(
     reactions: Message["reactions"] | DirectMessage["reactions"],
 ): MessageReaction[] | undefined {
@@ -79,6 +85,12 @@ function cloneReactions(
         }));
 }
 
+/**
+ * Creates channel context.
+ *
+ * @param {Message} message - The message value.
+ * @returns {{ kind: 'channel'; channelId: string; serverId?: string | undefined; }} The return value.
+ */
 function createChannelContext(
     message: Message,
 ): Extract<ChatSurfaceContext, { kind: "channel" }> {
@@ -89,6 +101,13 @@ function createChannelContext(
     };
 }
 
+/**
+ * Creates dm context.
+ *
+ * @param {DirectMessage} message - The message value.
+ * @param {Omit<{ kind: 'dm'; conversationId: string; isGroup?: boolean | undefined; readOnly?: boolean | undefined; readOnlyReason?: string | null | undefined; }, 'kind' | 'conversationId'> | undefined} overrides - The overrides value, if provided.
+ * @returns {{ kind: 'dm'; conversationId: string; isGroup?: boolean | undefined; readOnly?: boolean | undefined; readOnlyReason?: string | null | undefined; }} The return value.
+ */
 function createDmContext(
     message: DirectMessage,
     overrides?: Omit<
@@ -118,6 +137,13 @@ function sortByCreatedAt<T extends { createdAt: string; id: string }>(
     });
 }
 
+/**
+ * Handles from channel message.
+ *
+ * @param {Message} message - The message value.
+ * @param {{ kind: 'channel'; channelId: string; serverId?: string | undefined; }} context - The context value, if provided.
+ * @returns {{ id: string; sourceType: 'channel' | 'dm'; sourceMessageId: string; context: ChatSurfaceContext; authorId: string; authorUserName?: string | undefined; authorLabel: string; authorAvatarUrl?: string | undefined; authorPronouns?: string | undefined; text: string; createdAt: string; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: any; replyToId?: string | undefined; replyTo?: ChatSurfaceReplyPreview | undefined; threadId?: string | undefined; threadReplyCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: any[] | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; threadHasUnread?: boolean | undefined; threadLastReadAt?: string | undefined; }} The return value.
+ */
 export function fromChannelMessage(
     message: Message,
     context: Extract<
@@ -166,6 +192,13 @@ export function fromChannelMessage(
     };
 }
 
+/**
+ * Handles from direct message.
+ *
+ * @param {DirectMessage} message - The message value.
+ * @param {{ kind: 'dm'; conversationId: string; isGroup?: boolean | undefined; readOnly?: boolean | undefined; readOnlyReason?: string | null | undefined; }} context - The context value, if provided.
+ * @returns {{ id: string; sourceType: 'channel' | 'dm'; sourceMessageId: string; context: ChatSurfaceContext; authorId: string; authorUserName?: string | undefined; authorLabel: string; authorAvatarUrl?: string | undefined; authorPronouns?: string | undefined; text: string; createdAt: string; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: any; replyToId?: string | undefined; replyTo?: ChatSurfaceReplyPreview | undefined; threadId?: string | undefined; threadReplyCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: any[] | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; threadHasUnread?: boolean | undefined; threadLastReadAt?: string | undefined; }} The return value.
+ */
 export function fromDirectMessage(
     message: DirectMessage,
     context: Extract<ChatSurfaceContext, { kind: "dm" }> = createDmContext(
@@ -210,6 +243,13 @@ export function fromDirectMessage(
     };
 }
 
+/**
+ * Handles adapt channel messages.
+ *
+ * @param {Message[]} messages - The messages value.
+ * @param {{ kind: 'channel'; channelId: string; serverId?: string | undefined; } | undefined} context - The context value, if provided.
+ * @returns {ChatSurfaceMessage[]} The return value.
+ */
 export function adaptChannelMessages(
     messages: Message[],
     context?: Extract<ChatSurfaceContext, { kind: "channel" }>,
@@ -224,6 +264,13 @@ export function adaptChannelMessages(
     );
 }
 
+/**
+ * Handles adapt direct messages.
+ *
+ * @param {DirectMessage[]} messages - The messages value.
+ * @param {{ kind: 'dm'; conversationId: string; isGroup?: boolean | undefined; readOnly?: boolean | undefined; readOnlyReason?: string | null | undefined; } | undefined} context - The context value, if provided.
+ * @returns {ChatSurfaceMessage[]} The return value.
+ */
 export function adaptDirectMessages(
     messages: DirectMessage[],
     context?: Extract<ChatSurfaceContext, { kind: "dm" }>,

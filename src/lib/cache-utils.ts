@@ -102,11 +102,11 @@ class SimpleCache {
      * Stale-while-revalidate pattern (Performance Optimization #3)
      * Returns cached data immediately (even if stale) while fetching fresh data in background
      *
-     * @param key - Cache key
-     * @param fetcher - Function to fetch fresh data
-     * @param ttl - Time to live in milliseconds
-     * @param onUpdate - Optional callback when fresh data arrives
-     * @returns Cached data immediately, fresh data arrives via onUpdate
+     * @param {Cache key} key - The key value.
+     * @param {Function to fetch fresh data} fetcher - The fetcher value.
+     * @param {Time to live in milliseconds} ttl - The ttl value.
+     * @param {Optional callback when fresh data arrives} onUpdate - The on update value.
+     * @returns {Cached data immediately, fresh data arrives via onUpdate} The return value.
      */
     async swr<T>(
         key: string,

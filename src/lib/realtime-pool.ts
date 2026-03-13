@@ -11,6 +11,7 @@ const subscriptionRefs = new Map<string, number>();
 
 /**
  * Get or create shared Appwrite client
+ * @returns {Client} The return value.
  */
 export function getSharedClient(): Client {
     if (!sharedClient) {
@@ -34,6 +35,9 @@ export function getSharedClient(): Client {
 
 /**
  * Track subscription references to prevent premature cleanup
+ *
+ * @param {string} channel - The channel value.
+ * @returns {() => void} The return value.
  */
 export function trackSubscription(channel: string): () => void {
     const count = subscriptionRefs.get(channel) ?? 0;
@@ -51,6 +55,9 @@ export function trackSubscription(channel: string): () => void {
 
 /**
  * Check if a channel has active subscriptions
+ *
+ * @param {string} channel - The channel value.
+ * @returns {boolean} The return value.
  */
 export function hasActiveSubscriptions(channel: string): boolean {
     return (subscriptionRefs.get(channel) ?? 0) > 0;

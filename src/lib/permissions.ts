@@ -20,10 +20,10 @@ import type {
  * Calculate effective permissions for a user in a channel context.
  * Takes into account role hierarchy and channel-specific overrides.
  *
- * @param roles - All roles the user has in the server
- * @param overrides - Channel-specific permission overrides (role and user)
- * @param isOwner - Whether user is the server owner
- * @returns Object mapping each permission to true/false
+ * @param {Role[]} roles - The roles value.
+ * @param {ChannelPermissionOverride[]} overrides - The overrides value, if provided.
+ * @param {boolean} isOwner - The is owner value, if provided.
+ * @returns {{ readMessages: boolean; sendMessages: boolean; manageMessages: boolean; manageChannels: boolean; manageRoles: boolean; manageServer: boolean; mentionEveryone: boolean; administrator: boolean; }} The return value.
  */
 export function getEffectivePermissions(
 	roles: Role[],
@@ -122,9 +122,9 @@ export function getEffectivePermissions(
 /**
  * Check if a user has a specific permission in a context.
  *
- * @param permission - The permission to check
- * @param effectivePermissions - Pre-calculated effective permissions
- * @returns True if user has the permission
+ * @param {'readMessages' | 'sendMessages' | 'manageMessages' | 'manageChannels' | 'manageRoles' | 'manageServer' | 'mentionEveryone' | 'administrator'} permission - The permission value.
+ * @param {{ readMessages: boolean; sendMessages: boolean; manageMessages: boolean; manageChannels: boolean; manageRoles: boolean; manageServer: boolean; mentionEveryone: boolean; administrator: boolean; }} effectivePermissions - The effective permissions value.
+ * @returns {boolean} The return value.
  */
 export function hasPermission(
 	permission: Permission,
@@ -142,8 +142,8 @@ export function hasPermission(
  * Calculate role hierarchy based on position.
  * Higher position = higher in hierarchy.
  *
- * @param roles - Array of roles to sort
- * @returns Roles sorted by position (highest first)
+ * @param {Role[]} roles - The roles value.
+ * @returns {Role[]} The return value.
  */
 export function calculateRoleHierarchy(roles: Role[]): Role[] {
 	return [...roles].sort((a, b) => b.position - a.position);
@@ -152,8 +152,8 @@ export function calculateRoleHierarchy(roles: Role[]): Role[] {
 /**
  * Get the highest role for display purposes (role with highest position).
  *
- * @param roles - Array of user's roles
- * @returns The highest positioned role, or undefined if no roles
+ * @param {Role[]} roles - The roles value.
+ * @returns {Role | undefined} The return value.
  */
 export function getHighestRole(roles: Role[]): Role | undefined {
 	if (roles.length === 0) {
@@ -166,10 +166,10 @@ export function getHighestRole(roles: Role[]): Role | undefined {
  * Check if user can manage a specific role based on hierarchy.
  * Users can only manage roles lower than their highest role.
  *
- * @param userRoles - Roles assigned to the user
- * @param targetRole - Role being managed
- * @param isOwner - Whether user is server owner
- * @returns True if user can manage the target role
+ * @param {Role[]} userRoles - The user roles value.
+ * @param {{ $id: string; serverId: string; name: string; color: string; position: number; defaultOnJoin?: boolean | undefined; readMessages: boolean; sendMessages: boolean; manageMessages: boolean; manageChannels: boolean; manageRoles: boolean; manageServer: boolean; mentionEveryone: boolean; administrator: boolean; mentionable: boolean; memberCount?: number | undefined; $createdAt?: string | undefined; }} targetRole - The target role value.
+ * @param {boolean} isOwner - The is owner value, if provided.
+ * @returns {boolean} The return value.
  */
 export function canManageRole(
 	userRoles: Role[],
@@ -205,8 +205,8 @@ export function canManageRole(
 /**
  * Validate that a permission name is valid.
  *
- * @param permission - Permission string to validate
- * @returns True if valid permission
+ * @param {string} permission - The permission value.
+ * @returns {boolean} The return value.
  */
 export function isValidPermission(permission: string): permission is Permission {
 	const validPermissions: Permission[] = [
@@ -224,8 +224,7 @@ export function isValidPermission(permission: string): permission is Permission 
 
 /**
  * Get all permissions as an array.
- *
- * @returns Array of all available permissions
+ * @returns {Permission[]} The return value.
  */
 export function getAllPermissions(): Permission[] {
 	return [
@@ -243,8 +242,8 @@ export function getAllPermissions(): Permission[] {
 /**
  * Get human-readable description for a permission.
  *
- * @param permission - The permission to describe
- * @returns User-friendly description
+ * @param {'readMessages' | 'sendMessages' | 'manageMessages' | 'manageChannels' | 'manageRoles' | 'manageServer' | 'mentionEveryone' | 'administrator'} permission - The permission value.
+ * @returns {string} The return value.
  */
 export function getPermissionDescription(permission: Permission): string {
 	const descriptions: Record<Permission, string> = {

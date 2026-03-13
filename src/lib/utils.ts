@@ -1,12 +1,22 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+/**
+ * Handles cn.
+ *
+ * @param {ClassValue[]} inputs - The inputs value.
+ * @returns {string} The return value.
+ */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 /**
  * Safely parse JSON with fallback value
+ *
+ * @param {string} json - The json value.
+ * @param {T} fallback - The fallback value.
+ * @returns {T} The return value.
  */
 export function safeJsonParse<T>(
   json: string,
@@ -21,6 +31,10 @@ export function safeJsonParse<T>(
 
 /**
  * Debounce function calls
+ *
+ * @param {T} func - The func value.
+ * @param {number} wait - The wait value.
+ * @returns {(...args: Parameters<T>) => void} The return value.
  */
 export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
@@ -37,6 +51,9 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
 
 /**
  * Format date to relative time (e.g., "2 hours ago")
+ *
+ * @param {string | Date} date - The date value.
+ * @returns {string} The return value.
  */
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date();
@@ -64,6 +81,10 @@ export function formatRelativeTime(date: string | Date): string {
 
 /**
  * Truncate text with ellipsis
+ *
+ * @param {string} text - The text value.
+ * @param {number} maxLength - The max length value.
+ * @returns {string} The return value.
  */
 export function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
@@ -74,6 +95,9 @@ export function truncate(text: string, maxLength: number): string {
 
 /**
  * Check if value is non-empty string
+ *
+ * @param {unknown} value - The value value.
+ * @returns {boolean} The return value.
  */
 export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -81,6 +105,9 @@ export function isNonEmptyString(value: unknown): value is string {
 
 /**
  * Get initials from name (for avatars)
+ *
+ * @param {string} name - The name value.
+ * @returns {string} The return value.
  */
 export function getInitials(name: string): string {
   if (!name || name.trim().length === 0) {
@@ -96,6 +123,9 @@ export function getInitials(name: string): string {
 /**
  * Format date and time for message timestamps
  * Shows date and time in a user-friendly format
+ *
+ * @param {string} dateString - The date string value.
+ * @returns {string} The return value.
  */
 export function formatMessageTimestamp(dateString: string): string {
   const date = new Date(dateString);

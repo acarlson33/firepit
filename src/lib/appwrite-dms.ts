@@ -19,6 +19,9 @@ type ProfileData = {
 
 /**
  * Batch-fetch user profiles through the Next.js API route (client-safe).
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, ProfileData>>} The return value.
  */
 async function fetchProfilesBatch(
     userIds: string[],
@@ -48,10 +51,21 @@ async function fetchProfilesBatch(
     return profileMap;
 }
 
+/**
+ * Returns databases.
+ * @returns {Databases} The return value.
+ */
 function getDatabases() {
     return getBrowserDatabases();
 }
 
+/**
+ * Handles schedule reaction migration.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {unknown} reactions - The reactions value.
+ * @returns {void} The return value.
+ */
 function scheduleReactionMigration(messageId: string, reactions: unknown) {
     if (!DIRECT_MESSAGES_COLLECTION) {
         return;
@@ -84,6 +98,9 @@ function scheduleReactionMigration(messageId: string, reactions: unknown) {
 
 /**
  * Fetch attachments for direct messages and enrich them
+ *
+ * @param {DirectMessage[]} messages - The messages value.
+ * @returns {Promise<DirectMessage[]>} The return value.
  */
 async function enrichDirectMessagesWithAttachments(
     messages: DirectMessage[],
@@ -152,6 +169,10 @@ async function enrichDirectMessagesWithAttachments(
 
 /**
  * Get or create a conversation between two users
+ *
+ * @param {string} userId1 - The user id1 value.
+ * @param {string} userId2 - The user id2 value.
+ * @returns {Promise<Conversation>} The return value.
  */
 export async function getOrCreateConversation(
     userId1: string,
@@ -226,6 +247,10 @@ export async function getOrCreateConversation(
 
 /**
  * Create a group DM conversation with 3+ participants
+ *
+ * @param {string[]} participantIds - The participant ids value.
+ * @param {{ name?: string | undefined; avatarUrl?: string | undefined; } | undefined} options - The options value, if provided.
+ * @returns {Promise<Conversation>} The return value.
  */
 export async function createGroupConversation(
     participantIds: string[],
@@ -280,6 +305,9 @@ export async function createGroupConversation(
 
 /**
  * List all conversations for a user
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<Conversation[]>} The return value.
  */
 export async function listConversations(
     userId: string,
@@ -348,6 +376,12 @@ export async function listConversations(
 
 /**
  * Send a direct message
+ *
+ * @param {string} conversationId - The conversation id value.
+ * @param {string} senderId - The sender id value.
+ * @param {string | undefined} receiverId - The receiver id value.
+ * @param {string} text - The text value.
+ * @returns {Promise<DirectMessage>} The return value.
  */
 export async function sendDirectMessage(
     conversationId: string,
@@ -453,6 +487,11 @@ export async function sendDirectMessage(
 
 /**
  * List direct messages in a conversation
+ *
+ * @param {string} conversationId - The conversation id value.
+ * @param {number} limit - The limit value, if provided.
+ * @param {string | undefined} cursor - The cursor value, if provided.
+ * @returns {Promise<{ items: DirectMessage[]; nextCursor?: string | undefined; }>} The return value.
  */
 export async function listDirectMessages(
     conversationId: string,
@@ -534,6 +573,10 @@ export async function listDirectMessages(
 
 /**
  * Edit a direct message
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} newText - The new text value.
+ * @returns {Promise<void>} The return value.
  */
 export async function editDirectMessage(
     messageId: string,
@@ -556,6 +599,10 @@ export async function editDirectMessage(
 
 /**
  * Delete a direct message (soft delete)
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function deleteDirectMessage(
     messageId: string,

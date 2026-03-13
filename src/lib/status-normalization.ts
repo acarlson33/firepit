@@ -20,6 +20,12 @@ export type StatusLike = {
     $updatedAt?: unknown;
 };
 
+/**
+ * Handles coerce timestamp.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {string | undefined} The return value.
+ */
 function coerceTimestamp(value: unknown): string | undefined {
     if (typeof value !== "string") {
         return undefined;
@@ -33,6 +39,13 @@ function coerceTimestamp(value: unknown): string | undefined {
     return value;
 }
 
+/**
+ * Normalizes status.
+ *
+ * @param {{ $id?: unknown; userId?: unknown; status?: unknown; customMessage?: unknown; lastSeenAt?: unknown; expiresAt?: unknown; isManuallySet?: unknown; $updatedAt?: unknown; }} input - The input value.
+ * @param {number} now - The now value, if provided.
+ * @returns {{ normalized: UserStatus; isExpired: boolean; isStale: boolean; shouldAutoOffline: boolean; }} The return value.
+ */
 export function normalizeStatus(input: StatusLike, now = Date.now()) {
     const lastSeenCandidate =
         coerceTimestamp(input.lastSeenAt) ?? coerceTimestamp(input.$updatedAt);

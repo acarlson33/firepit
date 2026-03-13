@@ -32,6 +32,7 @@ let newrelic: NewRelicAgent | null = null;
 
 /**
  * Initialize New Relic (should be called automatically by instrumentation.ts)
+ * @returns {Promise<NewRelicAgent | null>} The return value.
  */
 export async function initNewRelic() {
   if (typeof window !== 'undefined') {
@@ -56,6 +57,7 @@ export async function initNewRelic() {
 
 /**
  * Get the New Relic agent instance
+ * @returns {Promise<NewRelicAgent | null>} The return value.
  */
 export async function getNewRelic(): Promise<NewRelicAgent | null> {
   if (!newrelic) {
@@ -66,6 +68,7 @@ export async function getNewRelic(): Promise<NewRelicAgent | null> {
 
 /**
  * Get the New Relic agent instance synchronously (may return null if not initialized)
+ * @returns {NewRelicAgent | null} The return value.
  */
 export function getNewRelicSync(): NewRelicAgent | null {
   return newrelic;
@@ -96,6 +99,11 @@ type _LogEntry = {
 /**
  * Log a message with New Relic
  * In production, this forwards to New Relic. In development, it also logs to console.
+ *
+ * @param {'debug' | 'info' | 'warn' | 'error'} level - The level value.
+ * @param {string} message - The message value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function log(level: LogLevelType, message: string, attributes?: Record<string, unknown>) {
   // Console logging (development and as fallback)
@@ -136,6 +144,10 @@ export const logger = {
 
 /**
  * Record an error with New Relic
+ *
+ * @param {string | Error} error - The error value.
+ * @param {Record<string, unknown> | undefined} customAttributes - The custom attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function recordError(error: Error | string, customAttributes?: Record<string, unknown>) {
   // Console error as fallback
@@ -150,6 +162,10 @@ export function recordError(error: Error | string, customAttributes?: Record<str
 
 /**
  * Record a custom event in New Relic
+ *
+ * @param {string} eventType - The event type value.
+ * @param {{ [x: string]: unknown; }} attributes - The attributes value.
+ * @returns {void} The return value.
  */
 export function recordEvent(eventType: string, attributes: Record<string, unknown>) {
   const nr = getNewRelicSync();
@@ -160,6 +176,10 @@ export function recordEvent(eventType: string, attributes: Record<string, unknow
 
 /**
  * Record a custom metric in New Relic
+ *
+ * @param {string} name - The name value.
+ * @param {number} value - The value value.
+ * @returns {void} The return value.
  */
 export function recordMetric(name: string, value: number) {
   const nr = getNewRelicSync();
@@ -170,6 +190,10 @@ export function recordMetric(name: string, value: number) {
 
 /**
  * Increment a counter metric in New Relic
+ *
+ * @param {string} name - The name value.
+ * @param {number} value - The value value, if provided.
+ * @returns {void} The return value.
  */
 export function incrementMetric(name: string, value = 1) {
   const nr = getNewRelicSync();
@@ -180,6 +204,9 @@ export function incrementMetric(name: string, value = 1) {
 
 /**
  * Add custom attributes to the current transaction
+ *
+ * @param {{ [x: string]: string | number | boolean; }} attributes - The attributes value.
+ * @returns {void} The return value.
  */
 export function addTransactionAttributes(attributes: Record<string, string | number | boolean>) {
   const nr = getNewRelicSync();
@@ -190,6 +217,9 @@ export function addTransactionAttributes(attributes: Record<string, string | num
 
 /**
  * Set the transaction name for better organization in New Relic
+ *
+ * @param {string} name - The name value.
+ * @returns {void} The return value.
  */
 export function setTransactionName(name: string) {
   const nr = getNewRelicSync();
@@ -200,6 +230,13 @@ export function setTransactionName(name: string) {
 
 /**
  * Track API endpoint performance
+ *
+ * @param {string} endpoint - The endpoint value.
+ * @param {string} method - The method value.
+ * @param {number} statusCode - The status code value.
+ * @param {number} duration - The duration value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackApiCall(
   endpoint: string,
@@ -222,6 +259,13 @@ export function trackApiCall(
 
 /**
  * Track database query performance
+ *
+ * @param {string} operation - The operation value.
+ * @param {string} collection - The collection value.
+ * @param {number} duration - The duration value.
+ * @param {number | undefined} recordCount - The record count value, if provided.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackDatabaseQuery(
   operation: string,
@@ -243,6 +287,11 @@ export function trackDatabaseQuery(
 
 /**
  * Track authentication events
+ *
+ * @param {'login' | 'logout' | 'signup' | 'failed'} action - The action value.
+ * @param {string | undefined} userId - The user id value, if provided.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackAuth(
   action: 'login' | 'logout' | 'signup' | 'failed',
@@ -260,6 +309,11 @@ export function trackAuth(
 
 /**
  * Track user actions
+ *
+ * @param {string} action - The action value.
+ * @param {string} userId - The user id value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackUserAction(
   action: string,
@@ -277,6 +331,11 @@ export function trackUserAction(
 
 /**
  * Track message events
+ *
+ * @param {'sent' | 'edited' | 'deleted'} type - The type value.
+ * @param {'channel' | 'dm'} channelType - The channel type value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackMessage(
   type: 'sent' | 'edited' | 'deleted',
@@ -294,6 +353,11 @@ export function trackMessage(
 
 /**
  * Track performance timing
+ *
+ * @param {string} name - The name value.
+ * @param {number} duration - The duration value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {void} The return value.
  */
 export function trackTiming(name: string, duration: number, attributes?: Record<string, unknown>) {
   recordEvent('Timing', {
@@ -307,6 +371,11 @@ export function trackTiming(name: string, duration: number, attributes?: Record<
 
 /**
  * Measure and track execution time of an async function
+ *
+ * @param {string} name - The name value.
+ * @param {() => Promise<T>} fn - The fn value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {Promise<T>} The return value.
  */
 export async function measureAsync<T>(
   name: string,
@@ -329,6 +398,11 @@ export async function measureAsync<T>(
 
 /**
  * Measure and track execution time of a sync function
+ *
+ * @param {string} name - The name value.
+ * @param {() => T} fn - The fn value.
+ * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
+ * @returns {T} The return value.
  */
 export function measureSync<T>(
   name: string,
@@ -351,6 +425,11 @@ export function measureSync<T>(
 
 /**
  * Create a background transaction for async work
+ *
+ * @param {string} name - The name value.
+ * @param {string} group - The group value.
+ * @param {() => Promise<T>} fn - The fn value.
+ * @returns {Promise<T>} The return value.
  */
 export async function backgroundTransaction<T>(
   name: string,
@@ -381,6 +460,7 @@ export async function backgroundTransaction<T>(
 /**
  * Get browser timing header for Real User Monitoring (RUM)
  * Insert this in your HTML <head> for browser monitoring
+ * @returns {string} The return value.
  */
 export function getBrowserTimingHeader(): string {
   const nr = getNewRelicSync();

@@ -31,6 +31,9 @@ export type UserProfile = {
 
 /**
  * Get a user's profile by userId
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<UserProfile | null>} The return value.
  */
 export async function getUserProfile(
     userId: string,
@@ -57,6 +60,9 @@ export async function getUserProfile(
 
 /**
  * Resolve a profile by either exact userId or exact userName.
+ *
+ * @param {string} identifier - The identifier value.
+ * @returns {Promise<string | undefined>} The return value.
  */
 export async function resolveProfileUserId(identifier: string) {
     const trimmedIdentifier = identifier.trim();
@@ -91,6 +97,12 @@ export async function resolveProfileUserId(identifier: string) {
     }
 }
 
+/**
+ * Handles resolve profile identifiers.
+ *
+ * @param {string[]} identifiers - The identifiers value.
+ * @returns {Promise<Map<string, string>>} The return value.
+ */
 export async function resolveProfileIdentifiers(identifiers: string[]) {
     const trimmedIdentifiers = Array.from(
         new Set(
@@ -156,6 +168,10 @@ export async function resolveProfileIdentifiers(identifiers: string[]) {
 
 /**
  * Create a new user profile
+ *
+ * @param {string} userId - The user id value.
+ * @param {{ userName?: string | undefined; displayName?: string | undefined; bio?: string | undefined; pronouns?: string | undefined; avatarFileId?: string | undefined; location?: string | undefined; website?: string | undefined; showDocsInNavigation?: boolean | undefined; showFriendsInNavigation?: boolean | undefined; showSettingsInNavigation?: boolean | undefined; showAddFriendInHeader?: boolean | undefined; navigationItemOrder?: string | NavigationItemPreferenceId[] | undefined; }} data - The data value.
+ * @returns {Promise<UserProfile>} The return value.
  */
 export async function createUserProfile(
     userId: string,
@@ -181,6 +197,10 @@ export async function createUserProfile(
 
 /**
  * Update a user's profile
+ *
+ * @param {string} profileId - The profile id value.
+ * @param {{ userName?: string | undefined; displayName?: string | undefined; bio?: string | undefined; pronouns?: string | undefined; avatarFileId?: string | undefined; location?: string | undefined; website?: string | undefined; showDocsInNavigation?: boolean | undefined; showFriendsInNavigation?: boolean | undefined; showSettingsInNavigation?: boolean | undefined; showAddFriendInHeader?: boolean | undefined; navigationItemOrder?: string | NavigationItemPreferenceId[] | undefined; }} data - The data value.
+ * @returns {Promise<UserProfile>} The return value.
  */
 export async function updateUserProfile(
     profileId: string,
@@ -204,6 +224,10 @@ export async function updateUserProfile(
 /**
  * Get or create a user profile
  * Ensures every user has a profile
+ *
+ * @param {string} userId - The user id value.
+ * @param {string | undefined} defaultDisplayName - The default display name value, if provided.
+ * @returns {Promise<UserProfile>} The return value.
  */
 export async function getOrCreateUserProfile(
     userId: string,
@@ -222,6 +246,9 @@ export async function getOrCreateUserProfile(
 
 /**
  * Delete a user's avatar file
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function deleteAvatarFile(fileId: string): Promise<void> {
     try {
@@ -236,6 +263,9 @@ export async function deleteAvatarFile(fileId: string): Promise<void> {
 
 /**
  * Get avatar URL for a profile
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {string} The return value.
  */
 export function getAvatarUrl(fileId: string): string {
     const env = getEnvConfig();
@@ -244,6 +274,10 @@ export function getAvatarUrl(fileId: string): string {
 
 /**
  * Search profiles by display name
+ *
+ * @param {string} searchTerm - The search term value.
+ * @param {number} limit - The limit value, if provided.
+ * @returns {Promise<UserProfile[]>} The return value.
  */
 export async function searchProfiles(
     searchTerm: string,
@@ -267,6 +301,9 @@ export async function searchProfiles(
 
 /**
  * Get multiple profiles by user IDs
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, UserProfile>>} The return value.
  */
 export async function getProfilesByUserIds(
     userIds: string[],

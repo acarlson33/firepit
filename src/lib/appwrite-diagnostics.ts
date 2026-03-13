@@ -28,6 +28,10 @@ export type AuthDiagnosticReport = {
     }>;
 };
 
+/**
+ * Handles make browser client.
+ * @returns {Client | null} The return value.
+ */
 function makeBrowserClient(): Client | null {
     try {
         const env = getEnvConfig();
@@ -53,6 +57,10 @@ function makeBrowserClient(): Client | null {
     }
 }
 
+/**
+ * Handles run auth diagnostics.
+ * @returns {Promise<AuthDiagnosticReport>} The return value.
+ */
 export async function runAuthDiagnostics(): Promise<AuthDiagnosticReport> {
     const client = makeBrowserClient();
     if (!client) {

@@ -57,6 +57,12 @@ type UnreadThreadParentInput = {
 
 type ThreadContextField = "channelId" | "conversationId";
 
+/**
+ * Determines whether is blocked relationship.
+ *
+ * @param {{ blockedByMe?: boolean | undefined; blockedMe?: boolean | undefined; }} value - The value value.
+ * @returns {boolean} The return value.
+ */
 function isBlockedRelationship(value: {
     blockedByMe?: boolean;
     blockedMe?: boolean;
@@ -64,6 +70,12 @@ function isBlockedRelationship(value: {
     return Boolean(value.blockedByMe || value.blockedMe);
 }
 
+/**
+ * Handles to count map.
+ *
+ * @param {InboxItem[]} items - The items value.
+ * @returns {{ [x: string]: number; }} The return value.
+ */
 function toCountMap(items: InboxItem[]): Record<InboxItemKind, number> {
     return items.reduce<Record<InboxItemKind, number>>(
         (accumulator, item) => {
@@ -74,6 +86,12 @@ function toCountMap(items: InboxItem[]): Record<InboxItemKind, number> {
     );
 }
 
+/**
+ * Handles sort inbox items.
+ *
+ * @param {InboxItem[]} items - The items value.
+ * @returns {InboxItem[]} The return value.
+ */
 function sortInboxItems(items: InboxItem[]) {
     return [...items].sort((left, right) => {
         const activityOrder = right.latestActivityAt.localeCompare(
@@ -118,6 +136,12 @@ async function runInBatches<T>(params: {
     return runSequentially;
 }
 
+/**
+ * Handles count unread replies by parent.
+ *
+ * @param {{ collectionId: string; contextField: ThreadContextField; parents: UnreadThreadParentInput[]; }} params - The params value.
+ * @returns {Promise<Map<string, number>>} The return value.
+ */
 async function countUnreadRepliesByParent(params: {
     collectionId: string;
     contextField: ThreadContextField;
@@ -176,6 +200,12 @@ async function countUnreadRepliesByParent(params: {
     return countsByParentId;
 }
 
+/**
+ * Lists conversation documents.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<Record<string, unknown>[]>} The return value.
+ */
 async function listConversationDocuments(userId: string) {
     const env = getEnvConfig();
     const { databases } = getServerClient();
@@ -193,6 +223,12 @@ async function listConversationDocuments(userId: string) {
     return response.documents as unknown as Array<Record<string, unknown>>;
 }
 
+/**
+ * Handles load author profiles.
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<any>} The return value.
+ */
 async function loadAuthorProfiles(userIds: string[]) {
     if (userIds.length === 0) {
         return new Map<string, AuthorProfile>();
@@ -273,6 +309,13 @@ async function filterReadableChannelContexts<T>(
     });
 }
 
+/**
+ * Handles apply mute state.
+ *
+ * @param {string} userId - The user id value.
+ * @param {InboxItem[]} items - The items value.
+ * @returns {Promise<InboxItem[]>} The return value.
+ */
 async function applyMuteState(userId: string, items: InboxItem[]) {
     if (items.length === 0) {
         return items;
@@ -307,6 +350,13 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
     });
 }
 
+/**
+ * Lists unread conversation thread items.
+ *
+ * @param {string} userId - The user id value.
+ * @param {boolean} usePerMessageUnread - The use per message unread value.
+ * @returns {Promise<InboxItem[]>} The return value.
+ */
 async function listUnreadConversationThreadItems(
     userId: string,
     usePerMessageUnread: boolean,
@@ -427,6 +477,13 @@ async function listUnreadConversationThreadItems(
     });
 }
 
+/**
+ * Lists unread channel thread items.
+ *
+ * @param {string} userId - The user id value.
+ * @param {boolean} usePerMessageUnread - The use per message unread value.
+ * @returns {Promise<InboxItem[]>} The return value.
+ */
 async function listUnreadChannelThreadItems(
     userId: string,
     usePerMessageUnread: boolean,
@@ -562,6 +619,12 @@ async function listUnreadChannelThreadItems(
     });
 }
 
+/**
+ * Lists persisted mention items.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<InboxItem[]>} The return value.
+ */
 async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const { databases } = getServerClient();
@@ -624,6 +687,12 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
     });
 }
 
+/**
+ * Lists inbox items.
+ *
+ * @param {{ contextKinds?: InboxContextKind[] | undefined; kinds: InboxItemKind[]; limit: number; userId: string; }} params - The params value.
+ * @returns {Promise<{ contractVersion: InboxDigestResponse; counts: Record<InboxItemKind, number>; items: InboxItem[]; unreadCount: number; }>} The return value.
+ */
 export async function listInboxItems({
     contextKinds,
     kinds,
@@ -680,6 +749,12 @@ export async function listInboxItems({
     };
 }
 
+/**
+ * Lists inbox digest.
+ *
+ * @param {{ contextId?: string | undefined; contextKind?: any; limit: number; userId: string; }} params - The params value.
+ * @returns {Promise<InboxDigestResponse>} The return value.
+ */
 export async function listInboxDigest(params: {
     contextId?: string;
     contextKind?: InboxContextKind;

@@ -15,6 +15,12 @@ type ThreadReadDocument = {
     userId: string;
 };
 
+/**
+ * Handles merge thread reads by max.
+ *
+ * @param {{ existingReads: Record<string, string>; incomingReads: Record<string, string>; }} params - The params value.
+ * @returns {{ [x: string]: string; }} The return value.
+ */
 export function mergeThreadReadsByMax(params: {
     existingReads: Record<string, string>;
     incomingReads: Record<string, string>;
@@ -33,6 +39,12 @@ export function mergeThreadReadsByMax(params: {
     return mergedReads;
 }
 
+/**
+ * Handles map thread read document.
+ *
+ * @param {{ [x: string]: unknown; }} document - The document value.
+ * @returns {{ $id: string; contextId: string; contextType: ThreadReadContextType; reads: Record<string, string>; userId: string; }} The return value.
+ */
 function mapThreadReadDocument(
     document: Record<string, unknown>,
 ): ThreadReadDocument {
@@ -45,6 +57,12 @@ function mapThreadReadDocument(
     };
 }
 
+/**
+ * Returns thread reads.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; userId: string; }} params - The params value.
+ * @returns {Promise<ThreadReadDocument | null>} The return value.
+ */
 export async function getThreadReads(params: {
     contextId: string;
     contextType: ThreadReadContextType;
@@ -69,6 +87,12 @@ export async function getThreadReads(params: {
         : null;
 }
 
+/**
+ * Lists thread reads by context.
+ *
+ * @param {{ contextIds: string[]; contextType: ThreadReadContextType; userId: string; }} params - The params value.
+ * @returns {Promise<any>} The return value.
+ */
 export async function listThreadReadsByContext(params: {
     contextIds: string[];
     contextType: ThreadReadContextType;
@@ -103,6 +127,12 @@ export async function listThreadReadsByContext(params: {
     );
 }
 
+/**
+ * Handles upsert thread reads.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; reads: Record<string, string>; userId: string; }} params - The params value.
+ * @returns {Promise<ThreadReadDocument>} The return value.
+ */
 export async function upsertThreadReads(params: {
     contextId: string;
     contextType: ThreadReadContextType;

@@ -13,6 +13,12 @@ export type ParsedReactionsResult = {
     didNormalize: boolean;
 };
 
+/**
+ * Normalizes reaction.
+ *
+ * @param {unknown} reaction - The reaction value.
+ * @returns {Reaction | null} The return value.
+ */
 function normalizeReaction(reaction: unknown): Reaction | null {
     if (!reaction || typeof reaction !== "object") {
         return null;
@@ -45,6 +51,12 @@ function normalizeReaction(reaction: unknown): Reaction | null {
     };
 }
 
+/**
+ * Normalizes legacy reaction map.
+ *
+ * @param {{ [x: string]: unknown; }} reactionsData - The reactions data value.
+ * @returns {Reaction[]} The return value.
+ */
 function normalizeLegacyReactionMap(
     reactionsData: Record<string, unknown>,
 ): Reaction[] {
@@ -78,6 +90,12 @@ function normalizeLegacyReactionMap(
     return reactions;
 }
 
+/**
+ * Parses reactions with metadata.
+ *
+ * @param {unknown} reactionsData - The reactions data value.
+ * @returns {{ reactions: Reaction[]; didNormalize: boolean; }} The return value.
+ */
 export function parseReactionsWithMetadata(
     reactionsData: unknown,
 ): ParsedReactionsResult {
@@ -122,8 +140,9 @@ export function parseReactionsWithMetadata(
 
 /**
  * Parse reactions data from Appwrite (can be JSON string or array)
- * @param reactionsData - The reactions data from the database (string, array, or undefined)
- * @returns Parsed array of reactions
+ *
+ * @param {string | Reaction[] | undefined} reactionsData - The reactions data value.
+ * @returns {Reaction[]} The return value.
  */
 export function parseReactions(
     reactionsData: string | Reaction[] | undefined,

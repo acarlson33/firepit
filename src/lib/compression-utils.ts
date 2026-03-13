@@ -1,6 +1,10 @@
 /**
  * Compression utilities for API responses
  * Reduces bandwidth usage and improves load times for large payloads
+ *
+ * @param {string} contentType - The content type value.
+ * @param {number} bodySize - The body size value.
+ * @returns {boolean} The return value.
  */
 
 export function shouldCompress(contentType: string, bodySize: number): boolean {
@@ -26,6 +30,10 @@ export function shouldCompress(contentType: string, bodySize: number): boolean {
   return compressibleTypes.some((type) => contentType.includes(type));
 }
 
+/**
+ * Returns compression headers.
+ * @returns {{ [x: string]: string; }} The return value.
+ */
 export function getCompressionHeaders(): Record<string, string> {
   return {
     "Content-Encoding": "gzip",

@@ -224,6 +224,12 @@ const docsPageMap = new Map<string, DocsPageMeta>(
     docsPages.map((page) => [page.slug, page]),
 );
 
+/**
+ * Handles slugify heading.
+ *
+ * @param {string} value - The value value.
+ * @returns {string} The return value.
+ */
 function slugifyHeading(value: string) {
     return value
         .trim()
@@ -233,6 +239,12 @@ function slugifyHeading(value: string) {
         .replace(/-+/g, "-");
 }
 
+/**
+ * Handles extract table of contents.
+ *
+ * @param {string} content - The content value.
+ * @returns {DocsTocEntry[]} The return value.
+ */
 function extractTableOfContents(content: string): DocsTocEntry[] {
     const entries: DocsTocEntry[] = [];
 
@@ -251,19 +263,43 @@ function extractTableOfContents(content: string): DocsTocEntry[] {
     return entries;
 }
 
+/**
+ * Handles strip leading title.
+ *
+ * @param {string} content - The content value.
+ * @returns {string} The return value.
+ */
 function stripLeadingTitle(content: string) {
     return content.replace(/^#\s+.+\n+/, "");
 }
 
+/**
+ * Returns ref name.
+ *
+ * @param {string} ref - The ref value.
+ * @returns {string} The return value.
+ */
 function getRefName(ref: string) {
     const parts = ref.split("/");
     return parts.at(-1) || ref;
 }
 
+/**
+ * Handles unique strings.
+ *
+ * @param {string[]} values - The values value.
+ * @returns {string[]} The return value.
+ */
 function uniqueStrings(values: string[]) {
     return Array.from(new Set(values));
 }
 
+/**
+ * Handles format default value.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {string} The return value.
+ */
 function formatDefaultValue(value: unknown) {
     if (value === undefined) {
         return "";
@@ -280,6 +316,12 @@ function formatDefaultValue(value: unknown) {
     return JSON.stringify(value);
 }
 
+/**
+ * Handles describe schema.
+ *
+ * @param {OpenApiSchema | undefined} schema - The schema value, if provided.
+ * @returns {string} The return value.
+ */
 function describeSchema(schema?: OpenApiSchema): string {
     if (!schema) {
         return "none";
@@ -327,6 +369,13 @@ function describeSchema(schema?: OpenApiSchema): string {
     return schema.type || "unknown";
 }
 
+/**
+ * Handles merge all of schemas.
+ *
+ * @param {OpenApiSchema[]} schemas - The schemas value.
+ * @param {OpenApiSchema | undefined} baseSchema - The base schema value, if provided.
+ * @returns {{ $ref?: string | undefined; type?: string | undefined; description?: string | undefined; format?: string | undefined; enum?: string[] | undefined; required?: string[] | undefined; default?: unknown; items?: OpenApiSchema | undefined; oneOf?: OpenApiSchema[] | undefined; anyOf?: OpenApiSchema[] | undefined; allOf?: OpenApiSchema[] | undefined; properties?: Record<string, OpenApiSchema> | undefined; additionalProperties?: boolean | OpenApiSchema | undefined; }} The return value.
+ */
 function mergeAllOfSchemas(
     schemas: OpenApiSchema[],
     baseSchema?: OpenApiSchema,
@@ -392,6 +441,14 @@ function mergeAllOfSchemas(
     return merged;
 }
 
+/**
+ * Handles resolve schema.
+ *
+ * @param {OpenApiSchema | undefined} schema - The schema value.
+ * @param {{ [x: string]: OpenApiSchema; }} schemas - The schemas value.
+ * @param {Set<string>} seenRefs - The seen refs value, if provided.
+ * @returns {OpenApiSchema | undefined} The return value.
+ */
 function resolveSchema(
     schema: OpenApiSchema | undefined,
     schemas: Record<string, OpenApiSchema>,
@@ -477,6 +534,12 @@ function resolveSchema(
     return resolvedSchema;
 }
 
+/**
+ * Returns schema variants.
+ *
+ * @param {OpenApiSchema | undefined} schema - The schema value.
+ * @returns {string[]} The return value.
+ */
 function getSchemaVariants(schema: OpenApiSchema | undefined): string[] {
     if (!schema) {
         return [];
@@ -493,6 +556,13 @@ function getSchemaVariants(schema: OpenApiSchema | undefined): string[] {
     return [];
 }
 
+/**
+ * Returns schema fields.
+ *
+ * @param {OpenApiSchema | undefined} schema - The schema value.
+ * @param {{ [x: string]: OpenApiSchema; }} schemas - The schemas value.
+ * @returns {ApiSchemaField[]} The return value.
+ */
 function getSchemaFields(
     schema: OpenApiSchema | undefined,
     schemas: Record<string, OpenApiSchema>,
@@ -555,6 +625,13 @@ function getSchemaFields(
     return [];
 }
 
+/**
+ * Returns schema summary.
+ *
+ * @param {OpenApiSchema | undefined} schema - The schema value.
+ * @param {{ [x: string]: OpenApiSchema; }} schemas - The schemas value.
+ * @returns {ApiSchemaSummary | null} The return value.
+ */
 function getSchemaSummary(
     schema: OpenApiSchema | undefined,
     schemas: Record<string, OpenApiSchema>,
@@ -579,6 +656,13 @@ function getSchemaSummary(
     };
 }
 
+/**
+ * Handles summarize content.
+ *
+ * @param {Record<string, OpenApiMediaType> | undefined} content - The content value.
+ * @param {{ [x: string]: OpenApiSchema; }} schemas - The schemas value.
+ * @returns {{ contentTypes: string[]; schema: string; schemaDetails: ApiSchemaSummary | null; }} The return value.
+ */
 function summarizeContent(
     content: Record<string, OpenApiMediaType> | undefined,
     schemas: Record<string, OpenApiSchema>,
@@ -615,6 +699,13 @@ function summarizeContent(
     };
 }
 
+/**
+ * Returns auth type.
+ *
+ * @param {OpenApiSecurityRequirement[] | undefined} operationSecurity - The operation security value.
+ * @param {boolean} hasGlobalSecurity - The has global security value.
+ * @returns {'public' | 'session' | 'mixed'} The return value.
+ */
 function getAuthType(
     operationSecurity: OpenApiSecurityRequirement[] | undefined,
     hasGlobalSecurity: boolean,
@@ -634,14 +725,33 @@ function getAuthType(
     return "session";
 }
 
+/**
+ * Returns tag anchor id.
+ *
+ * @param {string} name - The name value.
+ * @returns {string} The return value.
+ */
 function getTagAnchorId(name: string) {
     return `tag-${slugifyHeading(name)}`;
 }
 
+/**
+ * Returns operation anchor id.
+ *
+ * @param {string} method - The method value.
+ * @param {string} path - The path value.
+ * @returns {string} The return value.
+ */
 function getOperationAnchorId(method: string, path: string) {
     return `operation-${slugifyHeading(`${method}-${path}`)}`;
 }
 
+/**
+ * Returns doc page.
+ *
+ * @param {string} slug - The slug value.
+ * @returns {Promise<DocsPage | null>} The return value.
+ */
 export async function getDocPage(slug: string): Promise<DocsPage | null> {
     const page = docsPageMap.get(slug);
     if (!page) {
@@ -658,6 +768,10 @@ export async function getDocPage(slug: string): Promise<DocsPage | null> {
     };
 }
 
+/**
+ * Returns api reference data.
+ * @returns {Promise<ApiReferenceData>} The return value.
+ */
 export async function getApiReferenceData(): Promise<ApiReferenceData> {
     const raw = await readFile(OPENAPI_FILE, "utf8");
     const parsed = parse(raw) as OpenApiSpec;

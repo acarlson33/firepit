@@ -5,6 +5,10 @@ import { getServerClient } from "./appwrite-server";
 import { getAdminClient } from "./appwrite-admin";
 import { getFeatureFlag, FEATURE_FLAGS } from "./feature-flags";
 
+/**
+ * Returns databases.
+ * @returns {Databases} The return value.
+ */
 function getDatabases() {
     return getBrowserDatabases();
 }
@@ -27,6 +31,13 @@ export type AuditEvent = {
     details?: string;
 };
 
+/**
+ * Returns meta string.
+ *
+ * @param {Record<string, unknown> | undefined} meta - The meta value.
+ * @param {string} key - The key value.
+ * @returns {string | undefined} The return value.
+ */
 function getMetaString(
     meta: Record<string, unknown> | undefined,
     key: string,
@@ -35,6 +46,12 @@ function getMetaString(
     return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Handles serialize audit meta.
+ *
+ * @param {Record<string, unknown> | undefined} meta - The meta value.
+ * @returns {string | undefined} The return value.
+ */
 function serializeAuditMeta(meta: Record<string, unknown> | undefined) {
     if (!meta) {
         return undefined;
@@ -47,6 +64,12 @@ function serializeAuditMeta(meta: Record<string, unknown> | undefined) {
     }
 }
 
+/**
+ * Parses audit meta.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {Record<string, unknown> | undefined} The return value.
+ */
 function parseAuditMeta(value: unknown): Record<string, unknown> | undefined {
     if (typeof value === "string") {
         try {
@@ -71,6 +94,15 @@ function parseAuditMeta(value: unknown): Record<string, unknown> | undefined {
     return undefined;
 }
 
+/**
+ * Handles record audit.
+ *
+ * @param {string} action - The action value.
+ * @param {string} targetId - The target id value.
+ * @param {string} actorId - The actor id value.
+ * @param {Record<string, unknown> | undefined} meta - The meta value, if provided.
+ * @returns {Promise<void>} The return value.
+ */
 export async function recordAudit(
     action: string,
     targetId: string,
@@ -146,6 +178,12 @@ export type ListAuditOpts = {
     targetId?: string;
 };
 
+/**
+ * Lists audit events.
+ *
+ * @param {{ limit?: number | undefined; cursorAfter?: string | undefined; action?: string | undefined; actorId?: string | undefined; targetId?: string | undefined; }} opts - The opts value, if provided.
+ * @returns {Promise<{ items: { $id: string; action: string; targetId: string; actorId: string; $createdAt: string; meta: Record<string, unknown> | undefined; }[]; nextCursor: string | null; }>} The return value.
+ */
 export async function listAuditEvents(opts: ListAuditOpts = {}) {
     if (!AUDIT_COLLECTION_ID) {
         return { items: [], nextCursor: null as string | null };
@@ -191,6 +229,9 @@ export async function listAuditEvents(opts: ListAuditOpts = {}) {
 /**
  * Admin version of listAuditEvents that uses server SDK with admin privileges
  * Use this for admin-only pages to bypass permission checks
+ *
+ * @param {{ limit?: number | undefined; cursorAfter?: string | undefined; action?: string | undefined; actorId?: string | undefined; targetId?: string | undefined; }} opts - The opts value, if provided.
+ * @returns {Promise<{ items: { $id: string; action: string; targetId: string; actorId: string; $createdAt: string; meta: Record<string, unknown> | undefined; }[]; nextCursor: string | null; }>} The return value.
  */
 export async function adminListAuditEvents(opts: ListAuditOpts = {}) {
     if (!AUDIT_COLLECTION_ID) {

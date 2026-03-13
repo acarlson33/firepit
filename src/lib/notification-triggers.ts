@@ -48,6 +48,9 @@ interface NotificationResult {
 
 /**
  * Determines the type of notification event based on context
+ *
+ * @param {NotificationContext} context - The context value.
+ * @returns {'dm' | 'mention' | 'message' | 'thread_reply'} The return value.
  */
 function determineEventType(context: NotificationContext): NotificationEventType {
 	// Direct messages
@@ -71,6 +74,10 @@ function determineEventType(context: NotificationContext): NotificationEventType
 
 /**
  * Check if the notification level allows this event type
+ *
+ * @param {NotificationLevel} level - The level value.
+ * @param {'dm' | 'mention' | 'message' | 'thread_reply'} eventType - The event type value.
+ * @returns {boolean} The return value.
  */
 function isEventAllowedByLevel(
 	level: NotificationLevel,
@@ -92,8 +99,8 @@ function isEventAllowedByLevel(
 /**
  * Determines if and how to notify a user about an event
  *
- * @param context - The context of the notification event
- * @returns NotificationResult indicating whether and how to notify
+ * @param {NotificationContext} context - The context value.
+ * @returns {Promise<NotificationResult>} The return value.
  */
 export async function shouldNotifyUser(
 	context: NotificationContext
@@ -171,6 +178,10 @@ export async function shouldNotifyUser(
 
 /**
  * Build a notification payload for display
+ *
+ * @param {'dm' | 'mention' | 'message' | 'thread_reply'} eventType - The event type value.
+ * @param {{ senderName: string; senderAvatarUrl?: string | undefined; messageContent: string; channelName?: string | undefined; serverName?: string | undefined; messageId?: string | undefined; channelId?: string | undefined; serverId?: string | undefined; conversationId?: string | undefined; }} data - The data value.
+ * @returns {NotificationPayload} The return value.
  */
 export function buildNotificationPayload(
 	eventType: NotificationEventType,
@@ -251,6 +262,9 @@ export function buildNotificationPayload(
 
 /**
  * Check if a message content contains a mention of a specific user
+ *
+ * @param {string} messageContent - The message content value.
+ * @returns {string[]} The return value.
  */
 export function extractMentionedUserIds(messageContent: string): string[] {
 	// Match patterns like @<userId> or <@userId>
@@ -267,6 +281,10 @@ export function extractMentionedUserIds(messageContent: string): string[] {
 
 /**
  * Check if a message is a reply to a specific user based on replyToMessageId
+ *
+ * @param {string | undefined} replyToAuthorId - The reply to author id value.
+ * @param {string} userId - The user id value.
+ * @returns {boolean} The return value.
  */
 export function isReplyToUser(
 	replyToAuthorId: string | undefined,

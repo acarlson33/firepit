@@ -4,6 +4,10 @@ import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import type { FileAttachment } from "./types";
 
+/**
+ * Returns collection ids.
+ * @returns {{ servers: string; channels: string; messages: string; messageAttachments: string; }} The return value.
+ */
 function getCollectionIds() {
     const { collections } = getEnvConfig();
     return {
@@ -14,6 +18,12 @@ function getCollectionIds() {
     };
 }
 
+/**
+ * Determines whether is document not found error.
+ *
+ * @param {unknown} error - The error value.
+ * @returns {boolean} The return value.
+ */
 function isDocumentNotFoundError(error: unknown) {
     if (!(error instanceof Error)) {
         return false;
@@ -34,6 +44,13 @@ function isDocumentNotFoundError(error: unknown) {
 
 type PageResult<T> = { items: T[]; nextCursor?: string | null };
 
+/**
+ * Lists all servers page.
+ *
+ * @param {number} limit - The limit value.
+ * @param {string | undefined} cursor - The cursor value, if provided.
+ * @returns {Promise<PageResult<{ $id: string; name?: string | undefined; }>>} The return value.
+ */
 export async function listAllServersPage(
     limit: number,
     cursor?: string,
@@ -72,6 +89,14 @@ export async function listAllServersPage(
     }
 }
 
+/**
+ * Lists all channels page.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {number} limit - The limit value.
+ * @param {string | undefined} cursor - The cursor value, if provided.
+ * @returns {Promise<PageResult<{ $id: string; name?: string | undefined; }>>} The return value.
+ */
 export async function listAllChannelsPage(
     serverId: string,
     limit: number,
@@ -125,6 +150,12 @@ export type GlobalMessageFilters = {
     text?: string;
 };
 
+/**
+ * Lists global messages.
+ *
+ * @param {{ limit: number; cursorAfter?: string | undefined; includeRemoved?: boolean | undefined; onlyRemoved?: boolean | undefined; userId?: string | undefined; channelId?: string | undefined; channelIds?: string[] | undefined; serverId?: string | undefined; onlyMissingServerId?: boolean | undefined; text?: string | undefined; }} filters - The filters value.
+ * @returns {Promise<PageResult<{ $id: string; attachments?: FileAttachment[] | undefined; imageUrl?: string | undefined; removedAt?: string | undefined; text?: string | undefined; userId?: string | undefined; userName?: string | undefined; channelId?: string | undefined; serverId?: string | undefined; removedBy?: string | undefined; }>>} The return value.
+ */
 export async function listGlobalMessages(
     filters: GlobalMessageFilters,
 ): Promise<
@@ -179,11 +210,23 @@ type MappedMessage = {
     removedBy?: string;
 };
 
+/**
+ * Handles coerce message.
+ *
+ * @param {unknown} raw - The raw value.
+ * @returns {MappedMessage | null} The return value.
+ */
 function coerceMessage(raw: unknown): MappedMessage | null {
     if (typeof raw !== "object" || !raw || !("$id" in raw)) {
         return null;
     }
     const obj = raw as Record<string, unknown> & { $id: string };
+    /**
+     * Returns string field from message object.
+     *
+     * @param {string} k - The k value.
+     * @returns {string | undefined} The return value.
+     */
     const pick = (k: string) =>
         typeof (obj as Record<string, unknown>)[k] === "string"
             ? (obj as Record<string, string>)[k]
@@ -201,6 +244,12 @@ function coerceMessage(raw: unknown): MappedMessage | null {
     };
 }
 
+/**
+ * Handles map message documents.
+ *
+ * @param {unknown[]} rawList - The raw list value.
+ * @returns {MappedMessage[]} The return value.
+ */
 function mapMessageDocuments(rawList: unknown[]) {
     const out: MappedMessage[] = [];
     for (const raw of rawList) {
@@ -212,6 +261,15 @@ function mapMessageDocuments(rawList: unknown[]) {
     return out;
 }
 
+/**
+ * Handles enrich messages with attachments.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {string} databaseId - The database id value.
+ * @param {string} attachmentsCollectionId - The attachments collection id value.
+ * @param {MappedMessage[]} messages - The messages value.
+ * @returns {Promise<MappedMessage[]>} The return value.
+ */
 async function enrichMessagesWithAttachments(
     databases: ReturnType<typeof getAdminClient>["databases"],
     databaseId: string,
@@ -275,6 +333,12 @@ async function enrichMessagesWithAttachments(
     }
 }
 
+/**
+ * Returns admin message audit context.
+ *
+ * @param {string} messageId - The message id value.
+ * @returns {Promise<MappedMessage | null>} The return value.
+ */
 export async function getAdminMessageAuditContext(messageId: string) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
@@ -293,11 +357,21 @@ export async function getAdminMessageAuditContext(messageId: string) {
 }
 
 // Basic stats aggregation using listDocuments with minimal queries.
+/**
+ * Returns basic stats.
+ * @returns {Promise<{ servers: number; channels: number; messages: number; }>} The return value.
+ */
 export async function getBasicStats() {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
     const collectionIds = getCollectionIds();
     // We only need counts; use small limit to reduce payload and rely on total.
+    /**
+     * Handles count.
+     *
+     * @param {string} col - The col value.
+     * @returns {Promise<number>} The return value.
+     */
     async function count(col: string) {
         try {
             const res = await databases.listDocuments(dbId, col, [
@@ -333,6 +407,13 @@ export type MessageQueryOpts = {
     includeRemoved?: boolean;
 };
 
+/**
+ * Builds message queries.
+ *
+ * @param {{ cursorAfter?: string | undefined; userId?: string | undefined; channelId?: string | undefined; channelIds?: string[] | undefined; serverId?: string | undefined; onlyMissingServerId?: boolean | undefined; text?: string | undefined; onlyRemoved?: boolean | undefined; includeRemoved?: boolean | undefined; }} opts - The opts value.
+ * @param {number} limit - The limit value.
+ * @returns {string[]} The return value.
+ */
 export function buildMessageQueries(opts: MessageQueryOpts, limit: number) {
     const queries: string[] = [];
     queries.push(Query.limit(limit));
@@ -392,6 +473,10 @@ export function postFilterMessages<
     });
 }
 
+/**
+ * Returns admin client.
+ * @returns {{ databases: Databases; teams: Teams; storage: Storage; }} The return value.
+ */
 export function getAdminClient() {
     const { client, databases, teams } = getServerClient();
     const storage = new Storage(client);
@@ -399,6 +484,13 @@ export function getAdminClient() {
 }
 
 // Admin moderation functions that bypass document permissions
+/**
+ * Handles admin soft delete message.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} moderatorId - The moderator id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function adminSoftDeleteMessage(
     messageId: string,
     moderatorId: string,
@@ -413,6 +505,12 @@ export async function adminSoftDeleteMessage(
     });
 }
 
+/**
+ * Handles admin restore message.
+ *
+ * @param {string} messageId - The message id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function adminRestoreMessage(messageId: string) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;
@@ -423,6 +521,12 @@ export async function adminRestoreMessage(messageId: string) {
     });
 }
 
+/**
+ * Handles admin delete message.
+ *
+ * @param {string} messageId - The message id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function adminDeleteMessage(messageId: string) {
     const { databases } = getAdminClient();
     const dbId = getEnvConfig().databaseId;

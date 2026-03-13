@@ -11,6 +11,12 @@ type MarkInboxItemsReadInput = {
     itemIds: string[];
 };
 
+/**
+ * Parses inbox response.
+ *
+ * @param {Response} response - The response value.
+ * @returns {Promise<InboxListResponse>} The return value.
+ */
 async function parseInboxResponse(response: Response) {
     if (!response.ok) {
         const error = (await response.json().catch(() => null)) as {
@@ -22,6 +28,12 @@ async function parseInboxResponse(response: Response) {
     return (await response.json()) as InboxListResponse;
 }
 
+/**
+ * Parses inbox digest response.
+ *
+ * @param {Response} response - The response value.
+ * @returns {Promise<InboxDigestResponse>} The return value.
+ */
 async function parseInboxDigestResponse(response: Response) {
     if (!response.ok) {
         const error = (await response.json().catch(() => null)) as {
@@ -33,11 +45,21 @@ async function parseInboxDigestResponse(response: Response) {
     return (await response.json()) as InboxDigestResponse;
 }
 
+/**
+ * Lists inbox.
+ * @returns {Promise<InboxListResponse>} The return value.
+ */
 export async function listInbox(): Promise<InboxListResponse> {
     const response = await fetch("/api/inbox");
     return parseInboxResponse(response);
 }
 
+/**
+ * Lists inbox with filters.
+ *
+ * @param {{ contextId?: string | undefined; contextKind?: any; kinds?: InboxItemKind[] | undefined; limit?: number | undefined; scope?: InboxScope | undefined; } | undefined} params - The params value, if provided.
+ * @returns {Promise<InboxListResponse>} The return value.
+ */
 export async function listInboxWithFilters(params?: {
     contextId?: string;
     contextKind?: InboxContextKind;
@@ -69,6 +91,12 @@ export async function listInboxWithFilters(params?: {
     return parseInboxResponse(response);
 }
 
+/**
+ * Marks inbox items read.
+ *
+ * @param {{ itemIds: string[]; }} params - The params value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function markInboxItemsRead({ itemIds }: MarkInboxItemsReadInput) {
     if (itemIds.length === 0) {
         return;
@@ -90,6 +118,12 @@ export async function markInboxItemsRead({ itemIds }: MarkInboxItemsReadInput) {
     }
 }
 
+/**
+ * Marks inbox context read.
+ *
+ * @param {{ contextId?: string | undefined; contextKind?: any; } | undefined} params - The params value, if provided.
+ * @returns {Promise<void>} The return value.
+ */
 export async function markInboxContextRead(params?: {
     contextId?: string;
     contextKind?: InboxContextKind;
@@ -114,6 +148,12 @@ export async function markInboxContextRead(params?: {
     }
 }
 
+/**
+ * Lists inbox digest.
+ *
+ * @param {{ contextId?: string | undefined; contextKind?: 'channel' | 'conversation' | undefined; limit?: number | undefined; } | undefined} params - The params value, if provided.
+ * @returns {Promise<InboxDigestResponse>} The return value.
+ */
 export async function listInboxDigest(params?: {
     contextId?: string;
     contextKind?: "channel" | "conversation";

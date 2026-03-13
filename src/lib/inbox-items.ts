@@ -16,6 +16,12 @@ type MentionInboxItemInput = {
     serverId?: string;
 };
 
+/**
+ * Handles resolve mention target ids.
+ *
+ * @param {{ authorUserId: string; mentions: string[]; }} params - The params value.
+ * @returns {Promise<string[]>} The return value.
+ */
 async function resolveMentionTargetIds(params: {
     authorUserId: string;
     mentions: string[];
@@ -36,6 +42,12 @@ async function resolveMentionTargetIds(params: {
     );
 }
 
+/**
+ * Handles find existing mention inbox item.
+ *
+ * @param {{ contextId: string; contextKind: 'channel' | 'conversation'; messageId: string; userId: string; }} params - The params value.
+ * @returns {Promise<Record<string, unknown> | undefined>} The return value.
+ */
 async function findExistingMentionInboxItem(params: {
     contextId: string;
     contextKind: "channel" | "conversation";
@@ -60,6 +72,12 @@ async function findExistingMentionInboxItem(params: {
     return existing.documents.at(0) as Record<string, unknown> | undefined;
 }
 
+/**
+ * Handles upsert mention inbox items.
+ *
+ * @param {{ authorUserId: string; contextId: string; contextKind: 'channel' | 'conversation'; latestActivityAt: string; mentions: string[]; messageId: string; parentMessageId?: string | undefined; previewText: string; serverId?: string | undefined; }} params - The params value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function upsertMentionInboxItems(
     params: MentionInboxItemInput,
 ): Promise<void> {

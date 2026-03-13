@@ -8,6 +8,15 @@ import { getBrowserDatabases } from "./appwrite-core";
 const ROLES_COLLECTION_ID = "roles";
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 
+/**
+ * Updates role member count.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {string} databaseId - The database id value.
+ * @param {string} roleId - The role id value.
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<void>} The return value.
+ */
 async function updateRoleMemberCount(
     databases: Databases,
     databaseId: string,
@@ -34,6 +43,15 @@ async function updateRoleMemberCount(
     }
 }
 
+/**
+ * Handles apply default role.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {string} databaseId - The database id value.
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<boolean>} The return value.
+ */
 async function applyDefaultRole(
     databases: Databases,
     databaseId: string,
@@ -93,6 +111,13 @@ async function applyDefaultRole(
     return true;
 }
 
+/**
+ * Handles assign default role server.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<boolean>} The return value.
+ */
 export async function assignDefaultRoleServer(
     serverId: string,
     userId: string,
@@ -102,6 +127,13 @@ export async function assignDefaultRoleServer(
     return applyDefaultRole(databases, databaseId, serverId, userId);
 }
 
+/**
+ * Handles assign default role browser.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<boolean>} The return value.
+ */
 export async function assignDefaultRoleBrowser(
     serverId: string,
     userId: string,
@@ -111,6 +143,15 @@ export async function assignDefaultRoleBrowser(
     return applyDefaultRole(databases as unknown as Databases, databaseId, serverId, userId);
 }
 
+/**
+ * Handles enforce single default role.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {string} databaseId - The database id value.
+ * @param {string} serverId - The server id value.
+ * @param {string} keepRoleId - The keep role id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function enforceSingleDefaultRole(
     databases: Databases,
     databaseId: string,

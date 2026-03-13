@@ -18,6 +18,9 @@ type BatchProfileLookup = {
 /**
  * Batch-fetch profiles via the Next.js API route (client-safe).
  * Uses the /api/profiles/batch endpoint so no server SDK is needed.
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<BatchProfileLookup>} The return value.
  */
 async function fetchProfilesBatch(
     userIds: string[],
@@ -86,6 +89,9 @@ async function fetchProfilesBatch(
  * by batch-fetching profiles through the /api/profiles/batch API route.
  * This version is client-safe — no server SDK imports.
  * Also enriches messages with reply context if replyToId is present.
+ *
+ * @param {Message[]} messages - The messages value.
+ * @returns {Promise<Message[]>} The return value.
  */
 export async function enrichMessagesWithProfiles(
     messages: Message[],
@@ -151,6 +157,9 @@ export async function enrichMessagesWithProfiles(
  * Useful for realtime updates where we receive one message at a time
  * Uses client-side fetch to work in browser context with caching
  * Note: Reply context should be enriched by the caller if needed (using existing messages)
+ *
+ * @param {{ $id: string; userId: string; userName?: string | undefined; text: string; $createdAt: string; channelId?: string | undefined; serverId?: string | undefined; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: FileAttachment[] | undefined; replyToId?: string | undefined; threadId?: string | undefined; threadMessageCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: { emoji: string; userIds: string[]; count: number; }[] | undefined; displayName?: string | undefined; avatarFileId?: string | undefined; avatarUrl?: string | undefined; pronouns?: string | undefined; replyTo?: { text: string; userName?: string | undefined; displayName?: string | undefined; } | undefined; threadReplyCount?: number | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; }} message - The message value.
+ * @returns {Promise<Message | null>} The return value.
  */
 export async function enrichMessageWithProfile(
     message: Message,
@@ -200,6 +209,10 @@ export async function enrichMessageWithProfile(
 /**
  * Enriches a message with reply context from a list of messages
  * Used for realtime updates where we need to add reply info after profile enrichment
+ *
+ * @param {{ $id: string; userId: string; userName?: string | undefined; text: string; $createdAt: string; channelId?: string | undefined; serverId?: string | undefined; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: FileAttachment[] | undefined; replyToId?: string | undefined; threadId?: string | undefined; threadMessageCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: { emoji: string; userIds: string[]; count: number; }[] | undefined; displayName?: string | undefined; avatarFileId?: string | undefined; avatarUrl?: string | undefined; pronouns?: string | undefined; replyTo?: { text: string; userName?: string | undefined; displayName?: string | undefined; } | undefined; threadReplyCount?: number | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; }} message - The message value.
+ * @param {Message[]} allMessages - The all messages value.
+ * @returns { $id: string; userId: string; userName?: string | undefined; text: string; $createdAt: string; channelId?: string | undefined; serverId?: string | undefined; editedAt?: string | undefined; removedAt?: string | undefined; removedBy?: string | undefined; imageFileId?: string | undefined; imageUrl?: string | undefined; attachments?: FileAttachment[] | undefined; replyToId?: string | undefined; threadId?: string | undefined; threadMessageCount?: number | undefined; threadParticipants?: string[] | undefined; lastThreadReplyAt?: string | undefined; mentions?: string[] | undefined; reactions?: { emoji: string; userIds: string[]; count: number; }[] | undefined; displayName?: string | undefined; avatarFileId?: string | undefined; avatarUrl?: string | undefined; pronouns?: string | undefined; replyTo?: { text: string; userName?: string | undefined; displayName?: string | undefined; } | undefined; threadReplyCount?: number | undefined; isPinned?: boolean | undefined; pinnedAt?: string | undefined; pinnedBy?: string | undefined; }.
  */
 export function enrichMessageWithReplyContext(
     message: Message,

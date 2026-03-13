@@ -10,6 +10,11 @@ type Reaction = {
 
 /**
  * Add a reaction to a message
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} emoji - The emoji value.
+ * @param {boolean} isDM - The is dm value, if provided.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} The return value.
  */
 export async function addReaction(
 	messageId: string,
@@ -38,6 +43,11 @@ export async function addReaction(
 
 /**
  * Remove a reaction from a message
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} emoji - The emoji value.
+ * @param {boolean} isDM - The is dm value, if provided.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} The return value.
  */
 export async function removeReaction(
 	messageId: string,
@@ -62,6 +72,12 @@ export async function removeReaction(
 
 /**
  * Toggle a reaction on a message (add if not present, remove if present)
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} emoji - The emoji value.
+ * @param {boolean} isAdding - The is adding value.
+ * @param {boolean} isDM - The is dm value, if provided.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} The return value.
  */
 export async function toggleReaction(
 	messageId: string,
