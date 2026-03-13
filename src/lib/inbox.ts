@@ -783,9 +783,9 @@ export async function listInboxDigest(params: {
     const sortedItems = [...scopedItems].sort((left, right) =>
         right.latestActivityAt.localeCompare(left.latestActivityAt),
     );
-    const totalUnreadCount = (
-        isContextScoped ? scopedItems : inbox.items
-    ).reduce((total, item) => total + item.unreadCount, 0);
+    const totalUnreadCount = isContextScoped
+        ? scopedItems.reduce((total, item) => total + item.unreadCount, 0)
+        : inbox.unreadCount;
     const pagedItems = sortedItems.slice(0, limit).map((item) => ({
         activityAt: item.latestActivityAt,
         authorAvatarUrl: item.authorAvatarUrl,

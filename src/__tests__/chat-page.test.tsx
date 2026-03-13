@@ -342,18 +342,28 @@ describe("ChatPage", () => {
                 }
 
                 if (url.includes("/api/inbox") && url.includes("contextId=")) {
+                    const parsedUrl = new URL(url, "http://localhost");
+                    const contextId = parsedUrl.searchParams.get("contextId");
+                    const contextKind =
+                        parsedUrl.searchParams.get("contextKind");
+                    const scopedItems = mockContextInboxItems.filter(
+                        (item) =>
+                            item.contextId === contextId &&
+                            item.contextKind === contextKind,
+                    );
+
                     return {
                         json: async () => ({
                             contractVersion: "message_v2",
-                            counts: mockContextInboxItems.reduce(
+                            counts: scopedItems.reduce(
                                 (accumulator, item) => {
                                     accumulator[item.kind] += item.unreadCount;
                                     return accumulator;
                                 },
                                 { mention: 0, thread: 0 },
                             ),
-                            items: mockContextInboxItems,
-                            unreadCount: mockContextInboxItems.reduce(
+                            items: scopedItems,
+                            unreadCount: scopedItems.reduce(
                                 (total, item) => total + item.unreadCount,
                                 0,
                             ),

@@ -246,7 +246,7 @@ All Must Ship items are complete and represented in the current API, docs, and p
 - Performance: no material regression in message-list render or inbox query latency relative to current canary baseline
 - Test coverage: parity-critical unread, badge, and inbox flows have automated coverage for channel, DM, and thread paths
 
-### Release Gates
+#### Release Gates
 
 - Complete canary hardening with parity test pass and no unresolved P0/P1 unread correctness defects
 - Validate telemetry dashboards for unread mismatch rate, jump-to-unread success, and badge consistency before promotion

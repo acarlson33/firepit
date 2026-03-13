@@ -231,6 +231,7 @@ export function ConversationList({
 
         let cancelled = false;
         setServerFilteredInboxLoading(true);
+        setServerFilteredInboxItems(fallbackFilteredInboxItems);
 
         void listInboxWithFilters({
             kinds: inboxFilterQuery.kinds,

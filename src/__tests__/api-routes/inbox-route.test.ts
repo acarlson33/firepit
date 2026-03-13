@@ -258,7 +258,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 1, thread: 2 },
+            counts: { mention: 2, thread: 3 },
             items: [
                 {
                     id: "item-mention-1",
@@ -269,6 +269,19 @@ describe("inbox route", () => {
                     latestActivityAt: "2026-03-13T00:00:00.000Z",
                     unreadCount: 1,
                     previewText: "mention",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+                {
+                    id: "item-mention-2",
+                    kind: "mention",
+                    contextKind: "channel",
+                    contextId: "channel-2",
+                    messageId: "message-9",
+                    latestActivityAt: "2026-03-13T00:30:00.000Z",
+                    unreadCount: 1,
+                    previewText: "mention other context",
                     authorUserId: "user-2",
                     authorLabel: "Alice",
                     muted: false,
@@ -287,8 +300,22 @@ describe("inbox route", () => {
                     authorLabel: "Alice",
                     muted: false,
                 },
+                {
+                    id: "thread:channel:channel-2:message-8",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-2",
+                    messageId: "message-8",
+                    parentMessageId: "message-8",
+                    latestActivityAt: "2026-03-13T01:30:00.000Z",
+                    unreadCount: 1,
+                    previewText: "thread other context",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
             ],
-            unreadCount: 3,
+            unreadCount: 5,
         });
         mockListDocuments.mockResolvedValue({
             documents: [{ $id: "item-mention-1" }],
@@ -321,6 +348,17 @@ describe("inbox route", () => {
             },
             userId: "user-1",
         });
+        expect(mockUpdateDocument).not.toHaveBeenCalledWith(
+            "test-db",
+            "inbox-items-collection",
+            "item-mention-2",
+            expect.anything(),
+        );
+        expect(mockUpsertThreadReads).not.toHaveBeenCalledWith(
+            expect.objectContaining({
+                contextId: "channel-2",
+            }),
+        );
         expect(data.ok).toBe(true);
         expect(data.updatedMentionCount).toBe(1);
         expect(data.updatedThreadContextCount).toBe(1);
@@ -330,7 +368,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 0, thread: 5 },
+            counts: { mention: 0, thread: 7 },
             items: [
                 {
                     id: "thread:channel:channel-1:message-2",
@@ -360,8 +398,22 @@ describe("inbox route", () => {
                     authorLabel: "Alice",
                     muted: false,
                 },
+                {
+                    id: "thread:channel:channel-2:message-2",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-2",
+                    messageId: "message-2",
+                    parentMessageId: "message-2",
+                    latestActivityAt: "2026-03-13T03:00:00.000Z",
+                    unreadCount: 2,
+                    previewText: "thread channel 2",
+                    authorUserId: "user-3",
+                    authorLabel: "Bob",
+                    muted: false,
+                },
             ],
-            unreadCount: 5,
+            unreadCount: 7,
         });
         const response = await PATCH(
             new NextRequest("http://localhost/api/inbox", {
@@ -372,7 +424,7 @@ describe("inbox route", () => {
         const data = await response.json();
 
         expect(response.status).toBe(200);
-        expect(mockUpsertThreadReads).toHaveBeenCalledTimes(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledTimes(2);
         expect(mockUpsertThreadReads).toHaveBeenCalledWith({
             contextId: "channel-1",
             contextType: "channel",
@@ -381,7 +433,15 @@ describe("inbox route", () => {
             },
             userId: "user-1",
         });
-        expect(data.updatedThreadContextCount).toBe(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledWith({
+            contextId: "channel-2",
+            contextType: "channel",
+            reads: {
+                "message-2": "2026-03-13T03:00:00.000Z",
+            },
+            userId: "user-1",
+        });
+        expect(data.updatedThreadContextCount).toBe(2);
     });
 
     it("rejects empty inbox read updates", async () => {

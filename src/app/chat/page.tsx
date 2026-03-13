@@ -239,7 +239,7 @@ export default function ChatPage() {
         messageId: string;
     } | null>(null);
     const [activeContextInboxItems, setActiveContextInboxItems] = useState<
-        InboxItem[] | null
+        InboxItem[] | null | undefined
     >(null);
     const _messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -520,13 +520,16 @@ export default function ChatPage() {
         }
 
         let cancelled = false;
+        setActiveContextInboxItems(undefined);
         void listInboxWithFilters({
             contextId: activeContext.contextId,
             contextKind: activeContext.contextKind,
         })
             .then((data) => {
                 if (!cancelled) {
-                    setActiveContextInboxItems(data.items);
+                    setActiveContextInboxItems(
+                        data.items.length > 0 ? data.items : null,
+                    );
                 }
             })
             .catch(() => {
@@ -541,25 +544,30 @@ export default function ChatPage() {
     }, [activeContext, inboxApi.items.length, inboxApi.unreadCount, userId]);
 
     const scopedFirstUnreadItem = useMemo(
-        () => getFirstUnreadItem(activeContextInboxItems ?? []),
+        () =>
+            Array.isArray(activeContextInboxItems)
+                ? getFirstUnreadItem(activeContextInboxItems)
+                : null,
         [activeContextInboxItems],
     );
     const scopedUnreadCount = useMemo(
         () =>
-            (activeContextInboxItems ?? []).reduce(
-                (total, item) => total + item.unreadCount,
-                0,
-            ),
+            Array.isArray(activeContextInboxItems)
+                ? activeContextInboxItems.reduce(
+                      (total, item) => total + item.unreadCount,
+                      0,
+                  )
+                : 0,
         [activeContextInboxItems],
     );
     const currentContextFirstUnreadMessageId =
-        scopedFirstUnreadItem?.messageId ??
-        currentContextSummary?.firstUnreadItem?.messageId ??
-        null;
+        activeContextInboxItems === null
+            ? (currentContextSummary?.firstUnreadItem?.messageId ?? null)
+            : (scopedFirstUnreadItem?.messageId ?? null);
     const currentContextUnreadCount =
-        (activeContextInboxItems
-            ? scopedUnreadCount
-            : currentContextSummary?.totalCount) ?? 0;
+        activeContextInboxItems === null
+            ? (currentContextSummary?.totalCount ?? 0)
+            : scopedUnreadCount;
     const currentContextKind =
         activeContext?.contextKind ?? currentContextSummary?.contextKind;
 
@@ -730,13 +738,17 @@ export default function ChatPage() {
         }
 
         setActiveUnreadAnchor((currentValue) => {
-            if (currentValue?.contextKey === currentContextKey) {
-                return currentValue;
-            }
-
             const nextMessageId = currentContextFirstUnreadMessageId;
+
             if (!nextMessageId) {
                 return null;
+            }
+
+            if (
+                currentValue?.contextKey === currentContextKey &&
+                currentValue.messageId === nextMessageId
+            ) {
+                return currentValue;
             }
 
             return {
