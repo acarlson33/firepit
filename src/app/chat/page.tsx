@@ -483,10 +483,10 @@ export default function ChatPage() {
     }, [inboxApi, selectedChannel, selectedConversationId]);
     const currentContextUnreadCount =
         inboxApi.contractVersion === "message_v2"
-            ? inboxDigestApi.totalUnreadCount ??
+            ? (inboxDigestApi.totalUnreadCount ??
               currentContextSummary?.totalCount ??
-              0
-            : currentContextSummary?.totalCount ?? 0;
+              0)
+            : (currentContextSummary?.totalCount ?? 0);
 
     useEffect(() => {
         if (routeConversationId) {
@@ -1736,7 +1736,6 @@ export default function ChatPage() {
                             currentUserId={userId}
                             loading={dmApi.loading}
                             messages={dmApi.messages}
-                            surfaceMessages={dmApi.surfaceMessages}
                             onDelete={dmApi.deleteMsg}
                             onEdit={dmApi.edit}
                             activeThreadParent={dmApi.activeThreadParent}
