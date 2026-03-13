@@ -91,6 +91,12 @@ export type EnvConfig = {
 
 let cachedEnv: EnvConfig | null = null;
 
+/**
+ * Handles first defined.
+ *
+ * @param {(string | null | undefined)[]} vals - The vals value.
+ * @returns {string | undefined} The return value.
+ */
 function firstDefined(
     ...vals: Array<string | undefined | null>
 ): string | undefined {
@@ -102,6 +108,10 @@ function firstDefined(
     return;
 }
 
+/**
+ * Returns env config.
+ * @returns {{ endpoint: string; project: string; databaseId: string; collections: { servers: string; channels: string; categories: string; messages: string; audit: string; typing: string; memberships: string; bannedUsers: string; mutedUsers: string; friendships: string; blocks: string; profiles: string; conversations: string; directMessages: string; statuses: string; messageAttachments: string; pinnedMessages: string; featureFlags: string; notificationSettings: string; inboxItems: string; threadReads: string; }; buckets: { avatars: string; emojis: string; images: string; files: string; }; teams: { adminTeamId: string | null; moderatorTeamId: string | null; }; }} The return value.
+ */
 export function getEnvConfig(): EnvConfig {
     if (cachedEnv) {
         return cachedEnv;
@@ -296,6 +306,10 @@ export function getEnvConfig(): EnvConfig {
     return cachedEnv;
 }
 
+/**
+ * Handles reset env cache.
+ * @returns {void} The return value.
+ */
 export function resetEnvCache() {
     cachedEnv = null;
 }
@@ -303,6 +317,12 @@ export function resetEnvCache() {
 // ---------- Client Builders ----------
 let browserClient: Client | null = null;
 
+/**
+ * Returns browser client.
+ *
+ * @param {boolean} force - The force value, if provided.
+ * @returns {Client} The return value.
+ */
 export function getBrowserClient(force = false): Client {
     const env = getEnvConfig();
     if (!browserClient || force) {
@@ -324,18 +344,34 @@ export function getBrowserClient(force = false): Client {
     return browserClient;
 }
 
+/**
+ * Returns browser account.
+ * @returns {Account} The return value.
+ */
 export function getBrowserAccount(): Account {
     return new Account(getBrowserClient());
 }
 
+/**
+ * Returns browser databases.
+ * @returns {Databases} The return value.
+ */
 export function getBrowserDatabases(): Databases {
     return new Databases(getBrowserClient());
 }
 
+/**
+ * Returns browser teams.
+ * @returns {Teams} The return value.
+ */
 export function getBrowserTeams(): Teams {
     return new Teams(getBrowserClient());
 }
 
+/**
+ * Returns browser storage.
+ * @returns {Storage} The return value.
+ */
 export function getBrowserStorage(): Storage {
     return new Storage(getBrowserClient());
 }
@@ -344,6 +380,10 @@ export function getBrowserStorage(): Storage {
 // Import getServerClient from "./appwrite-server" directly in server-only code.
 
 // ---------- Session Helpers ----------
+/**
+ * Handles ensure session.
+ * @returns {Promise<{ userId: string; } | { error: string; }>} The return value.
+ */
 export async function ensureSession(): Promise<
     { userId: string } | { error: string }
 > {
@@ -356,6 +396,10 @@ export async function ensureSession(): Promise<
     }
 }
 
+/**
+ * Handles require session.
+ * @returns {Promise<{ userId: string; }>} The return value.
+ */
 export async function requireSession(): Promise<{ userId: string }> {
     const res = await ensureSession();
     if ("error" in res) {
@@ -404,6 +448,12 @@ const RE_401 = /401/;
 const RE_UNAUTHORIZED = /unauthorized/i;
 const RE_403 = /403/;
 const RE_FORBIDDEN = /forbidden/i;
+/**
+ * Normalizes error.
+ *
+ * @param {unknown} e - The e value.
+ * @returns {Error} The return value.
+ */
 export function normalizeError(e: unknown): Error {
     if (e instanceof UnauthorizedError || e instanceof ForbiddenError) {
         return e;
@@ -458,7 +508,19 @@ const ROLE_PREFIX_USER = "user:";
 const ROLE_PREFIX_TEAM = "team:";
 const SLICE_OFFSET = 5; // shared prefix length
 const PERM_REGEX = /^(\w+)\("([^"]+)"\)$/;
+/**
+ * Handles materialize permissions.
+ *
+ * @param {string[]} list - The list value.
+ * @returns {string[]} The return value.
+ */
 export function materializePermissions(list: string[]) {
+            /**
+     * Handles target to role.
+     *
+     * @param {string} target - The target value.
+     * @returns {string | null} The return value.
+     */
     function targetToRole(target: string) {
         if (target === "any") {
             return Role.any();
@@ -471,6 +533,13 @@ export function materializePermissions(list: string[]) {
         }
         return null;
     }
+            /**
+     * Builds build.
+     *
+     * @param {string} op - The op value.
+     * @param {string} target - The target value.
+     * @returns {string | null} The return value.
+     */
     function build(op: string, target: string) {
         const role = targetToRole(target);
         if (!role) {

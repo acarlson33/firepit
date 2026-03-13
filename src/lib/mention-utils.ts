@@ -22,6 +22,9 @@ export const MENTION_REGEX = /@(\S+)/g;
  * Parse message text to find all @mentions using the simple regex.
  * For names with spaces/symbols, use findMentionSpans in
  * message-with-mentions.tsx with the mentions array instead.
+ *
+ * @param {string} text - The text value.
+ * @returns {MentionMatch[]} The return value.
  */
 export function parseMentions(text: string): MentionMatch[] {
     const matches: MentionMatch[] = [];
@@ -46,6 +49,9 @@ export function parseMentions(text: string): MentionMatch[] {
  * Extract usernames from @mentions in text (simple regex fallback).
  * Only captures single-word @mentions. For names with spaces, use
  * extractMentionsWithKnownNames instead.
+ *
+ * @param {string} text - The text value.
+ * @returns {string[]} The return value.
  */
 export function extractMentionedUsernames(text: string): string[] {
     const mentions = parseMentions(text);
@@ -57,6 +63,10 @@ export function extractMentionedUsernames(text: string): string[] {
  * This handles names containing spaces and special characters (e.g. "avery <3")
  * by finding exact `@displayName` substrings in the text.
  * Falls back to the simple regex for any remaining @-mentions.
+ *
+ * @param {string} text - The text value.
+ * @param {string[]} knownNames - The known names value.
+ * @returns {string[]} The return value.
  */
 export function extractMentionsWithKnownNames(
     text: string,
@@ -103,6 +113,9 @@ export function extractMentionsWithKnownNames(
 
 /**
  * Check if text contains any mentions
+ *
+ * @param {string} text - The text value.
+ * @returns {boolean} The return value.
  */
 export function hasMentions(text: string): boolean {
     MENTION_REGEX.lastIndex = 0;
@@ -112,6 +125,10 @@ export function hasMentions(text: string): boolean {
 /**
  * Find mention at cursor position
  * Returns the mention being typed if cursor is within/after an @ symbol
+ *
+ * @param {string} text - The text value.
+ * @param {number} cursorPosition - The cursor position value.
+ * @returns {MentionMatch | null} The return value.
  */
 export function getMentionAtCursor(
     text: string,
@@ -149,6 +166,11 @@ export function getMentionAtCursor(
 
 /**
  * Replace mention text with formatted version (for autocomplete)
+ *
+ * @param {string} text - The text value.
+ * @param {number} cursorPosition - The cursor position value.
+ * @param {string} newUsername - The new username value.
+ * @returns {{ newText: string; newCursorPosition: number; }} The return value.
  */
 export function replaceMentionAtCursor(
     text: string,

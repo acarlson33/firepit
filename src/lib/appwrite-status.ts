@@ -4,16 +4,31 @@ import type { UserStatus } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import { normalizeStatus } from "./status-normalization";
 
+/**
+ * Returns config.
+ * @returns {{ endpoint: string; project: string; databaseId: string; collections: { servers: string; channels: string; categories: string; messages: string; audit: string; typing: string; memberships: string; bannedUsers: string; mutedUsers: string; friendships: string; blocks: string; profiles: string; conversations: string; directMessages: string; statuses: string; messageAttachments: string; pinnedMessages: string; featureFlags: string; notificationSettings: string; inboxItems: string; threadReads: string; }; buckets: { avatars: string; emojis: string; images: string; files: string; }; teams: { adminTeamId: string | null; moderatorTeamId: string | null; }; }} The return value.
+ */
 function getConfig() {
     return getEnvConfig();
 }
 
+/**
+ * Returns databases.
+ * @returns {Databases} The return value.
+ */
 function getDatabases() {
     return getBrowserDatabases();
 }
 
 /**
  * Set or update user status (via server API)
+ *
+ * @param {string} userId - The user id value.
+ * @param {'online' | 'away' | 'busy' | 'offline'} status - The status value.
+ * @param {string | undefined} customMessage - The custom message value, if provided.
+ * @param {string | undefined} expiresAt - The expires at value, if provided.
+ * @param {boolean | undefined} isManuallySet - The is manually set value, if provided.
+ * @returns {Promise<UserStatus>} The return value.
  */
 export async function setUserStatus(
     userId: string,
@@ -58,6 +73,9 @@ export async function setUserStatus(
 
 /**
  * Get status for a single user
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<UserStatus | null>} The return value.
  */
 export async function getUserStatus(
     userId: string,
@@ -91,6 +109,9 @@ export async function getUserStatus(
 
 /**
  * Get statuses for multiple users (batch fetch)
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, UserStatus>>} The return value.
  */
 export async function getUsersStatuses(
     userIds: string[],
@@ -104,16 +125,31 @@ export async function getUsersStatuses(
     }
 
     try {
-        const response = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: STATUSES_COLLECTION,
-            queries: [Query.equal("userId", userIds), Query.limit(100)],
-        });
+        const uniqueUserIds = [...new Set(userIds)];
+        const chunks: string[][] = [];
+
+        for (let index = 0; index < uniqueUserIds.length; index += 100) {
+            chunks.push(uniqueUserIds.slice(index, index + 100));
+        }
+
+        const responses = await Promise.all(
+            chunks.map((chunk) =>
+                getDatabases().listDocuments({
+                    databaseId: DATABASE_ID,
+                    collectionId: STATUSES_COLLECTION,
+                    queries: [Query.equal("userId", chunk), Query.limit(100)],
+                }),
+            ),
+        );
 
         const statusMap = new Map<string, UserStatus>();
-        for (const doc of response.documents) {
-            const { normalized } = normalizeStatus(doc);
-            statusMap.set(normalized.userId, normalized);
+        for (const response of responses) {
+            for (const doc of response.documents) {
+                const { normalized } = normalizeStatus(doc);
+                if (!statusMap.has(normalized.userId)) {
+                    statusMap.set(normalized.userId, normalized);
+                }
+            }
         }
 
         return statusMap;
@@ -124,6 +160,9 @@ export async function getUsersStatuses(
 
 /**
  * Update last seen timestamp (via server API)
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function updateLastSeen(userId: string): Promise<void> {
     const env = getConfig();
@@ -148,6 +187,9 @@ export async function updateLastSeen(userId: string): Promise<void> {
 
 /**
  * Set user offline
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function setOffline(userId: string): Promise<void> {
     await setUserStatus(userId, "offline");

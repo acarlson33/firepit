@@ -68,6 +68,13 @@ async function parseJsonResponse<T>(
     return response.json() as Promise<T>;
 }
 
+/**
+ * Lists replies for a channel thread parent message.
+ *
+ * @param {string} messageId - Parent channel message id that anchors the thread.
+ * @param {number} limit - Maximum number of replies to request; defaults to 50 when omitted.
+ * @returns {Promise<Message[]>} Resolves to channel thread replies in API return order.
+ */
 export async function listChannelThreadMessages(
     messageId: string,
     limit = 50,
@@ -91,6 +98,13 @@ export async function listThreadMessages<TMessage>(
     return data.items ?? data.replies ?? [];
 }
 
+/**
+ * Creates a new reply in a channel thread.
+ *
+ * @param {string} messageId - Parent channel message id for the target thread.
+ * @param {ThreadReplyPayload} payload - Reply payload (text, mentions, and optional media metadata).
+ * @returns {Promise<Message>} Resolves to the created channel reply.
+ */
 export async function createChannelThreadReply(
     messageId: string,
     payload: ThreadReplyPayload,
@@ -98,6 +112,13 @@ export async function createChannelThreadReply(
     return createThreadReply<Message>("channel", messageId, payload);
 }
 
+/**
+ * Lists replies for a DM thread parent message.
+ *
+ * @param {string} messageId - Parent DM message id that anchors the thread.
+ * @param {number} limit - Maximum number of replies to request; defaults to 50 when omitted.
+ * @returns {Promise<DirectMessage[]>} Resolves to DM thread replies in API return order.
+ */
 export async function listDMThreadMessages(
     messageId: string,
     limit = 50,
@@ -134,6 +155,13 @@ export async function createThreadReply<TMessage>(
     return message;
 }
 
+/**
+ * Creates a new reply in a DM thread.
+ *
+ * @param {string} messageId - Parent DM message id for the target thread.
+ * @param {ThreadReplyPayload} payload - Reply payload (text, mentions, and optional media metadata).
+ * @returns {Promise<DirectMessage>} Resolves to the created DM reply.
+ */
 export async function createDMThreadReply(
     messageId: string,
     payload: ThreadReplyPayload,
@@ -141,36 +169,79 @@ export async function createDMThreadReply(
     return createThreadReply<DirectMessage>("dm", messageId, payload);
 }
 
+/**
+ * Pins a channel message.
+ *
+ * @param {string} messageId - Channel message id to pin.
+ * @returns {Promise<PinnedMessage>} Resolves to the created pin record.
+ */
 export async function pinChannelMessage(
     messageId: string,
 ): Promise<PinnedMessage> {
     return pinMessage("channel", messageId);
 }
 
+/**
+ * Removes a pin from a channel message.
+ *
+ * @param {string} messageId - Channel message id to unpin.
+ * @returns {Promise<void>} Resolves when the pin has been removed.
+ */
 export async function unpinChannelMessage(messageId: string): Promise<void> {
     await unpinMessage("channel", messageId);
 }
 
+/**
+ * Lists pinned messages for a channel.
+ *
+ * @param {string} channelId - Channel identifier whose pins should be fetched.
+ * @returns {Promise<PinItem<Message>[]>} Resolves to channel pin items.
+ */
 export async function listChannelPins(
     channelId: string,
 ): Promise<Array<PinItem<Message>>> {
     return listPins<Message>("channel", channelId);
 }
 
+/**
+ * Pins a DM message.
+ *
+ * @param {string} messageId - DM message id to pin.
+ * @returns {Promise<PinnedMessage>} Resolves to the created pin record.
+ */
 export async function pinDMMessage(messageId: string): Promise<PinnedMessage> {
     return pinMessage("dm", messageId);
 }
 
+/**
+ * Removes a pin from a DM message.
+ *
+ * @param {string} messageId - DM message id to unpin.
+ * @returns {Promise<void>} Resolves when the pin has been removed.
+ */
 export async function unpinDMMessage(messageId: string): Promise<void> {
     await unpinMessage("dm", messageId);
 }
 
+/**
+ * Lists pinned messages for a DM conversation.
+ *
+ * @param {string} conversationId - Conversation identifier whose pins should be fetched.
+ * @returns {Promise<PinItem<DirectMessage>[]>} Resolves to conversation pin items.
+ */
 export async function listConversationPins(
     conversationId: string,
 ): Promise<Array<PinItem<DirectMessage>>> {
     return listPins<DirectMessage>("dm", conversationId);
 }
 
+/**
+ * Pins a message on the selected surface (channel or DM).
+ *
+ * @param {'channel' | 'dm'} surface - Message surface namespace used to route the API request.
+ * @param {string} messageId - Message identifier to pin.
+ * @returns {Promise<PinnedMessage>} Resolves to the created pin payload.
+ */
 export async function pinMessage(
     surface: ThreadPinSurface,
     messageId: string,
@@ -189,6 +260,13 @@ export async function pinMessage(
     return data.pin;
 }
 
+/**
+ * Unpins a message on the selected surface (channel or DM).
+ *
+ * @param {'channel' | 'dm'} surface - Message surface namespace used to route the API request.
+ * @param {string} messageId - Message identifier to unpin.
+ * @returns {Promise<void>} Resolves when the unpin request succeeds.
+ */
 export async function unpinMessage(
     surface: ThreadPinSurface,
     messageId: string,

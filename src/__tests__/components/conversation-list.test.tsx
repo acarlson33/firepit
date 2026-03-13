@@ -5,6 +5,7 @@ import { ConversationList } from "@/app/chat/components/ConversationList";
 
 const mockUseFriends = vi.fn();
 const mockGetOrCreateConversation = vi.fn();
+const mockListInboxWithFilters = vi.fn();
 const mockPush = vi.fn();
 
 vi.mock("sonner", () => ({
@@ -21,6 +22,11 @@ vi.mock("@/hooks/useFriends", () => ({
 vi.mock("@/lib/appwrite-dms-client", () => ({
     getOrCreateConversation: (...args: unknown[]) =>
         mockGetOrCreateConversation(...args),
+}));
+
+vi.mock("@/lib/inbox-client", () => ({
+    listInboxWithFilters: (...args: unknown[]) =>
+        mockListInboxWithFilters(...args),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -43,6 +49,12 @@ describe("ConversationList", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.stubGlobal("fetch", vi.fn());
+        mockListInboxWithFilters.mockResolvedValue({
+            contractVersion: "message_v2",
+            counts: { mention: 0, thread: 0 },
+            items: [],
+            unreadCount: 0,
+        });
         mockUseFriends.mockReturnValue({
             friends: [
                 {
@@ -260,5 +272,158 @@ describe("ConversationList", () => {
         expect(mockPush).toHaveBeenCalledWith(
             "/chat?conversation=conv-mention&unread=message-1",
         );
+    });
+
+    it("filters inbox items by all, direct, and server views", async () => {
+        mockListInboxWithFilters.mockImplementation(async (params) => {
+            if (params?.scope === "direct") {
+                return {
+                    contractVersion: "message_v2",
+                    counts: { mention: 0, thread: 1 },
+                    items: [
+                        {
+                            authorLabel: "Direct Author",
+                            authorUserId: "user-direct",
+                            contextId: "conv-1",
+                            contextKind: "conversation",
+                            id: "thread:conversation:conv-1:message-1",
+                            kind: "thread",
+                            latestActivityAt: "2026-03-11T12:00:00.000Z",
+                            messageId: "message-1",
+                            muted: false,
+                            previewText: "direct unread",
+                            unreadCount: 1,
+                        },
+                    ],
+                    unreadCount: 1,
+                };
+            }
+
+            if (params?.scope === "server") {
+                return {
+                    contractVersion: "message_v2",
+                    counts: { mention: 1, thread: 0 },
+                    items: [
+                        {
+                            authorLabel: "Server Author",
+                            authorUserId: "user-server",
+                            contextId: "channel-1",
+                            contextKind: "channel",
+                            id: "mention-item-1",
+                            kind: "mention",
+                            latestActivityAt: "2026-03-11T12:01:00.000Z",
+                            messageId: "message-2",
+                            muted: false,
+                            previewText: "server mention",
+                            unreadCount: 1,
+                        },
+                    ],
+                    unreadCount: 1,
+                };
+            }
+
+            return {
+                contractVersion: "message_v2",
+                counts: { mention: 1, thread: 1 },
+                items: [
+                    {
+                        authorLabel: "Direct Author",
+                        authorUserId: "user-direct",
+                        contextId: "conv-1",
+                        contextKind: "conversation",
+                        id: "thread:conversation:conv-1:message-1",
+                        kind: "thread",
+                        latestActivityAt: "2026-03-11T12:00:00.000Z",
+                        messageId: "message-1",
+                        muted: false,
+                        previewText: "direct unread",
+                        unreadCount: 1,
+                    },
+                    {
+                        authorLabel: "Server Author",
+                        authorUserId: "user-server",
+                        contextId: "channel-1",
+                        contextKind: "channel",
+                        id: "mention-item-1",
+                        kind: "mention",
+                        latestActivityAt: "2026-03-11T12:01:00.000Z",
+                        messageId: "message-2",
+                        muted: false,
+                        previewText: "server mention",
+                        unreadCount: 1,
+                    },
+                ],
+                unreadCount: 2,
+            };
+        });
+
+        render(
+            <ConversationList
+                conversations={[]}
+                currentUserId="current-user"
+                inboxItems={
+                    [
+                        {
+                            authorLabel: "Direct Author",
+                            authorUserId: "user-direct",
+                            contextId: "conv-1",
+                            contextKind: "conversation",
+                            id: "thread:conversation:conv-1:message-1",
+                            kind: "thread",
+                            latestActivityAt: "2026-03-11T12:00:00.000Z",
+                            messageId: "message-1",
+                            muted: false,
+                            previewText: "direct unread",
+                            unreadCount: 1,
+                        },
+                        {
+                            authorLabel: "Server Author",
+                            authorUserId: "user-server",
+                            contextId: "channel-1",
+                            contextKind: "channel",
+                            id: "mention-item-1",
+                            kind: "mention",
+                            latestActivityAt: "2026-03-11T12:01:00.000Z",
+                            messageId: "message-2",
+                            muted: false,
+                            previewText: "server mention",
+                            unreadCount: 1,
+                        },
+                    ] as never[]
+                }
+                loading={false}
+                onConversationCreated={vi.fn()}
+                onNewConversation={vi.fn()}
+                onSelectConversation={vi.fn()}
+                selectedConversationId={null}
+            />,
+        );
+
+        fireEvent.click(screen.getByRole("button", { name: /inbox/i }));
+        await waitFor(() => {
+            expect(screen.getByText("Direct Author")).toBeInTheDocument();
+            expect(screen.getByText("Server Author")).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /^Direct$/i }));
+        await waitFor(() => {
+            expect(screen.getByText("Direct Author")).toBeInTheDocument();
+            expect(screen.queryByText("Server Author")).not.toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: /^Servers$/i }));
+        await waitFor(() => {
+            expect(screen.getByText("Server Author")).toBeInTheDocument();
+            expect(screen.queryByText("Direct Author")).not.toBeInTheDocument();
+        });
+
+        expect(mockListInboxWithFilters).toHaveBeenCalledWith({
+            scope: "direct",
+            kinds: undefined,
+        });
+        expect(mockListInboxWithFilters).toHaveBeenCalledWith({
+            scope: "server",
+            kinds: undefined,
+        });
     });
 });

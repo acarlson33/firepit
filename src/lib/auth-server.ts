@@ -7,6 +7,7 @@ import { getUserRoles } from "./appwrite-roles";
 /**
  * Server-side auth helper for RSC and server actions.
  * Returns null if no valid session exists.
+ * @returns {Promise<{ $id: string; name: string; email: string; } | null>} The return value.
  */
 export async function getServerSession() {
     const env = getEnvConfig();
@@ -40,6 +41,9 @@ export async function getServerSession() {
 
 /**
  * Check if the current user has specific roles.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<RoleInfo>} The return value.
  */
 export async function checkUserRoles(userId: string) {
     return getUserRoles(userId);
@@ -47,6 +51,7 @@ export async function checkUserRoles(userId: string) {
 
 /**
  * Require authentication - throws if no session.
+ * @returns {Promise<{ $id: string; name: string; email: string; }>} The return value.
  */
 export async function requireAuth() {
     const user = await getServerSession();
@@ -58,6 +63,7 @@ export async function requireAuth() {
 
 /**
  * Require admin role - throws if not admin.
+ * @returns {Promise<{ user: { $id: string; name: string; email: string; }; roles: RoleInfo; }>} The return value.
  */
 export async function requireAdmin() {
     const user = await requireAuth();
@@ -70,6 +76,7 @@ export async function requireAdmin() {
 
 /**
  * Require moderator or admin role - throws if neither.
+ * @returns {Promise<{ user: { $id: string; name: string; email: string; }; roles: RoleInfo; }>} The return value.
  */
 export async function requireModerator() {
     const user = await requireAuth();

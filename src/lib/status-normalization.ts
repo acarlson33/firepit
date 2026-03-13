@@ -20,6 +20,12 @@ export type StatusLike = {
     $updatedAt?: unknown;
 };
 
+/**
+ * coerceTimestamp converts a candidate value to an ISO timestamp string when valid.
+ *
+ * @param {unknown} value - The input to coerce (for example a string, number, or Date-like value).
+ * @returns {string | undefined} ISO 8601 timestamp string if coercion succeeds, otherwise undefined.
+ */
 function coerceTimestamp(value: unknown): string | undefined {
     if (typeof value !== "string") {
         return undefined;
@@ -33,6 +39,13 @@ function coerceTimestamp(value: unknown): string | undefined {
     return value;
 }
 
+/**
+ * normalizeStatus applies status defaults and expiry/staleness rules to StatusLike input.
+ *
+ * @param {StatusLike} input - Raw status document to normalize.
+ * @param {number} now - Epoch milliseconds used for deterministic expiration checks.
+ * @returns {{ normalized: UserStatus; isExpired: boolean; isStale: boolean; shouldAutoOffline: boolean; }} Normalized status payload and computed lifecycle flags.
+ */
 export function normalizeStatus(input: StatusLike, now = Date.now()) {
     const lastSeenCandidate =
         coerceTimestamp(input.lastSeenAt) ?? coerceTimestamp(input.$updatedAt);

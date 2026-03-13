@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { useFriends } from "@/hooks/useFriends";
 import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
+import { listInboxWithFilters } from "@/lib/inbox-client";
 import {
     buildChatMessageHref,
     type ChatMessageDestination,
@@ -38,6 +39,8 @@ import { toast } from "sonner";
 
 type SidebarMode = "chats" | "inbox" | "mentions";
 
+type InboxFilter = "all" | "mentions" | "direct" | "server";
+
 type MentionItem = {
     authorAvatarUrl?: string;
     authorLabel: string;
@@ -48,6 +51,11 @@ type MentionItem = {
     muted: boolean;
     text: string;
     unreadCount: number;
+};
+
+type InboxFilterQuery = {
+    kinds?: Array<"mention" | "thread">;
+    scope?: "all" | "direct" | "server";
 };
 
 type ConversationUnreadState = {
@@ -101,6 +109,7 @@ export function ConversationList({
         string | null
     >(null);
     const [sidebarMode, setSidebarMode] = useState<SidebarMode>("chats");
+    const [inboxFilter, setInboxFilter] = useState<InboxFilter>("all");
     const isMessageContract = inboxContractVersion === "message_v2";
 
     const getConversationUnreadCount = useCallback(
@@ -164,6 +173,130 @@ export function ConversationList({
         () => sidebarItems.filter((item) => item.kind === "mention"),
         [sidebarItems],
     );
+
+    const fallbackFilteredInboxItems = useMemo(() => {
+        if (inboxFilter === "mentions") {
+            return sidebarItems.filter((item) => item.kind === "mention");
+        }
+
+        if (inboxFilter === "direct") {
+            return sidebarItems.filter(
+                (item) => item.destination.kind === "dm",
+            );
+        }
+
+        if (inboxFilter === "server") {
+            return sidebarItems.filter(
+                (item) => item.destination.kind === "channel",
+            );
+        }
+
+        return sidebarItems;
+    }, [inboxFilter, sidebarItems]);
+
+    const [serverFilteredInboxItems, setServerFilteredInboxItems] =
+        useState<MentionItem[]>(sidebarItems);
+    const [serverFilteredInboxLoading, setServerFilteredInboxLoading] =
+        useState(false);
+
+    const inboxFilterQuery = useMemo<InboxFilterQuery>(() => {
+        if (inboxFilter === "mentions") {
+            return { kinds: ["mention"] };
+        }
+
+        if (inboxFilter === "direct") {
+            return { scope: "direct" };
+        }
+
+        if (inboxFilter === "server") {
+            return { scope: "server" };
+        }
+
+        return { scope: "all" };
+    }, [inboxFilter]);
+
+    const inboxFilterCacheKey = useMemo(
+        () =>
+            JSON.stringify({
+                kinds: inboxFilterQuery.kinds ?? [],
+                scope: inboxFilterQuery.scope ?? "all",
+            }),
+        [inboxFilterQuery.kinds, inboxFilterQuery.scope],
+    );
+
+    useEffect(() => {
+        if (sidebarMode !== "inbox") {
+            return;
+        }
+
+        let cancelled = false;
+        setServerFilteredInboxLoading(true);
+        setServerFilteredInboxItems(fallbackFilteredInboxItems);
+
+        void listInboxWithFilters({
+            kinds: inboxFilterQuery.kinds,
+            scope: inboxFilterQuery.scope,
+        })
+            .then((response) => {
+                if (cancelled) {
+                    return;
+                }
+
+                const nextItems = response.items.map((item) => {
+                    const destination: ChatMessageDestination =
+                        item.contextKind === "channel"
+                            ? {
+                                  kind: "channel",
+                                  channelId: item.contextId,
+                                  messageId: item.messageId,
+                                  serverId: item.serverId,
+                              }
+                            : {
+                                  kind: "dm",
+                                  conversationId: item.contextId,
+                                  messageId: item.messageId,
+                              };
+
+                    return {
+                        authorAvatarUrl: item.authorAvatarUrl,
+                        authorLabel: item.authorLabel,
+                        createdAt: item.latestActivityAt,
+                        destination,
+                        id: item.id,
+                        kind: item.kind,
+                        muted: item.muted,
+                        text: item.previewText,
+                        unreadCount: item.unreadCount,
+                    } satisfies MentionItem;
+                });
+
+                setServerFilteredInboxItems(nextItems);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    // Local filtering remains as a fallback for transient failures.
+                    setServerFilteredInboxItems(fallbackFilteredInboxItems);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setServerFilteredInboxLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        fallbackFilteredInboxItems,
+        inboxFilterCacheKey,
+        inboxFilterQuery.kinds,
+        inboxFilterQuery.scope,
+        sidebarMode,
+    ]);
+
+    const displayedInboxItems =
+        sidebarMode === "inbox" ? serverFilteredInboxItems : sidebarItems;
     const inboxUnreadCount = useMemo(
         () =>
             sidebarItems.reduce(
@@ -453,6 +586,63 @@ export function ConversationList({
 
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
+                {sidebarMode === "inbox" ? (
+                    <div
+                        aria-label="Inbox filter"
+                        className="grid grid-cols-4 gap-1 border-border border-b p-2"
+                        role="group"
+                    >
+                        <Button
+                            aria-pressed={inboxFilter === "all"}
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("all")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "all" ? "default" : "ghost"
+                            }
+                        >
+                            All
+                        </Button>
+                        <Button
+                            aria-pressed={inboxFilter === "mentions"}
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("mentions")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "mentions" ? "default" : "ghost"
+                            }
+                        >
+                            Mentions
+                        </Button>
+                        <Button
+                            aria-pressed={inboxFilter === "direct"}
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("direct")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "direct" ? "default" : "ghost"
+                            }
+                        >
+                            Direct
+                        </Button>
+                        <Button
+                            aria-pressed={inboxFilter === "server"}
+                            className="rounded-lg"
+                            onClick={() => setInboxFilter("server")}
+                            size="sm"
+                            type="button"
+                            variant={
+                                inboxFilter === "server" ? "default" : "ghost"
+                            }
+                        >
+                            Servers
+                        </Button>
+                    </div>
+                ) : null}
+
                 {sidebarMode === "chats" &&
                 currentUserId &&
                 (friendsLoading ||
@@ -733,7 +923,7 @@ export function ConversationList({
                         )}
                     </div>
                 ) : (sidebarMode === "inbox"
-                      ? sidebarItems
+                      ? displayedInboxItems
                       : unreadConversations.length > 0
                         ? unreadConversations
                         : conversations
@@ -746,7 +936,9 @@ export function ConversationList({
                         )}
                         <p className="text-muted-foreground text-sm">
                             {sidebarMode === "inbox"
-                                ? "No unread threads"
+                                ? serverFilteredInboxLoading
+                                    ? "Loading inbox items..."
+                                    : "No unread items for this filter"
                                 : "No conversations yet"}
                         </p>
                         {sidebarMode === "chats" ? (
@@ -763,7 +955,7 @@ export function ConversationList({
                 ) : (
                     <div className="space-y-1 p-2">
                         {sidebarMode === "inbox"
-                            ? sidebarItems.map((item) => (
+                            ? displayedInboxItems.map((item) => (
                                   <button
                                       className="flex w-full items-start gap-3 rounded-lg border border-border/60 p-3 text-left transition hover:bg-accent/40"
                                       key={item.id}

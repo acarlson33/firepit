@@ -15,6 +15,38 @@ type ThreadReadDocument = {
     userId: string;
 };
 
+const THREAD_READ_QUERY_LIMIT = 500;
+
+/**
+ * Handles merge thread reads by max.
+ *
+ * @param {{ existingReads: Record<string, string>; incomingReads: Record<string, string>; }} params - The params value.
+ * @returns {{ [x: string]: string; }} The return value.
+ */
+export function mergeThreadReadsByMax(params: {
+    existingReads: Record<string, string>;
+    incomingReads: Record<string, string>;
+}) {
+    const mergedReads = { ...params.existingReads };
+
+    for (const [messageId, incomingTimestamp] of Object.entries(
+        params.incomingReads,
+    )) {
+        const existingTimestamp = mergedReads[messageId];
+        if (!existingTimestamp || existingTimestamp < incomingTimestamp) {
+            mergedReads[messageId] = incomingTimestamp;
+        }
+    }
+
+    return mergedReads;
+}
+
+/**
+ * Handles map thread read document.
+ *
+ * @param {{ [x: string]: unknown; }} document - The document value.
+ * @returns {{ $id: string; contextId: string; contextType: ThreadReadContextType; reads: Record<string, string>; userId: string; }} The return value.
+ */
 function mapThreadReadDocument(
     document: Record<string, unknown>,
 ): ThreadReadDocument {
@@ -27,7 +59,13 @@ function mapThreadReadDocument(
     };
 }
 
-export async function getThreadReads(params: {
+/**
+ * Lists thread read documents for one context.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; userId: string; }} params - The params value.
+ * @returns {Promise<ThreadReadDocument[]>} The return value.
+ */
+async function listThreadReadDocumentsForContext(params: {
     contextId: string;
     contextType: ThreadReadContextType;
     userId: string;
@@ -41,16 +79,53 @@ export async function getThreadReads(params: {
             Query.equal("userId", params.userId),
             Query.equal("contextType", params.contextType),
             Query.equal("contextId", params.contextId),
-            Query.limit(1),
+            Query.limit(THREAD_READ_QUERY_LIMIT),
         ],
     );
-    const document = documents.documents.at(0);
 
-    return document
-        ? mapThreadReadDocument(document as unknown as Record<string, unknown>)
-        : null;
+    return documents.documents.map((document) =>
+        mapThreadReadDocument(document as unknown as Record<string, unknown>),
+    );
 }
 
+/**
+ * Returns thread reads.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; userId: string; }} params - The params value.
+ * @returns {Promise<ThreadReadDocument | null>} The return value.
+ */
+export async function getThreadReads(params: {
+    contextId: string;
+    contextType: ThreadReadContextType;
+    userId: string;
+}) {
+    const documents = await listThreadReadDocumentsForContext(params);
+    const document = documents.at(0);
+    if (!document) {
+        return null;
+    }
+
+    const mergedReads = documents.reduce<Record<string, string>>(
+        (accumulator, currentDocument) =>
+            mergeThreadReadsByMax({
+                existingReads: accumulator,
+                incomingReads: currentDocument.reads,
+            }),
+        {},
+    );
+
+    return {
+        ...document,
+        reads: mergedReads,
+    };
+}
+
+/**
+ * Lists thread reads by context.
+ *
+ * @param {{ contextIds: string[]; contextType: ThreadReadContextType; userId: string; }} params - The params value.
+ * @returns {Promise<any>} The return value.
+ */
 export async function listThreadReadsByContext(params: {
     contextIds: string[];
     contextType: ThreadReadContextType;
@@ -69,7 +144,7 @@ export async function listThreadReadsByContext(params: {
             Query.equal("userId", params.userId),
             Query.equal("contextType", params.contextType),
             Query.equal("contextId", params.contextIds),
-            Query.limit(500),
+            Query.limit(THREAD_READ_QUERY_LIMIT),
         ],
     );
 
@@ -78,13 +153,26 @@ export async function listThreadReadsByContext(params: {
             const mapped = mapThreadReadDocument(
                 document as unknown as Record<string, unknown>,
             );
-            accumulator.set(mapped.contextId, mapped.reads);
+            const existingReads = accumulator.get(mapped.contextId) ?? {};
+            accumulator.set(
+                mapped.contextId,
+                mergeThreadReadsByMax({
+                    existingReads,
+                    incomingReads: mapped.reads,
+                }),
+            );
             return accumulator;
         },
         new Map(),
     );
 }
 
+/**
+ * Handles upsert thread reads.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; reads: Record<string, string>; userId: string; }} params - The params value.
+ * @returns {Promise<ThreadReadDocument>} The return value.
+ */
 export async function upsertThreadReads(params: {
     contextId: string;
     contextType: ThreadReadContextType;
@@ -93,28 +181,15 @@ export async function upsertThreadReads(params: {
 }) {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
-    const existing = await getThreadReads(params);
+    const incomingReads = normalizeThreadReads(params.reads);
     const payload = {
         contextId: params.contextId,
         contextType: params.contextType,
-        reads: JSON.stringify(normalizeThreadReads(params.reads)),
+        reads: JSON.stringify(incomingReads),
         userId: params.userId,
     };
 
-    if (existing) {
-        const updated = await databases.updateDocument(
-            env.databaseId,
-            env.collections.threadReads,
-            existing.$id,
-            payload,
-        );
-
-        return mapThreadReadDocument(
-            updated as unknown as Record<string, unknown>,
-        );
-    }
-
-    const created = await databases.createDocument(
+    await databases.createDocument(
         env.databaseId,
         env.collections.threadReads,
         ID.unique(),
@@ -122,5 +197,16 @@ export async function upsertThreadReads(params: {
         perms.serverOwner(params.userId),
     );
 
-    return mapThreadReadDocument(created as unknown as Record<string, unknown>);
+    const merged = await getThreadReads(params);
+    if (merged) {
+        return merged;
+    }
+
+    return {
+        $id: "",
+        contextId: params.contextId,
+        contextType: params.contextType,
+        reads: incomingReads,
+        userId: params.userId,
+    };
 }

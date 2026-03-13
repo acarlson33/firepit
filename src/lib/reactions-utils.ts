@@ -13,6 +13,15 @@ export type ParsedReactionsResult = {
     didNormalize: boolean;
 };
 
+/**
+ * normalizeReaction validates and normalizes one reaction entry.
+ * Invalid entries are dropped (returns null), including missing/invalid emoji
+ * or non-object values. userIds are filtered to non-empty strings, deduplicated,
+ * and count is repaired from userIds when needed.
+ *
+ * @param {unknown} reaction - Raw reaction candidate from storage.
+ * @returns {Reaction | null} Normalized reaction, or null when the input is not valid.
+ */
 function normalizeReaction(reaction: unknown): Reaction | null {
     if (!reaction || typeof reaction !== "object") {
         return null;
@@ -45,6 +54,14 @@ function normalizeReaction(reaction: unknown): Reaction | null {
     };
 }
 
+/**
+ * normalizeLegacyReactionMap converts legacy emoji-keyed reaction objects to the
+ * current Reaction[] shape. Invalid legacy entries are skipped and userIds are
+ * normalized to unique non-empty strings.
+ *
+ * @param {{ [x: string]: unknown; }} reactionsData - Legacy emoji -> payload mapping.
+ * @returns {Reaction[]} Normalized reactions in the current array format.
+ */
 function normalizeLegacyReactionMap(
     reactionsData: Record<string, unknown>,
 ): Reaction[] {
@@ -78,6 +95,16 @@ function normalizeLegacyReactionMap(
     return reactions;
 }
 
+/**
+ * parseReactionsWithMetadata normalizes Appwrite reaction payloads across shapes:
+ * JSON strings, current Reaction[] arrays, and legacy emoji maps. Invalid entries
+ * are dropped during normalization and legacy shapes are converted to Reaction[].
+ * didNormalize is true when repairs/coercions occur (for example, dropping invalid
+ * rows, deduplicating userIds, or converting a legacy map).
+ *
+ * @param {unknown} reactionsData - Raw reactions payload from storage.
+ * @returns {{ reactions: Reaction[]; didNormalize: boolean; }} Normalized reactions plus a flag indicating whether normalization changed the input.
+ */
 export function parseReactionsWithMetadata(
     reactionsData: unknown,
 ): ParsedReactionsResult {
@@ -121,9 +148,12 @@ export function parseReactionsWithMetadata(
 }
 
 /**
- * Parse reactions data from Appwrite (can be JSON string or array)
- * @param reactionsData - The reactions data from the database (string, array, or undefined)
- * @returns Parsed array of reactions
+ * parseReactions returns normalized reactions only, discarding metadata.
+ * Accepts current array payloads and serialized JSON forms; invalid entries are
+ * removed as part of normalization.
+ *
+ * @param {string | Reaction[] | undefined} reactionsData - Stored reactions payload.
+ * @returns {Reaction[]} Normalized reactions ready for client/server consumers.
  */
 export function parseReactions(
     reactionsData: string | Reaction[] | undefined,

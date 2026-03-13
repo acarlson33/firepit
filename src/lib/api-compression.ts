@@ -13,10 +13,10 @@ import { shouldCompress } from "./compression-utils";
 
 /**
  * Wraps a Next.js API response with compression headers if appropriate
- * 
- * @param data - The response data to send
- * @param options - NextResponse options (status, headers, etc.)
- * @returns NextResponse with compression headers if applicable
+ *
+ * @param {T} data - The data value.
+ * @param {{ status?: number | undefined; headers?: Record<string, string> | undefined; statusText?: string | undefined; } | undefined} options - The options value, if provided.
+ * @returns {NextResponse<unknown>} The return value.
  */
 export function compressedResponse<T>(
   data: T,
@@ -58,9 +58,9 @@ export function compressedResponse<T>(
 
 /**
  * Helper to add compression headers to an existing NextResponse
- * 
- * @param response - The NextResponse to add headers to
- * @returns The same response with compression headers added
+ *
+ * @param {NextResponse<unknown>} response - The response value.
+ * @returns {NextResponse<unknown>} The return value.
  */
 export function addCompressionHeaders(response: NextResponse): NextResponse {
   // Check if response is JSON and large enough

@@ -30,7 +30,12 @@ import {
     jumpToMessage,
     jumpToMessageWhenReady,
 } from "@/lib/message-navigation";
-import type { Channel, FileAttachment } from "@/lib/types";
+import type {
+    Channel,
+    FileAttachment,
+    InboxContextKind,
+    InboxItem,
+} from "@/lib/types";
 import { ConversationList } from "./components/ConversationList";
 import { DirectMessageView } from "./components/DirectMessageView";
 import { useAuth } from "@/contexts/auth-context";
@@ -41,12 +46,12 @@ import { useServers } from "./hooks/useServers";
 import { useConversations } from "./hooks/useConversations";
 import { useDirectMessages } from "./hooks/useDirectMessages";
 import { useInbox } from "./hooks/useInbox";
-import { useInboxDigest } from "./hooks/useInboxDigest";
 import { useNotificationSettings } from "@/hooks/useNotificationSettings";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
+import { listInboxWithFilters } from "@/lib/inbox-client";
 import { toggleReaction } from "@/lib/reactions-client";
 import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
 import { toast } from "sonner";
@@ -154,6 +159,23 @@ function sortSidebarChannels(channels: Channel[]) {
     });
 }
 
+function getFirstUnreadItem(items: InboxItem[]) {
+    if (items.length === 0) {
+        return null;
+    }
+
+    return [...items].sort((left, right) => {
+        const activityOrder = left.latestActivityAt.localeCompare(
+            right.latestActivityAt,
+        );
+        if (activityOrder !== 0) {
+            return activityOrder;
+        }
+
+        return left.id.localeCompare(right.id);
+    })[0];
+}
+
 export default function ChatPage() {
     const { userData, loading: _authLoading } = useAuth();
     const userId = userData?.userId ?? null;
@@ -216,6 +238,9 @@ export default function ChatPage() {
         contextKey: string;
         messageId: string;
     } | null>(null);
+    const [activeContextInboxItems, setActiveContextInboxItems] = useState<
+        InboxItem[] | null | undefined
+    >(null);
     const _messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,20 +251,6 @@ export default function ChatPage() {
     const { customEmojis, uploadEmoji } = useCustomEmojis();
     const notificationSettingsApi = useNotificationSettings();
     const inboxApi = useInbox(userId);
-    const digestContextKind = selectedChannel
-        ? "channel"
-        : selectedConversationId
-          ? "conversation"
-          : undefined;
-    const digestContextId =
-        selectedChannel || selectedConversationId || undefined;
-    const inboxDigestApi = useInboxDigest({
-        contextId: digestContextId,
-        contextKind: digestContextKind,
-        enabled: Boolean(digestContextId && digestContextKind),
-        limit: 100,
-        userId,
-    });
     const conversationsApi = useConversations(
         userId,
         viewMode === "dms" ||
@@ -481,12 +492,89 @@ export default function ChatPage() {
 
         return null;
     }, [inboxApi, selectedChannel, selectedConversationId]);
+    const activeContext = useMemo<{
+        contextId: string;
+        contextKind: InboxContextKind;
+    } | null>(() => {
+        if (selectedChannel) {
+            return {
+                contextId: selectedChannel,
+                contextKind: "channel",
+            };
+        }
+
+        if (selectedConversationId) {
+            return {
+                contextId: selectedConversationId,
+                contextKind: "conversation",
+            };
+        }
+
+        return null;
+    }, [selectedChannel, selectedConversationId]);
+
+    useEffect(() => {
+        if (!userId || !activeContext) {
+            setActiveContextInboxItems(null);
+            return;
+        }
+
+        let cancelled = false;
+        setActiveContextInboxItems(undefined);
+        void listInboxWithFilters({
+            contextId: activeContext.contextId,
+            contextKind: activeContext.contextKind,
+        })
+            .then((data) => {
+                if (!cancelled) {
+                    setActiveContextInboxItems(
+                        data.items.length > 0 ? data.items : null,
+                    );
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setActiveContextInboxItems(null);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        activeContext,
+        currentContextSummary?.firstUnreadItem?.id,
+        currentContextSummary?.totalCount,
+        userId,
+    ]);
+
+    const scopedFirstUnreadItem = useMemo(
+        () =>
+            Array.isArray(activeContextInboxItems)
+                ? getFirstUnreadItem(activeContextInboxItems)
+                : null,
+        [activeContextInboxItems],
+    );
+    const scopedUnreadCount = useMemo(
+        () =>
+            Array.isArray(activeContextInboxItems)
+                ? activeContextInboxItems.reduce(
+                      (total, item) => total + item.unreadCount,
+                      0,
+                  )
+                : 0,
+        [activeContextInboxItems],
+    );
+    const currentContextFirstUnreadMessageId =
+        activeContextInboxItems === null
+            ? (currentContextSummary?.firstUnreadItem?.messageId ?? null)
+            : (scopedFirstUnreadItem?.messageId ?? null);
     const currentContextUnreadCount =
-        inboxApi.contractVersion === "message_v2"
-            ? (inboxDigestApi.totalUnreadCount ??
-              currentContextSummary?.totalCount ??
-              0)
-            : (currentContextSummary?.totalCount ?? 0);
+        activeContextInboxItems === null
+            ? (currentContextSummary?.totalCount ?? 0)
+            : scopedUnreadCount;
+    const currentContextKind =
+        activeContext?.contextKind ?? currentContextSummary?.contextKind;
 
     useEffect(() => {
         if (routeConversationId) {
@@ -655,15 +743,17 @@ export default function ChatPage() {
         }
 
         setActiveUnreadAnchor((currentValue) => {
-            if (currentValue?.contextKey === currentContextKey) {
-                return currentValue;
-            }
+            const nextMessageId = currentContextFirstUnreadMessageId;
 
-            const nextMessageId =
-                currentContextSummary?.firstUnreadItem?.messageId ??
-                inboxDigestApi.items.at(0)?.messageId;
             if (!nextMessageId) {
                 return null;
+            }
+
+            if (
+                currentValue?.contextKey === currentContextKey &&
+                currentValue.messageId === nextMessageId
+            ) {
+                return currentValue;
             }
 
             return {
@@ -671,28 +761,28 @@ export default function ChatPage() {
                 messageId: nextMessageId,
             };
         });
-    }, [
-        currentContextKey,
-        currentContextSummary?.firstUnreadItem?.messageId,
-        inboxDigestApi.items,
-    ]);
+    }, [currentContextFirstUnreadMessageId, currentContextKey]);
 
     useEffect(() => {
-        if (!currentContextKey || !currentContextSummary) {
+        if (
+            !currentContextKey ||
+            !activeContext ||
+            currentContextUnreadCount < 1
+        ) {
             return;
         }
 
         const timeoutId = window.setTimeout(() => {
             void inboxApi.markContextRead(
-                currentContextSummary.contextKind,
-                currentContextSummary.contextId,
+                activeContext.contextKind,
+                activeContext.contextId,
             );
         }, 800);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [currentContextKey, currentContextSummary, inboxApi]);
+    }, [activeContext, currentContextKey, currentContextUnreadCount, inboxApi]);
 
     useEffect(() => {
         if (!serversApi.selectedServer) {
@@ -858,9 +948,7 @@ export default function ChatPage() {
     }, []);
     const handleJumpToCurrentUnread = useCallback(() => {
         const targetMessageId =
-            activeUnreadAnchor?.messageId ??
-            currentContextSummary?.firstUnreadItem?.messageId ??
-            inboxDigestApi.items.at(0)?.messageId;
+            activeUnreadAnchor?.messageId ?? currentContextFirstUnreadMessageId;
         if (!targetMessageId) {
             return;
         }
@@ -868,14 +956,14 @@ export default function ChatPage() {
         jumpToUnreadEntry(targetMessageId);
     }, [
         activeUnreadAnchor?.messageId,
-        currentContextSummary?.firstUnreadItem?.messageId,
-        inboxDigestApi.items,
+        currentContextFirstUnreadMessageId,
         jumpToUnreadEntry,
     ]);
 
     const handleCatchUpCurrentContext = useCallback(() => {
         setActiveUnreadAnchor(null);
         if (selectedChannel) {
+            void inboxApi.markContextRead("channel", selectedChannel);
             if (messagesApi.surfaceMessages.length > 0) {
                 jumpToMessage(messagesApi.surfaceMessages.at(-1)?.id || "", {
                     block: "end",
@@ -885,11 +973,16 @@ export default function ChatPage() {
         }
 
         if (selectedConversationId && dmApi.surfaceMessages.length > 0) {
+            void inboxApi.markContextRead(
+                "conversation",
+                selectedConversationId,
+            );
             jumpToMessage(dmApi.surfaceMessages.at(-1)?.id || "", {
                 block: "end",
             });
         }
     }, [
+        inboxApi,
         dmApi.surfaceMessages,
         messagesApi.surfaceMessages,
         selectedChannel,
@@ -1612,11 +1705,11 @@ export default function ChatPage() {
                         : null
                 }
                 unreadSummaryLabel={
-                    currentContextSummary
+                    currentContextKind && currentContextUnreadCount > 0
                         ? `${currentContextUnreadCount} unread ${unreadSummaryUnitLabel}${
                               currentContextUnreadCount === 1 ? "" : "s"
                           } in this ${
-                              currentContextSummary.contextKind === "channel"
+                              currentContextKind === "channel"
                                   ? "channel"
                                   : "conversation"
                           }`
@@ -1770,14 +1863,14 @@ export default function ChatPage() {
                                     : null
                             }
                             unreadSummaryLabel={
-                                currentContextSummary
+                                currentContextKind &&
+                                currentContextUnreadCount > 0
                                     ? `${currentContextUnreadCount} unread ${unreadSummaryUnitLabel}${
                                           currentContextUnreadCount === 1
                                               ? ""
                                               : "s"
                                       } in this ${
-                                          currentContextSummary.contextKind ===
-                                          "channel"
+                                          currentContextKind === "channel"
                                               ? "channel"
                                               : "conversation"
                                       }`

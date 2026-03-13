@@ -29,6 +29,7 @@ export type ValidationResult = {
 
 /**
  * Generate a unique invite code with collision retry logic
+ * @returns {Promise<string>} The return value.
  */
 async function generateUniqueCode(): Promise<string> {
     const maxAttempts = 5;
@@ -61,6 +62,9 @@ async function generateUniqueCode(): Promise<string> {
 
 /**
  * Create a new server invite
+ *
+ * @param {{ serverId: string; creatorId: string; channelId?: string | undefined; expiresAt?: string | undefined; maxUses?: number | undefined; temporary?: boolean | undefined; }} options - The options value.
+ * @returns {Promise<ServerInvite>} The return value.
  */
 export async function createInvite(
     options: CreateInviteOptions,
@@ -91,6 +95,9 @@ export async function createInvite(
 
 /**
  * Get invite by code
+ *
+ * @param {string} code - The code value.
+ * @returns {Promise<ServerInvite | null>} The return value.
  */
 export async function getInviteByCode(
     code: string,
@@ -117,6 +124,9 @@ export async function getInviteByCode(
 
 /**
  * Validate an invite code
+ *
+ * @param {string} code - The code value.
+ * @returns {Promise<ValidationResult>} The return value.
  */
 export async function validateInvite(code: string): Promise<ValidationResult> {
     const invite = await getInviteByCode(code);
@@ -149,6 +159,10 @@ export async function validateInvite(code: string): Promise<ValidationResult> {
 
 /**
  * Use an invite (increment usage count and record usage)
+ *
+ * @param {string} code - The code value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<{ success: boolean; error?: string | undefined; serverId?: string | undefined; }>} The return value.
  */
 export async function useInvite(
     code: string,
@@ -247,6 +261,9 @@ export async function useInvite(
 
 /**
  * List all invites for a server
+ *
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<ServerInvite[]>} The return value.
  */
 export async function listServerInvites(
     serverId: string,
@@ -273,6 +290,9 @@ export async function listServerInvites(
 
 /**
  * Revoke (delete) an invite
+ *
+ * @param {string} inviteId - The invite id value.
+ * @returns {Promise<boolean>} The return value.
  */
 export async function revokeInvite(inviteId: string): Promise<boolean> {
     const { databases } = getServerClient();
@@ -292,6 +312,9 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
 
 /**
  * Get invite usage statistics for an invite
+ *
+ * @param {string} code - The code value.
+ * @returns {Promise<InviteUsage[]>} The return value.
  */
 export async function getInviteUsage(code: string): Promise<InviteUsage[]> {
     const { databases } = getServerClient();
@@ -316,6 +339,9 @@ export async function getInviteUsage(code: string): Promise<InviteUsage[]> {
 
 /**
  * Get server info for invite preview (public, no auth required)
+ *
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<{ name: string; memberCount: number; } | null>} The return value.
  */
 export async function getServerPreview(serverId: string): Promise<{
     name: string;

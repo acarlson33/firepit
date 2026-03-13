@@ -12,8 +12,13 @@ import type {
 import { parseReactions } from "./reactions-utils";
 import { extractMentionedUsernames } from "./mention-utils";
 
+type FetchedUserProfile = Partial<UserProfileData>;
+
 /**
  * Upload an image to Appwrite Storage
+ *
+ * @param {File} file - The file value.
+ * @returns {Promise<{ fileId: string; url: string; }>} The return value.
  */
 export async function uploadImage(
     file: File,
@@ -37,6 +42,9 @@ export async function uploadImage(
 
 /**
  * Delete an image from Appwrite Storage
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function deleteImage(fileId: string): Promise<void> {
     const response = await fetch(
@@ -54,8 +62,13 @@ export async function deleteImage(fileId: string): Promise<void> {
 
 /**
  * Fetch a user profile from the existing profile API
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<FetchedUserProfile | null>} The return value.
  */
-async function fetchUserProfile(userId: string) {
+async function fetchUserProfile(
+    userId: string,
+): Promise<FetchedUserProfile | null> {
     try {
         const response = await fetch(
             `/api/profile/${encodeURIComponent(userId)}`,
@@ -63,7 +76,7 @@ async function fetchUserProfile(userId: string) {
         if (!response.ok) {
             return null;
         }
-        const data = await response.json();
+        const data = (await response.json()) as FetchedUserProfile;
         return data;
     } catch {
         return null;
@@ -72,6 +85,9 @@ async function fetchUserProfile(userId: string) {
 
 /**
  * Batch fetch multiple user profiles in a single API call
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, Partial<UserProfileData>>>} The return value.
  */
 async function fetchUserProfilesBatchAPI(
     userIds: string[],
@@ -122,6 +138,10 @@ async function fetchUserProfilesBatchAPI(
 
 /**
  * Get or create a conversation between two users
+ *
+ * @param {string} userId1 - The user id1 value.
+ * @param {string} userId2 - The user id2 value.
+ * @returns {Promise<Conversation>} The return value.
  */
 export async function getOrCreateConversation(
     userId1: string,
@@ -144,6 +164,10 @@ export async function getOrCreateConversation(
 
 /**
  * Create a group DM conversation with 3+ participants
+ *
+ * @param {string[]} participantIds - The participant ids value.
+ * @param {{ name?: string | undefined; avatarUrl?: string | undefined; } | undefined} options - The options value, if provided.
+ * @returns {Promise<Conversation>} The return value.
  */
 export async function createGroupConversation(
     participantIds: string[],
@@ -177,6 +201,9 @@ export async function createGroupConversation(
 
 /**
  * List all conversations for the current user
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<Conversation[]>} The return value.
  */
 export async function listConversations(
     userId: string,
@@ -260,6 +287,16 @@ export async function listConversations(
 
 /**
  * Send a direct message
+ *
+ * @param {string} conversationId - The conversation id value.
+ * @param {string} senderId - The sender id value.
+ * @param {string | undefined} receiverId - The receiver id value.
+ * @param {string} text - The text value.
+ * @param {string | undefined} imageFileId - The image file id value, if provided.
+ * @param {string | undefined} imageUrl - The image url value, if provided.
+ * @param {string | undefined} replyToId - The reply to id value, if provided.
+ * @param {unknown[] | undefined} attachments - The attachments value, if provided.
+ * @returns {Promise<DirectMessage>} The return value.
  */
 export async function sendDirectMessage(
     conversationId: string,
@@ -306,6 +343,9 @@ export async function sendDirectMessage(
  * Fetch multiple user profiles in batch
  * This is the fallback method that fetches profiles individually in batches of 5
  * Used if the batch API endpoint fails
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, Partial<UserProfileData>>>} The return value.
  */
 async function fetchUserProfilesBatch(
     userIds: string[],
@@ -341,6 +381,9 @@ async function fetchUserProfilesBatch(
 /**
  * Load image URLs for messages that have imageFileId but no imageUrl yet
  * This is called separately after initial message load to avoid blocking
+ *
+ * @param {DirectMessage[]} messages - The messages value.
+ * @returns {Promise<Map<string, string>>} The return value.
  */
 export async function loadMessageImages(
     messages: DirectMessage[],
@@ -366,6 +409,11 @@ export async function loadMessageImages(
 /**
  * List direct messages in a conversation
  * Optimized to batch queries and load images separately
+ *
+ * @param {string} conversationId - The conversation id value.
+ * @param {number} limit - The limit value, if provided.
+ * @param {string | undefined} cursor - The cursor value, if provided.
+ * @returns {Promise<{ items: DirectMessage[]; nextCursor?: string | undefined; readOnly: boolean; readOnlyReason?: string | undefined; relationship?: RelationshipStatus | undefined; }>} The return value.
  */
 export async function listDirectMessages(
     conversationId: string,
@@ -444,6 +492,10 @@ export async function listDirectMessages(
 
 /**
  * Edit a direct message
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} newText - The new text value.
+ * @returns {Promise<void>} The return value.
  */
 export async function editDirectMessage(
     messageId: string,
@@ -470,6 +522,10 @@ export async function editDirectMessage(
 
 /**
  * Delete a direct message (soft delete)
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} _userId - The  user id value.
+ * @returns {Promise<void>} The return value.
  */
 export async function deleteDirectMessage(
     messageId: string,

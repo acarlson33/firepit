@@ -20,6 +20,12 @@ export class RelationshipError extends Error {
     }
 }
 
+/**
+ * Returns error message.
+ *
+ * @param {unknown} error - The error value.
+ * @returns {string} The return value.
+ */
 function getErrorMessage(error: unknown) {
     if (error instanceof Error) {
         return error.message;
@@ -28,6 +34,12 @@ function getErrorMessage(error: unknown) {
     return String(error);
 }
 
+/**
+ * Determines whether is relationship schema error.
+ *
+ * @param {unknown} error - The error value.
+ * @returns {boolean} The return value.
+ */
 function isRelationshipSchemaError(error: unknown) {
     const message = getErrorMessage(error).toLowerCase();
 
@@ -42,6 +54,10 @@ function isRelationshipSchemaError(error: unknown) {
     );
 }
 
+/**
+ * Creates relationship schema unavailable error.
+ * @returns {RelationshipError} The return value.
+ */
 function createRelationshipSchemaUnavailableError() {
     return new RelationshipError(
         "Friend system schema is not available yet. Run bun run setup to provision the Appwrite collections.",
@@ -76,6 +92,13 @@ async function writeRelationshipData<T>(operation: () => Promise<T>) {
     }
 }
 
+/**
+ * Handles friendship permissions.
+ *
+ * @param {string} requesterId - The requester id value.
+ * @param {string} recipientId - The recipient id value.
+ * @returns {string[]} The return value.
+ */
 function friendshipPermissions(requesterId: string, recipientId: string) {
     return [
         Permission.read(Role.user(requesterId)),
@@ -87,6 +110,12 @@ function friendshipPermissions(requesterId: string, recipientId: string) {
     ];
 }
 
+/**
+ * Handles block permissions.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {string[]} The return value.
+ */
 function blockPermissions(userId: string) {
     return [
         Permission.read(Role.user(userId)),
@@ -95,6 +124,12 @@ function blockPermissions(userId: string) {
     ];
 }
 
+/**
+ * Handles to friendship.
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {{ $id: string; requesterId: string; recipientId: string; pairKey: string; status: 'pending' | 'accepted' | 'declined'; requestedAt: string; respondedAt?: string | undefined; acceptedAt?: string | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} The return value.
+ */
 function toFriendship(doc: Record<string, unknown>): Friendship {
     return {
         $id: String(doc.$id),
@@ -110,6 +145,12 @@ function toFriendship(doc: Record<string, unknown>): Friendship {
     };
 }
 
+/**
+ * Handles to blocked user.
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {{ $id: string; userId: string; blockedUserId: string; blockedAt: string; reason?: string | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} The return value.
+ */
 function toBlockedUser(doc: Record<string, unknown>): BlockedUser {
     return {
         $id: String(doc.$id),
@@ -126,6 +167,13 @@ type RelationshipDocumentList = {
     documents: Array<Record<string, unknown>>;
 };
 
+/**
+ * Normalizes user pair.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} otherUserId - The other user id value.
+ * @returns {{ firstUserId: string; secondUserId: string; pairKey: string; }} The return value.
+ */
 export function normalizeUserPair(userId: string, otherUserId: string) {
     const [firstUserId, secondUserId] = [userId, otherUserId].sort();
     return {
@@ -135,6 +183,13 @@ export function normalizeUserPair(userId: string, otherUserId: string) {
     };
 }
 
+/**
+ * Returns friendship other user id.
+ *
+ * @param {{ $id: string; requesterId: string; recipientId: string; pairKey: string; status: 'pending' | 'accepted' | 'declined'; requestedAt: string; respondedAt?: string | undefined; acceptedAt?: string | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} friendship - The friendship value.
+ * @param {string} userId - The user id value.
+ * @returns {string} The return value.
+ */
 export function getFriendshipOtherUserId(
     friendship: Friendship,
     userId: string,
@@ -145,6 +200,14 @@ export function getFriendshipOtherUserId(
     return friendship.requesterId;
 }
 
+/**
+ * Handles assert distinct users.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @param {string} action - The action value.
+ * @returns {void} The return value.
+ */
 function assertDistinctUsers(
     userId: string,
     targetUserId: string,
@@ -159,6 +222,13 @@ function assertDistinctUsers(
     }
 }
 
+/**
+ * Returns friendship by pair.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @returns {Promise<Friendship | null>} The return value.
+ */
 export async function getFriendshipByPair(
     userId: string,
     targetUserId: string,
@@ -180,6 +250,13 @@ export async function getFriendshipByPair(
     return document ? toFriendship(document) : null;
 }
 
+/**
+ * Returns block record.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} blockedUserId - The blocked user id value.
+ * @returns {Promise<BlockedUser | null>} The return value.
+ */
 export async function getBlockRecord(userId: string, blockedUserId: string) {
     const { databases } = getAdminClient();
     const response = await readRelationshipData<RelationshipDocumentList>(
@@ -198,6 +275,13 @@ export async function getBlockRecord(userId: string, blockedUserId: string) {
     return document ? toBlockedUser(document) : null;
 }
 
+/**
+ * Returns block status.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @returns {Promise<{ blockedByMe: BlockedUser | null; blockedMe: BlockedUser | null; isBlocked: boolean; }>} The return value.
+ */
 export async function getBlockStatus(userId: string, targetUserId: string) {
     const [blockedByMe, blockedMe] = await Promise.all([
         getBlockRecord(userId, targetUserId),
@@ -211,6 +295,13 @@ export async function getBlockStatus(userId: string, targetUserId: string) {
     };
 }
 
+/**
+ * Returns relationship status.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @returns {Promise<RelationshipStatus>} The return value.
+ */
 export async function getRelationshipStatus(
     userId: string,
     targetUserId: string,
@@ -253,6 +344,12 @@ export async function getRelationshipStatus(
     };
 }
 
+/**
+ * Lists friendships for user.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<{ friends: Friendship[]; incoming: Friendship[]; outgoing: Friendship[]; }>} The return value.
+ */
 export async function listFriendshipsForUser(userId: string) {
     const { databases } = getAdminClient();
     const [requested, received] = await Promise.all([
@@ -305,6 +402,12 @@ export async function listFriendshipsForUser(userId: string) {
     return { friends, incoming, outgoing };
 }
 
+/**
+ * Lists blocked users.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<BlockedUser[]>} The return value.
+ */
 export async function listBlockedUsers(userId: string) {
     const { databases } = getAdminClient();
     const response = await readRelationshipData<RelationshipDocumentList>(
@@ -322,6 +425,12 @@ export async function listBlockedUsers(userId: string) {
     );
 }
 
+/**
+ * Removes friendship by id.
+ *
+ * @param {string} friendshipId - The friendship id value.
+ * @returns {Promise<void>} The return value.
+ */
 async function deleteFriendshipById(friendshipId: string) {
     const { databases } = getAdminClient();
     await writeRelationshipData(() =>
@@ -333,6 +442,13 @@ async function deleteFriendshipById(friendshipId: string) {
     );
 }
 
+/**
+ * Creates friend request.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @returns {Promise<Friendship>} The return value.
+ */
 export async function createFriendRequest(
     userId: string,
     targetUserId: string,
@@ -429,6 +545,14 @@ export async function createFriendRequest(
     return toFriendship(friendship as unknown as Record<string, unknown>);
 }
 
+/**
+ * Handles respond to friend request.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} requesterId - The requester id value.
+ * @param {'accept' | 'decline'} action - The action value.
+ * @returns {Promise<Friendship>} The return value.
+ */
 export async function respondToFriendRequest(
     userId: string,
     requesterId: string,
@@ -469,6 +593,13 @@ export async function respondToFriendRequest(
     return toFriendship(updated as unknown as Record<string, unknown>);
 }
 
+/**
+ * Removes friendship.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} targetUserId - The target user id value.
+ * @returns {Promise<Friendship>} The return value.
+ */
 export async function removeFriendship(userId: string, targetUserId: string) {
     assertDistinctUsers(userId, targetUserId, "remove");
 
@@ -481,6 +612,14 @@ export async function removeFriendship(userId: string, targetUserId: string) {
     return friendship;
 }
 
+/**
+ * Handles block user.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} blockedUserId - The blocked user id value.
+ * @param {string | undefined} reason - The reason value, if provided.
+ * @returns {Promise<BlockedUser>} The return value.
+ */
 export async function blockUser(
     userId: string,
     blockedUserId: string,
@@ -517,6 +656,13 @@ export async function blockUser(
     return toBlockedUser(block as unknown as Record<string, unknown>);
 }
 
+/**
+ * Handles unblock user.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} blockedUserId - The blocked user id value.
+ * @returns {Promise<BlockedUser>} The return value.
+ */
 export async function unblockUser(userId: string, blockedUserId: string) {
     assertDistinctUsers(userId, blockedUserId, "unblock");
 
@@ -536,6 +682,13 @@ export async function unblockUser(userId: string, blockedUserId: string) {
     return existingBlock;
 }
 
+/**
+ * Returns relationship map.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string[]} otherUserIds - The other user ids value.
+ * @returns {Promise<Map<string, RelationshipStatus>>} The return value.
+ */
 export async function getRelationshipMap(
     userId: string,
     otherUserIds: string[],
@@ -557,6 +710,13 @@ export async function getRelationshipMap(
     return new Map(entries);
 }
 
+/**
+ * Handles filter visible user ids.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string[]} otherUserIds - The other user ids value.
+ * @returns {Promise<string[]>} The return value.
+ */
 export async function filterVisibleUserIds(
     userId: string,
     otherUserIds: string[],

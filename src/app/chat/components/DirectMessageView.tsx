@@ -33,11 +33,7 @@ import { ChatThreadContent } from "@/components/chat-thread-content";
 import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { MESSAGE_LIST_VIEWPORT_HEIGHT } from "@/components/virtualized-message-list";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
-import {
-    adaptDirectMessages,
-    fromDirectMessage,
-    type ChatSurfaceMessage,
-} from "@/lib/chat-surface";
+import { adaptDirectMessages, fromDirectMessage } from "@/lib/chat-surface";
 import { jumpToMessage } from "@/lib/message-navigation";
 import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";

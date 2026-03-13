@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { listInbox, markInboxItemsRead } from "@/lib/inbox-client";
-import { persistThreadReads } from "@/lib/thread-read-client";
+import {
+    listInbox,
+    markInboxContextRead,
+    markInboxItemsRead,
+} from "@/lib/inbox-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
@@ -224,16 +227,6 @@ export function useInbox(userId: string | null) {
                     item.contextKind === contextKind &&
                     item.contextId === contextId,
             );
-            const mentionItemIds = matchingItems
-                .filter((item) => item.kind === "mention")
-                .map((item) => item.id);
-            const threadReads = matchingItems
-                .filter((item) => item.kind === "thread")
-                .reduce<Record<string, string>>((accumulator, item) => {
-                    accumulator[item.parentMessageId ?? item.messageId] =
-                        item.latestActivityAt;
-                    return accumulator;
-                }, {});
 
             updateInboxCache((currentInbox) =>
                 removeItemsFromInbox(
@@ -245,21 +238,9 @@ export function useInbox(userId: string | null) {
             );
 
             try {
-                await Promise.all([
-                    mentionItemIds.length > 0
-                        ? markInboxItemsRead({ itemIds: mentionItemIds })
-                        : Promise.resolve(),
-                    Object.keys(threadReads).length > 0
-                        ? persistThreadReads({
-                              contextId,
-                              contextType:
-                                  contextKind === "channel"
-                                      ? "channel"
-                                      : "conversation",
-                              reads: threadReads,
-                          })
-                        : Promise.resolve({}),
-                ]);
+                if (matchingItems.length > 0) {
+                    await markInboxContextRead({ contextId, contextKind });
+                }
             } catch {
                 await refetch();
             }

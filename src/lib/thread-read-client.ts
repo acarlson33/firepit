@@ -4,6 +4,12 @@ type ThreadReadResponse = {
     reads?: Record<string, string>;
 };
 
+/**
+ * Parses thread read response.
+ *
+ * @param {Response} response - The response value.
+ * @returns {Promise<ThreadReadResponse>} The return value.
+ */
 async function parseThreadReadResponse(response: Response) {
     if (!response.ok) {
         const error = (await response.json().catch(() => null)) as {
@@ -15,6 +21,13 @@ async function parseThreadReadResponse(response: Response) {
     return (await response.json()) as ThreadReadResponse;
 }
 
+/**
+ * Lists thread reads.
+ *
+ * @param {ThreadReadContextType} contextType - The context type value.
+ * @param {string} contextId - The context id value.
+ * @returns {Promise<Record<string, string>>} The return value.
+ */
 export async function listThreadReads(
     contextType: ThreadReadContextType,
     contextId: string,
@@ -26,6 +39,12 @@ export async function listThreadReads(
     return data.reads ?? {};
 }
 
+/**
+ * Handles persist thread reads.
+ *
+ * @param {{ contextId: string; contextType: ThreadReadContextType; reads: Record<string, string>; }} params - The params value.
+ * @returns {Promise<Record<string, string>>} The return value.
+ */
 export async function persistThreadReads(params: {
     contextId: string;
     contextType: ThreadReadContextType;

@@ -36,6 +36,13 @@ type DeferredJumpToMessageOptions = JumpToMessageOptions & {
 const MESSAGE_HIGHLIGHT_CLASSES = ["ring-2", "ring-amber-400"] as const;
 const MESSAGE_SCROLL_CONTAINER_SELECTOR = "[data-message-scroll-container]";
 
+/**
+ * Handles find marked scroll container.
+ *
+ * @param {HTMLElement} element - The element value.
+ * @param {ParentNode} boundary - The boundary value.
+ * @returns {HTMLElement | null} The return value.
+ */
 function findMarkedScrollContainer(
     element: HTMLElement,
     boundary: ParentNode,
@@ -53,6 +60,13 @@ function findMarkedScrollContainer(
     return null;
 }
 
+/**
+ * Handles find scrollable ancestor.
+ *
+ * @param {HTMLElement} element - The element value.
+ * @param {ParentNode} boundary - The boundary value.
+ * @returns {HTMLElement | null} The return value.
+ */
 function findScrollableAncestor(
     element: HTMLElement,
     boundary: ParentNode,
@@ -81,6 +95,12 @@ function findScrollableAncestor(
     return null;
 }
 
+/**
+ * Handles scroll message within container.
+ *
+ * @param {{ behavior: ScrollBehavior; block: ScrollLogicalPosition; container: HTMLElement; target: HTMLElement; }} params - The params value.
+ * @returns {void} The return value.
+ */
 function scrollMessageWithinContainer(params: {
     behavior: ScrollBehavior;
     block: ScrollLogicalPosition;
@@ -125,13 +145,30 @@ function scrollMessageWithinContainer(params: {
     });
 }
 
+/**
+ * Handles find message element.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {ParentNode} root - The root value, if provided.
+ * @returns {HTMLElement | null} The return value.
+ */
 function findMessageElement(
     messageId: string,
     root: ParentNode = document,
 ): HTMLElement | null {
-    return root.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+    const escapedMessageId = CSS.escape(messageId);
+    return root.querySelector<HTMLElement>(
+        `[data-message-id="${escapedMessageId}"]`,
+    );
 }
 
+/**
+ * Builds chat message href.
+ *
+ * @param {{ kind: 'channel'; channelId: string; messageId: string; serverId?: string | undefined; } | { kind: 'dm'; conversationId: string; messageId: string; }} destination - The destination value.
+ * @param {{ entry?: 'highlight' | undefined; } | { entry: 'unread'; }} options - The options value, if provided.
+ * @returns {string} The return value.
+ */
 export function buildChatMessageHref(
     destination: ChatMessageDestination,
     options: BuildChatMessageHrefOptions = { entry: "highlight" },
@@ -155,6 +192,13 @@ export function buildChatMessageHref(
     return `/chat?${params.toString()}`;
 }
 
+/**
+ * Handles jump to message.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {{ behavior?: ScrollBehavior | undefined; block?: ScrollLogicalPosition | undefined; highlightDurationMs?: number | undefined; root?: ParentNode | undefined; }} options - The options value, if provided.
+ * @returns {boolean} The return value.
+ */
 export function jumpToMessage(
     messageId: string,
     options: JumpToMessageOptions = {},
@@ -193,6 +237,13 @@ export function jumpToMessage(
     return true;
 }
 
+/**
+ * Handles jump to message when ready.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {JumpToMessageOptions & { retryAttempts?: number | undefined; retryDelayMs?: number | undefined; onComplete?: ((found: boolean) => void) | undefined; onRetry?: ((attempt: number) => void) | undefined; }} options - The options value, if provided.
+ * @returns {() => void} The return value.
+ */
 export function jumpToMessageWhenReady(
     messageId: string,
     options: DeferredJumpToMessageOptions = {},
@@ -209,6 +260,10 @@ export function jumpToMessageWhenReady(
     let attempts = 0;
     let timeoutId: number | undefined;
 
+    /**
+     * Attempts a jump and schedules retries until a target is found or retries are exhausted.
+     * @returns {void} The return value.
+     */
     const tryJump = () => {
         if (cancelled) {
             return;

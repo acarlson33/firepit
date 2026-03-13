@@ -1,5 +1,11 @@
 export type ThreadReadContextType = "channel" | "conversation";
 
+/**
+ * Normalizes thread reads.
+ *
+ * @param {unknown} value - The value value.
+ * @returns {{ [x: string]: string; }} The return value.
+ */
 export function normalizeThreadReads(value: unknown): Record<string, string> {
     if (!value) {
         return {};
@@ -32,6 +38,12 @@ export function normalizeThreadReads(value: unknown): Record<string, string> {
     );
 }
 
+/**
+ * Determines whether is thread unread.
+ *
+ * @param {{ lastReadAt?: string | undefined; lastThreadReplyAt?: string | undefined; threadMessageCount?: number | undefined; }} params - The params value.
+ * @returns {boolean} The return value.
+ */
 export function isThreadUnread(params: {
     lastReadAt?: string;
     lastThreadReplyAt?: string;
