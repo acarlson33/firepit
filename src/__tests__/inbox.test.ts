@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listInboxDigest, listInboxItems } from "@/lib/inbox";
 
 const {
+    mockGetChannelAccessForUser,
     mockGetNotificationSettings,
     mockGetRelationshipMap,
     mockListDocuments,
 } = vi.hoisted(() => ({
+    mockGetChannelAccessForUser: vi.fn(),
     mockGetNotificationSettings: vi.fn(),
     mockGetRelationshipMap: vi.fn(),
     mockListDocuments: vi.fn(),
@@ -61,7 +63,7 @@ vi.mock("@/lib/thread-read-states", () => ({
 }));
 
 vi.mock("@/lib/server-channel-access", () => ({
-    getChannelAccessForUser: vi.fn(async () => ({ canRead: false })),
+    getChannelAccessForUser: mockGetChannelAccessForUser,
 }));
 
 vi.mock("@/lib/notification-settings", () => ({
@@ -75,6 +77,7 @@ vi.mock("@/lib/notification-settings", () => ({
 describe("inbox", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: false });
         mockGetRelationshipMap.mockResolvedValue(new Map());
     });
 
@@ -212,6 +215,80 @@ describe("inbox", () => {
 
         expect(result.items).toHaveLength(0);
         expect(result.unreadCount).toBe(0);
+    });
+
+    it("suppresses thread unread items in mentions-only contexts", async () => {
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "messages-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "message-thread-1",
+                                channelId: "channel-1",
+                                userId: "user-2",
+                                text: "Thread root",
+                                $createdAt: "2026-03-11T12:00:00.000Z",
+                                threadMessageCount: 2,
+                                lastThreadReplyAt: "2026-03-11T12:05:00.000Z",
+                                serverId: "server-1",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-1",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "channel",
+                                contextId: "channel-1",
+                                messageId: "message-mention-1",
+                                latestActivityAt: "2026-03-11T12:10:00.000Z",
+                                previewText: "hello @user-1",
+                                authorUserId: "user-3",
+                                serverId: "server-1",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                userId: "user-2",
+                                displayName: "Thread Author",
+                            },
+                            {
+                                userId: "user-3",
+                                displayName: "Mention Author",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue({
+            globalNotifications: "mentions",
+        });
+
+        const result = await listInboxItems({
+            kinds: ["mention", "thread"],
+            limit: 10,
+            userId: "user-1",
+        });
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]?.kind).toBe("mention");
+        expect(result.counts).toEqual({ mention: 1, thread: 0 });
+        expect(result.unreadCount).toBe(1);
     });
 
     it("returns digest items ordered by newest activity first", async () => {

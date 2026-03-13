@@ -283,7 +283,7 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
         return items;
     }
 
-    return items.map((item) => {
+    return items.flatMap((item) => {
         const effectiveLevel = getEffectiveNotificationLevel(settings, {
             channelId:
                 item.contextKind === "channel" ? item.contextId : undefined,
@@ -294,10 +294,16 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
             serverId: item.serverId,
         });
 
-        return {
-            ...item,
-            muted: effectiveLevel === "nothing",
-        } satisfies InboxItem;
+        if (effectiveLevel === "mentions" && item.kind === "thread") {
+            return [] as InboxItem[];
+        }
+
+        return [
+            {
+                ...item,
+                muted: effectiveLevel === "nothing",
+            } satisfies InboxItem,
+        ];
     });
 }
 

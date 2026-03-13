@@ -18,12 +18,28 @@ Rollout note for `enable_per_message_unread`:
 - Keep disabled until message-level unread persistence and parity tests are complete.
 - Enable first in internal environments, then ramp gradually in production.
 - Keep the current thread-based inbox contract as the stable fallback while disabled.
+- Promotion gate metrics:
+    - unread mismatch rate between scoped inbox summaries and rendered badges
+    - jump-to-unread success and fallback frequency
+    - mark-all-read convergence latency under realtime updates
+    - badge drift incidents between channel, DM, and inbox surfaces
 
 Rollout note for `enable_inbox_digest`:
 
 - Keep disabled until digest endpoint validation and hook-level regression tests are stable.
 - Enable in internal environments first, then ramp gradually.
 - Use digest payloads as additive support for unread workflows, not as a replacement for existing inbox contracts during rollout.
+- Confirm digest ordering and total-unread semantics match inbox contract expectations before broad rollout.
+
+## Phase 3 Rollout Gates
+
+Use these gates before promoting unread-related flags from canary to stable:
+
+1. No unresolved P0 or P1 unread correctness defects.
+2. Parity-critical unread tests pass for channel, DM, and thread surfaces.
+3. Telemetry signals stay within acceptable thresholds for two consecutive observation windows.
+4. Rollback path is verified by disabling `enable_per_message_unread` without data corruption.
+5. User-facing docs and OpenAPI contracts match shipped inbox and digest behavior.
 
 ## How Flags Work
 
