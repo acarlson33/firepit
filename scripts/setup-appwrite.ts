@@ -897,14 +897,12 @@ async function ensureFeatureFlagDocument(params: {
             () =>
                 dbAny.updateDocument(DB_ID, "feature_flags", document.$id, {
                     description,
-                    enabled,
                     updatedAt: now,
                 }),
             () =>
                 dbAny.updateDocument?.({
                     data: {
                         description,
-                        enabled,
                         updatedAt: now,
                     },
                     databaseId: DB_ID,

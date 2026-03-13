@@ -51,7 +51,6 @@ const VIRTUALIZATION_THRESHOLD = 20;
 type DirectMessageViewProps = {
     conversation: Conversation;
     messages: DirectMessage[];
-    surfaceMessages: ChatSurfaceMessage[];
     loading: boolean;
     sending: boolean;
     currentUserId: string;
@@ -100,7 +99,6 @@ type DirectMessageViewProps = {
 export function DirectMessageView({
     conversation,
     messages,
-    surfaceMessages: _surfaceMessages,
     loading,
     sending,
     currentUserId,

@@ -483,10 +483,10 @@ export default function ChatPage() {
     }, [inboxApi, selectedChannel, selectedConversationId]);
     const currentContextUnreadCount =
         inboxApi.contractVersion === "message_v2"
-            ? inboxDigestApi.totalUnreadCount ||
-              currentContextSummary?.totalCount ||
+            ? inboxDigestApi.totalUnreadCount ??
+              currentContextSummary?.totalCount ??
               0
-            : currentContextSummary?.totalCount || 0;
+            : currentContextSummary?.totalCount ?? 0;
 
     useEffect(() => {
         if (routeConversationId) {

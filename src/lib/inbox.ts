@@ -91,18 +91,29 @@ async function runInBatches<T>(params: {
     worker: (item: T) => Promise<void>;
 }) {
     const { batchSize, items, worker } = params;
-    if (items.length === 0) {
+    if (items.length === 0 || batchSize <= 0) {
         return;
     }
 
-    const currentBatch = items.slice(0, batchSize);
-    await Promise.all(currentBatch.map((item) => worker(item)));
+    const batches: T[][] = [];
+    let startIndex = 0;
 
-    await runInBatches({
-        batchSize,
-        items: items.slice(batchSize),
-        worker,
-    });
+    while (startIndex < items.length) {
+        batches.push(items.slice(startIndex, startIndex + batchSize));
+        startIndex += batchSize;
+    }
+
+    const runSequentially = batches.reduce<Promise<void>>(
+        (previousPromise, batch) =>
+            previousPromise.then(() =>
+                Promise.all(batch.map((item) => worker(item))).then(() => {
+                    return;
+                }),
+            ),
+        Promise.resolve(),
+    );
+
+    return runSequentially;
 }
 
 async function countUnreadRepliesByParent(params: {
@@ -660,20 +671,23 @@ export async function listInboxDigest(params: {
     userId: string;
 }): Promise<InboxDigestResponse> {
     const { contextId, contextKind, limit, userId } = params;
+    const isContextScoped = Boolean(contextId && contextKind);
+    const upstreamLimit = isContextScoped
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, limit);
     const inbox = await listInboxItems({
         kinds: ["mention", "thread"],
-        limit: Math.max(1, limit),
+        limit: upstreamLimit,
         userId,
     });
 
-    const scopedItems =
-        contextId && contextKind
-            ? inbox.items.filter(
-                  (item) =>
-                      item.contextId === contextId &&
-                      item.contextKind === contextKind,
-              )
-            : inbox.items;
+    const scopedItems = isContextScoped
+        ? inbox.items.filter(
+              (item) =>
+                  item.contextId === contextId &&
+                  item.contextKind === contextKind,
+          )
+        : inbox.items;
 
     const sortedItems = [...scopedItems]
         .sort((left, right) =>
