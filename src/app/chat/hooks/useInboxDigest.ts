@@ -32,6 +32,10 @@ function formatInboxDigestError(error: unknown) {
         return error.message;
     }
 
+    if (typeof error === "string") {
+        return error;
+    }
+
     if (error) {
         return "Failed to load inbox digest";
     }

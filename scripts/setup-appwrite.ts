@@ -894,6 +894,44 @@ async function ensureFeatureFlagDocument(params: {
     const now = new Date().toISOString();
     const document = existingResponse.documents?.[0];
 
+    function isDuplicateConflictError(error: unknown): boolean {
+        if (!error || typeof error !== "object") {
+            return false;
+        }
+
+        const candidate = error as {
+            code?: unknown;
+            message?: unknown;
+            response?: { code?: unknown; message?: unknown };
+            type?: unknown;
+        };
+
+        const code =
+            typeof candidate.code === "number"
+                ? candidate.code
+                : typeof candidate.response?.code === "number"
+                  ? candidate.response.code
+                  : null;
+        if (code === 409) {
+            return true;
+        }
+
+        const messageParts = [
+            candidate.message,
+            candidate.response?.message,
+            candidate.type,
+        ]
+            .filter((value): value is string => typeof value === "string")
+            .join(" ")
+            .toLowerCase();
+
+        return (
+            messageParts.includes("duplicate") ||
+            messageParts.includes("already exists") ||
+            messageParts.includes("conflict")
+        );
+    }
+
     if (document?.$id) {
         await tryVariants([
             () =>
@@ -936,7 +974,11 @@ async function ensureFeatureFlagDocument(params: {
                 collectionId: "feature_flags",
                 documentId,
             }),
-    ]).catch(async () => {
+    ]).catch(async (error) => {
+        if (!isDuplicateConflictError(error)) {
+            throw error;
+        }
+
         // Another setup run may have created this document concurrently.
         const latest = (await tryVariants([
             () =>
@@ -965,14 +1007,12 @@ async function ensureFeatureFlagDocument(params: {
             () =>
                 dbAny.updateDocument(DB_ID, "feature_flags", latestDocumentId, {
                     description,
-                    enabled,
                     updatedAt: now,
                 }),
             () =>
                 dbAny.updateDocument?.({
                     data: {
                         description,
-                        enabled,
                         updatedAt: now,
                     },
                     databaseId: DB_ID,

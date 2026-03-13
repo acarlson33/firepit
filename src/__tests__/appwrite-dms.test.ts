@@ -17,6 +17,7 @@ let updateDocumentOverride:
       }) => Promise<unknown>)
     | null = null;
 const mockDocuments: Record<string, Models.Document[]> = {};
+const QUERY_VALUE_SEPARATOR = "|||";
 
 // Mock environment variables
 beforeEach(() => {
@@ -52,7 +53,9 @@ vi.mock("appwrite", () => {
                     );
                     if (equalMatch) {
                         const [, field, rawValue] = equalMatch;
-                        const values = rawValue.split(",").filter(Boolean);
+                        const values = rawValue
+                            .split(QUERY_VALUE_SEPARATOR)
+                            .filter(Boolean);
                         return currentDocs.filter((doc) => {
                             const value = (doc as Record<string, unknown>)[
                                 field
@@ -189,7 +192,7 @@ vi.mock("appwrite", () => {
         },
         Query: {
             equal: (attr: string, val: string | string[]) =>
-                `equal("${attr}","${Array.isArray(val) ? val.join(",") : val}")`,
+                `equal("${attr}","${Array.isArray(val) ? val.join(QUERY_VALUE_SEPARATOR) : val}")`,
             orderDesc: (attr: string) => `orderDesc("${attr}")`,
             limit: (num: number) => `limit(${num})`,
             cursorAfter: (id: string) => `cursorAfter("${id}")`,
@@ -457,10 +460,9 @@ describe("Direct Messages - Data Enrichment", () => {
         await getOrCreateConversation("user1", "user2");
         const conversations = await listConversations("user1");
 
-        if (conversations.length > 0) {
-            const conv = conversations[0];
-            expect(conv.otherUser).toBeDefined();
-        }
+        expect(conversations.length).toBeGreaterThan(0);
+        const conv = conversations[0];
+        expect(conv.otherUser).toBeDefined();
     });
 
     it("should enrich messages with sender data", async () => {
@@ -470,11 +472,10 @@ describe("Direct Messages - Data Enrichment", () => {
         await sendDirectMessage("conv123", "user1", "user2", "Test message");
         const result = await listDirectMessages("conv123", 50);
 
-        if (result.items.length > 0) {
-            const message = result.items[0];
-            // Sender data should be attempted to be enriched
-            expect(message.senderId).toBe("user1");
-        }
+        expect(result.items).not.toHaveLength(0);
+        const message = result.items[0];
+        // Sender data should be attempted to be enriched
+        expect(message.senderId).toBe("user1");
     });
 });
 

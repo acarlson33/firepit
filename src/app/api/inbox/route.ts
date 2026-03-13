@@ -297,20 +297,30 @@ export async function PATCH(request: NextRequest) {
                 ],
             );
 
-            const mentionUpdateResults = await Promise.allSettled(
-                documents.documents.map((document) =>
-                    databases.updateDocument(
-                        env.databaseId,
-                        env.collections.inboxItems,
-                        String(document.$id),
-                        { readAt },
+            for (
+                let startIndex = 0;
+                startIndex < documents.documents.length;
+                startIndex += UPDATE_BATCH_SIZE
+            ) {
+                const batch = documents.documents.slice(
+                    startIndex,
+                    startIndex + UPDATE_BATCH_SIZE,
+                );
+                const mentionUpdateResults = await Promise.allSettled(
+                    batch.map((document) =>
+                        databases.updateDocument(
+                            env.databaseId,
+                            env.collections.inboxItems,
+                            String(document.$id),
+                            { readAt },
+                        ),
                     ),
-                ),
-            );
+                );
 
-            updatedMentionCount = mentionUpdateResults.filter(
-                (result) => result.status === "fulfilled",
-            ).length;
+                updatedMentionCount += mentionUpdateResults.filter(
+                    (result) => result.status === "fulfilled",
+                ).length;
+            }
         }
 
         await Promise.all(

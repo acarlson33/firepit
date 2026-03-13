@@ -57,7 +57,9 @@ describe("appwrite-messages advanced flows", () => {
         // Should include user read/write and team based roles (simplistic string contains check)
         const perms = created?.permissions?.join(" ") || "";
         expect(perms).toContain("user:u1");
-        expect(/read|update|delete/.test(perms)).toBe(true);
+        expect(perms).toContain("read");
+        expect(perms).toContain("update");
+        expect(perms).toContain("delete");
     });
 
     it("listMessages builds queries (limit, cursor, channel) and maps docs", async () => {

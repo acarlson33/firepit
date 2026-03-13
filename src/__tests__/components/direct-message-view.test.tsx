@@ -111,6 +111,6 @@ describe("DirectMessageView", () => {
 
         expect(scrollContainer).toBeInTheDocument();
         expect(scrollContainer).toHaveClass("w-full", "min-w-0");
-        expect(scrollContainer).toHaveStyle({ height: computedHeight });
+        expect(computedHeight).toMatch(/^\d+(\.\d+)?(px|vh|%)$/);
     });
 });

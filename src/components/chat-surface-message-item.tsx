@@ -221,17 +221,13 @@ export function ChatSurfaceMessageItem({
                             type="button"
                         >
                             <Image
-                                alt={
-                                    message.text
-                                        ? `Image: ${message.text}`
-                                        : "Attached image"
-                                }
+                                alt={message.text ? message.text : "attachment"}
                                 className="max-h-64 max-w-full h-auto"
                                 height={768}
                                 loading="lazy"
                                 src={message.imageUrl}
                                 width={1024}
-                                onLoadingComplete={() => onMediaLoad?.(message)}
+                                onLoad={() => onMediaLoad?.(message)}
                             />
                         </button>
                     </div>

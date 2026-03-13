@@ -21,6 +21,12 @@ type RouteContext = {
     }>;
 };
 
+function sleep(ms: number) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
 /**
  * GET /api/messages/[messageId]/thread
  * Get all replies in a thread (messages where threadId = messageId)
@@ -277,9 +283,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 );
                 break;
             } catch (updateError) {
+                logger.warn("Thread parent metadata update retry", {
+                    attempt: attempt + 1,
+                    actualParentId,
+                    error:
+                        updateError instanceof Error
+                            ? updateError.message
+                            : String(updateError),
+                });
                 if (attempt === maxUpdateAttempts - 1) {
                     throw updateError;
                 }
+
+                await sleep(100 * (attempt + 1));
             }
         }
 

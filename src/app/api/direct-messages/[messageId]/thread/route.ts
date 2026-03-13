@@ -311,7 +311,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 break;
             } catch (updateError) {
                 if (attempt === maxUpdateAttempts - 1) {
-                    throw updateError;
+                    console.warn(
+                        "Failed to update DM thread metadata after retries",
+                        {
+                            actualThreadId,
+                            userId: user.$id,
+                            threadMessageCount: nextCount,
+                            threadParticipants: nextParticipants,
+                            lastThreadReplyAt: replyCreatedAt,
+                            error:
+                                updateError instanceof Error
+                                    ? updateError.message
+                                    : String(updateError),
+                        },
+                    );
+                    break;
                 }
             }
         }

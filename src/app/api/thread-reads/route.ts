@@ -29,12 +29,23 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
     }
 
     function isValidIsoTimestamp(candidate: string) {
+        const isoUtcPattern =
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+        if (!isoUtcPattern.test(candidate)) {
+            return false;
+        }
+
         const parsed = Date.parse(candidate);
         if (Number.isNaN(parsed)) {
             return false;
         }
 
-        return new Date(parsed).toISOString() === candidate;
+        const normalizedCandidate = candidate.replace(/\.000Z$/, "Z");
+        const normalizedParsed = new Date(parsed)
+            .toISOString()
+            .replace(/\.000Z$/, "Z");
+
+        return normalizedParsed === normalizedCandidate;
     }
 
     return Object.entries(value).every(
