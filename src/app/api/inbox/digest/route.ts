@@ -81,12 +81,19 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    const digest = await listInboxDigest({
-        contextId,
-        contextKind,
-        limit,
-        userId: session.$id,
-    });
+    try {
+        const digest = await listInboxDigest({
+            contextId,
+            contextKind,
+            limit,
+            userId: session.$id,
+        });
 
-    return NextResponse.json(digest);
+        return NextResponse.json(digest);
+    } catch {
+        return NextResponse.json(
+            { error: "Failed to load inbox digest" },
+            { status: 500 },
+        );
+    }
 }

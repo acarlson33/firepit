@@ -113,4 +113,49 @@ describe("useInboxDigest", () => {
         expect(result.current.unreadByKind).toEqual({ mention: 1, thread: 2 });
         expect(result.current.contractVersion).toBe("message_v2");
     });
+
+    it("refetches when limit changes", async () => {
+        (
+            inboxClient.listInboxDigest as ReturnType<typeof vi.fn>
+        ).mockResolvedValue({
+            contractVersion: "thread_v1",
+            items: [],
+            totalUnreadCount: 0,
+        });
+
+        const { rerender } = renderHook(
+            ({ limit }) =>
+                useInboxDigest({
+                    contextId: "conversation-1",
+                    contextKind: "conversation",
+                    limit,
+                    userId: "user-1",
+                }),
+            {
+                initialProps: { limit: 10 },
+                wrapper: createWrapper(),
+            },
+        );
+
+        await waitFor(() => {
+            expect(inboxClient.listInboxDigest).toHaveBeenCalledTimes(1);
+        });
+
+        rerender({ limit: 25 });
+
+        await waitFor(() => {
+            expect(inboxClient.listInboxDigest).toHaveBeenCalledTimes(2);
+        });
+
+        expect(inboxClient.listInboxDigest).toHaveBeenNthCalledWith(1, {
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            limit: 10,
+        });
+        expect(inboxClient.listInboxDigest).toHaveBeenNthCalledWith(2, {
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            limit: 25,
+        });
+    });
 });

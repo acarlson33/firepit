@@ -15,6 +15,7 @@ const EMPTY_DIGEST: InboxDigestResponse = {
 function getInboxDigestQueryKey(params: {
     contextId?: string;
     contextKind?: InboxContextKind;
+    limit?: number;
     userId: string | null;
 }) {
     return [
@@ -22,6 +23,7 @@ function getInboxDigestQueryKey(params: {
         params.userId,
         params.contextKind ?? "all",
         params.contextId ?? "all",
+        params.limit ?? "default",
     ] as const;
 }
 
@@ -39,6 +41,7 @@ export function useInboxDigest(params: {
         queryKey: getInboxDigestQueryKey({
             contextId,
             contextKind,
+            limit,
             userId,
         }),
         queryFn: () =>

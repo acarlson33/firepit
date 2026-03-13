@@ -139,4 +139,17 @@ describe("inbox digest route", () => {
         });
         expect(data.totalUnreadCount).toBe(2);
     });
+
+    it("returns 500 when digest lookup fails", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxDigest.mockRejectedValue(new Error("db unavailable"));
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox/digest"),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(data.error).toBe("Failed to load inbox digest");
+    });
 });
