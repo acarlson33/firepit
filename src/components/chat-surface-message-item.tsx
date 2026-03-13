@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
     MessageSquare,
     MessageSquareMore,
@@ -219,13 +220,18 @@ export function ChatSurfaceMessageItem({
                             }
                             type="button"
                         >
-                            <img
-                                alt="Attached"
+                            <Image
+                                alt={
+                                    message.text
+                                        ? `Image: ${message.text}`
+                                        : "Attached image"
+                                }
                                 className="max-h-64 max-w-full h-auto"
-                                decoding="async"
+                                height={768}
                                 loading="lazy"
-                                onLoad={() => onMediaLoad?.(message)}
                                 src={message.imageUrl}
+                                width={1024}
+                                onLoadingComplete={() => onMediaLoad?.(message)}
                             />
                         </button>
                     </div>
@@ -338,8 +344,10 @@ export function ChatSurfaceMessageItem({
                         {mine && (
                             <>
                                 <Button
+                                    aria-label="Edit message"
                                     onClick={() => onStartEdit(message)}
                                     size="sm"
+                                    title="Edit message"
                                     type="button"
                                     variant="ghost"
                                 >
@@ -368,10 +376,12 @@ export function ChatSurfaceMessageItem({
                                     </>
                                 ) : (
                                     <Button
+                                        aria-label="Delete message"
                                         onClick={() =>
                                             setDeleteConfirmId(message.id)
                                         }
                                         size="sm"
+                                        title="Delete message"
                                         type="button"
                                         variant="ghost"
                                     >

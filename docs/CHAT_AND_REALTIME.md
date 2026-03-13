@@ -159,7 +159,7 @@ To support the v1.6 per-message unread rollout safely, unread behavior now follo
 - If an unread anchor references a removed or inaccessible message, clients should degrade to context-level catch-up behavior instead of failing navigation.
 - Badge counts, unread boundary markers, and jump-to-unread affordances must all derive from the same inbox aggregation source to avoid cross-surface drift.
 - Digest ordering and inbox ordering are both newest-first to avoid context-level drift during rollout validation.
-- Digest `totalUnreadCount` is computed from the full scoped unread set before pagination.
+- Digest `totalUnreadCount` is computed from the full-scoped unread set before pagination.
 
 This phase is intentionally compatibility-first. It does not yet switch persistence from per-thread to per-message reads by default.
 

@@ -59,6 +59,7 @@ const DB_ID = "main";
 const LEN_ID = 128;
 const LEN_TS = 64; // ISO / epoch string length allowance
 const LEN_TEXT = 4000; // generous message / meta text length
+const LEN_TEXT_LARGE = 65535; // large JSON payloads (e.g., thread read maps)
 
 // ---- Client ----
 const client = new Client().setEndpoint(endpoint).setProject(project);
@@ -889,6 +890,7 @@ async function ensureFeatureFlagDocument(params: {
     const existingResponse = existing as {
         documents?: Array<{ $id?: string }>;
     };
+    const documentId = `flag_${key.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`;
     const now = new Date().toISOString();
     const document = existingResponse.documents?.[0];
 
@@ -916,7 +918,7 @@ async function ensureFeatureFlagDocument(params: {
 
     await tryVariants([
         () =>
-            dbAny.createDocument(DB_ID, "feature_flags", "unique()", {
+            dbAny.createDocument(DB_ID, "feature_flags", documentId, {
                 description,
                 enabled,
                 key,
@@ -932,9 +934,53 @@ async function ensureFeatureFlagDocument(params: {
                 },
                 databaseId: DB_ID,
                 collectionId: "feature_flags",
-                documentId: "unique()",
+                documentId,
             }),
-    ]);
+    ]).catch(async () => {
+        // Another setup run may have created this document concurrently.
+        const latest = (await tryVariants([
+            () =>
+                dbAny.listDocuments(DB_ID, "feature_flags", [
+                    Query.equal("key", key),
+                    Query.limit(1),
+                ]),
+            () =>
+                dbAny.listDocuments?.({
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    queries: [Query.equal("key", key), Query.limit(1)],
+                }),
+        ])) as {
+            documents?: Array<{ $id?: string }>;
+        };
+
+        const latestDocumentId = latest.documents?.[0]?.$id;
+        if (!latestDocumentId) {
+            throw new Error(
+                `feature flag '${key}' create failed and no existing document was found`,
+            );
+        }
+
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(DB_ID, "feature_flags", latestDocumentId, {
+                    description,
+                    enabled,
+                    updatedAt: now,
+                }),
+            () =>
+                dbAny.updateDocument?.({
+                    data: {
+                        description,
+                        enabled,
+                        updatedAt: now,
+                    },
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    documentId: latestDocumentId,
+                }),
+        ]);
+    });
     info(`[setup] added feature flag '${key}'`);
 }
 
@@ -1140,7 +1186,7 @@ async function setupThreadReads() {
     await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
     await ensureStringAttribute("thread_reads", "contextType", 32, true);
     await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
-    await ensureStringAttribute("thread_reads", "reads", LEN_TEXT, true);
+    await ensureStringAttribute("thread_reads", "reads", LEN_TEXT_LARGE, true);
     await ensureIndex("thread_reads", "idx_user_context", "unique", [
         "userId",
         "contextType",

@@ -16,6 +16,7 @@ let updateDocumentOverride:
           data?: Record<string, unknown>;
       }) => Promise<unknown>)
     | null = null;
+const mockDocuments: Record<string, Models.Document[]> = {};
 
 // Mock environment variables
 beforeEach(() => {
@@ -26,12 +27,13 @@ beforeEach(() => {
     process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID = "direct_messages";
     listDocumentsOverride = null;
     updateDocumentOverride = null;
+    for (const key of Object.keys(mockDocuments)) {
+        delete mockDocuments[key];
+    }
 });
 
 // Mock Appwrite
 vi.mock("appwrite", () => {
-    const mockDocuments: Record<string, Models.Document[]> = {};
-
     class MockDatabases {
         async listDocuments(params: {
             databaseId: string;
@@ -41,10 +43,77 @@ vi.mock("appwrite", () => {
             if (listDocumentsOverride) {
                 return listDocumentsOverride(params);
             }
-            const docs = mockDocuments[params.collectionId] || [];
+            const docs = [...(mockDocuments[params.collectionId] || [])];
+
+            const filtered = (params.queries || []).reduce(
+                (currentDocs, query) => {
+                    const equalMatch = /^equal\("([^"]+)","(.*)"\)$/.exec(
+                        query,
+                    );
+                    if (equalMatch) {
+                        const [, field, rawValue] = equalMatch;
+                        const values = rawValue.split(",").filter(Boolean);
+                        return currentDocs.filter((doc) => {
+                            const value = (doc as Record<string, unknown>)[
+                                field
+                            ];
+                            if (Array.isArray(value)) {
+                                return value.some((item) =>
+                                    values.includes(String(item)),
+                                );
+                            }
+                            return values.includes(String(value ?? ""));
+                        });
+                    }
+
+                    const orderDescMatch = /^orderDesc\("([^"]+)"\)$/.exec(
+                        query,
+                    );
+                    if (orderDescMatch) {
+                        const [, field] = orderDescMatch;
+                        return [...currentDocs].sort((left, right) => {
+                            const leftValue = String(
+                                (left as Record<string, unknown>)[field] ??
+                                    left.$createdAt ??
+                                    left.$id,
+                            );
+                            const rightValue = String(
+                                (right as Record<string, unknown>)[field] ??
+                                    right.$createdAt ??
+                                    right.$id,
+                            );
+                            return rightValue.localeCompare(leftValue);
+                        });
+                    }
+
+                    const cursorMatch = /^cursorAfter\("([^"]+)"\)$/.exec(
+                        query,
+                    );
+                    if (cursorMatch) {
+                        const [, cursorId] = cursorMatch;
+                        const cursorIndex = currentDocs.findIndex(
+                            (doc) => doc.$id === cursorId,
+                        );
+                        if (cursorIndex >= 0) {
+                            return currentDocs.slice(cursorIndex + 1);
+                        }
+                    }
+
+                    const limitMatch = /^limit\((\d+)\)$/.exec(query);
+                    if (limitMatch) {
+                        const [, rawLimit] = limitMatch;
+                        const parsedLimit = Number.parseInt(rawLimit, 10);
+                        return currentDocs.slice(0, parsedLimit);
+                    }
+
+                    return currentDocs;
+                },
+                docs,
+            );
+
             return {
-                documents: docs,
-                total: docs.length,
+                documents: filtered,
+                total: filtered.length,
             };
         }
 
@@ -352,7 +421,31 @@ describe("Direct Messages - Edge Cases", () => {
         expect(result.items[0]?.reactions).toEqual([
             { emoji: "🔥", userIds: ["user1"], count: 1 },
         ]);
-        expect(updateDocument).toHaveBeenCalled();
+        expect(updateDocument).toHaveBeenCalledWith(
+            expect.objectContaining({
+                collectionId: "direct_messages",
+                data: expect.objectContaining({
+                    reactions: expect.any(String),
+                }),
+                documentId: "dm-1",
+            }),
+        );
+
+        const updatePayload = updateDocument.mock.calls[0]?.[0] as {
+            data?: { reactions?: string };
+        };
+        const normalizedReactions = JSON.parse(
+            updatePayload.data?.reactions ?? "[]",
+        ) as Array<{ emoji: string; userIds: string[]; count: number }>;
+        expect(normalizedReactions).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    count: 1,
+                    emoji: "🔥",
+                    userIds: ["user1"],
+                }),
+            ]),
+        );
     });
 });
 

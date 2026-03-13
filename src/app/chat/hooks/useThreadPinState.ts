@@ -266,6 +266,9 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
             contextType: pinContextType,
             currentUserId,
         });
+        hasHydratedThreadReadsRef.current = false;
+        lastPersistedThreadReadsRef.current = "{}";
+        setThreadReadByMessageId({});
 
         try {
             const storedValue = window.sessionStorage.getItem(storageKey);
@@ -468,17 +471,6 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
 
         setActiveThreadParent(latestParent);
     }, [activeThreadParent, messages]);
-
-    useEffect(() => {
-        if (!activeThreadParent) {
-            return;
-        }
-
-        markThreadRead(
-            activeThreadParent.$id,
-            activeThreadParent.lastThreadReplyAt,
-        );
-    }, [activeThreadParent, markThreadRead]);
 
     const togglePin = useCallback(
         async (message: TMessage) => {

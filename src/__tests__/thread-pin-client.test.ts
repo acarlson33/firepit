@@ -57,6 +57,18 @@ describe("thread-pin-client", () => {
                 text: "legacy",
             }),
         ).resolves.toEqual({ $id: "reply-legacy-post" });
+        expect(fetchMock.mock.calls[0]?.[0]).toBe(
+            "/api/messages/message-legacy/thread?limit=50",
+        );
+        expect(fetchMock.mock.calls[1]?.[0]).toBe(
+            "/api/messages/message-legacy/thread",
+        );
+        expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+            expect.objectContaining({
+                body: JSON.stringify({ text: "legacy" }),
+                method: "POST",
+            }),
+        );
     });
 
     it("creates DM thread replies through the shared thread endpoint builder", async () => {

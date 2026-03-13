@@ -144,6 +144,41 @@ describe("ConversationList", () => {
     });
 
     it("renders unified inbox items across direct messages and channels", async () => {
+        mockListInboxWithFilters.mockResolvedValueOnce({
+            contractVersion: "message_v2",
+            counts: { mention: 1, thread: 1 },
+            items: [
+                {
+                    authorLabel: "Unread Friend",
+                    authorUserId: "unread-friend",
+                    contextId: "conv-unread",
+                    contextKind: "conversation",
+                    id: "thread:conversation:conv-unread:message-1",
+                    kind: "thread",
+                    latestActivityAt: "2026-03-11T12:00:00.000Z",
+                    messageId: "message-1",
+                    muted: false,
+                    previewText: "Unread thread reply",
+                    unreadCount: 2,
+                },
+                {
+                    authorLabel: "Channel Author",
+                    authorUserId: "channel-user",
+                    contextId: "channel-1",
+                    contextKind: "channel",
+                    id: "mention:channel:channel-1:message-2",
+                    kind: "mention",
+                    latestActivityAt: "2026-03-11T12:01:00.000Z",
+                    messageId: "message-2",
+                    muted: true,
+                    previewText: "hello @current-user",
+                    serverId: "server-1",
+                    unreadCount: 1,
+                },
+            ],
+            unreadCount: 3,
+        });
+
         render(
             <ConversationList
                 conversations={[]}
@@ -189,7 +224,9 @@ describe("ConversationList", () => {
 
         fireEvent.click(screen.getByRole("button", { name: /inbox/i }));
 
-        expect(screen.getByText("Unread Friend")).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText("Unread Friend")).toBeInTheDocument();
+        });
         expect(screen.getByText("Channel Author")).toBeInTheDocument();
         expect(screen.getByText("Direct message")).toBeInTheDocument();
         expect(screen.getByText("Channel")).toBeInTheDocument();

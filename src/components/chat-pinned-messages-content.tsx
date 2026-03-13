@@ -83,7 +83,8 @@ export function ChatPinnedMessagesContent({
                                 >
                                     {canManageMessages && onUnpin ? (
                                         <Button
-                                            className="absolute right-2 top-2 h-6 w-6 opacity-0 transition group-hover:opacity-100"
+                                            aria-label="Unpin message"
+                                            className="absolute right-2 top-2 h-6 w-6 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100"
                                             disabled={isUnpinning}
                                             onClick={() => {
                                                 void handleUnpin(message);
@@ -121,6 +122,7 @@ export function ChatPinnedMessagesContent({
                                             </div>
                                             <div className="mt-1 text-sm">
                                                 <MessageWithMentions
+                                                    mentions={message.mentions}
                                                     text={message.text}
                                                 />
                                             </div>

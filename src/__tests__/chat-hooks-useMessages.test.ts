@@ -45,6 +45,7 @@ vi.mock("@/lib/reactions-utils", () => ({
 
 vi.mock("@/lib/mention-utils", () => ({
     extractMentionedUsernames: vi.fn(() => []),
+    extractMentionsWithKnownNames: vi.fn(() => []),
 }));
 
 vi.mock("sonner", () => ({
@@ -67,7 +68,6 @@ describe("useMessages", () => {
         userName: mockUserName,
         text: "Hello",
         $createdAt: "2024-01-01T00:00:00.000Z",
-        $updatedAt: "2024-01-01T00:00:00.000Z",
         reactions: [],
     };
 
@@ -78,7 +78,6 @@ describe("useMessages", () => {
         userName: "Other User",
         text: "Hi there",
         $createdAt: "2024-01-01T00:01:00.000Z",
-        $updatedAt: "2024-01-01T00:01:00.000Z",
         reactions: [],
     };
 
@@ -168,7 +167,6 @@ describe("useMessages", () => {
                 userName: mockUserName,
                 text: "New channel",
                 $createdAt: "2024-01-01T00:02:00.000Z",
-                $updatedAt: "2024-01-01T00:02:00.000Z",
                 reactions: [],
             };
 
@@ -211,7 +209,6 @@ describe("useMessages", () => {
                 userName: mockUserName,
                 text: "New channel",
                 $createdAt: "2024-01-01T00:02:00.000Z",
-                $updatedAt: "2024-01-01T00:02:00.000Z",
                 reactions: [],
             };
 
@@ -669,7 +666,6 @@ describe("useMessages", () => {
                 userName: mockUserName,
                 text: "Older message",
                 $createdAt: "2023-12-31T23:59:00.000Z",
-                $updatedAt: "2023-12-31T23:59:00.000Z",
                 reactions: [],
             };
 

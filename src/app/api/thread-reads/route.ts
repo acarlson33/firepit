@@ -28,12 +28,22 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
         return false;
     }
 
+    function isValidIsoTimestamp(candidate: string) {
+        const parsed = Date.parse(candidate);
+        if (Number.isNaN(parsed)) {
+            return false;
+        }
+
+        return new Date(parsed).toISOString() === candidate;
+    }
+
     return Object.entries(value).every(
         ([messageId, readAt]) =>
             typeof messageId === "string" &&
             messageId.length > 0 &&
             typeof readAt === "string" &&
-            readAt.length > 0,
+            readAt.length > 0 &&
+            isValidIsoTimestamp(readAt),
     );
 }
 

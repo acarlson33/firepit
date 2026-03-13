@@ -375,9 +375,7 @@ describe("Direct Messages API", () => {
                 previewText: "Hi @alice",
             });
         });
-    });
 
-    describe("POST /api/direct-messages", () => {
         it("should return 401 if not authenticated", async () => {
             mockGetServerSession.mockResolvedValue(null);
 

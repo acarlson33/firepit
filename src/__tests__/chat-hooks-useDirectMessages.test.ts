@@ -261,7 +261,7 @@ describe("useDirectMessages", () => {
         );
     });
 
-    it("keeps previous direct messages visible while the next conversation is loading", async () => {
+    it("clears direct messages while the next conversation is loading", async () => {
         let resolveNextLoad:
             | ((value: DirectMessagesResult) => void)
             | undefined;
@@ -294,8 +294,7 @@ describe("useDirectMessages", () => {
         rerender({ conversationId: "conversation-2" });
 
         expect(result.current.loading).toBe(true);
-        expect(result.current.messages).toHaveLength(1);
-        expect(result.current.messages[0]?.$id).toBe("dm-1");
+        expect(result.current.messages).toHaveLength(0);
 
         await act(async () => {
             resolveNextLoad?.(

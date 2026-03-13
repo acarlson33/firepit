@@ -63,19 +63,32 @@ function removeItemsFromInbox(
     inbox: InboxListResponse,
     predicate: (item: InboxItem) => boolean,
 ): InboxListResponse {
-    const items = inbox.items.filter((item) => !predicate(item));
+    let removedUnread = 0;
+    const removedByKind = {
+        mention: 0,
+        thread: 0,
+    };
+
+    const items = inbox.items.filter((item) => {
+        if (!predicate(item)) {
+            return true;
+        }
+
+        removedUnread += item.unreadCount;
+        removedByKind[item.kind] += item.unreadCount;
+        return false;
+    });
+
+    const counts = {
+        mention: Math.max(0, inbox.counts.mention - removedByKind.mention),
+        thread: Math.max(0, inbox.counts.thread - removedByKind.thread),
+    };
 
     return {
         contractVersion: inbox.contractVersion,
-        counts: items.reduce(
-            (accumulator, item) => {
-                accumulator[item.kind] += item.unreadCount;
-                return accumulator;
-            },
-            { mention: 0, thread: 0 },
-        ),
+        counts,
         items,
-        unreadCount: items.reduce((total, item) => total + item.unreadCount, 0),
+        unreadCount: Math.max(0, inbox.unreadCount - removedUnread),
     };
 }
 
@@ -250,25 +263,20 @@ export function useInbox(userId: string | null) {
 
     const markItemRead = useCallback(
         async (item: InboxItem) => {
-            if (item.kind === "mention") {
-                updateInboxCache((currentInbox) =>
-                    removeItemsFromInbox(
-                        currentInbox,
-                        (currentItem) => currentItem.id === item.id,
-                    ),
-                );
+            updateInboxCache((currentInbox) =>
+                removeItemsFromInbox(
+                    currentInbox,
+                    (currentItem) => currentItem.id === item.id,
+                ),
+            );
 
-                try {
-                    await markInboxItemsRead({ itemIds: [item.id] });
-                } catch {
-                    await refetch();
-                }
-                return;
+            try {
+                await markInboxItemsRead({ itemIds: [item.id] });
+            } catch {
+                await refetch();
             }
-
-            await markContextRead(item.contextKind, item.contextId);
         },
-        [markContextRead, refetch, updateInboxCache],
+        [refetch, updateInboxCache],
     );
 
     const getContextSummary = useCallback(

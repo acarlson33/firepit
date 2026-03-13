@@ -27,6 +27,18 @@ function getInboxDigestQueryKey(params: {
     ] as const;
 }
 
+function formatInboxDigestError(error: unknown) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    if (error) {
+        return "Failed to load inbox digest";
+    }
+
+    return null;
+}
+
 export function useInboxDigest(params: {
     contextId?: string;
     contextKind?: InboxContextKind;
@@ -73,12 +85,7 @@ export function useInboxDigest(params: {
         contractVersion: data.contractVersion,
         contextId: data.contextId,
         contextKind: data.contextKind,
-        error:
-            query.error instanceof Error
-                ? query.error.message
-                : query.error
-                  ? "Failed to load inbox digest"
-                  : null,
+        error: formatInboxDigestError(query.error),
         items: data.items,
         loading: queryEnabled ? query.isLoading : false,
         refresh: query.refetch,

@@ -114,13 +114,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         )) as unknown as DirectMessage;
 
         const actualThreadId = parent.threadId ?? messageId;
-        const actualParent = parent.threadId
-            ? ((await databases.getDocument(
-                  env.databaseId,
-                  env.collections.directMessages,
-                  actualThreadId,
-              )) as unknown as DirectMessage)
-            : parent;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -154,7 +147,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
         return NextResponse.json({
             items,
-            parentMessage: actualParent,
+            parentMessage: parent,
             replies: items,
             total: docs.total,
             hasMore: docs.documents.length === limit,
@@ -229,13 +222,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         )) as unknown as DirectMessage;
 
         const actualThreadId = parent.threadId ?? messageId;
-        const actualParent = parent.threadId
-            ? ((await databases.getDocument(
-                  env.databaseId,
-                  env.collections.directMessages,
-                  actualThreadId,
-              )) as unknown as DirectMessage)
-            : parent;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -292,27 +278,43 @@ export async function POST(request: NextRequest, context: RouteContext) {
             await createAttachments(String(created.$id), attachments);
         }
 
-        const existingParticipants = Array.isArray(
-            actualParent.threadParticipants,
-        )
-            ? actualParent.threadParticipants
-            : [];
-        const nextParticipants = Array.from(
-            new Set([...existingParticipants, user.$id]),
-        );
-        const nextCount = (actualParent.threadMessageCount || 0) + 1;
-        const replyCreatedAt = new Date().toISOString();
+        const maxUpdateAttempts = 3;
+        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
+            const latestParent = (await databases.getDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+            )) as unknown as DirectMessage;
 
-        await databases.updateDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            actualThreadId,
-            {
-                threadMessageCount: nextCount,
-                threadParticipants: nextParticipants,
-                lastThreadReplyAt: replyCreatedAt,
-            },
-        );
+            const existingParticipants = Array.isArray(
+                latestParent.threadParticipants,
+            )
+                ? latestParent.threadParticipants
+                : [];
+            const nextParticipants = Array.from(
+                new Set([...existingParticipants, user.$id]),
+            );
+            const nextCount = (latestParent.threadMessageCount || 0) + 1;
+            const replyCreatedAt = new Date().toISOString();
+
+            try {
+                await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.directMessages,
+                    actualThreadId,
+                    {
+                        threadMessageCount: nextCount,
+                        threadParticipants: nextParticipants,
+                        lastThreadReplyAt: replyCreatedAt,
+                    },
+                );
+                break;
+            } catch (updateError) {
+                if (attempt === maxUpdateAttempts - 1) {
+                    throw updateError;
+                }
+            }
+        }
 
         if (mentions && mentions.length > 0) {
             await upsertMentionInboxItems({

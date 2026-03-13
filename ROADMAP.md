@@ -211,7 +211,7 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ### Version 1.6 Scope (Canary To Stable)
 
-Status: Shipped. Version 1.6 finalized unread and attention-management parity work that started in canary, with backend and frontend parity now live across channels and DMs.
+Status: Pre-release. Version 1.6 is finalizing unread and attention-management parity work that started in canary, with release targeted for 2026-04-02.
 
 #### Must Ship
 

@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { listInboxDigest } from "@/lib/inbox";
+import { logger } from "@/lib/newrelic-utils";
 import type { InboxContextKind } from "@/lib/types";
 
 const DEFAULT_LIMIT = 50;
@@ -90,7 +91,14 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json(digest);
-    } catch {
+    } catch (error) {
+        logger.error("Failed to load inbox digest", {
+            contextId,
+            contextKind,
+            limit,
+            userId: session.$id,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             { error: "Failed to load inbox digest" },
             { status: 500 },

@@ -15,6 +15,8 @@ const VALID_CONTEXT_KINDS: InboxContextKind[] = ["channel", "conversation"];
 const VALID_SCOPE_VALUES = ["all", "direct", "server"] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const MAX_ITEM_UPDATES = 50;
+const UPDATE_BATCH_SIZE = 25;
 const env = getEnvConfig();
 
 type InboxScope = (typeof VALID_SCOPE_VALUES)[number];
@@ -283,6 +285,7 @@ export async function PATCH(request: NextRequest) {
             }, new Map());
 
         const { databases } = getAdminClient();
+        let updatedMentionCount = 0;
         if (mentionItemIds.length > 0) {
             const documents = await databases.listDocuments(
                 env.databaseId,
@@ -294,7 +297,7 @@ export async function PATCH(request: NextRequest) {
                 ],
             );
 
-            await Promise.all(
+            const mentionUpdateResults = await Promise.allSettled(
                 documents.documents.map((document) =>
                     databases.updateDocument(
                         env.databaseId,
@@ -304,6 +307,10 @@ export async function PATCH(request: NextRequest) {
                     ),
                 ),
             );
+
+            updatedMentionCount = mentionUpdateResults.filter(
+                (result) => result.status === "fulfilled",
+            ).length;
         }
 
         await Promise.all(
@@ -320,7 +327,7 @@ export async function PATCH(request: NextRequest) {
         recordEvent("InboxMarkAllRead", {
             contextId: contextId ?? null,
             contextKind: contextKind ?? null,
-            updatedMentionCount: mentionItemIds.length,
+            updatedMentionCount,
             updatedThreadContextCount: threadReadWrites.size,
             userId: session.$id,
         });
@@ -328,19 +335,20 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({
             ok: true,
             readAt,
-            updatedMentionCount: mentionItemIds.length,
+            updatedMentionCount,
             updatedThreadContextCount: threadReadWrites.size,
         });
     }
 
     const requestedItemIds =
         body && "itemIds" in body ? body.itemIds : undefined;
-    const itemIds = Array.isArray(requestedItemIds)
+    const filteredItemIds = Array.isArray(requestedItemIds)
         ? requestedItemIds.filter(
               (value): value is string =>
                   typeof value === "string" && value.trim().length > 0,
           )
         : [];
+    const itemIds = filteredItemIds.slice(0, MAX_ITEM_UPDATES);
 
     if (itemIds.length === 0) {
         return NextResponse.json(
@@ -361,20 +369,34 @@ export async function PATCH(request: NextRequest) {
     );
 
     const readAt = new Date().toISOString();
-    await Promise.all(
-        documents.documents.map((document) =>
-            databases.updateDocument(
-                env.databaseId,
-                env.collections.inboxItems,
-                String(document.$id),
-                { readAt },
+    let updatedCount = 0;
+    for (
+        let startIndex = 0;
+        startIndex < documents.documents.length;
+        startIndex += UPDATE_BATCH_SIZE
+    ) {
+        const batch = documents.documents.slice(
+            startIndex,
+            startIndex + UPDATE_BATCH_SIZE,
+        );
+        const batchResults = await Promise.allSettled(
+            batch.map((document) =>
+                databases.updateDocument(
+                    env.databaseId,
+                    env.collections.inboxItems,
+                    String(document.$id),
+                    { readAt },
+                ),
             ),
-        ),
-    );
+        );
+        updatedCount += batchResults.filter(
+            (result) => result.status === "fulfilled",
+        ).length;
+    }
 
     recordEvent("InboxItemsRead", {
         requestedCount: itemIds.length,
-        updatedCount: documents.documents.length,
+        updatedCount,
         userId: session.$id,
     });
 
