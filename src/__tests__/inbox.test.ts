@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { listInboxItems } from "@/lib/inbox";
+import { listInboxDigest, listInboxItems } from "@/lib/inbox";
 
 const {
     mockGetNotificationSettings,
@@ -212,5 +212,132 @@ describe("inbox", () => {
 
         expect(result.items).toHaveLength(0);
         expect(result.unreadCount).toBe(0);
+    });
+
+    it("returns digest items ordered by newest activity first", async () => {
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-old",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-1",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "older mention",
+                                authorUserId: "user-2",
+                            },
+                            {
+                                $id: "mention-new",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-2",
+                                latestActivityAt: "2026-03-11T13:00:00.000Z",
+                                previewText: "newer mention",
+                                authorUserId: "user-3",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                userId: "user-2",
+                                displayName: "Alice",
+                            },
+                            {
+                                userId: "user-3",
+                                displayName: "Bob",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const digest = await listInboxDigest({
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            limit: 10,
+            userId: "user-1",
+        });
+
+        expect(digest.items).toHaveLength(2);
+        expect(digest.items[0]?.id).toBe("mention-new");
+        expect(digest.items[1]?.id).toBe("mention-old");
+    });
+
+    it("keeps digest total unread count from full scoped set when paginated", async () => {
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-1",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-1",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "one",
+                                authorUserId: "user-2",
+                            },
+                            {
+                                $id: "mention-2",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-2",
+                                latestActivityAt: "2026-03-11T13:00:00.000Z",
+                                previewText: "two",
+                                authorUserId: "user-3",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                userId: "user-2",
+                                displayName: "Alice",
+                            },
+                            {
+                                userId: "user-3",
+                                displayName: "Bob",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const digest = await listInboxDigest({
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            limit: 1,
+            userId: "user-1",
+        });
+
+        expect(digest.items).toHaveLength(1);
+        expect(digest.totalUnreadCount).toBe(2);
     });
 });

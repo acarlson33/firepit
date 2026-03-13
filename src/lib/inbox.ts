@@ -699,36 +699,35 @@ export async function listInboxDigest(params: {
           )
         : inbox.items;
 
-    const sortedItems = [...scopedItems]
-        .sort((left, right) =>
-            left.latestActivityAt.localeCompare(right.latestActivityAt),
-        )
-        .slice(0, limit)
-        .map((item) => ({
-            activityAt: item.latestActivityAt,
-            authorAvatarUrl: item.authorAvatarUrl,
-            authorLabel: item.authorLabel,
-            authorUserId: item.authorUserId,
-            contextId: item.contextId,
-            contextKind: item.contextKind,
-            id: item.id,
-            kind: item.kind,
-            messageId: item.messageId,
-            muted: item.muted,
-            parentMessageId: item.parentMessageId,
-            previewText: item.previewText,
-            serverId: item.serverId,
-            unreadCount: item.unreadCount,
-        }));
+    const sortedItems = [...scopedItems].sort((left, right) =>
+        right.latestActivityAt.localeCompare(left.latestActivityAt),
+    );
+    const totalUnreadCount = scopedItems.reduce(
+        (total, item) => total + item.unreadCount,
+        0,
+    );
+    const pagedItems = sortedItems.slice(0, limit).map((item) => ({
+        activityAt: item.latestActivityAt,
+        authorAvatarUrl: item.authorAvatarUrl,
+        authorLabel: item.authorLabel,
+        authorUserId: item.authorUserId,
+        contextId: item.contextId,
+        contextKind: item.contextKind,
+        id: item.id,
+        kind: item.kind,
+        messageId: item.messageId,
+        muted: item.muted,
+        parentMessageId: item.parentMessageId,
+        previewText: item.previewText,
+        serverId: item.serverId,
+        unreadCount: item.unreadCount,
+    }));
 
     return {
         contractVersion: inbox.contractVersion,
         contextId,
         contextKind,
-        items: sortedItems,
-        totalUnreadCount: sortedItems.reduce(
-            (total, item) => total + item.unreadCount,
-            0,
-        ),
+        items: pagedItems,
+        totalUnreadCount,
     };
 }

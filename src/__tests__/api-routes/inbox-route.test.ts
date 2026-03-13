@@ -266,6 +266,66 @@ describe("inbox route", () => {
         expect(data.updatedThreadContextCount).toBe(1);
     });
 
+    it("coalesces duplicate thread parents per context during mark-all-read", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxItems.mockResolvedValue({
+            contractVersion: "message_v2",
+            counts: { mention: 0, thread: 5 },
+            items: [
+                {
+                    id: "thread:channel:channel-1:message-2",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-2",
+                    parentMessageId: "message-2",
+                    latestActivityAt: "2026-03-13T01:00:00.000Z",
+                    unreadCount: 2,
+                    previewText: "thread",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+                {
+                    id: "thread:channel:channel-1:message-2-duplicate",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-2",
+                    parentMessageId: "message-2",
+                    latestActivityAt: "2026-03-13T02:00:00.000Z",
+                    unreadCount: 3,
+                    previewText: "thread newer",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+            ],
+            unreadCount: 5,
+        });
+        mockGetThreadReads.mockResolvedValue({ reads: {} });
+
+        const response = await PATCH(
+            new NextRequest("http://localhost/api/inbox", {
+                body: JSON.stringify({ action: "mark-all-read" }),
+                method: "PATCH",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockUpsertThreadReads).toHaveBeenCalledTimes(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledWith({
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: {
+                "message-2": "2026-03-13T02:00:00.000Z",
+            },
+            userId: "user-1",
+        });
+        expect(data.updatedThreadContextCount).toBe(1);
+    });
+
     it("rejects empty inbox read updates", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
 
