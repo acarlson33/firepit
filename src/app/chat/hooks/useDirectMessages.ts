@@ -142,6 +142,12 @@ export function useDirectMessages({
         try {
             setLoading(true);
             setError(null);
+            setMessages([]);
+            setOldestCursor(null);
+            setHasMore(false);
+            setReadOnly(false);
+            setReadOnlyReason(null);
+            setRelationship(null);
 
             // Optimized: Batch query all messages at once
             // User profiles are fetched in batches (5 at a time) to reduce API calls
@@ -180,11 +186,15 @@ export function useDirectMessages({
         }
 
         try {
+            const activeConversationId = conversationId;
             const result = await listDirectMessages(
-                conversationId,
+                activeConversationId,
                 loadMoreSize,
                 oldestCursor,
             );
+            if (currentConversationIdRef.current !== activeConversationId) {
+                return;
+            }
             const olderItems = result.items.reverse().filter(isTopLevelMessage);
 
             setMessages((currentValue) => [...olderItems, ...currentValue]);

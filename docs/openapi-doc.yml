@@ -2191,7 +2191,7 @@ paths:
 
     /api/notifications/settings:
         get:
-            tags: [Users]
+            tags: [Notifications]
             summary: Get notification settings for the current user
             security:
                 - sessionCookie: []
@@ -2203,7 +2203,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/NotificationSettings"
         patch:
-            tags: [Users]
+            tags: [Notifications]
             summary: Update notification settings for the current user
             security:
                 - sessionCookie: []
@@ -2223,7 +2223,7 @@ paths:
 
     /api/inbox:
         get:
-            tags: [Users]
+            tags: [Notifications]
             summary: Get unified unread inbox items and counts
             security:
                 - sessionCookie: []
@@ -2267,7 +2267,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Error"
         patch:
-            tags: [Users]
+            tags: [Notifications]
             summary: Mark inbox items or contexts as read
             security:
                 - sessionCookie: []
@@ -2328,7 +2328,7 @@ paths:
 
     /api/inbox/digest:
         get:
-            tags: [Users]
+            tags: [Notifications]
             summary: Get scoped unread digest payload
             security:
                 - sessionCookie: []
@@ -2370,7 +2370,7 @@ paths:
 
     /api/thread-reads:
         get:
-            tags: [Users]
+            tags: [Notifications]
             summary: Get persisted thread read state for a context
             security:
                 - sessionCookie: []
@@ -2406,7 +2406,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Error"
         patch:
-            tags: [Users]
+            tags: [Notifications]
             summary: Persist thread read state updates for a context
             security:
                 - sessionCookie: []

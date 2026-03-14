@@ -8,6 +8,9 @@ const VALID_CONTEXT_TYPES: ThreadReadContextType[] = [
     "channel",
     "conversation",
 ];
+const isoUtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const FRACTIONAL_SECONDS_PATTERN = /\.(\d{1,3})Z$/;
+const ZERO_MILLISECONDS_PATTERN = /\.000Z$/;
 
 type PatchBody = {
     contextId?: string;
@@ -28,12 +31,35 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
         return false;
     }
 
+    function isValidIsoTimestamp(candidate: string) {
+        if (!isoUtcPattern.test(candidate)) {
+            return false;
+        }
+
+        const parsed = Date.parse(candidate);
+        if (Number.isNaN(parsed)) {
+            return false;
+        }
+
+        const normalizedCandidate = candidate
+            .replace(FRACTIONAL_SECONDS_PATTERN, (_, fraction: string) => {
+                return `.${fraction.padEnd(3, "0")}Z`;
+            })
+            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
+        const normalizedParsed = new Date(parsed)
+            .toISOString()
+            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
+
+        return normalizedParsed === normalizedCandidate;
+    }
+
     return Object.entries(value).every(
         ([messageId, readAt]) =>
             typeof messageId === "string" &&
             messageId.length > 0 &&
             typeof readAt === "string" &&
-            readAt.length > 0,
+            readAt.length > 0 &&
+            isValidIsoTimestamp(readAt),
     );
 }
 

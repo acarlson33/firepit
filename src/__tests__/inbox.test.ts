@@ -134,6 +134,7 @@ describe("inbox", () => {
         expect(result.items[0]?.authorLabel).toBe("Alice");
         expect(result.items[0]?.muted).toBe(true);
         expect(result.counts.mention).toBe(1);
+        expect(result.contractVersion).toBe("thread_v1");
     });
 
     it("filters inbox items by context kind", async () => {
@@ -182,6 +183,7 @@ describe("inbox", () => {
 
         expect(result.items).toHaveLength(0);
         expect(result.unreadCount).toBe(0);
+        expect(result.contractVersion).toBe("thread_v1");
     });
 
     it("filters unread channel thread items when the user cannot read the channel", async () => {

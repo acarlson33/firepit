@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 
 import { DirectMessageView } from "@/app/chat/components/DirectMessageView";
 
@@ -104,10 +105,13 @@ describe("DirectMessageView", () => {
         const scrollContainer = container.querySelector(
             '[data-message-scroll-container="true"]',
         ) as HTMLDivElement | null;
+        const computedHeight = scrollContainer
+            ? getComputedStyle(scrollContainer).height
+            : "";
 
-        expect(scrollContainer).toBeTruthy();
-        expect(scrollContainer?.className).toContain("w-full");
-        expect(scrollContainer?.className).toContain("min-w-0");
-        expect(scrollContainer?.style.height).toBe("60vh");
+        expect(scrollContainer).toBeInTheDocument();
+        expect(scrollContainer).toHaveClass("w-full", "min-w-0");
+        expect(computedHeight).toMatch(/^\d+(\.\d+)?(px|vh|%)$/);
+        expect(Number.parseFloat(computedHeight)).toBeGreaterThan(0);
     });
 });

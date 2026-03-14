@@ -10,8 +10,8 @@ The live flag definitions are:
 
 - `allow_user_servers`: default `false`; controls whether regular users can create their own servers
 - `enable_audit_logging`: default `true`; controls whether moderation actions should be recorded for audit visibility
-- `enable_per_message_unread`: default `false`; gates the phase rollout from thread-level unread semantics to per-message unread semantics
-- `enable_inbox_digest`: default `false`; gates the phase-4 digest endpoint and hook scaffolding rollout
+- `enable_per_message_unread`: default `false`; gates the Phase 4 rollout from thread-level unread semantics to per-message unread semantics
+- `enable_inbox_digest`: default `false`; gates the Phase 4 digest endpoint and hook scaffolding rollout
 
 Rollout note for `enable_per_message_unread`:
 

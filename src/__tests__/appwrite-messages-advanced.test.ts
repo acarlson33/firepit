@@ -57,13 +57,9 @@ describe("appwrite-messages advanced flows", () => {
         // Should include user read/write and team based roles (simplistic string contains check)
         const perms = created?.permissions?.join(" ") || "";
         expect(perms).toContain("user:u1");
-        if (
-            perms.includes("team:team_mod") ||
-            perms.includes("team:team_admin")
-        ) {
-            // at least one team permission present (depending on perms.message implementation)
-            expect(true).toBe(true);
-        }
+        expect(perms).toContain("read");
+        expect(perms).toContain("update");
+        expect(perms).toContain("delete");
     });
 
     it("listMessages builds queries (limit, cursor, channel) and maps docs", async () => {
@@ -234,7 +230,7 @@ describe("appwrite-messages advanced flows", () => {
                 json: async () => ({ success: true }),
             };
         });
-        global.fetch = mockFetch;
+        vi.stubGlobal("fetch", mockFetch);
 
         const { setTyping } = await import("../lib/appwrite-messages");
         await setTyping("u1", "c1", "Alice", true);
@@ -254,7 +250,7 @@ describe("appwrite-messages advanced flows", () => {
         const mockFetch = vi.fn(async () => {
             throw new Error("Network error");
         });
-        global.fetch = mockFetch;
+        vi.stubGlobal("fetch", mockFetch);
 
         const { setTyping } = await import("../lib/appwrite-messages");
         // Should not throw even though fetch fails
@@ -271,7 +267,7 @@ describe("appwrite-messages advanced flows", () => {
                 json: async () => ({ success: true }),
             };
         });
-        global.fetch = mockFetch;
+        vi.stubGlobal("fetch", mockFetch);
 
         const { setTyping } = await import("../lib/appwrite-messages");
 

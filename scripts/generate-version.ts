@@ -61,6 +61,19 @@ function compareVersions(left: string, right: string): number {
 }
 
 /**
+ * Align leading v-prefix with a reference label (for stable/canary consistency).
+ */
+function alignVersionPrefix(
+    versionValue: string,
+    referenceLabel: string,
+): string {
+    const normalizedValue = versionValue.trim().replace(/^v/i, "");
+    const referenceHasVPrefix = /^v/i.test(referenceLabel.trim());
+
+    return referenceHasVPrefix ? `v${normalizedValue}` : normalizedValue;
+}
+
+/**
  * Get version from package.json as fallback
  */
 function getPackageVersion(): string {
@@ -106,11 +119,7 @@ function generateVersionMetadata(): VersionMetadata {
     let version = packageVersionLabel;
     let isCanary = false;
 
-    if (!gitAvailable || !latestTag) {
-        // No git metadata/tag available: assume stable package version.
-        version = packageVersionLabel;
-        isCanary = false;
-    } else {
+    if (gitAvailable && latestTag) {
         const comparison = compareVersions(packageVersion, latestTag);
 
         if (comparison > 0) {
@@ -119,8 +128,7 @@ function generateVersionMetadata(): VersionMetadata {
             isCanary = true;
         } else {
             // Equal or behind latest git tag: stable build.
-            version = latestTag;
-            isCanary = false;
+            version = alignVersionPrefix(latestTag, packageVersionLabel);
         }
     }
 
@@ -156,7 +164,7 @@ function main() {
 
     // Write metadata to file
     const outputPath = join(generatedDir, "version-metadata.json");
-    writeFileSync(outputPath, JSON.stringify(metadata, null, 2));
+    writeFileSync(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
     console.log(`✅ Version metadata written to ${outputPath}`);
 }

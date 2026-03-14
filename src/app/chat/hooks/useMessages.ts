@@ -145,6 +145,8 @@ export function useMessages({
         }
 
         setLoading(true);
+        setOldestCursor(null);
+        setHasMore(false);
         let cancelled = false;
 
         (async () => {
@@ -165,6 +167,7 @@ export function useMessages({
                     // If we got a full page, there might be more
                     setHasMore(initial.length === pageSize);
                 } else {
+                    setOldestCursor(null);
                     setHasMore(false);
                 }
             } catch (err) {

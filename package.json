@@ -90,6 +90,7 @@
         "happy-dom": "^20.8.4",
         "husky": "^9.1.7",
         "jsdom": "^27.4.0",
+        "lint-staged": "^16.4.0",
         "tailwindcss": "^4.2.1",
         "typescript": "^5.9.3",
         "vitest": "^3.2.4"
@@ -98,5 +99,11 @@
     "overrides": {
         "@types/react": "19.2.5",
         "@types/react-dom": "19.2.3"
+    },
+    "lint-staged": {
+        "!(*test).ts,!(*test).tsx": [
+            "eslint --fix",
+            "prettier --write"
+        ]
     }
 }

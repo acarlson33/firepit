@@ -6,6 +6,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { logger } from "@/lib/newrelic-utils";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
 import {
     MAX_MESSAGE_LENGTH,
@@ -21,6 +22,118 @@ type RouteContext = {
         messageId: string;
     }>;
 };
+
+function sleep(ms: number) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+async function updateThreadMetadataWithRetries(params: {
+    actualThreadId: string;
+    conversationId: string;
+    databases: ReturnType<typeof getServerClient>["databases"];
+    env: ReturnType<typeof getEnvConfig>;
+    maxUpdateAttempts: number;
+    replyCreatedAt: string;
+    userId: string;
+}) {
+    const {
+        actualThreadId,
+        conversationId,
+        databases,
+        env,
+        maxUpdateAttempts,
+        replyCreatedAt,
+        userId,
+    } = params;
+
+    async function attemptUpdate(attempt: number): Promise<void> {
+        const latestParent = (await databases.getDocument(
+            env.databaseId,
+            env.collections.directMessages,
+            actualThreadId,
+        )) as unknown as DirectMessage;
+
+        let existingParticipants: string[] = [];
+        if (Array.isArray(latestParent.threadParticipants)) {
+            existingParticipants = latestParent.threadParticipants.filter(
+                (participant): participant is string =>
+                    typeof participant === "string",
+            );
+        } else if (typeof latestParent.threadParticipants === "string") {
+            try {
+                const parsedParticipants = JSON.parse(
+                    latestParent.threadParticipants,
+                );
+                existingParticipants = Array.isArray(parsedParticipants)
+                    ? parsedParticipants.filter(
+                          (participant): participant is string =>
+                              typeof participant === "string",
+                      )
+                    : [];
+            } catch {
+                existingParticipants = [];
+            }
+        }
+
+        const nextParticipants = Array.from(
+            new Set([...existingParticipants, userId]),
+        );
+
+        // Use authoritative thread reply total to avoid lost increments under concurrency.
+        const replies = await databases.listDocuments(
+            env.databaseId,
+            env.collections.directMessages,
+            [
+                Query.equal("conversationId", conversationId),
+                Query.equal("threadId", actualThreadId),
+                Query.limit(1),
+            ],
+        );
+
+        const nextCount = Math.max(
+            latestParent.threadMessageCount || 0,
+            replies.total,
+        );
+        try {
+            await databases.updateDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+                {
+                    threadMessageCount: nextCount,
+                    threadParticipants: nextParticipants,
+                    lastThreadReplyAt: replyCreatedAt,
+                },
+            );
+        } catch (updateError) {
+            if (attempt >= maxUpdateAttempts - 1) {
+                logger.warn(
+                    "Failed to update DM thread metadata after retries",
+                    {
+                        actualThreadId,
+                        userId,
+                        threadMessageCount: nextCount,
+                        participantCount: nextParticipants.length,
+                        lastThreadReplyAt: replyCreatedAt,
+                        error:
+                            updateError instanceof Error
+                                ? updateError.message
+                                : String(updateError),
+                    },
+                );
+                return;
+            }
+
+            const backoffMs = Math.min(400, 75 * 2 ** attempt);
+            await sleep(backoffMs);
+            await attemptUpdate(attempt + 1);
+        }
+    }
+
+    await attemptUpdate(0);
+}
 
 async function createAttachments(
     messageId: string,
@@ -114,13 +227,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         )) as unknown as DirectMessage;
 
         const actualThreadId = parent.threadId ?? messageId;
-        const actualParent = parent.threadId
-            ? ((await databases.getDocument(
-                  env.databaseId,
-                  env.collections.directMessages,
-                  actualThreadId,
-              )) as unknown as DirectMessage)
-            : parent;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -152,9 +258,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
             return doc as unknown as DirectMessage;
         });
 
+        const parentMessage = parent.threadId
+            ? ((await databases.getDocument(
+                  env.databaseId,
+                  env.collections.directMessages,
+                  actualThreadId,
+              )) as unknown as DirectMessage)
+            : parent;
+
         return NextResponse.json({
             items,
-            parentMessage: actualParent,
+            parentMessage,
             replies: items,
             total: docs.total,
             hasMore: docs.documents.length === limit,
@@ -229,13 +343,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         )) as unknown as DirectMessage;
 
         const actualThreadId = parent.threadId ?? messageId;
-        const actualParent = parent.threadId
-            ? ((await databases.getDocument(
-                  env.databaseId,
-                  env.collections.directMessages,
-                  actualThreadId,
-              )) as unknown as DirectMessage)
-            : parent;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -292,27 +399,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
             await createAttachments(String(created.$id), attachments);
         }
 
-        const existingParticipants = Array.isArray(
-            actualParent.threadParticipants,
-        )
-            ? actualParent.threadParticipants
-            : [];
-        const nextParticipants = Array.from(
-            new Set([...existingParticipants, user.$id]),
-        );
-        const nextCount = (actualParent.threadMessageCount || 0) + 1;
-        const replyCreatedAt = new Date().toISOString();
-
-        await databases.updateDocument(
-            env.databaseId,
-            env.collections.directMessages,
+        const maxUpdateAttempts = 3;
+        await updateThreadMetadataWithRetries({
             actualThreadId,
-            {
-                threadMessageCount: nextCount,
-                threadParticipants: nextParticipants,
-                lastThreadReplyAt: replyCreatedAt,
-            },
-        );
+            conversationId: parent.conversationId,
+            databases,
+            env,
+            maxUpdateAttempts,
+            replyCreatedAt: String(
+                created.$createdAt || new Date().toISOString(),
+            ),
+            userId: user.$id,
+        });
 
         if (mentions && mentions.length > 0) {
             await upsertMentionInboxItems({

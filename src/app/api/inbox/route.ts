@@ -5,16 +5,19 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxItems } from "@/lib/inbox";
-import { recordEvent } from "@/lib/newrelic-utils";
+import { logger, recordEvent } from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
-import { Query } from "node-appwrite";
+import { Query, type Models } from "node-appwrite";
 
 const VALID_KINDS: InboxItemKind[] = ["mention", "thread"];
 const VALID_CONTEXT_KINDS: InboxContextKind[] = ["channel", "conversation"];
 const VALID_SCOPE_VALUES = ["all", "direct", "server"] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const MAX_ITEM_UPDATES = 50;
+const UPDATE_BATCH_SIZE = 25;
+const UPDATE_BATCH_CONCURRENCY = 2;
 const env = getEnvConfig();
 
 type InboxScope = (typeof VALID_SCOPE_VALUES)[number];
@@ -28,6 +31,77 @@ type MarkAllReadBody = {
 type MarkItemsReadBody = {
     itemIds?: unknown;
 };
+
+async function runBatchedUpdates<T>(params: {
+    batchConcurrency: number;
+    batchSize: number;
+    documents: T[];
+    getDocumentId: (document: T) => string;
+    loggerContext?: Record<string, unknown>;
+    loggerMessage: string;
+    updater: (document: T) => Promise<unknown>;
+}) {
+    const {
+        batchConcurrency,
+        batchSize,
+        documents,
+        getDocumentId,
+        loggerContext,
+        loggerMessage,
+        updater,
+    } = params;
+
+    const batches: T[][] = [];
+    for (
+        let startIndex = 0;
+        startIndex < documents.length;
+        startIndex += batchSize
+    ) {
+        batches.push(documents.slice(startIndex, startIndex + batchSize));
+    }
+
+    let fulfilledCount = 0;
+    const workerCount = Math.max(1, Math.min(batchConcurrency, batches.length));
+    const workers = Array.from({ length: workerCount }, (_, workerIndex) => {
+        return (async () => {
+            for (
+                let batchIndex = workerIndex;
+                batchIndex < batches.length;
+                batchIndex += workerCount
+            ) {
+                const batch = batches[batchIndex] ?? [];
+                const batchResults = await Promise.allSettled(
+                    batch.map((document) => updater(document)),
+                );
+
+                for (const [resultIndex, result] of batchResults.entries()) {
+                    if (result.status !== "rejected") {
+                        continue;
+                    }
+
+                    const failedDocument = batch[resultIndex];
+                    logger.warn(loggerMessage, {
+                        ...loggerContext,
+                        documentId: failedDocument
+                            ? getDocumentId(failedDocument)
+                            : undefined,
+                        reason:
+                            result.reason instanceof Error
+                                ? result.reason.message
+                                : String(result.reason),
+                    });
+                }
+
+                fulfilledCount += batchResults.filter(
+                    (result) => result.status === "fulfilled",
+                ).length;
+            }
+        })();
+    });
+
+    await Promise.all(workers);
+    return fulfilledCount;
+}
 
 function parseScope(value: string | null): InboxScope | null {
     if (!value) {
@@ -283,6 +357,7 @@ export async function PATCH(request: NextRequest) {
             }, new Map());
 
         const { databases } = getAdminClient();
+        let updatedMentionCount = 0;
         if (mentionItemIds.length > 0) {
             const documents = await databases.listDocuments(
                 env.databaseId,
@@ -294,16 +369,22 @@ export async function PATCH(request: NextRequest) {
                 ],
             );
 
-            await Promise.all(
-                documents.documents.map((document) =>
-                    databases.updateDocument(
+            updatedMentionCount += await runBatchedUpdates({
+                batchConcurrency: UPDATE_BATCH_CONCURRENCY,
+                batchSize: UPDATE_BATCH_SIZE,
+                documents: documents.documents,
+                getDocumentId: (document) => String(document.$id),
+                loggerMessage: "Failed to mark mention inbox item as read",
+                updater: (document) =>
+                    databases.updateDocument<
+                        Models.Document & { readAt?: string | null }
+                    >(
                         env.databaseId,
                         env.collections.inboxItems,
                         String(document.$id),
                         { readAt },
                     ),
-                ),
-            );
+            });
         }
 
         await Promise.all(
@@ -320,7 +401,7 @@ export async function PATCH(request: NextRequest) {
         recordEvent("InboxMarkAllRead", {
             contextId: contextId ?? null,
             contextKind: contextKind ?? null,
-            updatedMentionCount: mentionItemIds.length,
+            updatedMentionCount,
             updatedThreadContextCount: threadReadWrites.size,
             userId: session.$id,
         });
@@ -328,19 +409,25 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({
             ok: true,
             readAt,
-            updatedMentionCount: mentionItemIds.length,
+            updatedMentionCount,
             updatedThreadContextCount: threadReadWrites.size,
         });
     }
 
     const requestedItemIds =
         body && "itemIds" in body ? body.itemIds : undefined;
-    const itemIds = Array.isArray(requestedItemIds)
-        ? requestedItemIds.filter(
-              (value): value is string =>
-                  typeof value === "string" && value.trim().length > 0,
+    const filteredItemIds = Array.isArray(requestedItemIds)
+        ? Array.from(
+              new Set(
+                  requestedItemIds
+                      .map((value) =>
+                          typeof value === "string" ? value.trim() : "",
+                      )
+                      .filter((value): value is string => value.length > 0),
+              ),
           )
         : [];
+    const itemIds = filteredItemIds.slice(0, MAX_ITEM_UPDATES);
 
     if (itemIds.length === 0) {
         return NextResponse.json(
@@ -361,22 +448,39 @@ export async function PATCH(request: NextRequest) {
     );
 
     const readAt = new Date().toISOString();
-    await Promise.all(
-        documents.documents.map((document) =>
-            databases.updateDocument(
+    const updatedCount = await runBatchedUpdates({
+        batchConcurrency: UPDATE_BATCH_CONCURRENCY,
+        batchSize: UPDATE_BATCH_SIZE,
+        documents: documents.documents,
+        getDocumentId: (document) => String(document.$id),
+        loggerContext: {
+            userId: session.$id,
+        },
+        loggerMessage: "Failed to mark inbox item as read",
+        updater: (document) =>
+            databases.updateDocument<
+                Models.Document & { readAt?: string | null }
+            >(
                 env.databaseId,
                 env.collections.inboxItems,
                 String(document.$id),
                 { readAt },
             ),
-        ),
-    );
+    });
 
     recordEvent("InboxItemsRead", {
-        requestedCount: itemIds.length,
-        updatedCount: documents.documents.length,
+        requestedCount: filteredItemIds.length,
+        truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
+        truncatedCount: Math.max(0, filteredItemIds.length - itemIds.length),
+        updatedCount,
         userId: session.$id,
     });
 
-    return NextResponse.json({ ok: true, readAt });
+    return NextResponse.json({
+        ok: true,
+        readAt,
+        updatedCount,
+        truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
+        truncatedCount: Math.max(0, filteredItemIds.length - itemIds.length),
+    });
 }

@@ -240,9 +240,16 @@ export function ModerationMessageList({
             return [];
         }
 
-        return attachments.filter((attachment) =>
-            attachment.fileType.startsWith("image/"),
-        );
+        return attachments.filter((attachment) => {
+            if (typeof attachment.fileType !== "string") {
+                return false;
+            }
+
+            return attachment.fileType
+                .trim()
+                .toLowerCase()
+                .startsWith("image/");
+        });
     }
 
     return (

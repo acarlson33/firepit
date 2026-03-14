@@ -243,6 +243,11 @@ describe("DM Thread API", () => {
                 .mockResolvedValueOnce({
                     $id: "conv-1",
                     participants: ["user-1", "user-2"],
+                })
+                .mockResolvedValueOnce({
+                    $id: "msg-1",
+                    threadMessageCount: 0,
+                    threadParticipants: [],
                 });
 
             mockCreateDocument.mockResolvedValue({
@@ -298,6 +303,10 @@ describe("DM Thread API", () => {
                     $createdAt: now,
                 })
                 .mockResolvedValueOnce({
+                    $id: "conv-1",
+                    participants: ["user-1", "user-2"],
+                })
+                .mockResolvedValueOnce({
                     $id: "msg-1",
                     conversationId: "conv-1",
                     senderId: "user-2",
@@ -305,10 +314,6 @@ describe("DM Thread API", () => {
                     threadMessageCount: 1,
                     threadParticipants: ["user-2"],
                     $createdAt: now,
-                })
-                .mockResolvedValueOnce({
-                    $id: "conv-1",
-                    participants: ["user-1", "user-2"],
                 });
 
             mockCreateDocument.mockResolvedValue({

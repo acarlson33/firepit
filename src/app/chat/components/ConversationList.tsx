@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import {
@@ -57,6 +57,25 @@ type InboxFilterQuery = {
     kinds?: Array<"mention" | "thread">;
     scope?: "all" | "direct" | "server";
 };
+
+function filterInboxItems(
+    items: MentionItem[],
+    filter: InboxFilter,
+): MentionItem[] {
+    if (filter === "mentions") {
+        return items.filter((item) => item.kind === "mention");
+    }
+
+    if (filter === "direct") {
+        return items.filter((item) => item.destination.kind === "dm");
+    }
+
+    if (filter === "server") {
+        return items.filter((item) => item.destination.kind === "channel");
+    }
+
+    return items;
+}
 
 type ConversationUnreadState = {
     count: number;
@@ -174,28 +193,9 @@ export function ConversationList({
         [sidebarItems],
     );
 
-    const fallbackFilteredInboxItems = useMemo(() => {
-        if (inboxFilter === "mentions") {
-            return sidebarItems.filter((item) => item.kind === "mention");
-        }
-
-        if (inboxFilter === "direct") {
-            return sidebarItems.filter(
-                (item) => item.destination.kind === "dm",
-            );
-        }
-
-        if (inboxFilter === "server") {
-            return sidebarItems.filter(
-                (item) => item.destination.kind === "channel",
-            );
-        }
-
-        return sidebarItems;
-    }, [inboxFilter, sidebarItems]);
-
-    const [serverFilteredInboxItems, setServerFilteredInboxItems] =
-        useState<MentionItem[]>(sidebarItems);
+    const [serverFilteredInboxItems, setServerFilteredInboxItems] = useState<
+        MentionItem[]
+    >([]);
     const [serverFilteredInboxLoading, setServerFilteredInboxLoading] =
         useState(false);
 
@@ -224,18 +224,38 @@ export function ConversationList({
         [inboxFilterQuery.kinds, inboxFilterQuery.scope],
     );
 
+    const sidebarItemsRef = useRef<MentionItem[]>(sidebarItems);
+    const inboxFilterRef = useRef<InboxFilter>(inboxFilter);
+    const inboxFilterQueryRef = useRef<InboxFilterQuery>(inboxFilterQuery);
+
+    useEffect(() => {
+        sidebarItemsRef.current = sidebarItems;
+    }, [sidebarItems]);
+
+    useEffect(() => {
+        inboxFilterRef.current = inboxFilter;
+    }, [inboxFilter]);
+
+    useEffect(() => {
+        inboxFilterQueryRef.current = inboxFilterQuery;
+    }, [inboxFilterQuery]);
+
     useEffect(() => {
         if (sidebarMode !== "inbox") {
             return;
         }
 
         let cancelled = false;
+        const fallbackItems = filterInboxItems(
+            sidebarItemsRef.current,
+            inboxFilterRef.current,
+        );
         setServerFilteredInboxLoading(true);
-        setServerFilteredInboxItems(fallbackFilteredInboxItems);
+        setServerFilteredInboxItems(fallbackItems);
 
         void listInboxWithFilters({
-            kinds: inboxFilterQuery.kinds,
-            scope: inboxFilterQuery.scope,
+            kinds: inboxFilterQueryRef.current.kinds,
+            scope: inboxFilterQueryRef.current.scope,
         })
             .then((response) => {
                 if (cancelled) {
@@ -275,7 +295,7 @@ export function ConversationList({
             .catch(() => {
                 if (!cancelled) {
                     // Local filtering remains as a fallback for transient failures.
-                    setServerFilteredInboxItems(fallbackFilteredInboxItems);
+                    setServerFilteredInboxItems(fallbackItems);
                 }
             })
             .finally(() => {
@@ -287,13 +307,7 @@ export function ConversationList({
         return () => {
             cancelled = true;
         };
-    }, [
-        fallbackFilteredInboxItems,
-        inboxFilterCacheKey,
-        inboxFilterQuery.kinds,
-        inboxFilterQuery.scope,
-        sidebarMode,
-    ]);
+    }, [inboxFilterCacheKey, sidebarMode]);
 
     const displayedInboxItems =
         sidebarMode === "inbox" ? serverFilteredInboxItems : sidebarItems;
@@ -430,7 +444,7 @@ export function ConversationList({
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button
-                                className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                                className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
                                 size="icon"
                                 type="button"
                                 variant="ghost"
@@ -587,11 +601,8 @@ export function ConversationList({
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
                 {sidebarMode === "inbox" ? (
-                    <div
-                        aria-label="Inbox filter"
-                        className="grid grid-cols-4 gap-1 border-border border-b p-2"
-                        role="group"
-                    >
+                    <fieldset className="grid grid-cols-4 gap-1 border-0 border-border border-b p-2">
+                        <legend className="sr-only">Inbox filter</legend>
                         <Button
                             aria-pressed={inboxFilter === "all"}
                             className="rounded-lg"
@@ -640,7 +651,7 @@ export function ConversationList({
                         >
                             Servers
                         </Button>
-                    </div>
+                    </fieldset>
                 ) : null}
 
                 {sidebarMode === "chats" &&
@@ -814,7 +825,7 @@ export function ConversationList({
                                                     ) : null}
                                                 </button>
                                                 <Button
-                                                    className="opacity-0 transition-opacity group-hover:opacity-100"
+                                                    className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus-visible:opacity-100"
                                                     disabled={
                                                         actionLoading ===
                                                         `remove:${entry.user.userId}`
@@ -921,6 +932,22 @@ export function ConversationList({
                                 </button>
                             ))
                         )}
+                    </div>
+                ) : (
+                      sidebarMode === "inbox"
+                          ? inboxLoading || serverFilteredInboxLoading
+                          : false
+                  ) ? (
+                    <div className="space-y-2 p-2">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                            <div
+                                className="rounded-lg border border-border/60 p-3"
+                                key={index}
+                            >
+                                <Skeleton className="h-4 w-24" />
+                                <Skeleton className="mt-2 h-3 w-full" />
+                            </div>
+                        ))}
                     </div>
                 ) : (sidebarMode === "inbox"
                       ? displayedInboxItems

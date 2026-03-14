@@ -943,9 +943,18 @@ export default function ChatPage() {
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-    const jumpToPinnedMessage = useCallback((messageId: string) => {
-        jumpToMessage(messageId);
-    }, []);
+    const jumpToPinnedMessage = useCallback(
+        (messageId: string) => {
+            return jumpToMessageWhenReady(messageId, {
+                retryAttempts: 12,
+                retryDelayMs: 200,
+                onRetry: () => {
+                    void loadOlderAroundUnread();
+                },
+            });
+        },
+        [loadOlderAroundUnread],
+    );
     const handleJumpToCurrentUnread = useCallback(() => {
         const targetMessageId =
             activeUnreadAnchor?.messageId ?? currentContextFirstUnreadMessageId;
@@ -1942,7 +1951,7 @@ export default function ChatPage() {
                                                         pinnedChannelMessages.find(
                                                             (message) =>
                                                                 message.$id ===
-                                                                surfaceMessage.id,
+                                                                surfaceMessage.sourceMessageId,
                                                         );
                                                     if (rawMessage) {
                                                         await togglePin(

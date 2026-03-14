@@ -226,13 +226,26 @@ export async function GET(request: NextRequest) {
                 )
                 .filter((value): value is string => Boolean(value));
             const unreadThreadsByConversationId = new Map<string, number>();
-            const readStatesByConversationId = await listThreadReadsByContext({
-                contextIds: conversations.map(
-                    (conversation) => conversation.$id,
-                ),
-                contextType: "conversation",
-                userId: session.$id,
-            });
+            let readStatesByConversationId = new Map<
+                string,
+                Record<string, string>
+            >();
+            try {
+                readStatesByConversationId = await listThreadReadsByContext({
+                    contextIds: conversations.map(
+                        (conversation) => conversation.$id,
+                    ),
+                    contextType: "conversation",
+                    userId: session.$id,
+                });
+            } catch (error) {
+                logger.warn("Thread read lookup failed for conversations", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    userId: session.$id,
+                });
+                readStatesByConversationId = new Map();
+            }
 
             if (conversations.length > 0) {
                 try {
@@ -293,15 +306,26 @@ export async function GET(request: NextRequest) {
             );
 
             const enrichedConversations = conversations.map((conversation) => {
+                const unreadThreadCount =
+                    unreadThreadsByConversationId.get(conversation.$id) ?? 0;
+
                 if (conversation.isGroup) {
-                    return conversation;
+                    return {
+                        ...conversation,
+                        hasUnread: unreadThreadCount > 0,
+                        unreadThreadCount,
+                    };
                 }
 
                 const otherUserId = conversation.participants.find(
                     (id) => id !== session.$id,
                 );
                 if (!otherUserId) {
-                    return conversation;
+                    return {
+                        ...conversation,
+                        hasUnread: unreadThreadCount > 0,
+                        unreadThreadCount,
+                    };
                 }
 
                 const relationship = relationshipMap.get(otherUserId);
@@ -311,17 +335,13 @@ export async function GET(request: NextRequest) {
 
                 return {
                     ...conversation,
-                    hasUnread:
-                        (unreadThreadsByConversationId.get(conversation.$id) ??
-                            0) > 0,
+                    hasUnread: unreadThreadCount > 0,
                     readOnly,
                     readOnlyReason: relationship
                         ? getReadOnlyReason(relationship)
                         : undefined,
                     relationship,
-                    unreadThreadCount:
-                        unreadThreadsByConversationId.get(conversation.$id) ??
-                        0,
+                    unreadThreadCount,
                 };
             });
 
@@ -968,17 +988,29 @@ export async function POST(request: NextRequest) {
         }
 
         if (mentions && Array.isArray(mentions) && mentions.length > 0) {
-            await upsertMentionInboxItems({
-                authorUserId: senderId,
-                contextId: conversationId,
-                contextKind: "conversation",
-                latestActivityAt: String(
-                    message.$createdAt ?? new Date().toISOString(),
-                ),
-                mentions,
-                messageId: String(message.$id),
-                previewText: text || "",
-            });
+            try {
+                await upsertMentionInboxItems({
+                    authorUserId: senderId,
+                    contextId: conversationId,
+                    contextKind: "conversation",
+                    latestActivityAt: String(
+                        message.$createdAt ?? new Date().toISOString(),
+                    ),
+                    mentions,
+                    messageId: String(message.$id),
+                    previewText: text || "",
+                });
+            } catch (mentionError) {
+                logger.warn("Failed to upsert DM mention inbox items", {
+                    conversationId,
+                    messageId: String(message.$id),
+                    senderId,
+                    error:
+                        mentionError instanceof Error
+                            ? mentionError.message
+                            : String(mentionError),
+                });
+            }
         }
         // Update conversation's lastMessageAt
         try {

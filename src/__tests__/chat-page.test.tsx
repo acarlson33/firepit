@@ -182,7 +182,7 @@ vi.mock("../app/chat/hooks/useCategories", () => ({
     }),
 }));
 
-const mockUseMessages = vi.fn(() => ({
+const createDefaultUseMessagesValue = () => ({
     activeThreadParent: null,
     applyEdit: vi.fn(),
     cancelEdit: vi.fn(),
@@ -231,7 +231,9 @@ const mockUseMessages = vi.fn(() => ({
     togglePin: vi.fn(),
     typingUsers: {},
     userIdSlice: 6,
-}));
+});
+
+const mockUseMessages = vi.fn(createDefaultUseMessagesValue);
 
 vi.mock("../app/chat/hooks/useMessages", () => ({
     useMessages: (...args: unknown[]) => mockUseMessages(...args),
@@ -289,7 +291,8 @@ describe("ChatPage", () => {
     beforeEach(() => {
         mockPush.mockReset();
         mockReplace.mockReset();
-        mockUseMessages.mockClear();
+        mockUseMessages.mockReset();
+        mockUseMessages.mockImplementation(createDefaultUseMessagesValue);
         mockUseInbox.mockReset();
         mockUseInboxDigest.mockReset();
         mockInboxRefresh.mockReset();
@@ -302,6 +305,7 @@ describe("ChatPage", () => {
         mockSearchParams.delete("highlight");
         mockSearchParams.delete("invite");
         mockSearchParams.delete("server");
+        mockSearchParams.delete("unread");
         mockConversations.splice(0, mockConversations.length);
         mockContextInboxItems.splice(0, mockContextInboxItems.length);
         mockSetSelectedServer.mockReset();
@@ -557,7 +561,13 @@ describe("ChatPage", () => {
             await screen.findByRole("button", { name: "Jump to message" }),
         );
 
-        expect(mockJumpToMessage).toHaveBeenCalledWith("msg-1");
+        expect(mockJumpToMessageWhenReady).toHaveBeenCalledWith(
+            "msg-1",
+            expect.objectContaining({
+                onRetry: expect.any(Function),
+                retryAttempts: 12,
+            }),
+        );
     });
 
     it("refreshes inbox when jump-to-unread cannot resolve the target message", async () => {
