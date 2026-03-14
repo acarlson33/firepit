@@ -416,6 +416,25 @@ export async function PATCH(request: NextRequest) {
                 ),
             ),
         );
+
+        batchResults.forEach((result, index) => {
+            if (result.status !== "rejected") {
+                return;
+            }
+
+            const failedDocument = batch[index];
+            logger.warn("Failed to mark inbox item as read", {
+                documentId: failedDocument
+                    ? String(failedDocument.$id)
+                    : undefined,
+                reason:
+                    result.reason instanceof Error
+                        ? result.reason.message
+                        : String(result.reason),
+                userId: session.$id,
+            });
+        });
+
         updatedCount += batchResults.filter(
             (result) => result.status === "fulfilled",
         ).length;

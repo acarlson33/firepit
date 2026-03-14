@@ -5,6 +5,7 @@
  * Safe to re-run. Avoids console.* per project lint rules (writes directly to stdout/stderr).
  */
 import { config as loadDotenv } from "dotenv";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -873,6 +874,18 @@ async function ensureFeatureFlagDocument(params: {
 }) {
     const { description, enabled, key } = params;
 
+    function createFeatureFlagDocumentId(flagKey: string): string {
+        const readablePrefix = flagKey
+            .replace(/[^a-z0-9_-]/gi, "_")
+            .toLowerCase();
+        const hashSuffix = createHash("sha256")
+            .update(flagKey)
+            .digest("hex")
+            .slice(0, 12);
+
+        return `flag_${readablePrefix}_${hashSuffix}`;
+    }
+
     const existing = await tryVariants([
         () =>
             dbAny.listDocuments(DB_ID, "feature_flags", [
@@ -890,9 +903,10 @@ async function ensureFeatureFlagDocument(params: {
     const existingResponse = existing as {
         documents?: Array<{ $id?: string }>;
     };
-    const documentId = `flag_${key.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`;
+    const documentId = createFeatureFlagDocumentId(key);
     const now = new Date().toISOString();
     const document = existingResponse.documents?.[0];
+    let operation: "added" | "updated" = "added";
 
     function isDuplicateConflictError(error: unknown): boolean {
         if (!error || typeof error !== "object") {
@@ -980,6 +994,7 @@ async function ensureFeatureFlagDocument(params: {
         if (!isDuplicateConflictError(error)) {
             throw error;
         }
+        operation = "updated";
 
         // Another setup run may have created this deterministic document concurrently.
         const latestDocument = (await tryVariants([
@@ -1033,7 +1048,7 @@ async function ensureFeatureFlagDocument(params: {
                 }),
         ]);
     });
-    info(`[setup] added feature flag '${key}'`);
+    info(`[setup] ${operation} feature flag '${key}'`);
 }
 
 async function setupInvites() {

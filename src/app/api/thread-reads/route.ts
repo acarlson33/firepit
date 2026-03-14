@@ -8,6 +8,7 @@ const VALID_CONTEXT_TYPES: ThreadReadContextType[] = [
     "channel",
     "conversation",
 ];
+const isoUtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 type PatchBody = {
     contextId?: string;
@@ -29,8 +30,6 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
     }
 
     function isValidIsoTimestamp(candidate: string) {
-        const isoUtcPattern =
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
         if (!isoUtcPattern.test(candidate)) {
             return false;
         }

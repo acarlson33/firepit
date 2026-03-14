@@ -293,11 +293,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 actualThreadId,
             )) as unknown as DirectMessage;
 
-            const existingParticipants = Array.isArray(
-                latestParent.threadParticipants,
-            )
-                ? latestParent.threadParticipants
-                : [];
+            let existingParticipants: string[] = [];
+            if (Array.isArray(latestParent.threadParticipants)) {
+                existingParticipants = latestParent.threadParticipants.filter(
+                    (participant): participant is string =>
+                        typeof participant === "string",
+                );
+            } else if (typeof latestParent.threadParticipants === "string") {
+                try {
+                    const parsedParticipants = JSON.parse(
+                        latestParent.threadParticipants,
+                    );
+                    existingParticipants = Array.isArray(parsedParticipants)
+                        ? parsedParticipants.filter(
+                              (participant): participant is string =>
+                                  typeof participant === "string",
+                          )
+                        : [];
+                } catch {
+                    existingParticipants = [];
+                }
+            }
             const nextParticipants = Array.from(
                 new Set([...existingParticipants, user.$id]),
             );
