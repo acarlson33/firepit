@@ -8,7 +8,7 @@ import { listInboxItems } from "@/lib/inbox";
 import { logger, recordEvent } from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
-import { Query } from "node-appwrite";
+import { Query, type Models } from "node-appwrite";
 
 const VALID_KINDS: InboxItemKind[] = ["mention", "thread"];
 const VALID_CONTEXT_KINDS: InboxContextKind[] = ["channel", "conversation"];
@@ -376,7 +376,9 @@ export async function PATCH(request: NextRequest) {
                 getDocumentId: (document) => String(document.$id),
                 loggerMessage: "Failed to mark mention inbox item as read",
                 updater: (document) =>
-                    databases.updateDocument(
+                    databases.updateDocument<
+                        Models.Document & { readAt?: string | null }
+                    >(
                         env.databaseId,
                         env.collections.inboxItems,
                         String(document.$id),
@@ -456,7 +458,9 @@ export async function PATCH(request: NextRequest) {
         },
         loggerMessage: "Failed to mark inbox item as read",
         updater: (document) =>
-            databases.updateDocument(
+            databases.updateDocument<
+                Models.Document & { readAt?: string | null }
+            >(
                 env.databaseId,
                 env.collections.inboxItems,
                 String(document.$id),
