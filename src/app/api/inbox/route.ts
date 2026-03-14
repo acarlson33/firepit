@@ -317,9 +317,12 @@ export async function PATCH(request: NextRequest) {
                     ),
                 );
 
-                mentionUpdateResults.forEach((result, resultIndex) => {
+                for (const [
+                    resultIndex,
+                    result,
+                ] of mentionUpdateResults.entries()) {
                     if (result.status !== "rejected") {
-                        return;
+                        continue;
                     }
 
                     const failedDocument = batch[resultIndex];
@@ -332,7 +335,7 @@ export async function PATCH(request: NextRequest) {
                                 ? result.reason.message
                                 : String(result.reason),
                     });
-                });
+                }
 
                 updatedMentionCount += mentionUpdateResults.filter(
                     (result) => result.status === "fulfilled",
@@ -417,12 +420,12 @@ export async function PATCH(request: NextRequest) {
             ),
         );
 
-        batchResults.forEach((result, index) => {
+        for (const [resultIndex, result] of batchResults.entries()) {
             if (result.status !== "rejected") {
-                return;
+                continue;
             }
 
-            const failedDocument = batch[index];
+            const failedDocument = batch[resultIndex];
             logger.warn("Failed to mark inbox item as read", {
                 documentId: failedDocument
                     ? String(failedDocument.$id)
@@ -433,7 +436,7 @@ export async function PATCH(request: NextRequest) {
                         : String(result.reason),
                 userId: session.$id,
             });
-        });
+        }
 
         updatedCount += batchResults.filter(
             (result) => result.status === "fulfilled",
@@ -443,7 +446,7 @@ export async function PATCH(request: NextRequest) {
     recordEvent("InboxItemsRead", {
         requestedCount: filteredItemIds.length,
         truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
-        truncatedCount: itemIds.length,
+        truncatedCount: Math.max(0, filteredItemIds.length - itemIds.length),
         updatedCount,
         userId: session.$id,
     });

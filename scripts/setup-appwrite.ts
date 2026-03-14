@@ -875,15 +875,19 @@ async function ensureFeatureFlagDocument(params: {
     const { description, enabled, key } = params;
 
     function createFeatureFlagDocumentId(flagKey: string): string {
+        const MAX_PREFIX_LEN = 40;
         const readablePrefix = flagKey
             .replace(/[^a-z0-9_-]/gi, "_")
-            .toLowerCase();
+            .toLowerCase()
+            .replace(/^_+|_+$/g, "")
+            .slice(0, MAX_PREFIX_LEN)
+            .replace(/^_+|_+$/g, "");
         const hashSuffix = createHash("sha256")
             .update(flagKey)
             .digest("hex")
             .slice(0, 12);
 
-        return `flag_${readablePrefix}_${hashSuffix}`;
+        return `flag_${readablePrefix || "key"}_${hashSuffix}`;
     }
 
     const existing = await tryVariants([
