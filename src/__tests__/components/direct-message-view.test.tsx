@@ -112,5 +112,6 @@ describe("DirectMessageView", () => {
         expect(scrollContainer).toBeInTheDocument();
         expect(scrollContainer).toHaveClass("w-full", "min-w-0");
         expect(computedHeight).toMatch(/^\d+(\.\d+)?(px|vh|%)$/);
+        expect(Number.parseFloat(computedHeight)).toBeGreaterThan(0);
     });
 });

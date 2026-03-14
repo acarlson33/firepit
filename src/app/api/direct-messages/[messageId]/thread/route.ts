@@ -6,6 +6,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { logger } from "@/lib/newrelic-utils";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
 import {
     MAX_MESSAGE_LENGTH,
@@ -21,6 +22,12 @@ type RouteContext = {
         messageId: string;
     }>;
 };
+
+function sleep(ms: number) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
 
 async function createAttachments(
     messageId: string,
@@ -311,13 +318,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 break;
             } catch (updateError) {
                 if (attempt === maxUpdateAttempts - 1) {
-                    console.warn(
+                    logger.warn(
                         "Failed to update DM thread metadata after retries",
                         {
                             actualThreadId,
                             userId: user.$id,
                             threadMessageCount: nextCount,
-                            threadParticipants: nextParticipants,
+                            participantCount: nextParticipants.length,
                             lastThreadReplyAt: replyCreatedAt,
                             error:
                                 updateError instanceof Error
@@ -327,6 +334,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
                     );
                     break;
                 }
+
+                const backoffMs = Math.min(400, 75 * 2 ** attempt);
+                await sleep(backoffMs);
             }
         }
 

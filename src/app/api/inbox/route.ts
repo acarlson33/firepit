@@ -5,7 +5,7 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxItems } from "@/lib/inbox";
-import { recordEvent } from "@/lib/newrelic-utils";
+import { logger, recordEvent } from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
 import { Query } from "node-appwrite";
@@ -317,6 +317,23 @@ export async function PATCH(request: NextRequest) {
                     ),
                 );
 
+                mentionUpdateResults.forEach((result, resultIndex) => {
+                    if (result.status !== "rejected") {
+                        return;
+                    }
+
+                    const failedDocument = batch[resultIndex];
+                    logger.warn("Failed to mark mention inbox item as read", {
+                        documentId: failedDocument
+                            ? String(failedDocument.$id)
+                            : undefined,
+                        reason:
+                            result.reason instanceof Error
+                                ? result.reason.message
+                                : String(result.reason),
+                    });
+                });
+
                 updatedMentionCount += mentionUpdateResults.filter(
                     (result) => result.status === "fulfilled",
                 ).length;
@@ -405,10 +422,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     recordEvent("InboxItemsRead", {
-        requestedCount: itemIds.length,
+        requestedCount: filteredItemIds.length,
+        truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
+        truncatedCount: itemIds.length,
         updatedCount,
         userId: session.$id,
     });
 
-    return NextResponse.json({ ok: true, readAt });
+    return NextResponse.json({ ok: true, readAt, updatedCount });
 }

@@ -250,14 +250,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
             if (actualParent.threadParticipants) {
                 if (typeof actualParent.threadParticipants === "string") {
                     try {
-                        participants = JSON.parse(
+                        const parsedParticipants = JSON.parse(
                             actualParent.threadParticipants,
                         );
+                        participants = Array.isArray(parsedParticipants)
+                            ? parsedParticipants.filter(
+                                  (item): item is string =>
+                                      typeof item === "string",
+                              )
+                            : [];
                     } catch {
                         participants = [];
                     }
                 } else if (Array.isArray(actualParent.threadParticipants)) {
-                    participants = actualParent.threadParticipants;
+                    participants = actualParent.threadParticipants.filter(
+                        (item): item is string => typeof item === "string",
+                    );
                 }
             }
 
@@ -292,7 +300,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
                             : String(updateError),
                 });
                 if (attempt === maxUpdateAttempts - 1) {
-                    throw updateError;
+                    logger.error(
+                        "Failed to update thread parent metadata after retries",
+                        {
+                            attempt: attempt + 1,
+                            maxUpdateAttempts,
+                            actualParentId,
+                            error:
+                                updateError instanceof Error
+                                    ? updateError.message
+                                    : String(updateError),
+                        },
+                    );
+                    break;
                 }
 
                 await sleep(100 * (attempt + 1));

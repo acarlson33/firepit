@@ -59,7 +59,7 @@ const DB_ID = "main";
 const LEN_ID = 128;
 const LEN_TS = 64; // ISO / epoch string length allowance
 const LEN_TEXT = 4000; // generous message / meta text length
-const LEN_TEXT_LARGE = 65535; // large JSON payloads (e.g., thread read maps)
+const LEN_TEXT_LARGE = 65_535; // large JSON payloads (e.g., thread read maps)
 
 // ---- Client ----
 const client = new Client().setEndpoint(endpoint).setProject(project);
@@ -906,12 +906,14 @@ async function ensureFeatureFlagDocument(params: {
             type?: unknown;
         };
 
-        const code =
-            typeof candidate.code === "number"
-                ? candidate.code
-                : typeof candidate.response?.code === "number"
-                  ? candidate.response.code
-                  : null;
+        let code: number | null = null;
+        if (typeof candidate.code === "number") {
+            code = candidate.code;
+        } else if (typeof candidate.response?.code === "number") {
+            code = candidate.response.code;
+        } else {
+            code = null;
+        }
         if (code === 409) {
             return true;
         }
@@ -979,33 +981,43 @@ async function ensureFeatureFlagDocument(params: {
             throw error;
         }
 
-        // Another setup run may have created this document concurrently.
-        const latest = (await tryVariants([
+        // Another setup run may have created this deterministic document concurrently.
+        const latestDocument = (await tryVariants([
+            () => dbAny.getDocument(DB_ID, "feature_flags", documentId),
             () =>
-                dbAny.listDocuments(DB_ID, "feature_flags", [
-                    Query.equal("key", key),
-                    Query.limit(1),
-                ]),
-            () =>
-                dbAny.listDocuments?.({
+                dbAny.getDocument?.({
                     databaseId: DB_ID,
                     collectionId: "feature_flags",
-                    queries: [Query.equal("key", key), Query.limit(1)],
+                    documentId,
                 }),
-        ])) as {
-            documents?: Array<{ $id?: string }>;
+        ]).catch((getError: unknown) => {
+            throw new Error(
+                `feature flag '${key}' create conflicted but deterministic document '${documentId}' could not be loaded: ${
+                    getError instanceof Error
+                        ? getError.message
+                        : String(getError)
+                }`,
+            );
+        })) as {
+            $id?: string;
+            key?: string;
         };
 
-        const latestDocumentId = latest.documents?.[0]?.$id;
-        if (!latestDocumentId) {
+        if (!latestDocument.$id) {
             throw new Error(
-                `feature flag '${key}' create failed and no existing document was found`,
+                `feature flag '${key}' create conflicted but deterministic document '${documentId}' was not found`,
+            );
+        }
+
+        if (latestDocument.key !== key) {
+            throw new Error(
+                `feature flag '${key}' deterministic document '${documentId}' has mismatched key '${String(latestDocument.key)}'`,
             );
         }
 
         await tryVariants([
             () =>
-                dbAny.updateDocument(DB_ID, "feature_flags", latestDocumentId, {
+                dbAny.updateDocument(DB_ID, "feature_flags", documentId, {
                     description,
                     updatedAt: now,
                 }),
@@ -1017,7 +1029,7 @@ async function ensureFeatureFlagDocument(params: {
                     },
                     databaseId: DB_ID,
                     collectionId: "feature_flags",
-                    documentId: latestDocumentId,
+                    documentId,
                 }),
         ]);
     });
@@ -1227,6 +1239,53 @@ async function setupThreadReads() {
     await ensureStringAttribute("thread_reads", "contextType", 32, true);
     await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
     await ensureStringAttribute("thread_reads", "reads", LEN_TEXT_LARGE, true);
+
+    const readsAttribute = (await tryVariants([
+        () => dbAny.getAttribute(DB_ID, "thread_reads", "reads"),
+        () =>
+            dbAny.getAttribute?.({
+                databaseId: DB_ID,
+                collectionId: "thread_reads",
+                key: "reads",
+            }),
+    ])) as {
+        size?: number | string;
+    };
+    const configuredSize = Number(readsAttribute.size ?? 0);
+
+    if (Number.isFinite(configuredSize) && configuredSize < LEN_TEXT_LARGE) {
+        try {
+            await tryVariants([
+                () =>
+                    dbAny.updateStringAttribute(
+                        DB_ID,
+                        "thread_reads",
+                        "reads",
+                        LEN_TEXT_LARGE,
+                        true,
+                    ),
+                () =>
+                    dbAny.updateStringAttribute?.({
+                        databaseId: DB_ID,
+                        collectionId: "thread_reads",
+                        key: "reads",
+                        size: LEN_TEXT_LARGE,
+                        required: true,
+                    }),
+            ]);
+            await waitForAttribute("thread_reads", "reads");
+            info("[setup] migrated thread_reads.reads to large text size");
+        } catch (migrationError) {
+            throw new Error(
+                `thread_reads.reads size is ${configuredSize}, below required ${LEN_TEXT_LARGE}. Run a manual schema migration before setup can continue. ${
+                    migrationError instanceof Error
+                        ? migrationError.message
+                        : String(migrationError)
+                }`,
+            );
+        }
+    }
+
     await ensureIndex("thread_reads", "idx_user_context", "unique", [
         "userId",
         "contextType",

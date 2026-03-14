@@ -40,7 +40,11 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
             return false;
         }
 
-        const normalizedCandidate = candidate.replace(/\.000Z$/, "Z");
+        const normalizedCandidate = candidate
+            .replace(/\.([0-9]{1,3})Z$/, (_, fraction: string) => {
+                return `.${fraction.padEnd(3, "0")}Z`;
+            })
+            .replace(/\.000Z$/, "Z");
         const normalizedParsed = new Date(parsed)
             .toISOString()
             .replace(/\.000Z$/, "Z");
