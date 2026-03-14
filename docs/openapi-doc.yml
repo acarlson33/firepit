@@ -2359,7 +2359,7 @@ paths:
                   required: true
                   schema:
                       type: string
-                                - name: contextKind
+                - name: contextKind
                   in: query
                   required: true
                   schema:

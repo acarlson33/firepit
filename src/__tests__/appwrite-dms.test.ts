@@ -321,7 +321,7 @@ describe("Direct Messages - Core Functions", () => {
 
         expect(result).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
-        expect(result.items.length).toBeGreaterThanOrEqual(2);
+        expect(result.items).toHaveLength(2);
         expect(
             result.items.some(
                 (item) =>

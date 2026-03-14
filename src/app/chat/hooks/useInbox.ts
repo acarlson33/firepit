@@ -64,8 +64,15 @@ function formatInboxError(error: unknown) {
         return error.message;
     }
 
+    if (typeof error === "string") {
+        return error;
+    }
+
     if (error) {
-        return "Failed to load inbox";
+        const fallback = String(error);
+        return fallback.length > 0 && fallback !== "[object Object]"
+            ? fallback
+            : "Failed to load inbox";
     }
 
     return null;

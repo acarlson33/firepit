@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ID, Query, Permission, Role } from "node-appwrite";
-import type { Models } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
@@ -249,9 +248,8 @@ export async function GET(request: NextRequest) {
 
             if (conversations.length > 0) {
                 try {
-                    const threadParents: Models.Document[] = [];
                     const pageSize = 500;
-                    let offset = 0;
+                    let cursorAfterId: string | null = null;
 
                     while (true) {
                         const page = await databases.listDocuments(
@@ -265,49 +263,68 @@ export async function GET(request: NextRequest) {
                                     ),
                                 ),
                                 Query.greaterThan("threadMessageCount", 0),
+                                Query.orderAsc("$id"),
                                 Query.limit(pageSize),
-                                Query.offset(offset),
+                                ...(cursorAfterId
+                                    ? [Query.cursorAfter(cursorAfterId)]
+                                    : []),
                             ],
                         );
 
-                        threadParents.push(...page.documents);
+                        for (const document of page.documents) {
+                            const threadParent = document as Record<
+                                string,
+                                unknown
+                            >;
+                            const conversationId = String(
+                                threadParent.conversationId,
+                            );
+                            const messageId = String(threadParent.$id);
+                            const lastThreadReplyAt =
+                                typeof threadParent.lastThreadReplyAt ===
+                                "string"
+                                    ? threadParent.lastThreadReplyAt
+                                    : undefined;
+                            const threadMessageCount =
+                                typeof threadParent.threadMessageCount ===
+                                "number"
+                                    ? threadParent.threadMessageCount
+                                    : undefined;
+                            const lastReadAt =
+                                readStatesByConversationId.get(
+                                    conversationId,
+                                )?.[messageId];
+
+                            if (
+                                isThreadUnread({
+                                    lastReadAt,
+                                    lastThreadReplyAt,
+                                    threadMessageCount,
+                                })
+                            ) {
+                                unreadThreadsByConversationId.set(
+                                    conversationId,
+                                    (unreadThreadsByConversationId.get(
+                                        conversationId,
+                                    ) ?? 0) + 1,
+                                );
+                            }
+                        }
 
                         if (page.documents.length < pageSize) {
                             break;
                         }
 
-                        offset += pageSize;
-                    }
+                        const lastDocument = page.documents.at(-1) as
+                            | Record<string, unknown>
+                            | undefined;
+                        cursorAfterId =
+                            lastDocument && typeof lastDocument.$id === "string"
+                                ? lastDocument.$id
+                                : null;
 
-                    for (const document of threadParents) {
-                        const conversationId = String(document.conversationId);
-                        const messageId = String(document.$id);
-                        const lastThreadReplyAt =
-                            typeof document.lastThreadReplyAt === "string"
-                                ? document.lastThreadReplyAt
-                                : undefined;
-                        const threadMessageCount =
-                            typeof document.threadMessageCount === "number"
-                                ? document.threadMessageCount
-                                : undefined;
-                        const lastReadAt =
-                            readStatesByConversationId.get(conversationId)?.[
-                                messageId
-                            ];
-
-                        if (
-                            isThreadUnread({
-                                lastReadAt,
-                                lastThreadReplyAt,
-                                threadMessageCount,
-                            })
-                        ) {
-                            unreadThreadsByConversationId.set(
-                                conversationId,
-                                (unreadThreadsByConversationId.get(
-                                    conversationId,
-                                ) ?? 0) + 1,
-                            );
+                        if (!cursorAfterId) {
+                            break;
                         }
                     }
                 } catch {

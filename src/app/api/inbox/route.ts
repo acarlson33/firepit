@@ -406,19 +406,30 @@ export async function PATCH(request: NextRequest) {
         );
 
         if (failedThreadUpserts.length > 0) {
+            const reasons = failedThreadUpserts.map((result) =>
+                result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason),
+            );
             logger.error("Failed to upsert thread read states", {
                 contextId: contextId ?? null,
                 contextKind: contextKind ?? null,
                 failureCount: failedThreadUpserts.length,
                 userId: session.$id,
-                reasons: failedThreadUpserts.map((result) =>
-                    result.reason instanceof Error
-                        ? result.reason.message
-                        : String(result.reason),
-                ),
+                reasons,
             });
 
-            throw new Error("Failed to update one or more thread read states");
+            return NextResponse.json(
+                {
+                    error: "Failed to update one or more thread read states",
+                    contextId: contextId ?? null,
+                    contextKind: contextKind ?? null,
+                    failureCount: failedThreadUpserts.length,
+                    reasons,
+                    userId: session.$id,
+                },
+                { status: 500 },
+            );
         }
 
         recordEvent("InboxMarkAllRead", {
