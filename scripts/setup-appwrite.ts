@@ -875,37 +875,23 @@ async function ensureFeatureFlagDocument(params: {
     const { description, enabled, key } = params;
 
     function createFeatureFlagDocumentId(flagKey: string): string {
+        const MAX_PREFIX_LEN = 40;
         const readablePrefix = flagKey
             .replace(/[^a-z0-9_-]/gi, "_")
-            .toLowerCase();
+            .toLowerCase()
+            .replace(/^_+|_+$/g, "")
+            .slice(0, MAX_PREFIX_LEN)
+            .replace(/^_+|_+$/g, "");
         const hashSuffix = createHash("sha256")
             .update(flagKey)
             .digest("hex")
             .slice(0, 12);
 
-        return `flag_${readablePrefix}_${hashSuffix}`;
+        return `flag_${readablePrefix || "key"}_${hashSuffix}`;
     }
 
-    const existing = await tryVariants([
-        () =>
-            dbAny.listDocuments(DB_ID, "feature_flags", [
-                Query.equal("key", key),
-                Query.limit(1),
-            ]),
-        () =>
-            dbAny.listDocuments?.({
-                databaseId: DB_ID,
-                collectionId: "feature_flags",
-                queries: [Query.equal("key", key), Query.limit(1)],
-            }),
-    ]);
-
-    const existingResponse = existing as {
-        documents?: Array<{ $id?: string }>;
-    };
     const documentId = createFeatureFlagDocumentId(key);
     const now = new Date().toISOString();
-    const document = existingResponse.documents?.[0];
     let operation: "added" | "updated" = "added";
 
     function isDuplicateConflictError(error: unknown): boolean {
@@ -948,10 +934,29 @@ async function ensureFeatureFlagDocument(params: {
         );
     }
 
-    if (document?.$id) {
+    const deterministicDocument = (await tryVariants([
+        () => dbAny.getDocument(DB_ID, "feature_flags", documentId),
+        () =>
+            dbAny.getDocument?.({
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                documentId,
+            }),
+    ]).catch(() => null)) as {
+        $id?: string;
+        key?: string;
+    } | null;
+
+    if (deterministicDocument?.$id) {
+        if (deterministicDocument.key !== key) {
+            throw new Error(
+                `feature flag '${key}' deterministic document '${documentId}' has mismatched key '${String(deterministicDocument.key)}'`,
+            );
+        }
+
         await tryVariants([
             () =>
-                dbAny.updateDocument(DB_ID, "feature_flags", document.$id, {
+                dbAny.updateDocument(DB_ID, "feature_flags", documentId, {
                     description,
                     updatedAt: now,
                 }),
@@ -963,11 +968,34 @@ async function ensureFeatureFlagDocument(params: {
                     },
                     databaseId: DB_ID,
                     collectionId: "feature_flags",
-                    documentId: document.$id,
+                    documentId,
                 }),
         ]);
         info(`[setup] updated feature flag '${key}'`);
         return;
+    }
+
+    const existingByKey = (await tryVariants([
+        () =>
+            dbAny.listDocuments(DB_ID, "feature_flags", [
+                Query.equal("key", key),
+                Query.limit(1),
+            ]),
+        () =>
+            dbAny.listDocuments?.({
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                queries: [Query.equal("key", key), Query.limit(1)],
+            }),
+    ]).catch(() => ({ documents: [] }))) as {
+        documents?: Array<{ $id?: string }>;
+    };
+
+    const legacyDocumentId = existingByKey.documents?.[0]?.$id;
+    if (legacyDocumentId && legacyDocumentId !== documentId) {
+        warn(
+            `[setup] legacy duplicate detected for feature flag '${key}' (legacy id: ${legacyDocumentId}, deterministic id: ${documentId})`,
+        );
     }
 
     await tryVariants([
@@ -1254,6 +1282,7 @@ async function setupThreadReads() {
     await ensureStringAttribute("thread_reads", "contextType", 32, true);
     await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
     await ensureStringAttribute("thread_reads", "reads", LEN_TEXT_LARGE, true);
+    await waitForAttribute("thread_reads", "reads");
 
     const readsAttribute = (await tryVariants([
         () => dbAny.getAttribute(DB_ID, "thread_reads", "reads"),

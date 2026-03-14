@@ -9,6 +9,8 @@ const VALID_CONTEXT_TYPES: ThreadReadContextType[] = [
     "conversation",
 ];
 const isoUtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const FRACTIONAL_SECONDS_PATTERN = /\.(\d{1,3})Z$/;
+const ZERO_MILLISECONDS_PATTERN = /\.000Z$/;
 
 type PatchBody = {
     contextId?: string;
@@ -40,13 +42,13 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
         }
 
         const normalizedCandidate = candidate
-            .replace(/\.([0-9]{1,3})Z$/, (_, fraction: string) => {
+            .replace(FRACTIONAL_SECONDS_PATTERN, (_, fraction: string) => {
                 return `.${fraction.padEnd(3, "0")}Z`;
             })
-            .replace(/\.000Z$/, "Z");
+            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
         const normalizedParsed = new Date(parsed)
             .toISOString()
-            .replace(/\.000Z$/, "Z");
+            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
 
         return normalizedParsed === normalizedCandidate;
     }

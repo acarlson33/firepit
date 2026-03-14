@@ -17,6 +17,7 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const MAX_ITEM_UPDATES = 50;
 const UPDATE_BATCH_SIZE = 25;
+const UPDATE_BATCH_CONCURRENCY = 2;
 const env = getEnvConfig();
 
 type InboxScope = (typeof VALID_SCOPE_VALUES)[number];
@@ -30,6 +31,77 @@ type MarkAllReadBody = {
 type MarkItemsReadBody = {
     itemIds?: unknown;
 };
+
+async function runBatchedUpdates<T>(params: {
+    batchConcurrency: number;
+    batchSize: number;
+    documents: T[];
+    getDocumentId: (document: T) => string;
+    loggerContext?: Record<string, unknown>;
+    loggerMessage: string;
+    updater: (document: T) => Promise<unknown>;
+}) {
+    const {
+        batchConcurrency,
+        batchSize,
+        documents,
+        getDocumentId,
+        loggerContext,
+        loggerMessage,
+        updater,
+    } = params;
+
+    const batches: T[][] = [];
+    for (
+        let startIndex = 0;
+        startIndex < documents.length;
+        startIndex += batchSize
+    ) {
+        batches.push(documents.slice(startIndex, startIndex + batchSize));
+    }
+
+    let fulfilledCount = 0;
+    const workerCount = Math.max(1, Math.min(batchConcurrency, batches.length));
+    const workers = Array.from({ length: workerCount }, (_, workerIndex) => {
+        return (async () => {
+            for (
+                let batchIndex = workerIndex;
+                batchIndex < batches.length;
+                batchIndex += workerCount
+            ) {
+                const batch = batches[batchIndex] ?? [];
+                const batchResults = await Promise.allSettled(
+                    batch.map((document) => updater(document)),
+                );
+
+                for (const [resultIndex, result] of batchResults.entries()) {
+                    if (result.status !== "rejected") {
+                        continue;
+                    }
+
+                    const failedDocument = batch[resultIndex];
+                    logger.warn(loggerMessage, {
+                        ...loggerContext,
+                        documentId: failedDocument
+                            ? getDocumentId(failedDocument)
+                            : undefined,
+                        reason:
+                            result.reason instanceof Error
+                                ? result.reason.message
+                                : String(result.reason),
+                    });
+                }
+
+                fulfilledCount += batchResults.filter(
+                    (result) => result.status === "fulfilled",
+                ).length;
+            }
+        })();
+    });
+
+    await Promise.all(workers);
+    return fulfilledCount;
+}
 
 function parseScope(value: string | null): InboxScope | null {
     if (!value) {
@@ -297,47 +369,20 @@ export async function PATCH(request: NextRequest) {
                 ],
             );
 
-            for (
-                let startIndex = 0;
-                startIndex < documents.documents.length;
-                startIndex += UPDATE_BATCH_SIZE
-            ) {
-                const batch = documents.documents.slice(
-                    startIndex,
-                    startIndex + UPDATE_BATCH_SIZE,
-                );
-                const mentionUpdateResults = await Promise.allSettled(
-                    batch.map((document) =>
-                        databases.updateDocument(
-                            env.databaseId,
-                            env.collections.inboxItems,
-                            String(document.$id),
-                            { readAt },
-                        ),
+            updatedMentionCount += await runBatchedUpdates({
+                batchConcurrency: UPDATE_BATCH_CONCURRENCY,
+                batchSize: UPDATE_BATCH_SIZE,
+                documents: documents.documents,
+                getDocumentId: (document) => String(document.$id),
+                loggerMessage: "Failed to mark mention inbox item as read",
+                updater: (document) =>
+                    databases.updateDocument(
+                        env.databaseId,
+                        env.collections.inboxItems,
+                        String(document.$id),
+                        { readAt },
                     ),
-                );
-
-                mentionUpdateResults.forEach((result, resultIndex) => {
-                    if (result.status !== "rejected") {
-                        return;
-                    }
-
-                    const failedDocument = batch[resultIndex];
-                    logger.warn("Failed to mark mention inbox item as read", {
-                        documentId: failedDocument
-                            ? String(failedDocument.$id)
-                            : undefined,
-                        reason:
-                            result.reason instanceof Error
-                                ? result.reason.message
-                                : String(result.reason),
-                    });
-                });
-
-                updatedMentionCount += mentionUpdateResults.filter(
-                    (result) => result.status === "fulfilled",
-                ).length;
-            }
+            });
         }
 
         await Promise.all(
@@ -370,9 +415,14 @@ export async function PATCH(request: NextRequest) {
     const requestedItemIds =
         body && "itemIds" in body ? body.itemIds : undefined;
     const filteredItemIds = Array.isArray(requestedItemIds)
-        ? requestedItemIds.filter(
-              (value): value is string =>
-                  typeof value === "string" && value.trim().length > 0,
+        ? Array.from(
+              new Set(
+                  requestedItemIds
+                      .map((value) =>
+                          typeof value === "string" ? value.trim() : "",
+                      )
+                      .filter((value): value is string => value.length > 0),
+              ),
           )
         : [];
     const itemIds = filteredItemIds.slice(0, MAX_ITEM_UPDATES);
@@ -396,57 +446,37 @@ export async function PATCH(request: NextRequest) {
     );
 
     const readAt = new Date().toISOString();
-    let updatedCount = 0;
-    for (
-        let startIndex = 0;
-        startIndex < documents.documents.length;
-        startIndex += UPDATE_BATCH_SIZE
-    ) {
-        const batch = documents.documents.slice(
-            startIndex,
-            startIndex + UPDATE_BATCH_SIZE,
-        );
-        const batchResults = await Promise.allSettled(
-            batch.map((document) =>
-                databases.updateDocument(
-                    env.databaseId,
-                    env.collections.inboxItems,
-                    String(document.$id),
-                    { readAt },
-                ),
+    const updatedCount = await runBatchedUpdates({
+        batchConcurrency: UPDATE_BATCH_CONCURRENCY,
+        batchSize: UPDATE_BATCH_SIZE,
+        documents: documents.documents,
+        getDocumentId: (document) => String(document.$id),
+        loggerContext: {
+            userId: session.$id,
+        },
+        loggerMessage: "Failed to mark inbox item as read",
+        updater: (document) =>
+            databases.updateDocument(
+                env.databaseId,
+                env.collections.inboxItems,
+                String(document.$id),
+                { readAt },
             ),
-        );
-
-        batchResults.forEach((result, index) => {
-            if (result.status !== "rejected") {
-                return;
-            }
-
-            const failedDocument = batch[index];
-            logger.warn("Failed to mark inbox item as read", {
-                documentId: failedDocument
-                    ? String(failedDocument.$id)
-                    : undefined,
-                reason:
-                    result.reason instanceof Error
-                        ? result.reason.message
-                        : String(result.reason),
-                userId: session.$id,
-            });
-        });
-
-        updatedCount += batchResults.filter(
-            (result) => result.status === "fulfilled",
-        ).length;
-    }
+    });
 
     recordEvent("InboxItemsRead", {
         requestedCount: filteredItemIds.length,
         truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
-        truncatedCount: itemIds.length,
+        truncatedCount: Math.max(0, filteredItemIds.length - itemIds.length),
         updatedCount,
         userId: session.$id,
     });
 
-    return NextResponse.json({ ok: true, readAt, updatedCount });
+    return NextResponse.json({
+        ok: true,
+        readAt,
+        updatedCount,
+        truncated: filteredItemIds.length > MAX_ITEM_UPDATES,
+        truncatedCount: Math.max(0, filteredItemIds.length - itemIds.length),
+    });
 }

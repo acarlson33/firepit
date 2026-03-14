@@ -29,6 +29,112 @@ function sleep(ms: number) {
     });
 }
 
+async function updateThreadMetadataWithRetries(params: {
+    actualThreadId: string;
+    conversationId: string;
+    databases: ReturnType<typeof getServerClient>["databases"];
+    env: ReturnType<typeof getEnvConfig>;
+    maxUpdateAttempts: number;
+    replyCreatedAt: string;
+    userId: string;
+}) {
+    const {
+        actualThreadId,
+        conversationId,
+        databases,
+        env,
+        maxUpdateAttempts,
+        replyCreatedAt,
+        userId,
+    } = params;
+
+    async function attemptUpdate(attempt: number): Promise<void> {
+        const latestParent = (await databases.getDocument(
+            env.databaseId,
+            env.collections.directMessages,
+            actualThreadId,
+        )) as unknown as DirectMessage;
+
+        let existingParticipants: string[] = [];
+        if (Array.isArray(latestParent.threadParticipants)) {
+            existingParticipants = latestParent.threadParticipants.filter(
+                (participant): participant is string =>
+                    typeof participant === "string",
+            );
+        } else if (typeof latestParent.threadParticipants === "string") {
+            try {
+                const parsedParticipants = JSON.parse(
+                    latestParent.threadParticipants,
+                );
+                existingParticipants = Array.isArray(parsedParticipants)
+                    ? parsedParticipants.filter(
+                          (participant): participant is string =>
+                              typeof participant === "string",
+                      )
+                    : [];
+            } catch {
+                existingParticipants = [];
+            }
+        }
+
+        const nextParticipants = Array.from(
+            new Set([...existingParticipants, userId]),
+        );
+
+        // Use authoritative thread reply total to avoid lost increments under concurrency.
+        const replies = await databases.listDocuments(
+            env.databaseId,
+            env.collections.directMessages,
+            [
+                Query.equal("conversationId", conversationId),
+                Query.equal("threadId", actualThreadId),
+                Query.limit(1),
+            ],
+        );
+
+        const nextCount = Math.max(
+            latestParent.threadMessageCount || 0,
+            replies.total,
+        );
+        try {
+            await databases.updateDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+                {
+                    threadMessageCount: nextCount,
+                    threadParticipants: nextParticipants,
+                    lastThreadReplyAt: replyCreatedAt,
+                },
+            );
+        } catch (updateError) {
+            if (attempt >= maxUpdateAttempts - 1) {
+                logger.warn(
+                    "Failed to update DM thread metadata after retries",
+                    {
+                        actualThreadId,
+                        userId,
+                        threadMessageCount: nextCount,
+                        participantCount: nextParticipants.length,
+                        lastThreadReplyAt: replyCreatedAt,
+                        error:
+                            updateError instanceof Error
+                                ? updateError.message
+                                : String(updateError),
+                    },
+                );
+                return;
+            }
+
+            const backoffMs = Math.min(400, 75 * 2 ** attempt);
+            await sleep(backoffMs);
+            await attemptUpdate(attempt + 1);
+        }
+    }
+
+    await attemptUpdate(0);
+}
+
 async function createAttachments(
     messageId: string,
     attachments: FileAttachment[],
@@ -152,9 +258,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
             return doc as unknown as DirectMessage;
         });
 
+        const parentMessage = parent.threadId
+            ? ((await databases.getDocument(
+                  env.databaseId,
+                  env.collections.directMessages,
+                  actualThreadId,
+              )) as unknown as DirectMessage)
+            : parent;
+
         return NextResponse.json({
             items,
-            parentMessage: parent,
+            parentMessage,
             replies: items,
             total: docs.total,
             hasMore: docs.documents.length === limit,
@@ -286,75 +400,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const maxUpdateAttempts = 3;
-        for (let attempt = 0; attempt < maxUpdateAttempts; attempt += 1) {
-            const latestParent = (await databases.getDocument(
-                env.databaseId,
-                env.collections.directMessages,
-                actualThreadId,
-            )) as unknown as DirectMessage;
-
-            let existingParticipants: string[] = [];
-            if (Array.isArray(latestParent.threadParticipants)) {
-                existingParticipants = latestParent.threadParticipants.filter(
-                    (participant): participant is string =>
-                        typeof participant === "string",
-                );
-            } else if (typeof latestParent.threadParticipants === "string") {
-                try {
-                    const parsedParticipants = JSON.parse(
-                        latestParent.threadParticipants,
-                    );
-                    existingParticipants = Array.isArray(parsedParticipants)
-                        ? parsedParticipants.filter(
-                              (participant): participant is string =>
-                                  typeof participant === "string",
-                          )
-                        : [];
-                } catch {
-                    existingParticipants = [];
-                }
-            }
-            const nextParticipants = Array.from(
-                new Set([...existingParticipants, user.$id]),
-            );
-            const nextCount = (latestParent.threadMessageCount || 0) + 1;
-            const replyCreatedAt = new Date().toISOString();
-
-            try {
-                await databases.updateDocument(
-                    env.databaseId,
-                    env.collections.directMessages,
-                    actualThreadId,
-                    {
-                        threadMessageCount: nextCount,
-                        threadParticipants: nextParticipants,
-                        lastThreadReplyAt: replyCreatedAt,
-                    },
-                );
-                break;
-            } catch (updateError) {
-                if (attempt === maxUpdateAttempts - 1) {
-                    logger.warn(
-                        "Failed to update DM thread metadata after retries",
-                        {
-                            actualThreadId,
-                            userId: user.$id,
-                            threadMessageCount: nextCount,
-                            participantCount: nextParticipants.length,
-                            lastThreadReplyAt: replyCreatedAt,
-                            error:
-                                updateError instanceof Error
-                                    ? updateError.message
-                                    : String(updateError),
-                        },
-                    );
-                    break;
-                }
-
-                const backoffMs = Math.min(400, 75 * 2 ** attempt);
-                await sleep(backoffMs);
-            }
-        }
+        await updateThreadMetadataWithRetries({
+            actualThreadId,
+            conversationId: parent.conversationId,
+            databases,
+            env,
+            maxUpdateAttempts,
+            replyCreatedAt: String(
+                created.$createdAt || new Date().toISOString(),
+            ),
+            userId: user.$id,
+        });
 
         if (mentions && mentions.length > 0) {
             await upsertMentionInboxItems({
