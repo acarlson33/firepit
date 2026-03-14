@@ -52,6 +52,7 @@ Operational guidance:
 - keep secrets out of client-exposed Next.js config
 - prefer structured attributes over ad hoc log strings
 - treat debug and test endpoints as internal diagnostics, not public API surface
+- monitor `thread_reads.reads` payload growth per context; `setupThreadReads` configures this attribute in the `thread_reads` collection with a ~65KB cap, so alert on sustained high utilization (for example, 80%+ of configured size)
 
 ## Releases And Versioning
 

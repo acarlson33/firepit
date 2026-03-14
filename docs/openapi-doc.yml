@@ -300,7 +300,7 @@ components:
                       conversationId:
                           type: string
 
-        InboxItem:
+        InboxItemBase:
             type: object
             properties:
                 id:
@@ -319,13 +319,10 @@ components:
                     type: string
                 parentMessageId:
                     type: string
-                latestActivityAt:
-                    type: string
-                    format: date-time
-                unreadCount:
-                    type: integer
                 previewText:
                     type: string
+                unreadCount:
+                    type: integer
                 authorUserId:
                     type: string
                 authorLabel:
@@ -335,6 +332,15 @@ components:
                     format: uri
                 muted:
                     type: boolean
+
+        InboxItem:
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      latestActivityAt:
+                          type: string
+                          format: date-time
 
         InboxResponse:
             type: object
@@ -358,40 +364,13 @@ components:
                             type: integer
 
         InboxDigestItem:
-            type: object
-            properties:
-                id:
-                    type: string
-                kind:
-                    type: string
-                    enum: [mention, thread]
-                contextKind:
-                    type: string
-                    enum: [channel, conversation]
-                contextId:
-                    type: string
-                serverId:
-                    type: string
-                messageId:
-                    type: string
-                parentMessageId:
-                    type: string
-                activityAt:
-                    type: string
-                    format: date-time
-                previewText:
-                    type: string
-                unreadCount:
-                    type: integer
-                authorUserId:
-                    type: string
-                authorLabel:
-                    type: string
-                authorAvatarUrl:
-                    type: string
-                    format: uri
-                muted:
-                    type: boolean
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      activityAt:
+                          type: string
+                          format: date-time
 
         InboxDigestResponse:
             type: object
@@ -417,7 +396,7 @@ components:
             properties:
                 contextId:
                     type: string
-                contextType:
+                contextKind:
                     type: string
                     enum: [channel, conversation]
                 reads:
@@ -428,11 +407,11 @@ components:
 
         ThreadReadsPatchRequest:
             type: object
-            required: [contextId, contextType, reads]
+            required: [contextId, contextKind, reads]
             properties:
                 contextId:
                     type: string
-                contextType:
+                contextKind:
                     type: string
                     enum: [channel, conversation]
                 reads:
@@ -2380,7 +2359,7 @@ paths:
                   required: true
                   schema:
                       type: string
-                - name: contextType
+                                - name: contextKind
                   in: query
                   required: true
                   schema:

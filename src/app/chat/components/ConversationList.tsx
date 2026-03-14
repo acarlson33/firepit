@@ -309,6 +309,21 @@ export function ConversationList({
         };
     }, [inboxFilterCacheKey, sidebarMode]);
 
+    useEffect(() => {
+        if (sidebarMode !== "inbox" || serverFilteredInboxLoading) {
+            return;
+        }
+
+        setServerFilteredInboxItems(
+            filterInboxItems(sidebarItemsRef.current, inboxFilterRef.current),
+        );
+    }, [
+        serverFilteredInboxLoading,
+        setServerFilteredInboxItems,
+        sidebarItems,
+        sidebarMode,
+    ]);
+
     const displayedInboxItems =
         sidebarMode === "inbox" ? serverFilteredInboxItems : sidebarItems;
     const inboxUnreadCount = useMemo(

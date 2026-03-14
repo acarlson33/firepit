@@ -107,6 +107,34 @@ async function updateThreadMetadataWithRetries(params: {
                     lastThreadReplyAt: replyCreatedAt,
                 },
             );
+
+            // Best-effort verification to reduce lost updates when concurrent writes race.
+            const refreshedParent = (await databases.getDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+            )) as unknown as DirectMessage;
+            const refreshedParticipants = Array.isArray(
+                refreshedParent.threadParticipants,
+            )
+                ? refreshedParent.threadParticipants.filter(
+                      (participant): participant is string =>
+                          typeof participant === "string",
+                  )
+                : [];
+            const refreshedCount =
+                typeof refreshedParent.threadMessageCount === "number"
+                    ? refreshedParent.threadMessageCount
+                    : 0;
+
+            if (
+                !refreshedParticipants.includes(userId) ||
+                refreshedCount < nextCount
+            ) {
+                throw new Error(
+                    "Thread metadata reconciliation requires retry",
+                );
+            }
         } catch (updateError) {
             if (attempt >= maxUpdateAttempts - 1) {
                 logger.warn(
@@ -400,31 +428,57 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const maxUpdateAttempts = 3;
-        await updateThreadMetadataWithRetries({
-            actualThreadId,
-            conversationId: parent.conversationId,
-            databases,
-            env,
-            maxUpdateAttempts,
-            replyCreatedAt: String(
-                created.$createdAt || new Date().toISOString(),
-            ),
-            userId: user.$id,
-        });
-
-        if (mentions && mentions.length > 0) {
-            await upsertMentionInboxItems({
-                authorUserId: user.$id,
-                contextId: parent.conversationId,
-                contextKind: "conversation",
-                latestActivityAt: String(
+        try {
+            await updateThreadMetadataWithRetries({
+                actualThreadId,
+                conversationId: parent.conversationId,
+                databases,
+                env,
+                maxUpdateAttempts,
+                replyCreatedAt: String(
                     created.$createdAt || new Date().toISOString(),
                 ),
-                mentions,
-                messageId: String(created.$id),
-                parentMessageId: actualThreadId,
-                previewText: text?.trim() || "",
+                userId: user.$id,
             });
+        } catch (metadataError) {
+            logger.warn("DM thread metadata reconciliation failed", {
+                actualThreadId,
+                conversationId: parent.conversationId,
+                replyId: String(created.$id),
+                userId: user.$id,
+                error:
+                    metadataError instanceof Error
+                        ? metadataError.message
+                        : String(metadataError),
+            });
+        }
+
+        if (mentions && mentions.length > 0) {
+            try {
+                await upsertMentionInboxItems({
+                    authorUserId: user.$id,
+                    contextId: parent.conversationId,
+                    contextKind: "conversation",
+                    latestActivityAt: String(
+                        created.$createdAt || new Date().toISOString(),
+                    ),
+                    mentions,
+                    messageId: String(created.$id),
+                    parentMessageId: actualThreadId,
+                    previewText: text?.trim() || "",
+                });
+            } catch (mentionsError) {
+                logger.warn("DM thread mention inbox upsert failed", {
+                    authorUserId: user.$id,
+                    conversationId: parent.conversationId,
+                    messageId: String(created.$id),
+                    parentMessageId: actualThreadId,
+                    error:
+                        mentionsError instanceof Error
+                            ? mentionsError.message
+                            : String(mentionsError),
+                });
+            }
         }
 
         const d = created as unknown as Record<string, unknown>;

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ID, Query, Permission, Role } from "node-appwrite";
+import type { Models } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
@@ -244,27 +245,41 @@ export async function GET(request: NextRequest) {
                         error instanceof Error ? error.message : String(error),
                     userId: session.$id,
                 });
-                readStatesByConversationId = new Map();
             }
 
             if (conversations.length > 0) {
                 try {
-                    const threadParents = await databases.listDocuments(
-                        DATABASE_ID,
-                        DIRECT_MESSAGES_COLLECTION,
-                        [
-                            Query.equal(
-                                "conversationId",
-                                conversations.map(
-                                    (conversation) => conversation.$id,
-                                ),
-                            ),
-                            Query.greaterThan("threadMessageCount", 0),
-                            Query.limit(500),
-                        ],
-                    );
+                    const threadParents: Models.Document[] = [];
+                    const pageSize = 500;
+                    let offset = 0;
 
-                    for (const document of threadParents.documents) {
+                    while (true) {
+                        const page = await databases.listDocuments(
+                            DATABASE_ID,
+                            DIRECT_MESSAGES_COLLECTION,
+                            [
+                                Query.equal(
+                                    "conversationId",
+                                    conversations.map(
+                                        (conversation) => conversation.$id,
+                                    ),
+                                ),
+                                Query.greaterThan("threadMessageCount", 0),
+                                Query.limit(pageSize),
+                                Query.offset(offset),
+                            ],
+                        );
+
+                        threadParents.push(...page.documents);
+
+                        if (page.documents.length < pageSize) {
+                            break;
+                        }
+
+                        offset += pageSize;
+                    }
+
+                    for (const document of threadParents) {
                         const conversationId = String(document.conversationId);
                         const messageId = String(document.$id);
                         const lastThreadReplyAt =

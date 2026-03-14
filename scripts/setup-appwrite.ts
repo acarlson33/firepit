@@ -1281,6 +1281,8 @@ async function setupThreadReads() {
     await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
     await ensureStringAttribute("thread_reads", "contextType", 32, true);
     await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
+    // setupThreadReads: `thread_reads.reads` stores a JSON map and is capped at ~65KB;
+    // at typical ISO timestamp payload sizes this supports roughly ~1000 thread ids per context.
     await ensureStringAttribute("thread_reads", "reads", LEN_TEXT_LARGE, true);
     await waitForAttribute("thread_reads", "reads");
 

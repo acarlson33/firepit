@@ -62,7 +62,7 @@ vi.mock("node-appwrite", () => ({
 
 describe("DM Thread API", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
     });
 
     describe("GET /api/direct-messages/[messageId]/thread", () => {
@@ -259,6 +259,11 @@ describe("DM Thread API", () => {
                 $createdAt: now,
             });
 
+            mockListDocuments.mockResolvedValue({
+                total: 1,
+                documents: [],
+            });
+
             mockUpdateDocument.mockResolvedValue({
                 $id: "msg-1",
                 threadMessageCount: 1,
@@ -323,6 +328,18 @@ describe("DM Thread API", () => {
                 text: "Nested reply text",
                 threadId: "msg-1",
                 $createdAt: now,
+            });
+
+            mockListDocuments.mockResolvedValue({
+                total: 2,
+                documents: [],
+            });
+
+            mockUpdateDocument.mockResolvedValue({
+                $id: "msg-1",
+                threadMessageCount: 2,
+                threadParticipants: ["user-2", "user-1"],
+                lastThreadReplyAt: now,
             });
 
             const { POST } =

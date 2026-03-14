@@ -75,9 +75,10 @@ export function useInboxDigest(params: {
 
     const unreadByKind = useMemo(
         () =>
-            data.items.reduce(
+            data.items.reduce<Record<string, number>>(
                 (accumulator, item) => {
-                    accumulator[item.kind] += item.unreadCount;
+                    accumulator[item.kind] =
+                        (accumulator[item.kind] ?? 0) + item.unreadCount;
                     return accumulator;
                 },
                 { mention: 0, thread: 0 },

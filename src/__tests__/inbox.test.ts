@@ -293,6 +293,7 @@ describe("inbox", () => {
         expect(result.items[0]?.kind).toBe("mention");
         expect(result.counts).toEqual({ mention: 1, thread: 0 });
         expect(result.unreadCount).toBe(1);
+        expect(result.contractVersion).toBe("thread_v1");
     });
 
     it("returns digest items ordered by newest activity first", async () => {
@@ -357,6 +358,7 @@ describe("inbox", () => {
         expect(digest.items).toHaveLength(2);
         expect(digest.items[0]?.id).toBe("mention-new");
         expect(digest.items[1]?.id).toBe("mention-old");
+        expect(digest.contractVersion).toBe("thread_v1");
     });
 
     it("keeps digest total unread count from full scoped set when paginated", async () => {
@@ -420,5 +422,6 @@ describe("inbox", () => {
 
         expect(digest.items).toHaveLength(1);
         expect(digest.totalUnreadCount).toBe(2);
+        expect(digest.contractVersion).toBe("thread_v1");
     });
 });

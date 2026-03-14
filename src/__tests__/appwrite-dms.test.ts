@@ -321,7 +321,19 @@ describe("Direct Messages - Core Functions", () => {
 
         expect(result).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
-        expect(result.items.length).toBeGreaterThanOrEqual(0);
+        expect(result.items.length).toBeGreaterThanOrEqual(2);
+        expect(
+            result.items.some(
+                (item) =>
+                    item.text === "Message 1" && item.senderId === "user1",
+            ),
+        ).toBe(true);
+        expect(
+            result.items.some(
+                (item) =>
+                    item.text === "Message 2" && item.senderId === "user2",
+            ),
+        ).toBe(true);
     });
 });
 
@@ -335,6 +347,14 @@ describe("Direct Messages - Permission Handling", () => {
         expect(conversation.$id).toBeDefined();
         expect(conversation.participants).toEqual(
             expect.arrayContaining(["user1", "user2"]),
+        );
+        expect(conversation.$permissions).toEqual(
+            expect.arrayContaining([
+                'read("user(user1)")',
+                'read("user(user2)")',
+                'update("user(user1)")',
+                'update("user(user2)")',
+            ]),
         );
     });
 
@@ -353,6 +373,14 @@ describe("Direct Messages - Permission Handling", () => {
         expect(message.senderId).toBe("user1");
         expect(message.receiverId).toBe("user2");
         expect(message.text).toBe("Test");
+        expect(message.$permissions).toEqual(
+            expect.arrayContaining([
+                'read("user(user1)")',
+                'read("user(user2)")',
+                'update("user(user1)")',
+                'delete("user(user1)")',
+            ]),
+        );
     });
 });
 

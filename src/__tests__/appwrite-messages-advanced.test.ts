@@ -25,16 +25,7 @@ const FLOOD_MAX = 8; // mirrors implementation constant usage for boundary test 
 
 describe("appwrite-messages advanced flows", () => {
     beforeEach(() => {
-        // Manual reset: clear node/bun module cache for message module so env + mocks re-evaluate
-        const cache = (global as any).require?.cache || {};
-        for (const k of Object.keys(cache)) {
-            if (
-                k.includes("appwrite-messages") ||
-                k.includes("appwrite-core")
-            ) {
-                delete cache[k];
-            }
-        }
+        vi.resetModules();
         baseEnv();
     });
 
@@ -548,12 +539,8 @@ describe("appwrite-messages advanced flows", () => {
     it("canSend recovers after flood window elapses", async () => {
         setupMockAppwrite();
         vi.useFakeTimers();
-        // Clear module cache to reset flood state explicitly
-        for (const key of Object.keys((require as any).cache || {})) {
-            if (key.includes("appwrite-messages")) {
-                delete (require as any).cache[key];
-            }
-        }
+        vi.resetModules();
+        baseEnv();
         const start = Date.now();
         // Jump ahead more than flood window to ensure any prior timestamps are purged
         const purgeAdvanceMs = 6000; // > FLOOD_WINDOW_MS (5000)

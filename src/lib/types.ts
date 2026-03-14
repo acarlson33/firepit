@@ -116,6 +116,7 @@ export type Membership = {
 
 export type Conversation = {
     $id: string;
+    $permissions?: string[];
     participants: string[]; // Array of user IDs
     lastMessageAt?: string;
     $createdAt: string;
@@ -200,6 +201,7 @@ export type InboxDigestResponse = {
 
 export type DirectMessage = {
     $id: string;
+    $permissions?: string[];
     conversationId: string;
     senderId: string;
     receiverId?: string; // Optional for group DMs where there is no single receiver

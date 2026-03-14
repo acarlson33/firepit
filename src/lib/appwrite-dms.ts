@@ -216,6 +216,9 @@ export async function getOrCreateConversation(
             const doc = existing.documents[0] as Record<string, unknown>;
             return {
                 $id: String(doc.$id),
+                $permissions: Array.isArray(doc.$permissions)
+                    ? (doc.$permissions as string[])
+                    : undefined,
                 participants: doc.participants as string[],
                 lastMessageAt: doc.lastMessageAt
                     ? String(doc.lastMessageAt)
@@ -251,6 +254,9 @@ export async function getOrCreateConversation(
     const doc = newConv as unknown as Record<string, unknown>;
     return {
         $id: String(doc.$id),
+        $permissions: Array.isArray(doc.$permissions)
+            ? (doc.$permissions as string[])
+            : undefined,
         participants: doc.participants as string[],
         lastMessageAt: doc.lastMessageAt
             ? String(doc.lastMessageAt)
@@ -488,6 +494,9 @@ export async function sendDirectMessage(
 
     return {
         $id: String(doc.$id),
+        $permissions: Array.isArray(doc.$permissions)
+            ? (doc.$permissions as string[])
+            : undefined,
         conversationId: String(doc.conversationId),
         senderId: String(doc.senderId),
         receiverId: receiver,

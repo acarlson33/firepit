@@ -32,7 +32,7 @@ function parseContextKind(value: string | null) {
         return value satisfies InboxContextKind;
     }
 
-    return undefined;
+    throw new Error("contextKind must be one of channel,conversation");
 }
 
 export async function GET(request: NextRequest) {
@@ -64,8 +64,11 @@ export async function GET(request: NextRequest) {
     }
 
     const contextId = searchParams.get("contextId")?.trim() || undefined;
-    const parsedContextKind = parseContextKind(searchParams.get("contextKind"));
-    if (parsedContextKind === undefined) {
+
+    let parsedContextKind: InboxContextKind | null;
+    try {
+        parsedContextKind = parseContextKind(searchParams.get("contextKind"));
+    } catch {
         return NextResponse.json(
             { error: "contextKind must be one of channel,conversation" },
             { status: 400 },
