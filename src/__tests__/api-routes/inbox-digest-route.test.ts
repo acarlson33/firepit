@@ -30,6 +30,9 @@ vi.mock("@/lib/feature-flags", () => ({
 describe("inbox digest route", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetFeatureFlag.mockReset();
+        mockListInboxDigest.mockReset();
+        mockSession.mockReset();
         mockGetFeatureFlag.mockResolvedValue(true);
     });
 
@@ -85,6 +88,108 @@ describe("inbox digest route", () => {
             userId: "user-1",
         });
     });
+
+    it("passes digest v1 mode when v1.5 flag is disabled", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetFeatureFlag
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(false);
+        mockListInboxDigest.mockResolvedValue({
+            contractVersion: "thread_v1",
+            contextId: undefined,
+            contextKind: undefined,
+            items: [],
+            totalUnreadCount: 0,
+        });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox/digest"),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxDigest).toHaveBeenCalledWith({
+            contextId: undefined,
+            contextKind: undefined,
+            limit: 50,
+            useDigestV15: false,
+            userId: "user-1",
+        });
+    });
+
+    it.each([
+        {
+            digestEnabled: false,
+            digestV15Enabled: false,
+            expectStatus: 404,
+            expectCalled: false,
+            expectUseDigestV15: undefined,
+        },
+        {
+            digestEnabled: false,
+            digestV15Enabled: true,
+            expectStatus: 404,
+            expectCalled: false,
+            expectUseDigestV15: undefined,
+        },
+        {
+            digestEnabled: true,
+            digestV15Enabled: false,
+            expectStatus: 200,
+            expectCalled: true,
+            expectUseDigestV15: false,
+        },
+        {
+            digestEnabled: true,
+            digestV15Enabled: true,
+            expectStatus: 200,
+            expectCalled: true,
+            expectUseDigestV15: true,
+        },
+    ])(
+        "applies digest gate matrix: digest=$digestEnabled v1_5=$digestV15Enabled",
+        async ({
+            digestEnabled,
+            digestV15Enabled,
+            expectCalled,
+            expectStatus,
+            expectUseDigestV15,
+        }) => {
+            mockSession.mockResolvedValue({ $id: "user-1" });
+            if (!digestEnabled) {
+                mockGetFeatureFlag.mockResolvedValueOnce(false);
+            } else {
+                mockGetFeatureFlag
+                    .mockResolvedValueOnce(true)
+                    .mockResolvedValueOnce(digestV15Enabled);
+            }
+            mockListInboxDigest.mockResolvedValue({
+                contractVersion: "thread_v1",
+                contextId: undefined,
+                contextKind: undefined,
+                items: [],
+                totalUnreadCount: 0,
+            });
+
+            const response = await GET(
+                new NextRequest("http://localhost/api/inbox/digest"),
+            );
+
+            expect(response.status).toBe(expectStatus);
+
+            if (!expectCalled) {
+                expect(mockListInboxDigest).not.toHaveBeenCalled();
+                return;
+            }
+
+            expect(mockListInboxDigest).toHaveBeenCalledWith({
+                contextId: undefined,
+                contextKind: undefined,
+                limit: 50,
+                useDigestV15: expectUseDigestV15,
+                userId: "user-1",
+            });
+        },
+    );
 
     it("rejects invalid limit", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });

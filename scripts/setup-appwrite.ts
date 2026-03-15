@@ -461,6 +461,36 @@ async function ensureStringArrayAttribute(
     }
 }
 
+async function updateStringAttributeSize(
+    collection: string,
+    key: string,
+    size: number,
+    required: boolean,
+) {
+    const apiPath = `/databases/${DB_ID}/collections/${collection}/attributes/string/${key}`;
+
+    const response = await fetch(`${endpoint}${apiPath}`, {
+        method: "PATCH",
+        headers: {
+            "content-type": "application/json",
+            "x-appwrite-key": apiKey,
+            "x-appwrite-project": project,
+        },
+        body: JSON.stringify({
+            required,
+            default: null,
+            size,
+        }),
+    });
+
+    if (!response.ok) {
+        const responseBody = await response.text();
+        throw new Error(
+            `HTTP ${response.status} ${response.statusText}: ${responseBody}`,
+        );
+    }
+}
+
 type IndexType = "key" | "fulltext" | "unique"; // subset used
 
 function isAttributePropagationError(message: string): boolean {
@@ -1300,35 +1330,28 @@ async function setupThreadReads() {
                 key: "reads",
             }),
     ])) as {
+        required?: boolean;
         size?: number | string;
     };
     const configuredSize = Number(readsAttribute.size ?? 0);
+    const readsRequired = Boolean(readsAttribute.required);
 
-    if (Number.isFinite(configuredSize) && configuredSize < LEN_TEXT_LARGE) {
+    if (
+        (Number.isFinite(configuredSize) && configuredSize < LEN_TEXT_LARGE) ||
+        !readsRequired
+    ) {
         try {
-            await tryVariants([
-                () =>
-                    dbAny.updateStringAttribute(
-                        DB_ID,
-                        "thread_reads",
-                        "reads",
-                        LEN_TEXT_LARGE,
-                        true,
-                    ),
-                () =>
-                    dbAny.updateStringAttribute?.({
-                        databaseId: DB_ID,
-                        collectionId: "thread_reads",
-                        key: "reads",
-                        size: LEN_TEXT_LARGE,
-                        required: true,
-                    }),
-            ]);
+            await updateStringAttributeSize(
+                "thread_reads",
+                "reads",
+                LEN_TEXT_LARGE,
+                true,
+            );
             await waitForAttribute("thread_reads", "reads");
             info("[setup] migrated thread_reads.reads to large text size");
         } catch (migrationError) {
             throw new Error(
-                `thread_reads.reads size is ${configuredSize}, below required ${LEN_TEXT_LARGE}. Run a manual schema migration before setup can continue. ${
+                `thread_reads.reads schema mismatch (size=${configuredSize}, required=${readsRequired}). Expected size=${LEN_TEXT_LARGE} and required=true. Run a manual schema migration before setup can continue. ${
                     migrationError instanceof Error
                         ? migrationError.message
                         : String(migrationError)
