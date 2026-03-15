@@ -360,3 +360,104 @@ Before a planned workstream is marked live in [../ROADMAP.md](../ROADMAP.md):
 - API changes must be reflected in `openapi-doc.yml` when public or first-party client visible
 - README claims must not contradict shipped behavior
 - This spec must either be reduced to rollout notes or updated to reflect the next planned phase
+
+## Version 1.7 Delivery Plan (Q2 2026)
+
+Version 1.7 is the first post-1.6 stabilization-and-expansion cycle. It should treat the shipped unread/inbox model as stable input and focus on digest and triage behavior, social boundary polish, and moderation/admin workflow quality.
+
+### Scope Summary
+
+- Workstream C follow-on: inbox digest semantics and high-volume unread triage
+- Workstream D follow-on: friend-only DM boundaries and onboarding/social-graph polish
+- Workstream E follow-on: moderation/admin information architecture and audit usability
+- Workstream A follow-on (limited): category and role-management UX polish that does not require a new server model
+
+### Phase Plan
+
+#### Phase 1: Stabilize 1.6 Baseline (Week 1)
+
+- Freeze new unread-model contract changes unless they are correctness fixes
+- Confirm unread, badge, and jump telemetry baselines from 1.6 staged rollout
+- Lock alert thresholds for:
+    - unread mismatch rate
+    - unread-anchor failure rate
+    - mark-read convergence latency
+- Exit criteria:
+    - no unresolved P0/P1 unread correctness defects
+    - telemetry dashboards available and reviewed
+
+#### Phase 2: Digest And Triage Backend (Weeks 2-4)
+
+- Add digest-ready inbox summary contract extension on top of existing inbox response shape
+- Preserve backward compatibility for existing clients by keeping current inbox payload fields stable
+- Implement deterministic digest grouping keys and ordering rules across channel and DM contexts
+- Add scope-aware bulk catch-up endpoints or request modes on existing inbox mutation surface
+- Keep mention-priority semantics explicit when mentions-only suppression is active
+- Exit criteria:
+    - deterministic output across repeated queries on unchanged data
+    - no regression in existing inbox or thread-read API behavior
+
+#### Phase 3: Client Triage, Social Boundaries, Moderation UX (Weeks 4-7)
+
+- Inbox and chat surfaces:
+    - digest and triage views using shared navigation and unread anchor helpers
+    - bulk catch-up controls with explicit loading, success, and rollback states
+- Social/onboarding surfaces:
+    - friend-only DM controls exposed in settings and enforced in DM entry points
+    - first-run path updates that connect profile completion, server join, and first conversation start
+    - consistent user-card/profile summary fields across chat, member, and moderation surfaces
+- Moderation/admin surfaces:
+    - clearer banned and muted-member review lists
+    - improved effective-permission explainability in admin flows
+    - streamlined audit filtering for frequent moderator tasks
+- Exit criteria:
+    - parity-critical flows covered in component and route tests
+    - no unresolved P0/P1 UX regressions in inbox/chat/moderation paths
+
+#### Phase 4: Hardening And Rollout (Weeks 8-9)
+
+- Run focused load and regression passes for digest queries and moderation lists
+- Validate feature-flag staged rollout behavior and rollback automation
+- Final documentation alignment pass across roadmap, section docs, and OpenAPI
+- Exit criteria:
+    - release-gate checks pass
+    - rollout and rollback playbooks documented in operations docs
+
+### Backend Implementation Requirements
+
+- Keep inbox contract versioning explicit for new digest fields so clients can branch safely
+- Maintain server-authoritative read reconciliation and idempotent mark-read semantics
+- Reuse existing auth and permission enforcement paths for friend-only DM and moderation queries
+- Avoid introducing parallel moderation APIs when existing endpoints can be extended safely
+- Ensure new digest or triage fields are included in OpenAPI when first-party visible
+
+### Frontend Implementation Requirements
+
+- Reuse shared message navigation and unread helpers before introducing new per-surface logic
+- Keep channel and DM unread triage behavior aligned unless divergence is intentionally documented
+- Provide explicit empty/loading/error states for digest and triage UI paths
+- Preserve keyboard and screen-reader parity for new controls and batch actions
+
+### Testing Requirements
+
+- API tests:
+    - digest grouping and sorting determinism
+    - scope-aware bulk catch-up and mark-read idempotency
+    - friend-only DM policy enforcement
+    - moderation list and audit-filter correctness
+- UI and hook tests:
+    - digest and triage rendering across channel and DM contexts
+    - unread-anchor navigation from digest entries
+    - social boundary and onboarding flow transitions
+    - moderation/admin task flows and permission messaging
+- Regression and rollout tests:
+    - feature-flag on/off compatibility
+    - backward compatibility for existing inbox consumers
+    - observability signal validation for rollout dashboards
+
+### Rollout Notes
+
+- Gate digest and triage behavior behind dedicated feature flags during staged rollout
+- Promote friend-only DM controls with conservative defaults and clear user-facing messaging
+- Treat moderation/admin IA changes as opt-in staged UI updates if high-risk workflows are impacted
+- Keep rollback criteria explicit for unread mismatch, digest-anchor failures, and moderation query regressions

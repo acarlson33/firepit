@@ -1,6 +1,6 @@
 # Firepit Roadmap
 
-> Last Updated: March 13, 2026
+> Last Updated: March 15, 2026
 
 This roadmap is now organized around Discord parity areas instead of a historical milestone list. The goal is to make it obvious which Discord-like surfaces already exist in Firepit, which parity gaps are still open, and which areas are intentionally deferred.
 
@@ -252,6 +252,60 @@ All Must Ship items are complete and represented in the current API, docs, and p
 - Validate telemetry dashboards for unread mismatch rate, jump-to-unread success, and badge consistency before promotion
 - Confirm docs and settings copy reflect shipped unread semantics, especially for mentions-only and mute combinations
 - Roll out with feature flags and staged exposure, with explicit rollback criteria for badge drift or read-state corruption
+
+### Version 1.7 Scope (Q2 2026)
+
+Status: Planned. Version 1.7 builds on the 1.6 unread and inbox foundation to improve high-volume catch-up, social onboarding flow quality, and daily moderation/admin usability.
+
+#### Must Ship
+
+- Inbox digest v1.5 on top of the shipped inbox contract:
+  daily and weekly digest-ready summary API shape, deterministic grouping, and stable unread anchors across channel and DM contexts
+- High-volume unread triage workflows:
+  bulk catch-up actions by scope, stronger mention-priority views, and predictable unread ordering under concurrent realtime events
+- Social and onboarding parity improvements:
+  friend-only DM controls, improved first-run path from onboarding to first server and first conversation, and richer profile card consistency across chat/member/admin surfaces
+- Moderation/admin workflow polish:
+  clearer banned and muted member review flows, stronger effective-permission visibility, and more usable audit filtering for common moderator tasks
+
+#### Should Ship
+
+- Category and role-management polish from the shipped server-organization foundation:
+  improved reordering ergonomics, hierarchy clarity, and role-management guidance
+- Reliability and observability extensions for unread/digest correctness:
+  improved mismatch diagnostics, alerting thresholds, and faster operator triage paths
+- Accessibility and keyboard parity improvements in inbox, moderation lists, and profile-card actions
+
+#### Could Ship (If Capacity Allows)
+
+- Announcement-style channel follow-on foundation for community-oriented server workflows
+- Digest delivery experiments for future mobile-facing notification surfaces
+- Initial ecosystem decision artifact for webhooks go/no-go with concrete security and abuse constraints
+
+#### Acceptance Criteria
+
+- Digest correctness: digest summaries match server-side unread state and preserve deterministic grouping and ordering
+- Triage reliability: bulk read and catch-up actions remain idempotent and converge under concurrent updates
+- Mention priority accuracy: mentions remain visible and correctly prioritized when thread unread items are suppressed by user settings
+- Social boundary behavior: friend-only DM controls enforce policy without regressions in existing DM creation/navigation flows
+- Moderation productivity: moderator and admin task completion for common ban/mute/audit tasks improves versus 1.6 baseline
+- Accessibility parity: new and updated controls remain keyboard reachable and screen-reader labeled in parity-critical surfaces
+- Performance guardrails: no material regression in inbox query latency, chat render responsiveness, or moderation list load times
+- Test coverage: new digest, triage, social-boundary, and moderation workflows have automated API and UI regression coverage
+
+#### Release Gates
+
+- 1.6 stable rollout telemetry remains healthy before enabling 1.7 digest and triage defaults broadly
+- Digest and triage feature flags ship with staged rollout and rollback criteria tied to unread mismatch and anchor-failure metrics
+- Friend-only DM controls and moderation workflow changes complete permission-regression validation before general availability
+- Docs remain aligned across roadmap, section docs, and OpenAPI for first-party visible API behavior
+
+#### Not In 1.7
+
+- Voice or video calling
+- Screen sharing
+- Native mobile app delivery
+- Full bots and slash-command platform delivery
 
 ### Q2 2026
 
