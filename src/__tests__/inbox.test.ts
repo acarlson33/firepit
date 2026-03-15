@@ -424,4 +424,70 @@ describe("inbox", () => {
         expect(digest.totalUnreadCount).toBe(2);
         expect(digest.contractVersion).toBe("thread_v1");
     });
+
+    it("keeps v1.5 digest mode backward-compatible during rollout", async () => {
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-a",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-a",
+                                latestActivityAt: "2026-03-11T11:00:00.000Z",
+                                previewText: "older",
+                                authorUserId: "user-2",
+                            },
+                            {
+                                $id: "mention-b",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-b",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "newer",
+                                authorUserId: "user-3",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                userId: "user-2",
+                                displayName: "Alice",
+                            },
+                            {
+                                userId: "user-3",
+                                displayName: "Bob",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const digest = await listInboxDigest({
+            contextId: "conversation-1",
+            contextKind: "conversation",
+            limit: 1,
+            useDigestV15: true,
+            userId: "user-1",
+        });
+
+        expect(digest.contractVersion).toBe("thread_v1");
+        expect(digest.totalUnreadCount).toBe(2);
+        expect(digest.items).toHaveLength(1);
+        expect(digest.items[0]?.id).toBe("mention-b");
+    });
 });

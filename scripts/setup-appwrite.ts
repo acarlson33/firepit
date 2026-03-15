@@ -921,6 +921,11 @@ async function setupFeatureFlags() {
         enabled: false,
         key: "enable_inbox_digest",
     });
+    await ensureFeatureFlagDocument({
+        description: "Enable inbox digest v1.5 staged rollout behavior",
+        enabled: false,
+        key: "enable_inbox_digest_v1_5",
+    });
 }
 
 async function ensureFeatureFlagDocument(params: {
