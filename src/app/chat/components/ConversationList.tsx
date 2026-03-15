@@ -335,6 +335,13 @@ export function ConversationList({
             ),
         [sidebarItems],
     );
+    const activeConversationList =
+        unreadConversations.length > 0 ? unreadConversations : conversations;
+    const showInboxLoading =
+        sidebarMode === "inbox" && (inboxLoading || serverFilteredInboxLoading);
+    const activeList =
+        sidebarMode === "inbox" ? displayedInboxItems : activeConversationList;
+    const isEmpty = activeList.length === 0;
     const mentionUnreadCount = useMemo(
         () =>
             mentionItems.reduce(
@@ -949,11 +956,7 @@ export function ConversationList({
                             ))
                         )}
                     </div>
-                ) : (
-                      sidebarMode === "inbox"
-                          ? inboxLoading || serverFilteredInboxLoading
-                          : false
-                  ) ? (
+                ) : showInboxLoading ? (
                     <div className="space-y-2 p-2">
                         {Array.from({ length: 3 }).map((_, index) => (
                             <div
@@ -965,12 +968,7 @@ export function ConversationList({
                             </div>
                         ))}
                     </div>
-                ) : (sidebarMode === "inbox"
-                      ? displayedInboxItems
-                      : unreadConversations.length > 0
-                        ? unreadConversations
-                        : conversations
-                  ).length === 0 ? (
+                ) : isEmpty ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         {sidebarMode === "inbox" ? (
                             <Inbox className="mb-2 size-8 text-muted-foreground" />
@@ -1054,10 +1052,7 @@ export function ConversationList({
                                       </div>
                                   </button>
                               ))
-                            : (sidebarMode === "chats"
-                                  ? conversations
-                                  : unreadConversations
-                              ).map((conversation) =>
+                            : activeConversationList.map((conversation) =>
                                   renderConversationRow(conversation),
                               )}
                     </div>

@@ -1,11 +1,35 @@
 // Test file includes references to mock exports that intentionally use PascalCase to mirror SDK
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setupMockAppwrite } from "./__helpers__/mockAppwrite";
 
 // Hoisted regex for pagination query parsing (lint performance rule requires top-level)
 const paginationLimitRe = /limit\((\d+)\)/;
 const paginationCursorRe = /cursorAfter\(([^)]+)\)/;
+
+type DocRecord = Record<string, unknown> & {
+    $createdAt?: string;
+    $id?: string;
+    editedAt?: string | null;
+    removedAt?: string | null;
+    removedBy?: string | null;
+    text?: string;
+    userId?: string;
+};
+
+type UpdateDocumentOpts = {
+    data: Record<string, unknown>;
+    documentId: string;
+};
+
+type ListDocumentsOpts = {
+    queries?: string[];
+};
+
+type FetchCall = {
+    options?: RequestInit;
+    url: string;
+};
 
 // Utility to set minimal env each test and reset module cache
 function baseEnv() {
@@ -27,6 +51,13 @@ describe("appwrite-messages advanced flows", () => {
     beforeEach(() => {
         vi.resetModules();
         baseEnv();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.resetAllMocks();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
     });
 
     it("sendMessage creates document with materialized permissions and echoes fields", async () => {
@@ -126,32 +157,34 @@ describe("appwrite-messages advanced flows", () => {
     it("editMessage sets editedAt and new text", async () => {
         setupMockAppwrite({
             overrides: {
-                updateDocument: (opts: any) =>
+                updateDocument: (opts: UpdateDocumentOpts) =>
                     Promise.resolve({
                         $id: "m1",
                         userId: "u",
                         text: opts.data.text,
                         editedAt: opts.data.editedAt,
-                    }),
+                    } satisfies DocRecord),
             },
         });
         const { editMessage } = await import("../lib/appwrite-messages");
         const updated = await editMessage("m1", "updated text");
         expect(updated.text).toBe("updated text");
-        expect(typeof (updated as any).editedAt).toBe("string");
+        expect(typeof (updated as { editedAt?: unknown }).editedAt).toBe(
+            "string",
+        );
     });
 
     it("softDeleteMessage marks removedAt/removedBy", async () => {
         setupMockAppwrite({
             overrides: {
-                updateDocument: (opts: any) =>
+                updateDocument: (opts: UpdateDocumentOpts) =>
                     Promise.resolve({
                         $id: opts.documentId,
                         userId: "moderated",
                         text: "x",
                         removedAt: opts.data.removedAt,
                         removedBy: opts.data.removedBy,
-                    }),
+                    } satisfies DocRecord),
             },
         });
         const { softDeleteMessage } = await import("../lib/appwrite-messages");
@@ -163,14 +196,14 @@ describe("appwrite-messages advanced flows", () => {
     it("restoreMessage clears removedAt/removedBy", async () => {
         setupMockAppwrite({
             overrides: {
-                updateDocument: (opts: any) =>
+                updateDocument: (opts: UpdateDocumentOpts) =>
                     Promise.resolve({
                         $id: opts.documentId,
                         userId: "u",
                         text: "x",
                         removedAt: null,
                         removedBy: null,
-                    }),
+                    } satisfies DocRecord),
             },
         });
         const { restoreMessage } = await import("../lib/appwrite-messages");
@@ -213,7 +246,7 @@ describe("appwrite-messages advanced flows", () => {
     });
 
     it("setTyping calls the API route to set typing status", async () => {
-        const fetchCalls: any[] = [];
+        const fetchCalls: FetchCall[] = [];
         const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
             fetchCalls.push({ url, options });
             return {
@@ -250,7 +283,7 @@ describe("appwrite-messages advanced flows", () => {
     });
 
     it("setTyping makes correct API calls with encoded channel IDs", async () => {
-        const fetchCalls: any[] = [];
+        const fetchCalls: FetchCall[] = [];
         const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
             fetchCalls.push({ url, options });
             return {
@@ -271,7 +304,7 @@ describe("appwrite-messages advanced flows", () => {
         expect(fetchCalls[0].url).toBe("/api/typing");
 
         // Verify the body contains the channelId
-        const body = JSON.parse(fetchCalls[0].options.body);
+        const body = JSON.parse(String(fetchCalls[0]?.options?.body ?? "{}"));
         expect(body.channelId).toBe(channelId);
     });
 
@@ -293,7 +326,7 @@ describe("appwrite-messages advanced flows", () => {
         const queriesCaptured: string[][] = [];
         setupMockAppwrite({
             overrides: {
-                listDocuments: (opts: any) => {
+                listDocuments: (opts: ListDocumentsOpts) => {
                     queriesCaptured.push(opts.queries || []);
                     // Return descending order by $createdAt (newest first)
                     return Promise.resolve({
@@ -332,7 +365,7 @@ describe("appwrite-messages advanced flows", () => {
         let sawChannelEqual = false;
         setupMockAppwrite({
             overrides: {
-                listDocuments: (opts: any) => {
+                listDocuments: (opts: ListDocumentsOpts) => {
                     for (const q of opts.queries || []) {
                         if (
                             typeof q === "string" &&
@@ -402,7 +435,7 @@ describe("appwrite-messages advanced flows", () => {
         ];
         setupMockAppwrite({
             overrides: {
-                listDocuments: (opts: any) => {
+                listDocuments: (opts: ListDocumentsOpts) => {
                     const queries: string[] = opts.queries || [];
                     const limitQ = queries.find((q) => q.startsWith("limit("));
                     const limit = limitQ
@@ -456,7 +489,7 @@ describe("appwrite-messages advanced flows", () => {
         ];
         setupMockAppwrite({
             overrides: {
-                listDocuments: (opts: any) => {
+                listDocuments: (opts: ListDocumentsOpts) => {
                     const queries: string[] = opts.queries || [];
                     const cursorQ = queries.find((q) =>
                         q.startsWith("cursorAfter("),
@@ -506,7 +539,7 @@ describe("appwrite-messages advanced flows", () => {
         ];
         setupMockAppwrite({
             overrides: {
-                listDocuments: (opts: any) => {
+                listDocuments: (opts: ListDocumentsOpts) => {
                     const queries: string[] = opts.queries || [];
                     const limitQ = queries.find((q) => q.startsWith("limit("));
                     const limit = limitQ

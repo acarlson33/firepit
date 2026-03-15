@@ -14,7 +14,7 @@ const ZERO_MILLISECONDS_PATTERN = /\.000Z$/;
 
 type PatchBody = {
     contextId?: string;
-    contextType?: ThreadReadContextType;
+    contextKind?: ThreadReadContextType;
     reads?: Record<string, string>;
 };
 
@@ -74,24 +74,24 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const contextId = searchParams.get("contextId");
-    const contextType = searchParams.get("contextType");
+    const contextKind = searchParams.get("contextKind");
 
-    if (!contextId || !isValidContextType(contextType)) {
+    if (!contextId || !isValidContextType(contextKind)) {
         return NextResponse.json(
-            { error: "contextId and valid contextType are required" },
+            { error: "contextId and valid contextKind are required" },
             { status: 400 },
         );
     }
 
     const document = await getThreadReads({
         contextId,
-        contextType,
+        contextType: contextKind,
         userId: user.$id,
     });
 
     return NextResponse.json({
         contextId,
-        contextType,
+        contextKind,
         reads: document?.reads ?? {},
     });
 }
@@ -115,9 +115,9 @@ export async function PATCH(request: Request) {
         );
     }
 
-    if (!body.contextId || !isValidContextType(body.contextType)) {
+    if (!body.contextId || !isValidContextType(body.contextKind)) {
         return NextResponse.json(
-            { error: "contextId and valid contextType are required" },
+            { error: "contextId and valid contextKind are required" },
             { status: 400 },
         );
     }
@@ -133,14 +133,14 @@ export async function PATCH(request: Request) {
 
     const updated = await upsertThreadReads({
         contextId: body.contextId,
-        contextType: body.contextType,
+        contextType: body.contextKind,
         reads: body.reads,
         userId: user.$id,
     });
 
     return NextResponse.json({
         contextId: body.contextId,
-        contextType: body.contextType,
+        contextKind: body.contextKind,
         reads: updated.reads,
     });
 }

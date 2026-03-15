@@ -283,8 +283,9 @@ export async function PATCH(request: NextRequest) {
         | MarkAllReadBody
         | MarkItemsReadBody
         | null;
+    const isObjectBody = typeof body === "object" && body !== null;
 
-    if (body && "action" in body && body.action === "mark-all-read") {
+    if (isObjectBody && "action" in body && body.action === "mark-all-read") {
         const contextKind = body.contextKind;
         const contextId = body.contextId?.trim();
 
@@ -421,12 +422,7 @@ export async function PATCH(request: NextRequest) {
 
             return NextResponse.json(
                 {
-                    error: "Failed to update one or more thread read states",
-                    contextId: contextId ?? null,
-                    contextKind: contextKind ?? null,
-                    failureCount: failedThreadUpserts.length,
-                    reasons,
-                    userId: session.$id,
+                    error: "Internal server error updating thread read states",
                 },
                 { status: 500 },
             );
@@ -449,7 +445,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const requestedItemIds =
-        body && "itemIds" in body ? body.itemIds : undefined;
+        isObjectBody && "itemIds" in body ? body.itemIds : undefined;
     const filteredItemIds = Array.isArray(requestedItemIds)
         ? Array.from(
               new Set(

@@ -30,7 +30,7 @@ describe("thread reads route", () => {
 
         const response = await GET(
             new NextRequest(
-                "http://localhost/api/thread-reads?contextType=conversation&contextId=conv-1",
+                "http://localhost/api/thread-reads?contextKind=conversation&contextId=conv-1",
             ),
         );
         const data = await response.json();
@@ -50,7 +50,7 @@ describe("thread reads route", () => {
 
         const response = await GET(
             new NextRequest(
-                "http://localhost/api/thread-reads?contextType=conversation&contextId=conv-1",
+                "http://localhost/api/thread-reads?contextKind=conversation&contextId=conv-1",
             ),
         );
         const data = await response.json();
@@ -68,7 +68,7 @@ describe("thread reads route", () => {
             new NextRequest("http://localhost/api/thread-reads", {
                 body: JSON.stringify({
                     contextId: "conv-1",
-                    contextType: "conversation",
+                    contextKind: "conversation",
                     reads: [],
                 }),
                 method: "PATCH",
@@ -94,7 +94,7 @@ describe("thread reads route", () => {
             new NextRequest("http://localhost/api/thread-reads", {
                 body: JSON.stringify({
                     contextId: "conv-1",
-                    contextType: "conversation",
+                    contextKind: "conversation",
                     reads: {
                         "message-2": "2026-03-10T14:00:00.000Z",
                     },

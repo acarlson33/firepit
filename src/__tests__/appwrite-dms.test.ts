@@ -403,24 +403,81 @@ describe("Direct Messages - Edge Cases", () => {
     it("should filter messages by conversation ID", async () => {
         const { listDirectMessages } = await import("../lib/appwrite-dms");
 
-        // Mock returns all messages - in real implementation would filter by conversationId
+        mockDocuments.direct_messages = [
+            {
+                $id: "dm-1",
+                $createdAt: "2026-03-10T12:00:00.000Z",
+                conversationId: "conv123",
+                receiverId: "user2",
+                senderId: "user1",
+                text: "Match 1",
+            } as Models.Document,
+            {
+                $id: "dm-2",
+                $createdAt: "2026-03-10T12:01:00.000Z",
+                conversationId: "conv123",
+                receiverId: "user1",
+                senderId: "user2",
+                text: "Match 2",
+            } as Models.Document,
+            {
+                $id: "dm-3",
+                $createdAt: "2026-03-10T12:02:00.000Z",
+                conversationId: "conv-other",
+                receiverId: "user9",
+                senderId: "user8",
+                text: "Non match",
+            } as Models.Document,
+        ];
+
         const result = await listDirectMessages("conv123", 50);
 
-        expect(result.items).toBeDefined();
-        expect(Array.isArray(result.items)).toBe(true);
-        // All messages should have conversationId property
+        expect(result.items).toHaveLength(2);
         for (const msg of result.items) {
-            expect(msg).toHaveProperty("conversationId");
+            expect(msg.conversationId).toBe("conv123");
         }
+        expect(
+            result.items.some((item) => item.conversationId === "conv-other"),
+        ).toBe(false);
     });
 
     it("should handle pagination cursor", async () => {
         const { listDirectMessages } = await import("../lib/appwrite-dms");
 
+        mockDocuments.direct_messages = [
+            {
+                $id: "cursor123",
+                $createdAt: "2026-03-10T12:02:00.000Z",
+                conversationId: "conv123",
+                receiverId: "user2",
+                senderId: "user1",
+                text: "Newest",
+            } as Models.Document,
+            {
+                $id: "dm-after-1",
+                $createdAt: "2026-03-10T12:01:00.000Z",
+                conversationId: "conv123",
+                receiverId: "user1",
+                senderId: "user2",
+                text: "After cursor 1",
+            } as Models.Document,
+            {
+                $id: "dm-after-2",
+                $createdAt: "2026-03-10T12:00:00.000Z",
+                conversationId: "conv123",
+                receiverId: "user2",
+                senderId: "user1",
+                text: "After cursor 2",
+            } as Models.Document,
+        ];
+
         const result = await listDirectMessages("conv123", 10, "cursor123");
 
-        expect(result).toBeDefined();
-        expect(Array.isArray(result.items)).toBe(true);
+        expect(result.items.map((item) => item.$id)).toEqual([
+            "dm-after-1",
+            "dm-after-2",
+        ]);
+        expect(result.nextCursor).toBeUndefined();
     });
 
     it("should normalize and migrate legacy DM reaction maps", async () => {

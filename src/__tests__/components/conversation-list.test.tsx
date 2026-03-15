@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ConversationList } from "@/app/chat/components/ConversationList";
-import type { InboxItem } from "@/lib/types";
+import type { Conversation, InboxItem } from "@/lib/types";
 
 const mockUseFriends = vi.fn();
 const mockGetOrCreateConversation = vi.fn();
@@ -50,6 +50,17 @@ describe("ConversationList", () => {
             muted: false,
             previewText: "Preview",
             unreadCount: 1,
+            ...overrides,
+        };
+    }
+
+    function createTestConversation(
+        overrides: Partial<Conversation>,
+    ): Conversation {
+        return {
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "conv-1",
+            participants: ["current-user", "friend-1"],
             ...overrides,
         };
     }
@@ -105,6 +116,10 @@ describe("ConversationList", () => {
         });
     });
 
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     it("creates a direct message from a friend shortcut when no existing conversation exists", async () => {
         mockGetOrCreateConversation.mockResolvedValue({ $id: "conv-new" });
         const onConversationCreated = vi.fn();
@@ -136,15 +151,14 @@ describe("ConversationList", () => {
 
     it("selects an existing one-to-one conversation from a friend shortcut", async () => {
         const onSelectConversation = vi.fn();
-        const conversation = {
+        const conversation = createTestConversation({
             $id: "conv-existing",
-            participants: ["current-user", "friend-1"],
             otherUser: { userId: "friend-1", displayName: "Friend One" },
-        };
+        });
 
         render(
             <ConversationList
-                conversations={[conversation] as never[]}
+                conversations={[conversation]}
                 currentUserId="current-user"
                 inboxItems={[]}
                 loading={false}
@@ -254,20 +268,18 @@ describe("ConversationList", () => {
     it("ignores legacy unreadThreadCount fallback under message_v2 contract", async () => {
         render(
             <ConversationList
-                conversations={
-                    [
-                        {
-                            $createdAt: "2026-03-10T12:00:00.000Z",
-                            $id: "conv-legacy",
-                            otherUser: {
-                                displayName: "Legacy Friend",
-                                userId: "legacy-friend",
-                            },
-                            participants: ["current-user", "legacy-friend"],
-                            unreadThreadCount: 5,
+                conversations={[
+                    createTestConversation({
+                        $createdAt: "2026-03-10T12:00:00.000Z",
+                        $id: "conv-legacy",
+                        otherUser: {
+                            displayName: "Legacy Friend",
+                            userId: "legacy-friend",
                         },
-                    ] as never[]
-                }
+                        participants: ["current-user", "legacy-friend"],
+                        unreadThreadCount: 5,
+                    }),
+                ]}
                 currentUserId="current-user"
                 inboxContractVersion="message_v2"
                 inboxItems={[]}
