@@ -12,6 +12,7 @@ The live flag definitions are:
 - `enable_audit_logging`: default `true`; controls whether moderation actions should be recorded for audit visibility
 - `enable_per_message_unread`: default `false`; gates the Phase 4 rollout from thread-level unread semantics to per-message unread semantics
 - `enable_inbox_digest`: default `false`; gates the Phase 4 digest endpoint and hook scaffolding rollout
+- `enable_inbox_digest_v1_5`: default `false`; temporary gate for Digest API v1.5 rollout behavior
 
 Rollout note for `enable_per_message_unread`:
 
@@ -30,6 +31,13 @@ Rollout note for `enable_inbox_digest`:
 - Enable in internal environments first, then ramp gradually.
 - Use digest payloads as additive support for unread workflows, not as a replacement for existing inbox contracts during rollout.
 - Confirm digest ordering and total-unread semantics match inbox contract expectations before broad rollout.
+
+Rollout note for `enable_inbox_digest_v1_5`:
+
+- Treat this as a temporary rollout flag for 1.7 only.
+- Enable first in internal/canary environments, then ramp gradually after digest correctness metrics remain stable.
+- Keep the public digest response contract backward-compatible while this flag is enabled.
+- Remove this flag and related branching before the 1.7 release cut; final Digest API v1 behavior should be enabled by default.
 
 ## Phase 3 Rollout Gates
 

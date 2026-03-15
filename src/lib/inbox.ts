@@ -805,9 +805,16 @@ export async function listInboxDigest(params: {
     contextId?: string;
     contextKind?: InboxContextKind;
     limit: number;
+    useDigestV15?: boolean;
     userId: string;
 }): Promise<InboxDigestResponse> {
-    const { contextId, contextKind, limit, userId } = params;
+    const {
+        contextId,
+        contextKind,
+        limit,
+        useDigestV15 = false,
+        userId,
+    } = params;
     const isContextScoped = Boolean(contextId && contextKind);
     const upstreamLimit = isContextScoped
         ? Number.POSITIVE_INFINITY
@@ -828,7 +835,34 @@ export async function listInboxDigest(params: {
     const totalUnreadCount = isContextScoped
         ? scopedItems.reduce((total, item) => total + item.unreadCount, 0)
         : inbox.unreadCount;
-    const pagedItems = scopedItems.slice(0, limit).map((item) => ({
+    const pagedItems = buildDigestItems(scopedItems, limit, useDigestV15);
+
+    return {
+        contractVersion: inbox.contractVersion,
+        contextId,
+        contextKind,
+        items: pagedItems,
+        totalUnreadCount,
+    };
+}
+
+function buildDigestItems(
+    items: InboxItem[],
+    limit: number,
+    useDigestV15: boolean,
+): InboxDigestResponse["items"] {
+    if (useDigestV15) {
+        return buildDigestItemsV15(items, limit);
+    }
+
+    return buildDigestItemsV1(items, limit);
+}
+
+function buildDigestItemsV1(
+    items: InboxItem[],
+    limit: number,
+): InboxDigestResponse["items"] {
+    return items.slice(0, limit).map((item) => ({
         activityAt: item.latestActivityAt,
         authorAvatarUrl: item.authorAvatarUrl,
         authorLabel: item.authorLabel,
@@ -844,12 +878,13 @@ export async function listInboxDigest(params: {
         serverId: item.serverId,
         unreadCount: item.unreadCount,
     }));
+}
 
-    return {
-        contractVersion: inbox.contractVersion,
-        contextId,
-        contextKind,
-        items: pagedItems,
-        totalUnreadCount,
-    };
+function buildDigestItemsV15(
+    items: InboxItem[],
+    limit: number,
+): InboxDigestResponse["items"] {
+    // v1.5 rollout keeps the same public item contract while allowing internal
+    // implementation improvements behind a temporary feature flag.
+    return buildDigestItemsV1(items, limit);
 }
