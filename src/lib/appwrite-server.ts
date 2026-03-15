@@ -7,8 +7,7 @@ import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 /**
  * Get server-side Appwrite client with API key authentication.
  * This function should ONLY be called from server-side code (server components, API routes, server actions).
- *
- * @throws {AppwriteIntegrationError} If APPWRITE_API_KEY is not configured
+ * @returns {{ client: Client; databases: Databases; teams: Teams; storage: Storage; }} The return value.
  */
 export function getServerClient(): {
     client: Client;

@@ -3,74 +3,99 @@
  */
 
 type Reaction = {
-	emoji: string;
-	userIds: string[];
-	count: number;
+    emoji: string;
+    userIds: string[];
+    count: number;
 };
 
 /**
- * Add a reaction to a message
+ * Adds a reaction to a message on either the channel or DM route.
+ * When isDM is true, the DM reaction endpoint is used; otherwise the channel
+ * message endpoint is used.
+ *
+ * @param {string} messageId - Target message identifier.
+ * @param {string} emoji - Emoji to add for the current user.
+ * @param {boolean} isDM - Switches between DM and channel reaction APIs.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} Resolves with success metadata and an optional updated reactions array when provided by the API.
  */
 export async function addReaction(
-	messageId: string,
-	emoji: string,
-	isDM = false
+    messageId: string,
+    emoji: string,
+    isDM = false,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
-	const endpoint = isDM
-		? `/api/direct-messages/${messageId}/reactions`
-		: `/api/messages/${messageId}/reactions`;
+    const endpoint = isDM
+        ? `/api/direct-messages/${messageId}/reactions`
+        : `/api/messages/${messageId}/reactions`;
 
-	const response = await fetch(endpoint, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ emoji }),
-	});
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ emoji }),
+    });
 
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || "Failed to add reaction");
-	}
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to add reaction");
+    }
 
-	return response.json();
+    return response.json();
 }
 
 /**
- * Remove a reaction from a message
+ * Removes a reaction from a message on either the channel or DM route.
+ * When isDM is true, the DM reaction endpoint is used; otherwise the channel
+ * message endpoint is used.
+ *
+ * @param {string} messageId - Target message identifier.
+ * @param {string} emoji - Emoji to remove for the current user.
+ * @param {boolean} isDM - Switches between DM and channel reaction APIs.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} Resolves with success metadata and an optional updated reactions array when provided by the API.
  */
 export async function removeReaction(
-	messageId: string,
-	emoji: string,
-	isDM = false
+    messageId: string,
+    emoji: string,
+    isDM = false,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
-	const endpoint = isDM
-		? `/api/direct-messages/${messageId}/reactions`
-		: `/api/messages/${messageId}/reactions`;
+    const endpoint = isDM
+        ? `/api/direct-messages/${messageId}/reactions`
+        : `/api/messages/${messageId}/reactions`;
 
-	const response = await fetch(`${endpoint}?emoji=${encodeURIComponent(emoji)}`, {
-		method: "DELETE",
-	});
+    const response = await fetch(
+        `${endpoint}?emoji=${encodeURIComponent(emoji)}`,
+        {
+            method: "DELETE",
+        },
+    );
 
-	if (!response.ok) {
-		const error = await response.json();
-		throw new Error(error.error || "Failed to remove reaction");
-	}
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to remove reaction");
+    }
 
-	return response.json();
+    return response.json();
 }
 
 /**
- * Toggle a reaction on a message (add if not present, remove if present)
+ * Executes add or remove behavior for a reaction based on isAdding.
+ * isAdding=true delegates to addReaction and isAdding=false delegates to
+ * removeReaction; isDM controls whether DM or channel routes are called.
+ *
+ * @param {string} messageId - Target message identifier.
+ * @param {string} emoji - Emoji to toggle.
+ * @param {boolean} isAdding - Chooses add (true) vs remove (false) operation.
+ * @param {boolean} isDM - Switches between DM and channel reaction APIs.
+ * @returns {Promise<{ success: boolean; reactions?: Reaction[] | undefined; }>} Resolves with success metadata and an optional updated reactions array when provided by the API.
  */
 export async function toggleReaction(
-	messageId: string,
-	emoji: string,
-	isAdding: boolean,
-	isDM = false
+    messageId: string,
+    emoji: string,
+    isAdding: boolean,
+    isDM = false,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
-	if (isAdding) {
-		return addReaction(messageId, emoji, isDM);
-	}
-	return removeReaction(messageId, emoji, isDM);
+    if (isAdding) {
+        return addReaction(messageId, emoji, isDM);
+    }
+    return removeReaction(messageId, emoji, isDM);
 }

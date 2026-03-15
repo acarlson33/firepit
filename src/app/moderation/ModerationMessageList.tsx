@@ -3,8 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { getBrowserClient } from "@/lib/appwrite-core";
+import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import type { FileAttachment } from "@/lib/types";
 import {
     actionHardDeleteBound,
     actionRestoreBound,
@@ -13,6 +15,8 @@ import {
 
 type ModerationMessage = {
     $id: string;
+    attachments?: FileAttachment[];
+    imageUrl?: string;
     removedAt?: string;
     removedBy?: string;
     serverId?: string;
@@ -231,12 +235,30 @@ export function ModerationMessageList({
         );
     }
 
+    function getImageAttachments(attachments?: FileAttachment[]) {
+        if (!attachments || attachments.length === 0) {
+            return [];
+        }
+
+        return attachments.filter((attachment) => {
+            if (typeof attachment.fileType !== "string") {
+                return false;
+            }
+
+            return attachment.fileType
+                .trim()
+                .toLowerCase()
+                .startsWith("image/");
+        });
+    }
+
     return (
         <div className="space-y-3">
             {messages.map((m) => {
                 const removed = Boolean(m.removedAt);
                 const authorBadges = badgeMap[m.userId || ""] || [];
                 const removerBadges = badgeMap[m.removedBy || ""] || [];
+                const imageAttachments = getImageAttachments(m.attachments);
 
                 return (
                     <div
@@ -269,6 +291,41 @@ export function ModerationMessageList({
                                         />
                                     ) : null}
                                 </p>
+
+                                {m.imageUrl ? (
+                                    <a
+                                        className="block max-w-md overflow-hidden rounded-xl border border-border/60 bg-background/70 transition-opacity hover:opacity-90"
+                                        href={m.imageUrl}
+                                        rel="noopener noreferrer"
+                                        target="_blank"
+                                    >
+                                        <ImageWithSkeleton
+                                            alt={`Moderation preview for message ${m.$id}`}
+                                            className="max-h-72 w-full object-contain"
+                                            src={m.imageUrl}
+                                        />
+                                    </a>
+                                ) : null}
+
+                                {imageAttachments.length > 0 ? (
+                                    <div className="flex flex-wrap gap-3">
+                                        {imageAttachments.map((attachment) => (
+                                            <a
+                                                className="block max-w-md overflow-hidden rounded-xl border border-border/60 bg-background/70 transition-opacity hover:opacity-90"
+                                                href={attachment.fileUrl}
+                                                key={`${m.$id}-${attachment.fileId}`}
+                                                rel="noopener noreferrer"
+                                                target="_blank"
+                                            >
+                                                <ImageWithSkeleton
+                                                    alt={`Moderation attachment preview for ${attachment.fileName}`}
+                                                    className="max-h-72 w-full object-contain"
+                                                    src={attachment.fileUrl}
+                                                />
+                                            </a>
+                                        ))}
+                                    </div>
+                                ) : null}
 
                                 {/* Author and Metadata */}
                                 <div className="flex flex-wrap items-center gap-2 text-xs">

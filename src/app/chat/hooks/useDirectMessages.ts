@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { adaptDirectMessages } from "@/lib/chat-surface";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import {
     listDirectMessages,
@@ -10,7 +11,6 @@ import {
     deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
 import type { DirectMessage, RelationshipStatus } from "@/lib/types";
-import type { PinnedMessage } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {
@@ -24,7 +24,9 @@ import {
     pinDMMessage,
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
+import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
@@ -49,6 +51,8 @@ export function useDirectMessages({
 
     const [messages, setMessages] = useState<DirectMessage[]>([]);
     const [loading, setLoading] = useState(true);
+    const [oldestCursor, setOldestCursor] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [readOnly, setReadOnly] = useState(false);
     const [readOnlyReason, setReadOnlyReason] = useState<string | null>(null);
@@ -59,18 +63,12 @@ export function useDirectMessages({
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
     >({});
-    const [conversationPins, setConversationPins] = useState<
-        Array<{ pin: PinnedMessage; message: DirectMessage }>
-    >([]);
-    const [activeThreadParent, setActiveThreadParent] =
-        useState<DirectMessage | null>(null);
-    const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
-    const [threadLoading, setThreadLoading] = useState(false);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastTypingSentState = useRef<boolean>(false);
     const lastTypingSentAt = useRef<number>(0);
     const currentConversationIdRef = useRef<string | null>(conversationId);
+    const loadRequestIdRef = useRef(0);
     const userProfileCache = useRef<
         Record<
             string,
@@ -80,6 +78,28 @@ export function useDirectMessages({
 
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
+    const initialPageSize = 50;
+    const loadMoreSize = 50;
+    const listConversationThreadReads = useCallback(
+        (currentContextId: string) =>
+            listThreadReads("conversation", currentContextId),
+        [],
+    );
+    const persistConversationThreadReads = useCallback(
+        ({
+            contextId: currentContextId,
+            reads,
+        }: {
+            contextId: string;
+            reads: Record<string, string>;
+        }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "conversation",
+                reads,
+            }),
+        [],
+    );
 
     // Debounced batch update for typing state changes (reduces re-renders by 70-80%)
     const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
@@ -106,8 +126,12 @@ export function useDirectMessages({
     }, 150);
 
     const loadMessages = useCallback(async () => {
+        const requestId = ++loadRequestIdRef.current;
+
         if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
             setMessages([]);
+            setOldestCursor(null);
+            setHasMore(false);
             setReadOnly(false);
             setReadOnlyReason(null);
             setRelationship(null);
@@ -118,15 +142,30 @@ export function useDirectMessages({
         try {
             setLoading(true);
             setError(null);
+            setMessages([]);
+            setOldestCursor(null);
+            setHasMore(false);
+            setReadOnly(false);
+            setReadOnlyReason(null);
+            setRelationship(null);
 
             // Optimized: Batch query all messages at once
             // User profiles are fetched in batches (5 at a time) to reduce API calls
             // Images are already included in the response with URLs
-            const result = await listDirectMessages(conversationId);
+            const result = await listDirectMessages(
+                conversationId,
+                initialPageSize,
+            );
+
+            if (requestId !== loadRequestIdRef.current) {
+                return;
+            }
 
             // Reverse to show oldest first
             const orderedItems = result.items.reverse();
             setMessages(orderedItems.filter(isTopLevelMessage));
+            setOldestCursor(result.nextCursor ?? null);
+            setHasMore(Boolean(result.nextCursor));
             setReadOnly(result.readOnly);
             setReadOnlyReason(result.readOnlyReason ?? null);
             setRelationship(result.relationship ?? null);
@@ -135,9 +174,40 @@ export function useDirectMessages({
                 err instanceof Error ? err.message : "Failed to load messages",
             );
         } finally {
-            setLoading(false);
+            if (requestId === loadRequestIdRef.current) {
+                setLoading(false);
+            }
         }
-    }, [conversationId]);
+    }, [conversationId, initialPageSize]);
+
+    const loadOlder = useCallback(async () => {
+        if (!conversationId || !oldestCursor) {
+            return;
+        }
+
+        try {
+            const activeConversationId = conversationId;
+            const result = await listDirectMessages(
+                activeConversationId,
+                loadMoreSize,
+                oldestCursor,
+            );
+            if (currentConversationIdRef.current !== activeConversationId) {
+                return;
+            }
+            const olderItems = result.items.reverse().filter(isTopLevelMessage);
+
+            setMessages((currentValue) => [...olderItems, ...currentValue]);
+            setOldestCursor(result.nextCursor ?? null);
+            setHasMore(Boolean(result.nextCursor));
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to load older messages",
+            );
+        }
+    }, [conversationId, oldestCursor]);
 
     useEffect(() => {
         currentConversationIdRef.current = conversationId;
@@ -147,22 +217,49 @@ export function useDirectMessages({
         void loadMessages();
     }, [loadMessages]);
 
-    useEffect(() => {
-        if (!conversationId) {
-            setConversationPins([]);
-            setActiveThreadParent(null);
-            setThreadMessages([]);
-            return;
-        }
-
-        listConversationPins(conversationId)
-            .then((items) => {
-                setConversationPins(items);
-            })
-            .catch(() => {
-                setConversationPins([]);
-            });
-    }, [conversationId]);
+    const {
+        activeThreadParent,
+        closeThread,
+        isThreadUnread,
+        openThread,
+        pins: conversationPins,
+        refreshPins,
+        sendThreadReply,
+        threadLoading,
+        threadMessages,
+        threadReadByMessageId,
+        threadReplySending,
+        togglePin,
+    } = useThreadPinState<DirectMessage>({
+        buildOptimisticThreadReply: ({
+            createdAt,
+            currentUserId,
+            parentMessage,
+            tempId,
+            text,
+        }) => ({
+            $createdAt: createdAt,
+            $id: tempId,
+            conversationId: parentMessage.conversationId,
+            receiverId: parentMessage.receiverId,
+            senderDisplayName: userName ?? undefined,
+            senderId: currentUserId ?? "unknown",
+            text,
+            threadId: parentMessage.threadId ?? parentMessage.$id,
+        }),
+        contextId: conversationId,
+        currentUserId: userId,
+        createThreadReply: createDMThreadReply,
+        listPins: listConversationPins,
+        listThreadReads: listConversationThreadReads,
+        listThreadMessages: listDMThreadMessages,
+        messages,
+        pinContextType: "conversation",
+        pinMessage: pinDMMessage,
+        persistThreadReads: persistConversationThreadReads,
+        setMessages,
+        unpinMessage: unpinDMMessage,
+    });
 
     // Real-time subscription
     useEffect(() => {
@@ -643,130 +740,57 @@ export function useDirectMessages({
         };
     }, [sendTypingState]);
 
-    const refreshPins = useCallback(async () => {
-        if (!conversationId) {
-            setConversationPins([]);
-            return;
-        }
+    const surfaceMessages = useMemo(() => {
+        const messagesById = new Map(
+            messages.map((message) => [message.$id, message]),
+        );
 
-        const items = await listConversationPins(conversationId);
-        setConversationPins(items);
-    }, [conversationId]);
+        return adaptDirectMessages(
+            messages,
+            conversationId
+                ? {
+                      kind: "dm",
+                      conversationId,
+                      readOnly,
+                      readOnlyReason,
+                  }
+                : undefined,
+        ).map((message) => {
+            const sourceMessage = messagesById.get(message.id);
 
-    const togglePin = useCallback(
-        async (message: DirectMessage) => {
-            try {
-                const isPinned = conversationPins.some(
-                    (item) => item.message.$id === message.$id,
-                );
-                if (isPinned) {
-                    await unpinDMMessage(message.$id);
-                } else {
-                    await pinDMMessage(message.$id);
-                }
-                await refreshPins();
-            } catch (err) {
-                toast.error(
-                    err instanceof Error ? err.message : "Pin action failed",
-                );
-            }
-        },
-        [conversationPins, refreshPins],
-    );
-
-    const openThread = useCallback(async (parent: DirectMessage) => {
-        setActiveThreadParent(parent);
-        setThreadLoading(true);
-        try {
-            const items = await listDMThreadMessages(parent.$id);
-            setThreadMessages(items);
-        } catch (err) {
-            toast.error(
-                err instanceof Error ? err.message : "Failed to load thread",
-            );
-            setThreadMessages([]);
-        } finally {
-            setThreadLoading(false);
-        }
-    }, []);
-
-    const closeThread = useCallback(() => {
-        setActiveThreadParent(null);
-        setThreadMessages([]);
-    }, []);
-
-    const sendThreadReply = useCallback(
-        async (textValue: string) => {
-            if (!activeThreadParent) {
-                return;
-            }
-
-            const value = textValue.trim();
-            if (!value) {
-                return;
-            }
-            if (value.length > MAX_MESSAGE_LENGTH) {
-                toast.error(MESSAGE_TOO_LONG_ERROR);
-                return;
-            }
-
-            try {
-                const reply = await createDMThreadReply(
-                    activeThreadParent.$id,
-                    {
-                        text: value,
-                    },
-                );
-
-                setThreadMessages((prev) =>
-                    [...prev, reply].sort((a, b) =>
-                        a.$createdAt.localeCompare(b.$createdAt),
-                    ),
-                );
-
-                setMessages((prev) =>
-                    prev.map((msg) => {
-                        if (msg.$id !== activeThreadParent.$id) {
-                            return msg;
-                        }
-                        const currentCount = msg.threadMessageCount || 0;
-                        const participants = Array.isArray(
-                            msg.threadParticipants,
-                        )
-                            ? msg.threadParticipants
-                            : [];
-                        const nextParticipants =
-                            userId && !participants.includes(userId)
-                                ? [...participants, userId]
-                                : participants;
-                        return {
-                            ...msg,
-                            threadMessageCount: currentCount + 1,
-                            threadParticipants: nextParticipants,
-                            lastThreadReplyAt: new Date().toISOString(),
-                        };
-                    }),
-                );
-            } catch (err) {
-                toast.error(
-                    err instanceof Error
-                        ? err.message
-                        : "Failed to send thread reply",
-                );
-            }
-        },
-        [activeThreadParent, userId],
-    );
+            return {
+                ...message,
+                threadHasUnread: sourceMessage
+                    ? isThreadUnread(sourceMessage)
+                    : false,
+                threadLastReadAt: threadReadByMessageId[message.id],
+            };
+        });
+    }, [
+        conversationId,
+        isThreadUnread,
+        messages,
+        readOnly,
+        readOnlyReason,
+        threadReadByMessageId,
+    ]);
 
     return {
+        hasMore,
         messages,
+        oldestCursor,
+        surfaceMessages,
         loading,
         error,
         sending,
         send,
         edit,
         deleteMsg,
+        loadOlder,
         refresh: loadMessages,
+        shouldShowLoadOlder: Boolean(
+            hasMore && oldestCursor && messages.length,
+        ),
         typingUsers,
         handleTypingChange,
         conversationPins,
@@ -778,6 +802,7 @@ export function useDirectMessages({
         activeThreadParent,
         threadMessages,
         threadLoading,
+        threadReplySending,
         openThread,
         closeThread,
         sendThreadReply,

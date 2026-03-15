@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.5.0
+    version: 1.6.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -31,6 +31,8 @@ tags:
       description: Channel message creation and management
     - name: Direct Messages
       description: Conversation and direct-message operations
+    - name: Notifications
+      description: Notification settings and unread inbox aggregation
     - name: Presence
       description: Status and typing state
     - name: Users
@@ -297,6 +299,128 @@ components:
                   properties:
                       conversationId:
                           type: string
+
+        InboxItemBase:
+            type: object
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+                    enum: [mention, thread]
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                serverId:
+                    type: string
+                messageId:
+                    type: string
+                parentMessageId:
+                    type: string
+                previewText:
+                    type: string
+                unreadCount:
+                    type: integer
+                authorUserId:
+                    type: string
+                authorLabel:
+                    type: string
+                authorAvatarUrl:
+                    type: string
+                    format: uri
+                muted:
+                    type: boolean
+
+        InboxItem:
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      latestActivityAt:
+                          type: string
+                          format: date-time
+
+        InboxResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxItem"
+                unreadCount:
+                    type: integer
+                counts:
+                    type: object
+                    properties:
+                        mention:
+                            type: integer
+                        thread:
+                            type: integer
+
+        InboxDigestItem:
+            allOf:
+                - $ref: "#/components/schemas/InboxItemBase"
+                - type: object
+                  properties:
+                      activityAt:
+                          type: string
+                          format: date-time
+
+        InboxDigestResponse:
+            type: object
+            properties:
+                contractVersion:
+                    type: string
+                    enum: [thread_v1, message_v2]
+                    default: thread_v1
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                contextId:
+                    type: string
+                items:
+                    type: array
+                    items:
+                        $ref: "#/components/schemas/InboxDigestItem"
+                totalUnreadCount:
+                    type: integer
+
+        ThreadReadsResponse:
+            type: object
+            properties:
+                contextId:
+                    type: string
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
+                        pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
+
+        ThreadReadsPatchRequest:
+            type: object
+            required: [contextId, contextKind, reads]
+            properties:
+                contextId:
+                    type: string
+                contextKind:
+                    type: string
+                    enum: [channel, conversation]
+                reads:
+                    type: object
+                    additionalProperties:
+                        type: string
+                        format: date-time
+                        pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$"
 
         Invite:
             type: object
@@ -1022,6 +1146,7 @@ paths:
         get:
             tags: [Channels, Messages]
             summary: List pinned messages for a channel
+            description: Returns pinned channel messages with their existing message identifiers so clients can reopen the channel context and jump to the pinned message.
             security:
                 - sessionCookie: []
             parameters:
@@ -1214,6 +1339,7 @@ paths:
         get:
             tags: [Messages]
             summary: List thread messages for a channel message
+            description: Returns the thread rooted at the specified channel message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
             parameters:
@@ -1464,6 +1590,7 @@ paths:
         get:
             tags: [Direct Messages]
             summary: List thread messages for a direct message
+            description: Returns the thread rooted at the specified direct message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
             parameters:
@@ -1555,6 +1682,7 @@ paths:
         get:
             tags: [Direct Messages]
             summary: List pinned messages for a conversation
+            description: Returns pinned direct messages with the conversation context needed for consistent jump-to-message flows in DM chat.
             security:
                 - sessionCookie: []
             parameters:
@@ -1913,6 +2041,7 @@ paths:
         get:
             tags: [Search]
             summary: Search messages across accessible contexts
+            description: Returns message matches with enough channel or conversation context for the client to deep-link into the correct chat surface and highlight the selected message.
             security:
                 - sessionCookie: []
             parameters:
@@ -2043,7 +2172,7 @@ paths:
 
     /api/notifications/settings:
         get:
-            tags: [Users]
+            tags: [Notifications]
             summary: Get notification settings for the current user
             security:
                 - sessionCookie: []
@@ -2055,7 +2184,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/NotificationSettings"
         patch:
-            tags: [Users]
+            tags: [Notifications]
             summary: Update notification settings for the current user
             security:
                 - sessionCookie: []
@@ -2072,6 +2201,251 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/NotificationSettings"
+
+    /api/inbox:
+        get:
+            tags: [Notifications]
+            summary: Get unified unread inbox items and counts
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: kind
+                  in: query
+                  description: Comma-separated list of inbox kinds
+                  schema:
+                      type: string
+                      example: mention,thread
+                - name: scope
+                  in: query
+                  description: Context scope filter for inbox results
+                  schema:
+                      type: string
+                      enum: [all, direct, server]
+                      default: all
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextId
+                  in: query
+                  required: false
+                  description: Context identifier. Must be provided together with contextKind for context-scoped inbox responses.
+                  schema:
+                      type: string
+                - name: contextKind
+                  in: query
+                  required: false
+                  description: Context discriminator. Must be provided together with contextId.
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+            responses:
+                "200":
+                    description: Inbox list response. When both contextId and contextKind are provided, returns the context-scoped variant.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Notifications]
+            summary: Mark inbox items or contexts as read
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            oneOf:
+                                - type: object
+                                  required: [itemIds]
+                                  properties:
+                                      itemIds:
+                                          type: array
+                                          minItems: 1
+                                          maxItems: 50
+                                          items:
+                                              type: string
+                                - type: object
+                                  required: [action]
+                                  properties:
+                                      action:
+                                          type: string
+                                          enum: [mark-all-read]
+                                      contextKind:
+                                          type: string
+                                          enum: [channel, conversation]
+                                      contextId:
+                                          type: string
+            responses:
+                "200":
+                    description: Read state updated
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - type: object
+                                      description: Response for itemIds-based read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedCount:
+                                              type: integer
+                                          truncated:
+                                              type: boolean
+                                          truncatedCount:
+                                              type: integer
+                                    - type: object
+                                      description: Response for mark-all-read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedMentionCount:
+                                              type: integer
+                                          updatedThreadContextCount:
+                                              type: integer
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/inbox/digest:
+        get:
+            tags: [Notifications]
+            summary: Get scoped unread digest payload
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: limit
+                  in: query
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: contextKind
+                  in: query
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+                - name: contextId
+                  in: query
+                  schema:
+                      type: string
+            responses:
+                "200":
+                    description: Inbox digest response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/InboxDigestResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/thread-reads:
+        get:
+            tags: [Notifications]
+            summary: Get persisted thread read state for a context
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: contextId
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                - name: contextKind
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
+            responses:
+                "200":
+                    description: Thread reads response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid query parameters
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        patch:
+            tags: [Notifications]
+            summary: Persist thread read state updates for a context
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ThreadReadsPatchRequest"
+            responses:
+                "200":
+                    description: Thread reads updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ThreadReadsResponse"
+                "400":
+                    description: Invalid request body
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/roles:
         get:

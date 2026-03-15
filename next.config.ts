@@ -143,30 +143,6 @@ const nextConfig = {
         ],
         formats: ["image/avif", "image/webp"],
     },
-
-    // Add caching headers for static assets
-    async headers() {
-        return [
-            {
-                source: "/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif)",
-                headers: [
-                    {
-                        key: "Cache-Control",
-                        value: "public, max-age=31536000, immutable",
-                    },
-                ],
-            },
-            {
-                source: "/_next/static/:path*",
-                headers: [
-                    {
-                        key: "Cache-Control",
-                        value: "public, max-age=31536000, immutable",
-                    },
-                ],
-            },
-        ];
-    },
 };
 
 export default withBundleAnalyzer(nextConfig);

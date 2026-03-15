@@ -2,6 +2,7 @@ import { ID, Query } from "appwrite";
 
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
+import { parseReactionsWithMetadata } from "./reactions-utils";
 
 // Environment derived identifiers (centralized)
 const env = getEnvConfig();
@@ -9,9 +10,14 @@ const DATABASE_ID = env.databaseId;
 const COLLECTION_ID = env.collections.messages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const migratedReactionDocuments = new Set<string>();
 
 /**
  * Fetch attachments for multiple messages and enrich them
+ *
+ * @param {Message[]} messages - The messages value.
+ * @param {'channel' | 'dm'} messageType - The message type value.
+ * @returns {Promise<Message[]>} The return value.
  */
 async function enrichMessagesWithAttachments(
     messages: Message[],
@@ -86,10 +92,20 @@ export type ListOptions = {
     order?: "asc" | "desc";
 };
 
+/**
+ * Returns databases.
+ * @returns {Databases} The return value.
+ */
 function getDatabases() {
     return getBrowserDatabases();
 }
 
+/**
+ * Lists messages.
+ *
+ * @param {{ limit?: number | undefined; cursorAfter?: string | undefined; channelId?: string | undefined; order?: 'asc' | 'desc' | undefined; }} opts - The opts value, if provided.
+ * @returns {Promise<Message[]>} The return value.
+ */
 export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
     const queries = buildMessageListQueries(opts);
     const res = await getDatabases().listDocuments({
@@ -103,6 +119,45 @@ export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
     return enrichMessagesWithAttachments(messages, "channel");
 }
 
+/**
+ * Handles schedule reaction migration.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {unknown} reactions - The reactions value.
+ * @returns {void} The return value.
+ */
+function scheduleReactionMigration(messageId: string, reactions: unknown) {
+    const key = `${COLLECTION_ID}:${messageId}`;
+    if (migratedReactionDocuments.has(key)) {
+        return;
+    }
+
+    const parsed = parseReactionsWithMetadata(reactions);
+    if (!parsed.didNormalize) {
+        return;
+    }
+
+    migratedReactionDocuments.add(key);
+    void getDatabases()
+        .updateDocument({
+            databaseId: DATABASE_ID,
+            collectionId: COLLECTION_ID,
+            documentId: messageId,
+            data: {
+                reactions: JSON.stringify(parsed.reactions),
+            },
+        })
+        .catch(() => {
+            migratedReactionDocuments.delete(key);
+        });
+}
+
+/**
+ * Builds message list queries.
+ *
+ * @param {{ limit?: number | undefined; cursorAfter?: string | undefined; channelId?: string | undefined; order?: 'asc' | 'desc' | undefined; }} opts - The opts value.
+ * @returns {string[]} The return value.
+ */
 function buildMessageListQueries(opts: ListOptions) {
     const q: string[] = [];
     if (opts.limit) {
@@ -122,6 +177,12 @@ function buildMessageListQueries(opts: ListOptions) {
     return q;
 }
 
+/**
+ * Handles map message docs.
+ *
+ * @param {unknown[]} list - The list value.
+ * @returns {Message[]} The return value.
+ */
 function mapMessageDocs(list: unknown[]): Message[] {
     const out: Message[] = [];
     for (const raw of list) {
@@ -133,32 +194,20 @@ function mapMessageDocs(list: unknown[]): Message[] {
     return out;
 }
 
+/**
+ * Handles coerce message.
+ *
+ * @param {unknown} raw - The raw value.
+ * @returns {Message | null} The return value.
+ */
 function coerceMessage(raw: unknown): Message | null {
     if (typeof raw !== "object" || !raw || !("$id" in raw)) {
         return null;
     }
     const d = raw as Record<string, unknown> & { $id: string };
 
-    // Handle reactions - can be string (JSON) or already parsed array from database
-    let reactions:
-        | Array<{ emoji: string; userIds: string[]; count: number }>
-        | undefined;
-    if (d.reactions) {
-        if (typeof d.reactions === "string") {
-            try {
-                const parsed = JSON.parse(d.reactions);
-                reactions = Array.isArray(parsed) ? parsed : undefined;
-            } catch {
-                reactions = undefined;
-            }
-        } else if (Array.isArray(d.reactions)) {
-            reactions = d.reactions as Array<{
-                emoji: string;
-                userIds: string[];
-                count: number;
-            }>;
-        }
-    }
+    const parsedReactions = parseReactionsWithMetadata(d.reactions);
+    scheduleReactionMigration(String(d.$id), d.reactions);
 
     return {
         $id: String(d.$id),
@@ -184,7 +233,10 @@ function coerceMessage(raw: unknown): Message | null {
             typeof d.lastThreadReplyAt === "string"
                 ? d.lastThreadReplyAt
                 : undefined,
-        reactions,
+        reactions:
+            parsedReactions.reactions.length > 0
+                ? parsedReactions.reactions
+                : undefined,
         imageFileId:
             typeof d.imageFileId === "string" ? d.imageFileId : undefined,
         imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,
@@ -203,6 +255,12 @@ type SendMessageInput = {
     replyToId?: string;
 };
 
+/**
+ * Handles send message.
+ *
+ * @param {{ userId: string; text: string; userName?: string | undefined; channelId?: string | undefined; serverId?: string | undefined; replyToId?: string | undefined; }} input - The input value.
+ * @returns {Promise<Message>} The return value.
+ */
 export async function sendMessage(input: SendMessageInput): Promise<Message> {
     const { userId, text, userName, channelId, serverId, replyToId } = input;
     // Import Permission and Role from appwrite for client SDK
@@ -243,6 +301,13 @@ export async function sendMessage(input: SendMessageInput): Promise<Message> {
     };
 }
 
+/**
+ * Handles edit message.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} text - The text value.
+ * @returns {Promise<Message>} The return value.
+ */
 export async function editMessage(messageId: string, text: string) {
     const editedAt = new Date().toISOString();
     const res = await getDatabases().updateDocument({
@@ -254,6 +319,12 @@ export async function editMessage(messageId: string, text: string) {
     return res as unknown as Message;
 }
 
+/**
+ * Removes message.
+ *
+ * @param {string} messageId - The message id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function deleteMessage(messageId: string) {
     await getDatabases().deleteDocument({
         databaseId: DATABASE_ID,
@@ -263,6 +334,13 @@ export async function deleteMessage(messageId: string) {
 }
 
 // Soft delete (moderation) – marks message as removed but keeps for audit
+/**
+ * Handles soft delete message.
+ *
+ * @param {string} messageId - The message id value.
+ * @param {string} moderatorId - The moderator id value.
+ * @returns {Promise<Message>} The return value.
+ */
 export async function softDeleteMessage(
     messageId: string,
     moderatorId: string,
@@ -277,6 +355,12 @@ export async function softDeleteMessage(
     return res as unknown as Message;
 }
 
+/**
+ * Handles restore message.
+ *
+ * @param {string} messageId - The message id value.
+ * @returns {Promise<Message>} The return value.
+ */
 export async function restoreMessage(messageId: string) {
     const res = await getDatabases().updateDocument({
         databaseId: DATABASE_ID,
@@ -289,6 +373,15 @@ export async function restoreMessage(messageId: string) {
 
 // Typing indicator: create/update ephemeral doc per user+channel via API route
 // This now uses the server-side API to avoid permission issues
+/**
+ * Handles set typing.
+ *
+ * @param {string} userId - The user id value.
+ * @param {string} channelId - The channel id value.
+ * @param {string | undefined} userName - The user name value.
+ * @param {boolean} isTyping - The is typing value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function setTyping(
     userId: string,
     channelId: string,
@@ -328,6 +421,10 @@ export async function setTyping(
 const recent: string[] = [];
 const FLOOD_WINDOW_MS = 5000;
 const FLOOD_MAX_MESSAGES = 8;
+/**
+ * Determines whether can send.
+ * @returns {boolean} The return value.
+ */
 export function canSend() {
     const now = Date.now();
     const cutoff = now - FLOOD_WINDOW_MS;
@@ -342,6 +439,14 @@ export function canSend() {
 }
 
 // Helper: fetch recent messages (returns ascending order for straightforward rendering)
+/**
+ * Lists recent messages.
+ *
+ * @param {number} limit - The limit value, if provided.
+ * @param {string | undefined} cursorAfter - The cursor after value, if provided.
+ * @param {string | undefined} channelId - The channel id value, if provided.
+ * @returns {Promise<Message[]>} The return value.
+ */
 export async function listRecentMessages(
     limit = 30,
     cursorAfter?: string,

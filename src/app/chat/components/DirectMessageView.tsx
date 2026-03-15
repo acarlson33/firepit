@@ -22,27 +22,27 @@ import { ImageViewer } from "@/components/image-viewer";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { ChatInput } from "@/components/chat-input";
-import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { MessageWithMentions } from "@/components/message-with-mentions";
-import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { VirtualizedDMList } from "@/components/virtualized-dm-list";
-import type {
-    DirectMessage,
-    Conversation,
-    FileAttachment,
-    Message,
-} from "@/lib/types";
+import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
+import { ChatThreadContent } from "@/components/chat-thread-content";
+import { MentionHelpTooltip } from "@/components/mention-help-tooltip";
+import { MESSAGE_LIST_VIEWPORT_HEIGHT } from "@/components/virtualized-message-list";
+import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { adaptDirectMessages, fromDirectMessage } from "@/lib/chat-surface";
+import { jumpToMessage } from "@/lib/message-navigation";
+import type { DirectMessage, Conversation, FileAttachment } from "@/lib/types";
 import { formatMessageTimestamp } from "@/lib/utils";
 import { uploadImage } from "@/lib/appwrite-dms-client";
 import { toggleReaction } from "@/lib/reactions-client";
 import { toast } from "sonner";
 
-// Use virtual scrolling when message count exceeds this threshold
-const VIRTUALIZATION_THRESHOLD = 50;
+// Keep DM rendering parity with the shared chat surface threshold.
+const VIRTUALIZATION_THRESHOLD = 20;
 
 type DirectMessageViewProps = {
     conversation: Conversation;
@@ -68,14 +68,28 @@ type DirectMessageViewProps = {
         { userId: string; userName?: string; updatedAt: string }
     >;
     onTypingChange?: (_text: string) => void;
+    pinnedMessages?: DirectMessage[];
     pinnedMessageIds?: string[];
     onTogglePinMessage?: (_message: DirectMessage) => Promise<void>;
     onOpenThread?: (_message: DirectMessage) => Promise<void>;
     activeThreadParent?: DirectMessage | null;
     threadMessages?: DirectMessage[];
     threadLoading?: boolean;
+    threadReplySending?: boolean;
     onCloseThread?: () => void;
     onSendThreadReply?: (_text: string) => Promise<void> | void;
+    onOpenProfileModal?: (
+        userId: string,
+        userName?: string,
+        displayName?: string,
+        avatarUrl?: string,
+    ) => void;
+    onCatchUpUnread?: () => void;
+    onJumpToUnread?: () => void;
+    onLoadOlder?: () => Promise<void> | void;
+    shouldShowLoadOlder?: boolean;
+    unreadAnchorMessageId?: string | null;
+    unreadSummaryLabel?: string | null;
 };
 
 export function DirectMessageView({
@@ -93,14 +107,23 @@ export function DirectMessageView({
     onBack,
     typingUsers = {},
     onTypingChange,
+    pinnedMessages: providedPinnedMessages,
     pinnedMessageIds,
     onTogglePinMessage,
     onOpenThread,
     activeThreadParent,
     threadMessages = [],
     threadLoading = false,
+    threadReplySending = false,
     onCloseThread,
     onSendThreadReply,
+    onOpenProfileModal,
+    onCatchUpUnread,
+    onJumpToUnread,
+    onLoadOlder,
+    shouldShowLoadOlder = false,
+    unreadAnchorMessageId,
+    unreadSummaryLabel,
 }: DirectMessageViewProps) {
     const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
@@ -121,7 +144,6 @@ export function DirectMessageView({
         [],
     );
     const [threadReplyText, setThreadReplyText] = useState("");
-    const messagesEndRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isGroup =
@@ -137,9 +159,14 @@ export function DirectMessageView({
         : otherUser?.status;
     const composerDisabled = readOnly || sending || uploadingImage;
     const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
-
-    // Use virtual scrolling for large message lists (better performance)
-    const useVirtualScrolling = messages.length > VIRTUALIZATION_THRESHOLD;
+    const useVirtualScrolling = messages.length >= VIRTUALIZATION_THRESHOLD;
+    const typingUserList = Object.values(typingUsers ?? {});
+    const typingLabel = typingUserList
+        .map(
+            (typingUser) =>
+                typingUser.userName || typingUser.userId.slice(0, 6),
+        )
+        .join(", ");
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -158,6 +185,10 @@ export function DirectMessageView({
     );
 
     const pinnedMessages = useMemo(() => {
+        if (providedPinnedMessages) {
+            return providedPinnedMessages;
+        }
+
         if (!Array.isArray(pinnedMessageIds) || pinnedMessageIds.length === 0) {
             return [] as DirectMessage[];
         }
@@ -166,8 +197,20 @@ export function DirectMessageView({
         return pinnedMessageIds
             .map((messageId) => byId.get(messageId))
             .filter((message): message is DirectMessage => Boolean(message));
-    }, [messages, pinnedMessageIds]);
-
+    }, [messages, pinnedMessageIds, providedPinnedMessages]);
+    const pinnedSurfaceMessages = useMemo(
+        () => adaptDirectMessages(pinnedMessages),
+        [pinnedMessages],
+    );
+    const threadParentSurfaceMessage = useMemo(
+        () =>
+            activeThreadParent ? fromDirectMessage(activeThreadParent) : null,
+        [activeThreadParent],
+    );
+    const threadSurfaceMessages = useMemo(
+        () => adaptDirectMessages(threadMessages),
+        [threadMessages],
+    );
     useEffect(() => {
         setThreadReplyText("");
     }, [activeThreadParent?.$id]);
@@ -181,8 +224,8 @@ export function DirectMessageView({
         }
     }, [messages.length]); // Only scroll when message count changes, not on every update
 
-    const handleSend = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSend = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         if (
             (!text.trim() && !selectedImage && fileAttachments.length === 0) ||
             sending
@@ -297,10 +340,6 @@ export function DirectMessageView({
         }
     };
 
-    const confirmDelete = (messageId: string) => {
-        setDeleteConfirmId(messageId);
-    };
-
     const handleDelete = async (messageId: string) => {
         try {
             await onDelete(messageId);
@@ -326,7 +365,7 @@ export function DirectMessageView({
     }, []);
 
     return (
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
             {/* Header */}
             <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
                 {onBack && (
@@ -389,12 +428,50 @@ export function DirectMessageView({
                 </div>
             ) : null}
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="space-y-4">
-                    {/* Messages */}
+            <div className="grid gap-4">
+                <div className="min-w-0 space-y-4">
+                    <MentionHelpTooltip />
+                    {unreadAnchorMessageId &&
+                    (onJumpToUnread || onCatchUpUnread) ? (
+                        <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+                            <div>
+                                <p className="font-medium text-foreground">
+                                    Unread activity available
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {unreadSummaryLabel ||
+                                        "Jump to the first unread item or catch up from the latest messages."}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {onJumpToUnread ? (
+                                    <Button
+                                        onClick={onJumpToUnread}
+                                        size="sm"
+                                        type="button"
+                                    >
+                                        Jump to unread
+                                    </Button>
+                                ) : null}
+                                {onCatchUpUnread ? (
+                                    <Button
+                                        onClick={onCatchUpUnread}
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        Catch up
+                                    </Button>
+                                ) : null}
+                            </div>
+                        </div>
+                    ) : null}
+
                     <div
+                        className="min-w-0 w-full space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+                        data-message-scroll-container="true"
                         ref={messagesContainerRef}
-                        className="h-[60vh] space-y-3 overflow-y-auto rounded-3xl border border-border/60 bg-background/70 p-4 shadow-inner"
+                        style={{ height: MESSAGE_LIST_VIEWPORT_HEIGHT }}
                     >
                         {loading ? (
                             <div className="space-y-3">
@@ -421,103 +498,109 @@ export function DirectMessageView({
                             </div>
                         ) : useVirtualScrolling ? (
                             <VirtualizedDMList
-                                messages={messages}
-                                userId={currentUserId}
-                                userIdSlice={6}
-                                editingMessageId={editingMessageId}
+                                conversationId={conversation.$id}
+                                customEmojis={customEmojis}
                                 deleteConfirmId={deleteConfirmId}
-                                setDeleteConfirmId={setDeleteConfirmId}
+                                editingMessageId={editingMessageId}
                                 messageDensity={messageDensity}
-                                onStartEdit={(msg: Message) => {
-                                    const dmMessage = messages.find(
-                                        (m) => m.$id === msg.$id,
-                                    );
-                                    if (dmMessage) {
-                                        startEdit(dmMessage);
-                                    }
-                                }}
-                                onStartReply={(msg: Message) => {
-                                    const dmMessage = messages.find(
-                                        (m) => m.$id === msg.$id,
-                                    );
-                                    if (dmMessage) {
-                                        startReply(dmMessage);
-                                    }
-                                }}
-                                onRemove={(id: string) => {
-                                    void onDelete(id);
-                                    setDeleteConfirmId(null);
-                                }}
-                                onTogglePin={
-                                    onTogglePinMessage
-                                        ? async (msg: Message) => {
-                                              const dmMessage = messages.find(
-                                                  (m) => m.$id === msg.$id,
-                                              );
-                                              if (dmMessage) {
-                                                  await onTogglePinMessage(
-                                                      dmMessage,
-                                                  );
-                                              }
-                                          }
-                                        : undefined
-                                }
-                                onOpenThread={
-                                    onOpenThread
-                                        ? async (msg: Message) => {
-                                              const dmMessage = messages.find(
-                                                  (m) => m.$id === msg.$id,
-                                              );
-                                              if (dmMessage) {
-                                                  await onOpenThread(dmMessage);
-                                              }
-                                          }
-                                        : undefined
-                                }
-                                onToggleReaction={async (
-                                    messageId: string,
-                                    emoji: string,
-                                ) => {
-                                    const message = messages.find(
-                                        (m) => m.$id === messageId,
-                                    );
-                                    const hasReacted = message?.reactions?.some(
-                                        (r) =>
-                                            r.emoji === emoji &&
-                                            r.userIds.includes(currentUserId),
-                                    );
-                                    await toggleReaction(
-                                        messageId,
-                                        emoji,
-                                        !hasReacted,
-                                        true,
-                                    );
-                                }}
-                                onOpenProfileModal={(
-                                    _userId: string,
-                                    _userName?: string,
-                                    _displayName?: string,
-                                    _avatarUrl?: string,
-                                ) => {
-                                    // Profile modal handler - can be implemented later
-                                }}
-                                onOpenImageViewer={(imageUrl: string) => {
+                                messages={messages}
+                                onLoadOlder={onLoadOlder || (() => undefined)}
+                                onOpenImageViewer={(imageUrl) => {
                                     setViewingImage({
                                         url: imageUrl,
                                         alt: "Direct message image",
                                     });
                                 }}
-                                customEmojis={customEmojis}
-                                onUploadCustomEmoji={uploadEmoji}
-                                shouldShowLoadOlder={false}
-                                onLoadOlder={() => {
-                                    // Load older messages handler - implement if pagination is added
+                                onOpenProfileModal={
+                                    onOpenProfileModal || (() => undefined)
+                                }
+                                onOpenThread={
+                                    onOpenThread
+                                        ? async (message) => {
+                                              const rawMessage = messages.find(
+                                                  (candidate) =>
+                                                      candidate.$id ===
+                                                      message.id,
+                                              );
+                                              if (rawMessage) {
+                                                  await onOpenThread(
+                                                      rawMessage,
+                                                  );
+                                              }
+                                          }
+                                        : undefined
+                                }
+                                onRemove={(messageId) => {
+                                    void handleDelete(messageId);
                                 }}
-                                conversationId={conversation.$id}
+                                onStartEdit={(message) => {
+                                    const rawMessage = messages.find(
+                                        (candidate) =>
+                                            candidate.$id === message.id,
+                                    );
+                                    if (rawMessage) {
+                                        startEdit(rawMessage);
+                                    }
+                                }}
+                                onStartReply={(message) => {
+                                    const rawMessage = messages.find(
+                                        (candidate) =>
+                                            candidate.$id === message.id,
+                                    );
+                                    if (rawMessage) {
+                                        startReply(rawMessage);
+                                    }
+                                }}
+                                onTogglePin={
+                                    onTogglePinMessage
+                                        ? async (message) => {
+                                              const rawMessage = messages.find(
+                                                  (candidate) =>
+                                                      candidate.$id ===
+                                                      message.id,
+                                              );
+                                              if (rawMessage) {
+                                                  await onTogglePinMessage(
+                                                      rawMessage,
+                                                  );
+                                              }
+                                          }
+                                        : undefined
+                                }
+                                onToggleReaction={async (
+                                    messageId,
+                                    emoji,
+                                    isAdding,
+                                ) => {
+                                    await toggleReaction(
+                                        messageId,
+                                        emoji,
+                                        isAdding,
+                                        true,
+                                    );
+                                }}
+                                onUploadCustomEmoji={uploadEmoji}
                                 pinnedMessageIds={pinnedMessageIds}
+                                setDeleteConfirmId={setDeleteConfirmId}
+                                shouldShowLoadOlder={shouldShowLoadOlder}
+                                unreadAnchorMessageId={unreadAnchorMessageId}
+                                userId={currentUserId}
+                                userIdSlice={6}
                             />
                         ) : (
                             <>
+                                {shouldShowLoadOlder && onLoadOlder ? (
+                                    <div className="flex justify-center pb-4">
+                                        <Button
+                                            onClick={onLoadOlder}
+                                            size="sm"
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            Load older messages
+                                        </Button>
+                                    </div>
+                                ) : null}
                                 {messages.map((message) => {
                                     const isMine =
                                         message.senderId === currentUserId;
@@ -534,100 +617,106 @@ export function DirectMessageView({
                                         message.senderId;
 
                                     return (
-                                        <div
-                                            data-message-id={message.$id}
-                                            className={`group flex ${
-                                                isEditing
-                                                    ? "rounded-lg bg-blue-50 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
-                                                    : ""
-                                            } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
-                                            key={message.$id}
-                                        >
-                                            <Avatar
-                                                alt={msgDisplayName}
-                                                fallback={msgDisplayName}
-                                                size="sm"
-                                                src={message.senderAvatarUrl}
-                                            />
-                                            <div className="min-w-0 flex-1">
-                                                <div
-                                                    className={`flex flex-wrap items-baseline gap-2 text-muted-foreground ${
-                                                        compactMessages
-                                                            ? "text-[11px]"
-                                                            : "text-xs"
-                                                    }`}
-                                                >
-                                                    <span className="font-medium text-foreground">
-                                                        {msgDisplayName}
-                                                    </span>
-                                                    {message.senderPronouns && (
-                                                        <span className="italic">
-                                                            (
-                                                            {
-                                                                message.senderPronouns
-                                                            }
-                                                            )
-                                                        </span>
-                                                    )}
-                                                    <span>
-                                                        {formatMessageTimestamp(
-                                                            message.$createdAt,
-                                                        )}
-                                                    </span>
-                                                    {message.editedAt && (
-                                                        <span className="italic">
-                                                            (edited)
-                                                        </span>
-                                                    )}
-                                                    {removed && (
-                                                        <span className="text-destructive">
-                                                            (removed)
-                                                        </span>
-                                                    )}
-                                                    {isPinned && (
-                                                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                                                            <Pin className="h-3 w-3" />
-                                                            Pinned
-                                                        </span>
-                                                    )}
-                                                    {isEditing && (
-                                                        <span className="font-medium text-blue-600 dark:text-blue-400">
-                                                            Editing...
-                                                        </span>
-                                                    )}
+                                        <div key={message.$id}>
+                                            {unreadAnchorMessageId ===
+                                            message.$id ? (
+                                                <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+                                                    <span className="h-px flex-1 bg-primary/30" />
+                                                    First unread
+                                                    <span className="h-px flex-1 bg-primary/30" />
                                                 </div>
-                                                {message.replyTo && (
+                                            ) : null}
+                                            <div
+                                                className={`group flex ${
+                                                    isEditing
+                                                        ? "rounded-lg bg-blue-50 ring-2 ring-blue-500/50 dark:bg-blue-950/20"
+                                                        : ""
+                                                } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
+                                                data-message-id={message.$id}
+                                            >
+                                                <Avatar
+                                                    alt={msgDisplayName}
+                                                    fallback={msgDisplayName}
+                                                    size="sm"
+                                                    src={
+                                                        message.senderAvatarUrl
+                                                    }
+                                                />
+                                                <div className="min-w-0 flex-1">
                                                     <div
-                                                        className={`mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 ${
+                                                        className={`flex flex-wrap items-baseline gap-2 text-muted-foreground ${
                                                             compactMessages
-                                                                ? "px-2 py-1 text-[11px]"
-                                                                : "px-3 py-1.5 text-xs"
+                                                                ? "text-[11px]"
+                                                                : "text-xs"
                                                         }`}
                                                     >
-                                                        <div className="font-medium text-muted-foreground">
-                                                            Replying to{" "}
-                                                            {message.replyTo
-                                                                .senderDisplayName ||
-                                                                "Unknown"}
-                                                        </div>
-                                                        <div className="line-clamp-1 text-muted-foreground/80">
-                                                            {
-                                                                message.replyTo
-                                                                    .text
-                                                            }
-                                                        </div>
+                                                        <span className="font-medium text-foreground">
+                                                            {msgDisplayName}
+                                                        </span>
+                                                        {message.senderPronouns ? (
+                                                            <span className="italic">
+                                                                (
+                                                                {
+                                                                    message.senderPronouns
+                                                                }
+                                                                )
+                                                            </span>
+                                                        ) : null}
+                                                        <span>
+                                                            {formatMessageTimestamp(
+                                                                message.$createdAt,
+                                                            )}
+                                                        </span>
+                                                        {message.editedAt ? (
+                                                            <span className="italic">
+                                                                (edited)
+                                                            </span>
+                                                        ) : null}
+                                                        {removed ? (
+                                                            <span className="text-destructive">
+                                                                (removed)
+                                                            </span>
+                                                        ) : null}
+                                                        {isPinned ? (
+                                                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                                                <Pin className="h-3 w-3" />
+                                                                Pinned
+                                                            </span>
+                                                        ) : null}
                                                     </div>
-                                                )}
-                                                <div className="flex items-start gap-2">
-                                                    <div
-                                                        className={`flex-1 wrap-break-word ${
-                                                            compactMessages
-                                                                ? "space-y-1 text-xs"
-                                                                : "space-y-2 text-sm"
-                                                        }`}
-                                                    >
-                                                        {message.imageUrl &&
-                                                            !removed && (
+                                                    {message.replyTo ? (
+                                                        <div
+                                                            className={`mt-1 rounded-lg border-l-2 border-muted-foreground/40 bg-muted/30 ${
+                                                                compactMessages
+                                                                    ? "px-2 py-1 text-[11px]"
+                                                                    : "px-3 py-1.5 text-xs"
+                                                            }`}
+                                                        >
+                                                            <div className="font-medium text-muted-foreground">
+                                                                Replying to{" "}
+                                                                {message.replyTo
+                                                                    .senderDisplayName ||
+                                                                    "Unknown"}
+                                                            </div>
+                                                            <div className="line-clamp-1 text-muted-foreground/80">
+                                                                {
+                                                                    message
+                                                                        .replyTo
+                                                                        .text
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="flex items-start gap-2">
+                                                        <div
+                                                            className={`flex-1 wrap-break-word ${
+                                                                compactMessages
+                                                                    ? "space-y-1 text-xs"
+                                                                    : "space-y-2 text-sm"
+                                                            }`}
+                                                        >
+                                                            {message.imageUrl &&
+                                                            !removed ? (
                                                                 <div className="mt-1">
                                                                     <ImageWithSkeleton
                                                                         alt="Uploaded image"
@@ -645,15 +734,15 @@ export function DirectMessageView({
                                                                             }
                                                                         }}
                                                                         onKeyDown={(
-                                                                            e,
+                                                                            event,
                                                                         ) => {
                                                                             if (
-                                                                                e.key ===
+                                                                                event.key ===
                                                                                     "Enter" ||
-                                                                                e.key ===
+                                                                                event.key ===
                                                                                     " "
                                                                             ) {
-                                                                                e.preventDefault();
+                                                                                event.preventDefault();
                                                                                 if (
                                                                                     message.imageUrl
                                                                                 ) {
@@ -675,19 +764,19 @@ export function DirectMessageView({
                                                                         }
                                                                     />
                                                                 </div>
-                                                            )}
-                                                        {message.attachments &&
+                                                            ) : null}
+                                                            {message.attachments &&
                                                             message.attachments
                                                                 .length > 0 &&
-                                                            !removed && (
+                                                            !removed ? (
                                                                 <div className="mt-1 space-y-2">
                                                                     {message.attachments.map(
                                                                         (
                                                                             attachment,
-                                                                            idx,
+                                                                            index,
                                                                         ) => (
                                                                             <FileAttachmentDisplay
-                                                                                key={`${message.$id}-${attachment.fileId}-${idx}`}
+                                                                                key={`${message.$id}-${attachment.fileId}-${index}`}
                                                                                 attachment={
                                                                                     attachment
                                                                                 }
@@ -695,96 +784,82 @@ export function DirectMessageView({
                                                                         ),
                                                                     )}
                                                                 </div>
-                                                            )}
-                                                        {removed ? (
-                                                            <span className="italic opacity-70">
-                                                                Message removed
-                                                            </span>
-                                                        ) : message.text ? (
-                                                            <p
-                                                                className={
-                                                                    compactMessages
-                                                                        ? "text-xs"
-                                                                        : "text-sm"
-                                                                }
-                                                            >
-                                                                <MessageWithMentions
-                                                                    text={
-                                                                        message.text
+                                                            ) : null}
+                                                            {removed ? (
+                                                                <span className="italic opacity-70">
+                                                                    Message
+                                                                    removed
+                                                                </span>
+                                                            ) : message.text ? (
+                                                                <p
+                                                                    className={
+                                                                        compactMessages
+                                                                            ? "text-xs"
+                                                                            : "text-sm"
                                                                     }
-                                                                    mentions={
-                                                                        message.mentions
-                                                                    }
-                                                                    knownNames={
-                                                                        knownDisplayNames
-                                                                    }
-                                                                    currentUserId={
-                                                                        currentUserId
-                                                                    }
-                                                                    customEmojis={
-                                                                        customEmojis
-                                                                    }
-                                                                />
-                                                            </p>
-                                                        ) : null}
+                                                                >
+                                                                    <MessageWithMentions
+                                                                        currentUserId={
+                                                                            currentUserId
+                                                                        }
+                                                                        customEmojis={
+                                                                            customEmojis
+                                                                        }
+                                                                        knownNames={
+                                                                            knownDisplayNames
+                                                                        }
+                                                                        mentions={
+                                                                            message.mentions
+                                                                        }
+                                                                        text={
+                                                                            message.text
+                                                                        }
+                                                                    />
+                                                                </p>
+                                                            ) : null}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                {!removed &&
+                                                    {!removed &&
                                                     message.reactions &&
                                                     message.reactions.length >
-                                                        0 && (
+                                                        0 ? (
                                                         <div className="mt-1 flex flex-wrap gap-1">
                                                             {message.reactions.map(
                                                                 (reaction) => (
                                                                     <ReactionButton
-                                                                        key={
-                                                                            reaction.emoji
-                                                                        }
                                                                         currentUserId={
                                                                             currentUserId
                                                                         }
-                                                                        reaction={
-                                                                            reaction
-                                                                        }
                                                                         customEmojis={
                                                                             customEmojis
+                                                                        }
+                                                                        key={
+                                                                            reaction.emoji
                                                                         }
                                                                         onToggle={async (
                                                                             emoji,
                                                                             isAdding,
                                                                         ) => {
-                                                                            try {
-                                                                                await toggleReaction(
-                                                                                    message.$id,
-                                                                                    emoji,
-                                                                                    isAdding,
-                                                                                    true,
-                                                                                );
-                                                                            } catch (error) {
-                                                                                if (
-                                                                                    process
-                                                                                        .env
-                                                                                        .NODE_ENV ===
-                                                                                    "development"
-                                                                                ) {
-                                                                                    console.error(
-                                                                                        "Failed to toggle DM reaction:",
-                                                                                        error,
-                                                                                    );
-                                                                                }
-                                                                            }
+                                                                            await toggleReaction(
+                                                                                message.$id,
+                                                                                emoji,
+                                                                                isAdding,
+                                                                                true,
+                                                                            );
                                                                         }}
+                                                                        reaction={
+                                                                            reaction
+                                                                        }
                                                                     />
                                                                 ),
                                                             )}
                                                         </div>
-                                                    )}
-
-                                                {typeof message.threadMessageCount ===
-                                                    "number" &&
+                                                    ) : null}
+                                                    {typeof message.threadMessageCount ===
+                                                        "number" &&
                                                     message.threadMessageCount >
                                                         0 &&
-                                                    onOpenThread && (
+                                                    onOpenThread ? (
                                                         <button
                                                             className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                                                             onClick={() => {
@@ -803,242 +878,182 @@ export function DirectMessageView({
                                                                 ? "reply"
                                                                 : "replies"}
                                                         </button>
-                                                    )}
-
-                                                {!removed && (
-                                                    <div
-                                                        className={`mt-1 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMine ? "justify-end" : ""}`}
-                                                    >
-                                                        <ReactionPicker
-                                                            customEmojis={
-                                                                customEmojis
-                                                            }
-                                                            onUploadCustomEmoji={
-                                                                uploadEmoji
-                                                            }
-                                                            onSelectEmoji={async (
-                                                                emoji,
-                                                            ) => {
-                                                                try {
+                                                    ) : null}
+                                                    {!removed ? (
+                                                        <div
+                                                            className={`mt-1 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${isMine ? "justify-end" : ""}`}
+                                                        >
+                                                            <ReactionPicker
+                                                                customEmojis={
+                                                                    customEmojis
+                                                                }
+                                                                onSelectEmoji={async (
+                                                                    emoji,
+                                                                ) => {
                                                                     await toggleReaction(
                                                                         message.$id,
                                                                         emoji,
                                                                         true,
                                                                         true,
                                                                     );
-                                                                } catch (error) {
-                                                                    if (
-                                                                        process
-                                                                            .env
-                                                                            .NODE_ENV ===
-                                                                        "development"
-                                                                    ) {
-                                                                        console.error(
-                                                                            "Failed to add DM reaction:",
-                                                                            error,
-                                                                        );
-                                                                    }
-                                                                }
-                                                            }}
-                                                        />
-                                                        <Button
-                                                            aria-label="Reply"
-                                                            onClick={() =>
-                                                                startReply(
-                                                                    message,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            type="button"
-                                                            variant="ghost"
-                                                        >
-                                                            <Reply className="h-4 w-4" />
-                                                        </Button>
-                                                        {onOpenThread && (
-                                                            <Button
-                                                                aria-label="Start thread"
-                                                                onClick={() => {
-                                                                    void onOpenThread(
-                                                                        message,
-                                                                    );
                                                                 }}
+                                                                onUploadCustomEmoji={
+                                                                    uploadEmoji
+                                                                }
+                                                            />
+                                                            <Button
+                                                                aria-label="Reply"
+                                                                onClick={() =>
+                                                                    startReply(
+                                                                        message,
+                                                                    )
+                                                                }
                                                                 size="sm"
                                                                 type="button"
                                                                 variant="ghost"
                                                             >
-                                                                <MessageSquare className="h-4 w-4" />
+                                                                <Reply className="h-4 w-4" />
                                                             </Button>
-                                                        )}
-                                                        {onTogglePinMessage && (
-                                                            <Button
-                                                                aria-label={
-                                                                    isPinned
-                                                                        ? "Unpin message"
-                                                                        : "Pin message"
-                                                                }
-                                                                onClick={() => {
-                                                                    void onTogglePinMessage(
-                                                                        message,
-                                                                    );
-                                                                }}
-                                                                size="sm"
-                                                                type="button"
-                                                                variant="ghost"
-                                                            >
-                                                                <Pin
-                                                                    className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
-                                                                />
-                                                            </Button>
-                                                        )}
-                                                        {isMine && (
-                                                            <>
+                                                            {onOpenThread ? (
                                                                 <Button
-                                                                    onClick={() =>
-                                                                        startEdit(
+                                                                    aria-label="Start thread"
+                                                                    onClick={() => {
+                                                                        void onOpenThread(
                                                                             message,
-                                                                        )
-                                                                    }
+                                                                        );
+                                                                    }}
                                                                     size="sm"
                                                                     type="button"
                                                                     variant="ghost"
                                                                 >
-                                                                    <Pencil className="h-4 w-4" />
+                                                                    <MessageSquare className="h-4 w-4" />
                                                                 </Button>
-                                                                {isDeleting ? (
-                                                                    <>
-                                                                        <Button
-                                                                            onClick={() => {
-                                                                                void handleDelete(
-                                                                                    message.$id,
-                                                                                );
-                                                                            }}
-                                                                            size="sm"
-                                                                            type="button"
-                                                                            variant="destructive"
-                                                                        >
-                                                                            Confirm
-                                                                        </Button>
-                                                                        <Button
-                                                                            onClick={() =>
-                                                                                setDeleteConfirmId(
-                                                                                    null,
-                                                                                )
-                                                                            }
-                                                                            size="sm"
-                                                                            type="button"
-                                                                            variant="ghost"
-                                                                        >
-                                                                            Cancel
-                                                                        </Button>
-                                                                    </>
-                                                                ) : (
+                                                            ) : null}
+                                                            {onTogglePinMessage ? (
+                                                                <Button
+                                                                    aria-label={
+                                                                        isPinned
+                                                                            ? "Unpin message"
+                                                                            : "Pin message"
+                                                                    }
+                                                                    onClick={() => {
+                                                                        void onTogglePinMessage(
+                                                                            message,
+                                                                        );
+                                                                    }}
+                                                                    size="sm"
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                >
+                                                                    <Pin
+                                                                        className={`h-4 w-4 ${isPinned ? "text-amber-600 dark:text-amber-400" : ""}`}
+                                                                    />
+                                                                </Button>
+                                                            ) : null}
+                                                            {isMine ? (
+                                                                <>
                                                                     <Button
                                                                         onClick={() =>
-                                                                            confirmDelete(
-                                                                                message.$id,
+                                                                            startEdit(
+                                                                                message,
                                                                             )
                                                                         }
                                                                         size="sm"
                                                                         type="button"
                                                                         variant="ghost"
                                                                     >
-                                                                        <Trash2 className="h-4 w-4" />
+                                                                        <Pencil className="h-4 w-4" />
                                                                     </Button>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                {isDeleting && (
-                                                    <div className="mt-2 flex items-center gap-2 rounded border border-destructive bg-destructive/10 p-2">
-                                                        <span className="flex-1 text-sm">
-                                                            Delete this message?
-                                                        </span>
-                                                        <Button
-                                                            onClick={() =>
-                                                                void handleDelete(
-                                                                    message.$id,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            variant="destructive"
-                                                        >
-                                                            Delete
-                                                        </Button>
-                                                        <Button
-                                                            onClick={() =>
-                                                                setDeleteConfirmId(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            size="sm"
-                                                            variant="outline"
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                )}
+                                                                    {isDeleting ? (
+                                                                        <>
+                                                                            <Button
+                                                                                onClick={() => {
+                                                                                    void handleDelete(
+                                                                                        message.$id,
+                                                                                    );
+                                                                                }}
+                                                                                size="sm"
+                                                                                type="button"
+                                                                                variant="destructive"
+                                                                            >
+                                                                                Confirm
+                                                                            </Button>
+                                                                            <Button
+                                                                                onClick={() => {
+                                                                                    setDeleteConfirmId(
+                                                                                        null,
+                                                                                    );
+                                                                                }}
+                                                                                size="sm"
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                            >
+                                                                                Cancel
+                                                                            </Button>
+                                                                        </>
+                                                                    ) : (
+                                                                        <Button
+                                                                            onClick={() => {
+                                                                                setDeleteConfirmId(
+                                                                                    message.$id,
+                                                                                );
+                                                                            }}
+                                                                            size="sm"
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                        >
+                                                                            <Trash2 className="h-4 w-4" />
+                                                                        </Button>
+                                                                    )}
+                                                                </>
+                                                            ) : null}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                         </div>
                                     );
                                 })}
-                                <div
-                                    aria-live="polite"
-                                    className={[
-                                        "flex min-w-0 items-center gap-2 overflow-hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-all duration-300",
-                                        Object.values(typingUsers).length > 0
-                                            ? "bg-muted/50 opacity-100"
-                                            : "pointer-events-none opacity-0",
-                                    ].join(" ")}
-                                >
-                                    <span
-                                        className="inline-flex size-2 shrink-0 animate-pulse rounded-full bg-primary"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="truncate">
-                                        {Object.values(typingUsers)
-                                            .map(
-                                                (t) =>
-                                                    t.userName ||
-                                                    t.userId.slice(0, 6),
-                                            )
-                                            .join(", ")}{" "}
-                                        {Object.values(typingUsers).length > 1
-                                            ? "are"
-                                            : "is"}{" "}
-                                        typing...
-                                    </span>
-                                </div>
                             </>
                         )}
-                        <div ref={messagesEndRef} />
                     </div>
 
-                    {/* Input */}
-                    <div className="space-y-3">
-                        <MentionHelpTooltip />
-                        {replyingToMessage && (
-                            <div className="flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                                <div className="flex-1">
-                                    <div className="font-medium">
-                                        Replying to{" "}
+                    {typingUserList.length > 0 ? (
+                        <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground">
+                            <span
+                                aria-hidden="true"
+                                className="inline-flex size-2 animate-pulse rounded-full bg-primary"
+                            />
+                            <span>
+                                {typingLabel}{" "}
+                                {typingUserList.length > 1 ? "are" : "is"}{" "}
+                                typing...
+                            </span>
+                        </div>
+                    ) : null}
+
+                    <>
+                        {replyingToMessage ? (
+                            <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm">
+                                <div className="truncate">
+                                    Replying to{" "}
+                                    <span className="font-medium">
                                         {replyingToMessage.senderDisplayName ||
                                             "Unknown"}
-                                    </div>
-                                    <div className="line-clamp-1 text-xs text-muted-foreground">
-                                        {replyingToMessage.text}
-                                    </div>
+                                    </span>
                                 </div>
                                 <Button
                                     onClick={cancelReply}
                                     size="sm"
+                                    type="button"
                                     variant="ghost"
                                 >
                                     Cancel
                                 </Button>
                             </div>
-                        )}
-                        {editingMessageId && (
+                        ) : null}
+
+                        {editingMessageId ? (
                             <div className="flex items-center justify-between rounded-2xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-sm dark:border-blue-500/40 dark:bg-blue-950/30">
                                 <span className="text-blue-700 dark:text-blue-300">
                                     Editing message
@@ -1046,190 +1061,167 @@ export function DirectMessageView({
                                 <Button
                                     onClick={cancelEdit}
                                     size="sm"
+                                    type="button"
                                     variant="ghost"
                                 >
                                     Cancel
                                 </Button>
                             </div>
-                        )}
-                        {imagePreview && (
-                            <div className="relative mb-2 inline-block">
-                                <img
-                                    alt="Upload preview"
-                                    className="h-32 rounded-lg object-cover"
-                                    src={imagePreview}
+                        ) : null}
+
+                        <div className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-4">
+                            {imagePreview ? (
+                                <div className="relative inline-block">
+                                    <img
+                                        alt="Upload preview"
+                                        className="h-32 rounded-lg object-cover"
+                                        src={imagePreview}
+                                    />
+                                    <Button
+                                        className="absolute -right-2 -top-2"
+                                        onClick={removeImage}
+                                        size="icon"
+                                        type="button"
+                                        variant="destructive"
+                                    >
+                                        <X className="size-4" />
+                                    </Button>
+                                </div>
+                            ) : null}
+
+                            {fileAttachments.length > 0 ? (
+                                <div className="flex flex-col gap-2">
+                                    {fileAttachments.map(
+                                        (attachment, index) => (
+                                            <FilePreview
+                                                attachment={attachment}
+                                                key={`${attachment.fileId}-${index}`}
+                                                onRemove={() => {
+                                                    removeFileAttachment(index);
+                                                }}
+                                            />
+                                        ),
+                                    )}
+                                </div>
+                            ) : null}
+
+                            <form
+                                className="flex flex-col gap-3 sm:flex-row sm:items-center"
+                                onSubmit={(event) => {
+                                    void handleSend(event);
+                                }}
+                            >
+                                <input
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleImageSelect}
+                                    ref={fileInputRef}
+                                    type="file"
                                 />
-                                <Button
-                                    className="absolute -right-2 -top-2"
-                                    onClick={removeImage}
-                                    size="icon"
-                                    type="button"
-                                    variant="destructive"
-                                >
-                                    <X className="size-4" />
-                                </Button>
-                            </div>
-                        )}
-                        {fileAttachments.length > 0 && (
-                            <div className="flex flex-col gap-2 mb-2">
-                                {fileAttachments.map((attachment, index) => (
-                                    <FilePreview
-                                        key={`${attachment.fileId}-${index}`}
-                                        attachment={attachment}
-                                        onRemove={() =>
-                                            removeFileAttachment(index)
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        className="shrink-0"
+                                        disabled={
+                                            composerDisabled ||
+                                            Boolean(editingMessageId)
+                                        }
+                                        onClick={() => {
+                                            fileInputRef.current?.click();
+                                        }}
+                                        size="icon"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        <ImageIcon className="size-4" />
+                                    </Button>
+                                    <FileUploadButton
+                                        className="shrink-0"
+                                        disabled={
+                                            composerDisabled ||
+                                            Boolean(editingMessageId)
+                                        }
+                                        onFileSelect={
+                                            handleFileAttachmentSelect
                                         }
                                     />
-                                ))}
-                            </div>
-                        )}
-                        <form
-                            className="flex flex-col gap-3 sm:flex-row sm:items-center"
-                            onSubmit={handleSend}
-                        >
-                            <input
-                                accept="image/*"
-                                className="hidden"
-                                onChange={handleImageSelect}
-                                ref={fileInputRef}
-                                type="file"
-                            />
-                            <div className="flex items-center gap-2">
+                                    <EmojiPicker
+                                        customEmojis={customEmojis}
+                                        onEmojiSelect={handleEmojiSelect}
+                                        onUploadCustomEmoji={uploadEmoji}
+                                    />
+                                </div>
+                                <ChatInput
+                                    aria-label={
+                                        editingMessageId
+                                            ? "Edit message"
+                                            : "Message"
+                                    }
+                                    className="flex-1 rounded-2xl border-border/60"
+                                    disabled={composerDisabled}
+                                    onChange={(newValue) => {
+                                        setText(newValue);
+                                        onTypingChange?.(newValue);
+                                    }}
+                                    onMentionsChange={undefined}
+                                    placeholder={
+                                        readOnly
+                                            ? readOnlyMessage
+                                            : "Type a message..."
+                                    }
+                                    value={text}
+                                />
                                 <Button
+                                    className="shrink-0 rounded-2xl"
                                     disabled={
                                         composerDisabled ||
-                                        Boolean(editingMessageId)
+                                        (!text.trim() &&
+                                            !selectedImage &&
+                                            fileAttachments.length === 0)
                                     }
-                                    onClick={() =>
-                                        fileInputRef.current?.click()
-                                    }
-                                    size="icon"
-                                    type="button"
-                                    variant="outline"
-                                    className="shrink-0"
+                                    type="submit"
                                 >
-                                    <ImageIcon className="size-4" />
+                                    {uploadingImage ? (
+                                        <>
+                                            <Loader2 className="mr-2 size-4 animate-spin" />
+                                            Uploading...
+                                        </>
+                                    ) : (
+                                        "Send"
+                                    )}
                                 </Button>
-                                <FileUploadButton
-                                    onFileSelect={handleFileAttachmentSelect}
-                                    disabled={
-                                        composerDisabled ||
-                                        Boolean(editingMessageId)
-                                    }
-                                    className="shrink-0"
-                                />
-                                <EmojiPicker
-                                    onEmojiSelect={handleEmojiSelect}
-                                    customEmojis={customEmojis}
-                                    onUploadCustomEmoji={uploadEmoji}
-                                />
-                            </div>
-                            <ChatInput
-                                aria-label={
-                                    editingMessageId
-                                        ? "Edit message"
-                                        : "Message"
-                                }
-                                disabled={composerDisabled}
-                                onChange={(newValue) => {
-                                    setText(newValue);
-                                    if (onTypingChange) {
-                                        onTypingChange(newValue);
-                                    }
-                                }}
-                                placeholder={
-                                    readOnly
-                                        ? readOnlyMessage
-                                        : "Type a message..."
-                                }
-                                value={text}
-                                className="flex-1 rounded-2xl border-border/60"
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        void handleSend(
-                                            e as unknown as React.FormEvent,
-                                        );
-                                    }
-                                    if (e.key === "Escape") {
-                                        cancelEdit();
-                                    }
-                                }}
-                            />
-                            <Button
-                                disabled={
-                                    composerDisabled ||
-                                    (!text.trim() &&
-                                        !selectedImage &&
-                                        fileAttachments.length === 0)
-                                }
-                                type="submit"
-                                className="rounded-2xl shrink-0"
-                            >
-                                {sending || uploadingImage ? (
-                                    <>
-                                        <Loader2 className="mr-2 size-4 animate-spin" />
-                                        {uploadingImage
-                                            ? "Uploading..."
-                                            : "Sending..."}
-                                    </>
-                                ) : editingMessageId ? (
-                                    "Save"
-                                ) : (
-                                    "Send"
-                                )}
-                            </Button>
-                        </form>
-                    </div>
+                            </form>
+                        </div>
+                    </>
                 </div>
 
-                <aside className="space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
+                <aside className="min-w-0 space-y-3 rounded-2xl border border-border/60 bg-background/80 p-3">
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
                         <div className="mb-2 flex items-center gap-2 font-medium text-sm">
                             <Pin className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                             Pinned Messages
                         </div>
-                        {pinnedMessages.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                                No pinned messages yet.
-                            </p>
-                        ) : (
-                            <div className="space-y-1">
-                                {pinnedMessages.slice(0, 10).map((message) => (
-                                    <button
-                                        className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background hover:text-foreground"
-                                        key={message.$id}
-                                        onClick={() => {
-                                            const target =
-                                                document.querySelector<HTMLElement>(
-                                                    `[data-message-id="${message.$id}"]`,
-                                                );
-                                            if (target) {
-                                                target.scrollIntoView({
-                                                    behavior: "smooth",
-                                                    block: "center",
-                                                });
-                                                target.classList.add(
-                                                    "ring-2",
-                                                    "ring-amber-400",
-                                                );
-                                                window.setTimeout(() => {
-                                                    if (target.isConnected) {
-                                                        target.classList.remove(
-                                                            "ring-2",
-                                                            "ring-amber-400",
-                                                        );
-                                                    }
-                                                }, 2000);
-                                            }
-                                        }}
-                                        type="button"
-                                    >
-                                        {message.text || "(attachment)"}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <ChatPinnedMessagesContent
+                            canManageMessages={Boolean(onTogglePinMessage)}
+                            messages={pinnedSurfaceMessages}
+                            onJumpToMessage={jumpToMessage}
+                            onUnpin={
+                                onTogglePinMessage
+                                    ? async (surfaceMessage) => {
+                                          const rawMessage =
+                                              pinnedMessages.find(
+                                                  (message) =>
+                                                      message.$id ===
+                                                      surfaceMessage.id,
+                                              );
+                                          if (rawMessage) {
+                                              await onTogglePinMessage(
+                                                  rawMessage,
+                                              );
+                                          }
+                                      }
+                                    : undefined
+                            }
+                        />
                     </div>
 
                     <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
@@ -1251,66 +1243,47 @@ export function DirectMessageView({
                                 Open a message thread to view replies here.
                             </p>
                         ) : (
-                            <div className="space-y-3">
-                                <p className="line-clamp-2 text-xs text-muted-foreground">
-                                    {activeThreadParent.text || "(attachment)"}
-                                </p>
-                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/60 p-2">
-                                    {threadLoading ? (
-                                        <p className="text-xs text-muted-foreground">
-                                            Loading thread...
-                                        </p>
-                                    ) : threadMessages.length === 0 ? (
-                                        <p className="text-xs text-muted-foreground">
-                                            No replies yet.
-                                        </p>
-                                    ) : (
-                                        threadMessages.map((threadMessage) => (
-                                            <div
-                                                className="rounded-md bg-background/80 px-2 py-1.5"
-                                                key={threadMessage.$id}
-                                            >
-                                                <div className="mb-1 text-[11px] text-muted-foreground">
-                                                    {threadMessage.senderDisplayName ||
-                                                        threadMessage.senderId}
-                                                </div>
-                                                <div className="text-xs">
-                                                    {threadMessage.text ||
-                                                        "(attachment)"}
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                                {onSendThreadReply && (
-                                    <div className="flex gap-2">
-                                        <ChatInput
-                                            disabled={readOnly}
-                                            onChange={setThreadReplyText}
-                                            placeholder={
-                                                readOnly
-                                                    ? readOnlyMessage
-                                                    : "Reply in thread"
-                                            }
-                                            value={threadReplyText}
-                                        />
-                                        <Button
-                                            disabled={
-                                                readOnly ||
-                                                !threadReplyText.trim()
-                                            }
-                                            onClick={() => {
-                                                const value = threadReplyText;
-                                                setThreadReplyText("");
-                                                void onSendThreadReply(value);
-                                            }}
-                                            type="button"
-                                        >
-                                            Reply
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
+                            <ChatThreadContent
+                                currentUserId={currentUserId}
+                                customEmojis={customEmojis}
+                                loading={threadLoading}
+                                onReplyTextChange={
+                                    onSendThreadReply
+                                        ? setThreadReplyText
+                                        : undefined
+                                }
+                                onSendReply={
+                                    onSendThreadReply
+                                        ? async () => {
+                                              const value = threadReplyText;
+                                              setThreadReplyText("");
+                                              await onSendThreadReply(value);
+                                          }
+                                        : undefined
+                                }
+                                onToggleReaction={async (
+                                    messageId,
+                                    emoji,
+                                    isAdding,
+                                ) => {
+                                    await toggleReaction(
+                                        messageId,
+                                        emoji,
+                                        isAdding,
+                                        true,
+                                    );
+                                }}
+                                parentMessage={threadParentSurfaceMessage}
+                                replies={threadSurfaceMessages}
+                                replyDisabled={readOnly}
+                                replyPlaceholder={
+                                    readOnly
+                                        ? readOnlyMessage
+                                        : "Reply in thread"
+                                }
+                                sendingReply={threadReplySending}
+                                replyText={threadReplyText}
+                            />
                         )}
                     </div>
                 </aside>

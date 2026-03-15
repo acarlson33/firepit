@@ -1,6 +1,14 @@
 import { getBrowserAccount } from "./appwrite-core";
 import type { User } from "./types";
 
+/**
+ * Handles register.
+ *
+ * @param {string} email - The email value.
+ * @param {string} password - The password value.
+ * @param {string} name - The name value.
+ * @returns {Promise<User>} The return value.
+ */
 export async function register(
   email: string,
   password: string,
@@ -17,6 +25,13 @@ export async function register(
   return res as unknown as User;
 }
 
+/**
+ * Handles login.
+ *
+ * @param {string} email - The email value.
+ * @param {string} password - The password value.
+ * @returns {Promise<Session>} The return value.
+ */
 export function login(email: string, password: string) {
   const acc = getBrowserAccount();
   // Primary session creation (SDK sets cookie). If Appwrite cannot set cookies due to platform misconfig,
@@ -24,11 +39,19 @@ export function login(email: string, password: string) {
   return acc.createEmailPasswordSession({ email, password });
 }
 
+/**
+ * Handles logout.
+ * @returns {Promise<{}>} The return value.
+ */
 export function logout() {
   const acc = getBrowserAccount();
   return acc.deleteSession({ sessionId: "current" });
 }
 
+/**
+ * Returns current user.
+ * @returns {Promise<User | null>} The return value.
+ */
 export async function getCurrentUser(): Promise<User | null> {
   try {
     const acc = getBrowserAccount();
@@ -39,6 +62,10 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 }
 
+/**
+ * Returns current session.
+ * @returns {Promise<Session | null>} The return value.
+ */
 export async function getCurrentSession() {
   try {
     const acc = getBrowserAccount();

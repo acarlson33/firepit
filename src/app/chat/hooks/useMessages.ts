@@ -1,8 +1,9 @@
 "use client";
 import type { RealtimeResponseEvent } from "appwrite";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { adaptChannelMessages } from "@/lib/chat-surface";
 import { canSend, setTyping } from "@/lib/appwrite-messages";
 import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -21,7 +22,6 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
-import type { PinnedMessage } from "@/lib/types";
 import {
     createChannelThreadReply,
     listChannelPins,
@@ -29,6 +29,8 @@ import {
     pinChannelMessage,
     unpinChannelMessage,
 } from "@/lib/thread-pin-client";
+import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
 
@@ -51,6 +53,7 @@ export function useMessages({
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
+    const [sending, setSending] = useState<boolean>(false);
     const [oldestCursor, setOldestCursor] = useState<string | null>(null);
     const [hasMore, setHasMore] = useState<boolean>(false);
     const [text, setText] = useState("");
@@ -64,13 +67,6 @@ export function useMessages({
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
     >({});
-    const [channelPins, setChannelPins] = useState<
-        Array<{ pin: PinnedMessage; message: Message }>
-    >([]);
-    const [activeThreadParent, setActiveThreadParent] =
-        useState<Message | null>(null);
-    const [threadMessages, setThreadMessages] = useState<Message[]>([]);
-    const [threadLoading, setThreadLoading] = useState(false);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastTypingSentState = useRef<boolean>(false);
@@ -117,6 +113,26 @@ export function useMessages({
     const typingStartDebounceMs = 400; // debounce for consecutive "started" events
     const userIdSlice = 6;
     const maxTypingDisplay = 3;
+    const listChannelThreadReads = useCallback(
+        (currentContextId: string) =>
+            listThreadReads("channel", currentContextId),
+        [],
+    );
+    const persistChannelThreadReads = useCallback(
+        ({
+            contextId: currentContextId,
+            reads,
+        }: {
+            contextId: string;
+            reads: Record<string, string>;
+        }) =>
+            persistThreadReads({
+                contextId: currentContextId,
+                contextType: "channel",
+                reads,
+            }),
+        [],
+    );
 
     // load messages when channel changes
     useEffect(() => {
@@ -128,11 +144,10 @@ export function useMessages({
             return;
         }
 
-        // Clear messages and show loading immediately when channel changes
-        setMessages([]);
+        setLoading(true);
         setOldestCursor(null);
         setHasMore(false);
-        setLoading(true);
+        let cancelled = false;
 
         (async () => {
             try {
@@ -141,6 +156,9 @@ export function useMessages({
                     undefined,
                     channelId,
                 );
+                if (cancelled) {
+                    return;
+                }
                 const initialTopLevel = initial.filter(isTopLevelMessage);
                 setMessages(initialTopLevel);
                 if (initial.length) {
@@ -149,20 +167,30 @@ export function useMessages({
                     // If we got a full page, there might be more
                     setHasMore(initial.length === pageSize);
                 } else {
+                    setOldestCursor(null);
                     setHasMore(false);
                 }
             } catch (err) {
+                if (cancelled) {
+                    return;
+                }
                 toast.error(
                     err instanceof Error
                         ? err.message
                         : "Failed to load messages",
                 );
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         })().catch(() => {
             /* error already surfaced via toast */
         });
+
+        return () => {
+            cancelled = true;
+        };
     }, [channelId, pageSize]);
 
     // realtime subscription for messages
@@ -421,22 +449,49 @@ export function useMessages({
         };
     }, [channelId, userId]);
 
-    useEffect(() => {
-        if (!channelId) {
-            setChannelPins([]);
-            setActiveThreadParent(null);
-            setThreadMessages([]);
-            return;
-        }
-
-        listChannelPins(channelId)
-            .then((items) => {
-                setChannelPins(items);
-            })
-            .catch(() => {
-                setChannelPins([]);
-            });
-    }, [channelId]);
+    const {
+        activeThreadParent,
+        closeThread,
+        isThreadUnread,
+        openThread,
+        pins: channelPins,
+        refreshPins,
+        sendThreadReply,
+        threadLoading,
+        threadMessages,
+        threadReadByMessageId,
+        threadReplySending,
+        togglePin,
+    } = useThreadPinState<Message>({
+        buildOptimisticThreadReply: ({
+            createdAt,
+            currentUserId,
+            parentMessage,
+            tempId,
+            text,
+        }) => ({
+            $createdAt: createdAt,
+            $id: tempId,
+            channelId: parentMessage.channelId,
+            serverId: parentMessage.serverId,
+            text,
+            threadId: parentMessage.threadId ?? parentMessage.$id,
+            userId: currentUserId ?? "unknown",
+            userName: userName ?? undefined,
+        }),
+        contextId: channelId,
+        currentUserId: userId,
+        createThreadReply: createChannelThreadReply,
+        listPins: listChannelPins,
+        listThreadReads: listChannelThreadReads,
+        listThreadMessages: listChannelThreadMessages,
+        messages,
+        pinContextType: "channel",
+        pinMessage: pinChannelMessage,
+        persistThreadReads: persistChannelThreadReads,
+        setMessages,
+        unpinMessage: unpinChannelMessage,
+    });
 
     // Auto-scroll only when user is already near the bottom to avoid snapping when loading older messages
     useEffect(() => {
@@ -688,6 +743,7 @@ export function useMessages({
             return;
         }
         try {
+            setSending(true);
             setText("");
             const replyToId = replyingToMessage?.$id;
             setReplyingToMessage(null);
@@ -760,6 +816,8 @@ export function useMessages({
             }
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to send");
+        } finally {
+            setSending(false);
         }
     }
 
@@ -783,116 +841,38 @@ export function useMessages({
         return false;
     }
 
-    async function refreshPins() {
-        if (!channelId) {
-            setChannelPins([]);
-            return;
-        }
+    const surfaceMessages = useMemo(() => {
+        const messagesById = new Map(
+            messages.map((message) => [message.$id, message]),
+        );
 
-        const items = await listChannelPins(channelId);
-        setChannelPins(items);
-    }
+        return adaptChannelMessages(
+            messages,
+            channelId
+                ? {
+                      kind: "channel",
+                      channelId,
+                      serverId: serverId ?? undefined,
+                  }
+                : undefined,
+        ).map((message) => {
+            const sourceMessage = messagesById.get(message.id);
 
-    async function togglePin(message: Message) {
-        try {
-            const isPinned = channelPins.some(
-                (item) => item.message.$id === message.$id,
-            );
-            if (isPinned) {
-                await unpinChannelMessage(message.$id);
-            } else {
-                await pinChannelMessage(message.$id);
-            }
-            await refreshPins();
-        } catch (err) {
-            toast.error(
-                err instanceof Error ? err.message : "Pin action failed",
-            );
-        }
-    }
-
-    async function openThread(parent: Message) {
-        setActiveThreadParent(parent);
-        setThreadLoading(true);
-        try {
-            const items = await listChannelThreadMessages(parent.$id);
-            setThreadMessages(items);
-        } catch (err) {
-            toast.error(
-                err instanceof Error ? err.message : "Failed to load thread",
-            );
-            setThreadMessages([]);
-        } finally {
-            setThreadLoading(false);
-        }
-    }
-
-    function closeThread() {
-        setActiveThreadParent(null);
-        setThreadMessages([]);
-    }
-
-    async function sendThreadReply(textValue: string) {
-        if (!activeThreadParent) {
-            return;
-        }
-
-        const value = textValue.trim();
-        if (!value) {
-            return;
-        }
-        if (value.length > MAX_MESSAGE_LENGTH) {
-            toast.error(MESSAGE_TOO_LONG_ERROR);
-            return;
-        }
-
-        try {
-            const reply = await createChannelThreadReply(
-                activeThreadParent.$id,
-                {
-                    text: value,
-                },
-            );
-
-            setThreadMessages((prev) =>
-                [...prev, reply].sort((a, b) =>
-                    a.$createdAt.localeCompare(b.$createdAt),
-                ),
-            );
-
-            setMessages((prev) =>
-                prev.map((msg) => {
-                    if (msg.$id !== activeThreadParent.$id) {
-                        return msg;
-                    }
-                    const currentCount = msg.threadMessageCount || 0;
-                    const participants = Array.isArray(msg.threadParticipants)
-                        ? msg.threadParticipants
-                        : [];
-                    const nextParticipants =
-                        userId && !participants.includes(userId)
-                            ? [...participants, userId]
-                            : participants;
-                    return {
-                        ...msg,
-                        threadMessageCount: currentCount + 1,
-                        threadParticipants: nextParticipants,
-                        lastThreadReplyAt: new Date().toISOString(),
-                    };
-                }),
-            );
-        } catch (err) {
-            toast.error(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to send thread reply",
-            );
-        }
-    }
+            return {
+                ...message,
+                threadHasUnread: sourceMessage
+                    ? isThreadUnread(sourceMessage)
+                    : false,
+                threadLastReadAt: threadReadByMessageId[message.id],
+            };
+        });
+    }, [channelId, isThreadUnread, messages, serverId, threadReadByMessageId]);
 
     return {
         messages,
+        surfaceMessages,
         loading,
+        sending,
         oldestCursor,
         hasMore,
         text,
@@ -919,6 +899,7 @@ export function useMessages({
         activeThreadParent,
         threadMessages,
         threadLoading,
+        threadReplySending,
         openThread,
         closeThread,
         sendThreadReply,

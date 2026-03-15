@@ -90,6 +90,7 @@ export function useDeveloperMode(userId: string | null) {
             showDocsInNavigation: true,
             showFriendsInNavigation: true,
             showSettingsInNavigation: true,
+            showAddFriendInHeader: true,
             navigationItemOrder: ["docs", "friends", "settings"],
         };
 

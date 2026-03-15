@@ -1,6 +1,6 @@
 # Firepit Roadmap
 
-> Last Updated: March 9, 2026
+> Last Updated: March 13, 2026
 
 This roadmap is now organized around Discord parity areas instead of a historical milestone list. The goal is to make it obvious which Discord-like surfaces already exist in Firepit, which parity gaps are still open, and which areas are intentionally deferred.
 
@@ -23,14 +23,14 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ## Discord Parity Snapshot
 
-| Parity Area                            | Status         | Summary                                                                                                                                   |
-| -------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Server and community layer             | Strong parity  | Servers, channels, categories, invites, discovery, roles, and moderation are live; deeper community-grade organization is still open.     |
-| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.                       |
-| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.             |
-| Notifications and attention management | Partial parity | Scoped notification levels, mute durations, quiet hours, and per-context controls are live; inbox, unread, and digest parity remain open. |
-| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                         |
-| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                        |
+| Parity Area                            | Status         | Summary                                                                                                                                                       |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server and community layer             | Strong parity  | Servers, channels, categories, invites, discovery, roles, and moderation are live; deeper community-grade organization is still open.                         |
+| Messaging and conversation layer       | Strong parity  | Channels, 1:1 DMs, group DMs, replies, mentions, reactions, threads, pins, search, emoji, and attachments are live.                                           |
+| Identity, presence, and social graph   | Partial parity | Profiles, statuses, friends, blocking, and onboarding foundations are live; richer identity and social polish are still open.                                 |
+| Notifications and attention management | Partial parity | Scoped notification levels, unified inbox and unread controls, mute durations, quiet hours, and per-context controls are live; digest follow-on remains open. |
+| Moderation and trust/safety            | Strong parity  | Role-aware moderation, audit logs, bans, kicks, and mutes are already part of the server surface.                                                             |
+| Voice, video, and ecosystem features   | Gap            | No meaningful parity yet for calls, screen share, bots, webhooks, or richer platform integrations.                                                            |
 
 ## 1. Server And Community Parity
 
@@ -77,19 +77,22 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Rich file attachments beyond images
 - Message search across channels and DMs
 - Typing indicators across channels and conversations
+- Consistent deep-link navigation from search results, pinned messages, and thread entry points across channel and DM chat
+- Unified inbox and mentions surfaces across channel and DM contexts
+- Jump-to-unread and catch-up actions shared across channel and DM chat
+- Inbox filters for all, mentions, direct messages, and server channels
 
 ### Planned
 
-- Close the remaining UX gaps between server chat and DM chat where similar message actions should behave the same way
-- Continue improving navigation into search results, pinned items, and thread state so parity holds across all message surfaces
 - Add clearer parity tracking for message-history affordances that users expect in Discord-like products
+- Digest-style unread summaries and follow-on attention workflows on top of the shipped inbox model
 
 ### Investigating
 
 - Polls
 - Voice messages
 - Message bookmarks or saved items
-- Better unread and catch-up flows for high-volume channels
+- Higher-order catch-up and triage workflows for high-volume channels after digest semantics settle
 
 ### Deferred
 
@@ -136,17 +139,17 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 - Direct-message privacy controls
 - Shared mute-management flows across server, channel, and DM contexts
 - Settings UI for scoped override review, label enrichment, search, and bulk cleanup actions
+- Unified unread and badge semantics across server list, channel list, conversation list, and inbox
+- Context-scoped and global inbox mark-read workflows, including mark-all-read catch-up behavior
+- Mentions-only precedence that suppresses thread unread items while preserving mention visibility
 
 ### Planned
 
-- Better unread and badge semantics that stay consistent across servers, channels, and DMs
-- Notification-center or inbox flows for missed activity review
 - Additional polish for high-volume mention workflows and future mobile delivery surfaces
 
 ### Investigating
 
-- Mention inbox or notification center
-- Unread-count consistency across servers, channels, and DMs
+- Digest-style inbox extensions beyond the current thread-and-mention unread model
 - Digest-style summaries for missed activity
 
 ### Deferred
@@ -206,11 +209,56 @@ For technical implementation planning that follows this roadmap, see [docs/ROADM
 
 ## Near-Term Priorities
 
+### Version 1.6 Scope (Canary To Stable)
+
+Status: Pre-release. Version 1.6 is finalizing unread and attention-management parity work that started in canary, with release targeted for 2026-04-02.
+
+#### Must Ship
+
+- Per-message unread parity across channels, DMs, and threads, including consistent read cursor behavior after message send, read, and navigation events
+- Unified inbox v1 covering unread and mentions across server and DM contexts with stable sorting and clear read-state transitions
+- Jump-to-unread and catch-up actions in every major message surface (channel, DM, thread, inbox)
+- Unified unread and badge semantics across server list, channel list, conversation list, and inbox
+- Mention-workflow controls for high-volume contexts, including per-context mention muting and bulk mark-read actions
+
+All Must Ship items are complete and represented in the current API, docs, and product surfaces.
+
+#### Should Ship
+
+- Better empty, loading, and error states for unread and inbox flows
+- Keyboard-first navigation and focus management parity for unread and inbox actions
+- Improved diagnostics and analytics for unread mismatches and badge drift
+
+#### Could Ship (If Capacity Allows)
+
+- Digest-style summary experiments for missed activity windows
+- Additional onboarding copy that explains unread semantics to new users
+- Moderator-facing visibility into unread pressure in high-volume public servers
+
+#### Acceptance Criteria
+
+- Cross-surface consistency: unread state transitions match between channel, DM, thread, and inbox views for equivalent events
+- Badge correctness: global and scoped badges match server-side unread totals with no known deterministic drift scenarios
+- Jump reliability: jump-to-unread lands on the expected first unread message in parity-critical surfaces
+- Catch-up reliability: mark-read and mark-all actions are idempotent and converge quickly under concurrent realtime events
+- Mention accuracy: mention-only users are not over-notified by non-mention activity in muted or mentions-only contexts
+- Accessibility: unread and inbox controls are keyboard reachable, screen-reader labeled, and do not regress existing a11y baselines
+- Performance: no material regression in message-list render or inbox query latency relative to current canary baseline
+- Test coverage: parity-critical unread, badge, and inbox flows have automated coverage for channel, DM, and thread paths
+
+#### Release Gates
+
+- Complete canary hardening with parity test pass and no unresolved P0/P1 unread correctness defects
+- Validate telemetry dashboards for unread mismatch rate, jump-to-unread success, and badge consistency before promotion
+- Confirm docs and settings copy reflect shipped unread semantics, especially for mentions-only and mute combinations
+- Roll out with feature flags and staged exposure, with explicit rollback criteria for badge drift or read-state corruption
+
 ### Q2 2026
 
 - Continue closing parity gaps where a feature exists in one chat surface but not another
 - Continue polishing the newly shipped category-management UX and permissions model
-- Decide whether unread and inbox-style notification follow-up work should stay in Q2 or move behind social-graph polish
+- Build digest-style follow-on work on top of the shipped unread-history foundation
+- Validate post-ship unread telemetry and adjust rollout defaults for related feature flags
 
 ### Q3 2026
 

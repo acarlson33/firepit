@@ -4,15 +4,15 @@ This guide walks you through deploying **Firepit** from scratch on a new instanc
 
 ## Table of Contents
 
--   [Prerequisites](#prerequisites)
--   [Quick Start](#quick-start)
--   [Detailed Setup](#detailed-setup)
-    -   [1. Appwrite Setup](#1-appwrite-setup)
-    -   [2. Environment Configuration](#2-environment-configuration)
-    -   [3. Database Initialization](#3-database-initialization)
-    -   [4. Initial Deployment](#4-initial-deployment)
--   [Production Deployment](#production-deployment)
--   [Troubleshooting](#troubleshooting)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Detailed Setup](#detailed-setup)
+    - [1. Appwrite Setup](#1-appwrite-setup)
+    - [2. Environment Configuration](#2-environment-configuration)
+    - [3. Database Initialization](#3-database-initialization)
+    - [4. Initial Deployment](#4-initial-deployment)
+- [Production Deployment](#production-deployment)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -20,11 +20,11 @@ This guide walks you through deploying **Firepit** from scratch on a new instanc
 
 Before you begin, ensure you have:
 
--   **Node.js** 18+ or **Bun** installed
--   **Appwrite** instance (cloud or self-hosted)
-    -   Cloud: Sign up at [https://appwrite.io](https://appwrite.io)
-    -   Self-hosted: Follow [Appwrite Installation](https://appwrite.io/docs/installation)
--   **Git** for cloning the repository
+- **Node.js** 18+ or **Bun** installed
+- **Appwrite** instance (cloud or self-hosted)
+    - Cloud: Sign up at [https://appwrite.io](https://appwrite.io)
+    - Self-hosted: Follow [Appwrite Installation](https://appwrite.io/docs/installation)
+- **Git** for cloning the repository
 
 ---
 
@@ -121,6 +121,8 @@ APPWRITE_DATABASE_ID=main
 APPWRITE_SERVERS_COLLECTION_ID=servers
 APPWRITE_CHANNELS_COLLECTION_ID=channels
 APPWRITE_MESSAGES_COLLECTION_ID=messages
+APPWRITE_NOTIFICATION_SETTINGS_COLLECTION_ID=notification_settings
+APPWRITE_THREAD_READS_COLLECTION_ID=thread_reads
 # ... (more collections with defaults)
 
 # === OPTIONAL: Admin & Moderator Setup ===
@@ -162,13 +164,15 @@ bun run setup
 
 **What this does:**
 
--   ✅ Creates `main` database (if it doesn't exist)
--   ✅ Creates all collections (servers, channels, messages, profiles, etc.)
--   ✅ Sets up attributes with proper types and sizes
--   ✅ Creates indexes for query performance
--   ✅ Configures storage buckets (avatars)
--   ✅ Creates admin and moderator teams
--   ✅ Validates API key permissions
+- ✅ Creates `main` database (if it doesn't exist)
+- ✅ Creates all collections (servers, channels, messages, profiles, etc.)
+- ✅ Creates dedicated unread persistence storage in `thread_reads` without consuming another `notification_settings` attribute slot
+- ✅ Ensures `setupThreadReads` configures `thread_reads.reads` with the large text limit (~65KB, roughly ~1000 thread entries per context)
+- ✅ Sets up attributes with proper types and sizes
+- ✅ Creates indexes for query performance
+- ✅ Configures storage buckets (avatars)
+- ✅ Creates admin and moderator teams
+- ✅ Validates API key permissions
 
 **Output:** You should see:
 
@@ -183,9 +187,9 @@ bun run setup
 
 **Common Issues:**
 
--   **"Missing scopes"**: Your API key needs more permissions (see Step 1B)
--   **"Project not found"**: Double-check your `APPWRITE_PROJECT_ID`
--   **"Unauthorized"**: Verify your `APPWRITE_API_KEY` is correct
+- **"Missing scopes"**: Your API key needs more permissions (see Step 1B)
+- **"Project not found"**: Double-check your `APPWRITE_PROJECT_ID`
+- **"Unauthorized"**: Verify your `APPWRITE_API_KEY` is correct
 
 ---
 
@@ -251,9 +255,9 @@ bun start
 
 **Environment Variables:**
 
--   Set all variables from `.env.local` in your hosting environment
--   Use secrets management for `APPWRITE_API_KEY`
--   Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
+- Set all variables from `.env.local` in your hosting environment
+- Use secrets management for `APPWRITE_API_KEY`
+- Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
 
 **Reverse Proxy Setup (Nginx):**
 
@@ -342,6 +346,20 @@ The application will automatically load these variables at runtime without requi
 2. It will skip existing resources and create missing ones
 3. Safe to run multiple times
 
+### Setup Script Fails with Notification Settings Attribute Limit
+
+**Cause:** An older checkout tried to add unread persistence directly to the `notification_settings` schema, which can exceed Appwrite's attribute limit on some projects.
+
+**Fix:**
+
+1. Pull the latest version of this branch
+2. Ensure `.env.local` includes `APPWRITE_THREAD_READS_COLLECTION_ID=thread_reads`
+3. Re-run `bun run setup`
+4. Confirm the setup creates or reuses the dedicated `thread_reads` collection instead of trying to add `notification_settings.threadReadStates`
+5. Monitor `thread_reads.reads` utilization per context and alert when payload size approaches the configured limit (for example, at 80%+ of the attribute size)
+
+No manual data migration is required for existing notification-settings documents.
+
 ### "Cannot find module" errors
 
 **Cause:** Dependencies not installed
@@ -373,18 +391,18 @@ lsof -ti:3000 | xargs kill -9
 
 ## Next Steps
 
--   📖 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow
--   🧪 Run tests with `bun run test`
--   🛠️ Customize UI in `src/components/`
--   🔐 Review security settings in Appwrite Console
+- 📖 Read [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow
+- 🧪 Run tests with `bun run test`
+- 🛠️ Customize UI in `src/components/`
+- 🔐 Review security settings in Appwrite Console
 
 ---
 
 ## Support
 
--   **Issues:** [GitHub Issues](https://github.com/acarlson33/firepit/issues)
--   **Discussions:** [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
--   **Appwrite:** [Appwrite Discord](https://appwrite.io/discord)
+- **Issues:** [GitHub Issues](https://github.com/acarlson33/firepit/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
+- **Appwrite:** [Appwrite Discord](https://appwrite.io/discord)
 
 ---
 

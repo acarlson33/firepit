@@ -179,6 +179,34 @@ export function DeveloperModeSettings() {
                     );
                 })}
             </div>
+
+            <div className="rounded-2xl border border-border/60 bg-card/60 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-2">
+                        <Label
+                            className="text-base font-semibold text-foreground"
+                            htmlFor="header-add-friend"
+                        >
+                            Header Add Friend button
+                        </Label>
+                        <p className="max-w-2xl text-sm text-muted-foreground">
+                            Show or hide the Add Friend shortcut next to your
+                            username in the header.
+                        </p>
+                    </div>
+
+                    <Switch
+                        checked={navigationPreferences.showAddFriendInHeader}
+                        disabled={!isLoaded || !userId || isSaving}
+                        id="header-add-friend"
+                        onCheckedChange={(checked) =>
+                            updateNavigationPreferences({
+                                showAddFriendInHeader: checked,
+                            })
+                        }
+                    />
+                </div>
+            </div>
         </div>
     );
 }

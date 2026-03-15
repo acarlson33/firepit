@@ -1,49 +1,64 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  clearFeatureFlagsCache,
-  FEATURE_FLAGS,
-} from "../lib/feature-flags";
+import { clearFeatureFlagsCache, FEATURE_FLAGS } from "../lib/feature-flags";
 
 describe("Feature Flags", () => {
-  describe("FEATURE_FLAGS constants", () => {
-    it("should have ALLOW_USER_SERVERS flag with correct key", () => {
-      expect(FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("allow_user_servers");
+    describe("FEATURE_FLAGS constants", () => {
+        it("should have ALLOW_USER_SERVERS flag with correct key", () => {
+            expect(FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("allow_user_servers");
+        });
+
+        it("should have ENABLE_AUDIT_LOGGING flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe(
+                "enable_audit_logging",
+            );
+        });
+
+        it("should have ENABLE_PER_MESSAGE_UNREAD flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD).toBe(
+                "enable_per_message_unread",
+            );
+        });
+
+        it("should have ENABLE_INBOX_DIGEST flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_INBOX_DIGEST).toBe(
+                "enable_inbox_digest",
+            );
+        });
+
+        it("should have all required feature flags defined", () => {
+            // Ensure the FEATURE_FLAGS object has the expected structure
+            expect(FEATURE_FLAGS).toBeDefined();
+            expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
+            expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
+            expect(typeof FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD).toBe(
+                "string",
+            );
+            expect(typeof FEATURE_FLAGS.ENABLE_INBOX_DIGEST).toBe("string");
+        });
     });
 
-    it("should have ENABLE_AUDIT_LOGGING flag with correct key", () => {
-      expect(FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("enable_audit_logging");
+    describe("clearFeatureFlagsCache", () => {
+        it("should be callable without errors", () => {
+            expect(() => clearFeatureFlagsCache()).not.toThrow();
+        });
     });
 
-    it("should have all required feature flags defined", () => {
-      // Ensure the FEATURE_FLAGS object has the expected structure
-      expect(FEATURE_FLAGS).toBeDefined();
-      expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
-      expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
-    });
-  });
+    // Note: Integration tests for getFeatureFlag, setFeatureFlag, and getAllFeatureFlags
+    // should be performed against a real database or with proper node-appwrite mocking.
+    // These functions use server-side node-appwrite which requires different mocking
+    // strategies than the browser appwrite client.
 
-  describe("clearFeatureFlagsCache", () => {
-    it("should be callable without errors", () => {
-      expect(() => clearFeatureFlagsCache()).not.toThrow();
-    });
-  });
+    describe("feature flag module structure", () => {
+        it("should export all required functions", async () => {
+            const module = await import("../lib/feature-flags");
 
-  // Note: Integration tests for getFeatureFlag, setFeatureFlag, and getAllFeatureFlags
-  // should be performed against a real database or with proper node-appwrite mocking.
-  // These functions use server-side node-appwrite which requires different mocking
-  // strategies than the browser appwrite client.
-  
-  describe("feature flag module structure", () => {
-    it("should export all required functions", async () => {
-      const module = await import("../lib/feature-flags");
-      
-      expect(module.getFeatureFlag).toBeDefined();
-      expect(module.setFeatureFlag).toBeDefined();
-      expect(module.getAllFeatureFlags).toBeDefined();
-      expect(module.initializeFeatureFlags).toBeDefined();
-      expect(module.clearFeatureFlagsCache).toBeDefined();
-      expect(module.FEATURE_FLAGS).toBeDefined();
+            expect(module.getFeatureFlag).toBeDefined();
+            expect(module.setFeatureFlag).toBeDefined();
+            expect(module.getAllFeatureFlags).toBeDefined();
+            expect(module.initializeFeatureFlags).toBeDefined();
+            expect(module.clearFeatureFlagsCache).toBeDefined();
+            expect(module.FEATURE_FLAGS).toBeDefined();
+        });
     });
-  });
 });

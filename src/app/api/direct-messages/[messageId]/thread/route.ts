@@ -5,6 +5,8 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { logger } from "@/lib/newrelic-utils";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
 import {
     MAX_MESSAGE_LENGTH,
@@ -20,6 +22,146 @@ type RouteContext = {
         messageId: string;
     }>;
 };
+
+function sleep(ms: number) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+async function updateThreadMetadataWithRetries(params: {
+    actualThreadId: string;
+    conversationId: string;
+    databases: ReturnType<typeof getServerClient>["databases"];
+    env: ReturnType<typeof getEnvConfig>;
+    maxUpdateAttempts: number;
+    replyCreatedAt: string;
+    userId: string;
+}) {
+    const {
+        actualThreadId,
+        conversationId,
+        databases,
+        env,
+        maxUpdateAttempts,
+        replyCreatedAt,
+        userId,
+    } = params;
+
+    async function attemptUpdate(attempt: number): Promise<void> {
+        const latestParent = (await databases.getDocument(
+            env.databaseId,
+            env.collections.directMessages,
+            actualThreadId,
+        )) as unknown as DirectMessage;
+
+        let existingParticipants: string[] = [];
+        if (Array.isArray(latestParent.threadParticipants)) {
+            existingParticipants = latestParent.threadParticipants.filter(
+                (participant): participant is string =>
+                    typeof participant === "string",
+            );
+        } else if (typeof latestParent.threadParticipants === "string") {
+            try {
+                const parsedParticipants = JSON.parse(
+                    latestParent.threadParticipants,
+                );
+                existingParticipants = Array.isArray(parsedParticipants)
+                    ? parsedParticipants.filter(
+                          (participant): participant is string =>
+                              typeof participant === "string",
+                      )
+                    : [];
+            } catch {
+                existingParticipants = [];
+            }
+        }
+
+        const nextParticipants = Array.from(
+            new Set([...existingParticipants, userId]),
+        );
+
+        // Use authoritative thread reply total to avoid lost increments under concurrency.
+        const replies = await databases.listDocuments(
+            env.databaseId,
+            env.collections.directMessages,
+            [
+                Query.equal("conversationId", conversationId),
+                Query.equal("threadId", actualThreadId),
+                Query.limit(1),
+            ],
+        );
+
+        const nextCount = Math.max(
+            latestParent.threadMessageCount || 0,
+            replies.total,
+        );
+        try {
+            await databases.updateDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+                {
+                    threadMessageCount: nextCount,
+                    threadParticipants: nextParticipants,
+                    lastThreadReplyAt: replyCreatedAt,
+                },
+            );
+
+            // Best-effort verification to reduce lost updates when concurrent writes race.
+            const refreshedParent = (await databases.getDocument(
+                env.databaseId,
+                env.collections.directMessages,
+                actualThreadId,
+            )) as unknown as DirectMessage;
+            const refreshedParticipants = Array.isArray(
+                refreshedParent.threadParticipants,
+            )
+                ? refreshedParent.threadParticipants.filter(
+                      (participant): participant is string =>
+                          typeof participant === "string",
+                  )
+                : [];
+            const refreshedCount =
+                typeof refreshedParent.threadMessageCount === "number"
+                    ? refreshedParent.threadMessageCount
+                    : 0;
+
+            if (
+                !refreshedParticipants.includes(userId) ||
+                refreshedCount < nextCount
+            ) {
+                throw new Error(
+                    "Thread metadata reconciliation requires retry",
+                );
+            }
+        } catch (updateError) {
+            if (attempt >= maxUpdateAttempts - 1) {
+                logger.warn(
+                    "Failed to update DM thread metadata after retries",
+                    {
+                        actualThreadId,
+                        userId,
+                        threadMessageCount: nextCount,
+                        participantCount: nextParticipants.length,
+                        lastThreadReplyAt: replyCreatedAt,
+                        error:
+                            updateError instanceof Error
+                                ? updateError.message
+                                : String(updateError),
+                    },
+                );
+                return;
+            }
+
+            const backoffMs = Math.min(400, 75 * 2 ** attempt);
+            await sleep(backoffMs);
+            await attemptUpdate(attempt + 1);
+        }
+    }
+
+    await attemptUpdate(0);
+}
 
 async function createAttachments(
     messageId: string,
@@ -62,6 +204,11 @@ function parseLimit(url: string): number {
     return Math.min(raw, 100);
 }
 
+function parseCursor(url: string): string | null {
+    const { searchParams } = new URL(url);
+    return searchParams.get("cursor");
+}
+
 async function getConversationParticipants(
     conversationId: string,
 ): Promise<string[]> {
@@ -99,12 +246,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
         const limit = parseLimit(request.url);
+        const cursor = parseCursor(request.url);
 
         const parent = (await databases.getDocument(
             env.databaseId,
             env.collections.directMessages,
             messageId,
         )) as unknown as DirectMessage;
+
+        const actualThreadId = parent.threadId ?? messageId;
 
         if (!parent.conversationId) {
             return NextResponse.json(
@@ -125,35 +275,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
             env.collections.directMessages,
             [
                 Query.equal("conversationId", parent.conversationId),
-                Query.equal("threadId", messageId),
+                Query.equal("threadId", actualThreadId),
                 Query.orderAsc("$createdAt"),
                 Query.limit(limit),
+                ...(cursor ? [Query.cursorAfter(cursor)] : []),
             ],
         );
 
         const items = docs.documents.map((doc) => {
-            const d = doc as Record<string, unknown>;
-            return {
-                $id: String(d.$id),
-                conversationId: String(d.conversationId),
-                senderId: String(d.senderId),
-                receiverId: d.receiverId as string | undefined,
-                text: String(d.text || ""),
-                imageFileId: d.imageFileId as string | undefined,
-                imageUrl: d.imageUrl as string | undefined,
-                $createdAt: String(d.$createdAt || ""),
-                editedAt: d.editedAt as string | undefined,
-                removedAt: d.removedAt as string | undefined,
-                removedBy: d.removedBy as string | undefined,
-                replyToId: d.replyToId as string | undefined,
-                threadId: d.threadId as string | undefined,
-                mentions: Array.isArray(d.mentions)
-                    ? (d.mentions as string[])
-                    : undefined,
-            } satisfies DirectMessage;
+            return doc as unknown as DirectMessage;
         });
 
-        return NextResponse.json({ items });
+        const parentMessage = parent.threadId
+            ? ((await databases.getDocument(
+                  env.databaseId,
+                  env.collections.directMessages,
+                  actualThreadId,
+              )) as unknown as DirectMessage)
+            : parent;
+
+        return NextResponse.json({
+            items,
+            parentMessage,
+            replies: items,
+            total: docs.total,
+            hasMore: docs.documents.length === limit,
+        });
     } catch (error) {
         return NextResponse.json(
             {
@@ -223,6 +370,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             messageId,
         )) as unknown as DirectMessage;
 
+        const actualThreadId = parent.threadId ?? messageId;
+
         if (!parent.conversationId) {
             return NextResponse.json(
                 { error: "Parent message has no conversation context" },
@@ -253,7 +402,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             senderId: user.$id,
             receiverId,
             text: text?.trim() || "",
-            threadId: messageId,
+            threadId: actualThreadId,
         };
 
         if (imageFileId) {
@@ -278,24 +427,59 @@ export async function POST(request: NextRequest, context: RouteContext) {
             await createAttachments(String(created.$id), attachments);
         }
 
-        const existingParticipants = Array.isArray(parent.threadParticipants)
-            ? parent.threadParticipants
-            : [];
-        const nextParticipants = Array.from(
-            new Set([...existingParticipants, user.$id]),
-        );
-        const nextCount = (parent.threadMessageCount || 0) + 1;
+        const maxUpdateAttempts = 3;
+        try {
+            await updateThreadMetadataWithRetries({
+                actualThreadId,
+                conversationId: parent.conversationId,
+                databases,
+                env,
+                maxUpdateAttempts,
+                replyCreatedAt: String(
+                    created.$createdAt || new Date().toISOString(),
+                ),
+                userId: user.$id,
+            });
+        } catch (metadataError) {
+            logger.warn("DM thread metadata reconciliation failed", {
+                actualThreadId,
+                conversationId: parent.conversationId,
+                replyId: String(created.$id),
+                userId: user.$id,
+                error:
+                    metadataError instanceof Error
+                        ? metadataError.message
+                        : String(metadataError),
+            });
+        }
 
-        await databases.updateDocument(
-            env.databaseId,
-            env.collections.directMessages,
-            messageId,
-            {
-                threadMessageCount: nextCount,
-                threadParticipants: nextParticipants,
-                lastThreadReplyAt: new Date().toISOString(),
-            },
-        );
+        if (mentions && mentions.length > 0) {
+            try {
+                await upsertMentionInboxItems({
+                    authorUserId: user.$id,
+                    contextId: parent.conversationId,
+                    contextKind: "conversation",
+                    latestActivityAt: String(
+                        created.$createdAt || new Date().toISOString(),
+                    ),
+                    mentions,
+                    messageId: String(created.$id),
+                    parentMessageId: actualThreadId,
+                    previewText: text?.trim() || "",
+                });
+            } catch (mentionsError) {
+                logger.warn("DM thread mention inbox upsert failed", {
+                    authorUserId: user.$id,
+                    conversationId: parent.conversationId,
+                    messageId: String(created.$id),
+                    parentMessageId: actualThreadId,
+                    error:
+                        mentionsError instanceof Error
+                            ? mentionsError.message
+                            : String(mentionsError),
+                });
+            }
+        }
 
         const d = created as unknown as Record<string, unknown>;
         const message: DirectMessage = {
@@ -312,13 +496,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
             removedBy: d.removedBy as string | undefined,
             replyToId: d.replyToId as string | undefined,
             threadId: d.threadId as string | undefined,
+            threadMessageCount:
+                typeof d.threadMessageCount === "number"
+                    ? d.threadMessageCount
+                    : undefined,
+            threadParticipants: Array.isArray(d.threadParticipants)
+                ? (d.threadParticipants as string[])
+                : undefined,
+            lastThreadReplyAt: d.lastThreadReplyAt as string | undefined,
             mentions: Array.isArray(d.mentions)
                 ? (d.mentions as string[])
                 : undefined,
             attachments,
         };
 
-        return NextResponse.json({ message });
+        return NextResponse.json(
+            {
+                success: true,
+                message,
+                reply: message,
+                threadId: actualThreadId,
+            },
+            { status: 201 },
+        );
     } catch (error) {
         return NextResponse.json(
             {

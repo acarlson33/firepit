@@ -4,6 +4,7 @@ import { Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { buildPinsResponse } from "@/lib/pin-response";
 import type { DirectMessage, PinnedMessage } from "@/lib/types";
 
 type RouteContext = {
@@ -50,7 +51,7 @@ export async function GET(_request: Request, context: RouteContext) {
             [
                 Query.equal("contextType", "conversation"),
                 Query.equal("contextId", conversationId),
-                Query.orderDesc("$createdAt"),
+                Query.orderDesc("pinnedAt"),
                 Query.limit(50),
             ],
         );
@@ -59,7 +60,11 @@ export async function GET(_request: Request, context: RouteContext) {
         const messageIds = pins.map((pin) => pin.messageId);
 
         if (messageIds.length === 0) {
-            return NextResponse.json({ items: [] });
+            return NextResponse.json({
+                items: [],
+                pins: [],
+                total: 0,
+            });
         }
 
         const messageDocs = await databases.listDocuments(
@@ -70,50 +75,11 @@ export async function GET(_request: Request, context: RouteContext) {
 
         const messagesById = new Map<string, DirectMessage>();
         for (const doc of messageDocs.documents) {
-            const d = doc as unknown as Record<string, unknown>;
-            messagesById.set(String(d.$id), {
-                $id: String(d.$id),
-                conversationId: String(d.conversationId),
-                senderId: String(d.senderId),
-                receiverId: d.receiverId as string | undefined,
-                text: String(d.text || ""),
-                imageFileId: d.imageFileId as string | undefined,
-                imageUrl: d.imageUrl as string | undefined,
-                $createdAt: String(d.$createdAt || ""),
-                editedAt: d.editedAt as string | undefined,
-                removedAt: d.removedAt as string | undefined,
-                removedBy: d.removedBy as string | undefined,
-                replyToId: d.replyToId as string | undefined,
-                threadId: d.threadId as string | undefined,
-                threadMessageCount:
-                    typeof d.threadMessageCount === "number"
-                        ? d.threadMessageCount
-                        : undefined,
-                threadParticipants: Array.isArray(d.threadParticipants)
-                    ? (d.threadParticipants as string[])
-                    : undefined,
-                lastThreadReplyAt: d.lastThreadReplyAt as string | undefined,
-                mentions: Array.isArray(d.mentions)
-                    ? (d.mentions as string[])
-                    : undefined,
-            });
+            const message = doc as unknown as DirectMessage;
+            messagesById.set(String(message.$id), message);
         }
 
-        const items = pins
-            .map((pin) => {
-                const message = messagesById.get(pin.messageId);
-                if (!message) {
-                    return null;
-                }
-
-                return {
-                    pin,
-                    message,
-                };
-            })
-            .filter(Boolean);
-
-        return NextResponse.json({ items });
+        return NextResponse.json(buildPinsResponse(pins, messagesById));
     } catch (error) {
         return NextResponse.json(
             {

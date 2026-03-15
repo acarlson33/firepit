@@ -9,6 +9,8 @@ import {
     getRelationshipMap,
     getRelationshipStatus,
 } from "@/lib/appwrite-friendships";
+import { listThreadReadsByContext } from "@/lib/thread-read-store";
+import { isThreadUnread } from "@/lib/thread-read-states";
 import {
     logger,
     recordError,
@@ -21,6 +23,7 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
+import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
@@ -222,21 +225,141 @@ export async function GET(request: NextRequest) {
                     conversation.participants.find((id) => id !== session.$id),
                 )
                 .filter((value): value is string => Boolean(value));
+            const unreadThreadsByConversationId = new Map<string, number>();
+            let readStatesByConversationId = new Map<
+                string,
+                Record<string, string>
+            >();
+            let threadReadLookupFailed = false;
+            try {
+                readStatesByConversationId = await listThreadReadsByContext({
+                    contextIds: conversations.map(
+                        (conversation) => conversation.$id,
+                    ),
+                    contextType: "conversation",
+                    userId: session.$id,
+                });
+            } catch (error) {
+                threadReadLookupFailed = true;
+                logger.warn("Thread read lookup failed for conversations", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    userId: session.$id,
+                });
+            }
+
+            if (conversations.length > 0 && !threadReadLookupFailed) {
+                try {
+                    const pageSize = 500;
+                    let cursorAfterId: string | null = null;
+
+                    while (true) {
+                        const page = await databases.listDocuments(
+                            DATABASE_ID,
+                            DIRECT_MESSAGES_COLLECTION,
+                            [
+                                Query.equal(
+                                    "conversationId",
+                                    conversations.map(
+                                        (conversation) => conversation.$id,
+                                    ),
+                                ),
+                                Query.greaterThan("threadMessageCount", 0),
+                                Query.orderAsc("$id"),
+                                Query.limit(pageSize),
+                                ...(cursorAfterId
+                                    ? [Query.cursorAfter(cursorAfterId)]
+                                    : []),
+                            ],
+                        );
+
+                        for (const document of page.documents) {
+                            const threadParent = document as Record<
+                                string,
+                                unknown
+                            >;
+                            const conversationId = String(
+                                threadParent.conversationId,
+                            );
+                            const messageId = String(threadParent.$id);
+                            const lastThreadReplyAt =
+                                typeof threadParent.lastThreadReplyAt ===
+                                "string"
+                                    ? threadParent.lastThreadReplyAt
+                                    : undefined;
+                            const threadMessageCount =
+                                typeof threadParent.threadMessageCount ===
+                                "number"
+                                    ? threadParent.threadMessageCount
+                                    : undefined;
+                            const lastReadAt =
+                                readStatesByConversationId.get(
+                                    conversationId,
+                                )?.[messageId];
+
+                            if (
+                                isThreadUnread({
+                                    lastReadAt,
+                                    lastThreadReplyAt,
+                                    threadMessageCount,
+                                })
+                            ) {
+                                unreadThreadsByConversationId.set(
+                                    conversationId,
+                                    (unreadThreadsByConversationId.get(
+                                        conversationId,
+                                    ) ?? 0) + 1,
+                                );
+                            }
+                        }
+
+                        if (page.documents.length < pageSize) {
+                            break;
+                        }
+
+                        const lastDocument = page.documents.at(-1) as
+                            | Record<string, unknown>
+                            | undefined;
+                        cursorAfterId =
+                            lastDocument && typeof lastDocument.$id === "string"
+                                ? lastDocument.$id
+                                : null;
+
+                        if (!cursorAfterId) {
+                            break;
+                        }
+                    }
+                } catch {
+                    // Skip unread aggregates if the supporting query fails.
+                }
+            }
+
             const relationshipMap = await getRelationshipMap(
                 session.$id,
                 oneToOneOtherUserIds,
             );
 
             const enrichedConversations = conversations.map((conversation) => {
+                const unreadThreadCount =
+                    unreadThreadsByConversationId.get(conversation.$id) ?? 0;
+
                 if (conversation.isGroup) {
-                    return conversation;
+                    return {
+                        ...conversation,
+                        hasUnread: unreadThreadCount > 0,
+                        unreadThreadCount,
+                    };
                 }
 
                 const otherUserId = conversation.participants.find(
                     (id) => id !== session.$id,
                 );
                 if (!otherUserId) {
-                    return conversation;
+                    return {
+                        ...conversation,
+                        hasUnread: unreadThreadCount > 0,
+                        unreadThreadCount,
+                    };
                 }
 
                 const relationship = relationshipMap.get(otherUserId);
@@ -246,11 +369,13 @@ export async function GET(request: NextRequest) {
 
                 return {
                     ...conversation,
+                    hasUnread: unreadThreadCount > 0,
                     readOnly,
                     readOnlyReason: relationship
                         ? getReadOnlyReason(relationship)
                         : undefined,
                     relationship,
+                    unreadThreadCount,
                 };
             });
 
@@ -896,6 +1021,36 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+            try {
+                await upsertMentionInboxItems({
+                    authorUserId: senderId,
+                    contextId: conversationId,
+                    contextKind: "conversation",
+                    latestActivityAt: String(
+                        message.$createdAt ?? new Date().toISOString(),
+                    ),
+                    mentions,
+                    messageId: String(message.$id),
+                    parentMessageId:
+                        replyToId ??
+                        ((message as Record<string, unknown>).replyToId as
+                            | string
+                            | undefined),
+                    previewText: text || "",
+                });
+            } catch (mentionError) {
+                logger.warn("Failed to upsert DM mention inbox items", {
+                    conversationId,
+                    messageId: String(message.$id),
+                    senderId,
+                    error:
+                        mentionError instanceof Error
+                            ? mentionError.message
+                            : String(mentionError),
+                });
+            }
+        }
         // Update conversation's lastMessageAt
         try {
             await databases.updateDocument(

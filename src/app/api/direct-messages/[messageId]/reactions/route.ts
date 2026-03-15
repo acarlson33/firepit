@@ -5,6 +5,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import type { DirectMessage } from "@/lib/types";
+import { parseReactions } from "@/lib/reactions-utils";
 import {
     logger,
     recordError,
@@ -103,29 +104,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             );
         }
 
-        // Initialize reactions array if it doesn't exist
-        // Parse reactions from JSON string if needed
-        let reactions: Array<{
-            emoji: string;
-            userIds: string[];
-            count: number;
-        }> = [];
-
-        if (message.reactions) {
-            if (typeof message.reactions === "string") {
-                try {
-                    reactions = JSON.parse(message.reactions);
-                } catch {
-                    reactions = [];
-                }
-            } else if (Array.isArray(message.reactions)) {
-                reactions = message.reactions as Array<{
-                    emoji: string;
-                    userIds: string[];
-                    count: number;
-                }>;
-            }
-        }
+        const reactions = parseReactions(message.reactions);
 
         // Find existing reaction for this emoji
         const existingReaction = reactions.find((r) => r.emoji === emoji);
@@ -295,29 +274,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
             );
         }
 
-        // Initialize reactions array if it doesn't exist
-        // Parse reactions from JSON string if needed
-        let reactions: Array<{
-            emoji: string;
-            userIds: string[];
-            count: number;
-        }> = [];
-
-        if (message.reactions) {
-            if (typeof message.reactions === "string") {
-                try {
-                    reactions = JSON.parse(message.reactions);
-                } catch {
-                    reactions = [];
-                }
-            } else if (Array.isArray(message.reactions)) {
-                reactions = message.reactions as Array<{
-                    emoji: string;
-                    userIds: string[];
-                    count: number;
-                }>;
-            }
-        }
+        let reactions = parseReactions(message.reactions);
 
         // Find existing reaction for this emoji
         const existingReaction = reactions.find((r) => r.emoji === emoji);

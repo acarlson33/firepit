@@ -51,6 +51,19 @@ Pinning is split across two levels:
 
 For channel views, pinned history is available at `/api/channels/{channelId}/pins`.
 
+## Cross-Surface Navigation
+
+Search results, pinned items, and thread-entry affordances now resolve through the same client-side message navigation flow in both channels and DMs.
+
+Current navigation behavior:
+
+- search results build routeable chat URLs that preserve the message context through `server`, `channel`, `conversation`, and `highlight` query parameters
+- channel and DM chat surfaces consume those query parameters to select the correct context before attempting a message jump
+- jump-to-message highlighting is shared across channel chat, DM chat, and pinned-message entry points
+- the client relies on existing message identifiers and context identifiers from current APIs rather than a separate navigation endpoint
+
+This keeps search, pins, and thread access behavior aligned across message surfaces without changing the underlying channel and DM REST contracts.
+
 ## Typing Indicators
 
 Typing state is managed through `/api/typing`.
@@ -105,9 +118,14 @@ Client expectations:
 Chat-adjacent discovery is handled by:
 
 - `/api/search/messages` for message search
+- `/api/inbox` for the first unified unread-history aggregation pass across unread threads and mentions
+- `/api/inbox/digest` for scoped unread digest payloads used by rollout and diagnostics
 - `/api/users/search` for people lookup and mentions
 - `/api/notifications/settings` for user notification preferences
+- `/api/thread-reads` for persisted per-thread read state across channels and DMs
 - `/api/memberships` for membership resolution used by navigation and mention features
+
+Message search responses are expected to provide the context identifiers needed for client navigation so results can deep-link back into either channel or DM chat with a consistent highlight state.
 
 Current notification capabilities include:
 
@@ -119,6 +137,31 @@ Current notification capabilities include:
 - direct-message privacy controls for friend-only DM restrictions
 - server-enriched override labels returned from `/api/notifications/settings` so the client can render readable server, channel, and DM names without extra lookups
 - bulk override management in settings for clearing expired overrides and resetting channel overrides
+- dedicated unread-thread persistence through the `thread_reads` collection so inbox and unread state survive across sessions without expanding the `notification_settings` schema
+
+Current unread-history implementation is intentionally incremental:
+
+- unread thread state is durable today through `/api/thread-reads`
+- the first inbox contract aggregates unread conversation and channel thread activity plus mentions into one normalized API shape
+- the chat client now uses that inbox contract for DM inbox, mentions, channel badges, DM badges, jump-to-unread, catch-up affordances, and unread boundary markers across both channels and DMs
+- `PATCH /api/inbox` supports both mention item read updates and `mark-all-read` context catch-up flows that also persist thread reads
+- `GET /api/inbox` supports scoped filtering through `scope=all|direct|server` and kind filtering through `kind`
+- mention-only notification levels suppress thread unread entries in inbox aggregation while preserving mention entries
+- full per-message unread and digest-style delivery remain follow-on work on top of the shared inbox model
+
+## Unread Semantics Contract (Phase 1)
+
+To support the v1.6 per-message unread rollout safely, unread behavior now follows explicit phase-1 contract rules:
+
+- Inbox responses include a `contractVersion` marker.
+- `thread_v1` remains the default contract while per-message unread is gated and rolling out.
+- Clients must treat server responses as authoritative for unread reconciliation and anchor targets.
+- If an unread anchor references a removed or inaccessible message, clients should degrade to context-level catch-up behavior instead of failing navigation.
+- Badge counts, unread boundary markers, and jump-to-unread affordances must all derive from the same inbox aggregation source to avoid cross-surface drift.
+- Digest ordering and inbox ordering are both newest-first to avoid context-level drift during rollout validation.
+- Digest `totalUnreadCount` is computed from the full-scoped unread set before pagination.
+
+This phase is intentionally compatibility-first. It does not yet switch persistence from per-thread to per-message reads by default.
 
 Override precedence is intentionally deterministic:
 

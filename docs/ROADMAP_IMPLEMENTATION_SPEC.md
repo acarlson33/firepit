@@ -151,6 +151,8 @@ Move from basic mute controls to Discord-like notification preferences across se
 
 ## Workstream C: Cross-Surface Messaging Consistency
 
+Status: In progress. The shared navigation, normalized pin-thread contracts, optimistic pin-thread state slice, unread-thread follow-on slice, and unified inbox/jump-to-unread client slice shipped in March 2026; broader full-message unread and digest-style parity is still follow-on work.
+
 ### Objective
 
 Ensure that parity features that already exist behave consistently across channel chat, DM chat, threads, pinned views, and search navigation.
@@ -159,6 +161,7 @@ Ensure that parity features that already exist behave consistently across channe
 
 - Users should not find a feature in channels that behaves differently or disappears in DMs without an intentional reason
 - Search results, pins, and thread views should land users in predictable message state
+- Channel and DM surfaces should share the same deep-link and highlight behavior when a user opens a message from search or pinned history
 
 ### Backend Scope
 
@@ -172,23 +175,64 @@ Ensure that parity features that already exist behave consistently across channe
     - mute state interactions
 - Normalize serialization and enrichment fields where the same concept exists in both message types
 - Document intentional differences instead of letting them emerge by accident
+- No new REST endpoints are required for the shipped slice; existing search, pin, thread, and typing APIs already expose the identifiers needed for shared client navigation
+- The shipped follow-on slice normalized channel and DM pin-list responses around the same shape, ordering, and enriched pin metadata
+- The shipped follow-on slice normalized channel and DM thread responses around the same item-oriented contract while preserving legacy keys during client transition
+- DM thread replies now flatten onto the root thread for metadata updates, matching channel-side thread-parent behavior
+- Thread read state now persists through a dedicated `thread-reads` API so unread state survives across sessions and devices
+- DM conversation payloads now include unread thread aggregates for inbox-style sidebar affordances
+- The next unread-history slice introduces a dedicated inbox contract for unread thread activity and mentions instead of relying on search-derived mention results as the long-term inbox source
 
 ### Frontend Scope
 
-- Shared component behavior for message actions where feasible
-- Shared navigation helpers for jump-to-message flows from search, pins, and threads
-- Consistent optimistic-update behavior and failure recovery across chat surfaces
-- Consistent unread and active-thread indicators where supported
+- Shipped slice:
+    - shared navigation helpers for jump-to-message flows from search results, pinned items, and message highlight deep links
+    - shared pin and thread client helpers across channel and DM surfaces
+    - shared hook state for pin and thread behavior in `useMessages` and `useDirectMessages`
+    - route-driven context selection and highlight behavior for both channel and DM chat landings
+    - normalized pin-list payload handling across channel and DM surfaces, including shared pinned metadata in the normalized message model
+    - optimistic pin and thread-reply behavior in the shared hook layer with rollback and reply-pending UI support across channel and DM thread views
+    - shared unread-thread tracking in the hook layer, with thread-open read reconciliation, server-backed read sync, and shared unread indicator projection across channel and DM message lists
+    - DM sidebar inbox and mentions surfaces, including unread badges on conversations and the top-level DMs switch
+- Remaining follow-on scope:
+    - full-message unread extension on top of the current thread-and-mention model
+    - digest-style and mobile-facing unread delivery on top of the current inbox contract
+    - shared component behavior for remaining message actions where feasible
+    - broader history and message-action parity beyond the current pin-thread-unread slice
 
 ### Testing
 
-- Cross-surface regression suite that runs the same assertions for channels and DMs where parity is expected
-- Search-to-message navigation tests
-- Pinned-item and thread-entry tests
+- Shipped slice coverage:
+    - search-to-message navigation tests
+    - pinned-item and thread-entry tests for channel and DM surfaces
+    - shared client and shared hook regression coverage for pin-thread state
+    - dedicated hook coverage for both `useMessages` and `useDirectMessages`
+    - parity regression coverage for normalized channel and DM pin-list and thread response contracts
+    - optimistic pin-toggle and thread-reply regression coverage in the shared hook layer, including rollback behavior
+    - unread-thread regression coverage for the shared hook, channel and DM hook projections, and thread indicator rendering
+    - dedicated route coverage for persisted thread-read synchronization and sidebar coverage for inbox and mentions behavior
+- Remaining parity work should continue extending cross-surface regression coverage where the same affordance exists in both surfaces
+- The unread-history follow-on slice should add route coverage for the inbox contract, mention persistence or projection, and unread-entry navigation across both channel and DM surfaces
 
 ### Rollout Notes
 
 - This workstream should generally ship incrementally with no separate feature flag unless a behavioral change is high risk
+- The March 2026 slice began without backend contract changes, but later parity follow-up normalized existing channel and DM pin-thread response contracts while retaining legacy keys needed by older client paths during rollout
+
+### Phase 1 (March 2026): Unread Contract Lock
+
+Phase 1 for the per-message unread follow-on is complete once these constraints are documented and treated as implementation guardrails:
+
+- Introduce an explicit inbox contract version marker in inbox responses so clients can branch safely during rollout.
+- Preserve `thread_v1` behavior as the default and backward-compatible read model until per-message persistence is fully validated.
+- Keep unread semantics deterministic across channel and DM surfaces:
+    - read state reconciliation remains server authoritative
+    - unread anchors must always target a valid message or degrade to context-level catch-up
+    - unread counts and badge semantics must derive from the same inbox aggregation source
+- Gate per-message unread behavior behind a dedicated feature flag so rollout can be staged without forcing a migration cutover.
+- Keep mention-read behavior (`PATCH /api/inbox`) and thread-read persistence (`/api/thread-reads`) stable while phase 2 data-model work is underway.
+
+Phase 1 does not change the persistence model. It locks API expectations, rollout strategy, and compatibility behavior so phase 2 can ship with lower regression risk.
 
 ## Workstream D: Onboarding And Social Graph Polish
 

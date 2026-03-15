@@ -5,10 +5,11 @@
  * Safe to re-run. Avoids console.* per project lint rules (writes directly to stdout/stderr).
  */
 import { config as loadDotenv } from "dotenv";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client, Databases, Storage, Teams } from "node-appwrite";
+import { Client, Databases, Query, Storage, Teams } from "node-appwrite";
 
 const envFiles = [".env", ".env.local"];
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,7 @@ const DB_ID = "main";
 const LEN_ID = 128;
 const LEN_TS = 64; // ISO / epoch string length allowance
 const LEN_TEXT = 4000; // generous message / meta text length
+const LEN_TEXT_LARGE = 65_535; // large JSON payloads (e.g., thread read maps)
 
 // ---- Client ----
 const client = new Client().setEndpoint(endpoint).setProject(project);
@@ -75,6 +77,62 @@ const storage = new Storage(client);
 // Provide compatibility with potential SDK signature variants (object vs positional)
 const dbAny = databases as any;
 const storageAny = storage as any;
+
+export function createFeatureFlagDocumentId(flagKey: string): string {
+    const MAX_PREFIX_LEN = 18;
+    const readablePrefix = flagKey
+        .replace(/[^a-z0-9_-]/gi, "_")
+        .toLowerCase()
+        .replace(/^_+|_+$/g, "")
+        .slice(0, MAX_PREFIX_LEN)
+        .replace(/^_+|_+$/g, "");
+    const hashSuffix = createHash("sha256")
+        .update(flagKey)
+        .digest("hex")
+        .slice(0, 12);
+
+    return `flag_${readablePrefix || "key"}_${hashSuffix}`;
+}
+
+export function isDuplicateConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: unknown;
+        message?: unknown;
+        response?: { code?: unknown; message?: unknown };
+        type?: unknown;
+    };
+
+    let code: number | null = null;
+    if (typeof candidate.code === "number") {
+        code = candidate.code;
+    } else if (typeof candidate.response?.code === "number") {
+        code = candidate.response.code;
+    } else {
+        code = null;
+    }
+    if (code === 409) {
+        return true;
+    }
+
+    const messageParts = [
+        candidate.message,
+        candidate.response?.message,
+        candidate.type,
+    ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+
+    return (
+        messageParts.includes("duplicate") ||
+        messageParts.includes("already exists") ||
+        messageParts.includes("conflict")
+    );
+}
 
 async function tryVariants<T>(variants: Array<() => Promise<T>>): Promise<T> {
     let lastErr: unknown;
@@ -164,7 +222,7 @@ function info(msg: string) {
     }
 
     let label = "info";
-    let color = ANSI.blue;
+    let color: string = ANSI.blue;
 
     if (message.includes("created") || message.includes("added")) {
         label = "ok";
@@ -815,13 +873,8 @@ async function setupProfiles() {
     await ensureBooleanAttribute("profiles", "showDocsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
-    await ensureStringAttribute(
-        "profiles",
-        "navigationItemOrder",
-        255,
-        false,
-        true,
-    );
+    await ensureBooleanAttribute("profiles", "showAddFriendInHeader", false);
+    await ensureStringAttribute("profiles", "navigationItemOrder", 255, false);
     await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
     try {
         await ensureIndex("profiles", "idx_displayName_search", "fulltext", [
@@ -845,6 +898,185 @@ async function setupFeatureFlags() {
     }
     await ensureBooleanAttribute("feature_flags", "enabled", true);
     await ensureIndex("feature_flags", "idx_key", "key", ["key"]);
+
+    await ensureFeatureFlagDocument({
+        description: "Allow members to create their own servers",
+        enabled: false,
+        key: "allow_user_servers",
+    });
+    await ensureFeatureFlagDocument({
+        description: "Enable audit logging for moderation actions",
+        enabled: true,
+        key: "enable_audit_logging",
+    });
+    await ensureFeatureFlagDocument({
+        description:
+            "Enable per-message unread model and message-level inbox semantics",
+        enabled: false,
+        key: "enable_per_message_unread",
+    });
+    await ensureFeatureFlagDocument({
+        description:
+            "Enable inbox digest API foundation for chronological unread payloads",
+        enabled: false,
+        key: "enable_inbox_digest",
+    });
+}
+
+async function ensureFeatureFlagDocument(params: {
+    description: string;
+    enabled: boolean;
+    key: string;
+}) {
+    const { description, enabled, key } = params;
+
+    const documentId = createFeatureFlagDocumentId(key);
+    const now = new Date().toISOString();
+    let operation: "added" | "updated" = "added";
+
+    const deterministicDocument = (await tryVariants([
+        () => dbAny.getDocument(DB_ID, "feature_flags", documentId),
+        () =>
+            dbAny.getDocument?.({
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                documentId,
+            }),
+    ]).catch(() => null)) as {
+        $id?: string;
+        key?: string;
+    } | null;
+
+    if (deterministicDocument?.$id) {
+        if (deterministicDocument.key !== key) {
+            throw new Error(
+                `feature flag '${key}' deterministic document '${documentId}' has mismatched key '${String(deterministicDocument.key)}'`,
+            );
+        }
+
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(DB_ID, "feature_flags", documentId, {
+                    description,
+                    updatedAt: now,
+                }),
+            () =>
+                dbAny.updateDocument?.({
+                    data: {
+                        description,
+                        updatedAt: now,
+                    },
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    documentId,
+                }),
+        ]);
+        info(`[setup] updated feature flag '${key}'`);
+        return;
+    }
+
+    const existingByKey = (await tryVariants([
+        () =>
+            dbAny.listDocuments(DB_ID, "feature_flags", [
+                Query.equal("key", key),
+                Query.limit(1),
+            ]),
+        () =>
+            dbAny.listDocuments?.({
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                queries: [Query.equal("key", key), Query.limit(1)],
+            }),
+    ]).catch(() => ({ documents: [] }))) as {
+        documents?: Array<{ $id?: string }>;
+    };
+
+    const legacyDocumentId = existingByKey.documents?.[0]?.$id;
+    if (legacyDocumentId && legacyDocumentId !== documentId) {
+        warn(
+            `[setup] legacy duplicate detected for feature flag '${key}' (legacy id: ${legacyDocumentId}, deterministic id: ${documentId})`,
+        );
+    }
+
+    await tryVariants([
+        () =>
+            dbAny.createDocument(DB_ID, "feature_flags", documentId, {
+                description,
+                enabled,
+                key,
+                updatedAt: now,
+            }),
+        () =>
+            dbAny.createDocument?.({
+                data: {
+                    description,
+                    enabled,
+                    key,
+                    updatedAt: now,
+                },
+                databaseId: DB_ID,
+                collectionId: "feature_flags",
+                documentId,
+            }),
+    ]).catch(async (error) => {
+        if (!isDuplicateConflictError(error)) {
+            throw error;
+        }
+        operation = "updated";
+
+        // Another setup run may have created this deterministic document concurrently.
+        const latestDocument = (await tryVariants([
+            () => dbAny.getDocument(DB_ID, "feature_flags", documentId),
+            () =>
+                dbAny.getDocument?.({
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    documentId,
+                }),
+        ]).catch((getError: unknown) => {
+            throw new Error(
+                `feature flag '${key}' create conflicted but deterministic document '${documentId}' could not be loaded: ${
+                    getError instanceof Error
+                        ? getError.message
+                        : String(getError)
+                }`,
+            );
+        })) as {
+            $id?: string;
+            key?: string;
+        };
+
+        if (!latestDocument.$id) {
+            throw new Error(
+                `feature flag '${key}' create conflicted but deterministic document '${documentId}' was not found`,
+            );
+        }
+
+        if (latestDocument.key !== key) {
+            throw new Error(
+                `feature flag '${key}' deterministic document '${documentId}' has mismatched key '${String(latestDocument.key)}'`,
+            );
+        }
+
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(DB_ID, "feature_flags", documentId, {
+                    description,
+                    updatedAt: now,
+                }),
+            () =>
+                dbAny.updateDocument?.({
+                    data: {
+                        description,
+                        updatedAt: now,
+                    },
+                    databaseId: DB_ID,
+                    collectionId: "feature_flags",
+                    documentId,
+                }),
+        ]);
+    });
+    info(`[setup] ${operation} feature flag '${key}'`);
 }
 
 async function setupInvites() {
@@ -1041,6 +1273,104 @@ async function setupNotificationSettings() {
     );
     await ensureIndex("notification_settings", "idx_userId", "unique", [
         "userId",
+    ]);
+}
+
+async function setupThreadReads() {
+    await ensureCollection("thread_reads", "Thread Reads");
+    await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
+    await ensureStringAttribute("thread_reads", "contextType", 32, true);
+    await ensureStringAttribute("thread_reads", "contextId", LEN_ID, true);
+    // setupThreadReads: `thread_reads.reads` stores a JSON map and is capped at ~65KB;
+    // at typical ISO timestamp payload sizes this supports roughly ~1000 thread ids per context.
+    await ensureStringAttribute("thread_reads", "reads", LEN_TEXT_LARGE, true);
+    await waitForAttribute("thread_reads", "reads");
+
+    const readsAttribute = (await tryVariants([
+        () => dbAny.getAttribute(DB_ID, "thread_reads", "reads"),
+        () =>
+            dbAny.getAttribute?.({
+                databaseId: DB_ID,
+                collectionId: "thread_reads",
+                key: "reads",
+            }),
+    ])) as {
+        size?: number | string;
+    };
+    const configuredSize = Number(readsAttribute.size ?? 0);
+
+    if (Number.isFinite(configuredSize) && configuredSize < LEN_TEXT_LARGE) {
+        try {
+            await tryVariants([
+                () =>
+                    dbAny.updateStringAttribute(
+                        DB_ID,
+                        "thread_reads",
+                        "reads",
+                        LEN_TEXT_LARGE,
+                        true,
+                    ),
+                () =>
+                    dbAny.updateStringAttribute?.({
+                        databaseId: DB_ID,
+                        collectionId: "thread_reads",
+                        key: "reads",
+                        size: LEN_TEXT_LARGE,
+                        required: true,
+                    }),
+            ]);
+            await waitForAttribute("thread_reads", "reads");
+            info("[setup] migrated thread_reads.reads to large text size");
+        } catch (migrationError) {
+            throw new Error(
+                `thread_reads.reads size is ${configuredSize}, below required ${LEN_TEXT_LARGE}. Run a manual schema migration before setup can continue. ${
+                    migrationError instanceof Error
+                        ? migrationError.message
+                        : String(migrationError)
+                }`,
+            );
+        }
+    }
+
+    await ensureIndex("thread_reads", "idx_user_context", "unique", [
+        "userId",
+        "contextType",
+        "contextId",
+    ]);
+}
+
+async function setupInboxItems() {
+    await ensureCollection("inbox_items", "Inbox Items");
+    const fields: [string, number, boolean][] = [
+        ["userId", LEN_ID, true],
+        ["kind", 32, true],
+        ["contextKind", 32, true],
+        ["contextId", LEN_ID, true],
+        ["serverId", LEN_ID, false],
+        ["messageId", LEN_ID, true],
+        ["parentMessageId", LEN_ID, false],
+        ["latestActivityAt", LEN_TS, true],
+        ["previewText", LEN_TEXT, false],
+        ["authorUserId", LEN_ID, true],
+        ["readAt", LEN_TS, false],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute("inbox_items", key, size, required);
+    }
+    await ensureIndex("inbox_items", "idx_user_kind", "key", [
+        "userId",
+        "kind",
+    ]);
+    await ensureIndex("inbox_items", "idx_user_activity", "key", [
+        "userId",
+        "latestActivityAt",
+    ]);
+    await ensureIndex("inbox_items", "idx_user_item", "unique", [
+        "userId",
+        "kind",
+        "contextKind",
+        "contextId",
+        "messageId",
     ]);
 }
 
@@ -1294,6 +1624,10 @@ async function run() {
     await setupPinnedMessages();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
+    info("[setup] Setting up inbox items...");
+    await setupInboxItems();
+    info("[setup] Setting up thread reads...");
+    await setupThreadReads();
     info("[setup] Setting up teams...");
     await ensureTeams();
     writeStdout();

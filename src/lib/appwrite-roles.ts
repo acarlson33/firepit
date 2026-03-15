@@ -16,6 +16,10 @@ const moderatorTeamId = env.teams.moderatorTeamId || undefined;
 
 // Optional explicit user ID overrides (comma separated) – useful for bootstrap/dev.
 // Parse these at call time so tests can override them
+/**
+ * Returns admin user overrides.
+ * @returns {string[]} The return value.
+ */
 function getAdminUserOverrides(): string[] {
     return (process.env.APPWRITE_ADMIN_USER_IDS || "")
         .split(",")
@@ -23,6 +27,10 @@ function getAdminUserOverrides(): string[] {
         .filter(Boolean);
 }
 
+/**
+ * Returns moderator user overrides.
+ * @returns {string[]} The return value.
+ */
 function getModeratorUserOverrides(): string[] {
     return (process.env.APPWRITE_MODERATOR_USER_IDS || "")
         .split(",")
@@ -31,6 +39,14 @@ function getModeratorUserOverrides(): string[] {
 }
 
 // Robust membership check with pagination; avoids false negatives for large teams.
+/**
+ * Determines whether is member.
+ *
+ * @param {string} teamId - The team id value.
+ * @param {string} userId - The user id value.
+ * @param {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} teams - The teams value.
+ * @returns {Promise<boolean>} The return value.
+ */
 async function isMember(
     teamId: string,
     userId: string,
@@ -73,6 +89,10 @@ async function isMember(
     return false;
 }
 
+/**
+ * Handles select teams client.
+ * @returns {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} The return value.
+ */
 function selectTeamsClient(): Teams | ServerTeams {
     // Prefer server client (API key) if available for reliable membership listing; otherwise fall back to browser teams.
     if (process.env.APPWRITE_API_KEY) {
@@ -85,6 +105,12 @@ function selectTeamsClient(): Teams | ServerTeams {
     return getBrowserTeams();
 }
 
+/**
+ * Returns user roles.
+ *
+ * @param {string | null} userId - The user id value.
+ * @returns {Promise<RoleInfo>} The return value.
+ */
 export async function getUserRoles(userId: string | null): Promise<RoleInfo> {
     if (!userId) {
         return { isAdmin: false, isModerator: false };
@@ -118,6 +144,10 @@ let parsedTeamMap: Record<string, { label: string; color?: string }> | null =
     null;
 let lastTeamMapRaw: string | undefined = undefined;
 
+/**
+ * Handles load team map.
+ * @returns {{ [x: string]: { label: string; color?: string | undefined; }; }} The return value.
+ */
 function loadTeamMap() {
     const raw = process.env.ROLE_TEAM_MAP;
 
@@ -145,6 +175,10 @@ function loadTeamMap() {
 
 // Internal cache accessors to keep complexity low.
 type CacheEntry = { expires: number; value: ExtendedRoleInfo };
+/**
+ * Returns role tag cache.
+ * @returns {Map<string, CacheEntry>} The return value.
+ */
 function getRoleTagCache(): Map<string, CacheEntry> {
     const g = globalThis as unknown as {
         __roleTagCache?: Map<string, CacheEntry>;
@@ -155,6 +189,13 @@ function getRoleTagCache(): Map<string, CacheEntry> {
     return g.__roleTagCache;
 }
 
+/**
+ * Handles cache hit.
+ *
+ * @param {string} userId - The user id value.
+ * @param {number} now - The now value.
+ * @returns {ExtendedRoleInfo | null} The return value.
+ */
 function cacheHit(userId: string, now: number): ExtendedRoleInfo | null {
     const c = getRoleTagCache();
     const entry = c.get(userId);
@@ -164,6 +205,15 @@ function cacheHit(userId: string, now: number): ExtendedRoleInfo | null {
     return null;
 }
 
+/**
+ * Handles cache store.
+ *
+ * @param {string} userId - The user id value.
+ * @param {RoleInfo & { tags: RoleTag[]; }} value - The value value.
+ * @param {number} now - The now value.
+ * @param {number} ttl - The ttl value.
+ * @returns {void} The return value.
+ */
 function cacheStore(
     userId: string,
     value: ExtendedRoleInfo,
@@ -173,6 +223,14 @@ function cacheStore(
     getRoleTagCache().set(userId, { expires: now + ttl, value });
 }
 
+/**
+ * Handles fetch custom team tags.
+ *
+ * @param {string} userId - The user id value.
+ * @param {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} teams - The teams value.
+ * @param {{ [x: string]: { label: string; color?: string | undefined; }; }} teamMap - The team map value.
+ * @returns {Promise<RoleTag[]>} The return value.
+ */
 async function fetchCustomTeamTags(
     userId: string,
     teams: Teams | ServerTeams,
@@ -196,6 +254,13 @@ async function fetchCustomTeamTags(
     return tags;
 }
 
+/**
+ * Handles append implicit tags.
+ *
+ * @param {{ isAdmin: boolean; isModerator: boolean; }} base - The base value.
+ * @param {RoleTag[]} tags - The tags value.
+ * @returns {RoleTag[]} The return value.
+ */
 function appendImplicitTags(base: RoleInfo, tags: RoleTag[]): RoleTag[] {
     const lowered = tags.map((t) => t.label.toLowerCase());
     if (base.isAdmin && !lowered.includes("admin")) {
@@ -209,6 +274,12 @@ function appendImplicitTags(base: RoleInfo, tags: RoleTag[]): RoleTag[] {
 
 const ROLE_TAG_CACHE_TTL_MS = 60_000; // 60s
 
+/**
+ * Returns user role tags.
+ *
+ * @param {string | null} userId - The user id value.
+ * @returns {Promise<ExtendedRoleInfo>} The return value.
+ */
 export async function getUserRoleTags(
     userId: string | null,
 ): Promise<ExtendedRoleInfo> {

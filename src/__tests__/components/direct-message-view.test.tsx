@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 
 import { DirectMessageView } from "@/app/chat/components/DirectMessageView";
 
@@ -69,7 +70,7 @@ vi.mock("@/components/virtualized-dm-list", () => ({
 
 describe("DirectMessageView", () => {
     it("shows a read-only banner and disables composer controls", () => {
-        render(
+        const { container } = render(
             <DirectMessageView
                 conversation={{
                     $id: "conv-1",
@@ -84,6 +85,7 @@ describe("DirectMessageView", () => {
                 currentUserId="current-user"
                 loading={false}
                 messages={[]}
+                surfaceMessages={[]}
                 onDelete={vi.fn()}
                 onEdit={vi.fn()}
                 onSend={vi.fn()}
@@ -99,5 +101,17 @@ describe("DirectMessageView", () => {
             screen.getByPlaceholderText("This user blocked you"),
         ).toBeDisabled();
         expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+
+        const scrollContainer = container.querySelector(
+            '[data-message-scroll-container="true"]',
+        ) as HTMLDivElement | null;
+        const computedHeight = scrollContainer
+            ? getComputedStyle(scrollContainer).height
+            : "";
+
+        expect(scrollContainer).toBeInTheDocument();
+        expect(scrollContainer).toHaveClass("w-full", "min-w-0");
+        expect(computedHeight).toMatch(/^\d+(\.\d+)?(px|vh|%)$/);
+        expect(Number.parseFloat(computedHeight)).toBeGreaterThan(0);
     });
 });

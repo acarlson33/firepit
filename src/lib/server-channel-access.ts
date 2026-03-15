@@ -31,6 +31,12 @@ type ServerAccess = {
     roles: Role[];
 };
 
+/**
+ * Handles map role document.
+ *
+ * @param {{ [x: string]: unknown; }} doc - The doc value.
+ * @returns {Role} The return value.
+ */
 function mapRoleDocument(doc: Record<string, unknown>): Role {
     return {
         $id: String(doc.$id),
@@ -64,6 +70,15 @@ const NO_PERMISSIONS: EffectivePermissions = {
     administrator: false,
 };
 
+/**
+ * Returns role ids for user.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<string[]>} The return value.
+ */
 async function getRoleIdsForUser(
     databases: Databases,
     env: EnvConfig,
@@ -86,6 +101,15 @@ async function getRoleIdsForUser(
         : [];
 }
 
+/**
+ * Returns roles by ids.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} serverId - The server id value.
+ * @param {string[]} roleIds - The role ids value.
+ * @returns {Promise<Role[]>} The return value.
+ */
 async function getRolesByIds(
     databases: Databases,
     env: EnvConfig,
@@ -111,6 +135,15 @@ async function getRolesByIds(
     );
 }
 
+/**
+ * Returns base server access.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<{ isServerOwner: boolean; isMember: boolean; roleIds: string[]; roles: Role[]; }>} The return value.
+ */
 async function getBaseServerAccess(
     databases: Databases,
     env: EnvConfig,
@@ -165,6 +198,15 @@ async function getBaseServerAccess(
     };
 }
 
+/**
+ * Returns server permissions for user.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<ServerAccess>} The return value.
+ */
 export async function getServerPermissionsForUser(
     databases: Databases,
     env: EnvConfig,
@@ -210,6 +252,15 @@ export async function getServerPermissionsForUser(
     };
 }
 
+/**
+ * Returns channel access for user.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} channelId - The channel id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<ChannelAccess>} The return value.
+ */
 export async function getChannelAccessForUser(
     databases: Databases,
     env: EnvConfig,

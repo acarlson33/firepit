@@ -20,6 +20,10 @@ const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
 const CATEGORIES_COLLECTION_ID = env.collections.categories;
 // Read memberships collection ID at call time for testability
+/**
+ * Returns memberships collection id.
+ * @returns {string | undefined} The return value.
+ */
 function getMembershipsCollectionId(): string | undefined {
     return getEnvConfig().collections.memberships || undefined;
 }
@@ -29,10 +33,20 @@ const DEFAULT_CHANNEL_PAGE_SIZE = 50;
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
 
+/**
+ * Returns databases.
+ * @returns {Databases} The return value.
+ */
 function getDatabases() {
     return getBrowserDatabases();
 }
 
+/**
+ * Lists servers.
+ *
+ * @param {number} limit - The limit value, if provided.
+ * @returns {Promise<Server[]>} The return value.
+ */
 export async function listServers(limit = 25): Promise<Server[]> {
     const databases = getDatabases();
     const res = await databases.listDocuments({
@@ -64,6 +78,13 @@ export async function listServers(limit = 25): Promise<Server[]> {
     return servers;
 }
 
+/**
+ * Lists servers page.
+ *
+ * @param {number} limit - The limit value, if provided.
+ * @param {string | undefined} cursorAfter - The cursor after value, if provided.
+ * @returns {Promise<{ servers: Server[]; nextCursor: string | null; }>} The return value.
+ */
 export async function listServersPage(
     limit = DEFAULT_SERVER_PAGE_SIZE,
     cursorAfter?: string,
@@ -103,6 +124,13 @@ export async function listServersPage(
     return { servers: items, nextCursor };
 }
 
+/**
+ * Creates server.
+ *
+ * @param {string} name - The name value.
+ * @param {{ bypassFeatureCheck?: boolean | undefined; } | undefined} options - The options value, if provided.
+ * @returns {Promise<Server>} The return value.
+ */
 export function createServer(
     name: string,
     options?: { bypassFeatureCheck?: boolean },
@@ -200,6 +228,13 @@ export function createServer(
     });
 }
 
+/**
+ * Lists channels.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {number} limit - The limit value, if provided.
+ * @returns {Promise<Channel[]>} The return value.
+ */
 export async function listChannels(
     serverId: string,
     limit = 100,
@@ -228,6 +263,14 @@ export async function listChannels(
     });
 }
 
+/**
+ * Lists channels page.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {number} limit - The limit value, if provided.
+ * @param {string | undefined} cursorAfter - The cursor after value, if provided.
+ * @returns {Promise<{ channels: Channel[]; nextCursor: string | null; }>} The return value.
+ */
 export async function listChannelsPage(
     serverId: string,
     limit = DEFAULT_CHANNEL_PAGE_SIZE,
@@ -264,6 +307,14 @@ export async function listChannelsPage(
     return { channels: items, nextCursor };
 }
 
+/**
+ * Creates channel.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {string} name - The name value.
+ * @param {string} _ownerId - The  owner id value.
+ * @returns {Promise<Channel>} The return value.
+ */
 export async function createChannel(
     serverId: string,
     name: string,
@@ -290,6 +341,13 @@ export async function createChannel(
     } satisfies Channel;
 }
 
+/**
+ * Lists categories.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {number} limit - The limit value, if provided.
+ * @returns {Promise<ChannelCategory[]>} The return value.
+ */
 export async function listCategories(
     serverId: string,
     limit = 100,
@@ -320,6 +378,12 @@ export async function listCategories(
 }
 
 // Membership utilities
+/**
+ * Lists memberships for user.
+ *
+ * @param {string} userId - The user id value.
+ * @returns {Promise<Membership[]>} The return value.
+ */
 export async function listMembershipsForUser(
     userId: string,
 ): Promise<Membership[]> {
@@ -344,6 +408,13 @@ export async function listMembershipsForUser(
     });
 }
 
+/**
+ * Handles join server.
+ *
+ * @param {string} serverId - The server id value.
+ * @param {string} userId - The user id value.
+ * @returns {Promise<Membership | null>} The return value.
+ */
 export async function joinServer(
     serverId: string,
     userId: string,
@@ -380,6 +451,12 @@ export async function joinServer(
     } satisfies Membership;
 }
 
+/**
+ * Removes channel.
+ *
+ * @param {string} channelId - The channel id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function deleteChannel(channelId: string) {
     await getDatabases().deleteDocument({
         databaseId: DATABASE_ID,
@@ -388,6 +465,12 @@ export async function deleteChannel(channelId: string) {
     });
 }
 
+/**
+ * Removes server.
+ *
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<void>} The return value.
+ */
 export async function deleteServer(serverId: string) {
     // Best effort delete channels first
     try {

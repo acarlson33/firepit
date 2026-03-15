@@ -20,9 +20,9 @@ type MemberCountDatabases = {
  * Gets the actual member count for a server by querying the memberships collection.
  * This is the single source of truth for member counts.
  *
- * @param databases - Appwrite Databases instance
- * @param serverId - Server ID to count members for
- * @returns The actual number of members in the server
+ * @param {{ listDocuments: { (databaseId: string, collectionId: string, queries?: string[] | undefined): Promise<{ total: number; }>; (params: { databaseId: string; collectionId: string; queries?: string[] | undefined; }): Promise<{ total: number; }>; }; }} databases - The databases value.
+ * @param {string} serverId - The server id value.
+ * @returns {Promise<number>} The return value.
  */
 export async function getActualMemberCount(
     databases: MemberCountDatabases,
@@ -50,6 +50,10 @@ export async function getActualMemberCount(
 /**
  * Gets actual member counts for multiple servers with batched membership scans.
  * Falls back to an empty map if memberships are unavailable.
+ *
+ * @param {{ listDocuments: { (databaseId: string, collectionId: string, queries?: string[] | undefined): Promise<{ total: number; }>; (params: { databaseId: string; collectionId: string; queries?: string[] | undefined; }): Promise<{ total: number; }>; }; }} databases - The databases value.
+ * @param {string[]} serverIds - The server ids value.
+ * @returns {Promise<Map<string, number>>} The return value.
  */
 export async function getActualMemberCounts(
     databases: MemberCountDatabases,

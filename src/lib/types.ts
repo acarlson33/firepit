@@ -116,6 +116,7 @@ export type Membership = {
 
 export type Conversation = {
     $id: string;
+    $permissions?: string[];
     participants: string[]; // Array of user IDs
     lastMessageAt?: string;
     $createdAt: string;
@@ -127,6 +128,8 @@ export type Conversation = {
     readOnly?: boolean;
     readOnlyReason?: string;
     relationship?: RelationshipStatus;
+    unreadThreadCount?: number;
+    hasUnread?: boolean;
     // Enriched data
     otherUser?: {
         userId: string;
@@ -141,8 +144,64 @@ export type Conversation = {
     };
 };
 
+export type InboxItemKind = "mention" | "thread";
+
+export type InboxContextKind = "channel" | "conversation";
+
+export type InboxContractVersion = "thread_v1" | "message_v2";
+
+export type InboxItem = {
+    id: string;
+    kind: InboxItemKind;
+    contextKind: InboxContextKind;
+    contextId: string;
+    serverId?: string;
+    messageId: string;
+    parentMessageId?: string;
+    latestActivityAt: string;
+    unreadCount: number;
+    previewText: string;
+    authorUserId: string;
+    authorLabel: string;
+    authorAvatarUrl?: string;
+    muted: boolean;
+};
+
+export type InboxListResponse = {
+    contractVersion: InboxContractVersion;
+    items: InboxItem[];
+    unreadCount: number;
+    counts: Record<InboxItemKind, number>;
+};
+
+export type InboxDigestItem = {
+    id: string;
+    kind: InboxItemKind;
+    contextKind: InboxContextKind;
+    contextId: string;
+    serverId?: string;
+    messageId: string;
+    parentMessageId?: string;
+    activityAt: string;
+    previewText: string;
+    unreadCount: number;
+    authorUserId: string;
+    authorLabel: string;
+    authorAvatarUrl?: string;
+    muted: boolean;
+};
+
+export type InboxDigestResponse = {
+    contractVersion: InboxContractVersion;
+    contextId?: string;
+    contextKind?: InboxContextKind;
+    items: InboxDigestItem[];
+    totalUnreadCount: number;
+};
+
 export type DirectMessage = {
     $id: string;
+    $permissions?: string[];
     conversationId: string;
     senderId: string;
     receiverId?: string; // Optional for group DMs where there is no single receiver
@@ -174,6 +233,10 @@ export type DirectMessage = {
         text: string;
         senderDisplayName?: string;
     };
+    // Pinning fields
+    isPinned?: boolean;
+    pinnedAt?: string;
+    pinnedBy?: string;
 };
 
 export type UserStatus = {
@@ -193,6 +256,7 @@ export type NavigationPreferences = {
     showDocsInNavigation: boolean;
     showFriendsInNavigation: boolean;
     showSettingsInNavigation: boolean;
+    showAddFriendInHeader: boolean;
     navigationItemOrder: NavigationItemPreferenceId[];
 };
 
@@ -208,6 +272,7 @@ export type UserProfileData = {
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
+    showAddFriendInHeader?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
     status?: {
         status: "online" | "away" | "busy" | "offline";

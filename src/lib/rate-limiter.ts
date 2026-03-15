@@ -35,6 +35,10 @@ export type RateLimitResult = {
 
 /**
  * Check if a request is allowed under rate limiting
+ *
+ * @param {string} identifier - The identifier value.
+ * @param {{ maxRequests: number; windowMs: number; }} config - The config value.
+ * @returns {{ allowed: boolean; remaining: number; resetAt: number; retryAfter?: number | undefined; }} The return value.
  */
 export function checkRateLimit(identifier: string, config: RateLimitConfig): RateLimitResult {
 	const now = Date.now();
@@ -80,6 +84,9 @@ export function checkRateLimit(identifier: string, config: RateLimitConfig): Rat
 
 /**
  * Reset rate limit for a specific identifier
+ *
+ * @param {string} identifier - The identifier value.
+ * @returns {void} The return value.
  */
 export function resetRateLimit(identifier: string): void {
 	rateLimitStore.delete(identifier);
@@ -87,6 +94,10 @@ export function resetRateLimit(identifier: string): void {
 
 /**
  * Get current rate limit status without consuming a request
+ *
+ * @param {string} identifier - The identifier value.
+ * @param {{ maxRequests: number; windowMs: number; }} config - The config value.
+ * @returns {{ allowed: boolean; remaining: number; resetAt: number; retryAfter?: number | undefined; }} The return value.
  */
 export function getRateLimitStatus(identifier: string, config: RateLimitConfig): RateLimitResult {
 	const now = Date.now();

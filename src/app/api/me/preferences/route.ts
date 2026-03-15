@@ -20,11 +20,64 @@ type PreferencesResponse = NavigationPreferences;
 
 type PatchRequestBody = Partial<NavigationPreferences>;
 
-function normalizeNavigationItemOrder(
-    order: NavigationItemPreferenceId[] | undefined,
+type ProfilePreferencesShape = {
+    showDocsInNavigation?: boolean;
+    showFriendsInNavigation?: boolean;
+    showSettingsInNavigation?: boolean;
+    showAddFriendInHeader?: boolean;
+    navigationItemOrder?: NavigationItemPreferenceId[] | string;
+};
+
+function parseNavigationItemOrder(
+    order: NavigationItemPreferenceId[] | string | undefined,
 ) {
-    const normalizedOrder = Array.isArray(order)
-        ? order.filter(
+    if (Array.isArray(order)) {
+        return order;
+    }
+
+    if (typeof order !== "string") {
+        return undefined;
+    }
+
+    const trimmedOrder = order.trim();
+    if (!trimmedOrder) {
+        return undefined;
+    }
+
+    if (trimmedOrder.startsWith("[")) {
+        try {
+            const parsedOrder = JSON.parse(trimmedOrder) as unknown;
+            return Array.isArray(parsedOrder)
+                ? parsedOrder.filter(
+                      (item): item is NavigationItemPreferenceId =>
+                          typeof item === "string" &&
+                          DEFAULT_NAVIGATION_ITEM_ORDER.includes(
+                              item as NavigationItemPreferenceId,
+                          ),
+                  )
+                : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    return trimmedOrder
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item): item is NavigationItemPreferenceId =>
+            DEFAULT_NAVIGATION_ITEM_ORDER.includes(
+                item as NavigationItemPreferenceId,
+            ),
+        );
+}
+
+function normalizeNavigationItemOrder(
+    order: NavigationItemPreferenceId[] | string | undefined,
+) {
+    const parsedOrder = parseNavigationItemOrder(order);
+
+    const normalizedOrder = Array.isArray(parsedOrder)
+        ? parsedOrder.filter(
               (item, index, items): item is NavigationItemPreferenceId =>
                   DEFAULT_NAVIGATION_ITEM_ORDER.includes(item) &&
                   items.indexOf(item) === index,
@@ -40,20 +93,30 @@ function normalizeNavigationItemOrder(
     return normalizedOrder;
 }
 
-function toPreferencesResponse(profile: {
-    showDocsInNavigation?: boolean;
-    showFriendsInNavigation?: boolean;
-    showSettingsInNavigation?: boolean;
-    navigationItemOrder?: NavigationItemPreferenceId[];
-}): PreferencesResponse {
+function toPreferencesResponse(
+    profile: ProfilePreferencesShape,
+): PreferencesResponse {
     return {
         showDocsInNavigation: profile.showDocsInNavigation ?? true,
         showFriendsInNavigation: profile.showFriendsInNavigation ?? true,
         showSettingsInNavigation: profile.showSettingsInNavigation ?? true,
+        showAddFriendInHeader: profile.showAddFriendInHeader ?? true,
         navigationItemOrder: normalizeNavigationItemOrder(
             profile.navigationItemOrder,
         ),
     };
+}
+
+function isLegacyNavigationOrderError(error: unknown) {
+    return (
+        error instanceof Error &&
+        error.message.includes("navigationItemOrder") &&
+        error.message.includes("valid string")
+    );
+}
+
+function serializeNavigationItemOrder(order: NavigationItemPreferenceId[]) {
+    return order.join(",");
 }
 
 export async function GET() {
@@ -133,6 +196,18 @@ export async function PATCH(request: Request) {
         }
 
         if (
+            body.showAddFriendInHeader !== undefined &&
+            typeof body.showAddFriendInHeader !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid showAddFriendInHeader value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
             body.navigationItemOrder !== undefined &&
             (!Array.isArray(body.navigationItemOrder) ||
                 body.navigationItemOrder.some(
@@ -151,6 +226,7 @@ export async function PATCH(request: Request) {
             body.showDocsInNavigation === undefined &&
             body.showFriendsInNavigation === undefined &&
             body.showSettingsInNavigation === undefined &&
+            body.showAddFriendInHeader === undefined &&
             body.navigationItemOrder === undefined
         ) {
             return NextResponse.json(
@@ -161,19 +237,56 @@ export async function PATCH(request: Request) {
             );
         }
 
-        const profile = await getOrCreateUserProfile(user.$id, user.name);
+        const profile = (await getOrCreateUserProfile(
+            user.$id,
+            user.name,
+        )) as ProfilePreferencesShape & { $id: string };
         const mergedPreferences = toPreferencesResponse({
             ...profile,
             ...body,
         });
 
-        const updatedProfile = await updateUserProfile(profile.$id, {
+        const profileUpdate: {
+            showDocsInNavigation: boolean;
+            showFriendsInNavigation: boolean;
+            showSettingsInNavigation: boolean;
+            showAddFriendInHeader: boolean;
+            navigationItemOrder?: NavigationItemPreferenceId[];
+        } = {
             showDocsInNavigation: mergedPreferences.showDocsInNavigation,
             showFriendsInNavigation: mergedPreferences.showFriendsInNavigation,
             showSettingsInNavigation:
                 mergedPreferences.showSettingsInNavigation,
-            navigationItemOrder: mergedPreferences.navigationItemOrder,
-        });
+            showAddFriendInHeader: mergedPreferences.showAddFriendInHeader,
+        };
+
+        if (body.navigationItemOrder !== undefined) {
+            profileUpdate.navigationItemOrder =
+                mergedPreferences.navigationItemOrder;
+        }
+
+        let updatedProfile;
+
+        try {
+            updatedProfile = await updateUserProfile(
+                profile.$id,
+                profileUpdate,
+            );
+        } catch (error) {
+            if (
+                body.navigationItemOrder === undefined ||
+                !isLegacyNavigationOrderError(error)
+            ) {
+                throw error;
+            }
+
+            updatedProfile = await updateUserProfile(profile.$id, {
+                ...profileUpdate,
+                navigationItemOrder: serializeNavigationItemOrder(
+                    mergedPreferences.navigationItemOrder,
+                ),
+            });
+        }
 
         return NextResponse.json(toPreferencesResponse(updatedProfile));
     } catch (error) {

@@ -21,6 +21,9 @@ const {
     mockGetDocument,
     mockGetRelationshipMap,
     mockGetRelationshipStatus,
+    mockUpsertMentionInboxItems,
+    mockListThreadReadsByContext,
+    mockIsThreadUnread,
 } = vi.hoisted(() => ({
     mockGetServerSession: vi.fn(),
     mockListDocuments: vi.fn(),
@@ -30,6 +33,9 @@ const {
     mockGetDocument: vi.fn(),
     mockGetRelationshipMap: vi.fn(),
     mockGetRelationshipStatus: vi.fn(),
+    mockUpsertMentionInboxItems: vi.fn(),
+    mockListThreadReadsByContext: vi.fn(),
+    mockIsThreadUnread: vi.fn(),
 }));
 
 // Mock dependencies
@@ -91,6 +97,18 @@ vi.mock("@/lib/appwrite-friendships", () => ({
     getRelationshipStatus: mockGetRelationshipStatus,
 }));
 
+vi.mock("@/lib/inbox-items", () => ({
+    upsertMentionInboxItems: mockUpsertMentionInboxItems,
+}));
+
+vi.mock("@/lib/thread-read-store", () => ({
+    listThreadReadsByContext: mockListThreadReadsByContext,
+}));
+
+vi.mock("@/lib/thread-read-states", () => ({
+    isThreadUnread: mockIsThreadUnread,
+}));
+
 vi.mock("node-appwrite", () => ({
     ID: {
         unique: () => "mock-id",
@@ -121,6 +139,9 @@ describe("Direct Messages API", () => {
         vi.clearAllMocks();
 
         mockGetDocument.mockRejectedValue(new Error("not found"));
+        mockUpsertMentionInboxItems.mockReset();
+        mockListThreadReadsByContext.mockResolvedValue(new Map());
+        mockIsThreadUnread.mockReturnValue(false);
         mockGetRelationshipStatus.mockResolvedValue({
             blockedByMe: false,
             blockedMe: false,
@@ -310,6 +331,51 @@ describe("Direct Messages API", () => {
     });
 
     describe("POST /api/direct-messages", () => {
+        it("persists mention inbox items when mentions are present", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockGetDocument.mockResolvedValue({
+                $id: "conv-1",
+                participants: ["user-1", "user-2"],
+                isGroup: false,
+            });
+            mockCreateDocument.mockResolvedValue({
+                $id: "dm-mention",
+                $createdAt: "2026-03-11T12:00:00.000Z",
+                conversationId: "conv-1",
+                senderId: "user-1",
+                receiverId: "user-2",
+                text: "Hi @alice",
+                mentions: ["alice"],
+            });
+
+            const response = await POST(
+                new NextRequest("http://localhost/api/direct-messages", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        conversationId: "conv-1",
+                        senderId: "user-1",
+                        receiverId: "user-2",
+                        text: "Hi @alice",
+                        mentions: ["alice"],
+                    }),
+                }),
+            );
+
+            expect(response.status).toBe(200);
+            expect(mockUpsertMentionInboxItems).toHaveBeenCalledWith({
+                authorUserId: "user-1",
+                contextId: "conv-1",
+                contextKind: "conversation",
+                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                mentions: ["alice"],
+                messageId: "dm-mention",
+                previewText: "Hi @alice",
+            });
+        });
+
         it("should return 401 if not authenticated", async () => {
             mockGetServerSession.mockResolvedValue(null);
 

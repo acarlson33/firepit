@@ -53,6 +53,7 @@ vi.mock("node-appwrite", () => ({
         equal: (field: string, value: string) => `equal(${field},${value})`,
         limit: (value: number) => `limit(${value})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
+        cursorAfter: (value: string) => `cursorAfter(${value})`,
     },
 }));
 
@@ -110,6 +111,8 @@ describe("Message Thread API", () => {
         const data = await response.json();
 
         expect(response.status).toBe(200);
+        expect(data.items).toHaveLength(1);
+        expect(data.parentMessage.$id).toBe("msg-1");
         expect(data.replies).toHaveLength(1);
         expect(data.replies[0].threadId).toBe("msg-1");
     });
@@ -151,16 +154,18 @@ describe("Message Thread API", () => {
         const response = await POST(request, {
             params: Promise.resolve({ messageId: "msg-1" }),
         });
+        const data = await response.json();
 
         expect(response.status).toBe(201);
+        expect(data.message.$id).toBe("thread-msg-1");
         expect(mockCreateDocument).toHaveBeenCalledOnce();
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "test-db",
             "messages",
             "msg-1",
             expect.objectContaining({
-                threadReplyCount: 1,
-                threadParticipants: JSON.stringify(["user-2", "user-1"]),
+                threadMessageCount: 2,
+                threadParticipants: ["user-2", "user-1"],
             }),
         );
     });

@@ -9,116 +9,164 @@ import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 interface VersionMetadata {
-	version: string;
-	commitSha: string;
-	commitShort: string;
-	buildTime: string;
-	isCanary: boolean;
-	latestTag: string | null;
-	branch: string;
+    version: string;
+    commitSha: string;
+    commitShort: string;
+    buildTime: string;
+    isCanary: boolean;
+    latestTag: string | null;
+    branch: string;
+}
+
+/**
+ * Normalize a version-like string by removing a leading v prefix and
+ * stripping prerelease/build metadata for numeric comparison.
+ */
+function normalizeVersion(raw: string): string {
+    return raw.trim().replace(/^v/i, "").split("-")[0].split("+")[0] || "0.0.0";
+}
+
+/**
+ * Parse a version into numeric parts for comparison (major.minor.patch...).
+ */
+function parseVersionParts(version: string): number[] {
+    return normalizeVersion(version)
+        .split(".")
+        .map((part) => Number.parseInt(part, 10))
+        .map((part) => (Number.isFinite(part) ? part : 0));
+}
+
+/**
+ * Compare versions.
+ * Returns 1 when left > right, -1 when left < right, and 0 when equal.
+ */
+function compareVersions(left: string, right: string): number {
+    const leftParts = parseVersionParts(left);
+    const rightParts = parseVersionParts(right);
+    const width = Math.max(leftParts.length, rightParts.length);
+
+    for (let index = 0; index < width; index += 1) {
+        const leftValue = leftParts[index] ?? 0;
+        const rightValue = rightParts[index] ?? 0;
+
+        if (leftValue > rightValue) {
+            return 1;
+        }
+        if (leftValue < rightValue) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Align leading v-prefix with a reference label (for stable/canary consistency).
+ */
+function alignVersionPrefix(
+    versionValue: string,
+    referenceLabel: string,
+): string {
+    const normalizedValue = versionValue.trim().replace(/^v/i, "");
+    const referenceHasVPrefix = /^v/i.test(referenceLabel.trim());
+
+    return referenceHasVPrefix ? `v${normalizedValue}` : normalizedValue;
 }
 
 /**
  * Get version from package.json as fallback
  */
 function getPackageVersion(): string {
-	try {
-		const packagePath = join(process.cwd(), "package.json");
-		const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
-		return packageJson.version || "0.0.0";
-	} catch {
-		return "0.0.0";
-	}
+    try {
+        const packagePath = join(process.cwd(), "package.json");
+        const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+        return packageJson.version || "0.0.0";
+    } catch {
+        return "0.0.0";
+    }
 }
 
 /**
  * Execute a git command and return the output
  */
 function gitCommand(command: string): string {
-	try {
-		return execSync(command, { encoding: "utf8" }).trim();
-	} catch {
-		return "";
-	}
+    try {
+        return execSync(command, { encoding: "utf8" }).trim();
+    } catch {
+        return "";
+    }
 }
 
 /**
  * Generate version metadata from git information
  */
 function generateVersionMetadata(): VersionMetadata {
-	// Get current commit SHA
-	const commitSha = gitCommand("git rev-parse HEAD") || "unknown";
-	const commitShort = commitSha.slice(0, 7);
+    const packageVersion = getPackageVersion();
+    const packageVersionLabel = `v${packageVersion}`;
 
-	// Get current branch
-	const branch = gitCommand("git rev-parse --abbrev-ref HEAD") || "unknown";
+    // Get current commit SHA
+    const commitSha = gitCommand("git rev-parse HEAD") || "unknown";
+    const commitShort = commitSha.slice(0, 7);
 
-	// Get the latest tag
-	const latestTag = gitCommand("git describe --tags --abbrev=0 2>/dev/null");
+    // Get current branch
+    const branch = gitCommand("git rev-parse --abbrev-ref HEAD") || "unknown";
 
-	// Check if current commit is tagged
-	const currentTag = gitCommand(
-		"git describe --exact-match --tags HEAD 2>/dev/null",
-	);
+    // Get the latest tag
+    const latestTag = gitCommand("git describe --tags --abbrev=0 2>/dev/null");
+    const gitAvailable = commitSha !== "unknown";
 
-	// Determine version and canary status
-	let version: string;
-	let isCanary = false;
+    // Determine version and canary status
+    let version = packageVersionLabel;
+    let isCanary = false;
 
-	if (currentTag) {
-		// Current commit is tagged - use the tag as version
-		version = currentTag;
-	} else if (latestTag) {
-		// Current commit is not tagged - it's a canary build
-		version = `${latestTag}-canary.${commitShort}`;
-		isCanary = true;
-	} else {
-		// No tags found - fall back to package.json version
-		const packageVersion = getPackageVersion();
-		if (commitSha !== "unknown") {
-			version = `${packageVersion}-canary.${commitShort}`;
-		} else {
-			// Git is completely unavailable - use package.json version only
-			version = packageVersion;
-		}
-		isCanary = commitSha !== "unknown";
-	}
+    if (gitAvailable && latestTag) {
+        const comparison = compareVersions(packageVersion, latestTag);
 
-	return {
-		version,
-		commitSha,
-		commitShort,
-		buildTime: new Date().toISOString(),
-		isCanary,
-		latestTag: latestTag || null,
-		branch,
-	};
+        if (comparison > 0) {
+            // package.json is ahead of git tag: canary build from package version.
+            version = `${packageVersionLabel}-canary.${commitShort}`;
+            isCanary = true;
+        } else {
+            // Equal or behind latest git tag: stable build.
+            version = alignVersionPrefix(latestTag, packageVersionLabel);
+        }
+    }
+
+    return {
+        version,
+        commitSha,
+        commitShort,
+        buildTime: new Date().toISOString(),
+        isCanary,
+        latestTag: latestTag || null,
+        branch,
+    };
 }
 
 /**
  * Main execution
  */
 function main() {
-	console.log("🔧 Generating version metadata...");
+    console.log("🔧 Generating version metadata...");
 
-	const metadata = generateVersionMetadata();
+    const metadata = generateVersionMetadata();
 
-	console.log("📦 Version information:");
-	console.log(`   Version: ${metadata.version}`);
-	console.log(`   Commit: ${metadata.commitSha}`);
-	console.log(`   Branch: ${metadata.branch}`);
-	console.log(`   Canary: ${metadata.isCanary}`);
-	console.log(`   Build time: ${metadata.buildTime}`);
+    console.log("📦 Version information:");
+    console.log(`   Version: ${metadata.version}`);
+    console.log(`   Commit: ${metadata.commitSha}`);
+    console.log(`   Branch: ${metadata.branch}`);
+    console.log(`   Canary: ${metadata.isCanary}`);
+    console.log(`   Build time: ${metadata.buildTime}`);
 
-	// Ensure src/generated directory exists
-	const generatedDir = join(process.cwd(), "src", "generated");
-	mkdirSync(generatedDir, { recursive: true });
+    // Ensure src/generated directory exists
+    const generatedDir = join(process.cwd(), "src", "generated");
+    mkdirSync(generatedDir, { recursive: true });
 
-	// Write metadata to file
-	const outputPath = join(generatedDir, "version-metadata.json");
-	writeFileSync(outputPath, JSON.stringify(metadata, null, 2));
+    // Write metadata to file
+    const outputPath = join(generatedDir, "version-metadata.json");
+    writeFileSync(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);
 
-	console.log(`✅ Version metadata written to ${outputPath}`);
+    console.log(`✅ Version metadata written to ${outputPath}`);
 }
 
 main();
