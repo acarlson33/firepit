@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ConversationList } from "@/app/chat/components/ConversationList";
+import type { InboxItem } from "@/lib/types";
 
 const mockUseFriends = vi.fn();
 const mockGetOrCreateConversation = vi.fn();
@@ -36,6 +37,23 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("ConversationList", () => {
+    function createTestInboxItem(overrides: Partial<InboxItem>): InboxItem {
+        return {
+            authorLabel: "Test Author",
+            authorUserId: "test-user",
+            contextId: "context-1",
+            contextKind: "conversation",
+            id: "inbox-item-1",
+            kind: "mention",
+            latestActivityAt: "2026-03-10T12:00:00.000Z",
+            messageId: "message-1",
+            muted: false,
+            previewText: "Preview",
+            unreadCount: 1,
+            ...overrides,
+        };
+    }
+
     function clickFriendShortcut(name: string) {
         const label = screen.getAllByText(name)[0];
         const shortcutButton = label.closest("button");
@@ -183,37 +201,35 @@ describe("ConversationList", () => {
             <ConversationList
                 conversations={[]}
                 currentUserId="current-user"
-                inboxItems={
-                    [
-                        {
-                            authorLabel: "Unread Friend",
-                            authorUserId: "unread-friend",
-                            contextId: "conv-unread",
-                            contextKind: "conversation",
-                            id: "thread:conversation:conv-unread:message-1",
-                            kind: "thread",
-                            latestActivityAt: "2026-03-11T12:00:00.000Z",
-                            messageId: "message-1",
-                            muted: false,
-                            previewText: "Unread thread reply",
-                            unreadCount: 2,
-                        },
-                        {
-                            authorLabel: "Channel Author",
-                            authorUserId: "channel-user",
-                            contextId: "channel-1",
-                            contextKind: "channel",
-                            id: "mention:channel:channel-1:message-2",
-                            kind: "mention",
-                            latestActivityAt: "2026-03-11T12:01:00.000Z",
-                            messageId: "message-2",
-                            muted: true,
-                            previewText: "hello @current-user",
-                            serverId: "server-1",
-                            unreadCount: 1,
-                        },
-                    ] as never[]
-                }
+                inboxItems={[
+                    createTestInboxItem({
+                        authorLabel: "Unread Friend",
+                        authorUserId: "unread-friend",
+                        contextId: "conv-unread",
+                        contextKind: "conversation",
+                        id: "thread:conversation:conv-unread:message-1",
+                        kind: "thread",
+                        latestActivityAt: "2026-03-11T12:00:00.000Z",
+                        messageId: "message-1",
+                        muted: false,
+                        previewText: "Unread thread reply",
+                        unreadCount: 2,
+                    }),
+                    createTestInboxItem({
+                        authorLabel: "Channel Author",
+                        authorUserId: "channel-user",
+                        contextId: "channel-1",
+                        contextKind: "channel",
+                        id: "mention:channel:channel-1:message-2",
+                        kind: "mention",
+                        latestActivityAt: "2026-03-11T12:01:00.000Z",
+                        messageId: "message-2",
+                        muted: true,
+                        previewText: "hello @current-user",
+                        serverId: "server-1",
+                        unreadCount: 1,
+                    }),
+                ]}
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}
@@ -275,23 +291,21 @@ describe("ConversationList", () => {
             <ConversationList
                 conversations={[]}
                 currentUserId="current-user"
-                inboxItems={
-                    [
-                        {
-                            authorLabel: "Mention Author",
-                            authorUserId: "mention-author",
-                            contextId: "conv-mention",
-                            contextKind: "conversation",
-                            id: "mention:conversation:conv-mention:message-1",
-                            kind: "mention",
-                            latestActivityAt: "2026-03-10T12:00:00.000Z",
-                            messageId: "message-1",
-                            muted: false,
-                            previewText: "hello @current-user",
-                            unreadCount: 1,
-                        },
-                    ] as never[]
-                }
+                inboxItems={[
+                    createTestInboxItem({
+                        authorLabel: "Mention Author",
+                        authorUserId: "mention-author",
+                        contextId: "conv-mention",
+                        contextKind: "conversation",
+                        id: "mention:conversation:conv-mention:message-1",
+                        kind: "mention",
+                        latestActivityAt: "2026-03-10T12:00:00.000Z",
+                        messageId: "message-1",
+                        muted: false,
+                        previewText: "hello @current-user",
+                        unreadCount: 1,
+                    }),
+                ]}
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}
@@ -398,36 +412,34 @@ describe("ConversationList", () => {
             <ConversationList
                 conversations={[]}
                 currentUserId="current-user"
-                inboxItems={
-                    [
-                        {
-                            authorLabel: "Direct Author",
-                            authorUserId: "user-direct",
-                            contextId: "conv-1",
-                            contextKind: "conversation",
-                            id: "thread:conversation:conv-1:message-1",
-                            kind: "thread",
-                            latestActivityAt: "2026-03-11T12:00:00.000Z",
-                            messageId: "message-1",
-                            muted: false,
-                            previewText: "direct unread",
-                            unreadCount: 1,
-                        },
-                        {
-                            authorLabel: "Server Author",
-                            authorUserId: "user-server",
-                            contextId: "channel-1",
-                            contextKind: "channel",
-                            id: "mention-item-1",
-                            kind: "mention",
-                            latestActivityAt: "2026-03-11T12:01:00.000Z",
-                            messageId: "message-2",
-                            muted: false,
-                            previewText: "server mention",
-                            unreadCount: 1,
-                        },
-                    ] as never[]
-                }
+                inboxItems={[
+                    createTestInboxItem({
+                        authorLabel: "Direct Author",
+                        authorUserId: "user-direct",
+                        contextId: "conv-1",
+                        contextKind: "conversation",
+                        id: "thread:conversation:conv-1:message-1",
+                        kind: "thread",
+                        latestActivityAt: "2026-03-11T12:00:00.000Z",
+                        messageId: "message-1",
+                        muted: false,
+                        previewText: "direct unread",
+                        unreadCount: 1,
+                    }),
+                    createTestInboxItem({
+                        authorLabel: "Server Author",
+                        authorUserId: "user-server",
+                        contextId: "channel-1",
+                        contextKind: "channel",
+                        id: "mention-item-1",
+                        kind: "mention",
+                        latestActivityAt: "2026-03-11T12:01:00.000Z",
+                        messageId: "message-2",
+                        muted: false,
+                        previewText: "server mention",
+                        unreadCount: 1,
+                    }),
+                ]}
                 loading={false}
                 onConversationCreated={vi.fn()}
                 onNewConversation={vi.fn()}

@@ -387,22 +387,56 @@ export async function PATCH(request: NextRequest) {
             });
         }
 
-        await Promise.all(
-            Array.from(threadReadWrites.values()).map(async (entry) => {
-                await upsertThreadReads({
+        const threadUpsertResults = await Promise.allSettled(
+            Array.from(threadReadWrites.values()).map((entry) =>
+                upsertThreadReads({
                     contextId: entry.contextId,
                     contextType: entry.contextType,
                     reads: entry.reads,
                     userId: session.$id,
-                });
-            }),
+                }),
+            ),
         );
+
+        const updatedThreadContextCount = threadUpsertResults.filter(
+            (result) => result.status === "fulfilled",
+        ).length;
+        const failedThreadUpserts = threadUpsertResults.filter(
+            (result) => result.status === "rejected",
+        );
+
+        if (failedThreadUpserts.length > 0) {
+            const reasons = failedThreadUpserts.map((result) =>
+                result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason),
+            );
+            logger.error("Failed to upsert thread read states", {
+                contextId: contextId ?? null,
+                contextKind: contextKind ?? null,
+                failureCount: failedThreadUpserts.length,
+                userId: session.$id,
+                reasons,
+            });
+
+            return NextResponse.json(
+                {
+                    error: "Failed to update one or more thread read states",
+                    contextId: contextId ?? null,
+                    contextKind: contextKind ?? null,
+                    failureCount: failedThreadUpserts.length,
+                    reasons,
+                    userId: session.$id,
+                },
+                { status: 500 },
+            );
+        }
 
         recordEvent("InboxMarkAllRead", {
             contextId: contextId ?? null,
             contextKind: contextKind ?? null,
             updatedMentionCount,
-            updatedThreadContextCount: threadReadWrites.size,
+            updatedThreadContextCount,
             userId: session.$id,
         });
 
@@ -410,7 +444,7 @@ export async function PATCH(request: NextRequest) {
             ok: true,
             readAt,
             updatedMentionCount,
-            updatedThreadContextCount: threadReadWrites.size,
+            updatedThreadContextCount,
         });
     }
 

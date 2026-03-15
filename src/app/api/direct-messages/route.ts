@@ -244,55 +244,87 @@ export async function GET(request: NextRequest) {
                         error instanceof Error ? error.message : String(error),
                     userId: session.$id,
                 });
-                readStatesByConversationId = new Map();
             }
 
             if (conversations.length > 0) {
                 try {
-                    const threadParents = await databases.listDocuments(
-                        DATABASE_ID,
-                        DIRECT_MESSAGES_COLLECTION,
-                        [
-                            Query.equal(
-                                "conversationId",
-                                conversations.map(
-                                    (conversation) => conversation.$id,
+                    const pageSize = 500;
+                    let cursorAfterId: string | null = null;
+
+                    while (true) {
+                        const page = await databases.listDocuments(
+                            DATABASE_ID,
+                            DIRECT_MESSAGES_COLLECTION,
+                            [
+                                Query.equal(
+                                    "conversationId",
+                                    conversations.map(
+                                        (conversation) => conversation.$id,
+                                    ),
                                 ),
-                            ),
-                            Query.greaterThan("threadMessageCount", 0),
-                            Query.limit(500),
-                        ],
-                    );
+                                Query.greaterThan("threadMessageCount", 0),
+                                Query.orderAsc("$id"),
+                                Query.limit(pageSize),
+                                ...(cursorAfterId
+                                    ? [Query.cursorAfter(cursorAfterId)]
+                                    : []),
+                            ],
+                        );
 
-                    for (const document of threadParents.documents) {
-                        const conversationId = String(document.conversationId);
-                        const messageId = String(document.$id);
-                        const lastThreadReplyAt =
-                            typeof document.lastThreadReplyAt === "string"
-                                ? document.lastThreadReplyAt
-                                : undefined;
-                        const threadMessageCount =
-                            typeof document.threadMessageCount === "number"
-                                ? document.threadMessageCount
-                                : undefined;
-                        const lastReadAt =
-                            readStatesByConversationId.get(conversationId)?.[
-                                messageId
-                            ];
-
-                        if (
-                            isThreadUnread({
-                                lastReadAt,
-                                lastThreadReplyAt,
-                                threadMessageCount,
-                            })
-                        ) {
-                            unreadThreadsByConversationId.set(
-                                conversationId,
-                                (unreadThreadsByConversationId.get(
-                                    conversationId,
-                                ) ?? 0) + 1,
+                        for (const document of page.documents) {
+                            const threadParent = document as Record<
+                                string,
+                                unknown
+                            >;
+                            const conversationId = String(
+                                threadParent.conversationId,
                             );
+                            const messageId = String(threadParent.$id);
+                            const lastThreadReplyAt =
+                                typeof threadParent.lastThreadReplyAt ===
+                                "string"
+                                    ? threadParent.lastThreadReplyAt
+                                    : undefined;
+                            const threadMessageCount =
+                                typeof threadParent.threadMessageCount ===
+                                "number"
+                                    ? threadParent.threadMessageCount
+                                    : undefined;
+                            const lastReadAt =
+                                readStatesByConversationId.get(
+                                    conversationId,
+                                )?.[messageId];
+
+                            if (
+                                isThreadUnread({
+                                    lastReadAt,
+                                    lastThreadReplyAt,
+                                    threadMessageCount,
+                                })
+                            ) {
+                                unreadThreadsByConversationId.set(
+                                    conversationId,
+                                    (unreadThreadsByConversationId.get(
+                                        conversationId,
+                                    ) ?? 0) + 1,
+                                );
+                            }
+                        }
+
+                        if (page.documents.length < pageSize) {
+                            break;
+                        }
+
+                        const lastDocument = page.documents.at(-1) as
+                            | Record<string, unknown>
+                            | undefined;
+                        cursorAfterId =
+                            lastDocument && typeof lastDocument.$id === "string"
+                                ? lastDocument.$id
+                                : null;
+
+                        if (!cursorAfterId) {
+                            break;
                         }
                     }
                 } catch {

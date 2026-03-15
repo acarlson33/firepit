@@ -225,6 +225,7 @@ export function ConversationList({
     );
 
     const sidebarItemsRef = useRef<MentionItem[]>(sidebarItems);
+    const prevSidebarItemsRef = useRef<MentionItem[]>(sidebarItems);
     const inboxFilterRef = useRef<InboxFilter>(inboxFilter);
     const inboxFilterQueryRef = useRef<InboxFilterQuery>(inboxFilterQuery);
 
@@ -308,6 +309,21 @@ export function ConversationList({
             cancelled = true;
         };
     }, [inboxFilterCacheKey, sidebarMode]);
+
+    useEffect(() => {
+        if (
+            sidebarMode !== "inbox" ||
+            serverFilteredInboxLoading ||
+            prevSidebarItemsRef.current === sidebarItemsRef.current
+        ) {
+            return;
+        }
+
+        setServerFilteredInboxItems(
+            filterInboxItems(sidebarItemsRef.current, inboxFilterRef.current),
+        );
+        prevSidebarItemsRef.current = sidebarItemsRef.current;
+    }, [sidebarItems, sidebarMode]);
 
     const displayedInboxItems =
         sidebarMode === "inbox" ? serverFilteredInboxItems : sidebarItems;

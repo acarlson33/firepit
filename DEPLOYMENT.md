@@ -167,6 +167,7 @@ bun run setup
 - ✅ Creates `main` database (if it doesn't exist)
 - ✅ Creates all collections (servers, channels, messages, profiles, etc.)
 - ✅ Creates dedicated unread persistence storage in `thread_reads` without consuming another `notification_settings` attribute slot
+- ✅ Ensures `setupThreadReads` configures `thread_reads.reads` with the large text limit (~65KB, roughly ~1000 thread entries per context)
 - ✅ Sets up attributes with proper types and sizes
 - ✅ Creates indexes for query performance
 - ✅ Configures storage buckets (avatars)
@@ -355,6 +356,7 @@ The application will automatically load these variables at runtime without requi
 2. Ensure `.env.local` includes `APPWRITE_THREAD_READS_COLLECTION_ID=thread_reads`
 3. Re-run `bun run setup`
 4. Confirm the setup creates or reuses the dedicated `thread_reads` collection instead of trying to add `notification_settings.threadReadStates`
+5. Monitor `thread_reads.reads` utilization per context and alert when payload size approaches the configured limit (for example, at 80%+ of the attribute size)
 
 No manual data migration is required for existing notification-settings documents.
 

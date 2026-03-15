@@ -105,7 +105,16 @@ export async function PATCH(request: Request) {
         );
     }
 
-    const body = (await request.json()) as PatchBody;
+    let body: PatchBody;
+    try {
+        body = (await request.json()) as PatchBody;
+    } catch {
+        return NextResponse.json(
+            { error: "Request body must be valid JSON" },
+            { status: 400 },
+        );
+    }
+
     if (!body.contextId || !isValidContextType(body.contextType)) {
         return NextResponse.json(
             { error: "contextId and valid contextType are required" },

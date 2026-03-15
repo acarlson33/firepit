@@ -1,6 +1,6 @@
 {
     "name": "firepit",
-    "version": "1.6",
+    "version": "1.6.0",
     "private": true,
     "type": "module",
     "scripts": {
@@ -101,7 +101,7 @@
         "@types/react-dom": "19.2.3"
     },
     "lint-staged": {
-        "!(*test).ts,!(*test).tsx": [
+        "!(*test).{ts,tsx}": [
             "eslint --fix",
             "prettier --write"
         ]

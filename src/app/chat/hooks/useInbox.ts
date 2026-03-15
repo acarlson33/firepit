@@ -59,6 +59,25 @@ function sortByActivityAsc(items: InboxItem[]) {
     });
 }
 
+function formatInboxError(error: unknown) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    if (typeof error === "string") {
+        return error;
+    }
+
+    if (error) {
+        const fallback = String(error);
+        return fallback.length > 0 && fallback !== "[object Object]"
+            ? fallback
+            : "Failed to load inbox";
+    }
+
+    return null;
+}
+
 function removeItemsFromInbox(
     inbox: InboxListResponse,
     predicate: (item: InboxItem) => boolean,
@@ -181,18 +200,19 @@ export function useInbox(userId: string | null) {
 
         return Array.from(grouped.values()).map((items) => {
             const sortedAscending = sortByActivityAsc(items);
-            const latestItem = items[0] ?? null;
+            const firstItem = sortedAscending[0] ?? null;
+            const latestItem = sortedAscending.at(-1) ?? null;
 
             return {
-                contextId: items[0]?.contextId ?? "",
-                contextKind: items[0]?.contextKind ?? "channel",
-                firstUnreadItem: sortedAscending[0] ?? null,
+                contextId: firstItem?.contextId ?? "",
+                contextKind: firstItem?.contextKind ?? "channel",
+                firstUnreadItem: firstItem,
                 latestItem,
                 mentionCount: items
                     .filter((item) => item.kind === "mention")
                     .reduce((total, item) => total + item.unreadCount, 0),
                 muted: items.every((item) => item.muted),
-                serverId: items[0]?.serverId,
+                serverId: firstItem?.serverId,
                 threadCount: items
                     .filter((item) => item.kind === "thread")
                     .reduce((total, item) => total + item.unreadCount, 0),
@@ -290,12 +310,7 @@ export function useInbox(userId: string | null) {
     return {
         contractVersion: data.contractVersion,
         counts: data.counts,
-        error:
-            error instanceof Error
-                ? error.message
-                : error
-                  ? "Failed to load inbox"
-                  : null,
+        error: formatInboxError(error),
         getContextSummary,
         items: data.items,
         loading: isEnabled ? isLoading : false,
