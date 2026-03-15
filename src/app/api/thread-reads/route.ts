@@ -18,6 +18,23 @@ type PatchBody = {
     reads?: Record<string, string>;
 };
 
+function normalizeIsoTimestamp(value: string): string {
+    return new Date(value)
+        .toISOString()
+        .replace(ZERO_MILLISECONDS_PATTERN, "Z");
+}
+
+function normalizeReadsMap(
+    reads: Record<string, string>,
+): Record<string, string> {
+    return Object.fromEntries(
+        Object.entries(reads).map(([messageId, readAt]) => [
+            messageId,
+            normalizeIsoTimestamp(readAt),
+        ]),
+    );
+}
+
 function isValidContextType(
     value: string | null | undefined,
 ): value is ThreadReadContextType {
@@ -41,14 +58,17 @@ function isValidReadsMap(value: unknown): value is Record<string, string> {
             return false;
         }
 
-        const normalizedCandidate = candidate
-            .replace(FRACTIONAL_SECONDS_PATTERN, (_, fraction: string) => {
-                return `.${fraction.padEnd(3, "0")}Z`;
-            })
-            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
-        const normalizedParsed = new Date(parsed)
-            .toISOString()
-            .replace(ZERO_MILLISECONDS_PATTERN, "Z");
+        const normalizedCandidate = normalizeIsoTimestamp(
+            candidate.replace(
+                FRACTIONAL_SECONDS_PATTERN,
+                (_, fraction: string) => {
+                    return `.${fraction.padEnd(3, "0")}Z`;
+                },
+            ),
+        );
+        const normalizedParsed = normalizeIsoTimestamp(
+            new Date(parsed).toISOString(),
+        );
 
         return normalizedParsed === normalizedCandidate;
     }
@@ -107,7 +127,19 @@ export async function PATCH(request: Request) {
 
     let body: PatchBody;
     try {
-        body = (await request.json()) as PatchBody;
+        const parsedBody = (await request.json()) as unknown;
+        if (
+            !parsedBody ||
+            typeof parsedBody !== "object" ||
+            Array.isArray(parsedBody)
+        ) {
+            return NextResponse.json(
+                { error: "Request body must be a non-null JSON object" },
+                { status: 400 },
+            );
+        }
+
+        body = parsedBody as PatchBody;
     } catch {
         return NextResponse.json(
             { error: "Request body must be valid JSON" },
@@ -131,16 +163,18 @@ export async function PATCH(request: Request) {
         );
     }
 
+    const normalizedReads = normalizeReadsMap(body.reads);
+
     const updated = await upsertThreadReads({
         contextId: body.contextId,
         contextType: body.contextKind,
-        reads: body.reads,
+        reads: normalizedReads,
         userId: user.$id,
     });
 
     return NextResponse.json({
         contextId: body.contextId,
         contextKind: body.contextKind,
-        reads: updated.reads,
+        reads: normalizeReadsMap(updated.reads),
     });
 }

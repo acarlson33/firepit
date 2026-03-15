@@ -282,7 +282,7 @@ describe("appwrite-messages advanced flows", () => {
         expect(mockFetch).toHaveBeenCalled();
     });
 
-    it("setTyping makes correct API calls with encoded channel IDs", async () => {
+    it("setTyping uses encoded channel ID in delete route", async () => {
         const fetchCalls: FetchCall[] = [];
         const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
             fetchCalls.push({ url, options });
@@ -298,14 +298,13 @@ describe("appwrite-messages advanced flows", () => {
         // Test with channel ID that needs encoding
         const channelId = "channel-id-with-special-chars!@#$%";
 
-        await setTyping("user-123", channelId, "Alice", true);
+        await setTyping("user-123", channelId, "Alice", false);
 
         expect(fetchCalls.length).toBe(1);
-        expect(fetchCalls[0].url).toBe("/api/typing");
-
-        // Verify the body contains the channelId
-        const body = JSON.parse(String(fetchCalls[0]?.options?.body ?? "{}"));
-        expect(body.channelId).toBe(channelId);
+        expect(fetchCalls[0].url).toContain(
+            `/api/typing?channelId=${encodeURIComponent(channelId)}`,
+        );
+        expect(fetchCalls[0].options.method).toBe("DELETE");
     });
 
     it("canSend enforces flood window and limit", async () => {

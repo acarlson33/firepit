@@ -78,6 +78,62 @@ const storage = new Storage(client);
 const dbAny = databases as any;
 const storageAny = storage as any;
 
+export function createFeatureFlagDocumentId(flagKey: string): string {
+    const MAX_PREFIX_LEN = 18;
+    const readablePrefix = flagKey
+        .replace(/[^a-z0-9_-]/gi, "_")
+        .toLowerCase()
+        .replace(/^_+|_+$/g, "")
+        .slice(0, MAX_PREFIX_LEN)
+        .replace(/^_+|_+$/g, "");
+    const hashSuffix = createHash("sha256")
+        .update(flagKey)
+        .digest("hex")
+        .slice(0, 12);
+
+    return `flag_${readablePrefix || "key"}_${hashSuffix}`;
+}
+
+export function isDuplicateConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: unknown;
+        message?: unknown;
+        response?: { code?: unknown; message?: unknown };
+        type?: unknown;
+    };
+
+    let code: number | null = null;
+    if (typeof candidate.code === "number") {
+        code = candidate.code;
+    } else if (typeof candidate.response?.code === "number") {
+        code = candidate.response.code;
+    } else {
+        code = null;
+    }
+    if (code === 409) {
+        return true;
+    }
+
+    const messageParts = [
+        candidate.message,
+        candidate.response?.message,
+        candidate.type,
+    ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+
+    return (
+        messageParts.includes("duplicate") ||
+        messageParts.includes("already exists") ||
+        messageParts.includes("conflict")
+    );
+}
+
 async function tryVariants<T>(variants: Array<() => Promise<T>>): Promise<T> {
     let lastErr: unknown;
     for (const v of variants) {
@@ -874,65 +930,9 @@ async function ensureFeatureFlagDocument(params: {
 }) {
     const { description, enabled, key } = params;
 
-    function createFeatureFlagDocumentId(flagKey: string): string {
-        const MAX_PREFIX_LEN = 18;
-        const readablePrefix = flagKey
-            .replace(/[^a-z0-9_-]/gi, "_")
-            .toLowerCase()
-            .replace(/^_+|_+$/g, "")
-            .slice(0, MAX_PREFIX_LEN)
-            .replace(/^_+|_+$/g, "");
-        const hashSuffix = createHash("sha256")
-            .update(flagKey)
-            .digest("hex")
-            .slice(0, 12);
-
-        return `flag_${readablePrefix || "key"}_${hashSuffix}`;
-    }
-
     const documentId = createFeatureFlagDocumentId(key);
     const now = new Date().toISOString();
     let operation: "added" | "updated" = "added";
-
-    function isDuplicateConflictError(error: unknown): boolean {
-        if (!error || typeof error !== "object") {
-            return false;
-        }
-
-        const candidate = error as {
-            code?: unknown;
-            message?: unknown;
-            response?: { code?: unknown; message?: unknown };
-            type?: unknown;
-        };
-
-        let code: number | null = null;
-        if (typeof candidate.code === "number") {
-            code = candidate.code;
-        } else if (typeof candidate.response?.code === "number") {
-            code = candidate.response.code;
-        } else {
-            code = null;
-        }
-        if (code === 409) {
-            return true;
-        }
-
-        const messageParts = [
-            candidate.message,
-            candidate.response?.message,
-            candidate.type,
-        ]
-            .filter((value): value is string => typeof value === "string")
-            .join(" ")
-            .toLowerCase();
-
-        return (
-            messageParts.includes("duplicate") ||
-            messageParts.includes("already exists") ||
-            messageParts.includes("conflict")
-        );
-    }
 
     const deterministicDocument = (await tryVariants([
         () => dbAny.getDocument(DB_ID, "feature_flags", documentId),

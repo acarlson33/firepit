@@ -248,7 +248,7 @@ export async function GET(request: NextRequest) {
                 });
             }
 
-            if (conversations.length > 0) {
+            if (conversations.length > 0 && !threadReadLookupFailed) {
                 try {
                     const pageSize = 500;
                     let cursorAfterId: string | null = null;
@@ -296,10 +296,6 @@ export async function GET(request: NextRequest) {
                                 readStatesByConversationId.get(
                                     conversationId,
                                 )?.[messageId];
-
-                            if (threadReadLookupFailed && !lastReadAt) {
-                                continue;
-                            }
 
                             if (
                                 isThreadUnread({
@@ -1036,7 +1032,11 @@ export async function POST(request: NextRequest) {
                     ),
                     mentions,
                     messageId: String(message.$id),
-                    parentMessageId: replyToId ?? undefined,
+                    parentMessageId:
+                        replyToId ??
+                        ((message as Record<string, unknown>).replyToId as
+                            | string
+                            | undefined),
                     previewText: text || "",
                 });
             } catch (mentionError) {

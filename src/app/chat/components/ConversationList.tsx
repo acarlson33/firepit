@@ -58,6 +58,34 @@ type InboxFilterQuery = {
     scope?: "all" | "direct" | "server";
 };
 
+function mapInboxItemToMentionItem(item: InboxItem): MentionItem {
+    const destination: ChatMessageDestination =
+        item.contextKind === "channel"
+            ? {
+                  kind: "channel",
+                  channelId: item.contextId,
+                  messageId: item.messageId,
+                  serverId: item.serverId,
+              }
+            : {
+                  kind: "dm",
+                  conversationId: item.contextId,
+                  messageId: item.messageId,
+              };
+
+    return {
+        authorAvatarUrl: item.authorAvatarUrl,
+        authorLabel: item.authorLabel,
+        createdAt: item.latestActivityAt,
+        destination,
+        id: item.id,
+        kind: item.kind,
+        muted: item.muted,
+        text: item.previewText,
+        unreadCount: item.unreadCount,
+    };
+}
+
 function filterInboxItems(
     items: MentionItem[],
     filter: InboxFilter,
@@ -158,34 +186,7 @@ export function ConversationList({
         [conversations, getConversationUnreadCount],
     );
     const sidebarItems = useMemo(
-        () =>
-            inboxItems.map((item) => {
-                const destination: ChatMessageDestination =
-                    item.contextKind === "channel"
-                        ? {
-                              kind: "channel",
-                              channelId: item.contextId,
-                              messageId: item.messageId,
-                              serverId: item.serverId,
-                          }
-                        : {
-                              kind: "dm",
-                              conversationId: item.contextId,
-                              messageId: item.messageId,
-                          };
-
-                return {
-                    authorAvatarUrl: item.authorAvatarUrl,
-                    authorLabel: item.authorLabel,
-                    createdAt: item.latestActivityAt,
-                    destination,
-                    id: item.id,
-                    kind: item.kind,
-                    muted: item.muted,
-                    text: item.previewText,
-                    unreadCount: item.unreadCount,
-                } satisfies MentionItem;
-            }),
+        () => inboxItems.map((item) => mapInboxItemToMentionItem(item)),
         [inboxItems],
     );
     const mentionItems = useMemo(
@@ -263,33 +264,9 @@ export function ConversationList({
                     return;
                 }
 
-                const nextItems = response.items.map((item) => {
-                    const destination: ChatMessageDestination =
-                        item.contextKind === "channel"
-                            ? {
-                                  kind: "channel",
-                                  channelId: item.contextId,
-                                  messageId: item.messageId,
-                                  serverId: item.serverId,
-                              }
-                            : {
-                                  kind: "dm",
-                                  conversationId: item.contextId,
-                                  messageId: item.messageId,
-                              };
-
-                    return {
-                        authorAvatarUrl: item.authorAvatarUrl,
-                        authorLabel: item.authorLabel,
-                        createdAt: item.latestActivityAt,
-                        destination,
-                        id: item.id,
-                        kind: item.kind,
-                        muted: item.muted,
-                        text: item.previewText,
-                        unreadCount: item.unreadCount,
-                    } satisfies MentionItem;
-                });
+                const nextItems = response.items.map((item) =>
+                    mapInboxItemToMentionItem(item),
+                );
 
                 setServerFilteredInboxItems(nextItems);
             })
@@ -342,6 +319,10 @@ export function ConversationList({
     const activeList =
         sidebarMode === "inbox" ? displayedInboxItems : activeConversationList;
     const isEmpty = activeList.length === 0;
+    const emptyStateMessage =
+        sidebarMode === "inbox"
+            ? "No unread items for this filter"
+            : "No conversations yet";
     const mentionUnreadCount = useMemo(
         () =>
             mentionItems.reduce(
@@ -382,9 +363,7 @@ export function ConversationList({
             : otherUser?.displayName || otherUser?.userId || "Unknown User";
         const subtitle = isGroup
             ? `${participantCount} participants`
-            : otherUser?.status
-              ? otherUser.status
-              : undefined;
+            : (otherUser?.status ?? undefined);
         const secondaryLine = conversation.readOnly
             ? conversation.readOnlyReason || "Read only"
             : conversation.lastMessage?.text || subtitle;
@@ -976,11 +955,7 @@ export function ConversationList({
                             <MessageSquare className="mb-2 size-8 text-muted-foreground" />
                         )}
                         <p className="text-muted-foreground text-sm">
-                            {sidebarMode === "inbox"
-                                ? serverFilteredInboxLoading
-                                    ? "Loading inbox items..."
-                                    : "No unread items for this filter"
-                                : "No conversations yet"}
+                            {emptyStateMessage}
                         </p>
                         {sidebarMode === "chats" ? (
                             <Button

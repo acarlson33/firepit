@@ -109,12 +109,12 @@ describe("thread reads route", () => {
             contextId: "conv-1",
             contextType: "conversation",
             reads: {
-                "message-2": "2026-03-10T14:00:00.000Z",
+                "message-2": "2026-03-10T14:00:00Z",
             },
             userId: "user-1",
         });
         expect(data.reads).toEqual({
-            "message-2": "2026-03-10T14:00:00.000Z",
+            "message-2": "2026-03-10T14:00:00Z",
         });
     });
 });

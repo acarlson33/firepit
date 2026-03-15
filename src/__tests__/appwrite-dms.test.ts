@@ -18,6 +18,7 @@ let updateDocumentOverride:
     | null = null;
 const mockDocuments: Record<string, Models.Document[]> = {};
 const QUERY_VALUE_SEPARATOR = "|||";
+let uniqueCounter = 0;
 
 // Mock environment variables
 beforeEach(() => {
@@ -28,6 +29,7 @@ beforeEach(() => {
     process.env.APPWRITE_DIRECT_MESSAGES_COLLECTION_ID = "direct_messages";
     listDocumentsOverride = null;
     updateDocumentOverride = null;
+    uniqueCounter = 0;
     for (const key of Object.keys(mockDocuments)) {
         delete mockDocuments[key];
     }
@@ -46,77 +48,110 @@ vi.mock("appwrite", () => {
             }
             const docs = [...(mockDocuments[params.collectionId] || [])];
 
-            const filtered = (params.queries || []).reduce(
-                (currentDocs, query) => {
-                    const equalMatch = /^equal\("([^"]+)","(.*)"\)$/.exec(
-                        query,
-                    );
-                    if (equalMatch) {
-                        const [, field, rawValue] = equalMatch;
-                        const values = rawValue
-                            .split(QUERY_VALUE_SEPARATOR)
-                            .filter(Boolean);
-                        return currentDocs.filter((doc) => {
-                            const value = (doc as Record<string, unknown>)[
-                                field
-                            ];
-                            if (Array.isArray(value)) {
-                                return value.some((item) =>
-                                    values.includes(String(item)),
-                                );
-                            }
-                            return values.includes(String(value ?? ""));
-                        });
-                    }
-
-                    const orderDescMatch = /^orderDesc\("([^"]+)"\)$/.exec(
-                        query,
-                    );
-                    if (orderDescMatch) {
-                        const [, field] = orderDescMatch;
-                        return [...currentDocs].sort((left, right) => {
-                            const leftValue = String(
-                                (left as Record<string, unknown>)[field] ??
-                                    left.$createdAt ??
-                                    left.$id,
-                            );
-                            const rightValue = String(
-                                (right as Record<string, unknown>)[field] ??
-                                    right.$createdAt ??
-                                    right.$id,
-                            );
-                            return rightValue.localeCompare(leftValue);
-                        });
-                    }
-
-                    const cursorMatch = /^cursorAfter\("([^"]+)"\)$/.exec(
-                        query,
-                    );
-                    if (cursorMatch) {
-                        const [, cursorId] = cursorMatch;
-                        const cursorIndex = currentDocs.findIndex(
-                            (doc) => doc.$id === cursorId,
-                        );
-                        if (cursorIndex >= 0) {
-                            return currentDocs.slice(cursorIndex + 1);
-                        }
-                    }
-
-                    const limitMatch = /^limit\((\d+)\)$/.exec(query);
-                    if (limitMatch) {
-                        const [, rawLimit] = limitMatch;
-                        const parsedLimit = Number.parseInt(rawLimit, 10);
-                        return currentDocs.slice(0, parsedLimit);
-                    }
-
-                    return currentDocs;
-                },
-                docs,
+            const queries = params.queries || [];
+            const equalQueries = queries.filter((query) =>
+                /^equal\("[^"]+",".*"\)$/.test(query),
+            );
+            const orderDescQuery = queries.find((query) =>
+                /^orderDesc\("[^"]+"\)$/.test(query),
+            );
+            const cursorQuery = queries.find((query) =>
+                /^cursorAfter\("[^"]+"\)$/.test(query),
+            );
+            const limitQuery = queries.find((query) =>
+                /^limit\(\d+\)$/.test(query),
             );
 
+            const filtered = equalQueries.reduce((currentDocs, query) => {
+                const equalMatch = /^equal\("([^"]+)","(.*)"\)$/.exec(query);
+                if (!equalMatch) {
+                    return currentDocs;
+                }
+
+                const [, field, rawValue] = equalMatch;
+                const values = rawValue
+                    .split(QUERY_VALUE_SEPARATOR)
+                    .filter(Boolean);
+
+                return currentDocs.filter((doc) => {
+                    const value = (doc as Record<string, unknown>)[field];
+                    if (Array.isArray(value)) {
+                        return value.some((item) =>
+                            values.includes(String(item)),
+                        );
+                    }
+
+                    return values.includes(String(value ?? ""));
+                });
+            }, docs);
+
+            const sorted = (() => {
+                if (!orderDescQuery) {
+                    return filtered;
+                }
+
+                const orderDescMatch = /^orderDesc\("([^"]+)"\)$/.exec(
+                    orderDescQuery,
+                );
+                if (!orderDescMatch) {
+                    return filtered;
+                }
+
+                const [, field] = orderDescMatch;
+                return [...filtered].sort((left, right) => {
+                    const leftValue = String(
+                        (left as Record<string, unknown>)[field] ??
+                            left.$createdAt ??
+                            left.$id,
+                    );
+                    const rightValue = String(
+                        (right as Record<string, unknown>)[field] ??
+                            right.$createdAt ??
+                            right.$id,
+                    );
+                    return rightValue.localeCompare(leftValue);
+                });
+            })();
+
+            const afterCursor = (() => {
+                if (!cursorQuery) {
+                    return sorted;
+                }
+
+                const cursorMatch = /^cursorAfter\("([^"]+)"\)$/.exec(
+                    cursorQuery,
+                );
+                if (!cursorMatch) {
+                    return sorted;
+                }
+
+                const [, cursorId] = cursorMatch;
+                const cursorIndex = sorted.findIndex(
+                    (doc) => doc.$id === cursorId,
+                );
+                return cursorIndex >= 0
+                    ? sorted.slice(cursorIndex + 1)
+                    : sorted;
+            })();
+
+            const limited = (() => {
+                if (!limitQuery) {
+                    return afterCursor;
+                }
+
+                const limitMatch = /^limit\((\d+)\)$/.exec(limitQuery);
+                if (!limitMatch) {
+                    return afterCursor;
+                }
+
+                const [, rawLimit] = limitMatch;
+                const parsedLimit = Number.parseInt(rawLimit, 10);
+                return afterCursor.slice(0, parsedLimit);
+            })();
+
             return {
-                documents: filtered,
-                total: filtered.length,
+                documents: limited,
+                total: limited.length,
             };
         }
 
@@ -188,7 +223,10 @@ vi.mock("appwrite", () => {
         Client: MockClient,
         Databases: MockDatabases,
         ID: {
-            unique: () => `test-${Date.now()}`,
+            unique: () => {
+                uniqueCounter += 1;
+                return `test-${Date.now()}-${uniqueCounter}`;
+            },
         },
         Query: {
             equal: (attr: string, val: string | string[]) =>
@@ -203,7 +241,7 @@ vi.mock("appwrite", () => {
             delete: (role: string) => `delete("${role}")`,
         },
         Role: {
-            user: (id: string) => `user(${id})`,
+            user: (id: string) => `user:${id}`,
         },
     };
 });
@@ -294,6 +332,7 @@ describe("Direct Messages - Core Functions", () => {
         // Getting the same conversation should return same structure
         const conv2 = await getOrCreateConversation("user4", "user3");
         expect(conv2).toHaveProperty("$id");
+        expect(conv2.$id).toBe(conv1.$id);
         expect(conv2.participants).toEqual(conv1.participants);
     });
 
@@ -350,10 +389,10 @@ describe("Direct Messages - Permission Handling", () => {
         );
         expect(conversation.$permissions).toEqual(
             expect.arrayContaining([
-                'read("user(user1)")',
-                'read("user(user2)")',
-                'update("user(user1)")',
-                'update("user(user2)")',
+                'read("user:user1")',
+                'read("user:user2")',
+                'update("user:user1")',
+                'update("user:user2")',
             ]),
         );
     });
@@ -375,10 +414,10 @@ describe("Direct Messages - Permission Handling", () => {
         expect(message.text).toBe("Test");
         expect(message.$permissions).toEqual(
             expect.arrayContaining([
-                'read("user(user1)")',
-                'read("user(user2)")',
-                'update("user(user1)")',
-                'delete("user(user1)")',
+                'read("user:user1")',
+                'read("user:user2")',
+                'update("user:user1")',
+                'delete("user:user1")',
             ]),
         );
     });
