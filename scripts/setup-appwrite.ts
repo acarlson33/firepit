@@ -875,7 +875,7 @@ async function ensureFeatureFlagDocument(params: {
     const { description, enabled, key } = params;
 
     function createFeatureFlagDocumentId(flagKey: string): string {
-        const MAX_PREFIX_LEN = 40;
+        const MAX_PREFIX_LEN = 18;
         const readablePrefix = flagKey
             .replace(/[^a-z0-9_-]/gi, "_")
             .toLowerCase()

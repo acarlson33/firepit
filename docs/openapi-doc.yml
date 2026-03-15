@@ -2226,9 +2226,22 @@ paths:
                       type: integer
                       minimum: 1
                       maximum: 100
+                - name: contextId
+                  in: query
+                  required: false
+                  description: Context identifier. Must be provided together with contextKind for context-scoped inbox responses.
+                  schema:
+                      type: string
+                - name: contextKind
+                  in: query
+                  required: false
+                  description: Context discriminator. Must be provided together with contextId.
+                  schema:
+                      type: string
+                      enum: [channel, conversation]
             responses:
                 "200":
-                    description: Inbox list response
+                    description: Inbox list response. When both contextId and contextKind are provided, returns the context-scoped variant.
                     content:
                         application/json:
                             schema:
@@ -2262,6 +2275,7 @@ paths:
                                       itemIds:
                                           type: array
                                           minItems: 1
+                                                                                    maxItems: 50
                                           items:
                                               type: string
                                 - type: object
@@ -2281,17 +2295,33 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
-                                properties:
-                                    ok:
-                                        type: boolean
-                                    readAt:
-                                        type: string
-                                        format: date-time
-                                    updatedMentionCount:
-                                        type: integer
-                                    updatedThreadContextCount:
-                                        type: integer
+                                oneOf:
+                                    - type: object
+                                      description: Response for itemIds-based read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedCount:
+                                              type: integer
+                                          truncated:
+                                              type: boolean
+                                          truncatedCount:
+                                              type: integer
+                                    - type: object
+                                      description: Response for mark-all-read updates.
+                                      properties:
+                                          ok:
+                                              type: boolean
+                                          readAt:
+                                              type: string
+                                              format: date-time
+                                          updatedMentionCount:
+                                              type: integer
+                                          updatedThreadContextCount:
+                                              type: integer
                 "400":
                     description: Invalid request body
                     content:

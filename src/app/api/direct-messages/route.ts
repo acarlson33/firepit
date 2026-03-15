@@ -230,6 +230,7 @@ export async function GET(request: NextRequest) {
                 string,
                 Record<string, string>
             >();
+            let threadReadLookupFailed = false;
             try {
                 readStatesByConversationId = await listThreadReadsByContext({
                     contextIds: conversations.map(
@@ -239,6 +240,7 @@ export async function GET(request: NextRequest) {
                     userId: session.$id,
                 });
             } catch (error) {
+                threadReadLookupFailed = true;
                 logger.warn("Thread read lookup failed for conversations", {
                     error:
                         error instanceof Error ? error.message : String(error),
@@ -294,6 +296,10 @@ export async function GET(request: NextRequest) {
                                 readStatesByConversationId.get(
                                     conversationId,
                                 )?.[messageId];
+
+                            if (threadReadLookupFailed && !lastReadAt) {
+                                continue;
+                            }
 
                             if (
                                 isThreadUnread({
@@ -1030,6 +1036,7 @@ export async function POST(request: NextRequest) {
                     ),
                     mentions,
                     messageId: String(message.$id),
+                    parentMessageId: replyToId ?? undefined,
                     previewText: text || "",
                 });
             } catch (mentionError) {
