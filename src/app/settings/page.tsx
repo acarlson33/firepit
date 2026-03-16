@@ -24,6 +24,7 @@ import { FriendsSettings } from "@/components/friends-settings";
 import { NotificationSettings } from "@/components/notification-settings";
 import { PendingFriendRequestsBadge } from "@/components/pending-friend-requests-badge";
 import { SettingsSectionNav } from "@/components/settings-section-nav";
+import { TelemetrySettings } from "@/components/telemetry-settings";
 import { FlushCaches } from "./FlushCaches";
 
 export default async function SettingsPage() {
@@ -338,9 +339,13 @@ export default async function SettingsPage() {
                                     Privacy & Blocking
                                 </h2>
                                 <p className="text-muted-foreground">
-                                    Review blocked users and keep your
-                                    direct-message boundaries current.
+                                    Manage your telemetry preference and review
+                                    blocked users to keep your messaging
+                                    boundaries current.
                                 </p>
+                            </div>
+                            <div className="mb-6">
+                                <TelemetrySettings />
                             </div>
                             <BlockedUsersSettings />
                         </section>

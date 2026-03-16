@@ -904,6 +904,7 @@ async function setupProfiles() {
     await ensureBooleanAttribute("profiles", "showFriendsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showSettingsInNavigation", false);
     await ensureBooleanAttribute("profiles", "showAddFriendInHeader", false);
+    await ensureBooleanAttribute("profiles", "telemetryEnabled", false);
     await ensureStringAttribute("profiles", "navigationItemOrder", 255, false);
     await ensureIndex("profiles", "idx_userId", "key", ["userId"]);
     try {

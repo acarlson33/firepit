@@ -73,8 +73,45 @@ vi.mock("@/lib/server-channel-access", () => ({
 vi.mock("@/lib/notification-settings", () => ({
     getNotificationSettings: mockGetNotificationSettings,
     getEffectiveNotificationLevel: vi.fn(
-        (settings: { globalNotifications: string }) =>
-            settings.globalNotifications,
+        (
+            settings: {
+                globalNotifications: string;
+                channelOverrides?: Record<string, { level: string }>;
+                conversationOverrides?: Record<string, { level: string }>;
+                serverOverrides?: Record<string, { level: string }>;
+            },
+            context: {
+                channelId?: string;
+                conversationId?: string;
+                serverId?: string;
+            },
+        ) => {
+            if (context.conversationId) {
+                const conversationOverride =
+                    settings.conversationOverrides?.[context.conversationId];
+                if (conversationOverride) {
+                    return conversationOverride.level;
+                }
+            }
+
+            if (context.channelId) {
+                const channelOverride =
+                    settings.channelOverrides?.[context.channelId];
+                if (channelOverride) {
+                    return channelOverride.level;
+                }
+            }
+
+            if (context.serverId) {
+                const serverOverride =
+                    settings.serverOverrides?.[context.serverId];
+                if (serverOverride) {
+                    return serverOverride.level;
+                }
+            }
+
+            return settings.globalNotifications;
+        },
     ),
 }));
 
@@ -499,6 +536,200 @@ describe("inbox", () => {
         expect(digest.totalUnreadCount).toBe(2);
         expect(digest.items).toHaveLength(1);
         expect(digest.items[0]?.id).toBe("mention-b");
+    });
+
+    it("applies v1.5 triage ordering for mentions, muted state, and unread count", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "messages-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "thread-high",
+                                channelId: "channel-1",
+                                userId: "user-2",
+                                text: "high",
+                                threadMessageCount: 4,
+                                lastThreadReplyAt: "2026-03-11T13:00:00.000Z",
+                                $createdAt: "2026-03-11T10:00:00.000Z",
+                                serverId: "server-1",
+                            },
+                            {
+                                $id: "thread-low",
+                                channelId: "channel-1",
+                                userId: "user-3",
+                                text: "low",
+                                threadMessageCount: 2,
+                                lastThreadReplyAt: "2026-03-11T14:00:00.000Z",
+                                $createdAt: "2026-03-11T11:00:00.000Z",
+                                serverId: "server-1",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-muted",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-muted",
+                                messageId: "message-muted",
+                                latestActivityAt: "2026-03-11T15:00:00.000Z",
+                                previewText: "muted mention",
+                                authorUserId: "user-4",
+                            },
+                            {
+                                $id: "mention-active",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-active",
+                                messageId: "message-active",
+                                latestActivityAt: "2026-03-11T12:30:00.000Z",
+                                previewText: "active mention",
+                                authorUserId: "user-5",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            { userId: "user-2", displayName: "Thread High" },
+                            { userId: "user-3", displayName: "Thread Low" },
+                            { userId: "user-4", displayName: "Mention Muted" },
+                            { userId: "user-5", displayName: "Mention Active" },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue({
+            globalNotifications: "nothing",
+            conversationOverrides: {
+                "conversation-active": {
+                    level: "all",
+                },
+            },
+        });
+
+        const digest = await listInboxDigest({
+            limit: 10,
+            useDigestV15: true,
+            userId: "user-1",
+        });
+
+        expect(digest.items.map((item) => item.id)).toEqual([
+            "mention-active",
+            "mention-muted",
+            "thread:channel:channel-1:thread-high",
+            "thread:channel:channel-1:thread-low",
+        ]);
+        expect(digest.totalUnreadCount).toBe(8);
+    });
+
+    it("keeps v1.5 digest ordering deterministic across repeated calls", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "messages-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "thread-a",
+                                channelId: "channel-1",
+                                userId: "user-2",
+                                text: "A",
+                                threadMessageCount: 2,
+                                lastThreadReplyAt: "2026-03-11T12:00:00.000Z",
+                                $createdAt: "2026-03-11T10:00:00.000Z",
+                                serverId: "server-1",
+                            },
+                            {
+                                $id: "thread-b",
+                                channelId: "channel-1",
+                                userId: "user-3",
+                                text: "B",
+                                threadMessageCount: 2,
+                                lastThreadReplyAt: "2026-03-11T12:00:00.000Z",
+                                $createdAt: "2026-03-11T11:00:00.000Z",
+                                serverId: "server-1",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-a",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-a",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "A",
+                                authorUserId: "user-4",
+                            },
+                            {
+                                $id: "mention-b",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-2",
+                                messageId: "message-b",
+                                latestActivityAt: "2026-03-11T12:00:00.000Z",
+                                previewText: "B",
+                                authorUserId: "user-5",
+                            },
+                        ],
+                    };
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            { userId: "user-2", displayName: "Thread A" },
+                            { userId: "user-3", displayName: "Thread B" },
+                            { userId: "user-4", displayName: "Mention A" },
+                            { userId: "user-5", displayName: "Mention B" },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue({
+            globalNotifications: "all",
+        });
+
+        const firstDigest = await listInboxDigest({
+            limit: 10,
+            useDigestV15: true,
+            userId: "user-1",
+        });
+        const secondDigest = await listInboxDigest({
+            limit: 10,
+            useDigestV15: true,
+            userId: "user-1",
+        });
+
+        expect(secondDigest.items.map((item) => item.id)).toEqual(
+            firstDigest.items.map((item) => item.id),
+        );
     });
 
     it.each([

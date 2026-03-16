@@ -5,6 +5,7 @@ import "../index.css";
 import Providers from "@/components/providers";
 import { AppLayout } from "@/components/app-layout";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { PostHogClientInit } from "@/components/posthog-client-init";
 
 const geistSans = Geist({
     variable: "--font-geist-sans",
@@ -54,6 +55,7 @@ export default function RootLayout({
             <body
                 className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
             >
+                <PostHogClientInit />
                 <ServiceWorkerRegistration />
                 <Providers>
                     <div className="relative min-h-screen overflow-hidden">

@@ -2,6 +2,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { useState } from "react";
 import { Search, UserPlus } from "lucide-react";
 
@@ -79,6 +80,20 @@ export default function Header({ onSearchClick }: HeaderProps) {
         e.preventDefault();
         setLoggingOut(true);
         try {
+            posthog.capture(
+                "user_logged_out",
+                {
+                    source: "header",
+                },
+                {
+                    send_instantly: true,
+                },
+            );
+            // Give the SDK a brief window to queue/transmit before identity reset.
+            await new Promise((resolve) => {
+                setTimeout(resolve, 250);
+            });
+            posthog.reset();
             await logoutAction();
             setUserData(null);
             router.push("/");

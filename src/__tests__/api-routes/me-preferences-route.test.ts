@@ -46,6 +46,7 @@ describe("Me preferences route", () => {
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
             showAddFriendInHeader: false,
+            telemetryEnabled: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
 
@@ -57,6 +58,7 @@ describe("Me preferences route", () => {
         expect(data.showFriendsInNavigation).toBe(true);
         expect(data.showSettingsInNavigation).toBe(false);
         expect(data.showAddFriendInHeader).toBe(false);
+        expect(data.telemetryEnabled).toBe(false);
         expect(data.navigationItemOrder).toEqual([
             "settings",
             "docs",
@@ -79,6 +81,7 @@ describe("Me preferences route", () => {
         expect(data.showFriendsInNavigation).toBe(true);
         expect(data.showSettingsInNavigation).toBe(true);
         expect(data.showAddFriendInHeader).toBe(true);
+        expect(data.telemetryEnabled).toBe(true);
         expect(data.navigationItemOrder).toEqual([
             "docs",
             "friends",
@@ -137,6 +140,22 @@ describe("Me preferences route", () => {
         expect(mockUpdateProfile).not.toHaveBeenCalled();
     });
 
+    it("rejects invalid telemetry preference payloads", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
+
+        const request = new NextRequest("http://localhost/api/me/preferences", {
+            method: "PATCH",
+            body: JSON.stringify({ telemetryEnabled: "nope" }),
+        });
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toContain("telemetryEnabled");
+        expect(mockUpdateProfile).not.toHaveBeenCalled();
+    });
+
     it("rejects invalid navigation order payloads", async () => {
         mockSession.mockResolvedValue({ $id: "user-1", name: "August" });
 
@@ -162,6 +181,7 @@ describe("Me preferences route", () => {
             showFriendsInNavigation: true,
             showSettingsInNavigation: true,
             showAddFriendInHeader: true,
+            telemetryEnabled: true,
             navigationItemOrder: ["docs", "friends", "settings"],
         });
         mockUpdateProfile.mockResolvedValue({
@@ -171,6 +191,7 @@ describe("Me preferences route", () => {
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
             showAddFriendInHeader: false,
+            telemetryEnabled: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
 
@@ -180,6 +201,7 @@ describe("Me preferences route", () => {
                 showDocsInNavigation: false,
                 showSettingsInNavigation: false,
                 showAddFriendInHeader: false,
+                telemetryEnabled: false,
                 navigationItemOrder: ["settings", "docs", "friends"],
             }),
         });
@@ -193,11 +215,13 @@ describe("Me preferences route", () => {
             showFriendsInNavigation: true,
             showSettingsInNavigation: false,
             showAddFriendInHeader: false,
+            telemetryEnabled: false,
             navigationItemOrder: ["settings", "docs", "friends"],
         });
         expect(data.showDocsInNavigation).toBe(false);
         expect(data.showSettingsInNavigation).toBe(false);
         expect(data.showAddFriendInHeader).toBe(false);
+        expect(data.telemetryEnabled).toBe(false);
         expect(data.navigationItemOrder).toEqual([
             "settings",
             "docs",
