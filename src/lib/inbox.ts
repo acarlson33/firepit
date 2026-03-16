@@ -5,6 +5,7 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerClient } from "@/lib/appwrite-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
+import { recordEvent, recordMetric } from "@/lib/newrelic-utils";
 import {
     getEffectiveNotificationLevel,
     getNotificationSettings,
@@ -808,6 +809,7 @@ export async function listInboxDigest(params: {
     useDigestV15?: boolean;
     userId: string;
 }): Promise<InboxDigestResponse> {
+    const startedAt = Date.now();
     const {
         contextId,
         contextKind,
@@ -836,6 +838,21 @@ export async function listInboxDigest(params: {
         ? scopedItems.reduce((total, item) => total + item.unreadCount, 0)
         : inbox.unreadCount;
     const pagedItems = buildDigestItems(scopedItems, limit, useDigestV15);
+
+    const durationMs = Date.now() - startedAt;
+    recordMetric("Custom/InboxDigest/DurationMs", durationMs);
+    recordMetric("Custom/InboxDigest/ReturnedItems", pagedItems.length);
+    recordMetric("Custom/InboxDigest/TotalUnread", totalUnreadCount);
+    recordEvent("InboxDigestGenerated", {
+        contextKind: contextKind ?? "all",
+        isContextScoped,
+        mode: useDigestV15 ? "v1_5" : "v1",
+        requestedLimit: limit,
+        returnedItems: pagedItems.length,
+        totalUnreadCount,
+        userId,
+        durationMs,
+    });
 
     return {
         contractVersion: inbox.contractVersion,
@@ -884,9 +901,32 @@ function buildDigestItemsV15(
     items: InboxItem[],
     limit: number,
 ): InboxDigestResponse["items"] {
-    // v1.5 keeps the same response schema but prioritizes mentions for triage.
-    const mentions = items.filter((item) => item.kind === "mention");
-    const threads = items.filter((item) => item.kind === "thread");
+    const triagedItems = [...items].sort((left, right) => {
+        const leftKindPriority = left.kind === "mention" ? 0 : 1;
+        const rightKindPriority = right.kind === "mention" ? 0 : 1;
+        if (leftKindPriority !== rightKindPriority) {
+            return leftKindPriority - rightKindPriority;
+        }
 
-    return buildDigestItemsV1([...mentions, ...threads], limit);
+        const leftMutedPriority = left.muted ? 1 : 0;
+        const rightMutedPriority = right.muted ? 1 : 0;
+        if (leftMutedPriority !== rightMutedPriority) {
+            return leftMutedPriority - rightMutedPriority;
+        }
+
+        if (left.unreadCount !== right.unreadCount) {
+            return right.unreadCount - left.unreadCount;
+        }
+
+        const activityOrder = right.latestActivityAt.localeCompare(
+            left.latestActivityAt,
+        );
+        if (activityOrder !== 0) {
+            return activityOrder;
+        }
+
+        return left.id.localeCompare(right.id);
+    });
+
+    return buildDigestItemsV1(triagedItems, limit);
 }

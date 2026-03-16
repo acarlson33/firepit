@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createServer } from "@/lib/appwrite-servers";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 export async function POST(request: Request) {
     try {
@@ -37,6 +38,12 @@ export async function POST(request: Request) {
         // createServer will check the feature flag internally
         // and throw an error if server creation is disabled
         const server = await createServer(name.trim());
+
+        getPostHogClient().capture({
+            distinctId: session.$id,
+            event: "server_created",
+            properties: { serverId: server.$id },
+        });
 
         return NextResponse.json({
             success: true,

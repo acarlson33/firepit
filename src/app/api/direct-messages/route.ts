@@ -14,6 +14,7 @@ import { isThreadUnread } from "@/lib/thread-read-states";
 import {
     logger,
     recordError,
+    recordEvent,
     setTransactionName,
     trackApiCall,
     trackMessage,
@@ -1078,6 +1079,17 @@ export async function POST(request: NextRequest) {
             textLength: text?.length || 0,
         });
 
+        recordEvent("message_sent", {
+            actorUserId: senderId,
+            conversationId,
+            hasAttachments: Boolean(attachments && attachments.length > 0),
+            hasImage: Boolean(imageFileId),
+            isReply: Boolean(replyToId),
+            messageId: String(message.$id),
+            messageType: "dm",
+            totalQueryTimeMs: Date.now() - startTime,
+        });
+
         logger.info("DM sent", {
             messageId: message.$id,
             senderId,
@@ -1133,6 +1145,8 @@ export async function POST(request: NextRequest) {
  * Body: { text }
  */
 export async function PATCH(request: NextRequest) {
+    const startTime = Date.now();
+
     try {
         const session = await getServerSession();
         if (!session?.$id) {
@@ -1200,6 +1214,14 @@ export async function PATCH(request: NextRequest) {
             },
         );
 
+        recordEvent("message_edited", {
+            actorUserId: session.$id,
+            conversationId: String(updated.conversationId),
+            messageId,
+            messageType: "dm",
+            totalQueryTimeMs: Date.now() - startTime,
+        });
+
         return jsonResponse({
             message: {
                 $id: updated.$id,
@@ -1232,6 +1254,8 @@ export async function PATCH(request: NextRequest) {
  * Soft delete a direct message
  */
 export async function DELETE(request: NextRequest) {
+    const startTime = Date.now();
+
     try {
         const session = await getServerSession();
         if (!session?.$id) {
@@ -1281,6 +1305,14 @@ export async function DELETE(request: NextRequest) {
                 removedBy: session.$id,
             },
         );
+
+        recordEvent("message_deleted", {
+            actorUserId: session.$id,
+            conversationId: String(message.conversationId),
+            messageId,
+            messageType: "dm",
+            totalQueryTimeMs: Date.now() - startTime,
+        });
 
         return jsonResponse({ success: true });
     } catch (error) {

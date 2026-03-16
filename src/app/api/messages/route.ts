@@ -9,6 +9,7 @@ import type { Message, FileAttachment } from "@/lib/types";
 import {
     logger,
     recordError,
+    recordEvent,
     setTransactionName,
     trackApiCall,
     trackMessage,
@@ -244,6 +245,18 @@ export async function POST(request: NextRequest) {
             textLength: text?.length || 0,
         });
 
+        recordEvent("message_sent", {
+            actorUserId: userId,
+            channelId,
+            hasAttachments: Boolean(attachments && attachments.length > 0),
+            hasImage: Boolean(imageFileId),
+            isReply: Boolean(replyToId),
+            messageId: message.$id,
+            messageType: "channel",
+            serverId: serverId || undefined,
+            totalQueryTimeMs: Date.now() - startTime,
+        });
+
         logger.info("Message sent", {
             messageId: message.$id,
             userId,
@@ -285,6 +298,8 @@ export async function POST(request: NextRequest) {
  * Edits a message (user must own the message)
  */
 export async function PATCH(request: NextRequest) {
+    const startTime = Date.now();
+
     try {
         // Verify user is authenticated
         const user = await getServerSession();
@@ -358,6 +373,15 @@ export async function PATCH(request: NextRequest) {
             replyToId: doc.replyToId as string | undefined,
         };
 
+        recordEvent("message_edited", {
+            actorUserId: user.$id,
+            channelId: message.channelId,
+            messageId,
+            messageType: "channel",
+            serverId: message.serverId,
+            totalQueryTimeMs: Date.now() - startTime,
+        });
+
         return NextResponse.json({ message });
     } catch (error) {
         return NextResponse.json(
@@ -377,6 +401,8 @@ export async function PATCH(request: NextRequest) {
  * Deletes a message (user must own the message)
  */
 export async function DELETE(request: NextRequest) {
+    const startTime = Date.now();
+
     try {
         // Verify user is authenticated
         const user = await getServerSession();
@@ -418,6 +444,15 @@ export async function DELETE(request: NextRequest) {
             env.collections.messages,
             messageId,
         );
+
+        recordEvent("message_deleted", {
+            actorUserId: user.$id,
+            channelId: String(existing.channelId ?? ""),
+            messageId,
+            messageType: "channel",
+            serverId: String(existing.serverId ?? ""),
+            totalQueryTimeMs: Date.now() - startTime,
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

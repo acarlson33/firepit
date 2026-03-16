@@ -87,6 +87,7 @@ See the `/docs` folder for detailed guides:
 - [Chat And Realtime](./docs/CHAT_AND_REALTIME.md) - Messaging, DMs, pins, threads, search, emoji, typing, status, and notifications
 - [Server Administration](./docs/SERVER_ADMINISTRATION.md) - Roles, invites, permissions, moderation, and audit logging
 - [Feature Flags](./docs/FEATURE_FLAGS.md) - Flag behavior and rollout notes
+- [Telemetry Providers](./docs/TELEMETRY.md) - New Relic/PostHog routing, parity, and event mapping matrix
 - [Platform Operations](./docs/PLATFORM_OPERATIONS.md) - Performance, monitoring, releases, and operations
 - [Roadmap](./ROADMAP.md) - Discord parity roadmap and product priorities
 - [Roadmap Implementation Spec](./docs/ROADMAP_IMPLEMENTATION_SPEC.md) - Technical breakdown of roadmap workstreams

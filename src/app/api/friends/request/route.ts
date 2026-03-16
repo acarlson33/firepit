@@ -6,6 +6,7 @@ import {
     RelationshipError,
 } from "@/lib/appwrite-friendships";
 import { getServerSession } from "@/lib/auth-server";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 type RequestBody = {
     targetUserId?: string;
@@ -36,6 +37,11 @@ export async function POST(request: Request) {
             user.$id,
             targetUserId,
         );
+
+        getPostHogClient().capture({
+            distinctId: user.$id,
+            event: "friend_request_sent",
+        });
 
         return NextResponse.json({ friendship, relationship }, { status: 201 });
     } catch (error) {

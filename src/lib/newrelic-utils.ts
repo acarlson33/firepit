@@ -1,58 +1,209 @@
 /**
  * New Relic Utilities
- * 
+ *
  * Comprehensive utilities for logging, error tracking, and custom instrumentation
  * with New Relic APM.
  */
 
+import { getPostHogClient } from "@/lib/posthog-server";
+
 type NewRelicAgent = {
-  recordCustomEvent: (_eventType: string, _attributes: Record<string, unknown>) => void;
-  recordMetric: (_name: string, _value: number) => void;
-  incrementMetric: (_name: string, _value?: number) => void;
-  noticeError: (_error: Error | string, _customAttributes?: Record<string, unknown>) => void;
-  addCustomAttribute: (_key: string, _value: string | number | boolean) => void;
-  addCustomAttributes: (_attributes: Record<string, string | number | boolean>) => void;
-  setTransactionName: (_name: string) => void;
-  getTransaction: () => Transaction | null;
-  startBackgroundTransaction: (_name: string, _group: string | null, _handle: () => void) => void;
-  startWebTransaction: (_url: string, _handle: () => void) => void;
-  endTransaction: () => void;
-  getBrowserTimingHeader: () => string;
-  setLlmTokenCountCallback: (_callback: (_model: string, _content: string) => number) => void;
+    recordCustomEvent: (
+        _eventType: string,
+        _attributes: Record<string, unknown>,
+    ) => void;
+    recordMetric: (_name: string, _value: number) => void;
+    incrementMetric: (_name: string, _value?: number) => void;
+    noticeError: (
+        _error: Error | string,
+        _customAttributes?: Record<string, unknown>,
+    ) => void;
+    addCustomAttribute: (
+        _key: string,
+        _value: string | number | boolean,
+    ) => void;
+    addCustomAttributes: (
+        _attributes: Record<string, string | number | boolean>,
+    ) => void;
+    setTransactionName: (_name: string) => void;
+    getTransaction: () => Transaction | null;
+    startBackgroundTransaction: (
+        _name: string,
+        _group: string | null,
+        _handle: () => void,
+    ) => void;
+    startWebTransaction: (_url: string, _handle: () => void) => void;
+    endTransaction: () => void;
+    getBrowserTimingHeader: () => string;
+    setLlmTokenCountCallback: (
+        _callback: (_model: string, _content: string) => number,
+    ) => void;
 };
 
 type Transaction = {
-  end: () => void;
-  ignore: () => void;
-  acceptDistributedTraceHeaders: (_transportType: string, _headers: Record<string, string>) => void;
-  insertDistributedTraceHeaders: (_headers: Record<string, string>) => void;
+    end: () => void;
+    ignore: () => void;
+    acceptDistributedTraceHeaders: (
+        _transportType: string,
+        _headers: Record<string, string>,
+    ) => void;
+    insertDistributedTraceHeaders: (_headers: Record<string, string>) => void;
 };
 
+type TelemetryProvider = "newrelic" | "posthog" | "both" | "none";
+
 let newrelic: NewRelicAgent | null = null;
+
+function getTelemetryProvider(): TelemetryProvider {
+    const rawProvider = process.env.TELEMETRY_PROVIDER?.toLowerCase();
+    if (
+        rawProvider === "newrelic" ||
+        rawProvider === "posthog" ||
+        rawProvider === "both" ||
+        rawProvider === "none"
+    ) {
+        return rawProvider;
+    }
+
+    return "newrelic";
+}
+
+function shouldSendToNewRelic() {
+    const provider = getTelemetryProvider();
+    return provider === "newrelic" || provider === "both";
+}
+
+function hasPostHogCredentials() {
+    const projectToken =
+        process.env.POSTHOG_PROJECT_API_KEY ??
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+    const host =
+        process.env.POSTHOG_HOST ?? process.env.NEXT_PUBLIC_POSTHOG_HOST;
+
+    return Boolean(projectToken && host);
+}
+
+function shouldSendToPostHog() {
+    if (process.env.NODE_ENV === "test") {
+        return process.env.ENABLE_POSTHOG_IN_TESTS === "true";
+    }
+
+    if (typeof window !== "undefined") {
+        return false;
+    }
+
+    const provider = getTelemetryProvider();
+    if (provider !== "posthog" && provider !== "both") {
+        return false;
+    }
+
+    return hasPostHogCredentials();
+}
+
+function getDistinctId(attributes?: Record<string, unknown>) {
+    const candidate =
+        attributes?.distinctId ??
+        attributes?.userId ??
+        attributes?.actorUserId ??
+        attributes?.senderId ??
+        attributes?.authorUserId ??
+        attributes?.actorId;
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate;
+    }
+
+    return "server";
+}
+
+function getPersonProperties(attributes?: Record<string, unknown>) {
+    if (!attributes) {
+        return undefined;
+    }
+
+    const usernameCandidate =
+        attributes.username ??
+        attributes.userName ??
+        attributes.actorUserName ??
+        attributes.name;
+    const emailCandidate = attributes.email;
+
+    const properties: Record<string, unknown> = {};
+    if (
+        typeof usernameCandidate === "string" &&
+        usernameCandidate.trim().length > 0
+    ) {
+        properties.username = usernameCandidate;
+    }
+
+    if (
+        typeof emailCandidate === "string" &&
+        emailCandidate.trim().length > 0
+    ) {
+        properties.email = emailCandidate;
+    }
+
+    return Object.keys(properties).length > 0 ? properties : undefined;
+}
+
+function capturePostHogEvent(
+    event: string,
+    attributes?: Record<string, unknown>,
+) {
+    if (!shouldSendToPostHog()) {
+        return;
+    }
+
+    try {
+        const posthog = getPostHogClient();
+        const personProperties = getPersonProperties(attributes);
+        posthog.capture({
+            distinctId: getDistinctId(attributes),
+            event,
+            properties: personProperties
+                ? {
+                      ...attributes,
+                      $set: {
+                          ...personProperties,
+                      },
+                  }
+                : attributes,
+        });
+    } catch {
+        // Telemetry forwarding should never impact request handling.
+    }
+}
+
+function getNewRelicForDispatch() {
+    if (!newrelic && shouldSendToNewRelic()) {
+        void getNewRelic();
+    }
+
+    return getNewRelicSync();
+}
 
 /**
  * Initialize New Relic (should be called automatically by instrumentation.ts)
  * @returns {Promise<NewRelicAgent | null>} The return value.
  */
 export async function initNewRelic() {
-  if (typeof window !== 'undefined') {
-    // New Relic doesn't run in the browser (only server-side)
-    return null;
-  }
+    if (typeof window !== "undefined") {
+        // New Relic doesn't run in the browser (only server-side)
+        return null;
+    }
 
-  if (newrelic) {
-    return newrelic;
-  }
+    if (newrelic) {
+        return newrelic;
+    }
 
-  try {
-    // Dynamic import for New Relic (server-side only)
-    const nr = await import('newrelic');
-    newrelic = nr.default as NewRelicAgent;
-    return newrelic;
-  } catch {
-    // New Relic not available (development mode or not configured)
-    return null;
-  }
+    try {
+        // Dynamic import for New Relic (server-side only)
+        const nr = await import("newrelic");
+        newrelic = nr.default as NewRelicAgent;
+        return newrelic;
+    } catch {
+        // New Relic not available (development mode or not configured)
+        return null;
+    }
 }
 
 /**
@@ -60,10 +211,10 @@ export async function initNewRelic() {
  * @returns {Promise<NewRelicAgent | null>} The return value.
  */
 export async function getNewRelic(): Promise<NewRelicAgent | null> {
-  if (!newrelic) {
-    newrelic = await initNewRelic();
-  }
-  return newrelic;
+    if (!newrelic) {
+        newrelic = await initNewRelic();
+    }
+    return newrelic;
 }
 
 /**
@@ -71,29 +222,29 @@ export async function getNewRelic(): Promise<NewRelicAgent | null> {
  * @returns {NewRelicAgent | null} The return value.
  */
 export function getNewRelicSync(): NewRelicAgent | null {
-  return newrelic;
+    return newrelic;
 }
 
 /**
  * Log levels for structured logging
  */
 export const LogLevel = {
-  DEBUG: 'debug',
-  INFO: 'info',
-  WARN: 'warn',
-  ERROR: 'error',
+    DEBUG: "debug",
+    INFO: "info",
+    WARN: "warn",
+    ERROR: "error",
 } as const;
 
-export type LogLevelType = typeof LogLevel[keyof typeof LogLevel];
+export type LogLevelType = (typeof LogLevel)[keyof typeof LogLevel];
 
 /**
  * Structured log entry (for internal use)
  */
 type _LogEntry = {
-  level: LogLevelType;
-  message: string;
-  timestamp: string;
-  attributes?: Record<string, unknown>;
+    level: LogLevelType;
+    message: string;
+    timestamp: string;
+    attributes?: Record<string, unknown>;
 };
 
 /**
@@ -105,41 +256,60 @@ type _LogEntry = {
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function log(level: LogLevelType, message: string, attributes?: Record<string, unknown>) {
-  // Console logging (development and as fallback)
-  if (process.env.NODE_ENV !== 'production') {
-    const consoleMethod = level === LogLevel.ERROR ? 'error' : 
-                         level === LogLevel.WARN ? 'warn' : 'log';
-    console[consoleMethod](`[${String(level).toUpperCase()}]`, message, attributes || '');
-  }
+export function log(
+    level: LogLevelType,
+    message: string,
+    attributes?: Record<string, unknown>,
+) {
+    // Console logging (development and as fallback)
+    if (process.env.NODE_ENV !== "production") {
+        const consoleMethod =
+            level === LogLevel.ERROR
+                ? "error"
+                : level === LogLevel.WARN
+                  ? "warn"
+                  : "log";
+        console[consoleMethod](
+            `[${String(level).toUpperCase()}]`,
+            message,
+            attributes || "",
+        );
+    }
 
-  // New Relic custom event
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.recordCustomEvent('ApplicationLog', {
-      level,
-      message,
-      timestamp: new Date().toISOString(),
-      ...attributes,
+    // New Relic custom event
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.recordCustomEvent("ApplicationLog", {
+            level,
+            message,
+            timestamp: new Date().toISOString(),
+            ...attributes,
+        });
+    }
+
+    capturePostHogEvent("application_log", {
+        level,
+        message,
+        timestamp: new Date().toISOString(),
+        ...attributes,
     });
-  }
 }
 
 /**
  * Convenience logging functions
  */
 export const logger = {
-  debug: (message: string, attributes?: Record<string, unknown>) => 
-    log(LogLevel.DEBUG, message, attributes),
-  
-  info: (message: string, attributes?: Record<string, unknown>) => 
-    log(LogLevel.INFO, message, attributes),
-  
-  warn: (message: string, attributes?: Record<string, unknown>) => 
-    log(LogLevel.WARN, message, attributes),
-  
-  error: (message: string, attributes?: Record<string, unknown>) => 
-    log(LogLevel.ERROR, message, attributes),
+    debug: (message: string, attributes?: Record<string, unknown>) =>
+        log(LogLevel.DEBUG, message, attributes),
+
+    info: (message: string, attributes?: Record<string, unknown>) =>
+        log(LogLevel.INFO, message, attributes),
+
+    warn: (message: string, attributes?: Record<string, unknown>) =>
+        log(LogLevel.WARN, message, attributes),
+
+    error: (message: string, attributes?: Record<string, unknown>) =>
+        log(LogLevel.ERROR, message, attributes),
 };
 
 /**
@@ -149,15 +319,27 @@ export const logger = {
  * @param {Record<string, unknown> | undefined} customAttributes - The custom attributes value, if provided.
  * @returns {void} The return value.
  */
-export function recordError(error: Error | string, customAttributes?: Record<string, unknown>) {
-  // Console error as fallback
-  console.error('[ERROR]', error, customAttributes || '');
+export function recordError(
+    error: Error | string,
+    customAttributes?: Record<string, unknown>,
+) {
+    // Console error as fallback
+    console.error("[ERROR]", error, customAttributes || "");
 
-  const nr = getNewRelicSync();
-  if (nr) {
-    const errorObj = typeof error === 'string' ? new Error(error) : error;
-    nr.noticeError(errorObj, customAttributes);
-  }
+    const errorObject =
+        error instanceof Error ? error : new Error(String(error));
+
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.noticeError(errorObject, customAttributes);
+    }
+
+    capturePostHogEvent("error_recorded", {
+        errorMessage: errorObject.message,
+        errorName: errorObject.name,
+        errorStack: errorObject.stack,
+        ...customAttributes,
+    });
 }
 
 /**
@@ -167,11 +349,16 @@ export function recordError(error: Error | string, customAttributes?: Record<str
  * @param {{ [x: string]: unknown; }} attributes - The attributes value.
  * @returns {void} The return value.
  */
-export function recordEvent(eventType: string, attributes: Record<string, unknown>) {
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.recordCustomEvent(eventType, attributes);
-  }
+export function recordEvent(
+    eventType: string,
+    attributes: Record<string, unknown>,
+) {
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.recordCustomEvent(eventType, attributes);
+    }
+
+    capturePostHogEvent(eventType, attributes);
 }
 
 /**
@@ -182,10 +369,15 @@ export function recordEvent(eventType: string, attributes: Record<string, unknow
  * @returns {void} The return value.
  */
 export function recordMetric(name: string, value: number) {
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.recordMetric(name, value);
-  }
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.recordMetric(name, value);
+    }
+
+    capturePostHogEvent("metric_recorded", {
+        metricName: name,
+        value,
+    });
 }
 
 /**
@@ -196,10 +388,15 @@ export function recordMetric(name: string, value: number) {
  * @returns {void} The return value.
  */
 export function incrementMetric(name: string, value = 1) {
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.incrementMetric(name, value);
-  }
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.incrementMetric(name, value);
+    }
+
+    capturePostHogEvent("metric_incremented", {
+        metricName: name,
+        incrementBy: value,
+    });
 }
 
 /**
@@ -208,11 +405,13 @@ export function incrementMetric(name: string, value = 1) {
  * @param {{ [x: string]: string | number | boolean; }} attributes - The attributes value.
  * @returns {void} The return value.
  */
-export function addTransactionAttributes(attributes: Record<string, string | number | boolean>) {
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.addCustomAttributes(attributes);
-  }
+export function addTransactionAttributes(
+    attributes: Record<string, string | number | boolean>,
+) {
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.addCustomAttributes(attributes);
+    }
 }
 
 /**
@@ -222,10 +421,10 @@ export function addTransactionAttributes(attributes: Record<string, string | num
  * @returns {void} The return value.
  */
 export function setTransactionName(name: string) {
-  const nr = getNewRelicSync();
-  if (nr) {
-    nr.setTransactionName(name);
-  }
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        nr.setTransactionName(name);
+    }
 }
 
 /**
@@ -239,22 +438,22 @@ export function setTransactionName(name: string) {
  * @returns {void} The return value.
  */
 export function trackApiCall(
-  endpoint: string,
-  method: string,
-  statusCode: number,
-  duration: number,
-  attributes?: Record<string, unknown>
+    endpoint: string,
+    method: string,
+    statusCode: number,
+    duration: number,
+    attributes?: Record<string, unknown>,
 ) {
-  recordEvent('ApiCall', {
-    endpoint,
-    method,
-    statusCode,
-    duration,
-    success: statusCode >= 200 && statusCode < 300,
-    ...attributes,
-  });
+    recordEvent("ApiCall", {
+        endpoint,
+        method,
+        statusCode,
+        duration,
+        success: statusCode >= 200 && statusCode < 300,
+        ...attributes,
+    });
 
-  recordMetric(`Custom/API/${endpoint}/${method}`, duration);
+    recordMetric(`Custom/API/${endpoint}/${method}`, duration);
 }
 
 /**
@@ -268,21 +467,21 @@ export function trackApiCall(
  * @returns {void} The return value.
  */
 export function trackDatabaseQuery(
-  operation: string,
-  collection: string,
-  duration: number,
-  recordCount?: number,
-  attributes?: Record<string, unknown>
+    operation: string,
+    collection: string,
+    duration: number,
+    recordCount?: number,
+    attributes?: Record<string, unknown>,
 ) {
-  recordEvent('DatabaseQuery', {
-    operation,
-    collection,
-    duration,
-    recordCount,
-    ...attributes,
-  });
+    recordEvent("DatabaseQuery", {
+        operation,
+        collection,
+        duration,
+        recordCount,
+        ...attributes,
+    });
 
-  recordMetric(`Custom/Database/${collection}/${operation}`, duration);
+    recordMetric(`Custom/Database/${collection}/${operation}`, duration);
 }
 
 /**
@@ -294,17 +493,17 @@ export function trackDatabaseQuery(
  * @returns {void} The return value.
  */
 export function trackAuth(
-  action: 'login' | 'logout' | 'signup' | 'failed',
-  userId?: string,
-  attributes?: Record<string, unknown>
+    action: "login" | "logout" | "signup" | "failed",
+    userId?: string,
+    attributes?: Record<string, unknown>,
 ) {
-  recordEvent('Authentication', {
-    action,
-    userId,
-    ...attributes,
-  });
+    recordEvent("Authentication", {
+        action,
+        userId,
+        ...attributes,
+    });
 
-  incrementMetric(`Custom/Auth/${action}`);
+    incrementMetric(`Custom/Auth/${action}`);
 }
 
 /**
@@ -316,17 +515,17 @@ export function trackAuth(
  * @returns {void} The return value.
  */
 export function trackUserAction(
-  action: string,
-  userId: string,
-  attributes?: Record<string, unknown>
+    action: string,
+    userId: string,
+    attributes?: Record<string, unknown>,
 ) {
-  recordEvent('UserAction', {
-    action,
-    userId,
-    ...attributes,
-  });
+    recordEvent("UserAction", {
+        action,
+        userId,
+        ...attributes,
+    });
 
-  incrementMetric(`Custom/UserAction/${action}`);
+    incrementMetric(`Custom/UserAction/${action}`);
 }
 
 /**
@@ -338,17 +537,17 @@ export function trackUserAction(
  * @returns {void} The return value.
  */
 export function trackMessage(
-  type: 'sent' | 'edited' | 'deleted',
-  channelType: 'channel' | 'dm',
-  attributes?: Record<string, unknown>
+    type: "sent" | "edited" | "deleted",
+    channelType: "channel" | "dm",
+    attributes?: Record<string, unknown>,
 ) {
-  recordEvent('Message', {
-    type,
-    channelType,
-    ...attributes,
-  });
+    recordEvent("Message", {
+        type,
+        channelType,
+        ...attributes,
+    });
 
-  incrementMetric(`Custom/Message/${type}/${channelType}`);
+    incrementMetric(`Custom/Message/${type}/${channelType}`);
 }
 
 /**
@@ -359,14 +558,18 @@ export function trackMessage(
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function trackTiming(name: string, duration: number, attributes?: Record<string, unknown>) {
-  recordEvent('Timing', {
-    name,
-    duration,
-    ...attributes,
-  });
+export function trackTiming(
+    name: string,
+    duration: number,
+    attributes?: Record<string, unknown>,
+) {
+    recordEvent("Timing", {
+        name,
+        duration,
+        ...attributes,
+    });
 
-  recordMetric(`Custom/Timing/${name}`, duration);
+    recordMetric(`Custom/Timing/${name}`, duration);
 }
 
 /**
@@ -378,22 +581,25 @@ export function trackTiming(name: string, duration: number, attributes?: Record<
  * @returns {Promise<T>} The return value.
  */
 export async function measureAsync<T>(
-  name: string,
-  fn: () => Promise<T>,
-  attributes?: Record<string, unknown>
+    name: string,
+    fn: () => Promise<T>,
+    attributes?: Record<string, unknown>,
 ): Promise<T> {
-  const start = Date.now();
-  try {
-    const result = await fn();
-    const duration = Date.now() - start;
-    trackTiming(name, duration, { success: true, ...attributes });
-    return result;
-  } catch (error) {
-    const duration = Date.now() - start;
-    trackTiming(name, duration, { success: false, ...attributes });
-    recordError(error instanceof Error ? error : String(error), { operation: name, ...attributes });
-    throw error;
-  }
+    const start = Date.now();
+    try {
+        const result = await fn();
+        const duration = Date.now() - start;
+        trackTiming(name, duration, { success: true, ...attributes });
+        return result;
+    } catch (error) {
+        const duration = Date.now() - start;
+        trackTiming(name, duration, { success: false, ...attributes });
+        recordError(error instanceof Error ? error : String(error), {
+            operation: name,
+            ...attributes,
+        });
+        throw error;
+    }
 }
 
 /**
@@ -405,22 +611,25 @@ export async function measureAsync<T>(
  * @returns {T} The return value.
  */
 export function measureSync<T>(
-  name: string,
-  fn: () => T,
-  attributes?: Record<string, unknown>
+    name: string,
+    fn: () => T,
+    attributes?: Record<string, unknown>,
 ): T {
-  const start = Date.now();
-  try {
-    const result = fn();
-    const duration = Date.now() - start;
-    trackTiming(name, duration, { success: true, ...attributes });
-    return result;
-  } catch (error) {
-    const duration = Date.now() - start;
-    trackTiming(name, duration, { success: false, ...attributes });
-    recordError(error instanceof Error ? error : String(error), { operation: name, ...attributes });
-    throw error;
-  }
+    const start = Date.now();
+    try {
+        const result = fn();
+        const duration = Date.now() - start;
+        trackTiming(name, duration, { success: true, ...attributes });
+        return result;
+    } catch (error) {
+        const duration = Date.now() - start;
+        trackTiming(name, duration, { success: false, ...attributes });
+        recordError(error instanceof Error ? error : String(error), {
+            operation: name,
+            ...attributes,
+        });
+        throw error;
+    }
 }
 
 /**
@@ -432,29 +641,29 @@ export function measureSync<T>(
  * @returns {Promise<T>} The return value.
  */
 export async function backgroundTransaction<T>(
-  name: string,
-  group: string,
-  fn: () => Promise<T>
+    name: string,
+    group: string,
+    fn: () => Promise<T>,
 ): Promise<T> {
-  const nr = getNewRelicSync();
-  if (!nr) {
-    return fn();
-  }
+    const nr = getNewRelicForDispatch();
+    if (!shouldSendToNewRelic() || !nr) {
+        return fn();
+    }
 
-  return new Promise((resolve, reject) => {
-    nr.startBackgroundTransaction(name, group, () => {
-      void (async () => {
-        try {
-          const result = await fn();
-          nr.endTransaction();
-          resolve(result);
-        } catch (error) {
-          nr.endTransaction();
-          reject(error);
-        }
-      })();
+    return new Promise((resolve, reject) => {
+        nr.startBackgroundTransaction(name, group, () => {
+            void (async () => {
+                try {
+                    const result = await fn();
+                    nr.endTransaction();
+                    resolve(result);
+                } catch (error) {
+                    nr.endTransaction();
+                    reject(error);
+                }
+            })();
+        });
     });
-  });
 }
 
 /**
@@ -463,9 +672,9 @@ export async function backgroundTransaction<T>(
  * @returns {string} The return value.
  */
 export function getBrowserTimingHeader(): string {
-  const nr = getNewRelicSync();
-  if (nr) {
-    return nr.getBrowserTimingHeader();
-  }
-  return '';
+    const nr = getNewRelicForDispatch();
+    if (shouldSendToNewRelic() && nr) {
+        return nr.getBrowserTimingHeader();
+    }
+    return "";
 }

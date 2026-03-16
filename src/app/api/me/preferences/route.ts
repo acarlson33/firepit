@@ -25,6 +25,7 @@ type ProfilePreferencesShape = {
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
     showAddFriendInHeader?: boolean;
+    telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[] | string;
 };
 
@@ -101,6 +102,7 @@ function toPreferencesResponse(
         showFriendsInNavigation: profile.showFriendsInNavigation ?? true,
         showSettingsInNavigation: profile.showSettingsInNavigation ?? true,
         showAddFriendInHeader: profile.showAddFriendInHeader ?? true,
+        telemetryEnabled: profile.telemetryEnabled ?? true,
         navigationItemOrder: normalizeNavigationItemOrder(
             profile.navigationItemOrder,
         ),
@@ -208,6 +210,18 @@ export async function PATCH(request: Request) {
         }
 
         if (
+            body.telemetryEnabled !== undefined &&
+            typeof body.telemetryEnabled !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid telemetryEnabled value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
             body.navigationItemOrder !== undefined &&
             (!Array.isArray(body.navigationItemOrder) ||
                 body.navigationItemOrder.some(
@@ -227,6 +241,7 @@ export async function PATCH(request: Request) {
             body.showFriendsInNavigation === undefined &&
             body.showSettingsInNavigation === undefined &&
             body.showAddFriendInHeader === undefined &&
+            body.telemetryEnabled === undefined &&
             body.navigationItemOrder === undefined
         ) {
             return NextResponse.json(
@@ -251,6 +266,7 @@ export async function PATCH(request: Request) {
             showFriendsInNavigation: boolean;
             showSettingsInNavigation: boolean;
             showAddFriendInHeader: boolean;
+            telemetryEnabled?: boolean;
             navigationItemOrder?: NavigationItemPreferenceId[];
         } = {
             showDocsInNavigation: mergedPreferences.showDocsInNavigation,
@@ -259,6 +275,13 @@ export async function PATCH(request: Request) {
                 mergedPreferences.showSettingsInNavigation,
             showAddFriendInHeader: mergedPreferences.showAddFriendInHeader,
         };
+
+        if (
+            body.telemetryEnabled !== undefined ||
+            profile.telemetryEnabled !== undefined
+        ) {
+            profileUpdate.telemetryEnabled = mergedPreferences.telemetryEnabled;
+        }
 
         if (body.navigationItemOrder !== undefined) {
             profileUpdate.navigationItemOrder =

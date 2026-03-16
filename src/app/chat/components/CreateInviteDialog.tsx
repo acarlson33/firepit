@@ -1,5 +1,6 @@
 "use client";
 
+import posthog from "posthog-js";
 import { useState } from "react";
 import { Copy, Loader2 } from "lucide-react";
 import {
@@ -101,6 +102,7 @@ export function CreateInviteDialog({
       const invite = await response.json();
       setGeneratedCode(invite.code);
 
+      posthog.capture("invite_created", { serverId, expiration, maxUses, temporary });
       toast.success("Invite link generated successfully");
 
       // Notify parent to refresh invite list
@@ -122,6 +124,7 @@ export function CreateInviteDialog({
 
     const inviteUrl = `${window.location.origin}/invite/${generatedCode}`;
     void navigator.clipboard.writeText(inviteUrl);
+    posthog.capture("invite_link_copied", { serverId });
     toast.success("Invite link copied to clipboard");
   };
 

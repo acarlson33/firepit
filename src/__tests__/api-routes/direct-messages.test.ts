@@ -82,6 +82,7 @@ vi.mock("@/lib/newrelic-utils", () => ({
         error: vi.fn(),
     },
     recordError: vi.fn(),
+    recordEvent: vi.fn(),
     setTransactionName: vi.fn(),
     trackApiCall: vi.fn(),
     trackMessage: vi.fn(),
