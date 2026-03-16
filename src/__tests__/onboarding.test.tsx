@@ -9,169 +9,225 @@ const mockPush = vi.fn();
 
 // Mock dependencies
 vi.mock("next/navigation", () => ({
-	useRouter: () => ({
-		push: mockPush,
-	}),
+    useRouter: () => ({
+        push: mockPush,
+    }),
 }));
 
 // Mock auth context
 const mockRefreshUser = vi.fn();
 vi.mock("@/contexts/auth-context", () => ({
-	useAuth: () => ({
-		userData: { name: "Test User", userId: "123" },
-		refreshUser: mockRefreshUser,
-	}),
+    useAuth: () => ({
+        userData: { name: "Test User", userId: "123" },
+        refreshUser: mockRefreshUser,
+    }),
 }));
 
 // Mock toast
 vi.mock("sonner", () => ({
-	toast: {
-		success: vi.fn(),
-		error: vi.fn(),
-	},
+    toast: {
+        success: vi.fn(),
+        error: vi.fn(),
+    },
 }));
 
 vi.mock("../app/onboarding/actions", () => ({
-	completeOnboardingAction: vi.fn(),
+    completeOnboardingAction: vi.fn(),
 }));
 
 // Import the component after mocks are set up
 const OnboardingPage = (await import("../app/onboarding/page")).default;
 
 describe("Onboarding Page", () => {
-	beforeEach(() => {
-		// Clear all mocks before each test
-		vi.clearAllMocks();
-	});
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
 
-	it("should render onboarding form with welcome message", () => {
-		render(<OnboardingPage />);
+    it("should render onboarding form with welcome message", () => {
+        render(<OnboardingPage />);
 
-		expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
-		expect(
-			screen.getByText(
-				"Let's set up your profile so others can get to know you better.",
-			),
-		).toBeInTheDocument();
-	});
+        expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                "Let's set up your profile so others can get to know you better.",
+            ),
+        ).toBeInTheDocument();
+    });
 
-	it("should render display name input", () => {
-		render(<OnboardingPage />);
+    it("should render display name input", () => {
+        render(<OnboardingPage />);
 
-		const displayNameInput = screen.getByLabelText("Display Name *");
-		expect(displayNameInput).toBeInTheDocument();
-		expect(displayNameInput).toHaveAttribute("required");
-	});
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        expect(displayNameInput).toBeInTheDocument();
+        expect(displayNameInput).toHaveAttribute("required");
+    });
 
-	it("should render bio textarea", () => {
-		render(<OnboardingPage />);
+    it("should render bio textarea", () => {
+        render(<OnboardingPage />);
 
-		const bioTextarea = screen.getByLabelText("About You");
-		expect(bioTextarea).toBeInTheDocument();
-		expect(bioTextarea).not.toHaveAttribute("required");
-	});
+        const bioTextarea = screen.getByLabelText("About You");
+        expect(bioTextarea).toBeInTheDocument();
+        expect(bioTextarea).not.toHaveAttribute("required");
+    });
 
-	it("should render submit and skip buttons", () => {
-		render(<OnboardingPage />);
+    it("should render continue and skip buttons on first step", () => {
+        render(<OnboardingPage />);
 
-		expect(
-			screen.getByRole("button", { name: "Complete Setup" }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: "Skip for now" }),
-		).toBeInTheDocument();
-	});
+        expect(
+            screen.getByRole("button", { name: "Continue" }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole("button", { name: "Skip all" }),
+        ).toBeInTheDocument();
+    });
 
-	it("should show logged in user name", () => {
-		render(<OnboardingPage />);
+    it("should show logged in user name", () => {
+        render(<OnboardingPage />);
 
-		expect(screen.getByText(/Logged in as/i)).toBeInTheDocument();
-		expect(screen.getByText("Test User")).toBeInTheDocument();
-	});
+        expect(screen.getByText(/Logged in as/i)).toBeInTheDocument();
+        expect(screen.getByText("Test User")).toBeInTheDocument();
+    });
 
-	it("should navigate to /chat when skip button is clicked", async () => {
-		const user = userEvent.setup();
-		render(<OnboardingPage />);
+    it("should navigate to /chat when skip button is clicked", async () => {
+        const user = userEvent.setup();
+        render(<OnboardingPage />);
 
-		const skipButton = screen.getByRole("button", { name: "Skip for now" });
-		await user.click(skipButton);
+        const skipButton = screen.getByRole("button", { name: "Skip all" });
+        await user.click(skipButton);
 
-		expect(mockPush).toHaveBeenCalledWith("/chat");
-	});
+        expect(mockPush).toHaveBeenCalledWith("/chat");
+    });
 
-	it("should call completeOnboardingAction with form data when submitted", async () => {
-		const user = userEvent.setup();
-		const mockAction = vi.mocked(completeOnboardingAction);
-		mockAction.mockResolvedValue({ success: true });
+    it("should advance to next step when continue is clicked", async () => {
+        const user = userEvent.setup();
+        render(<OnboardingPage />);
 
-		render(<OnboardingPage />);
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        await user.type(displayNameInput, "John Doe");
 
-		const displayNameInput = screen.getByLabelText("Display Name *");
-		const bioTextarea = screen.getByLabelText("About You");
+        const continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
 
-		await user.type(displayNameInput, "John Doe");
-		await user.type(bioTextarea, "Software developer");
+        expect(
+            screen.getByText("Notification preferences"),
+        ).toBeInTheDocument();
+    });
 
-		const submitButton = screen.getByRole("button", {
-			name: "Complete Setup",
-		});
-		await user.click(submitButton);
+    it("should call completeOnboardingAction with form data when submitted on final step", async () => {
+        const user = userEvent.setup();
+        const mockAction = vi.mocked(completeOnboardingAction);
+        mockAction.mockResolvedValue({ success: true });
 
-		await waitFor(() => {
-			expect(mockAction).toHaveBeenCalled();
-		});
-	});
+        render(<OnboardingPage />);
 
-	it("should show success toast and navigate to /chat on successful submission", async () => {
-		const user = userEvent.setup();
-		const { toast } = await import("sonner");
-		const mockAction = vi.mocked(completeOnboardingAction);
-		mockAction.mockResolvedValue({ success: true });
+        // Step 1: Fill profile
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        await user.type(displayNameInput, "John Doe");
 
-		render(<OnboardingPage />);
+        // Click continue to go to step 2
+        let continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
 
-		const displayNameInput = screen.getByLabelText("Display Name *");
-		await user.type(displayNameInput, "John Doe");
+        // Step 2: Click continue to go to step 3
+        continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
 
-		const submitButton = screen.getByRole("button", {
-			name: "Complete Setup",
-		});
-		await user.click(submitButton);
+        // Step 3: Click Complete Setup
+        const submitButton = screen.getByRole("button", {
+            name: "Complete Setup",
+        });
+        await user.click(submitButton);
 
-		await waitFor(() => {
-			expect(toast.success).toHaveBeenCalledWith("Profile setup complete!");
-			expect(mockRefreshUser).toHaveBeenCalled();
-			expect(mockPush).toHaveBeenCalledWith("/chat");
-		});
-	});
+        await waitFor(() => {
+            expect(mockAction).toHaveBeenCalled();
+        });
+    });
 
-	it("should show error toast on submission failure", async () => {
-		const user = userEvent.setup();
-		const { toast } = await import("sonner");
-		const mockAction = vi.mocked(completeOnboardingAction);
-		mockAction.mockResolvedValue({
-			success: false,
-			error: "Failed to create profile",
-		});
+    it("should show success toast and navigate to /chat on successful submission", async () => {
+        const user = userEvent.setup();
+        const { toast } = await import("sonner");
+        const mockAction = vi.mocked(completeOnboardingAction);
+        mockAction.mockResolvedValue({ success: true });
 
-		render(<OnboardingPage />);
+        render(<OnboardingPage />);
 
-		const displayNameInput = screen.getByLabelText("Display Name *");
-		await user.type(displayNameInput, "John Doe");
+        // Step 1
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        await user.type(displayNameInput, "John Doe");
 
-		const submitButton = screen.getByRole("button", {
-			name: "Complete Setup",
-		});
-		await user.click(submitButton);
+        let continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
 
-		await waitFor(() => {
-			expect(toast.error).toHaveBeenCalledWith("Failed to create profile");
-		});
-	});
+        // Step 2
+        continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+
+        // Step 3
+        const submitButton = screen.getByRole("button", {
+            name: "Complete Setup",
+        });
+        await user.click(submitButton);
+
+        await waitFor(() => {
+            expect(toast.success).toHaveBeenCalledWith(
+                "Profile setup complete!",
+            );
+            expect(mockRefreshUser).toHaveBeenCalled();
+            expect(mockPush).toHaveBeenCalledWith("/chat");
+        });
+    });
+
+    it("should show error toast on submission failure", async () => {
+        const user = userEvent.setup();
+        const { toast } = await import("sonner");
+        const mockAction = vi.mocked(completeOnboardingAction);
+        mockAction.mockResolvedValue({
+            success: false,
+            error: "Failed to create profile",
+        });
+
+        render(<OnboardingPage />);
+
+        // Step 1
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        await user.type(displayNameInput, "John Doe");
+
+        let continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+
+        // Step 2
+        continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+
+        // Step 3
+        const submitButton = screen.getByRole("button", {
+            name: "Complete Setup",
+        });
+        await user.click(submitButton);
+
+        await waitFor(() => {
+            expect(toast.error).toHaveBeenCalledWith(
+                "Failed to create profile",
+            );
+        });
+    });
+
+    it("should not advance to next step when display name is empty", async () => {
+        const user = userEvent.setup();
+
+        render(<OnboardingPage />);
+
+        // Try to continue without entering display name - form validation should prevent it
+        const continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+
+        // Should still be on first step
+        expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
+    });
 });
 
 describe("completeOnboardingAction", () => {
-	it("should be defined", () => {
-		expect(completeOnboardingAction).toBeDefined();
-	});
+    it("should be defined", () => {
+        expect(completeOnboardingAction).toBeDefined();
+    });
 });
