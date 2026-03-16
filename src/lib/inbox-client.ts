@@ -149,6 +149,27 @@ export async function markInboxContextRead(params?: {
 }
 
 /**
+ * Marks all inbox items in a scope as read.
+ *
+ * @param {InboxScope} scope - The scope: "all", "direct" (DMs), or "server" (channels).
+ * @returns {Promise<void>} The return value.
+ */
+export async function markInboxScopeRead(scope: InboxScope): Promise<void> {
+    const contextKinds: InboxContextKind[] =
+        scope === "direct"
+            ? ["conversation"]
+            : scope === "server"
+              ? ["channel"]
+              : ["channel", "conversation"];
+
+    const promises = contextKinds.map((contextKind) =>
+        markInboxContextRead({ contextKind }),
+    );
+
+    await Promise.all(promises);
+}
+
+/**
  * Lists inbox digest.
  *
  * @param {{ contextId?: string | undefined; contextKind?: 'channel' | 'conversation' | undefined; limit?: number | undefined; } | undefined} params - The params value, if provided.

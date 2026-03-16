@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Conversation, InboxItem, InboxListResponse } from "@/lib/types";
 import { toast } from "sonner";
+import { InboxToolbar } from "./InboxToolbar";
 
 type SidebarMode = "chats" | "inbox" | "mentions";
 
@@ -126,6 +127,10 @@ type ConversationListProps = {
     inboxLoading?: boolean;
     inboxContractVersion?: InboxListResponse["contractVersion"];
     conversationUnreadStateById?: Record<string, ConversationUnreadState>;
+    inboxBulkLoading?: "all" | "direct" | "server" | null;
+    onMarkInboxScopeRead?: (
+        scope: "all" | "direct" | "server",
+    ) => Promise<void>;
 };
 
 export function ConversationList({
@@ -141,6 +146,8 @@ export function ConversationList({
     inboxLoading = false,
     inboxContractVersion = "thread_v1",
     conversationUnreadStateById = {},
+    inboxBulkLoading = null,
+    onMarkInboxScopeRead,
 }: ConversationListProps) {
     const router = useRouter();
     const {
@@ -603,57 +610,72 @@ export function ConversationList({
             {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
                 {sidebarMode === "inbox" ? (
-                    <fieldset className="grid grid-cols-4 gap-1 border-0 border-border border-b p-2">
-                        <legend className="sr-only">Inbox filter</legend>
-                        <Button
-                            aria-pressed={inboxFilter === "all"}
-                            className="rounded-lg"
-                            onClick={() => setInboxFilter("all")}
-                            size="sm"
-                            type="button"
-                            variant={
-                                inboxFilter === "all" ? "default" : "ghost"
-                            }
-                        >
-                            All
-                        </Button>
-                        <Button
-                            aria-pressed={inboxFilter === "mentions"}
-                            className="rounded-lg"
-                            onClick={() => setInboxFilter("mentions")}
-                            size="sm"
-                            type="button"
-                            variant={
-                                inboxFilter === "mentions" ? "default" : "ghost"
-                            }
-                        >
-                            Mentions
-                        </Button>
-                        <Button
-                            aria-pressed={inboxFilter === "direct"}
-                            className="rounded-lg"
-                            onClick={() => setInboxFilter("direct")}
-                            size="sm"
-                            type="button"
-                            variant={
-                                inboxFilter === "direct" ? "default" : "ghost"
-                            }
-                        >
-                            Direct
-                        </Button>
-                        <Button
-                            aria-pressed={inboxFilter === "server"}
-                            className="rounded-lg"
-                            onClick={() => setInboxFilter("server")}
-                            size="sm"
-                            type="button"
-                            variant={
-                                inboxFilter === "server" ? "default" : "ghost"
-                            }
-                        >
-                            Servers
-                        </Button>
-                    </fieldset>
+                    <>
+                        <fieldset className="grid grid-cols-4 gap-1 border-0 border-border border-b p-2">
+                            <legend className="sr-only">Inbox filter</legend>
+                            <Button
+                                aria-pressed={inboxFilter === "all"}
+                                className="rounded-lg"
+                                onClick={() => setInboxFilter("all")}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    inboxFilter === "all" ? "default" : "ghost"
+                                }
+                            >
+                                All
+                            </Button>
+                            <Button
+                                aria-pressed={inboxFilter === "mentions"}
+                                className="rounded-lg"
+                                onClick={() => setInboxFilter("mentions")}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    inboxFilter === "mentions"
+                                        ? "default"
+                                        : "ghost"
+                                }
+                            >
+                                Mentions
+                            </Button>
+                            <Button
+                                aria-pressed={inboxFilter === "direct"}
+                                className="rounded-lg"
+                                onClick={() => setInboxFilter("direct")}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    inboxFilter === "direct"
+                                        ? "default"
+                                        : "ghost"
+                                }
+                            >
+                                Direct
+                            </Button>
+                            <Button
+                                aria-pressed={inboxFilter === "server"}
+                                className="rounded-lg"
+                                onClick={() => setInboxFilter("server")}
+                                size="sm"
+                                type="button"
+                                variant={
+                                    inboxFilter === "server"
+                                        ? "default"
+                                        : "ghost"
+                                }
+                            >
+                                Servers
+                            </Button>
+                        </fieldset>
+                        {onMarkInboxScopeRead && (
+                            <InboxToolbar
+                                bulkLoading={inboxBulkLoading}
+                                onMarkScopeRead={onMarkInboxScopeRead}
+                                unreadCount={inboxUnreadCount}
+                            />
+                        )}
+                    </>
                 ) : null}
 
                 {sidebarMode === "chats" &&

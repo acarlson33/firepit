@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -8,6 +8,8 @@ import {
     listInbox,
     markInboxContextRead,
     markInboxItemsRead,
+    markInboxScopeRead,
+    type InboxScope,
 } from "@/lib/inbox-client";
 import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
 import type {
@@ -115,6 +117,7 @@ export function useInbox(userId: string | null) {
     const queryClient = useQueryClient();
     const env = getEnvConfig();
     const isEnabled = Boolean(userId);
+    const [bulkLoading, setBulkLoading] = useState<InboxScope | null>(null);
 
     const {
         data = EMPTY_INBOX,
@@ -299,6 +302,23 @@ export function useInbox(userId: string | null) {
         [refetch, updateInboxCache],
     );
 
+    const markScopeRead = useCallback(
+        async (scope: InboxScope) => {
+            setBulkLoading(scope);
+
+            updateInboxCache(() => EMPTY_INBOX);
+
+            try {
+                await markInboxScopeRead(scope);
+            } catch {
+                await refetch();
+            } finally {
+                setBulkLoading(null);
+            }
+        },
+        [refetch, updateInboxCache],
+    );
+
     const getContextSummary = useCallback(
         (contextKind: InboxContextKind, contextId: string) =>
             contextSummaryByKey.get(
@@ -308,6 +328,7 @@ export function useInbox(userId: string | null) {
     );
 
     return {
+        bulkLoading,
         contractVersion: data.contractVersion,
         counts: data.counts,
         error: formatInboxError(error),
@@ -316,6 +337,7 @@ export function useInbox(userId: string | null) {
         loading: isEnabled ? isLoading : false,
         markContextRead,
         markItemRead,
+        markScopeRead,
         refresh: refetch,
         summaries: contextSummaries,
         unreadCount: data.unreadCount,
