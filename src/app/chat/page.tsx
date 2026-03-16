@@ -1803,6 +1803,8 @@ export default function ChatPage() {
                             loading={conversationsApi.loading}
                             inboxItems={inboxApi.items}
                             inboxLoading={inboxApi.loading}
+                            inboxBulkLoading={inboxApi.bulkLoading}
+                            onMarkInboxScopeRead={inboxApi.markScopeRead}
                             onMuteConversation={(
                                 conversationId,
                                 conversationName,
