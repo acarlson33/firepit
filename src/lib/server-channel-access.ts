@@ -277,12 +277,14 @@ async function hasAccessToCategory(
         categoryId,
     );
 
-    const requiredRoleId = category.requiredRoleId;
-    if (!requiredRoleId) {
+    const allowedRoleIds = category.allowedRoleIds as string[] | undefined;
+    if (!allowedRoleIds || allowedRoleIds.length === 0) {
         return true;
     }
 
-    return serverAccess.roleIds.includes(requiredRoleId);
+    return allowedRoleIds.some((roleId) =>
+        serverAccess.roleIds.includes(roleId),
+    );
 }
 
 /**

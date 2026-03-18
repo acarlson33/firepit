@@ -292,13 +292,11 @@ export function CategorySettingsPanel({
         }
     }
 
-    async function saveRequiredRole(
+    async function saveAllowedRoles(
         categoryId: string,
-        requiredRoleId: string,
+        allowedRoleIds: string[],
     ) {
         const previousCategories = categories;
-        const normalizedRoleId =
-            requiredRoleId === "none" ? null : requiredRoleId;
 
         setCategoryPending([categoryId], true);
         setCategories((currentValue) =>
@@ -306,7 +304,7 @@ export function CategorySettingsPanel({
                 category.$id === categoryId
                     ? {
                           ...category,
-                          requiredRoleId: normalizedRoleId ?? undefined,
+                          allowedRoleIds,
                       }
                     : category,
             ),
@@ -318,7 +316,7 @@ export function CategorySettingsPanel({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     categoryId,
-                    requiredRoleId: normalizedRoleId,
+                    allowedRoleIds,
                 }),
             });
 
@@ -763,41 +761,66 @@ export function CategorySettingsPanel({
                                 {sortedRoles.length > 0 && (
                                     <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2">
                                         <Shield className="h-4 w-4 text-muted-foreground" />
-                                        <Select
-                                            disabled={pendingCategoryIds.includes(
-                                                category.$id,
-                                            )}
-                                            onValueChange={(value) =>
-                                                void saveRequiredRole(
-                                                    category.$id,
-                                                    value,
-                                                )
-                                            }
-                                            value={
-                                                category.requiredRoleId ??
-                                                "none"
-                                            }
-                                        >
-                                            <SelectTrigger className="w-56">
-                                                <SelectValue placeholder="Access control" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none">
-                                                    Everyone can access
-                                                </SelectItem>
-                                                {sortedRoles.map((role) => (
-                                                    <SelectItem
+                                        <div className="flex flex-wrap gap-1">
+                                            {sortedRoles.map((role) => {
+                                                const isSelected =
+                                                    category.allowedRoleIds?.includes(
+                                                        role.$id,
+                                                    ) ?? false;
+                                                return (
+                                                    <button
+                                                        disabled={pendingCategoryIds.includes(
+                                                            category.$id,
+                                                        )}
                                                         key={role.$id}
-                                                        value={role.$id}
+                                                        onClick={() => {
+                                                            const current =
+                                                                category.allowedRoleIds ||
+                                                                [];
+                                                            const newAllowed =
+                                                                isSelected
+                                                                    ? current.filter(
+                                                                          (
+                                                                              id,
+                                                                          ) =>
+                                                                              id !==
+                                                                              role.$id,
+                                                                      )
+                                                                    : [
+                                                                          ...current,
+                                                                          role.$id,
+                                                                      ];
+                                                            void saveAllowedRoles(
+                                                                category.$id,
+                                                                newAllowed,
+                                                            );
+                                                        }}
+                                                        type="button"
+                                                        className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                                                            isSelected
+                                                                ? "border-primary bg-primary/10 text-primary"
+                                                                : "border-border bg-background text-muted-foreground hover:border-primary/50"
+                                                        }`}
                                                     >
-                                                        {role.name} only
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <span className="text-xs text-muted-foreground">
-                                            {category.requiredRoleId
-                                                ? `Restricted to ${roles.find((r) => r.$id === category.requiredRoleId)?.name || "a role"}`
+                                                        {role.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <span className="ml-auto text-xs text-muted-foreground">
+                                            {category.allowedRoleIds &&
+                                            category.allowedRoleIds.length > 0
+                                                ? `Restricted to ${category.allowedRoleIds
+                                                      .map(
+                                                          (id) =>
+                                                              roles.find(
+                                                                  (r) =>
+                                                                      r.$id ===
+                                                                      id,
+                                                              )?.name ||
+                                                              "a role",
+                                                      )
+                                                      .join(", ")}`
                                                 : "Visible to all members"}
                                         </span>
                                     </div>

@@ -114,14 +114,18 @@ export async function GET(request: NextRequest) {
         const isAdmin = auth.access.permissions?.administrator ?? false;
 
         const accessibleCategories = categories.documents.filter((category) => {
-            const requiredRoleId = category.requiredRoleId;
-            if (!requiredRoleId) {
+            const allowedRoleIds = category.allowedRoleIds as
+                | string[]
+                | undefined;
+            if (!allowedRoleIds || allowedRoleIds.length === 0) {
                 return true;
             }
             if (isOwner || isAdmin) {
                 return true;
             }
-            return userRoleIds.includes(requiredRoleId);
+            return allowedRoleIds.some((roleId) =>
+                userRoleIds.includes(roleId),
+            );
         });
 
         return NextResponse.json({ categories: accessibleCategories });
@@ -189,7 +193,7 @@ export async function PUT(request: NextRequest) {
             categoryId?: string;
             name?: string;
             position?: number;
-            requiredRoleId?: string | null;
+            allowedRoleIds?: string[] | null;
         };
 
         if (!body.categoryId) {
@@ -212,7 +216,8 @@ export async function PUT(request: NextRequest) {
             return auth.response;
         }
 
-        const updateData: Record<string, string | number | null> = {};
+        const updateData: Record<string, string | number | string[] | null> =
+            {};
         if (body.name !== undefined) {
             const nextName = body.name.trim();
             if (!nextName) {
@@ -232,11 +237,11 @@ export async function PUT(request: NextRequest) {
             }
             updateData.position = body.position;
         }
-        if (body.requiredRoleId !== undefined) {
-            updateData.requiredRoleId =
-                body.requiredRoleId === null || body.requiredRoleId === ""
+        if (body.allowedRoleIds !== undefined) {
+            updateData.allowedRoleIds =
+                body.allowedRoleIds === null || body.allowedRoleIds.length === 0
                     ? null
-                    : body.requiredRoleId;
+                    : body.allowedRoleIds;
         }
 
         if (Object.keys(updateData).length === 0) {
