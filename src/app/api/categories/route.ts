@@ -109,7 +109,22 @@ export async function GET(request: NextRequest) {
             ],
         );
 
-        return NextResponse.json({ categories: categories.documents });
+        const userRoleIds = auth.access.roleIds;
+        const isOwner = auth.access.isServerOwner;
+        const isAdmin = auth.access.permissions?.administrator ?? false;
+
+        const accessibleCategories = categories.documents.filter((category) => {
+            const requiredRoleId = category.requiredRoleId;
+            if (!requiredRoleId) {
+                return true;
+            }
+            if (isOwner || isAdmin) {
+                return true;
+            }
+            return userRoleIds.includes(requiredRoleId);
+        });
+
+        return NextResponse.json({ categories: accessibleCategories });
     } catch (error) {
         logger.error("Failed to list categories", {
             error: error instanceof Error ? error.message : String(error),
@@ -174,6 +189,7 @@ export async function PUT(request: NextRequest) {
             categoryId?: string;
             name?: string;
             position?: number;
+            requiredRoleId?: string | null;
         };
 
         if (!body.categoryId) {
@@ -196,7 +212,7 @@ export async function PUT(request: NextRequest) {
             return auth.response;
         }
 
-        const updateData: Record<string, string | number> = {};
+        const updateData: Record<string, string | number | null> = {};
         if (body.name !== undefined) {
             const nextName = body.name.trim();
             if (!nextName) {
@@ -215,6 +231,12 @@ export async function PUT(request: NextRequest) {
                 );
             }
             updateData.position = body.position;
+        }
+        if (body.requiredRoleId !== undefined) {
+            updateData.requiredRoleId =
+                body.requiredRoleId === null || body.requiredRoleId === ""
+                    ? null
+                    : body.requiredRoleId;
         }
 
         if (Object.keys(updateData).length === 0) {

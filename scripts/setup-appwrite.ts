@@ -661,6 +661,7 @@ async function setupCategories() {
     await ensureStringAttribute("categories", "serverId", LEN_ID, true);
     await ensureStringAttribute("categories", "name", LEN_ID, true);
     await ensureStringAttribute("categories", "createdBy", LEN_ID, false);
+    await ensureStringAttribute("categories", "requiredRoleId", LEN_ID, false);
     await ensureIntegerAttribute("categories", "position", true, 0, 0);
     await ensureIndex("categories", "idx_serverId", "key", ["serverId"]);
     await ensureIndex("categories", "idx_position", "key", ["position"]);

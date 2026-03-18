@@ -58,6 +58,12 @@ describe("CategorySettingsPanel", () => {
                     ],
                     nextCursor: null,
                 }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    roles: [],
+                }),
             });
 
         render(<CategorySettingsPanel canManage={true} serverId="server-1" />);
@@ -79,6 +85,10 @@ describe("CategorySettingsPanel", () => {
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({ channels: [], nextCursor: null }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
             })
             .mockResolvedValueOnce({
                 ok: true,
@@ -108,6 +118,10 @@ describe("CategorySettingsPanel", () => {
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({ channels: [], nextCursor: null }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
             });
 
         const categoriesChanged = vi.fn();
@@ -166,6 +180,10 @@ describe("CategorySettingsPanel", () => {
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({ channels: [], nextCursor: null }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
             });
 
         render(<CategorySettingsPanel canManage={false} serverId="server-1" />);

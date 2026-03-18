@@ -81,6 +81,21 @@ interface ServerStats {
     mutedUsers: number;
 }
 
+interface Role {
+    $id: string;
+    name: string;
+    color: string;
+    position: number;
+    readMessages: boolean;
+    sendMessages: boolean;
+    manageMessages: boolean;
+    manageChannels: boolean;
+    manageRoles: boolean;
+    manageServer: boolean;
+    mentionEveryone: boolean;
+    administrator: boolean;
+}
+
 export function ServerAdminPanel({
     serverId,
     serverName,
@@ -90,6 +105,7 @@ export function ServerAdminPanel({
 }: ServerAdminPanelProps) {
     const [activeTab, setActiveTab] = useState("overview");
     const [members, setMembers] = useState<MemberData[]>([]);
+    const [roles, setRoles] = useState<Role[]>([]);
     const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
     const [filteredAuditLogs, setFilteredAuditLogs] = useState<AuditLog[]>([]);
     const [auditFilter, setAuditFilter] = useState<string>("all");
@@ -103,6 +119,9 @@ export function ServerAdminPanel({
     });
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [memberFilter, setMemberFilter] = useState<
+        "all" | "banned" | "muted"
+    >("all");
     const [selectedMember, setSelectedMember] = useState<MemberData | null>(
         null,
     );
@@ -141,6 +160,18 @@ export function ServerAdminPanel({
             toast.error("Failed to load server members");
         } finally {
             setLoading(false);
+        }
+    }, [serverId]);
+
+    const loadRoles = useCallback(async () => {
+        try {
+            const response = await fetch(`/api/roles?serverId=${serverId}`);
+            if (response.ok) {
+                const data = await response.json();
+                setRoles(data.roles || []);
+            }
+        } catch (error) {
+            console.error("Failed to load roles:", error);
         }
     }, [serverId]);
 
@@ -204,12 +235,18 @@ export function ServerAdminPanel({
         if (open) {
             void loadServerStats();
             void loadMembers();
+            void loadRoles();
             void loadAuditLogs();
         }
-    }, [open, loadServerStats, loadMembers, loadAuditLogs]);
+    }, [open, loadServerStats, loadMembers, loadRoles, loadAuditLogs]);
 
     const handleModerationAction = async () => {
         if (!selectedMember || !moderationAction) {
+            return;
+        }
+
+        if (moderationAction === "ban" && !moderationReason.trim()) {
+            toast.error("A reason is required when banning a user");
             return;
         }
 
@@ -258,7 +295,75 @@ export function ServerAdminPanel({
         setModerationDialogOpen(true);
     };
 
+    const getMemberPermissions = (member: MemberData) => {
+        if (member.roleIds.length === 0) {
+            return [];
+        }
+
+        const memberRoles = roles.filter((role) =>
+            member.roleIds.includes(role.$id),
+        );
+
+        // Get all unique permissions from all roles
+        const permissions = new Set<string>();
+        for (const role of memberRoles) {
+            if (role.administrator) {
+                permissions.add("Administrator");
+            }
+            if (role.manageServer) {
+                permissions.add("Manage Server");
+            }
+            if (role.manageChannels) {
+                permissions.add("Manage Channels");
+            }
+            if (role.manageRoles) {
+                permissions.add("Manage Roles");
+            }
+            if (role.manageMessages) {
+                permissions.add("Manage Messages");
+            }
+            if (role.mentionEveryone) {
+                permissions.add("Mention Everyone");
+            }
+            if (role.readMessages) {
+                permissions.add("Read Messages");
+            }
+            if (role.sendMessages) {
+                permissions.add("Send Messages");
+            }
+        }
+
+        return Array.from(permissions);
+    };
+
+    const getMemberHighestRole = (member: MemberData) => {
+        if (member.roleIds.length === 0) {
+            return null;
+        }
+
+        const memberRoles = roles.filter((role) =>
+            member.roleIds.includes(role.$id),
+        );
+
+        if (memberRoles.length === 0) {
+            return null;
+        }
+
+        // Sort by position descending to get highest role
+        const sorted = [...memberRoles].sort((a, b) => b.position - a.position);
+        return sorted[0];
+    };
+
     const filteredMembers = members.filter((m) => {
+        // Apply status filter
+        if (memberFilter === "banned" && !m.isBanned) {
+            return false;
+        }
+        if (memberFilter === "muted" && !m.isMuted) {
+            return false;
+        }
+
+        // Apply search filter
         if (!searchQuery) {
             return true;
         }
@@ -454,18 +559,46 @@ export function ServerAdminPanel({
                         </TabsContent>
 
                         <TabsContent value="members" className="space-y-4 m-0">
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 flex-wrap">
                                 <Input
                                     placeholder="Search members..."
                                     value={searchQuery}
                                     onChange={(e) =>
                                         setSearchQuery(e.target.value)
                                     }
-                                    className="flex-1"
+                                    className="flex-1 min-w-[200px]"
                                 />
-                                <Badge variant="secondary">
-                                    {filteredMembers.length} members
-                                </Badge>
+                                <div className="flex items-center gap-2">
+                                    <Select
+                                        value={memberFilter}
+                                        onValueChange={(v) =>
+                                            setMemberFilter(
+                                                v as "all" | "banned" | "muted",
+                                            )
+                                        }
+                                    >
+                                        <SelectTrigger className="w-40">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">
+                                                All Members
+                                            </SelectItem>
+                                            <SelectItem value="banned">
+                                                Banned ({stats.bannedUsers})
+                                            </SelectItem>
+                                            <SelectItem value="muted">
+                                                Muted ({stats.mutedUsers})
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <Badge variant="secondary">
+                                        {filteredMembers.length}{" "}
+                                        {filteredMembers.length === 1
+                                            ? "member"
+                                            : "members"}
+                                    </Badge>
+                                </div>
                             </div>
 
                             <div className="space-y-2">
@@ -499,23 +632,53 @@ export function ServerAdminPanel({
                                                         }
                                                         size="md"
                                                     />
-                                                    <div>
-                                                        <p className="font-medium">
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-medium truncate">
                                                             {member.displayName ||
                                                                 member.userName ||
                                                                 member.userId}
                                                         </p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {
-                                                                member.roleIds
-                                                                    .length
-                                                            }{" "}
-                                                            role
-                                                            {member.roleIds
-                                                                .length !== 1
-                                                                ? "s"
-                                                                : ""}
-                                                        </p>
+                                                        {(() => {
+                                                            const highestRole =
+                                                                getMemberHighestRole(
+                                                                    member,
+                                                                );
+                                                            if (highestRole) {
+                                                                return (
+                                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                                        <div
+                                                                            className="h-2 w-2 rounded-full"
+                                                                            style={{
+                                                                                backgroundColor:
+                                                                                    highestRole.color,
+                                                                            }}
+                                                                        />
+                                                                        <span className="text-xs truncate">
+                                                                            {
+                                                                                highestRole.name
+                                                                            }
+                                                                        </span>
+                                                                        {member
+                                                                            .roleIds
+                                                                            .length >
+                                                                            1 && (
+                                                                            <span className="text-xs text-muted-foreground">
+                                                                                +
+                                                                                {member
+                                                                                    .roleIds
+                                                                                    .length -
+                                                                                    1}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <p className="text-xs text-muted-foreground mt-0.5">
+                                                                    No roles
+                                                                </p>
+                                                            );
+                                                        })()}
                                                     </div>
                                                     {member.isBanned && (
                                                         <Badge
@@ -957,16 +1120,32 @@ export function ServerAdminPanel({
                         </div>
 
                         <div>
-                            <Label htmlFor="reason">Reason (optional)</Label>
+                            <Label htmlFor="reason">
+                                Reason{" "}
+                                {moderationAction === "ban"
+                                    ? "*"
+                                    : "(optional)"}
+                            </Label>
                             <Input
                                 id="reason"
-                                placeholder="Enter reason for this action..."
+                                placeholder={
+                                    moderationAction === "ban"
+                                        ? "Enter reason for this ban..."
+                                        : "Enter reason for this action..."
+                                }
                                 value={moderationReason}
                                 onChange={(e) =>
                                     setModerationReason(e.target.value)
                                 }
                                 className="mt-2"
+                                required={moderationAction === "ban"}
                             />
+                            {moderationAction === "ban" &&
+                                !moderationReason.trim() && (
+                                    <p className="text-xs text-destructive mt-1">
+                                        A reason is required when banning a user
+                                    </p>
+                                )}
                         </div>
                     </div>
 

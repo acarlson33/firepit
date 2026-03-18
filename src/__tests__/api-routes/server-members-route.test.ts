@@ -49,6 +49,8 @@ vi.mock("@/lib/appwrite-core", () => ({
             servers: "servers",
             channels: "channels",
             roles: "roles",
+            bannedUsers: "banned_users",
+            mutedUsers: "muted_users",
         },
     })),
 }));
@@ -110,6 +112,12 @@ describe("server members route", () => {
                 ],
             })
             .mockResolvedValueOnce({
+                documents: [],
+            })
+            .mockResolvedValueOnce({
+                documents: [],
+            })
+            .mockResolvedValueOnce({
                 documents: [
                     {
                         userId: "user-1",
@@ -135,5 +143,7 @@ describe("server members route", () => {
         expect(data.members).toHaveLength(2);
         expect(data.members[0].userId).toBe("user-1");
         expect(data.members[0].roleIds).toEqual(["role-1"]);
+        expect(data.members[0].isBanned).toBe(false);
+        expect(data.members[0].isMuted).toBe(false);
     });
 });

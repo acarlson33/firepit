@@ -11,6 +11,8 @@ const databaseId = env.databaseId || "main";
 const membershipsCollectionId = env.collections.memberships || "memberships";
 const profilesCollectionId = env.collections.profiles || "profiles";
 const roleAssignmentsCollectionId = "role_assignments";
+const bannedUsersCollectionId = env.collections.bannedUsers || "banned_users";
+const mutedUsersCollectionId = env.collections.mutedUsers || "muted_users";
 
 type RouteContext = {
     params: Promise<{ serverId: string }>;
@@ -54,6 +56,28 @@ export async function GET(request: Request, context: RouteContext) {
             [Query.equal("serverId", serverId), Query.limit(100)],
         );
 
+        // Get banned users for this server
+        const bannedUsers = await databases.listDocuments(
+            databaseId,
+            bannedUsersCollectionId,
+            [Query.equal("serverId", serverId), Query.limit(1000)],
+        );
+
+        // Get muted users for this server
+        const mutedUsers = await databases.listDocuments(
+            databaseId,
+            mutedUsersCollectionId,
+            [Query.equal("serverId", serverId), Query.limit(1000)],
+        );
+
+        // Create sets of banned/muted user IDs
+        const bannedUserIds = new Set(
+            bannedUsers.documents.map((doc) => String(doc.userId)),
+        );
+        const mutedUserIds = new Set(
+            mutedUsers.documents.map((doc) => String(doc.userId)),
+        );
+
         // Create a map of userId to roleIds
         const roleMap = new Map<string, string[]>();
         for (const assignment of roleAssignments.documents) {
@@ -90,6 +114,8 @@ export async function GET(request: Request, context: RouteContext) {
             displayName?: string;
             avatarUrl?: string;
             roleIds: string[];
+            isBanned?: boolean;
+            isMuted?: boolean;
         }>;
 
         for (const membership of memberships.documents) {
@@ -141,6 +167,8 @@ export async function GET(request: Request, context: RouteContext) {
                     displayName: profile.displayName as string | undefined,
                     avatarUrl: profile.avatarUrl as string | undefined,
                     roleIds: roleMap.get(userId) || [],
+                    isBanned: bannedUserIds.has(userId),
+                    isMuted: mutedUserIds.has(userId),
                 });
             } catch (error) {
                 logger.error("Failed to enrich membership", {
