@@ -8,6 +8,7 @@ import {
     Pencil,
     Save,
     Trash2,
+    Shield,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,7 +29,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import type { Channel, ChannelCategory } from "@/lib/types";
+import type { Channel, ChannelCategory, Role } from "@/lib/types";
 import { apiCache } from "@/lib/cache-utils";
 
 type CategorySettingsPanelProperties = {
@@ -43,6 +44,10 @@ type CategoriesResponse = {
 type ChannelsResponse = {
     channels: Channel[];
     nextCursor: string | null;
+};
+
+type RolesResponse = {
+    roles: Role[];
 };
 
 function sortCategories(categories: ChannelCategory[]) {
@@ -69,6 +74,7 @@ export function CategorySettingsPanel({
 }: CategorySettingsPanelProperties) {
     const [categories, setCategories] = useState<ChannelCategory[]>([]);
     const [channels, setChannels] = useState<Channel[]>([]);
+    const [roles, setRoles] = useState<Role[]>([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [creatingName, setCreatingName] = useState("");
@@ -91,6 +97,11 @@ export function CategorySettingsPanel({
     const uncategorizedChannels = useMemo(
         () => sortChannels(channels.filter((channel) => !channel.categoryId)),
         [channels],
+    );
+
+    const sortedRoles = useMemo(
+        () => [...roles].sort((left, right) => right.position - left.position),
+        [roles],
     );
 
     function setCategoryPending(categoryIds: string[], pending: boolean) {
@@ -122,12 +133,18 @@ export function CategorySettingsPanel({
         }
 
         try {
-            const [categoriesResponse, channelsResponse] = await Promise.all([
-                fetch(`/api/categories?serverId=${serverId}`),
-                fetch(`/api/channels?serverId=${serverId}&limit=100`),
-            ]);
+            const [categoriesResponse, channelsResponse, rolesResponse] =
+                await Promise.all([
+                    fetch(`/api/categories?serverId=${serverId}`),
+                    fetch(`/api/channels?serverId=${serverId}&limit=100`),
+                    fetch(`/api/roles?serverId=${serverId}`),
+                ]);
 
-            if (!categoriesResponse.ok || !channelsResponse.ok) {
+            if (
+                !categoriesResponse.ok ||
+                !channelsResponse.ok ||
+                !rolesResponse.ok
+            ) {
                 throw new Error("Failed to load categories");
             }
 
@@ -135,6 +152,7 @@ export function CategorySettingsPanel({
                 (await categoriesResponse.json()) as CategoriesResponse;
             const channelsData =
                 (await channelsResponse.json()) as ChannelsResponse;
+            const rolesData = (await rolesResponse.json()) as RolesResponse;
 
             if (requestId !== loadRequestId.current) {
                 return;
@@ -142,6 +160,7 @@ export function CategorySettingsPanel({
 
             setCategories(sortCategories(categoriesData.categories));
             setChannels(sortChannels(channelsData.channels));
+            setRoles(rolesData.roles);
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -267,6 +286,57 @@ export function CategorySettingsPanel({
                 error instanceof Error
                     ? error.message
                     : "Failed to rename category",
+            );
+        } finally {
+            setCategoryPending([categoryId], false);
+        }
+    }
+
+    async function saveRequiredRole(
+        categoryId: string,
+        requiredRoleId: string,
+    ) {
+        const previousCategories = categories;
+        const normalizedRoleId =
+            requiredRoleId === "none" ? null : requiredRoleId;
+
+        setCategoryPending([categoryId], true);
+        setCategories((currentValue) =>
+            currentValue.map((category) =>
+                category.$id === categoryId
+                    ? {
+                          ...category,
+                          requiredRoleId: normalizedRoleId ?? undefined,
+                      }
+                    : category,
+            ),
+        );
+
+        try {
+            const response = await fetch("/api/categories", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    categoryId,
+                    requiredRoleId: normalizedRoleId,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = (await response.json()) as { error?: string };
+                throw new Error(
+                    data.error || "Failed to update category access",
+                );
+            }
+
+            refreshAfterMutation();
+            toast.success("Category access updated");
+        } catch (error) {
+            setCategories(previousCategories);
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to update category access",
             );
         } finally {
             setCategoryPending([categoryId], false);
@@ -690,6 +760,48 @@ export function CategorySettingsPanel({
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </div>
+                                {sortedRoles.length > 0 && (
+                                    <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2">
+                                        <Shield className="h-4 w-4 text-muted-foreground" />
+                                        <Select
+                                            disabled={pendingCategoryIds.includes(
+                                                category.$id,
+                                            )}
+                                            onValueChange={(value) =>
+                                                void saveRequiredRole(
+                                                    category.$id,
+                                                    value,
+                                                )
+                                            }
+                                            value={
+                                                category.requiredRoleId ??
+                                                "none"
+                                            }
+                                        >
+                                            <SelectTrigger className="w-56">
+                                                <SelectValue placeholder="Access control" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">
+                                                    Everyone can access
+                                                </SelectItem>
+                                                {sortedRoles.map((role) => (
+                                                    <SelectItem
+                                                        key={role.$id}
+                                                        value={role.$id}
+                                                    >
+                                                        {role.name} only
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <span className="text-xs text-muted-foreground">
+                                            {category.requiredRoleId
+                                                ? `Restricted to ${roles.find((r) => r.$id === category.requiredRoleId)?.name || "a role"}`
+                                                : "Visible to all members"}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     {getChannelsForCategory(category.$id).map(
                                         (channel) => (
