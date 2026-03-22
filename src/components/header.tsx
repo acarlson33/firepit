@@ -3,7 +3,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, UserPlus } from "lucide-react";
 
 import { ModeToggle } from "./mode-toggle";
@@ -31,7 +31,12 @@ export default function Header({ onSearchClick }: HeaderProps) {
     const { incoming, loading: friendsLoading } = useFriends(
         Boolean(userData && navigationPreferences.showFriendsInNavigation),
     );
+    const [isMounted, setIsMounted] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const isAuthenticated = Boolean(userData);
     const roles = userData?.roles;
@@ -106,8 +111,8 @@ export default function Header({ onSearchClick }: HeaderProps) {
         }
     }
 
-    // Show skeleton while loading initial auth state
-    if (loading) {
+    // Keep the first server and client render in the same branch to avoid hydration drift.
+    if (!isMounted || loading) {
         return (
             <header
                 role="banner"
@@ -146,7 +151,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                 size="icon"
                                 onClick={onSearchClick}
                                 aria-label="Search messages"
-                                disabled
+                                title="Search messages (Ctrl+K)"
                             >
                                 <Search className="h-5 w-5" />
                             </Button>

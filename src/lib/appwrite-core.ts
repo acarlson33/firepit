@@ -82,6 +82,8 @@ export type EnvConfig = {
         emojis: string;
         images: string;
         files: string;
+        profileBackgrounds: string;
+        avatarFramesPredefined: string;
     };
     teams: {
         adminTeamId: string | null;
@@ -296,6 +298,19 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_FILES_BUCKET_ID,
                 "files",
             ) || "files",
+        profileBackgrounds:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_PROFILE_BACKGROUNDS_BUCKET_ID,
+                process.env.APPWRITE_PROFILE_BACKGROUNDS_BUCKET_ID,
+                "profile-backgrounds",
+            ) || "profile-backgrounds",
+        avatarFramesPredefined:
+            firstDefined(
+                process.env
+                    .NEXT_PUBLIC_APPWRITE_AVATAR_FRAMES_PREDEFINED_BUCKET_ID,
+                process.env.APPWRITE_AVATAR_FRAMES_PREDEFINED_BUCKET_ID,
+                "avatar-frames-predefined",
+            ) || "avatar-frames-predefined",
     };
     const teams = {
         adminTeamId: firstDefined(process.env.APPWRITE_ADMIN_TEAM_ID) || null,
@@ -515,7 +530,7 @@ const PERM_REGEX = /^(\w+)\("([^"]+)"\)$/;
  * @returns {string[]} The return value.
  */
 export function materializePermissions(list: string[]) {
-            /**
+    /**
      * Handles target to role.
      *
      * @param {string} target - The target value.
@@ -533,7 +548,7 @@ export function materializePermissions(list: string[]) {
         }
         return null;
     }
-            /**
+    /**
      * Builds build.
      *
      * @param {string} op - The op value.

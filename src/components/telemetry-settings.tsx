@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -9,6 +10,7 @@ import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
 
 export function TelemetrySettings() {
+    const [isMounted, setIsMounted] = useState(false);
     const { userData } = useAuth();
     const userId = userData?.userId ?? null;
     const {
@@ -17,6 +19,12 @@ export function TelemetrySettings() {
         navigationPreferences,
         updateNavigationPreferences,
     } = useDeveloperMode(userId);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    const isDisabled = !isMounted || !isLoaded || !userId || isSaving;
 
     return (
         <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
@@ -40,12 +48,17 @@ export function TelemetrySettings() {
 
                 <Switch
                     checked={navigationPreferences.telemetryEnabled}
-                    disabled={!isLoaded || !userId || isSaving}
+                    aria-disabled={isDisabled}
+                    className={
+                        isDisabled ? "pointer-events-none opacity-50" : ""
+                    }
                     id="telemetry-enabled"
                     onCheckedChange={(checked) =>
-                        updateNavigationPreferences({
-                            telemetryEnabled: checked,
-                        })
+                        isDisabled
+                            ? undefined
+                            : updateNavigationPreferences({
+                                  telemetryEnabled: checked,
+                              })
                     }
                 />
             </div>

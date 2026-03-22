@@ -3,7 +3,12 @@ import type { NextRequest } from "next/server";
 import { Query } from "node-appwrite";
 import { getServerSession } from "@/lib/auth-server";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
-import { getAvatarUrl } from "@/lib/appwrite-profiles";
+import {
+    getAvatarUrl,
+    getProfileBackgroundUrl,
+    getExistingPredefinedAvatarFrameIds,
+    getPredefinedAvatarFrameUrlByPresetId,
+} from "@/lib/appwrite-profiles";
 import {
     logger,
     recordError,
@@ -119,6 +124,16 @@ export async function POST(request: NextRequest) {
                 return [String(profile.userId), profile] as const;
             }),
         );
+        const avatarFramePresetIds = profilesResult.documents
+            .map((document) => {
+                const profile = document as Record<string, unknown>;
+                return typeof profile.avatarFramePreset === "string"
+                    ? profile.avatarFramePreset
+                    : undefined;
+            })
+            .filter((presetId) => typeof presetId === "string") as string[];
+        const existingPredefinedAvatarFrameIds =
+            await getExistingPredefinedAvatarFrameIds(avatarFramePresetIds);
         const statusesByUserId = new Map(
             statusesResult.documents.map((document) => {
                 const status = document as Record<string, unknown>;
@@ -141,6 +156,17 @@ export async function POST(request: NextRequest) {
                 typeof profile.avatarFileId === "string"
                     ? profile.avatarFileId
                     : undefined;
+            const profileBackgroundImageFileId =
+                typeof profile.profileBackgroundImageFileId === "string"
+                    ? profile.profileBackgroundImageFileId
+                    : undefined;
+            const avatarFramePreset =
+                typeof profile.avatarFramePreset === "string"
+                    ? profile.avatarFramePreset
+                    : undefined;
+            const hasPredefinedFrame =
+                avatarFramePreset &&
+                existingPredefinedAvatarFrameIds.has(avatarFramePreset);
 
             profilesMap[userId] = {
                 userId,
@@ -164,6 +190,22 @@ export async function POST(request: NextRequest) {
                 avatarFileId,
                 avatarUrl: avatarFileId
                     ? getAvatarUrl(avatarFileId)
+                    : undefined,
+                profileBackgroundColor:
+                    typeof profile.profileBackgroundColor === "string"
+                        ? profile.profileBackgroundColor
+                        : undefined,
+                profileBackgroundGradient:
+                    typeof profile.profileBackgroundGradient === "string"
+                        ? profile.profileBackgroundGradient
+                        : undefined,
+                profileBackgroundImageFileId,
+                profileBackgroundUrl: profileBackgroundImageFileId
+                    ? getProfileBackgroundUrl(profileBackgroundImageFileId)
+                    : undefined,
+                avatarFramePreset,
+                avatarFrameUrl: hasPredefinedFrame
+                    ? getPredefinedAvatarFrameUrlByPresetId(avatarFramePreset)
                     : undefined,
                 status: status
                     ? {
