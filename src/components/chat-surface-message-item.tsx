@@ -20,6 +20,7 @@ import { ThreadIndicator } from "@/components/thread-indicator";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { formatMessageTimestamp } from "@/lib/utils";
+import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 
 type ChatSurfaceMessageItemProps = {
     message: ChatSurfaceMessage;
@@ -107,6 +108,7 @@ export function ChatSurfaceMessageItem({
             } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
             data-message-id={message.id}
             id={`message-${message.id}`}
+            onMouseEnter={() => profilePrefetchPool.add(message.authorId)}
         >
             {onOpenProfileModal ? (
                 <button

@@ -902,6 +902,11 @@ async function setupProfiles() {
         ["avatarFileId", LEN_ID, false],
         ["location", 255, false],
         ["website", 500, false],
+        ["profileBackgroundColor", 16, false],
+        ["profileBackgroundGradient", 500, false],
+        ["profileBackgroundImageFileId", LEN_ID, false],
+        ["profileBackgroundImageChangedAt", LEN_TS, false],
+        ["avatarFramePreset", 64, false],
     ];
     for (const [k, size, req] of fields) {
         await ensureStringAttribute("profiles", k, size, req);
@@ -1474,6 +1479,18 @@ async function setupStorage() {
         "gif",
         "webp",
     ]); // 10MB for custom emojis
+    await ensureBucket("profile-backgrounds", "Profile Backgrounds", 5242880, [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+    ]); // 5MB for profile backgrounds
+    await ensureBucket(
+        "avatar-frames-predefined",
+        "Avatar Frames Predefined",
+        1048576,
+        ["png"],
+    ); // 1MB for predefined avatar frame PNGs
     // Files bucket for various file types (documents, videos, audio, archives, code)
     await ensureBucket(
         "files",

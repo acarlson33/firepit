@@ -280,6 +280,11 @@ export type UserProfileData = {
     showAddFriendInHeader?: boolean;
     telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
+    profileBackgroundColor?: string;
+    profileBackgroundGradient?: string;
+    profileBackgroundImageFileId?: string;
+    profileBackgroundImageChangedAt?: string;
+    avatarFramePreset?: string;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;

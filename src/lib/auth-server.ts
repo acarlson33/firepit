@@ -7,7 +7,7 @@ import { getUserRoles } from "./appwrite-roles";
 /**
  * Server-side auth helper for RSC and server actions.
  * Returns null if no valid session exists.
- * @returns {Promise<{ $id: string; name: string; email: string; } | null>} The return value.
+ * @returns {Promise<{ $id: string; name: string; email: string; $createdAt?: string; } | null>} The return value.
  */
 export async function getServerSession() {
     const env = getEnvConfig();
@@ -32,7 +32,12 @@ export async function getServerSession() {
         const user = await account.get().catch(() => null);
 
         return user && "$id" in user
-            ? (user as { $id: string; name: string; email: string })
+            ? (user as {
+                  $id: string;
+                  name: string;
+                  email: string;
+                  $createdAt: string;
+              })
             : null;
     } catch {
         return null;
@@ -51,7 +56,7 @@ export async function checkUserRoles(userId: string) {
 
 /**
  * Require authentication - throws if no session.
- * @returns {Promise<{ $id: string; name: string; email: string; }>} The return value.
+ * @returns {Promise<{ $id: string; name: string; email: string; $createdAt: string; }>} The return value.
  */
 export async function requireAuth() {
     const user = await getServerSession();
