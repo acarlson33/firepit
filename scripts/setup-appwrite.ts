@@ -738,6 +738,26 @@ async function setupAudit() {
     await ensureIndex("audit", "idx_server", "key", ["serverId"]);
 }
 
+async function setupReports() {
+    await ensureCollection("reports", "Reports");
+    const fields: [string, number, boolean][] = [
+        ["reporterId", LEN_ID, true],
+        ["reportedUserId", LEN_ID, true],
+        ["justification", LEN_TEXT, true],
+        ["status", 32, true],
+        ["resolvedBy", LEN_ID, false],
+        ["resolutionNotes", LEN_TEXT, false],
+    ];
+    for (const [k, size, req] of fields) {
+        await ensureStringAttribute("reports", k, size, req);
+    }
+    await ensureIndex("reports", "idx_reporter", "key", ["reporterId"]);
+    await ensureIndex("reports", "idx_reported_user", "key", [
+        "reportedUserId",
+    ]);
+    await ensureIndex("reports", "idx_status", "key", ["status"]);
+}
+
 async function setupTyping() {
     await ensureCollection("typing", "Typing");
     const fields: [string, number, boolean][] = [
@@ -1642,6 +1662,8 @@ async function run() {
     await setupMessages();
     info("[setup] Setting up audit...");
     await setupAudit();
+    info("[setup] Setting up reports...");
+    await setupReports();
     info("[setup] Setting up typing...");
     try {
         await setupTyping();

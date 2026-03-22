@@ -76,6 +76,7 @@ export type EnvConfig = {
         notificationSettings: string;
         inboxItems: string;
         threadReads: string;
+        reports: string;
     };
     buckets: {
         avatars: string;
@@ -272,6 +273,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_THREAD_READS_COLLECTION_ID,
                 "thread_reads",
             ) || "thread_reads",
+        reports:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_REPORTS_COLLECTION_ID,
+                process.env.APPWRITE_REPORTS_COLLECTION_ID,
+                "reports",
+            ) || "reports",
     };
     const buckets = {
         avatars:
