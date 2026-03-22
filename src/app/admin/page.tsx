@@ -76,6 +76,13 @@ export default async function AdminPage(props: {
                                 <span>Manage Preset Frame Assets</span>
                                 <span aria-hidden="true">→</span>
                             </Link>
+                            <Link
+                                className="inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40"
+                                href="/admin/reports"
+                            >
+                                <span>Review User Reports</span>
+                                <span aria-hidden="true">→</span>
+                            </Link>
                         </div>
                     </div>
                 </div>

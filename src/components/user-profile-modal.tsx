@@ -17,6 +17,7 @@ import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import { useRelationship } from "@/hooks/useRelationship";
 import { toast } from "sonner";
 import { AvatarWithFrame } from "./profile-background";
+import { ReportUserDialog } from "./report-user-dialog";
 import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 
 type UserProfile = {
@@ -325,6 +326,14 @@ export function UserProfileModal({
                                         fullWidth
                                         targetUserId={userId}
                                     />
+                                    {userData?.userId !== userId && (
+                                        <ReportUserDialog
+                                            fullWidth
+                                            targetDisplayName={displayName}
+                                            targetUserId={userId}
+                                            variant="outline"
+                                        />
+                                    )}
                                     <Button
                                         asChild
                                         className="w-full"

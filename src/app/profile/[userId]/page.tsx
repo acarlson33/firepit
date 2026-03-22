@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import {
     getCachedUserProfile,
@@ -8,6 +7,7 @@ import {
     getCachedAvatarFrameUrlForProfile,
 } from "@/lib/cached-data";
 import { getUserRoleTags } from "@/lib/appwrite-roles";
+import { getServerSession } from "@/lib/auth-server";
 import {
     Card,
     CardContent,
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { RelationshipActions } from "@/components/relationship-actions";
 import { StartDMButton } from "./start-dm-button";
 import { AvatarWithFrame } from "@/components/profile-background";
+import { ReportUserDialog } from "@/components/report-user-dialog";
 
 type Props = {
     params: Promise<{ userId: string }>;
@@ -32,6 +33,9 @@ export default async function ProfilePage({ params }: Props) {
     if (!profile) {
         notFound();
     }
+
+    const session = await getServerSession();
+    const isOwnProfile = session?.$id === userId;
 
     const roles = await getUserRoleTags(userId);
 
@@ -122,6 +126,14 @@ export default async function ProfilePage({ params }: Props) {
                                     }
                                     targetUserId={userId}
                                 />
+                                {!isOwnProfile && (
+                                    <ReportUserDialog
+                                        targetDisplayName={
+                                            profile.displayName ?? "this user"
+                                        }
+                                        targetUserId={userId}
+                                    />
+                                )}
                             </div>
                         </div>
                     </CardContent>
