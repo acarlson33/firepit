@@ -229,7 +229,13 @@ export async function createUserProfile(
 export async function updateUserProfile(
     profileId: string,
     data: Partial<
-        Omit<UserProfile, "$id" | "userId" | "$createdAt" | "$updatedAt">
+        Record<
+            keyof Omit<
+                UserProfile,
+                "$id" | "userId" | "$createdAt" | "$updatedAt"
+            >,
+            string | boolean | string[] | null
+        >
     >,
 ): Promise<UserProfile> {
     const { databases } = getAdminClient();
@@ -401,24 +407,31 @@ export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
         const { storage } = getAdminClient();
         const env = getEnvConfig();
 
-        const existingPresetIds = await Promise.all(
-            uniquePresetIds.map(async (presetId) => {
-                const storageFileId = getPresetFrameStorageFileId(presetId);
-                if (!storageFileId) {
-                    return undefined;
-                }
+        // Limit concurrency to avoid overwhelming Appwrite at scale.
+        const CHUNK_SIZE = 10;
+        const existingPresetIds: (string | undefined)[] = [];
+        for (let i = 0; i < uniquePresetIds.length; i += CHUNK_SIZE) {
+            const chunk = uniquePresetIds.slice(i, i + CHUNK_SIZE);
+            const results = await Promise.all(
+                chunk.map(async (presetId) => {
+                    const storageFileId = getPresetFrameStorageFileId(presetId);
+                    if (!storageFileId) {
+                        return undefined;
+                    }
 
-                try {
-                    await storage.getFile(
-                        env.buckets.avatarFramesPredefined,
-                        storageFileId,
-                    );
-                    return presetId;
-                } catch {
-                    return undefined;
-                }
-            }),
-        );
+                    try {
+                        await storage.getFile(
+                            env.buckets.avatarFramesPredefined,
+                            storageFileId,
+                        );
+                        return presetId;
+                    } catch {
+                        return undefined;
+                    }
+                }),
+            );
+            existingPresetIds.push(...results);
+        }
 
         const existingSet = new Set<string>();
         for (const presetId of existingPresetIds) {

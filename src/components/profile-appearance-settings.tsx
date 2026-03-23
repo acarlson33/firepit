@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-    Image as ImageIcon,
-    Palette,
-    Upload,
-    X,
-    Check,
-    Clock,
-} from "lucide-react";
+import { Palette, Upload, Check, Clock } from "lucide-react";
 import { PRESET_GRADIENTS, PRESET_COLORS } from "@/lib/preset-gradients";
 import { type PresetFrame } from "@/lib/preset-frames";
 import Image from "next/image";
@@ -86,9 +79,22 @@ export function ProfileAppearanceSettings({
     const colorInputRef = useRef<HTMLInputElement>(null);
     const backgroundImageInputRef = useRef<HTMLInputElement>(null);
 
+    const loadFrames = useCallback(async () => {
+        if (framesLoaded) {
+            return;
+        }
+        try {
+            const result = await getAvailableFrames();
+            setAvailableFrames(result.frames);
+            setFramesLoaded(true);
+        } catch {
+            setAvailableFrames([]);
+        }
+    }, [framesLoaded]);
+
     useEffect(() => {
         void loadFrames();
-    }, []);
+    }, [loadFrames]);
 
     async function loadCooldown() {
         try {
@@ -96,17 +102,6 @@ export function ProfileAppearanceSettings({
             setCooldown(result);
         } catch {
             setCooldown({ canChange: true, remainingMs: 0 });
-        }
-    }
-
-    async function loadFrames() {
-        if (framesLoaded) return;
-        try {
-            const result = await getAvailableFrames();
-            setAvailableFrames(result.frames);
-            setFramesLoaded(true);
-        } catch {
-            setAvailableFrames([]);
         }
     }
 
@@ -185,7 +180,9 @@ export function ProfileAppearanceSettings({
         event: React.ChangeEvent<HTMLInputElement>,
     ) {
         const file = event.target.files?.[0];
-        if (!file) return;
+        if (!file) {
+            return;
+        }
 
         if (cooldown && !cooldown.canChange) {
             toast.error(
@@ -282,9 +279,13 @@ export function ProfileAppearanceSettings({
                         <div className="absolute bottom-2 right-2">
                             <Button
                                 className="h-6 px-2 text-xs"
-                                onClick={() => {
-                                    loadCooldown();
-                                    void handleClearBackground();
+                                onClick={async () => {
+                                    try {
+                                        await loadCooldown();
+                                        await handleClearBackground();
+                                    } catch {
+                                        // handled by inner functions
+                                    }
                                 }}
                                 size="sm"
                                 type="button"

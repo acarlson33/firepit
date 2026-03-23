@@ -65,4 +65,3 @@ src/summaries/**
 
 # Generated files
 src/generated/**
-.env.local

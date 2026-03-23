@@ -116,11 +116,9 @@ export default function OnboardingPage() {
                         <div key={step} className="flex items-center gap-2">
                             <div
                                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
-                                    index < currentStepIndex
+                                    index <= currentStepIndex
                                         ? "bg-primary text-primary-foreground"
-                                        : index === currentStepIndex
-                                          ? "bg-primary text-primary-foreground"
-                                          : "bg-muted text-muted-foreground"
+                                        : "bg-muted text-muted-foreground"
                                 }`}
                             >
                                 {index < currentStepIndex ? (

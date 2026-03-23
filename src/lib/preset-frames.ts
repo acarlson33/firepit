@@ -140,7 +140,13 @@ const PRESET_FRAMES: PresetFrame[] = [
 
 function getPresetFrameBucketUrl(fileId: string): string {
     const env = getEnvConfig();
-    return `${env.endpoint}/storage/buckets/${env.buckets.avatarFramesPredefined || "a"}/files/${fileId}/view?project=${env.project}`;
+    const bucketId = env.buckets.avatarFramesPredefined;
+    if (!bucketId) {
+        throw new Error(
+            "Missing env config: buckets.avatarFramesPredefined is not configured",
+        );
+    }
+    return `${env.endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${env.project}`;
 }
 
 function hydrateFrameWithImageUrl(frame: PresetFrame): PresetFrame {
@@ -258,5 +264,6 @@ export function getFramePreviewStyle(frame: PresetFrame): React.CSSProperties {
     return {
         borderColor: frame.color || "#6366f1",
         borderStyle: frame.borderStyle || "solid",
+        borderWidth: "2px",
     };
 }

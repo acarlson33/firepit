@@ -276,7 +276,7 @@ describe("newrelic-utils", () => {
             expect(mockNewRelic.recordCustomEvent).not.toHaveBeenCalled();
         });
 
-        it("should route to both providers when configured", () => {
+        it("should route to PostHog when provider is both (New Relic unavailable in test env)", () => {
             process.env.TELEMETRY_PROVIDER = "both";
             process.env.POSTHOG_PROJECT_API_KEY = "test-key";
             process.env.POSTHOG_HOST = "https://us.i.posthog.com";

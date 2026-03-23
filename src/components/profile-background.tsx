@@ -154,14 +154,32 @@ export function AvatarWithFrame({
 }
 
 function getFrameEmoji(framePreset?: string): string | null {
-    if (!framePreset) return null;
-    if (framePreset.includes("star")) return "⭐";
-    if (framePreset.includes("diamond")) return "💎";
-    if (framePreset.includes("square")) return "⬜";
-    if (framePreset.includes("round")) return "⚪";
-    if (framePreset.includes("spring")) return "🌸";
-    if (framePreset.includes("summer")) return "☀️";
-    if (framePreset.includes("fall")) return "🍂";
-    if (framePreset.includes("winter")) return "❄️";
+    if (!framePreset) {
+        return null;
+    }
+    if (framePreset.includes("star")) {
+        return "⭐";
+    }
+    if (framePreset.includes("diamond")) {
+        return "💎";
+    }
+    if (framePreset.includes("square")) {
+        return "⬜";
+    }
+    if (framePreset.includes("round")) {
+        return "⚪";
+    }
+    if (framePreset.includes("spring")) {
+        return "🌸";
+    }
+    if (framePreset.includes("summer")) {
+        return "☀️";
+    }
+    if (framePreset.includes("fall")) {
+        return "🍂";
+    }
+    if (framePreset.includes("winter")) {
+        return "❄️";
+    }
     return "✨";
 }

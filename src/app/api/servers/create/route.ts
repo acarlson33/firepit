@@ -39,11 +39,15 @@ export async function POST(request: Request) {
         // and throw an error if server creation is disabled
         const server = await createServer(name.trim());
 
-        getPostHogClient().capture({
-            distinctId: session.$id,
-            event: "server_created",
-            properties: { serverId: server.$id },
-        });
+        try {
+            getPostHogClient().capture({
+                distinctId: session.$id,
+                event: "server_created",
+                properties: { serverId: server.$id },
+            });
+        } catch {
+            // Telemetry must not affect the response.
+        }
 
         return NextResponse.json({
             success: true,

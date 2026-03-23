@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-server";
-import { resolveReport } from "@/lib/appwrite-reports";
+import { getReportById, resolveReport } from "@/lib/appwrite-reports";
 import { recordAudit } from "@/lib/appwrite-audit";
 
 export async function actionResolveReport(
@@ -14,6 +14,11 @@ export async function actionResolveReport(
 
     if (!reportId) {
         throw new Error("Missing report ID");
+    }
+
+    const report = await getReportById(reportId);
+    if (report.status !== "pending") {
+        throw new Error("Report has already been processed");
     }
 
     await resolveReport(reportId, userId, "resolved", resolutionNotes);
@@ -37,6 +42,11 @@ export async function actionDismissReport(
         throw new Error("Missing report ID");
     }
 
+    const report = await getReportById(reportId);
+    if (report.status !== "pending") {
+        throw new Error("Report has already been processed");
+    }
+
     await resolveReport(reportId, userId, "dismissed", resolutionNotes);
     await recordAudit("report_dismissed", reportId, userId, {
         details: resolutionNotes
@@ -48,19 +58,29 @@ export async function actionDismissReport(
 }
 
 export async function actionResolveReportBound(formData: FormData) {
-    const reportId = formData.get("reportId") as string;
-    const notes = formData.get("resolutionNotes") as string;
-    if (!reportId) {
+    const reportIdRaw = formData.get("reportId");
+    const notesRaw = formData.get("resolutionNotes");
+
+    if (typeof reportIdRaw !== "string" || !reportIdRaw.trim()) {
         throw new Error("Missing report ID");
     }
-    await actionResolveReport(reportId, notes || undefined);
+
+    const notes =
+        typeof notesRaw === "string" ? notesRaw.trim() || undefined : undefined;
+
+    await actionResolveReport(reportIdRaw.trim(), notes);
 }
 
 export async function actionDismissReportBound(formData: FormData) {
-    const reportId = formData.get("reportId") as string;
-    const notes = formData.get("resolutionNotes") as string;
-    if (!reportId) {
+    const reportIdRaw = formData.get("reportId");
+    const notesRaw = formData.get("resolutionNotes");
+
+    if (typeof reportIdRaw !== "string" || !reportIdRaw.trim()) {
         throw new Error("Missing report ID");
     }
-    await actionDismissReport(reportId, notes || undefined);
+
+    const notes =
+        typeof notesRaw === "string" ? notesRaw.trim() || undefined : undefined;
+
+    await actionDismissReport(reportIdRaw.trim(), notes);
 }

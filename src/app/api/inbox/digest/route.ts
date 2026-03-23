@@ -54,10 +54,6 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    const digestV15Enabled = await getFeatureFlag(
-        FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5,
-    ).catch(() => false);
-
     const { searchParams } = new URL(request.url);
     const limit = parseLimit(searchParams.get("limit"));
     if (!limit) {
@@ -88,6 +84,10 @@ export async function GET(request: NextRequest) {
             { status: 400 },
         );
     }
+
+    const digestV15Enabled = await getFeatureFlag(
+        FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5,
+    ).catch(() => false);
 
     try {
         const digest = await listInboxDigest({

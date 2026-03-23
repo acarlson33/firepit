@@ -35,6 +35,15 @@ export type ListReportsOpts = {
 };
 
 const DEFAULT_LIST_LIMIT = 50;
+const MAX_LIST_LIMIT = 200;
+
+function clampLimit(value: unknown): number {
+    const parsed = Math.floor(Number(value));
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return DEFAULT_LIST_LIMIT;
+    }
+    return Math.min(parsed, MAX_LIST_LIMIT);
+}
 
 function parseReport(doc: Record<string, unknown>): Report {
     return {
@@ -54,6 +63,16 @@ function parseReport(doc: Record<string, unknown>): Report {
 }
 
 export async function createReport(input: CreateReportInput): Promise<Report> {
+    // Check for existing pending report to avoid duplicates (best-effort;
+    // the DB is the final authority but Appwrite lacks unique constraints).
+    const existing = await hasExistingPendingReport(
+        input.reporterId,
+        input.reportedUserId,
+    );
+    if (existing) {
+        throw new Error("You already have a pending report for this user.");
+    }
+
     const { databases } = getServerClient();
 
     const doc = await databases.createDocument(
@@ -80,7 +99,7 @@ export async function listReports(
     }
 
     const { databases } = getServerClient();
-    const limit = opts.limit || DEFAULT_LIST_LIMIT;
+    const limit = clampLimit(opts.limit);
     const queries: string[] = [
         Query.limit(limit),
         Query.orderDesc("$createdAt"),
@@ -118,6 +137,18 @@ export async function listReports(
     };
 }
 
+export async function getReportById(reportId: string): Promise<Report> {
+    const { databases } = getServerClient();
+
+    const doc = await databases.getDocument(
+        DATABASE_ID,
+        REPORTS_COLLECTION_ID,
+        reportId,
+    );
+
+    return parseReport(doc as unknown as Record<string, unknown>);
+}
+
 export async function resolveReport(
     reportId: string,
     adminId: string,
@@ -125,6 +156,16 @@ export async function resolveReport(
     resolutionNotes?: string,
 ): Promise<void> {
     const { databases } = getServerClient();
+
+    const existing = await databases.getDocument(
+        DATABASE_ID,
+        REPORTS_COLLECTION_ID,
+        reportId,
+    );
+
+    if (existing.status !== "pending") {
+        throw new Error("Report has already been processed");
+    }
 
     await databases.updateDocument(
         DATABASE_ID,
@@ -174,4 +215,27 @@ export async function hasExistingPendingReport(
     );
 
     return res.total > 0;
+}
+
+export async function countRecentReportsByUser(
+    reporterId: string,
+    windowMs: number,
+): Promise<number> {
+    if (!REPORTS_COLLECTION_ID) {
+        return 0;
+    }
+
+    const { databases } = getServerClient();
+    const cutoff = new Date(Date.now() - windowMs).toISOString();
+    const res = await databases.listDocuments(
+        DATABASE_ID,
+        REPORTS_COLLECTION_ID,
+        [
+            Query.equal("reporterId", reporterId),
+            Query.greaterThanEqual("$createdAt", cutoff),
+            Query.limit(20),
+        ],
+    );
+
+    return res.total;
 }

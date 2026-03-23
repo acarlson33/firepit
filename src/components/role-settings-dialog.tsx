@@ -152,7 +152,6 @@ export function RoleSettingsDialog({
                                 ) : (
                                     <RoleList
                                         roles={roles}
-                                        serverId={serverId}
                                         isOwner={isOwner}
                                         onCreateRole={handleCreateRole}
                                         onEditRole={handleEditRole}

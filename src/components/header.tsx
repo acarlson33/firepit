@@ -152,6 +152,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                 onClick={onSearchClick}
                                 aria-label="Search messages"
                                 title="Search messages (Ctrl+K)"
+                                type="button"
                             >
                                 <Search className="h-5 w-5" />
                             </Button>
@@ -251,6 +252,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
                             onClick={onSearchClick}
                             aria-label="Search messages"
                             title="Search messages (Ctrl+K)"
+                            type="button"
                         >
                             <Search className="h-5 w-5" />
                         </Button>

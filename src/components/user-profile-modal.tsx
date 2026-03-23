@@ -110,19 +110,33 @@ export function UserProfileModal({
         "Unknown User";
     const avatarUrl = profile?.avatarUrl || initialAvatarUrl;
 
-    const cardStyle = profile?.profileBackgroundUrl
-        ? {
-              backgroundImage: `url(${profile.profileBackgroundUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-          }
-        : profile?.profileBackgroundGradient
-          ? { background: profile.profileBackgroundGradient }
-          : profile?.profileBackgroundColor
-            ? { background: profile.profileBackgroundColor }
-            : undefined;
+    let cardStyle: React.CSSProperties | undefined;
+    if (profile?.profileBackgroundUrl) {
+        cardStyle = {
+            backgroundImage: `url(${profile.profileBackgroundUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+        };
+    } else if (profile?.profileBackgroundGradient) {
+        cardStyle = { background: profile.profileBackgroundGradient };
+    } else if (profile?.profileBackgroundColor) {
+        cardStyle = { background: profile.profileBackgroundColor };
+    }
 
     const hasBackground = Boolean(cardStyle);
+
+    function getStatusColor(status: string): string {
+        switch (status) {
+            case "online":
+                return "bg-green-500";
+            case "away":
+                return "bg-yellow-500";
+            case "busy":
+                return "bg-red-500";
+            default:
+                return "bg-gray-400";
+        }
+    }
 
     async function handleStartDM() {
         if (!onStartDM) {
@@ -219,20 +233,7 @@ export function UserProfileModal({
                                         {profile?.status && (
                                             <div className="mt-1 flex items-center gap-2 text-sm">
                                                 <span
-                                                    className={`inline-block size-2 rounded-full ${
-                                                        profile.status
-                                                            .status === "online"
-                                                            ? "bg-green-500"
-                                                            : profile.status
-                                                                    .status ===
-                                                                "away"
-                                                              ? "bg-yellow-500"
-                                                              : profile.status
-                                                                      .status ===
-                                                                  "busy"
-                                                                ? "bg-red-500"
-                                                                : "bg-gray-400"
-                                                    }`}
+                                                    className={`inline-block size-2 rounded-full ${getStatusColor(profile.status.status)}`}
                                                 />
                                                 <span className="capitalize text-foreground/90">
                                                     {profile.status.status}
@@ -255,8 +256,8 @@ export function UserProfileModal({
                                 {/* Bio */}
                                 {profile?.bio && (
                                     <div className="space-y-2 mt-4">
-                                        <h4 className="font-medium text-sm">
-                                            About
+                                        <h4 className="font-bold text-sm">
+                                            About:
                                         </h4>
                                         <p className="whitespace-pre-wrap text-foreground text-sm">
                                             {profile.bio}
@@ -266,9 +267,9 @@ export function UserProfileModal({
 
                                 {/* Additional Info */}
                                 {(profile?.location || profile?.website) && (
-                                    <div className="space-y-2">
-                                        <h4 className="font-medium text-sm">
-                                            Information
+                                    <div className="space-y-2 pt-2">
+                                        <h4 className="font-bold text-sm">
+                                            Information:
                                         </h4>
                                         <div className="space-y-1 text-sm">
                                             {profile.location && (
