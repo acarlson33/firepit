@@ -143,5 +143,24 @@ describe("inbox-client", () => {
                 }),
             );
         });
+
+        it("rejects when mark scope read request fails", async () => {
+            vi.stubGlobal(
+                "fetch",
+                vi.fn(
+                    async () =>
+                        ({
+                            json: async () => ({
+                                error: "Inbox mark read unavailable",
+                            }),
+                            ok: false,
+                        }) as Response,
+                ),
+            );
+
+            await expect(markInboxScopeRead("all")).rejects.toThrow(
+                "Inbox mark read unavailable",
+            );
+        });
     });
 });

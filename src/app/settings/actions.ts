@@ -279,7 +279,6 @@ export async function setAvatarFramePresetAction(frameId: string) {
     if (!frameId) {
         await updateUserProfile(profile.$id, {
             avatarFramePreset: null,
-            avatarFrameFileId: null,
         });
         revalidatePath("/settings");
         return { success: true };
@@ -299,9 +298,7 @@ export async function setAvatarFramePresetAction(frameId: string) {
     });
 
     revalidatePath("/settings");
-    if (user.$id) {
-        revalidatePath(`/profile/${user.$id}`);
-    }
+    revalidatePath(`/profile/${user.$id}`);
     return { success: true };
 }
 

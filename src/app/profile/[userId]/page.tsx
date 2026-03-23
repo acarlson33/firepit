@@ -59,17 +59,18 @@ export default async function ProfilePage({ params }: Props) {
           ? "Moderator"
           : "Member";
 
-    const cardStyle = profileBackgroundUrl
-        ? {
-              backgroundImage: `url(${profileBackgroundUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-          }
-        : profile.profileBackgroundGradient
-          ? { background: profile.profileBackgroundGradient }
-          : profile.profileBackgroundColor
-            ? { background: profile.profileBackgroundColor }
-            : undefined;
+    let cardStyle: React.CSSProperties | undefined;
+    if (profileBackgroundUrl) {
+        cardStyle = {
+            backgroundImage: `url(${profileBackgroundUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+        };
+    } else if (profile.profileBackgroundGradient) {
+        cardStyle = { background: profile.profileBackgroundGradient };
+    } else if (profile.profileBackgroundColor) {
+        cardStyle = { background: profile.profileBackgroundColor };
+    }
 
     const hasBackground = Boolean(cardStyle);
 

@@ -1,5 +1,3 @@
-"use server";
-
 import { requireAuth } from "@/lib/auth-server";
 import { redirect, notFound } from "next/navigation";
 import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
@@ -14,10 +12,6 @@ export default async function ProfileDebugPage() {
     const user = await requireAuth().catch(() => {
         redirect("/login");
     });
-
-    if (!user) {
-        redirect("/login");
-    }
 
     const profile = await getUserProfile(user.$id);
 

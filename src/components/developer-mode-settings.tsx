@@ -151,13 +151,14 @@ export function DeveloperModeSettings() {
                                             : ""
                                     }
                                     id={`navigation-${item}`}
-                                    onCheckedChange={(checked) =>
-                                        controlsDisabled
-                                            ? undefined
-                                            : updateNavigationPreferences({
-                                                  [visibilityKey]: checked,
-                                              })
-                                    }
+                                    onCheckedChange={(checked) => {
+                                        if (controlsDisabled) {
+                                            return;
+                                        }
+                                        updateNavigationPreferences({
+                                            [visibilityKey]: checked,
+                                        });
+                                    }}
                                 />
                                 <Button
                                     aria-label={`Move ${copy.label} earlier in navigation`}

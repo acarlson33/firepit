@@ -72,8 +72,6 @@ describe("ClientLogger", () => {
                     key: "value",
                 },
             );
-
-            delete (global as any).window;
         });
 
         it("should send to PostHog when provider is posthog", () => {
@@ -141,8 +139,6 @@ describe("ClientLogger", () => {
                     code: 123,
                 },
             );
-
-            delete (global as any).window;
         });
     });
 
@@ -174,8 +170,6 @@ describe("ClientLogger", () => {
                 message: "Error occurred",
                 userId: "456",
             });
-
-            delete (global as any).window;
         });
 
         it("should send Error objects to PostHog captureException when provider is posthog", () => {
@@ -214,8 +208,6 @@ describe("ClientLogger", () => {
                     context: "api",
                 },
             );
-
-            delete (global as any).window;
         });
 
         it("should handle errors without error object", () => {
@@ -274,8 +266,6 @@ describe("ClientLogger", () => {
 
             expect(mockNewRelic.addPageAction).not.toHaveBeenCalled();
             expect(mockNewRelic.noticeError).not.toHaveBeenCalled();
-
-            delete (global as any).window;
         });
     });
 

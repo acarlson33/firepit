@@ -8,6 +8,9 @@ import type { InboxContextKind, InboxDigestResponse } from "@/lib/types";
 
 const EMPTY_DIGEST: InboxDigestResponse = {
     contractVersion: "thread_v1",
+    navigationFallback: "context_catch_up",
+    ordering: "newest_first",
+    presentation: "flat",
     items: [],
     totalUnreadCount: 0,
 };

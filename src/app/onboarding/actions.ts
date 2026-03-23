@@ -11,6 +11,35 @@ import {
 } from "@/lib/notification-settings";
 import type { NotificationLevel, DirectMessagePrivacy } from "@/lib/types";
 
+const VALID_NOTIFICATION_LEVELS: readonly NotificationLevel[] = [
+    "all",
+    "mentions",
+    "nothing",
+] as const;
+
+const VALID_DM_PRIVACY: readonly DirectMessagePrivacy[] = [
+    "everyone",
+    "friends",
+] as const;
+
+function isNotificationLevel(
+    value: FormDataEntryValue | null,
+): value is NotificationLevel {
+    return (
+        typeof value === "string" &&
+        (VALID_NOTIFICATION_LEVELS as readonly string[]).includes(value)
+    );
+}
+
+function isDirectMessagePrivacy(
+    value: FormDataEntryValue | null,
+): value is DirectMessagePrivacy {
+    return (
+        typeof value === "string" &&
+        (VALID_DM_PRIVACY as readonly string[]).includes(value)
+    );
+}
+
 /**
  * Complete onboarding by setting up user profile and preferences
  */
@@ -43,19 +72,22 @@ export async function completeOnboardingAction(
         });
 
         // Extract notification settings
-        const notificationLevel = formData.get(
-            "notificationLevel",
-        ) as NotificationLevel;
-        const directMessagePrivacy = formData.get(
-            "directMessagePrivacy",
-        ) as DirectMessagePrivacy;
+        const rawLevel = formData.get("notificationLevel");
+        const rawPrivacy = formData.get("directMessagePrivacy");
+        const notificationLevel: NotificationLevel = isNotificationLevel(
+            rawLevel,
+        )
+            ? rawLevel
+            : "all";
+        const directMessagePrivacy: DirectMessagePrivacy =
+            isDirectMessagePrivacy(rawPrivacy) ? rawPrivacy : "everyone";
         const notificationSound = formData.get("notificationSound") === "true";
 
         // Get or create notification settings and update them
         const settings = await getOrCreateNotificationSettings(user.$id);
         await updateNotificationSettings(settings.$id, {
-            directMessagePrivacy: directMessagePrivacy ?? "everyone",
-            globalNotifications: notificationLevel ?? "all",
+            directMessagePrivacy,
+            globalNotifications: notificationLevel,
             notificationSound,
         });
 

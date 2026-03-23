@@ -1,5 +1,3 @@
-"use server";
-
 import { notFound, redirect } from "next/navigation";
 
 import { requireAuth } from "@/lib/auth-server";
@@ -11,13 +9,9 @@ export default async function PostHogErrorsDebugPage() {
         notFound();
     }
 
-    const user = await requireAuth().catch(() => {
+    await requireAuth().catch(() => {
         redirect("/login");
     });
-
-    if (!user) {
-        redirect("/login");
-    }
 
     return (
         <div className="container mx-auto max-w-4xl px-4 py-8">

@@ -30,9 +30,15 @@ function statusVariant(status: string) {
 export default async function ReportsPage(props: {
     searchParams?: Promise<Record<string, string | string[]>>;
 }) {
-    await requireAdmin().catch(() => {
-        redirect("/");
-    });
+    try {
+        await requireAdmin();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.startsWith("Forbidden") || message === "Unauthorized") {
+            redirect("/");
+        }
+        throw error;
+    }
 
     const searchParams = await props.searchParams;
 

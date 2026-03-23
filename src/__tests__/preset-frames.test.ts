@@ -72,8 +72,9 @@ describe("preset-frames", () => {
             expect(frames.length).toBeGreaterThan(0);
         });
 
+        // Use far-future date so no seasonal frame definition can reach it.
         it("returns empty array for user created after all seasons", () => {
-            const frames = getSeasonalFramesForUser("2030-01-01T10:00:00.000Z");
+            const frames = getSeasonalFramesForUser("9999-01-01T00:00:00.000Z");
             expect(frames.length).toBe(0);
         });
     });

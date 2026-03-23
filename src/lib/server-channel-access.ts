@@ -271,11 +271,17 @@ async function hasAccessToCategory(
         return true;
     }
 
-    const category = await databases.getDocument(
-        env.databaseId,
-        env.collections.categories,
-        categoryId,
-    );
+    let category;
+    try {
+        category = await databases.getDocument(
+            env.databaseId,
+            env.collections.categories,
+            categoryId,
+        );
+    } catch {
+        // Missing/orphaned category — treat as permissive.
+        return true;
+    }
 
     const allowedRoleIds = category.allowedRoleIds as string[] | undefined;
     if (!allowedRoleIds || allowedRoleIds.length === 0) {

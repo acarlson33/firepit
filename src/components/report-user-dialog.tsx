@@ -68,6 +68,7 @@ export function ReportUserDialog({
                 <Button
                     className={fullWidth ? "w-full" : undefined}
                     variant={variant}
+                    type="button"
                 >
                     <Flag className="mr-2 h-4 w-4" />
                     Report User
@@ -122,6 +123,7 @@ export function ReportUserDialog({
                         <Button
                             disabled={!isValid || submitting}
                             onClick={handleSubmit}
+                            type="button"
                             variant="destructive"
                         >
                             {submitting ? "Submitting..." : "Submit Report"}

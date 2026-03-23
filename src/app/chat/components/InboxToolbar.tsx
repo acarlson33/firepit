@@ -28,13 +28,12 @@ export function InboxToolbar({
     const handleMarkRead = async (scope: InboxScope) => {
         try {
             await onMarkScopeRead(scope);
-            const message =
-                scope === "all"
-                    ? "Marked all conversations as read"
-                    : scope === "direct"
-                      ? "Marked all direct messages as read"
-                      : "Marked all servers as read";
-            toast.success(message);
+            const scopeMessages: Record<InboxScope, string> = {
+                all: "Marked all conversations as read",
+                direct: "Marked all direct messages as read",
+                server: "Marked all servers as read",
+            };
+            toast.success(scopeMessages[scope]);
         } catch {
             toast.error("Failed to mark as read");
         }
@@ -42,14 +41,12 @@ export function InboxToolbar({
     };
 
     const isLoading = bulkLoading !== null;
-    const loadingLabel =
-        bulkLoading === "all"
-            ? "Marking all as read..."
-            : bulkLoading === "direct"
-              ? "Marking DMs as read..."
-              : bulkLoading === "server"
-                ? "Marking servers as read..."
-                : "";
+    const loadingLabels: Record<InboxScope, string> = {
+        all: "Marking all as read...",
+        direct: "Marking DMs as read...",
+        server: "Marking servers as read...",
+    };
+    const loadingLabel = bulkLoading ? loadingLabels[bulkLoading] : "";
 
     return (
         <div className="flex items-center justify-between border-b border-border/60 p-2">

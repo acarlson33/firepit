@@ -46,7 +46,12 @@ export default function Error({
 
                 {/* Action Buttons */}
                 <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-                    <Button onClick={reset} size="lg" className="min-w-[140px]">
+                    <Button
+                        onClick={reset}
+                        size="lg"
+                        className="min-w-[140px]"
+                        type="button"
+                    >
                         <RefreshCcw className="mr-2 h-4 w-4" />
                         Try Again
                     </Button>

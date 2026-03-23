@@ -306,7 +306,20 @@ export function useInbox(userId: string | null) {
         async (scope: InboxScope) => {
             setBulkLoading(scope);
 
-            updateInboxCache(() => EMPTY_INBOX);
+            const scopeContextKinds: InboxContextKind[] =
+                scope === "direct"
+                    ? ["conversation"]
+                    : scope === "server"
+                      ? ["channel"]
+                      : ["channel", "conversation"];
+
+            updateInboxCache((currentInbox) =>
+                scope === "all"
+                    ? EMPTY_INBOX
+                    : removeItemsFromInbox(currentInbox, (item) =>
+                          scopeContextKinds.includes(item.contextKind),
+                      ),
+            );
 
             try {
                 await markInboxScopeRead(scope);

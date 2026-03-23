@@ -48,7 +48,7 @@ export function useProfilePrefetch() {
 }
 
 export const profilePrefetchPool = {
-    queue: [] as string[],
+    queue: new Set<string>(),
     processing: false,
     maxConcurrent: 3,
 
@@ -57,21 +57,25 @@ export const profilePrefetchPool = {
     },
 
     add(userId: string) {
-        if (!this.queue.includes(userId)) {
-            this.queue.push(userId);
+        if (profileCache.has(userId) || this.queue.has(userId)) {
+            return;
         }
+        this.queue.add(userId);
         void this.process();
     },
 
     async process() {
-        if (this.processing || this.queue.length === 0) {
+        if (this.processing || this.queue.size === 0) {
             return;
         }
 
         this.processing = true;
 
-        while (this.queue.length > 0) {
-            const batch = this.queue.splice(0, this.maxConcurrent);
+        while (this.queue.size > 0) {
+            const batch = [...this.queue].slice(0, this.maxConcurrent);
+            for (const id of batch) {
+                this.queue.delete(id);
+            }
             await Promise.all(
                 batch.map(async (userId) => {
                     if (!profileCache.has(userId)) {
