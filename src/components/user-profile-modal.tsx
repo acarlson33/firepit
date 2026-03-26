@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { AvatarWithFrame } from "./profile-background";
 import { ReportUserDialog } from "./report-user-dialog";
 import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
+import { getProfileBackgroundStyle } from "@/lib/profile-utils";
 
 type UserProfile = {
     userId: string;
@@ -110,18 +111,11 @@ export function UserProfileModal({
         "Unknown User";
     const avatarUrl = profile?.avatarUrl || initialAvatarUrl;
 
-    let cardStyle: React.CSSProperties | undefined;
-    if (profile?.profileBackgroundUrl) {
-        cardStyle = {
-            backgroundImage: `url(${profile.profileBackgroundUrl})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-        };
-    } else if (profile?.profileBackgroundGradient) {
-        cardStyle = { background: profile.profileBackgroundGradient };
-    } else if (profile?.profileBackgroundColor) {
-        cardStyle = { background: profile.profileBackgroundColor };
-    }
+    const cardStyle = getProfileBackgroundStyle({
+        backgroundUrl: profile?.profileBackgroundUrl,
+        gradient: profile?.profileBackgroundGradient,
+        color: profile?.profileBackgroundColor,
+    });
 
     const hasBackground = Boolean(cardStyle);
 
@@ -327,14 +321,15 @@ export function UserProfileModal({
                                         fullWidth
                                         targetUserId={userId}
                                     />
-                                    {userData?.userId !== userId && (
-                                        <ReportUserDialog
-                                            fullWidth
-                                            targetDisplayName={displayName}
-                                            targetUserId={userId}
-                                            variant="outline"
-                                        />
-                                    )}
+                                    {userData?.userId &&
+                                        userData.userId !== userId && (
+                                            <ReportUserDialog
+                                                fullWidth
+                                                targetDisplayName={displayName}
+                                                targetUserId={userId}
+                                                variant="outline"
+                                            />
+                                        )}
                                     <Button
                                         asChild
                                         className="w-full"

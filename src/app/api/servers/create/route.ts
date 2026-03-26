@@ -45,8 +45,16 @@ export async function POST(request: Request) {
                 event: "server_created",
                 properties: { serverId: server.$id },
             });
-        } catch {
-            // Telemetry must not affect the response.
+        } catch (telemetryError) {
+            logger.warn("Telemetry capture failed", {
+                event: "server_created",
+                userId: session.$id,
+                serverId: server.$id,
+                error:
+                    telemetryError instanceof Error
+                        ? telemetryError.message
+                        : String(telemetryError),
+            });
         }
 
         return NextResponse.json({

@@ -272,7 +272,7 @@ async function listConversationDocuments(userId: string) {
     const documents = await listAllDocuments({
         collectionId: env.collections.conversations,
         queries: [
-            Query.equal("participants", userId),
+            Query.contains("participants", userId),
             Query.orderDesc("lastMessageAt"),
         ],
     });

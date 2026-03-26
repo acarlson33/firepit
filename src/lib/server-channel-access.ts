@@ -278,9 +278,15 @@ async function hasAccessToCategory(
             env.collections.categories,
             categoryId,
         );
-    } catch {
-        // Missing/orphaned category — treat as permissive.
-        return true;
+    } catch (error) {
+        // Only treat not-found (404) as permissive; re-throw other errors.
+        const code =
+            (error as { code?: number })?.code ??
+            (error as { statusCode?: number })?.statusCode;
+        if (code === 404) {
+            return true;
+        }
+        throw error;
     }
 
     const allowedRoleIds = category.allowedRoleIds as string[] | undefined;

@@ -306,12 +306,13 @@ export function useInbox(userId: string | null) {
         async (scope: InboxScope) => {
             setBulkLoading(scope);
 
-            const scopeContextKinds: InboxContextKind[] =
-                scope === "direct"
-                    ? ["conversation"]
-                    : scope === "server"
-                      ? ["channel"]
-                      : ["channel", "conversation"];
+            const SCOPE_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> =
+                {
+                    direct: ["conversation"],
+                    server: ["channel"],
+                    all: ["channel", "conversation"],
+                };
+            const scopeContextKinds = SCOPE_CONTEXT_KINDS[scope];
 
             updateInboxCache((currentInbox) =>
                 scope === "all"

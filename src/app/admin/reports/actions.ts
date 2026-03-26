@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-server";
-import { getReportById, resolveReport } from "@/lib/appwrite-reports";
+import { resolveReport } from "@/lib/appwrite-reports";
 import { recordAudit } from "@/lib/appwrite-audit";
 
 export async function actionResolveReport(
@@ -16,11 +16,7 @@ export async function actionResolveReport(
         throw new Error("Missing report ID");
     }
 
-    const report = await getReportById(reportId);
-    if (report.status !== "pending") {
-        throw new Error("Report has already been processed");
-    }
-
+    // resolveReport enforces the pending-status invariant internally.
     await resolveReport(reportId, userId, "resolved", resolutionNotes);
     await recordAudit("report_resolved", reportId, userId, {
         details: resolutionNotes
@@ -42,11 +38,7 @@ export async function actionDismissReport(
         throw new Error("Missing report ID");
     }
 
-    const report = await getReportById(reportId);
-    if (report.status !== "pending") {
-        throw new Error("Report has already been processed");
-    }
-
+    // resolveReport enforces the pending-status invariant internally.
     await resolveReport(reportId, userId, "dismissed", resolutionNotes);
     await recordAudit("report_dismissed", reportId, userId, {
         details: resolutionNotes

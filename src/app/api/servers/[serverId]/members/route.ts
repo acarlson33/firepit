@@ -168,7 +168,7 @@ export async function GET(request: Request, context: RouteContext) {
 
                 members.push({
                     userId,
-                    userName: profile.userId as string,
+                    userName: profile.userName as string | undefined,
                     displayName: profile.displayName as string | undefined,
                     avatarUrl: profile.avatarUrl as string | undefined,
                     roleIds: roleMap.get(userId) || [],
