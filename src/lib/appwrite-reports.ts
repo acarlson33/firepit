@@ -63,8 +63,9 @@ function parseReport(doc: Record<string, unknown>): Report {
 }
 
 export async function createReport(input: CreateReportInput): Promise<Report> {
-    // Check for existing pending report to avoid duplicates (best-effort;
-    // the DB is the final authority but Appwrite lacks unique constraints).
+    // Best-effort duplicate check. Appwrite lacks unique constraints, so
+    // concurrent requests may still create duplicates. Callers should handle
+    // the "already have a pending report" error gracefully.
     const existing = await hasExistingPendingReport(
         input.reporterId,
         input.reportedUserId,

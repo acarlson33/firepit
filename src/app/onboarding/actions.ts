@@ -53,9 +53,14 @@ export async function completeOnboardingAction(
         const profile = await getOrCreateUserProfile(user.$id, user.name);
 
         // Extract profile form data
-        const displayName = formData.get("displayName") as string;
-        const pronouns = formData.get("pronouns") as string;
-        const bio = formData.get("bio") as string;
+        const rawDisplayName = formData.get("displayName");
+        const rawPronouns = formData.get("pronouns");
+        const rawBio = formData.get("bio");
+
+        const displayName =
+            typeof rawDisplayName === "string" ? rawDisplayName : "";
+        const pronouns = typeof rawPronouns === "string" ? rawPronouns : "";
+        const bio = typeof rawBio === "string" ? rawBio : "";
 
         if (!displayName?.trim()) {
             return { success: false, error: "Display name is required" };

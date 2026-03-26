@@ -486,7 +486,10 @@ async function updateStringAttributeSize(
             signal: AbortSignal.timeout(30_000),
         });
     } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (
+            error instanceof DOMException &&
+            (error.name === "TimeoutError" || error.name === "AbortError")
+        ) {
             throw new Error(
                 `Timed out patching ${collection}.${key} (30s): ${apiPath}`,
             );

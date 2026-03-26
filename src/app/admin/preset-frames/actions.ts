@@ -42,6 +42,14 @@ export async function uploadPredefinedFrameAssetAction(
         const env = getEnvConfig();
         const bucketId = env.buckets.avatarFramesPredefined;
 
+        // Delete existing file first since createFile does not overwrite.
+        try {
+            await storage.getFile(bucketId, storageFileId);
+            await storage.deleteFile(bucketId, storageFileId);
+        } catch {
+            // No existing file — continue with create.
+        }
+
         await storage.createFile(bucketId, storageFileId, file);
 
         revalidatePath("/admin/preset-frames");

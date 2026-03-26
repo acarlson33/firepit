@@ -90,7 +90,7 @@ export function ProfileAppearanceSettings({
         } catch {
             setAvailableFrames([]);
         }
-    }, [framesLoaded]);
+    }, [framesLoaded, getAvailableFrames]);
 
     useEffect(() => {
         void loadFrames();
@@ -381,7 +381,6 @@ export function ProfileAppearanceSettings({
                             accept="image/jpeg,image/png,image/webp"
                             className="hidden"
                             onChange={(e) => {
-                                loadCooldown();
                                 void handleBackgroundImageUpload(e);
                             }}
                             ref={backgroundImageInputRef}
@@ -394,7 +393,6 @@ export function ProfileAppearanceSettings({
                                 Boolean(cooldown && !cooldown.canChange)
                             }
                             onClick={() => {
-                                loadCooldown();
                                 backgroundImageInputRef.current?.click();
                             }}
                             type="button"

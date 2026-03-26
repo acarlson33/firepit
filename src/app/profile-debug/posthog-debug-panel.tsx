@@ -11,6 +11,11 @@ type DebugResult = {
     status: "idle" | "ok" | "error";
 };
 
+const STATUS_CLASS_MAP: Record<string, string> = {
+    error: "text-destructive",
+    ok: "text-green-600",
+};
+
 export function PostHogDebugPanel() {
     const [lastResult, setLastResult] = useState<DebugResult>({
         detail: "No debug event fired yet.",
@@ -149,10 +154,6 @@ export function PostHogDebugPanel() {
         }
     }
 
-    const STATUS_CLASS_MAP: Record<string, string> = {
-        error: "text-destructive",
-        ok: "text-green-600",
-    };
     const statusClassName =
         STATUS_CLASS_MAP[lastResult.status] ?? "text-muted-foreground";
 

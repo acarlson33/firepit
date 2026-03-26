@@ -148,17 +148,35 @@ export async function updateProfileBackgroundAction(formData: FormData) {
     const backgroundGradient = formData.get("backgroundGradient") as string;
 
     if (!backgroundColor && !backgroundGradient) {
+        if (profile.profileBackgroundImageFileId) {
+            await deleteProfileBackgroundFile(
+                profile.profileBackgroundImageFileId,
+            );
+        }
         await updateUserProfile(profile.$id, {
+            profileBackgroundImageFileId: null,
             profileBackgroundColor: null,
             profileBackgroundGradient: null,
         });
     } else if (backgroundGradient) {
+        if (profile.profileBackgroundImageFileId) {
+            await deleteProfileBackgroundFile(
+                profile.profileBackgroundImageFileId,
+            );
+        }
         await updateUserProfile(profile.$id, {
+            profileBackgroundImageFileId: null,
             profileBackgroundColor: null,
             profileBackgroundGradient: backgroundGradient,
         });
     } else {
+        if (profile.profileBackgroundImageFileId) {
+            await deleteProfileBackgroundFile(
+                profile.profileBackgroundImageFileId,
+            );
+        }
         await updateUserProfile(profile.$id, {
+            profileBackgroundImageFileId: null,
             profileBackgroundColor: backgroundColor,
             profileBackgroundGradient: null,
         });
@@ -236,13 +254,13 @@ export async function removeProfileBackgroundAction() {
 
     if (profile.profileBackgroundImageFileId) {
         await deleteProfileBackgroundFile(profile.profileBackgroundImageFileId);
-
-        await updateUserProfile(profile.$id, {
-            profileBackgroundImageFileId: null,
-            profileBackgroundColor: null,
-            profileBackgroundGradient: null,
-        });
     }
+
+    await updateUserProfile(profile.$id, {
+        profileBackgroundImageFileId: null,
+        profileBackgroundColor: null,
+        profileBackgroundGradient: null,
+    });
 
     revalidatePath("/settings");
     return { success: true };
@@ -281,6 +299,7 @@ export async function setAvatarFramePresetAction(frameId: string) {
             avatarFramePreset: null,
         });
         revalidatePath("/settings");
+        revalidatePath(`/profile/${user.$id}`);
         return { success: true };
     }
 

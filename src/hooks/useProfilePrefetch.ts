@@ -71,30 +71,38 @@ export const profilePrefetchPool = {
 
         this.processing = true;
 
-        while (this.queue.size > 0) {
-            const batch = [...this.queue].slice(0, this.maxConcurrent);
-            for (const id of batch) {
-                this.queue.delete(id);
-            }
-            await Promise.all(
-                batch.map(async (userId) => {
-                    if (!profileCache.has(userId)) {
-                        try {
-                            const response = await fetch(
-                                `/api/users/${userId}/profile`,
-                            );
-                            if (response.ok) {
-                                const data = await response.json();
-                                profileCache.set(userId, data);
-                            }
-                        } catch {
-                            // Silently fail
-                        }
+        try {
+            while (this.queue.size > 0) {
+                const batch: string[] = [];
+                for (const id of this.queue) {
+                    if (batch.length >= this.maxConcurrent) {
+                        break;
                     }
-                }),
-            );
+                    batch.push(id);
+                }
+                for (const id of batch) {
+                    this.queue.delete(id);
+                }
+                await Promise.all(
+                    batch.map(async (userId) => {
+                        if (!profileCache.has(userId)) {
+                            try {
+                                const response = await fetch(
+                                    `/api/users/${userId}/profile`,
+                                );
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    profileCache.set(userId, data);
+                                }
+                            } catch {
+                                // Silently fail
+                            }
+                        }
+                    }),
+                );
+            }
+        } finally {
+            this.processing = false;
         }
-
-        this.processing = false;
     },
 };

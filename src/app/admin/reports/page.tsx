@@ -42,7 +42,11 @@ export default async function ReportsPage(props: {
 
     const searchParams = await props.searchParams;
 
-    const limit = Number(searchParams?.limit) || DEFAULT_LIMIT;
+    const rawLimit = Number(searchParams?.limit);
+    const limit =
+        Number.isFinite(rawLimit) && rawLimit >= 1
+            ? Math.min(Math.floor(rawLimit), 200)
+            : DEFAULT_LIMIT;
     const cursor =
         typeof searchParams?.cursor === "string"
             ? searchParams?.cursor
