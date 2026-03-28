@@ -34,8 +34,12 @@ export async function uploadPredefinedFrameAssetAction(
             );
         }
 
-        const isPng = file.type === "image/png" || file.name.endsWith(".png");
-        if (!isPng) {
+        // Verify PNG signature (magic bytes), not just filename/MIME.
+        const header = Buffer.from(await file.slice(0, 8).arrayBuffer());
+        const PNG_SIGNATURE = Buffer.from([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ]);
+        if (!header.equals(PNG_SIGNATURE)) {
             throw new Error("File must be a PNG image");
         }
 

@@ -54,7 +54,7 @@ type UserProfileModalProps = {
 };
 
 function getStatusColor(
-    status: "online" | "away" | "busy" | "offline",
+    status: NonNullable<UserProfile["status"]>["status"],
 ): string {
     switch (status) {
         case "online":
