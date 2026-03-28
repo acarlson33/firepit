@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
         logger.info("Using bucket", { bucketId: env.buckets.images });
 
         const formData = await request.formData();
-        const file = formData.get("file") as File;
+        const file = formData.get("file");
 
-        if (!file) {
+        if (!(file instanceof File)) {
             logger.warn("No file in upload request");
             return jsonResponse({ error: "No file provided" }, { status: 400 });
         }
@@ -149,7 +149,6 @@ export async function POST(request: NextRequest) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "POST /api/upload-image",
             endpoint: "/api/upload-image",
-            userId: request.headers.get("x-user-id"),
         });
 
         logger.error("Image upload failed", {

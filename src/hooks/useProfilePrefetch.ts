@@ -94,8 +94,12 @@ export const profilePrefetchPool = {
                                     const data = await response.json();
                                     profileCache.set(userId, data);
                                 }
-                            } catch {
-                                // Silently fail
+                            } catch (err) {
+                                // Log for observability but don't block the batch.
+                                console.warn(
+                                    `[profile-prefetch] Failed to prefetch ${userId}:`,
+                                    err instanceof Error ? err.message : err,
+                                );
                             }
                         }
                     }),
