@@ -280,12 +280,7 @@ export function ProfileAppearanceSettings({
                             <Button
                                 className="h-6 px-2 text-xs"
                                 onClick={async () => {
-                                    try {
-                                        await loadCooldown();
-                                        await handleClearBackground();
-                                    } catch {
-                                        // handled by inner functions
-                                    }
+                                    await handleClearBackground();
                                 }}
                                 size="sm"
                                 type="button"

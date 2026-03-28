@@ -1,4 +1,4 @@
-import { Query } from "node-appwrite";
+import { AppwriteException, Query } from "node-appwrite";
 import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
@@ -280,10 +280,7 @@ async function hasAccessToCategory(
         );
     } catch (error) {
         // Only treat not-found (404) as permissive; re-throw other errors.
-        const code =
-            (error as { code?: number })?.code ??
-            (error as { statusCode?: number })?.statusCode;
-        if (code === 404) {
+        if (error instanceof AppwriteException && error.code === 404) {
             return true;
         }
         throw error;

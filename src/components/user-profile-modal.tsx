@@ -53,6 +53,21 @@ type UserProfileModalProps = {
     onStartDM?: (conversationId: string) => void;
 };
 
+function getStatusColor(
+    status: "online" | "away" | "busy" | "offline",
+): string {
+    switch (status) {
+        case "online":
+            return "bg-green-500";
+        case "away":
+            return "bg-yellow-500";
+        case "busy":
+            return "bg-red-500";
+        default:
+            return "bg-gray-400";
+    }
+}
+
 export function UserProfileModal({
     userId,
     userName,
@@ -118,19 +133,6 @@ export function UserProfileModal({
     });
 
     const hasBackground = Boolean(cardStyle);
-
-    function getStatusColor(status: string): string {
-        switch (status) {
-            case "online":
-                return "bg-green-500";
-            case "away":
-                return "bg-yellow-500";
-            case "busy":
-                return "bg-red-500";
-            default:
-                return "bg-gray-400";
-        }
-    }
 
     async function handleStartDM() {
         if (!onStartDM) {

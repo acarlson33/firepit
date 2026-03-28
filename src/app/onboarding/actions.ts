@@ -10,16 +10,12 @@ import {
     updateNotificationSettings,
 } from "@/lib/notification-settings";
 import type { NotificationLevel, DirectMessagePrivacy } from "@/lib/types";
+import { DIRECT_MESSAGE_PRIVACY_VALUES } from "@/lib/types";
 
 const VALID_NOTIFICATION_LEVELS: readonly NotificationLevel[] = [
     "all",
     "mentions",
     "nothing",
-] as const;
-
-const VALID_DM_PRIVACY: readonly DirectMessagePrivacy[] = [
-    "everyone",
-    "friends",
 ] as const;
 
 function isNotificationLevel(
@@ -36,7 +32,7 @@ function isDirectMessagePrivacy(
 ): value is DirectMessagePrivacy {
     return (
         typeof value === "string" &&
-        (VALID_DM_PRIVACY as readonly string[]).includes(value)
+        (DIRECT_MESSAGE_PRIVACY_VALUES as readonly string[]).includes(value)
     );
 }
 
@@ -62,7 +58,7 @@ export async function completeOnboardingAction(
         const pronouns = typeof rawPronouns === "string" ? rawPronouns : "";
         const bio = typeof rawBio === "string" ? rawBio : "";
 
-        if (!displayName?.trim()) {
+        if (!displayName.trim()) {
             return { success: false, error: "Display name is required" };
         }
 
@@ -70,9 +66,9 @@ export async function completeOnboardingAction(
         const telemetryEnabled = formData.get("telemetryEnabled") === "true";
 
         await updateUserProfile(profile.$id, {
-            bio: bio?.trim() || undefined,
+            bio: bio.trim() || undefined,
             displayName: displayName.trim(),
-            pronouns: pronouns?.trim() || undefined,
+            pronouns: pronouns.trim() || undefined,
             telemetryEnabled,
         });
 
