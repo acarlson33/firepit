@@ -70,12 +70,13 @@ export const profilePrefetchPool = {
         }
 
         this.processing = true;
+        const concurrency = Math.max(1, this.maxConcurrent);
 
         try {
             while (this.queue.size > 0) {
                 const batch: string[] = [];
                 for (const id of this.queue) {
-                    if (batch.length >= this.maxConcurrent) {
+                    if (batch.length >= concurrency) {
                         break;
                     }
                     batch.push(id);
@@ -95,9 +96,8 @@ export const profilePrefetchPool = {
                                     profileCache.set(userId, data);
                                 }
                             } catch (err) {
-                                // Log for observability but don't block the batch.
-                                console.warn(
-                                    `[profile-prefetch] Failed to prefetch ${userId}:`,
+                                console.error(
+                                    `[profile-prefetch] Failed for ${userId}:`,
                                     err instanceof Error ? err.message : err,
                                 );
                             }

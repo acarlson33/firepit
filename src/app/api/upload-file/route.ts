@@ -294,9 +294,10 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        const errorMessage =
-            error instanceof Error ? error.message : "Failed to upload file";
-        return jsonResponse({ error: errorMessage }, { status: 500 });
+        return jsonResponse(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
     }
 }
 

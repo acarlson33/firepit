@@ -72,11 +72,19 @@ export async function POST(request: NextRequest) {
             size: file.size,
         });
 
-        // Validate file type (images only)
-        if (!file.type.startsWith("image/")) {
+        // Validate file type against explicit allowlist.
+        const ALLOWED_IMAGE_TYPES = [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+        ];
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
             logger.warn("Invalid file type", { type: file.type });
             return jsonResponse(
-                { error: "Only image files are allowed" },
+                {
+                    error: "Only JPEG, PNG, GIF, and WebP images are allowed",
+                },
                 { status: 400 },
             );
         }
@@ -156,9 +164,10 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        const errorMessage =
-            error instanceof Error ? error.message : "Failed to upload image";
-        return jsonResponse({ error: errorMessage }, { status: 500 });
+        return jsonResponse(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
     }
 }
 
