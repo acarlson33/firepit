@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ID, Permission, Role } from "node-appwrite";
+import { InputFile } from "node-appwrite/file";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -81,13 +82,14 @@ export async function POST(request: NextRequest) {
 
         const { storage } = getServerClient();
 
-        // Convert File to buffer and recreate as File for node-appwrite
-        // Use emoji name as file name to preserve the name in storage
+        // Convert File to InputFile for node-appwrite
         const arrayBuffer = await file.arrayBuffer();
-        const blob = new Blob([arrayBuffer], { type: file.type });
         const fileExtension = file.name.split(".").pop() || "png";
         const fileName = `${name}.${fileExtension}`;
-        const uploadFile = new File([blob], fileName, { type: file.type });
+        const uploadFile = InputFile.fromBuffer(
+            Buffer.from(arrayBuffer),
+            fileName,
+        );
 
         // Upload to Appwrite Storage
         const uploadedFile = await storage.createFile(

@@ -61,7 +61,7 @@ export const profilePrefetchPool = {
             return;
         }
         this.queue.add(userId);
-        void this.process();
+        this.process().catch(() => {});
     },
 
     async process() {

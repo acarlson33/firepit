@@ -44,9 +44,14 @@ export async function uploadPredefinedFrameAssetAction(
 
         // Delete existing file first since createFile does not overwrite.
         try {
-            await storage.getFile(bucketId, storageFileId);
             await storage.deleteFile(bucketId, storageFileId);
-        } catch {
+        } catch (err) {
+            const code =
+                (err as { code?: number })?.code ??
+                (err as { statusCode?: number })?.statusCode;
+            if (code !== 404) {
+                throw err;
+            }
             // No existing file — continue with create.
         }
 

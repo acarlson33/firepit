@@ -262,7 +262,7 @@ export function ServerAdminPanel({
 
             if (response.ok) {
                 toast.success(
-                    `Successfully ${moderationAction === "kick" ? "kicked" : `${moderationAction}ned`} ${selectedMember.displayName || selectedMember.userName}`,
+                    `Successfully ${moderationAction === "ban" ? "banned" : moderationAction === "mute" ? "muted" : "kicked"} ${selectedMember.displayName || selectedMember.userName}`,
                 );
                 setModerationDialogOpen(false);
                 setSelectedMember(null);

@@ -1,4 +1,4 @@
-import { Query } from "node-appwrite";
+import { AppwriteException, Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
@@ -25,21 +25,10 @@ function getCollectionIds() {
  * @returns {boolean} The return value.
  */
 function isDocumentNotFoundError(error: unknown) {
-    if (!(error instanceof Error)) {
-        return false;
+    if (error instanceof AppwriteException) {
+        return error.code === 404 || error.type === "document_not_found";
     }
-
-    const candidate = error as Error & {
-        code?: number;
-        type?: string;
-        response?: string;
-    };
-
-    if (candidate.code === 404 || candidate.type === "document_not_found") {
-        return true;
-    }
-
-    return candidate.message.includes("document_not_found");
+    return false;
 }
 
 type PageResult<T> = { items: T[]; nextCursor?: string | null };

@@ -35,9 +35,9 @@ export type ListReportsOpts = {
 };
 
 const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 200;
+export const MAX_LIST_LIMIT = 200;
 
-function clampLimit(value: unknown): number {
+export function clampLimit(value: unknown): number {
     const parsed = Math.floor(Number(value));
     if (!Number.isFinite(parsed) || parsed < 1) {
         return DEFAULT_LIST_LIMIT;

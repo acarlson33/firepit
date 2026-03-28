@@ -37,6 +37,12 @@ const EMPTY_INBOX: InboxListResponse = {
     unreadCount: 0,
 };
 
+const SCOPE_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> = {
+    direct: ["conversation"],
+    server: ["channel"],
+    all: ["channel", "conversation"],
+};
+
 function getInboxQueryKey(userId: string | null) {
     return ["inbox", userId] as const;
 }
@@ -306,21 +312,16 @@ export function useInbox(userId: string | null) {
         async (scope: InboxScope) => {
             setBulkLoading(scope);
 
-            const SCOPE_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> =
-                {
-                    direct: ["conversation"],
-                    server: ["channel"],
-                    all: ["channel", "conversation"],
-                };
-            const scopeContextKinds = SCOPE_CONTEXT_KINDS[scope];
-
-            updateInboxCache((currentInbox) =>
-                scope === "all"
-                    ? EMPTY_INBOX
-                    : removeItemsFromInbox(currentInbox, (item) =>
-                          scopeContextKinds.includes(item.contextKind),
-                      ),
-            );
+            if (scope === "all") {
+                updateInboxCache(() => EMPTY_INBOX);
+            } else {
+                const scopeContextKinds = SCOPE_CONTEXT_KINDS[scope];
+                updateInboxCache((currentInbox) =>
+                    removeItemsFromInbox(currentInbox, (item) =>
+                        scopeContextKinds.includes(item.contextKind),
+                    ),
+                );
+            }
 
             try {
                 await markInboxScopeRead(scope);

@@ -1,8 +1,10 @@
+import type { CSSProperties } from "react";
+
 export function getProfileBackgroundStyle(opts: {
     backgroundUrl?: string | null;
     gradient?: string | null;
     color?: string | null;
-}): React.CSSProperties | undefined {
+}): CSSProperties | undefined {
     if (opts.backgroundUrl) {
         return {
             backgroundImage: `url(${opts.backgroundUrl})`,
