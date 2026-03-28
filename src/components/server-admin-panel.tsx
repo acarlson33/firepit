@@ -1113,10 +1113,7 @@ export function ServerAdminPanel({
                     <DialogFooter>
                         <Button
                             variant="outline"
-                            onClick={() => {
-                                setModerationDialogOpen(false);
-                                setModerationReason("");
-                            }}
+                            onClick={() => setModerationDialogOpen(false)}
                         >
                             Cancel
                         </Button>

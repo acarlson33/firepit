@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { AppwriteException } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -46,10 +47,7 @@ export async function uploadPredefinedFrameAssetAction(
         try {
             await storage.deleteFile(bucketId, storageFileId);
         } catch (err) {
-            const code =
-                (err as { code?: number })?.code ??
-                (err as { statusCode?: number })?.statusCode;
-            if (code !== 404) {
+            if (!(err instanceof AppwriteException) || err.code !== 404) {
                 throw err;
             }
             // No existing file — continue with create.
@@ -82,7 +80,14 @@ export async function deletePredefinedFrameAssetAction(
         const env = getEnvConfig();
         const bucketId = env.buckets.avatarFramesPredefined;
 
-        await storage.deleteFile(bucketId, storageFileId);
+        // Idempotent delete — tolerate missing file (404).
+        try {
+            await storage.deleteFile(bucketId, storageFileId);
+        } catch (err) {
+            if (!(err instanceof AppwriteException) || err.code !== 404) {
+                throw err;
+            }
+        }
 
         revalidatePath("/admin/preset-frames");
         revalidatePath("/settings");
