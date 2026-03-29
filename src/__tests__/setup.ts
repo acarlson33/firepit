@@ -94,6 +94,8 @@ vi.mock("node-appwrite", () => ({
         search: (field: string, value: string) => `search(${field},${value})`,
         contains: (field: string, value: string) =>
             `contains(${field},${value})`,
+        greaterThanEqual: (field: string, value: string) =>
+            `greaterThanEqual(${field},${value})`,
     },
     Permission: {
         read: (role: string) => `read(${role})`,
