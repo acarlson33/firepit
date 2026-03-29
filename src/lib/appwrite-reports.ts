@@ -163,33 +163,42 @@ export async function resolveReport(
     // If another admin resolved it first, the commit fails with a conflict error.
     const tx = await tablesDB.createTransaction();
 
-    const existing = await tablesDB.getRow(
-        DATABASE_ID,
-        REPORTS_COLLECTION_ID,
-        reportId,
-        [],
-        tx.$id,
-    );
+    try {
+        const existing = await tablesDB.getRow(
+            DATABASE_ID,
+            REPORTS_COLLECTION_ID,
+            reportId,
+            [],
+            tx.$id,
+        );
 
-    if (existing.status !== "pending") {
-        await tablesDB.updateTransaction(tx.$id, undefined, true);
-        throw new Error("Report has already been processed");
+        if (existing.status !== "pending") {
+            throw new Error("Report has already been processed");
+        }
+
+        await tablesDB.updateRow(
+            DATABASE_ID,
+            REPORTS_COLLECTION_ID,
+            reportId,
+            {
+                status,
+                resolvedBy: adminId,
+                resolutionNotes: resolutionNotes || null,
+            },
+            undefined,
+            tx.$id,
+        );
+
+        await tablesDB.updateTransaction(tx.$id, true);
+    } catch (err) {
+        // Roll back on any failure before propagating.
+        try {
+            await tablesDB.updateTransaction(tx.$id, undefined, true);
+        } catch {
+            // Best-effort rollback.
+        }
+        throw err;
     }
-
-    await tablesDB.updateRow(
-        DATABASE_ID,
-        REPORTS_COLLECTION_ID,
-        reportId,
-        {
-            status,
-            resolvedBy: adminId,
-            resolutionNotes: resolutionNotes || null,
-        },
-        undefined,
-        tx.$id,
-    );
-
-    await tablesDB.updateTransaction(tx.$id, true);
 }
 
 export async function getPendingReportCount(): Promise<number> {

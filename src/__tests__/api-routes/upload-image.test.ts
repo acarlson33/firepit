@@ -5,27 +5,37 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 // Create persistent mocks
-const { mockGetServerSession, mockCreateFile, mockDeleteFile } = vi.hoisted(
-    () => ({
-        mockGetServerSession: vi.fn(),
-        mockCreateFile: vi.fn(),
-        mockDeleteFile: vi.fn(),
+const {
+    mockGetServerSession,
+    mockCreateFile,
+    mockGetFile,
+    mockDeleteFile,
+    mockCheckRateLimit,
+} = vi.hoisted(() => ({
+    mockGetServerSession: vi.fn(),
+    mockCreateFile: vi.fn(),
+    mockGetFile: vi.fn().mockResolvedValue({
+        $id: "file-123",
+        $permissions: ['delete("user:user-1")', 'read("user:user-1")'],
     }),
-);
+    mockDeleteFile: vi.fn(),
+    mockCheckRateLimit: vi.fn().mockReturnValue({ allowed: true }),
+}));
 
 // Mock dependencies
 vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
 }));
 
+vi.mock("@/lib/rate-limiter", () => ({
+    checkRateLimit: mockCheckRateLimit,
+}));
+
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         storage: {
             createFile: mockCreateFile,
-            getFile: vi.fn().mockResolvedValue({
-                $id: "file-123",
-                $permissions: ['delete("user:user-1")', 'read("user:user-1")'],
-            }),
+            getFile: mockGetFile,
             deleteFile: mockDeleteFile,
         },
     })),
