@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-03-29
+
+### ✨ Features
+
+#### Profile Backgrounds and Avatar Frames
+
+- **Custom profile backgrounds** - Solid colors, gradients, or uploaded images with cooldown enforcement
+- **Preset avatar frames** - Seasonal and themed frames with admin-configurable assets
+- **Profile appearance settings** - In-app UI for selecting backgrounds, frames, and previewing changes
+
+#### User Reporting System
+
+- **Report users** - Report users for inappropriate profile content with required justification
+- **Admin reports dashboard** - Instance admins can review, resolve, or dismiss reports with audit logging
+- **Rate limiting** - DB-backed rate limiting prevents report spam (5 per hour per user)
+- **Atomic report resolution** - Transaction-based resolution prevents double-processing of reports
+
+#### Onboarding Improvements
+
+- **Safe form validation** - Type-guarded formData parsing with proper fallbacks
+- **Notification settings** - Onboarding now correctly sets notification preferences
+
+#### Build and Infrastructure
+
+- **Next.js 16.2.1** - Updated Next.js ecosystem packages
+- **Node.js 20.9.0 minimum** - Enforced via engines field
+- **Appwrite TablesDB** - Added TablesDB client for transaction support
+- **InputFile.fromBuffer** - Replaced redundant ArrayBuffer→Blob→File conversion in upload routes
+- **AppwriteException** - Proper typed error handling replacing duck-typed error checks
+- **PostHog deduplication** - Removed duplicate PostHog initialization (instrumentation-client.ts + component)
+
+#### Bug Fixes
+
+- **Profile background clearing** - Fixed clearing not working for color/gradient backgrounds
+- **Background type switching** - Fixed image file ID not being cleared when switching to color/gradient
+- **Moderation toast grammar** - Fixed "Successfully kickned" → "Successfully kicked"
+- **Upload error message leak** - Generic error messages returned to clients instead of raw exceptions
+- **File ownership on delete** - Upload delete endpoints now verify file ownership before deletion
+- **Inbox query fix** - Fixed `Query.equal` on array attribute `participants` → `Query.contains`
+- **PostHog re-initialization** - Removed duplicate init causing "already initialized" warning
+
 ## [1.0.0] - 2025-11-02
 
 ### 🎉 Initial Release
