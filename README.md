@@ -1,6 +1,6 @@
 # firepit
 
-> **Version 1.0** - Production Ready
+> **Version 1.7.0** - Production Ready
 
 A modern, open-source chat platform inspired by Discord, built with Next.js 16, Appwrite, and TypeScript. Firepit includes real-time messaging, servers and channels, direct messages, roles and moderation, social features, and a growing parity roadmap for Discord-like workflows.
 
@@ -14,6 +14,8 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Profiles, presence, and social** - User profiles, statuses, friend requests, and blocking
 - **Notification controls parity** - Scoped notification levels, quiet hours, mute durations, DM privacy, and bulk override management
 - **Moderation and auditability** - Global and server moderation with audit log support
+- **User reporting** - Report users for inappropriate profile content with admin review dashboard
+- **Profile backgrounds and avatar frames** - Custom background colors, gradients, images, and seasonal/preset avatar frames
 - **Custom emoji support** - Standard emoji picker plus uploaded custom emoji assets
 
 ## Codebase Features

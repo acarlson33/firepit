@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.6.0
+    version: 1.7.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -115,6 +115,18 @@ components:
                     type: string
                 bio:
                     type: string
+                profileBackgroundColor:
+                    type: string
+                profileBackgroundGradient:
+                    type: string
+                profileBackgroundUrl:
+                    type: string
+                    format: uri
+                avatarFramePreset:
+                    type: string
+                avatarFrameUrl:
+                    type: string
+                    format: uri
 
         CurrentUser:
             allOf:
@@ -1889,7 +1901,18 @@ paths:
                         application/json:
                             schema:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                    fileId:
+                                        type: string
+                                    url:
+                                        type: string
+                                        format: uri
+                "413":
+                    description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
         delete:
             tags: [Uploads]
             summary: Delete an uploaded image
@@ -1908,6 +1931,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Success"
+                "403":
+                    description: Forbidden — caller does not own the file
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Image not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/upload-file:
         post:
@@ -1932,7 +1967,29 @@ paths:
                         application/json:
                             schema:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                    fileId:
+                                        type: string
+                                    fileName:
+                                        type: string
+                                    fileSize:
+                                        type: integer
+                                    fileType:
+                                        type: string
+                                    fileUrl:
+                                        type: string
+                                        format: uri
+                                    downloadUrl:
+                                        type: string
+                                        format: uri
+                                    category:
+                                        type: string
+                "413":
+                    description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
         delete:
             tags: [Uploads]
             summary: Delete an uploaded attachment
@@ -1951,6 +2008,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Success"
+                "403":
+                    description: Forbidden — caller does not own the file
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: File not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/custom-emojis:
         get:
