@@ -251,24 +251,34 @@ export async function DELETE(request: NextRequest) {
         const deleteStartTime = Date.now();
         await storage.deleteFile(env.buckets.images, fileId);
 
-        trackApiCall(
-            "/api/upload-image",
-            "DELETE",
-            200,
-            Date.now() - deleteStartTime,
-            { operation: "deleteFile", fileId },
-        );
+        // Best-effort observability — must not change the successful response.
+        try {
+            trackApiCall(
+                "/api/upload-image",
+                "DELETE",
+                200,
+                Date.now() - deleteStartTime,
+                { operation: "deleteFile", fileId },
+            );
 
-        recordEvent("ImageDelete", {
-            fileId,
-            userId: session.$id,
-        });
+            recordEvent("ImageDelete", {
+                fileId,
+                userId: session.$id,
+            });
 
-        logger.info("Image deleted", {
-            fileId,
-            userId: session.$id,
-            duration: Date.now() - startTime,
-        });
+            logger.info("Image deleted", {
+                fileId,
+                userId: session.$id,
+                duration: Date.now() - startTime,
+            });
+        } catch (obsError) {
+            logger.warn("Post-delete observability failed", {
+                error:
+                    obsError instanceof Error
+                        ? obsError.message
+                        : String(obsError),
+            });
+        }
 
         return jsonResponse({ success: true });
     } catch (error) {
