@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { ID, Permission, Role } from "node-appwrite";
+import { AppwriteException, ID, Permission, Role } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
             ID.unique(),
             uploadFile,
             [
-                Permission.read(Role.any()),
+                Permission.read(Role.user(session.$id)),
                 Permission.update(Role.user(session.$id)),
                 Permission.delete(Role.user(session.$id)),
             ],
@@ -335,6 +335,27 @@ export async function DELETE(request: NextRequest) {
         addTransactionAttributes({ fileId });
 
         const { storage } = getServerClient();
+
+        // Verify file ownership before deleting.
+        try {
+            const fileMeta = await storage.getFile(env.buckets.files, fileId);
+            const canDelete = fileMeta.$permissions.some(
+                (p) =>
+                    p.includes(`delete("user:${session.$id}")`) ||
+                    p.includes(`write("user:${session.$id}")`),
+            );
+            if (!canDelete) {
+                return jsonResponse({ error: "Forbidden" }, { status: 403 });
+            }
+        } catch (err) {
+            if (err instanceof AppwriteException && err.code === 404) {
+                return jsonResponse(
+                    { error: "File not found" },
+                    { status: 404 },
+                );
+            }
+            throw err;
+        }
 
         const deleteStartTime = Date.now();
         await storage.deleteFile(env.buckets.files, fileId);

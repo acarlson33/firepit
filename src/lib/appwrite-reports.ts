@@ -156,19 +156,27 @@ export async function resolveReport(
     status: "resolved" | "dismissed",
     resolutionNotes?: string,
 ): Promise<void> {
-    const { databases } = getServerClient();
+    const { tablesDB } = getServerClient();
 
-    const existing = await databases.getDocument(
+    // Use a transaction for atomic read-check-and-write.
+    // On commit, Appwrite verifies the row hasn't changed externally.
+    // If another admin resolved it first, the commit fails with a conflict error.
+    const tx = await tablesDB.createTransaction();
+
+    const existing = await tablesDB.getRow(
         DATABASE_ID,
         REPORTS_COLLECTION_ID,
         reportId,
+        [],
+        tx.$id,
     );
 
     if (existing.status !== "pending") {
+        await tablesDB.updateTransaction(tx.$id, undefined, true);
         throw new Error("Report has already been processed");
     }
 
-    await databases.updateDocument(
+    await tablesDB.updateRow(
         DATABASE_ID,
         REPORTS_COLLECTION_ID,
         reportId,
@@ -177,7 +185,11 @@ export async function resolveReport(
             resolvedBy: adminId,
             resolutionNotes: resolutionNotes || null,
         },
+        undefined,
+        tx.$id,
     );
+
+    await tablesDB.updateTransaction(tx.$id, true);
 }
 
 export async function getPendingReportCount(): Promise<number> {
