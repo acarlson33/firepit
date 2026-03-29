@@ -129,6 +129,7 @@ vi.mock("../lib/appwrite-server", () => {
         getServerClient: () => ({
             client: {},
             databases,
+            tablesDB: {} as any,
             teams: {} as any,
             storage: {} as any,
         }),
@@ -169,6 +170,7 @@ describe("admin channel & global message listing", () => {
                 databases: {
                     listDocuments: () => Promise.reject(new Error("boom")),
                 },
+                tablesDB: {} as any,
                 teams: {} as any,
                 storage: {} as any,
             }),

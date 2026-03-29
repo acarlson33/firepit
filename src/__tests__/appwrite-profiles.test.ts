@@ -146,6 +146,7 @@ vi.mock("node-appwrite", () => {
             search: (attr: string, val: string) => `search("${attr}","${val}")`,
             limit: (num: number) => `limit(${num})`,
         },
+        TablesDB: MockDatabases,
     };
 });
 

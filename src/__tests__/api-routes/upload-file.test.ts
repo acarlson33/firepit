@@ -33,6 +33,13 @@ vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         storage: {
             createFile: mockCreateFile,
+            getFile: vi.fn().mockResolvedValue({
+                $id: "file123",
+                $permissions: [
+                    'delete("user:user123")',
+                    'read("user:user123")',
+                ],
+            }),
             deleteFile: mockDeleteFile,
         },
     })),

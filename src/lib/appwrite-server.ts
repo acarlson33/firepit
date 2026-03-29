@@ -1,17 +1,18 @@
 // Server-only Appwrite client (uses node-appwrite with API key support)
 // DO NOT import this in client-side code!
 
-import { Client, Databases, Teams, Storage } from "node-appwrite";
+import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 
 /**
  * Get server-side Appwrite client with API key authentication.
  * This function should ONLY be called from server-side code (server components, API routes, server actions).
- * @returns {{ client: Client; databases: Databases; teams: Teams; storage: Storage; }} The return value.
+ * @returns {{ client: Client; databases: Databases; tablesDB: TablesDB; teams: Teams; storage: Storage; }} The return value.
  */
 export function getServerClient(): {
     client: Client;
     databases: Databases;
+    tablesDB: TablesDB;
     teams: Teams;
     storage: Storage;
 } {
@@ -38,6 +39,7 @@ export function getServerClient(): {
     return {
         client,
         databases: new Databases(client),
+        tablesDB: new TablesDB(client),
         teams: new Teams(client),
         storage: new Storage(client),
     };

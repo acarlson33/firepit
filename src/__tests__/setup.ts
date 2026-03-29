@@ -62,6 +62,7 @@ vi.mock("node-appwrite", () => ({
         setKey: vi.fn().mockReturnThis(),
     })),
     Databases: vi.fn(),
+    TablesDB: vi.fn(),
     Storage: vi.fn(),
     Teams: vi.fn(),
     AppwriteException: class AppwriteException extends Error {
