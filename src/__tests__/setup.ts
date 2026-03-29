@@ -62,7 +62,14 @@ vi.mock("node-appwrite", () => ({
         setKey: vi.fn().mockReturnThis(),
     })),
     Databases: vi.fn(),
-    TablesDB: vi.fn(),
+    TablesDB: vi.fn(() => ({
+        createTransaction: vi.fn().mockResolvedValue({ $id: "mock-tx-id" }),
+        getRow: vi
+            .fn()
+            .mockResolvedValue({ $id: "mock-row", status: "pending" }),
+        updateRow: vi.fn().mockResolvedValue({}),
+        updateTransaction: vi.fn().mockResolvedValue({}),
+    })),
     Storage: vi.fn(),
     Teams: vi.fn(),
     AppwriteException: class AppwriteException extends Error {

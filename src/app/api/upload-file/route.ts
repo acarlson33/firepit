@@ -245,44 +245,66 @@ export async function POST(request: NextRequest) {
         );
 
         const uploadDuration = Date.now() - uploadStartTime;
-        trackApiCall("/api/upload-file", "POST", 200, uploadDuration, {
-            operation: "uploadFile",
-            fileSize: file.size,
-            fileType: file.type,
-            category: validation.category,
-        });
 
-        logger.info("Upload successful", {
-            fileId: uploadedFile.$id,
-            size: file.size,
-            duration: uploadDuration,
-            category: validation.category,
-        });
+        // Best-effort observability — must not change the successful response.
+        try {
+            trackApiCall("/api/upload-file", "POST", 200, uploadDuration, {
+                operation: "uploadFile",
+                fileSize: file.size,
+                fileType: file.type,
+                category: validation.category,
+            });
 
-        // Track upload event
-        recordEvent("FileUpload", {
-            fileId: uploadedFile.$id,
-            userId: session.$id,
-            fileSize: file.size,
-            fileType: file.type,
-            category: validation.category,
-            duration: uploadDuration,
-        });
+            logger.info("Upload successful", {
+                fileId: uploadedFile.$id,
+                size: file.size,
+                duration: uploadDuration,
+                category: validation.category,
+            });
 
-        // Generate URL for the file
-        const fileUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/view?project=${env.project}`;
-        const downloadUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/download?project=${env.project}`;
+            recordEvent("FileUpload", {
+                fileId: uploadedFile.$id,
+                userId: session.$id,
+                fileSize: file.size,
+                fileType: file.type,
+                category: validation.category,
+                duration: uploadDuration,
+            });
 
-        logger.info("File URL generated", { url: fileUrl });
-        return jsonResponse({
-            fileId: uploadedFile.$id,
-            fileName: file.name,
-            fileSize: file.size,
-            fileType: file.type,
-            fileUrl,
-            downloadUrl,
-            category: validation.category,
-        });
+            // Generate URL for the file
+            const fileUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/view?project=${env.project}`;
+            const downloadUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/download?project=${env.project}`;
+
+            logger.info("File URL generated", { url: fileUrl });
+            return jsonResponse({
+                fileId: uploadedFile.$id,
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                fileUrl,
+                downloadUrl,
+                category: validation.category,
+            });
+        } catch (obsError) {
+            logger.warn("Post-upload observability failed", {
+                error:
+                    obsError instanceof Error
+                        ? obsError.message
+                        : String(obsError),
+            });
+            // Still return success — the upload itself succeeded.
+            const fileUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/view?project=${env.project}`;
+            const downloadUrl = `${env.endpoint}/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/download?project=${env.project}`;
+            return jsonResponse({
+                fileId: uploadedFile.$id,
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                fileUrl,
+                downloadUrl,
+                category: validation.category,
+            });
+        }
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "POST /api/upload-file",
