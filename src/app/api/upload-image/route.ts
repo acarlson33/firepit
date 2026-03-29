@@ -5,6 +5,7 @@ import { InputFile } from "node-appwrite/file";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import {
     logger,
     recordError,
@@ -51,6 +52,18 @@ export async function POST(request: NextRequest) {
         logger.info("Session verified", { userId: session.$id });
 
         addTransactionAttributes({ userId: session.$id });
+
+        // Rate limiting: 10 uploads per 5 minutes
+        const rateLimitResult = checkRateLimit(`upload-image:${session.$id}`, {
+            maxRequests: 10,
+            windowMs: 5 * 60 * 1000,
+        });
+        if (!rateLimitResult.allowed) {
+            return jsonResponse(
+                { error: "Too many upload requests. Please try again later." },
+                { status: 429 },
+            );
+        }
 
         const env = getEnvConfig() as {
             endpoint: string;
@@ -124,31 +137,39 @@ export async function POST(request: NextRequest) {
         );
 
         const uploadDuration = Date.now() - uploadStartTime;
-        trackApiCall("/api/upload-image", "POST", 200, uploadDuration, {
-            operation: "uploadFile",
-            fileSize: file.size,
-            fileType: file.type,
-        });
 
-        logger.info("Upload successful", {
-            fileId: uploadedFile.$id,
-            size: file.size,
-            duration: uploadDuration,
-        });
-
-        // Track upload event
-        recordEvent("ImageUpload", {
-            fileId: uploadedFile.$id,
-            userId: session.$id,
-            fileSize: file.size,
-            fileType: file.type,
-            duration: uploadDuration,
-        });
-
-        // Generate URL for the image
+        // Best-effort observability — must not change the successful response.
         const imageUrl = `${env.endpoint}/storage/buckets/${env.buckets.images}/files/${uploadedFile.$id}/view?project=${env.project}`;
+        try {
+            trackApiCall("/api/upload-image", "POST", 200, uploadDuration, {
+                operation: "uploadFile",
+                fileSize: file.size,
+                fileType: file.type,
+            });
 
-        logger.info("Image URL generated", { url: imageUrl });
+            logger.info("Upload successful", {
+                fileId: uploadedFile.$id,
+                size: file.size,
+                duration: uploadDuration,
+            });
+
+            recordEvent("ImageUpload", {
+                fileId: uploadedFile.$id,
+                userId: session.$id,
+                fileSize: file.size,
+                fileType: file.type,
+                duration: uploadDuration,
+            });
+
+            logger.info("Image URL generated", { url: imageUrl });
+        } catch (obsError) {
+            logger.warn("Post-upload observability failed", {
+                error:
+                    obsError instanceof Error
+                        ? obsError.message
+                        : String(obsError),
+            });
+        }
         return jsonResponse({
             fileId: uploadedFile.$id,
             url: imageUrl,
