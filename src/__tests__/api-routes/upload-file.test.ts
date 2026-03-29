@@ -4,6 +4,15 @@ import { POST, DELETE } from "@/app/api/upload-file/route";
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
     ID: { unique: () => "mock-file-id" },
+    AppwriteException: class AppwriteException extends Error {
+        code: number;
+        type: string;
+        constructor(message: string, code = 500, type = "unknown") {
+            super(message);
+            this.code = code;
+            this.type = type;
+        }
+    },
     Permission: {
         read: vi.fn((role) => `read(${role})`),
         update: vi.fn((role) => `update(${role})`),
@@ -16,13 +25,16 @@ vi.mock("node-appwrite", () => ({
 }));
 
 // Create persistent mocks using vi.hoisted
-const { mockGetServerSession, mockCreateFile, mockDeleteFile } = vi.hoisted(
-    () => ({
+const { mockGetServerSession, mockCreateFile, mockGetFile, mockDeleteFile } =
+    vi.hoisted(() => ({
         mockGetServerSession: vi.fn(),
         mockCreateFile: vi.fn(),
+        mockGetFile: vi.fn().mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        }),
         mockDeleteFile: vi.fn(),
-    }),
-);
+    }));
 
 // Mock dependencies
 vi.mock("@/lib/auth-server", () => ({
@@ -33,13 +45,7 @@ vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         storage: {
             createFile: mockCreateFile,
-            getFile: vi.fn().mockResolvedValue({
-                $id: "file123",
-                $permissions: [
-                    'delete("user:user123")',
-                    'read("user:user123")',
-                ],
-            }),
+            getFile: mockGetFile,
             deleteFile: mockDeleteFile,
         },
     })),
@@ -282,6 +288,12 @@ describe("POST /api/upload-file", () => {
 
 describe("DELETE /api/upload-file", () => {
     beforeEach(() => {
+        mockGetFile.mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        });
+    });
+    beforeEach(() => {
         mockGetServerSession.mockClear();
         mockCreateFile.mockClear();
         mockDeleteFile.mockClear();
@@ -335,6 +347,45 @@ describe("DELETE /api/upload-file", () => {
         const data = await response.json();
         expect(data).toEqual({ success: true });
         expect(mockDeleteFile).toHaveBeenCalledWith("files", "file123");
+    });
+
+    it("should return 403 when user does not own the file", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "differentUser" });
+        mockGetFile.mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        });
+
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            { method: "DELETE" },
+        );
+
+        const response = await DELETE(request);
+        expect(response.status).toBe(403);
+
+        const data = await response.json();
+        expect(data).toEqual({ error: "Forbidden" });
+        expect(mockDeleteFile).not.toHaveBeenCalled();
+    });
+
+    it("should return 404 when file does not exist", async () => {
+        const { AppwriteException } = await import("node-appwrite");
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockGetFile.mockRejectedValue(
+            new AppwriteException("Not found", 404, "document_not_found"),
+        );
+
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=missing-file",
+            { method: "DELETE" },
+        );
+
+        const response = await DELETE(request);
+        expect(response.status).toBe(404);
+
+        const data = await response.json();
+        expect(data).toEqual({ error: "File not found" });
     });
 
     it("should handle delete errors gracefully", async () => {

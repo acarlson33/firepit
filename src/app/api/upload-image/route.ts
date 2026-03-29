@@ -72,6 +72,24 @@ export async function POST(request: NextRequest) {
         };
         logger.info("Using bucket", { bucketId: env.buckets.images });
 
+        // Validate request content before parsing body.
+        const contentType = request.headers.get("content-type") ?? "";
+        if (!contentType.includes("multipart/form-data")) {
+            return jsonResponse(
+                { error: "Expected multipart/form-data" },
+                { status: 400 },
+            );
+        }
+
+        const contentLength = Number(request.headers.get("content-length"));
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (Number.isFinite(contentLength) && contentLength > maxSize) {
+            return jsonResponse(
+                { error: "File size must be less than 5MB" },
+                { status: 413 },
+            );
+        }
+
         const formData = await request.formData();
         const file = formData.get("file");
 
@@ -103,7 +121,6 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate file size (max 5MB)
-        const maxSize = 5 * 1024 * 1024; // 5MB
         if (file.size > maxSize) {
             logger.warn("File too large", { size: file.size, maxSize });
             return jsonResponse(
