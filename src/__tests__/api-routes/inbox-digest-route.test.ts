@@ -35,10 +35,10 @@ describe("inbox digest route", () => {
         expect(data.error).toBe("Authentication required");
     });
 
-    it("passes digest v1.5 mode when enabled", async () => {
+    it("passes request parameters to digest lookup", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxDigest.mockResolvedValue({
-            contractVersion: "thread_v1",
+            contractVersion: "message_v2",
             contextId: undefined,
             contextKind: undefined,
             items: [],

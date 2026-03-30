@@ -7,7 +7,7 @@ import { listInboxDigest } from "@/lib/inbox-client";
 import type { InboxContextKind, InboxDigestResponse } from "@/lib/types";
 
 const EMPTY_DIGEST: InboxDigestResponse = {
-    contractVersion: "thread_v1",
+    contractVersion: "message_v2",
     navigationFallback: "context_catch_up",
     ordering: "newest_first",
     presentation: "flat",

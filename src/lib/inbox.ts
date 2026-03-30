@@ -845,13 +845,6 @@ function buildDigestItems(
     items: InboxItem[],
     limit: number,
 ): InboxDigestResponse["items"] {
-    return buildDigestItemsV15(items, limit);
-}
-
-function buildDigestItemsV15(
-    items: InboxItem[],
-    limit: number,
-): InboxDigestResponse["items"] {
     const triagedItems = [...items].sort((left, right) => {
         const leftKindPriority = left.kind === "mention" ? 0 : 1;
         const rightKindPriority = right.kind === "mention" ? 0 : 1;
