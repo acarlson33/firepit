@@ -472,7 +472,7 @@ describe("inbox", () => {
         expect(digest.contractVersion).toBe("message_v2");
     });
 
-    it("keeps v1.5 digest mode backward-compatible during rollout", async () => {
+    it("applies v1.5 digest mode with triage ordering", async () => {
         mockListDocuments.mockImplementation(
             async (_databaseId, collectionId) => {
                 if (collectionId === "inbox-items-collection") {
@@ -751,7 +751,8 @@ describe("inbox", () => {
                                 read: false,
                                 muted: false,
                                 threadMessageCount: 0,
-                                unreadCount: 2,
+                                // Mention items are normalized to unreadCount 1.
+                                unreadCount: 1,
                                 channelId: null,
                                 channelName: null,
                                 serverId: null,
