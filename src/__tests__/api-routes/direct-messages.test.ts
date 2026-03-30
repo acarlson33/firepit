@@ -117,6 +117,8 @@ vi.mock("node-appwrite", () => ({
     Query: {
         equal: (field: string, value: string | string[]) =>
             `equal(${field},${JSON.stringify(value)})`,
+        contains: (field: string, value: string) =>
+            `contains(${field},${value})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
         limit: (n: number) => `limit(${n})`,
     },

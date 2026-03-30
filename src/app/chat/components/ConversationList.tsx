@@ -184,13 +184,28 @@ export function ConversationList({
     );
 
     const favoriteFriends = useMemo(() => friends.slice(0, 4), [friends]);
+    const favoriteFriendIds = useMemo(
+        () => new Set(favoriteFriends.map((f) => f.user.userId)),
+        [favoriteFriends],
+    );
+    const filteredConversations = useMemo(
+        () =>
+            conversations.filter((conversation) => {
+                if (conversation.isGroup) {
+                    return true;
+                }
+                const otherUserId = conversation.otherUser?.userId;
+                return !otherUserId || !favoriteFriendIds.has(otherUserId);
+            }),
+        [conversations, favoriteFriendIds],
+    );
     const incomingRequests = useMemo(() => incoming.slice(0, 3), [incoming]);
     const unreadConversations = useMemo(
         () =>
-            conversations.filter(
+            filteredConversations.filter(
                 (conversation) => getConversationUnreadCount(conversation) > 0,
             ),
-        [conversations, getConversationUnreadCount],
+        [filteredConversations, getConversationUnreadCount],
     );
     const sidebarItems = useMemo(
         () => inboxItems.map((item) => mapInboxItemToMentionItem(item)),
@@ -320,7 +335,9 @@ export function ConversationList({
         [sidebarItems],
     );
     const activeConversationList =
-        unreadConversations.length > 0 ? unreadConversations : conversations;
+        unreadConversations.length > 0
+            ? unreadConversations
+            : filteredConversations;
     const showInboxLoading =
         sidebarMode === "inbox" && (inboxLoading || serverFilteredInboxLoading);
     const activeList =

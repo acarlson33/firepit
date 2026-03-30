@@ -206,8 +206,8 @@ export async function getOrCreateConversation(
             databaseId: DATABASE_ID,
             collectionId: CONVERSATIONS_COLLECTION,
             queries: [
-                Query.equal("participants", user1),
-                Query.equal("participants", user2),
+                Query.contains("participants", user1),
+                Query.contains("participants", user2),
                 Query.limit(1),
             ],
         });
@@ -344,7 +344,7 @@ export async function listConversations(
             databaseId: DATABASE_ID,
             collectionId: CONVERSATIONS_COLLECTION,
             queries: [
-                Query.equal("participants", userId),
+                Query.contains("participants", userId),
                 Query.orderDesc("lastMessageAt"),
                 Query.limit(100),
             ],

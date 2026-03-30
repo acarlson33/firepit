@@ -985,28 +985,6 @@ async function setupFeatureFlags() {
         enabled: true,
         key: "enable_audit_logging",
     });
-    await ensureFeatureFlagDocument({
-        description:
-            "Enable per-message unread model and message-level inbox semantics",
-        enabled: false,
-        key: "enable_per_message_unread",
-    });
-    await ensureFeatureFlagDocument({
-        description:
-            "Enable inbox digest API foundation for chronological unread payloads",
-        enabled: false,
-        key: "enable_inbox_digest",
-    });
-    await ensureFeatureFlagDocument({
-        description: "Enable inbox digest v1.5 staged rollout behavior",
-        enabled: false,
-        key: "enable_inbox_digest_v1_5",
-    });
-    await ensureFeatureFlagDocument({
-        description: "Enable bulk catch-up UI for inbox triage actions",
-        enabled: false,
-        key: "enable_bulk_catch_up",
-    });
 }
 
 async function ensureFeatureFlagDocument(params: {
