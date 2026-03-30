@@ -32,7 +32,7 @@ export async function listThreadReads(
     contextType: ThreadReadContextType,
     contextId: string,
 ) {
-    const params = new URLSearchParams({ contextId, contextType });
+    const params = new URLSearchParams({ contextId, contextKind: contextType });
     const response = await fetch(`/api/thread-reads?${params.toString()}`);
     const data = await parseThreadReadResponse(response);
 
@@ -50,12 +50,13 @@ export async function persistThreadReads(params: {
     contextType: ThreadReadContextType;
     reads: Record<string, string>;
 }) {
+    const { contextType, ...rest } = params;
     const response = await fetch("/api/thread-reads", {
         method: "PATCH",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify(params),
+        body: JSON.stringify({ ...rest, contextKind: contextType }),
     });
     const data = await parseThreadReadResponse(response);
 

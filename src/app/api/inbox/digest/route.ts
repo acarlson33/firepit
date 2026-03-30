@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
-import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { listInboxDigest } from "@/lib/inbox";
 import { logger } from "@/lib/newrelic-utils";
 import type { InboxContextKind } from "@/lib/types";
@@ -44,16 +43,6 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    const digestEnabled = await getFeatureFlag(
-        FEATURE_FLAGS.ENABLE_INBOX_DIGEST,
-    ).catch(() => false);
-    if (!digestEnabled) {
-        return NextResponse.json(
-            { error: "Inbox digest is not enabled" },
-            { status: 404 },
-        );
-    }
-
     const { searchParams } = new URL(request.url);
     const limit = parseLimit(searchParams.get("limit"));
     if (!limit) {
@@ -85,16 +74,11 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    const digestV15Enabled = await getFeatureFlag(
-        FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5,
-    ).catch(() => false);
-
     try {
         const digest = await listInboxDigest({
             contextId,
             contextKind,
             limit,
-            useDigestV15: digestV15Enabled,
             userId: session.$id,
         });
 

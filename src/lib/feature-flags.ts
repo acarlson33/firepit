@@ -8,10 +8,6 @@ import type { FeatureFlag } from "./types";
 export const FEATURE_FLAGS = {
     ALLOW_USER_SERVERS: "allow_user_servers",
     ENABLE_AUDIT_LOGGING: "enable_audit_logging",
-    ENABLE_PER_MESSAGE_UNREAD: "enable_per_message_unread",
-    ENABLE_INBOX_DIGEST: "enable_inbox_digest",
-    ENABLE_INBOX_DIGEST_V1_5: "enable_inbox_digest_v1_5",
-    ENABLE_BULK_CATCH_UP: "enable_bulk_catch_up",
 } as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
@@ -20,10 +16,6 @@ export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: false,
     [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: true,
-    [FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD]: false,
-    [FEATURE_FLAGS.ENABLE_INBOX_DIGEST]: false,
-    [FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5]: false,
-    [FEATURE_FLAGS.ENABLE_BULK_CATCH_UP]: false,
 };
 
 // Cache for feature flags to reduce database calls
@@ -167,9 +159,6 @@ export async function setFeatureFlag(
  * Key descriptions:
  * - allow_user_servers: Allow members to create their own servers.
  * - enable_audit_logging: Enable audit logging for moderation actions.
- * - enable_per_message_unread: Enable per-message unread inbox semantics.
- * - enable_inbox_digest: Enable inbox digest API payloads.
- * - enable_inbox_digest_v1_5: Enable inbox digest v1.5 rollout behavior.
  * Unknown keys return an empty string.
  *
  * @param {FeatureFlagKey} key - Feature key to describe.
@@ -181,14 +170,6 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
             "Allow members to create their own servers",
         [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
             "Enable audit logging for moderation actions",
-        [FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD]:
-            "Enable per-message unread model and message-level inbox semantics",
-        [FEATURE_FLAGS.ENABLE_INBOX_DIGEST]:
-            "Enable inbox digest API foundation for chronological unread payloads",
-        [FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5]:
-            "Enable inbox digest v1.5 staged rollout behavior",
-        [FEATURE_FLAGS.ENABLE_BULK_CATCH_UP]:
-            "Enable bulk catch-up UI for inbox triage actions",
     };
 
     return descriptions[key] || "";
