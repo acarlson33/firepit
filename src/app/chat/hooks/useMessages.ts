@@ -1,4 +1,5 @@
 "use client";
+import { Query } from "appwrite";
 import type { RealtimeResponseEvent } from "appwrite";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -334,6 +335,7 @@ export function useMessages({
                         }
                         dispatchByEvents(event.events, base);
                     },
+                    [Query.equal("channelId", channelId)],
                 );
 
                 const untrack = trackSubscription(messageChannel);
@@ -432,7 +434,9 @@ export function useMessages({
                     }
                 }
 
-                const unsub = c.subscribe(typingChannel, handleTypingEvent);
+                const unsub = c.subscribe(typingChannel, handleTypingEvent, [
+                    Query.equal("channelId", channelId),
+                ]);
                 const untrack = trackSubscription(typingChannel);
                 cleanupFn = () => {
                     untrack();
