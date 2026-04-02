@@ -1,4 +1,4 @@
-import { ID, Query, Permission, Role } from "appwrite";
+import { ID, Query, Permission, Role } from "node-appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";

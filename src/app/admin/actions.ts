@@ -1,5 +1,5 @@
 "use server";
-import { Query } from "appwrite";
+import { Query } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getAppwriteIds } from "@/lib/appwrite-config";

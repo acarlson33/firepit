@@ -1,4 +1,4 @@
-import { ID, Query } from "appwrite";
+import { ID, Query } from "node-appwrite";
 
 import {
     AppwriteIntegrationError,
@@ -166,7 +166,7 @@ export function createServer(
         }
 
         try {
-            const { Permission, Role } = await import("appwrite");
+            const { Permission, Role } = await import("node-appwrite");
             const permissions = [
                 Permission.read(Role.any()),
                 Permission.update(Role.user(ownerId)),
@@ -320,7 +320,7 @@ export async function createChannel(
     name: string,
     _ownerId: string,
 ): Promise<Channel> {
-    const { Permission, Role } = await import("appwrite");
+    const { Permission, Role } = await import("node-appwrite");
     const permissions = [Permission.read(Role.any())];
     const res = await getDatabases().createDocument({
         databaseId: DATABASE_ID,
@@ -423,7 +423,7 @@ export async function joinServer(
     if (!membershipsCollectionId) {
         return null;
     }
-    const { Permission, Role } = await import("appwrite");
+    const { Permission, Role } = await import("node-appwrite");
     const permissions = [
         Permission.read(Role.any()),
         Permission.update(Role.user(userId)),

@@ -1,4 +1,4 @@
-import { Query } from "appwrite";
+import { Query } from "node-appwrite";
 
 import type { UserStatus } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";

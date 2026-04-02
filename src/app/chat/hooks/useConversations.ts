@@ -1,5 +1,6 @@
 "use client";
 
+import { Query } from "appwrite";
 import { useEffect, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -120,6 +121,7 @@ export function useConversations(userId: string | null, enabled = true) {
                         refetchType: "active",
                     });
                 },
+                [Query.contains("participants", userId)],
             );
             const untrack = trackSubscription(conversationChannel);
 

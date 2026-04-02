@@ -82,7 +82,8 @@ vi.mock("node-appwrite", () => ({
         }
     },
     Query: {
-        equal: (field: string, value: string) => `equal(${field},${value})`,
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${JSON.stringify(value)})`,
         limit: (n: number) => `limit(${n})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
@@ -98,11 +99,11 @@ vi.mock("node-appwrite", () => ({
             `greaterThanEqual(${field},${value})`,
     },
     Permission: {
-        read: (role: string) => `read(${role})`,
-        write: (role: string) => `write(${role})`,
-        update: (role: string) => `update(${role})`,
-        delete: (role: string) => `delete(${role})`,
-        create: (role: string) => `create(${role})`,
+        read: (role: string) => `read("${role}")`,
+        write: (role: string) => `write("${role}")`,
+        update: (role: string) => `update("${role}")`,
+        delete: (role: string) => `delete("${role}")`,
+        create: (role: string) => `create("${role}")`,
     },
     Role: {
         any: () => "any",

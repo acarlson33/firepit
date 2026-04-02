@@ -1,5 +1,5 @@
 import type { Teams } from "appwrite";
-import { Query } from "appwrite";
+import { Query } from "node-appwrite";
 import type { Teams as ServerTeams } from "node-appwrite";
 
 import { getBrowserTeams, getEnvConfig } from "./appwrite-core";

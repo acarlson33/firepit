@@ -1,5 +1,6 @@
 "use client";
 
+import { Query } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -644,51 +645,58 @@ export function useDirectMessages({
             const client = getSharedClient();
             const untrack = trackSubscription(typingChannel);
 
-            const unsubscribe = client.subscribe(typingChannel, (response) => {
-                const payload = response.payload as Record<string, unknown>;
-                const events = response.events as string[];
+            const unsubscribe = client.subscribe(
+                typingChannel,
+                (response) => {
+                    const payload = response.payload as Record<string, unknown>;
+                    const events = response.events as string[];
 
-                const typing = {
-                    $id: String(payload.$id),
-                    userId: String(payload.userId),
-                    userName: payload.userName as string | undefined,
-                    channelId: String(payload.channelId),
-                    updatedAt: String(payload.$updatedAt || payload.updatedAt),
-                };
+                    const typing = {
+                        $id: String(payload.$id),
+                        userId: String(payload.userId),
+                        userName: payload.userName as string | undefined,
+                        channelId: String(payload.channelId),
+                        updatedAt: String(
+                            payload.$updatedAt || payload.updatedAt,
+                        ),
+                    };
 
-                if (typing.channelId !== currentConversationIdRef.current) {
-                    return;
-                }
+                    if (typing.channelId !== currentConversationIdRef.current) {
+                        return;
+                    }
 
-                if (typing.userId === userId) {
-                    return;
-                }
+                    if (typing.userId === userId) {
+                        return;
+                    }
 
-                if (process.env.NODE_ENV === "development") {
-                    // biome-ignore lint: development debugging
-                    console.log("[typing] Received event:", events, typing);
-                }
+                    if (process.env.NODE_ENV === "development") {
+                        // biome-ignore lint: development debugging
+                        console.log("[typing] Received event:", events, typing);
+                    }
 
-                if (events.some((e) => e.endsWith(".delete"))) {
-                    batchUpdateTypingUsers({
-                        userId: typing.userId,
-                        userName: typing.userName,
-                        updatedAt: typing.updatedAt,
-                        action: "remove",
-                    });
-                } else if (
-                    events.some(
-                        (e) => e.endsWith(".create") || e.endsWith(".update"),
-                    )
-                ) {
-                    batchUpdateTypingUsers({
-                        userId: typing.userId,
-                        userName: typing.userName,
-                        updatedAt: typing.updatedAt,
-                        action: "add",
-                    });
-                }
-            });
+                    if (events.some((e) => e.endsWith(".delete"))) {
+                        batchUpdateTypingUsers({
+                            userId: typing.userId,
+                            userName: typing.userName,
+                            updatedAt: typing.updatedAt,
+                            action: "remove",
+                        });
+                    } else if (
+                        events.some(
+                            (e) =>
+                                e.endsWith(".create") || e.endsWith(".update"),
+                        )
+                    ) {
+                        batchUpdateTypingUsers({
+                            userId: typing.userId,
+                            userName: typing.userName,
+                            updatedAt: typing.updatedAt,
+                            action: "add",
+                        });
+                    }
+                },
+                [Query.equal("channelId", conversationId)],
+            );
 
             cleanupFn = () => {
                 untrack();

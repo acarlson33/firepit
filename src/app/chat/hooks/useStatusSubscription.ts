@@ -1,5 +1,6 @@
 "use client";
 
+import { Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { UserStatus } from "@/lib/types";
@@ -87,37 +88,42 @@ export function useStatusSubscription(userIds: string[]) {
                 const client = getSharedClient();
                 const channel = `databases.${env.databaseId}.collections.${STATUSES_COLLECTION}.documents`;
 
-                cleanup = client.subscribe(channel, (response) => {
-                    try {
-                        const payload = response.payload as
-                            | Record<string, unknown>
-                            | null
-                            | undefined;
-                        if (!payload) {
-                            return;
-                        }
-                        const userId = payload.userId as string | undefined;
+                const trackedIds = [...trackedUserIds];
+                cleanup = client.subscribe(
+                    channel,
+                    (response) => {
+                        try {
+                            const payload = response.payload as
+                                | Record<string, unknown>
+                                | null
+                                | undefined;
+                            if (!payload) {
+                                return;
+                            }
+                            const userId = payload.userId as string | undefined;
 
-                        // Only update if this status is for one of our tracked users
-                        if (userId && trackedUserIds.has(userId)) {
-                            const { normalized } = normalizeStatus(payload);
+                            // Only update if this status is for one of our tracked users
+                            if (userId && trackedUserIds.has(userId)) {
+                                const { normalized } = normalizeStatus(payload);
 
-                            setStatuses((prev) => {
-                                const next = new Map(prev);
-                                next.set(userId, normalized);
-                                return next;
-                            });
+                                setStatuses((prev) => {
+                                    const next = new Map(prev);
+                                    next.set(userId, normalized);
+                                    return next;
+                                });
+                            }
+                        } catch (err) {
+                            if (process.env.NODE_ENV !== "production") {
+                                // biome-ignore lint: dev logging
+                                console.error(
+                                    "Status subscription handler failed:",
+                                    err,
+                                );
+                            }
                         }
-                    } catch (err) {
-                        if (process.env.NODE_ENV !== "production") {
-                            // biome-ignore lint: dev logging
-                            console.error(
-                                "Status subscription handler failed:",
-                                err,
-                            );
-                        }
-                    }
-                });
+                    },
+                    [Query.equal("userId", trackedIds)],
+                );
                 const untrack = trackSubscription(channel);
                 const unsubscribe = cleanup;
                 cleanup = () => {

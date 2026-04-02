@@ -49,21 +49,29 @@ vi.mock("appwrite", () => {
             const docs = [...(mockDocuments[params.collectionId] || [])];
 
             const queries = params.queries || [];
-            const equalQueries = queries.filter((query) =>
-                /^equal\("[^"]+",".*"\)$/.test(query),
+            const equalQueries = queries.filter(
+                (query) =>
+                    /^equal\("[^"]+",".*"\)$/.test(query) ||
+                    /^equal\([^"]+,".*"\)$/.test(query),
             );
-            const orderDescQuery = queries.find((query) =>
-                /^orderDesc\("[^"]+"\)$/.test(query),
+            const orderDescQuery = queries.find(
+                (query) =>
+                    /^orderDesc\("[^"]+"\)$/.test(query) ||
+                    /^orderDesc\([^"]+\)$/.test(query),
             );
-            const cursorQuery = queries.find((query) =>
-                /^cursorAfter\("[^"]+"\)$/.test(query),
+            const cursorQuery = queries.find(
+                (query) =>
+                    /^cursorAfter\("[^"]+"\)$/.test(query) ||
+                    /^cursorAfter\([^"]+\)$/.test(query),
             );
             const limitQuery = queries.find((query) =>
                 /^limit\(\d+\)$/.test(query),
             );
 
             const filtered = equalQueries.reduce((currentDocs, query) => {
-                const equalMatch = /^equal\("([^"]+)","(.*)"\)$/.exec(query);
+                const equalMatch =
+                    /^equal\("([^"]+)","(.*)"\)$/.exec(query) ||
+                    /^equal\(([^,]+),"(.*)"\)$/.exec(query);
                 if (!equalMatch) {
                     return currentDocs;
                 }
@@ -90,9 +98,9 @@ vi.mock("appwrite", () => {
                     return filtered;
                 }
 
-                const orderDescMatch = /^orderDesc\("([^"]+)"\)$/.exec(
-                    orderDescQuery,
-                );
+                const orderDescMatch =
+                    /^orderDesc\("([^"]+)"\)$/.exec(orderDescQuery) ||
+                    /^orderDesc\(([^)]+)\)$/.exec(orderDescQuery);
                 if (!orderDescMatch) {
                     return filtered;
                 }
@@ -118,9 +126,9 @@ vi.mock("appwrite", () => {
                     return sorted;
                 }
 
-                const cursorMatch = /^cursorAfter\("([^"]+)"\)$/.exec(
-                    cursorQuery,
-                );
+                const cursorMatch =
+                    /^cursorAfter\("([^"]+)"\)$/.exec(cursorQuery) ||
+                    /^cursorAfter\(([^)]+)\)$/.exec(cursorQuery);
                 if (!cursorMatch) {
                     return sorted;
                 }
