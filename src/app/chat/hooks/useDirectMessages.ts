@@ -1,6 +1,6 @@
 "use client";
 
-import { Query } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -26,7 +26,7 @@ import {
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -270,60 +270,66 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const messageChannel = `databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`;
+        const messageChannel = Channel.database(env.databaseId)
+            .collection(DIRECT_MESSAGES_COLLECTION)
+            .document();
+        const messageChannelKey = messageChannel.toString();
 
-        void Promise.resolve().then(() => {
+        void Promise.resolve().then(async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const untrack = trackSubscription(messageChannel);
-            const unsubscribe = client.subscribe(messageChannel, (response) => {
-                const payload = response.payload as Record<string, unknown>;
-                const msgConversationId = payload.conversationId;
-                const events = response.events as string[];
+            const realtime = getSharedRealtime();
+            const untrack = trackSubscription(messageChannelKey);
+            const subscription = await realtime.subscribe(
+                messageChannel,
+                (response) => {
+                    const payload = response.payload as Record<string, unknown>;
+                    const msgConversationId = payload.conversationId;
+                    const events = response.events as string[];
 
-                // Only update if message belongs to this conversation
-                if (msgConversationId === conversationId) {
-                    const messageData = {
-                        ...(payload as unknown as DirectMessage),
-                        reactions: parseReactions(
-                            (payload as Record<string, unknown>).reactions as
-                                | string
-                                | undefined,
-                        ),
-                    };
-
-                    if (!isTopLevelMessage(messageData)) {
-                        return;
-                    }
-
-                    // Handle different event types to avoid full reload
-                    if (events.some((e) => e.endsWith(".create"))) {
-                        setMessages((prev) => {
-                            if (prev.some((m) => m.$id === messageData.$id)) {
-                                return prev;
-                            }
-                            return [...prev, messageData];
-                        });
-                    } else if (events.some((e) => e.endsWith(".update"))) {
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.$id === messageData.$id ? messageData : m,
+                    // Only update if message belongs to this conversation
+                    if (msgConversationId === conversationId) {
+                        const messageData = {
+                            ...(payload as unknown as DirectMessage),
+                            reactions: parseReactions(
+                                (payload as Record<string, unknown>).reactions as
+                                    | string
+                                    | undefined,
                             ),
-                        );
-                    } else if (events.some((e) => e.endsWith(".delete"))) {
-                        setMessages((prev) =>
-                            prev.filter((m) => m.$id !== messageData.$id),
-                        );
+                        };
+
+                        if (!isTopLevelMessage(messageData)) {
+                            return;
+                        }
+
+                        // Handle different event types to avoid full reload
+                        if (events.some((e) => e.endsWith(".create"))) {
+                            setMessages((prev) => {
+                                if (prev.some((m) => m.$id === messageData.$id)) {
+                                    return prev;
+                                }
+                                return [...prev, messageData];
+                            });
+                        } else if (events.some((e) => e.endsWith(".update"))) {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.$id === messageData.$id ? messageData : m,
+                                ),
+                            );
+                        } else if (events.some((e) => e.endsWith(".delete"))) {
+                            setMessages((prev) =>
+                                prev.filter((m) => m.$id !== messageData.$id),
+                            );
+                        }
                     }
-                }
-            });
+                },
+            );
 
             cleanupFn = () => {
                 untrack();
-                unsubscribe();
+                void subscription.close();
             };
         });
 
@@ -636,16 +642,19 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
+        const typingChannel = Channel.database(databaseId)
+            .collection(TYPING_COLLECTION_ID)
+            .document();
+        const typingChannelKey = typingChannel.toString();
 
-        void Promise.resolve().then(() => {
+        void Promise.resolve().then(async () => {
             if (cancelled) {
                 return;
             }
-            const client = getSharedClient();
-            const untrack = trackSubscription(typingChannel);
+            const realtime = getSharedRealtime();
+            const untrack = trackSubscription(typingChannelKey);
 
-            const unsubscribe = client.subscribe(
+            const subscription = await realtime.subscribe(
                 typingChannel,
                 (response) => {
                     const payload = response.payload as Record<string, unknown>;
@@ -700,7 +709,7 @@ export function useDirectMessages({
 
             cleanupFn = () => {
                 untrack();
-                unsubscribe();
+                void subscription.close();
             };
         });
 

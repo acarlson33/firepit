@@ -1,5 +1,5 @@
 "use client";
-import { Query } from "appwrite";
+import { Channel, Query } from "appwrite";
 import type { RealtimeResponseEvent } from "appwrite";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -210,12 +210,15 @@ export function useMessages({
         let cancelled = false;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
                 if (cancelled) {
                     return;
                 }
-                const c = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 function parseBase(
                     event: RealtimeResponseEvent<Record<string, unknown>>,
@@ -323,7 +326,7 @@ export function useMessages({
                         applyDelete(base);
                     }
                 }
-                const unsub = c.subscribe(
+                const subscription = await realtime.subscribe(
                     messageChannel,
                     (event: RealtimeResponseEvent<Record<string, unknown>>) => {
                         const base = parseBase(event);
@@ -338,11 +341,11 @@ export function useMessages({
                     [Query.equal("channelId", channelId)],
                 );
 
-                const untrack = trackSubscription(messageChannel);
+                const untrack = trackSubscription(messageChannelKey);
 
                 cleanupFn = () => {
                     untrack();
-                    unsub();
+                    void subscription.close();
                 };
             })
             .catch(() => {
@@ -374,12 +377,15 @@ export function useMessages({
         let cancelled = false;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
                 if (cancelled) {
                     return;
                 }
-                const c = getSharedClient();
-                const typingChannel = `databases.${databaseId}.collections.${typingCollectionId}.documents`;
+                const realtime = getSharedRealtime();
+                const typingChannel = Channel.database(databaseId)
+                    .collection(typingCollectionId)
+                    .document();
+                const typingChannelKey = typingChannel.toString();
 
                 function parseTyping(
                     event: RealtimeResponseEvent<Record<string, unknown>>,
@@ -434,13 +440,15 @@ export function useMessages({
                     }
                 }
 
-                const unsub = c.subscribe(typingChannel, handleTypingEvent, [
-                    Query.equal("channelId", channelId),
-                ]);
-                const untrack = trackSubscription(typingChannel);
+                const subscription = await realtime.subscribe(
+                    typingChannel,
+                    handleTypingEvent,
+                    [Query.equal("channelId", channelId)],
+                );
+                const untrack = trackSubscription(typingChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    unsub();
+                    void subscription.close();
                 };
             })
             .catch(() => {

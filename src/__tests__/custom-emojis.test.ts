@@ -39,8 +39,8 @@ global.URL.revokeObjectURL = vi.fn();
 
 // Mock realtime pool
 vi.mock("@/lib/realtime-pool", () => ({
-	getSharedClient: vi.fn(() => ({
-		subscribe: vi.fn(() => vi.fn()),
+	getSharedRealtime: vi.fn(() => ({
+		subscribe: vi.fn(async () => ({ close: vi.fn() })),
 	})),
 	trackSubscription: vi.fn(() => vi.fn()),
 }));
@@ -195,19 +195,23 @@ describe("Custom Emojis - Realtime Synchronization", () => {
 	it("should have realtime pool utilities", async () => {
 		const realtimePool = await import("@/lib/realtime-pool");
 		
-		expect(typeof realtimePool.getSharedClient).toBe("function");
+		expect(typeof realtimePool.getSharedRealtime).toBe("function");
 		expect(typeof realtimePool.trackSubscription).toBe("function");
 	});
 
-	it("should mock realtime client subscription", () => {
+	it("should mock realtime client subscription", async () => {
 		const mockClient = {
-			subscribe: vi.fn(() => vi.fn()),
+			subscribe: vi.fn(async () => ({ close: vi.fn() })),
 		};
 
-		const unsubscribe = mockClient.subscribe("test-channel", () => {});
+		const subscription = mockClient.subscribe("test-channel", () => {});
 		
 		expect(mockClient.subscribe).toHaveBeenCalledWith("test-channel", expect.any(Function));
-		expect(typeof unsubscribe).toBe("function");
+		await expect(subscription).resolves.toEqual(
+			expect.objectContaining({
+				close: expect.any(Function),
+			}),
+		);
 	});
 
 	it("should handle storage bucket events", () => {

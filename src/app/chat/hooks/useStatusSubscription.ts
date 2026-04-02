@@ -1,11 +1,11 @@
 "use client";
 
-import { Query } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus, type StatusLike } from "@/lib/status-normalization";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 const STATUSES_COLLECTION = env.collections.statuses;
@@ -85,11 +85,14 @@ export function useStatusSubscription(userIds: string[]) {
                     return;
                 }
 
-                const client = getSharedClient();
-                const channel = `databases.${env.databaseId}.collections.${STATUSES_COLLECTION}.documents`;
+                const realtime = getSharedRealtime();
+                const channel = Channel.database(env.databaseId)
+                    .collection(STATUSES_COLLECTION)
+                    .document();
+                const channelKey = channel.toString();
 
                 const trackedIds = [...trackedUserIds];
-                cleanup = client.subscribe(
+                const subscription = await realtime.subscribe(
                     channel,
                     (response) => {
                         try {
@@ -124,11 +127,10 @@ export function useStatusSubscription(userIds: string[]) {
                     },
                     [Query.equal("userId", trackedIds)],
                 );
-                const untrack = trackSubscription(channel);
-                const unsubscribe = cleanup;
+                const untrack = trackSubscription(channelKey);
                 cleanup = () => {
                     untrack();
-                    unsubscribe();
+                    void subscription.close();
                 };
             } catch (err) {
                 if (process.env.NODE_ENV !== "production") {

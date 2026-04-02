@@ -1,12 +1,12 @@
 "use client";
 
-import { Query } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useEffect, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
@@ -96,15 +96,18 @@ export function useConversations(userId: string | null, enabled = true) {
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        const conversationChannel = `databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`;
+        const conversationChannel = Channel.database(env.databaseId)
+            .collection(CONVERSATIONS_COLLECTION)
+            .document();
+        const conversationChannelKey = conversationChannel.toString();
 
-        void Promise.resolve().then(() => {
+        void Promise.resolve().then(async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const unsubscribe = client.subscribe(
+            const realtime = getSharedRealtime();
+            const subscription = await realtime.subscribe(
                 conversationChannel,
                 (response) => {
                     const payload = response.payload as Record<string, unknown>;
@@ -123,11 +126,11 @@ export function useConversations(userId: string | null, enabled = true) {
                 },
                 [Query.contains("participants", userId)],
             );
-            const untrack = trackSubscription(conversationChannel);
+            const untrack = trackSubscription(conversationChannelKey);
 
             cleanupFn = () => {
                 untrack();
-                unsubscribe();
+                void subscription.close();
             };
         });
 

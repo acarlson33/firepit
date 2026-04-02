@@ -1,11 +1,12 @@
 "use client";
 
+import { Channel } from "appwrite";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { getBrowserClient } from "@/lib/appwrite-core";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { getSharedRealtime } from "@/lib/realtime-pool";
 import type { FileAttachment } from "@/lib/types";
 import {
     actionHardDeleteBound,
@@ -110,7 +111,7 @@ export function ModerationMessageList({
 
     useEffect(() => {
         // Subscribe to real-time updates for the messages collection
-        const client = getBrowserClient();
+        const realtime = getSharedRealtime();
         const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
         const messagesCollectionId =
             process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID;
@@ -119,34 +120,50 @@ export function ModerationMessageList({
             return;
         }
 
-        const unsubscribe = client.subscribe(
-            `databases.${databaseId}.collections.${messagesCollectionId}.documents`,
-            (response: { events: string[]; payload: unknown }) => {
-                const event = response.events[0];
-                const payload =
-                    response.payload as unknown as ModerationMessage;
+        let cleanup: (() => void) | undefined;
+        let cancelled = false;
 
-                if (event?.includes(".update")) {
-                    // Update existing message
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.$id === payload.$id ? { ...m, ...payload } : m,
-                        ),
-                    );
-                } else if (event?.includes(".delete")) {
-                    // Remove deleted message
-                    setMessages((prev) =>
-                        prev.filter((m) => m.$id !== payload.$id),
-                    );
-                } else if (event?.includes(".create")) {
-                    // Add new message at the top
-                    setMessages((prev) => [payload, ...prev]);
-                }
-            },
-        );
+        void (async () => {
+            const subscription = await realtime.subscribe(
+                Channel.database(databaseId)
+                    .collection(messagesCollectionId)
+                    .document(),
+                (response: { events: string[]; payload: unknown }) => {
+                    const event = response.events[0];
+                    const payload = response.payload as ModerationMessage;
+
+                    if (event?.includes(".update")) {
+                        // Update existing message
+                        setMessages((prev) =>
+                            prev.map((m) =>
+                                m.$id === payload.$id ? { ...m, ...payload } : m,
+                            ),
+                        );
+                    } else if (event?.includes(".delete")) {
+                        // Remove deleted message
+                        setMessages((prev) =>
+                            prev.filter((m) => m.$id !== payload.$id),
+                        );
+                    } else if (event?.includes(".create")) {
+                        // Add new message at the top
+                        setMessages((prev) => [payload, ...prev]);
+                    }
+                },
+            );
+
+            if (cancelled) {
+                void subscription.close();
+                return;
+            }
+
+            cleanup = () => {
+                void subscription.close();
+            };
+        })();
 
         return () => {
-            unsubscribe();
+            cancelled = true;
+            cleanup?.();
         };
     }, []);
 
