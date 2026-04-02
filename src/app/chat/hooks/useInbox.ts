@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -11,7 +12,7 @@ import {
     markInboxScopeRead,
     type InboxScope,
 } from "@/lib/inbox-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
     InboxItem,
@@ -148,27 +149,27 @@ export function useInbox(userId: string | null) {
             env.collections.inboxItems,
             env.collections.messages,
             env.collections.threadReads,
-        ].map(
-            (collectionId) =>
-                `databases.${env.databaseId}.collections.${collectionId}.documents`,
+        ].map((collectionId) =>
+            Channel.database(env.databaseId).collection(collectionId).document(),
         );
+        const channelKeys = channels.map((channel) => channel.toString());
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        void Promise.resolve().then(() => {
+        void Promise.resolve().then(async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const unsubscribe = client.subscribe(channels, () => {
+            const realtime = getSharedRealtime();
+            const subscription = await realtime.subscribe(channels, () => {
                 void queryClient.invalidateQueries({
                     queryKey: getInboxQueryKey(userId),
                     refetchType: "active",
                 });
             });
-            const untrack = channels.map((channel) =>
+            const untrack = channelKeys.map((channel) =>
                 trackSubscription(channel),
             );
 
@@ -176,7 +177,7 @@ export function useInbox(userId: string | null) {
                 for (const stopTracking of untrack) {
                     stopTracking();
                 }
-                unsubscribe();
+                void subscription.close();
             };
         });
 

@@ -4,9 +4,11 @@
  */
 
 import { Client } from "appwrite";
+import { Realtime } from "appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
 let sharedClient: Client | null = null;
+let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 
 /**
@@ -31,6 +33,18 @@ export function getSharedClient(): Client {
     }
 
     return sharedClient;
+}
+
+/**
+ * Get or create shared Appwrite realtime helper
+ * @returns {Realtime} The return value.
+ */
+export function getSharedRealtime(): Realtime {
+    if (!sharedRealtime) {
+        sharedRealtime = new Realtime(getSharedClient());
+    }
+
+    return sharedRealtime;
 }
 
 /**

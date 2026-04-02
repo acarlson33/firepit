@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { RealtimeResponseEvent } from "appwrite";
+import { Channel, type RealtimeResponseEvent } from "appwrite";
 import type { CustomEmoji } from "@/lib/types";
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
@@ -81,17 +81,18 @@ export function useCustomEmojis() {
 
     // Dynamically import realtime pool to avoid SSR issues
     import("@/lib/realtime-pool")
-      .then(({ getSharedClient, trackSubscription }) => {
+      .then(async ({ getSharedRealtime, trackSubscription }) => {
         const bucketId = process.env.NEXT_PUBLIC_APPWRITE_EMOJIS_BUCKET_ID;
         if (!bucketId) {
           return;
         }
 
-        const client = getSharedClient();
+        const realtime = getSharedRealtime();
         
         // Subscribe to all file events in the emojis bucket
-        const channel = `buckets.${bucketId}.files`;
-        const untrack = trackSubscription(channel);
+        const channel = Channel.bucket(bucketId).file();
+        const channelKey = channel.toString();
+        const untrack = trackSubscription(channelKey);
 
         const handleStorageEvent = (
           event: RealtimeResponseEvent<Record<string, unknown>>
@@ -109,11 +110,9 @@ export function useCustomEmojis() {
         };
 
         try {
-          const unsub = client.subscribe(channel, handleStorageEvent);
+          const subscription = await realtime.subscribe(channel, handleStorageEvent);
           unsubscribe = () => {
-            if (typeof unsub === "function") {
-              unsub();
-            }
+            void subscription.close();
             untrack();
           };
         } catch {

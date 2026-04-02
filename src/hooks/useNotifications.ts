@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel } from "appwrite";
 import { useEffect, useRef, useCallback } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
@@ -134,9 +135,12 @@ export function useNotifications({
         let untrack: (() => void) | undefined;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
-                const client = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 const handleMessage = (event: {
                     events: string[];
@@ -224,8 +228,14 @@ export function useNotifications({
                     })();
                 };
 
-                unsubscribe = client.subscribe(messageChannel, handleMessage);
-                untrack = trackSubscription(messageChannel);
+                const subscription = await realtime.subscribe(
+                    messageChannel,
+                    handleMessage,
+                );
+                unsubscribe = () => {
+                    void subscription.close();
+                };
+                untrack = trackSubscription(messageChannelKey);
             })
             .catch(() => {
                 // Failed to set up realtime
@@ -260,9 +270,12 @@ export function useNotifications({
         let cleanup: (() => void) | undefined;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
-                const client = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 const handleMessage = (response: {
                     events: string[];
@@ -336,15 +349,15 @@ export function useNotifications({
                     })();
                 };
 
-                const unsubscribe = client.subscribe(
+                const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
                 );
-                const trackCleanup = trackSubscription(messageChannel);
+                const trackCleanup = trackSubscription(messageChannelKey);
 
                 // Store combined cleanup function
                 cleanup = () => {
-                    unsubscribe?.();
+                    void subscription.close();
                     trackCleanup?.();
                 };
             })

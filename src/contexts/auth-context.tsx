@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -18,7 +19,7 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 
@@ -200,10 +201,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         return;
                     }
 
-                    const client = getSharedClient();
-                    const channel = `databases.${env.databaseId}.collections.${statusesCollection}.documents`;
+                    const realtime = getSharedRealtime();
+                    const channel = Channel.database(env.databaseId)
+                        .collection(statusesCollection)
+                        .document();
+                    const channelKey = channel.toString();
 
-                    cleanup = client.subscribe(channel, (response) => {
+                    const subscription = await realtime.subscribe(
+                        channel,
+                        (response) => {
                         try {
                             const payload = response.payload as
                                 | Record<string, unknown>
@@ -230,12 +236,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 );
                             }
                         }
-                    });
-                    const untrack = trackSubscription(channel);
-                    const unsubscribe = cleanup;
+                        },
+                    );
+                    const untrack = trackSubscription(channelKey);
                     cleanup = () => {
                         untrack();
-                        unsubscribe();
+                        void subscription.close();
                     };
                 } catch (err) {
                     if (process.env.NODE_ENV !== "production") {
