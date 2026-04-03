@@ -167,6 +167,17 @@ export function useInbox(userId: string | null) {
 
             let subscription: { close: () => Promise<void> } | undefined;
             let untrack: Array<() => void> = [];
+            async function closeSubscriptionSafely() {
+                if (!subscription) {
+                    return;
+                }
+
+                try {
+                    await subscription.close();
+                } catch {
+                    // Ignore close errors when websocket is already unavailable.
+                }
+            }
 
             try {
                 const realtime = getSharedRealtime();
@@ -178,7 +189,7 @@ export function useInbox(userId: string | null) {
                 });
 
                 if (cancelled) {
-                    await subscription.close();
+                    await closeSubscriptionSafely();
                     return;
                 }
 
@@ -195,7 +206,7 @@ export function useInbox(userId: string | null) {
                     for (const stopTracking of untrack) {
                         stopTracking();
                     }
-                    void subscription?.close();
+                    void closeSubscriptionSafely();
                 };
             }
         })();
