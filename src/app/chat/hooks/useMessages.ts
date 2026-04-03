@@ -341,6 +341,11 @@ export function useMessages({
                     [Query.equal("channelId", channelId)],
                 );
 
+                if (cancelled) {
+                    void subscription.close();
+                    return;
+                }
+
                 const untrack = trackSubscription(messageChannelKey);
 
                 cleanupFn = () => {
@@ -445,6 +450,12 @@ export function useMessages({
                     handleTypingEvent,
                     [Query.equal("channelId", channelId)],
                 );
+
+                if (cancelled) {
+                    void subscription.close();
+                    return;
+                }
+
                 const untrack = trackSubscription(typingChannelKey);
                 cleanupFn = () => {
                     untrack();

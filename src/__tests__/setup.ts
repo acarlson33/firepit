@@ -52,6 +52,34 @@ vi.mock("appwrite", () => ({
     Databases: vi.fn(),
     Storage: vi.fn(),
     Teams: vi.fn(),
+    Channel: {
+        database: (databaseId: string) => ({
+            collection: (collectionId: string) => ({
+                document: () => ({
+                    toString: () =>
+                        `databases.${databaseId}.collections.${collectionId}.documents`,
+                }),
+            }),
+        }),
+        bucket: (bucketId: string) => ({
+            file: () => ({
+                create: () => ({
+                    toString: () => `buckets.${bucketId}.files.*.create`,
+                }),
+                toString: () => `buckets.${bucketId}.files`,
+            }),
+        }),
+        files: () => ({
+            toString: () => "files",
+        }),
+    },
+    Realtime: vi.fn().mockImplementation(() => ({
+        subscribe: vi.fn(async () => ({
+            close: vi.fn(async () => {}),
+        })),
+        close: vi.fn(async () => {}),
+        unsubscribe: vi.fn(async () => {}),
+    })),
 }));
 
 // Mock node-appwrite to prevent import errors

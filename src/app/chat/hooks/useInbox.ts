@@ -150,14 +150,16 @@ export function useInbox(userId: string | null) {
             env.collections.messages,
             env.collections.threadReads,
         ].map((collectionId) =>
-            Channel.database(env.databaseId).collection(collectionId).document(),
+            Channel.database(env.databaseId)
+                .collection(collectionId)
+                .document(),
         );
         const channelKeys = channels.map((channel) => channel.toString());
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        void Promise.resolve().then(async () => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
@@ -179,7 +181,7 @@ export function useInbox(userId: string | null) {
                 }
                 void subscription.close();
             };
-        });
+        })();
 
         return () => {
             cancelled = true;

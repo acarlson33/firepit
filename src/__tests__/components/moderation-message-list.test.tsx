@@ -15,6 +15,10 @@ vi.mock("@/lib/appwrite-core", () => ({
     getBrowserClient: () => ({
         subscribe: () => vi.fn(),
     }),
+    getEnvConfig: () => ({
+        endpoint: "https://cloud.appwrite.io/v1",
+        project: "test-project",
+    }),
 }));
 
 vi.mock("@/hooks/useCustomEmojis", () => ({

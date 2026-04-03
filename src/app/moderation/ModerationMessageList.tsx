@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { logger } from "@/lib/client-logger";
 import { getSharedRealtime } from "@/lib/realtime-pool";
 import type { FileAttachment } from "@/lib/types";
 import {
@@ -120,45 +121,59 @@ export function ModerationMessageList({
             return;
         }
 
-        let cleanup: (() => void) | undefined;
+        let cleanup: (() => void) | undefined = () => {};
         let cancelled = false;
 
         void (async () => {
-            const subscription = await realtime.subscribe(
-                Channel.database(databaseId)
-                    .collection(messagesCollectionId)
-                    .document(),
-                (response: { events: string[]; payload: unknown }) => {
-                    const event = response.events[0];
-                    const payload = response.payload as ModerationMessage;
+            let subscription: { close: () => Promise<void> } | undefined;
+            try {
+                subscription = await realtime.subscribe(
+                    Channel.database(databaseId)
+                        .collection(messagesCollectionId)
+                        .document(),
+                    (response: { events: string[]; payload: unknown }) => {
+                        const event = response.events[0];
+                        const payload = response.payload as ModerationMessage;
 
-                    if (event?.includes(".update")) {
-                        // Update existing message
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.$id === payload.$id ? { ...m, ...payload } : m,
-                            ),
-                        );
-                    } else if (event?.includes(".delete")) {
-                        // Remove deleted message
-                        setMessages((prev) =>
-                            prev.filter((m) => m.$id !== payload.$id),
-                        );
-                    } else if (event?.includes(".create")) {
-                        // Add new message at the top
-                        setMessages((prev) => [payload, ...prev]);
-                    }
-                },
-            );
+                        if (event?.includes(".update")) {
+                            // Update existing message
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.$id === payload.$id
+                                        ? { ...m, ...payload }
+                                        : m,
+                                ),
+                            );
+                        } else if (event?.includes(".delete")) {
+                            // Remove deleted message
+                            setMessages((prev) =>
+                                prev.filter((m) => m.$id !== payload.$id),
+                            );
+                        } else if (event?.includes(".create")) {
+                            // Add new message at the top
+                            setMessages((prev) => [payload, ...prev]);
+                        }
+                    },
+                );
 
-            if (cancelled) {
-                void subscription.close();
-                return;
+                if (cancelled) {
+                    await subscription.close();
+                    return;
+                }
+
+                cleanup = () => {
+                    void subscription?.close();
+                };
+            } catch (error) {
+                if (subscription) {
+                    await subscription.close();
+                }
+                logger.error(
+                    "Moderation realtime subscription failed:",
+                    error instanceof Error ? error : String(error),
+                );
+                cleanup = () => {};
             }
-
-            cleanup = () => {
-                void subscription.close();
-            };
         })();
 
         return () => {

@@ -275,28 +275,30 @@ export function useDirectMessages({
             .document();
         const messageChannelKey = messageChannel.toString();
 
-        void Promise.resolve().then(async () => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
 
-            const realtime = getSharedRealtime();
-            const untrack = trackSubscription(messageChannelKey);
-            const subscription = await realtime.subscribe(
-                messageChannel,
-                (response) => {
-                    const payload = response.payload as Record<string, unknown>;
-                    const msgConversationId = payload.conversationId;
-                    const events = response.events as string[];
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: (() => void) | undefined;
 
-                    // Only update if message belongs to this conversation
-                    if (msgConversationId === conversationId) {
+            try {
+                const realtime = getSharedRealtime();
+                subscription = await realtime.subscribe(
+                    messageChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const events = response.events as string[];
+
                         const messageData = {
                             ...(payload as unknown as DirectMessage),
                             reactions: parseReactions(
-                                (payload as Record<string, unknown>).reactions as
-                                    | string
-                                    | undefined,
+                                (payload as Record<string, unknown>)
+                                    .reactions as string | undefined,
                             ),
                         };
 
@@ -307,7 +309,9 @@ export function useDirectMessages({
                         // Handle different event types to avoid full reload
                         if (events.some((e) => e.endsWith(".create"))) {
                             setMessages((prev) => {
-                                if (prev.some((m) => m.$id === messageData.$id)) {
+                                if (
+                                    prev.some((m) => m.$id === messageData.$id)
+                                ) {
                                     return prev;
                                 }
                                 return [...prev, messageData];
@@ -323,15 +327,28 @@ export function useDirectMessages({
                                 prev.filter((m) => m.$id !== messageData.$id),
                             );
                         }
-                    }
-                },
-            );
+                    },
+                    [Query.equal("conversationId", conversationId)],
+                );
 
-            cleanupFn = () => {
-                untrack();
-                void subscription.close();
-            };
-        });
+                if (cancelled) {
+                    await subscription.close();
+                    return;
+                }
+
+                untrack = trackSubscription(messageChannelKey);
+            } catch {
+                untrack?.();
+                if (subscription) {
+                    await subscription.close();
+                }
+            } finally {
+                cleanupFn = () => {
+                    untrack?.();
+                    void subscription?.close();
+                };
+            }
+        })();
 
         return () => {
             cancelled = true;
@@ -676,11 +693,6 @@ export function useDirectMessages({
 
                     if (typing.userId === userId) {
                         return;
-                    }
-
-                    if (process.env.NODE_ENV === "development") {
-                        // biome-ignore lint: development debugging
-                        console.log("[typing] Received event:", events, typing);
                     }
 
                     if (events.some((e) => e.endsWith(".delete"))) {

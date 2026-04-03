@@ -3,6 +3,7 @@
 import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus, type StatusLike } from "@/lib/status-normalization";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
@@ -117,16 +118,19 @@ export function useStatusSubscription(userIds: string[]) {
                             }
                         } catch (err) {
                             if (process.env.NODE_ENV !== "production") {
-                                // biome-ignore lint: dev logging
-                                console.error(
+                                logger.error(
                                     "Status subscription handler failed:",
-                                    err,
+                                    err instanceof Error ? err : String(err),
                                 );
                             }
                         }
                     },
                     [Query.equal("userId", trackedIds)],
                 );
+                if (cancelled) {
+                    void subscription.close();
+                    return;
+                }
                 const untrack = trackSubscription(channelKey);
                 cleanup = () => {
                     untrack();
@@ -134,8 +138,10 @@ export function useStatusSubscription(userIds: string[]) {
                 };
             } catch (err) {
                 if (process.env.NODE_ENV !== "production") {
-                    // biome-ignore lint: dev logging
-                    console.error("Status subscription failed:", err);
+                    logger.error(
+                        "Status subscription failed:",
+                        err instanceof Error ? err : String(err),
+                    );
                 }
             }
         })();

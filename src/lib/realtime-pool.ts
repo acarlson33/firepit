@@ -76,3 +76,31 @@ export function trackSubscription(channel: string): () => void {
 export function hasActiveSubscriptions(channel: string): boolean {
     return (subscriptionRefs.get(channel) ?? 0) > 0;
 }
+
+/**
+ * Reset the shared realtime helper and tracked subscription references.
+ * Use this on auth/session transitions so a fresh realtime context is created.
+ */
+export function resetSharedRealtime(): void {
+    const realtimeToReset = sharedRealtime as
+        | (Realtime & {
+              close?: () => Promise<void> | void;
+              unsubscribe?: () => Promise<void> | void;
+          })
+        | null;
+
+    if (realtimeToReset) {
+        void realtimeToReset.close?.();
+        void realtimeToReset.unsubscribe?.();
+    }
+
+    sharedRealtime = null;
+    subscriptionRefs.clear();
+}
+
+/**
+ * Reset the shared Appwrite client singleton.
+ */
+export function resetSharedClient(): void {
+    sharedClient = null;
+}

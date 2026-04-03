@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useDeveloperMode } from "@/hooks/useDeveloperMode";
 import type { NavigationItemPreferenceId } from "@/lib/types";
 import { useFriends } from "@/hooks/useFriends";
+import { resetSharedClient, resetSharedRealtime } from "@/lib/realtime-pool";
 
 type HeaderProps = {
     onSearchClick?: () => void;
@@ -100,10 +101,14 @@ export default function Header({ onSearchClick }: HeaderProps) {
             });
             posthog.reset();
             await logoutAction();
+            resetSharedRealtime();
+            resetSharedClient();
             setUserData(null);
             router.push("/");
         } catch {
             // Ignore errors, redirect anyway
+            resetSharedRealtime();
+            resetSharedClient();
             setUserData(null);
             location.href = "/";
         } finally {

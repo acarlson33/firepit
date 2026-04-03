@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useEffect, useRef, useCallback } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
@@ -133,9 +133,14 @@ export function useNotifications({
 
         let unsubscribe: (() => void) | undefined;
         let untrack: (() => void) | undefined;
+        let cancelled = false;
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
+
                 const realtime = getSharedRealtime();
                 const messageChannel = Channel.database(databaseId)
                     .collection(collectionId)
@@ -231,7 +236,14 @@ export function useNotifications({
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
+                    [Query.equal("channelId", channelId)],
                 );
+
+                if (cancelled) {
+                    void subscription.close();
+                    return;
+                }
+
                 unsubscribe = () => {
                     void subscription.close();
                 };
@@ -242,6 +254,7 @@ export function useNotifications({
             });
 
         return () => {
+            cancelled = true;
             unsubscribe?.();
             untrack?.();
         };
@@ -268,9 +281,14 @@ export function useNotifications({
         }
 
         let cleanup: (() => void) | undefined;
+        let cancelled = false;
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
+
                 const realtime = getSharedRealtime();
                 const messageChannel = Channel.database(databaseId)
                     .collection(collectionId)
@@ -352,7 +370,14 @@ export function useNotifications({
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
+                    [Query.equal("conversationId", conversationId)],
                 );
+
+                if (cancelled) {
+                    void subscription.close();
+                    return;
+                }
+
                 const trackCleanup = trackSubscription(messageChannelKey);
 
                 // Store combined cleanup function
@@ -366,6 +391,7 @@ export function useNotifications({
             });
 
         return () => {
+            cancelled = true;
             cleanup?.();
         };
     }, [
