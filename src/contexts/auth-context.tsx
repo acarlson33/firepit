@@ -19,7 +19,12 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    resetSharedClient,
+    resetSharedRealtime,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 
@@ -69,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // or by the calling UI to avoid interfering with auth flows (e.g. the
                 // user trying to navigate from home -> /login). This avoids races
                 // caused by concurrent client-side navigation.
+                resetSharedRealtime();
+                resetSharedClient();
                 setUserData(null);
                 setUserStatusState(null);
                 setTelemetryEnabled(null);
@@ -210,32 +217,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     const subscription = await realtime.subscribe(
                         channel,
                         (response) => {
-                        try {
-                            const payload = response.payload as
-                                | Record<string, unknown>
-                                | null
-                                | undefined;
-                            if (!payload) {
-                                return;
-                            }
-                            const statusUserId = payload.userId as
-                                | string
-                                | undefined;
+                            try {
+                                const payload = response.payload as
+                                    | Record<string, unknown>
+                                    | null
+                                    | undefined;
+                                if (!payload) {
+                                    return;
+                                }
+                                const statusUserId = payload.userId as
+                                    | string
+                                    | undefined;
 
-                            // Only update if this is our user's status
-                            if (statusUserId === userData.userId) {
-                                const { normalized } = normalizeStatus(payload);
-                                setUserStatusState(normalized);
+                                // Only update if this is our user's status
+                                if (statusUserId === userData.userId) {
+                                    const { normalized } =
+                                        normalizeStatus(payload);
+                                    setUserStatusState(normalized);
+                                }
+                            } catch (err) {
+                                if (process.env.NODE_ENV !== "production") {
+                                    // biome-ignore lint: development-only diagnostics
+                                    console.error(
+                                        "Status subscription handler failed:",
+                                        err,
+                                    );
+                                }
                             }
-                        } catch (err) {
-                            if (process.env.NODE_ENV !== "production") {
-                                // biome-ignore lint: development-only diagnostics
-                                console.error(
-                                    "Status subscription handler failed:",
-                                    err,
-                                );
-                            }
-                        }
                         },
                     );
                     const untrack = trackSubscription(channelKey);

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Channel, type RealtimeResponseEvent } from "appwrite";
+import { logger } from "@/lib/client-logger";
 import type { CustomEmoji } from "@/lib/types";
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
@@ -29,8 +30,10 @@ function storeEmojis(emojis: CustomEmoji[]): void {
         localStorage.setItem(EMOJIS_STORAGE_KEY, JSON.stringify(emojis));
     } catch (error) {
         if (process.env.NODE_ENV === "development") {
-            // biome-ignore lint: development debugging
-            console.error("Failed to store emojis:", error);
+            logger.error(
+                "Failed to store emojis:",
+                error instanceof Error ? error : String(error),
+            );
         }
     }
 }
@@ -48,8 +51,10 @@ async function fetchEmojisFromServer(): Promise<CustomEmoji[]> {
         return emojis;
     } catch (error) {
         if (process.env.NODE_ENV === "development") {
-            // biome-ignore lint: development debugging
-            console.error("Failed to fetch emojis from server:", error);
+            logger.error(
+                "Failed to fetch emojis from server:",
+                error instanceof Error ? error : String(error),
+            );
         }
         // Fallback to cached emojis
         return getStoredEmojis();
@@ -95,8 +100,8 @@ export function useCustomEmojis() {
 
                 const realtime = getSharedRealtime();
 
-                // Subscribe to create events so uploads trigger invalidation immediately.
-                const channel = Channel.bucket(bucketId).file().create();
+                // Subscribe to file events so create and delete changes invalidate caches.
+                const channel = Channel.bucket(bucketId).file();
                 const channelKey = channel.toString();
                 let untrack: (() => void) | undefined;
 
@@ -106,8 +111,12 @@ export function useCustomEmojis() {
                     // Refetch emojis when a new emoji file is created in the target bucket.
                     if (
                         event.events.includes(`buckets.*.files.*.create`) ||
+                        event.events.includes(`buckets.*.files.*.delete`) ||
                         event.events.includes(
                             `buckets.${bucketId}.files.*.create`,
+                        ) ||
+                        event.events.includes(
+                            `buckets.${bucketId}.files.*.delete`,
                         )
                     ) {
                         void queryClient.invalidateQueries({
@@ -274,8 +283,10 @@ export function useCustomEmojis() {
                 }
 
                 if (process.env.NODE_ENV === "development") {
-                    // biome-ignore lint: development debugging
-                    console.error("Failed to delete emoji:", error);
+                    logger.error(
+                        "Failed to delete emoji:",
+                        error instanceof Error ? error : String(error),
+                    );
                 }
                 throw error;
             }

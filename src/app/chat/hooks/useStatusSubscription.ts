@@ -61,7 +61,10 @@ export function useStatusSubscription(userIds: string[]) {
                 setStatuses(statusMap);
             }
         } catch (error) {
-            console.error("Failed to fetch statuses:", error);
+            logger.error(
+                "Failed to fetch statuses:",
+                error instanceof Error ? error : String(error),
+            );
         } finally {
             setLoading(false);
         }

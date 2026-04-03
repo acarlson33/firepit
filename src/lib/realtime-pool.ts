@@ -82,18 +82,6 @@ export function hasActiveSubscriptions(channel: string): boolean {
  * Use this on auth/session transitions so a fresh realtime context is created.
  */
 export function resetSharedRealtime(): void {
-    const realtimeToReset = sharedRealtime as
-        | (Realtime & {
-              close?: () => Promise<void> | void;
-              unsubscribe?: () => Promise<void> | void;
-          })
-        | null;
-
-    if (realtimeToReset) {
-        void realtimeToReset.close?.();
-        void realtimeToReset.unsubscribe?.();
-    }
-
     sharedRealtime = null;
     subscriptionRefs.clear();
 }
@@ -103,4 +91,5 @@ export function resetSharedRealtime(): void {
  */
 export function resetSharedClient(): void {
     sharedClient = null;
+    resetSharedRealtime();
 }

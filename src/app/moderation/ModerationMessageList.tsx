@@ -150,8 +150,12 @@ export function ModerationMessageList({
                                 prev.filter((m) => m.$id !== payload.$id),
                             );
                         } else if (event?.includes(".create")) {
-                            // Add new message at the top
-                            setMessages((prev) => [payload, ...prev]);
+                            // Add new message at the top if it does not already exist
+                            setMessages((prev) =>
+                                prev.some((m) => m.$id === payload.$id)
+                                    ? prev
+                                    : [payload, ...prev],
+                            );
                         }
                     },
                 );

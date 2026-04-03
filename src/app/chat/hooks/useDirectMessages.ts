@@ -664,66 +664,90 @@ export function useDirectMessages({
             .document();
         const typingChannelKey = typingChannel.toString();
 
-        void Promise.resolve().then(async () => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
-            const realtime = getSharedRealtime();
-            const untrack = trackSubscription(typingChannelKey);
 
-            const subscription = await realtime.subscribe(
-                typingChannel,
-                (response) => {
-                    const payload = response.payload as Record<string, unknown>;
-                    const events = response.events as string[];
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: (() => void) | undefined;
 
-                    const typing = {
-                        $id: String(payload.$id),
-                        userId: String(payload.userId),
-                        userName: payload.userName as string | undefined,
-                        channelId: String(payload.channelId),
-                        updatedAt: String(
-                            payload.$updatedAt || payload.updatedAt,
-                        ),
-                    };
+            try {
+                const realtime = getSharedRealtime();
 
-                    if (typing.channelId !== currentConversationIdRef.current) {
-                        return;
-                    }
+                subscription = await realtime.subscribe(
+                    typingChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const events = response.events as string[];
 
-                    if (typing.userId === userId) {
-                        return;
-                    }
+                        const typing = {
+                            $id: String(payload.$id),
+                            userId: String(payload.userId),
+                            userName: payload.userName as string | undefined,
+                            channelId: String(payload.channelId),
+                            updatedAt: String(
+                                payload.$updatedAt || payload.updatedAt,
+                            ),
+                        };
 
-                    if (events.some((e) => e.endsWith(".delete"))) {
-                        batchUpdateTypingUsers({
-                            userId: typing.userId,
-                            userName: typing.userName,
-                            updatedAt: typing.updatedAt,
-                            action: "remove",
-                        });
-                    } else if (
-                        events.some(
-                            (e) =>
-                                e.endsWith(".create") || e.endsWith(".update"),
-                        )
-                    ) {
-                        batchUpdateTypingUsers({
-                            userId: typing.userId,
-                            userName: typing.userName,
-                            updatedAt: typing.updatedAt,
-                            action: "add",
-                        });
-                    }
-                },
-                [Query.equal("channelId", conversationId)],
-            );
+                        if (
+                            typing.channelId !==
+                            currentConversationIdRef.current
+                        ) {
+                            return;
+                        }
 
-            cleanupFn = () => {
-                untrack();
-                void subscription.close();
-            };
-        });
+                        if (typing.userId === userId) {
+                            return;
+                        }
+
+                        if (events.some((e) => e.endsWith(".delete"))) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                action: "remove",
+                            });
+                        } else if (
+                            events.some(
+                                (e) =>
+                                    e.endsWith(".create") ||
+                                    e.endsWith(".update"),
+                            )
+                        ) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                action: "add",
+                            });
+                        }
+                    },
+                    [Query.equal("channelId", conversationId)],
+                );
+
+                if (cancelled) {
+                    await subscription.close();
+                    return;
+                }
+
+                untrack = trackSubscription(typingChannelKey);
+            } catch {
+                untrack?.();
+                if (subscription) {
+                    await subscription.close();
+                }
+            } finally {
+                cleanupFn = () => {
+                    untrack?.();
+                    void subscription?.close();
+                };
+            }
+        })();
 
         return () => {
             cancelled = true;

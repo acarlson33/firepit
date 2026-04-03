@@ -12,6 +12,7 @@ import {
     markInboxScopeRead,
     type InboxScope,
 } from "@/lib/inbox-client";
+import { logger } from "@/lib/client-logger";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
@@ -164,23 +165,39 @@ export function useInbox(userId: string | null) {
                 return;
             }
 
-            const realtime = getSharedRealtime();
-            const subscription = await realtime.subscribe(channels, () => {
-                void queryClient.invalidateQueries({
-                    queryKey: getInboxQueryKey(userId),
-                    refetchType: "active",
-                });
-            });
-            const untrack = channelKeys.map((channel) =>
-                trackSubscription(channel),
-            );
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: Array<() => void> = [];
 
-            cleanupFn = () => {
-                for (const stopTracking of untrack) {
-                    stopTracking();
+            try {
+                const realtime = getSharedRealtime();
+                subscription = await realtime.subscribe(channels, () => {
+                    void queryClient.invalidateQueries({
+                        queryKey: getInboxQueryKey(userId),
+                        refetchType: "active",
+                    });
+                });
+
+                if (cancelled) {
+                    await subscription.close();
+                    return;
                 }
-                void subscription.close();
-            };
+
+                untrack = channelKeys.map((channel) =>
+                    trackSubscription(channel),
+                );
+            } catch (error) {
+                logger.error(
+                    "Inbox realtime subscription failed:",
+                    error instanceof Error ? error : String(error),
+                );
+            } finally {
+                cleanupFn = () => {
+                    for (const stopTracking of untrack) {
+                        stopTracking();
+                    }
+                    void subscription?.close();
+                };
+            }
         })();
 
         return () => {
