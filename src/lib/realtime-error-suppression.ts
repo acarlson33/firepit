@@ -27,7 +27,9 @@ function beginSuppression(): () => void {
     }
 
     if (suppressionDepth === 0) {
+        // biome-ignore lint/suspicious/noConsole: Intentional scoped interception of noisy Appwrite websocket close logs.
         originalConsoleError = console.error;
+        // biome-ignore lint/suspicious/noConsole: Intentional scoped interception of noisy Appwrite websocket close logs.
         console.error = (...args: unknown[]) => {
             if (isExpectedAppwriteWebSocketError(args)) {
                 return;
@@ -43,6 +45,7 @@ function beginSuppression(): () => void {
         suppressionDepth = Math.max(0, suppressionDepth - 1);
 
         if (suppressionDepth === 0 && originalConsoleError) {
+            // biome-ignore lint/suspicious/noConsole: Restore original console.error after scoped suppression.
             console.error = originalConsoleError;
             originalConsoleError = null;
         }

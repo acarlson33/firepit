@@ -5,6 +5,7 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getAppwriteIds } from "@/lib/appwrite-config";
 import { getUserRoles } from "@/lib/appwrite-roles";
 import { recordMetric, recordTiming } from "@/lib/monitoring";
+import { logger } from "@/lib/newrelic-utils";
 import {
     getAllFeatureFlags,
     setFeatureFlag,
@@ -106,8 +107,13 @@ async function updateMessageServerIds(
                 { serverId },
             );
             updated += 1;
-        } catch {
-            // ignore single failure
+        } catch (err) {
+            logger.error("Failed to backfill message serverId", {
+                messageId: String(d.$id),
+                channelId,
+                serverId,
+                error: err instanceof Error ? err.message : String(err),
+            });
         }
     }
     return updated;

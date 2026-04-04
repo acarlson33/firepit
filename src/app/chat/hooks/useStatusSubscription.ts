@@ -17,6 +17,33 @@ type RealtimeSubscription = {
     close: () => Promise<void>;
 };
 
+function isUnsupportedQueryRealtimeError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: number;
+        message?: string;
+        name?: string;
+        type?: string;
+    };
+
+    const name = (candidate.name ?? "").toLowerCase();
+    const type = (candidate.type ?? "").toLowerCase();
+    const message = (candidate.message ?? "").toLowerCase();
+
+    if (name.includes("unsupportedquery") || type.includes("unsupported")) {
+        return true;
+    }
+
+    if (candidate.code === 400 || candidate.code === 422) {
+        return message.includes("query") && message.includes("unsupported");
+    }
+
+    return false;
+}
+
 async function closeSubscriptionSafely(
     subscription?: RealtimeSubscription,
 ): Promise<void> {
@@ -164,6 +191,15 @@ export function useStatusSubscription(userIds: string[]) {
                         return;
                     }
 
+                    if (!isUnsupportedQueryRealtimeError(queryError)) {
+                        throw queryError;
+                    }
+
+                    const fallbackError =
+                        queryError instanceof Error
+                            ? queryError
+                            : String(queryError);
+
                     if (process.env.NODE_ENV !== "production") {
                         logger.warn(
                             "Status subscription query failed; retrying without query filter",
@@ -172,6 +208,14 @@ export function useStatusSubscription(userIds: string[]) {
                             },
                         );
                     }
+
+                    logger.error(
+                        "Status subscription degraded to unfiltered fallback",
+                        fallbackError,
+                        {
+                            trackedCount: trackedIds.length,
+                        },
+                    );
 
                     subscription = await realtime.subscribe(
                         channel,

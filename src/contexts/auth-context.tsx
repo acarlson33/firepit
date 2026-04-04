@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -228,6 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         .collection(statusesCollection)
                         .document();
                     const channelKey = channel.toString();
+                    const activeUserId = userData.userId;
 
                     const subscription = await realtime.subscribe(
                         channel,
@@ -245,7 +246,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                     | undefined;
 
                                 // Only update if this is our user's status
-                                if (statusUserId === userData.userId) {
+                                if (
+                                    statusUserId &&
+                                    statusUserId === realtimeUserIdRef.current
+                                ) {
                                     const { normalized } =
                                         normalizeStatus(payload);
                                     setUserStatusState(normalized);
@@ -261,14 +265,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 }
                             }
                         },
+                        [Query.equal("userId", activeUserId)],
                     );
 
+                    const untrack = trackSubscription(channelKey);
+
                     if (cancelled) {
+                        untrack();
                         void subscription.close();
                         return;
                     }
 
-                    const untrack = trackSubscription(channelKey);
                     cleanup = () => {
                         untrack();
                         void subscription.close();

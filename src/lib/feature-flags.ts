@@ -1,6 +1,7 @@
-import { Query } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
+import { logger } from "./newrelic-utils";
 import { getServerClient } from "./appwrite-server";
 import type { FeatureFlag } from "./types";
 
@@ -88,14 +89,14 @@ export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
 }
 
 /**
- * Creates or updates a feature flag (server/admin path) and invalidates its cache entry.
- * Returns true when the flag write succeeds, or false when persistence fails.
+ * Updates an existing feature flag (server/admin path) and invalidates its cache entry.
+ * Returns true when the flag update succeeds, or false when persistence fails.
  * The userId is required to record who performed the change in audit fields.
  *
- * @param key - Feature flag key to create or update.
+ * @param key - Existing feature flag key to update.
  * @param enabled - Desired enabled state for the flag.
  * @param userId - Identifier of the actor used for updatedBy audit tracking.
- * @returns Resolves to true on successful create/update, otherwise false.
+ * @returns Resolves to true on successful update, otherwise false.
  */
 export async function setFeatureFlag(
     key: FeatureFlagKey,
@@ -116,6 +117,10 @@ export async function setFeatureFlag(
         const now = new Date().toISOString();
 
         if (response.documents.length === 0) {
+            logger.warn("Feature flag update skipped: flag not initialized", {
+                key,
+                userId,
+            });
             return false;
         }
 
@@ -137,7 +142,11 @@ export async function setFeatureFlag(
 
         return true;
     } catch (error) {
-        console.error(`Failed to set feature flag ${key}:`, error);
+        logger.error("Failed to update feature flag", {
+            key,
+            userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return false;
     }
 }
@@ -174,6 +183,7 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
     const { databaseId, collections } = getEnvConfig();
     const existingFlags = await getAllFeatureFlags();
     const existingKeys = new Set(existingFlags.map((f) => f.key));
+    const failedKeys: string[] = [];
 
     // Create any missing flags with default values
     for (const [key, defaultValue] of Object.entries(DEFAULT_FLAGS)) {
@@ -183,7 +193,7 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
                 await databases.createDocument(
                     databaseId,
                     collections.featureFlags,
-                    featureKey,
+                    ID.unique(),
                     {
                         key: featureKey,
                         enabled: defaultValue,
@@ -193,12 +203,21 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
                     },
                 );
             } catch (error) {
-                console.error(
-                    `Failed to initialize feature flag ${featureKey}:`,
-                    error,
-                );
+                failedKeys.push(featureKey);
+                logger.error("Failed to initialize feature flag", {
+                    key: featureKey,
+                    userId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
             }
         }
+    }
+
+    if (failedKeys.length > 0) {
+        throw new Error(
+            `Failed to initialize feature flags: ${failedKeys.join(", ")}`,
+        );
     }
 }
 

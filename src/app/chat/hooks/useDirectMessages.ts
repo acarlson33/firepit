@@ -26,6 +26,7 @@ import {
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { logger } from "@/lib/client-logger";
 import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
@@ -128,11 +129,21 @@ export function useDirectMessages({
         userId: string;
         userName?: string;
         updatedAt: string;
+        conversationId: string;
         action: "add" | "remove";
     }>((updates) => {
+        const activeConversationId = currentConversationIdRef.current;
+
         setTypingUsers((prev) => {
             const updated = { ...prev };
             for (const update of updates) {
+                if (
+                    !activeConversationId ||
+                    update.conversationId !== activeConversationId
+                ) {
+                    continue;
+                }
+
                 if (update.action === "remove") {
                     delete updated[update.userId];
                 } else {
@@ -369,9 +380,18 @@ export function useDirectMessages({
                     untrack?.();
                     void closeSubscriptionSafely(subscription);
                 };
-            } catch {
+            } catch (error) {
                 untrack?.();
                 await closeSubscriptionSafely(subscription);
+                if (!cancelled) {
+                    logger.error(
+                        "Direct message realtime subscription failed:",
+                        error instanceof Error ? error : String(error),
+                        {
+                            conversationId: currentConversationIdRef.current,
+                        },
+                    );
+                }
             }
         })();
 
@@ -737,6 +757,7 @@ export function useDirectMessages({
                                 userId: typing.userId,
                                 userName: typing.userName,
                                 updatedAt: typing.updatedAt,
+                                conversationId: typing.channelId,
                                 action: "remove",
                             });
                         } else if (
@@ -750,6 +771,7 @@ export function useDirectMessages({
                                 userId: typing.userId,
                                 userName: typing.userName,
                                 updatedAt: typing.updatedAt,
+                                conversationId: typing.channelId,
                                 action: "add",
                             });
                         }
@@ -766,9 +788,18 @@ export function useDirectMessages({
                     untrack?.();
                     void closeSubscriptionSafely(subscription);
                 };
-            } catch {
+            } catch (error) {
                 untrack?.();
                 await closeSubscriptionSafely(subscription);
+                if (!cancelled) {
+                    logger.error(
+                        "Direct message typing realtime subscription failed:",
+                        error instanceof Error ? error : String(error),
+                        {
+                            conversationId: currentConversationIdRef.current,
+                        },
+                    );
+                }
             }
         })();
 

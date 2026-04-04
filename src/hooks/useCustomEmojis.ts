@@ -143,7 +143,6 @@ export function useCustomEmojis() {
                     };
                 } catch {
                     // Failed to set up realtime; ignore silently
-                    untrack?.();
                 }
             })
             .catch(() => {
@@ -255,8 +254,9 @@ export function useCustomEmojis() {
             );
 
             try {
+                const encodedFileId = encodeURIComponent(fileId);
                 const response = await fetch(
-                    `/api/upload-emoji?fileId=${fileId}`,
+                    `/api/upload-emoji?fileId=${encodedFileId}`,
                     {
                         method: "DELETE",
                     },

@@ -287,9 +287,13 @@ export function useMessages({
                     return true;
                 }
                 async function applyCreate(base: Message) {
+                    const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before adding to state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (currentChannelIdRef.current !== activeChannelId) {
+                        return;
+                    }
                     if (!profileEnriched) {
                         return;
                     }
@@ -309,9 +313,13 @@ export function useMessages({
                     });
                 }
                 async function applyUpdate(base: Message) {
+                    const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before updating state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (currentChannelIdRef.current !== activeChannelId) {
+                        return;
+                    }
                     if (!profileEnriched) {
                         setMessages((prev) =>
                             prev.filter((message) => message.$id !== base.$id),

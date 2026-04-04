@@ -54,6 +54,12 @@ vi.mock("appwrite", () => {
                     /^equal\("[^"]+",".*"\)$/.test(query) ||
                     /^equal\([^"]+,".*"\)$/.test(query),
             );
+            const containsQueries = queries.filter(
+                (query) =>
+                    /^contains\("[^"]+",".*"\)$/.test(query) ||
+                    /^contains\([^"]+,".*"\)$/.test(query) ||
+                    /^contains\([A-Za-z0-9_.$-]+,\[.*\]\)$/.test(query),
+            );
             const orderDescQuery = queries.find(
                 (query) =>
                     /^orderDesc\("[^"]+"\)$/.test(query) ||
@@ -93,20 +99,66 @@ vi.mock("appwrite", () => {
                 });
             }, docs);
 
+            const containsFiltered = containsQueries.reduce(
+                (currentDocs, query) => {
+                    const quotedContainsMatch =
+                        /^contains\("([^"]+)","(.*)"\)$/.exec(query) ||
+                        /^contains\(([^,]+),"(.*)"\)$/.exec(query);
+                    const arrayContainsMatch =
+                        /^contains\(([A-Za-z0-9_.$-]+),(\[.*\])\)$/.exec(query);
+
+                    const field =
+                        quotedContainsMatch?.[1] ?? arrayContainsMatch?.[1];
+                    const rawValue =
+                        quotedContainsMatch?.[2] ?? arrayContainsMatch?.[2];
+
+                    if (!field || !rawValue) {
+                        return currentDocs;
+                    }
+
+                    const values = rawValue.includes(QUERY_VALUE_SEPARATOR)
+                        ? rawValue.split(QUERY_VALUE_SEPARATOR).filter(Boolean)
+                        : (() => {
+                              try {
+                                  const parsed = JSON.parse(rawValue) as
+                                      | string
+                                      | string[];
+                                  return (
+                                      Array.isArray(parsed) ? parsed : [parsed]
+                                  ).map((item) => String(item));
+                              } catch {
+                                  return [rawValue];
+                              }
+                          })();
+
+                    return currentDocs.filter((doc) => {
+                        const value = (doc as Record<string, unknown>)[field];
+                        if (Array.isArray(value)) {
+                            return value.some((item) =>
+                                values.includes(String(item)),
+                            );
+                        }
+
+                        return values.includes(String(value ?? ""));
+                    });
+                },
+                filtered,
+            );
+
             const sorted = (() => {
                 if (!orderDescQuery) {
-                    return filtered;
+                    return containsFiltered;
                 }
 
                 const orderDescMatch =
                     /^orderDesc\("([^"]+)"\)$/.exec(orderDescQuery) ||
                     /^orderDesc\(([^)]+)\)$/.exec(orderDescQuery);
                 if (!orderDescMatch) {
-                    return filtered;
+                    return containsFiltered;
                 }
 
                 const [, field] = orderDescMatch;
-                return [...filtered].sort((left, right) => {
+                return [...containsFiltered].sort((left, right) => {
                     const leftValue = String(
                         (left as Record<string, unknown>)[field] ??
                             left.$createdAt ??

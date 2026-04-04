@@ -1,6 +1,7 @@
 import { ID, Query } from "node-appwrite";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
+import { logger } from "@/lib/newrelic-utils";
 import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
@@ -241,6 +242,7 @@ export async function useInvite(
     if (typeof invite.maxUses === "number") {
         let snapshot = invite;
         const maxReservationAttempts = 5;
+        let highestAttemptedIndex = snapshot.currentUses;
 
         for (let attempt = 0; attempt < maxReservationAttempts; attempt++) {
             if (typeof snapshot.maxUses !== "number") {
@@ -257,7 +259,10 @@ export async function useInvite(
                 };
             }
 
-            const nextUseIndex = snapshot.currentUses + 1;
+            const nextUseIndex = Math.max(
+                snapshot.currentUses + 1,
+                highestAttemptedIndex + 1,
+            );
             const usageDocId = createInviteUsageSlotDocumentId(
                 snapshot.$id,
                 nextUseIndex,
@@ -284,6 +289,8 @@ export async function useInvite(
                         error: "Failed to join server",
                     };
                 }
+
+                highestAttemptedIndex = nextUseIndex;
 
                 const refreshedInvite = await getInviteByCode(code);
                 if (!refreshedInvite) {
@@ -325,8 +332,14 @@ export async function useInvite(
                     INVITE_USAGE_COLLECTION_ID,
                     reservedUsageId,
                 );
-            } catch {
-                // Best-effort rollback for slot reservation.
+            } catch (rollbackError) {
+                logger.warn("Failed to rollback reserved invite usage slot", {
+                    reservedUsageId,
+                    error:
+                        rollbackError instanceof Error
+                            ? rollbackError.message
+                            : String(rollbackError),
+                });
             }
         }
 
