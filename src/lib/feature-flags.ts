@@ -115,34 +115,22 @@ export async function setFeatureFlag(
 
         const now = new Date().toISOString();
 
-        if (response.documents.length > 0) {
-            // Update existing flag
-            const flagId = response.documents[0].$id;
-            await databases.updateDocument(
-                databaseId,
-                collections.featureFlags,
-                flagId,
-                {
-                    enabled,
-                    updatedAt: now,
-                    updatedBy: userId,
-                },
-            );
-        } else {
-            // Create new flag
-            await databases.createDocument(
-                databaseId,
-                collections.featureFlags,
-                "unique()",
-                {
-                    key,
-                    enabled,
-                    description: getFeatureFlagDescription(key),
-                    updatedAt: now,
-                    updatedBy: userId,
-                },
-            );
+        if (response.documents.length === 0) {
+            return false;
         }
+
+        // Runtime admin updates are update-only. Flags are created in setup.
+        const flagId = response.documents[0].$id;
+        await databases.updateDocument(
+            databaseId,
+            collections.featureFlags,
+            flagId,
+            {
+                enabled,
+                updatedAt: now,
+                updatedBy: userId,
+            },
+        );
 
         // Clear cache for this flag
         flagCache.delete(key);
@@ -182,13 +170,34 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
  * @returns {Promise<void>} Resolves when initialization and any required upserts complete.
  */
 export async function initializeFeatureFlags(userId: string): Promise<void> {
+    const { databases } = getServerClient();
+    const { databaseId, collections } = getEnvConfig();
     const existingFlags = await getAllFeatureFlags();
     const existingKeys = new Set(existingFlags.map((f) => f.key));
 
     // Create any missing flags with default values
     for (const [key, defaultValue] of Object.entries(DEFAULT_FLAGS)) {
         if (!existingKeys.has(key)) {
-            await setFeatureFlag(key as FeatureFlagKey, defaultValue, userId);
+            const featureKey = key as FeatureFlagKey;
+            try {
+                await databases.createDocument(
+                    databaseId,
+                    collections.featureFlags,
+                    featureKey,
+                    {
+                        key: featureKey,
+                        enabled: defaultValue,
+                        description: getFeatureFlagDescription(featureKey),
+                        updatedAt: new Date().toISOString(),
+                        updatedBy: userId,
+                    },
+                );
+            } catch (error) {
+                console.error(
+                    `Failed to initialize feature flag ${featureKey}:`,
+                    error,
+                );
+            }
         }
     }
 }

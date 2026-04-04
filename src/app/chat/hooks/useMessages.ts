@@ -31,6 +31,7 @@ import {
     unpinChannelMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -41,6 +42,26 @@ type UseMessagesOptions = {
     userId: string | null;
     userName: string | null;
 };
+
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore close failures during teardown; socket may already be disconnected.
+    }
+}
 
 export function useMessages({
     channelId,
@@ -342,7 +363,7 @@ export function useMessages({
                 );
 
                 if (cancelled) {
-                    void subscription.close();
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
@@ -350,7 +371,7 @@ export function useMessages({
 
                 cleanupFn = () => {
                     untrack();
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                 };
             })
             .catch(() => {
@@ -452,14 +473,14 @@ export function useMessages({
                 );
 
                 if (cancelled) {
-                    void subscription.close();
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
                 const untrack = trackSubscription(typingChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                 };
             })
             .catch(() => {

@@ -331,7 +331,7 @@ export type ServerInvite = {
     creatorId: string;
     channelId?: string; // Default channel to show after joining
     expiresAt?: string; // ISO timestamp or null for never
-    maxUses?: number; // null for unlimited
+    maxUses: number | null; // null for unlimited
     currentUses: number;
     temporary: boolean; // Kick user if they go offline without role
     $createdAt: string;

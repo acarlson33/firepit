@@ -13,6 +13,7 @@ import {
 } from "react";
 import posthog from "posthog-js";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
 import type { UserStatus } from "@/lib/types";
 import {
     getUserStatus,
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
     const [loading, setLoading] = useState(true);
     const lastIdentifiedUserId = useRef<string | null>(null);
+    const realtimeUserIdRef = useRef<string | null>(null);
 
     const fetchUserData = useCallback(async () => {
         try {
@@ -104,6 +106,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         void fetchUserData();
     }, [fetchUserData]);
+
+    // Realtime state should not be shared between different authenticated users.
+    useEffect(() => {
+        const currentUserId = userData?.userId ?? null;
+        const previousUserId = realtimeUserIdRef.current;
+
+        if (previousUserId && previousUserId !== currentUserId) {
+            resetSharedRealtime();
+            resetSharedClient();
+        }
+
+        realtimeUserIdRef.current = currentUserId;
+    }, [userData?.userId]);
 
     useEffect(() => {
         if (!userData?.userId) {
@@ -237,15 +252,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 }
                             } catch (err) {
                                 if (process.env.NODE_ENV !== "production") {
-                                    // biome-ignore lint: development-only diagnostics
-                                    console.error(
+                                    logger.error(
                                         "Status subscription handler failed:",
-                                        err,
+                                        err instanceof Error
+                                            ? err
+                                            : String(err),
                                     );
                                 }
                             }
                         },
                     );
+
+                    if (cancelled) {
+                        void subscription.close();
+                        return;
+                    }
+
                     const untrack = trackSubscription(channelKey);
                     cleanup = () => {
                         untrack();
@@ -253,7 +275,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     };
                 } catch (err) {
                     if (process.env.NODE_ENV !== "production") {
-                        console.error("Status subscription failed:", err);
+                        logger.error(
+                            "Status subscription failed:",
+                            err instanceof Error ? err : String(err),
+                        );
                     }
                 }
             })();
@@ -291,8 +316,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
             } catch (err) {
                 if (process.env.NODE_ENV === "development") {
-                    // biome-ignore lint: development debugging
-                    console.error("Failed to change status:", err);
+                    logger.error(
+                        "Failed to change status:",
+                        err instanceof Error ? err : String(err),
+                    );
                 }
             }
         },

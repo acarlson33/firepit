@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel, Query } from "appwrite";
+import { Channel } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -26,6 +26,7 @@ import {
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
@@ -39,6 +40,26 @@ type UseDirectMessagesProps = {
     receiverId?: string;
     userName?: string | null;
 };
+
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore teardown errors when websocket is already unavailable.
+    }
+}
 
 export function useDirectMessages({
     conversationId,
@@ -264,7 +285,7 @@ export function useDirectMessages({
 
     // Real-time subscription
     useEffect(() => {
-        if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
+        if (!userId || !DIRECT_MESSAGES_COLLECTION) {
             return;
         }
 
@@ -302,6 +323,14 @@ export function useDirectMessages({
                             ),
                         };
 
+                        if (
+                            !messageData.conversationId ||
+                            messageData.conversationId !==
+                                currentConversationIdRef.current
+                        ) {
+                            return;
+                        }
+
                         if (!isTopLevelMessage(messageData)) {
                             return;
                         }
@@ -328,24 +357,21 @@ export function useDirectMessages({
                             );
                         }
                     },
-                    [Query.equal("conversationId", conversationId)],
                 );
 
                 if (cancelled) {
-                    await subscription.close();
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
                 untrack = trackSubscription(messageChannelKey);
             } catch {
                 untrack?.();
-                if (subscription) {
-                    await subscription.close();
-                }
+                await closeSubscriptionSafely(subscription);
             } finally {
                 cleanupFn = () => {
                     untrack?.();
-                    void subscription?.close();
+                    void closeSubscriptionSafely(subscription);
                 };
             }
         })();
@@ -354,7 +380,7 @@ export function useDirectMessages({
             cancelled = true;
             cleanupFn?.();
         };
-    }, [conversationId]);
+    }, [userId]);
 
     const send = useCallback(
         async (
@@ -648,10 +674,11 @@ export function useDirectMessages({
 
     // Realtime subscription for typing indicators
     useEffect(() => {
-        // Clear typing users whenever conversation changes (including to null)
         setTypingUsers({});
+    }, [conversationId]);
 
-        if (!conversationId || !TYPING_COLLECTION_ID) {
+    useEffect(() => {
+        if (!userId || !TYPING_COLLECTION_ID) {
             return;
         }
 
@@ -727,24 +754,21 @@ export function useDirectMessages({
                             });
                         }
                     },
-                    [Query.equal("channelId", conversationId)],
                 );
 
                 if (cancelled) {
-                    await subscription.close();
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
                 untrack = trackSubscription(typingChannelKey);
             } catch {
                 untrack?.();
-                if (subscription) {
-                    await subscription.close();
-                }
+                await closeSubscriptionSafely(subscription);
             } finally {
                 cleanupFn = () => {
                     untrack?.();
-                    void subscription?.close();
+                    void closeSubscriptionSafely(subscription);
                 };
             }
         })();
@@ -753,7 +777,7 @@ export function useDirectMessages({
             cancelled = true;
             cleanupFn?.();
         };
-    }, [conversationId, userId]);
+    }, [userId]);
 
     // Cleanup stale typing indicators
     useEffect(() => {

@@ -4,6 +4,7 @@ import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus, type StatusLike } from "@/lib/status-normalization";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
@@ -12,6 +13,25 @@ const env = getEnvConfig();
 const STATUSES_COLLECTION = env.collections.statuses;
 
 type StatusMap = Map<string, UserStatus>;
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore teardown errors when websocket is already disconnected.
+    }
+}
 
 /**
  * Hook to subscribe to real-time status updates for multiple users
@@ -95,49 +115,79 @@ export function useStatusSubscription(userIds: string[]) {
                     .document();
                 const channelKey = channel.toString();
 
-                const trackedIds = [...trackedUserIds];
-                const subscription = await realtime.subscribe(
-                    channel,
-                    (response) => {
-                        try {
-                            const payload = response.payload as
-                                | Record<string, unknown>
-                                | null
-                                | undefined;
-                            if (!payload) {
-                                return;
-                            }
-                            const userId = payload.userId as string | undefined;
-
-                            // Only update if this status is for one of our tracked users
-                            if (userId && trackedUserIds.has(userId)) {
-                                const { normalized } = normalizeStatus(payload);
-
-                                setStatuses((prev) => {
-                                    const next = new Map(prev);
-                                    next.set(userId, normalized);
-                                    return next;
-                                });
-                            }
-                        } catch (err) {
-                            if (process.env.NODE_ENV !== "production") {
-                                logger.error(
-                                    "Status subscription handler failed:",
-                                    err instanceof Error ? err : String(err),
-                                );
-                            }
-                        }
-                    },
-                    [Query.equal("userId", trackedIds)],
+                const trackedIds = [...trackedUserIds].filter(
+                    (id) => typeof id === "string" && id.length > 0,
                 );
-                if (cancelled) {
-                    void subscription.close();
+                if (trackedIds.length === 0) {
                     return;
                 }
+
+                const handleStatusEvent = (response: {
+                    payload?: Record<string, unknown> | null;
+                }) => {
+                    try {
+                        const payload = response.payload;
+                        if (!payload) {
+                            return;
+                        }
+                        const userId = payload.userId as string | undefined;
+
+                        // Only update if this status is for one of our tracked users
+                        if (userId && trackedUserIds.has(userId)) {
+                            const { normalized } = normalizeStatus(payload);
+
+                            setStatuses((prev) => {
+                                const next = new Map(prev);
+                                next.set(userId, normalized);
+                                return next;
+                            });
+                        }
+                    } catch (err) {
+                        if (process.env.NODE_ENV !== "production") {
+                            logger.error(
+                                "Status subscription handler failed:",
+                                err instanceof Error ? err : String(err),
+                            );
+                        }
+                    }
+                };
+
+                let subscription: RealtimeSubscription;
+                try {
+                    subscription = await realtime.subscribe(
+                        channel,
+                        handleStatusEvent,
+                        [Query.equal("userId", trackedIds)],
+                    );
+                } catch (queryError) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    if (process.env.NODE_ENV !== "production") {
+                        logger.warn(
+                            "Status subscription query failed; retrying without query filter",
+                            {
+                                trackedCount: trackedIds.length,
+                            },
+                        );
+                    }
+
+                    subscription = await realtime.subscribe(
+                        channel,
+                        handleStatusEvent,
+                    );
+                }
+
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
+                }
+
                 const untrack = trackSubscription(channelKey);
                 cleanup = () => {
                     untrack();
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                 };
             } catch (err) {
                 if (process.env.NODE_ENV !== "production") {

@@ -1,4 +1,5 @@
 import { ID, Query } from "node-appwrite";
+import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
@@ -17,7 +18,7 @@ export type CreateInviteOptions = {
     creatorId: string;
     channelId?: string;
     expiresAt?: string; // ISO timestamp
-    maxUses?: number; // null/undefined for unlimited
+    maxUses?: number | null; // null/undefined for unlimited
     temporary?: boolean;
 };
 
@@ -26,6 +27,33 @@ export type ValidationResult = {
     error?: string;
     invite?: ServerInvite;
 };
+
+function isConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { code?: number; message?: string };
+    if (candidate.code === 409) {
+        return true;
+    }
+
+    return typeof candidate.message === "string"
+        ? candidate.message.toLowerCase().includes("already exists")
+        : false;
+}
+
+function createInviteUsageSlotDocumentId(
+    inviteId: string,
+    useIndex: number,
+): string {
+    const digest = createHash("sha256")
+        .update(`${inviteId}:${String(useIndex)}`)
+        .digest("hex")
+        .slice(0, 28);
+
+    return `invuse_${digest}`;
+}
 
 /**
  * Generate a unique invite code with collision retry logic
@@ -78,7 +106,7 @@ export async function createInvite(
         creatorId: options.creatorId,
         channelId: options.channelId || null,
         expiresAt: options.expiresAt || null,
-        maxUses: options.maxUses || null,
+        maxUses: options.maxUses ?? null,
         currentUses: 0,
         temporary: options.temporary ?? false,
     };
@@ -144,7 +172,7 @@ export async function validateInvite(code: string): Promise<ValidationResult> {
     }
 
     // Check max uses
-    if (invite.maxUses !== null && invite.maxUses !== undefined) {
+    if (invite.maxUses !== null) {
         if (invite.currentUses >= invite.maxUses) {
             return {
                 valid: false,
@@ -177,6 +205,15 @@ export async function useInvite(
     }
 
     const invite = validation.invite;
+    const joinedAt = new Date().toISOString();
+    const usagePayload = {
+        inviteCode: code,
+        userId,
+        serverId: invite.serverId,
+        joinedAt,
+    };
+    let reservedUsageId: string | undefined;
+    let reservedUseIndex: number | undefined;
 
     // Check if user is already a member
     try {
@@ -201,6 +238,73 @@ export async function useInvite(
         return { success: false, error: "Failed to verify membership status" };
     }
 
+    if (typeof invite.maxUses === "number") {
+        let snapshot = invite;
+        const maxReservationAttempts = 5;
+
+        for (let attempt = 0; attempt < maxReservationAttempts; attempt++) {
+            if (typeof snapshot.maxUses !== "number") {
+                return {
+                    success: false,
+                    error: "Invite is no longer available",
+                };
+            }
+
+            if (snapshot.currentUses >= snapshot.maxUses) {
+                return {
+                    success: false,
+                    error: "Invite has reached maximum uses",
+                };
+            }
+
+            const nextUseIndex = snapshot.currentUses + 1;
+            const usageDocId = createInviteUsageSlotDocumentId(
+                snapshot.$id,
+                nextUseIndex,
+            );
+
+            try {
+                await databases.createDocument(
+                    DATABASE_ID,
+                    INVITE_USAGE_COLLECTION_ID,
+                    usageDocId,
+                    usagePayload,
+                );
+                reservedUsageId = usageDocId;
+                reservedUseIndex = nextUseIndex;
+                break;
+            } catch (error) {
+                if (!isConflictError(error)) {
+                    console.error(
+                        "Failed to reserve invite usage slot:",
+                        error,
+                    );
+                    return {
+                        success: false,
+                        error: "Failed to join server",
+                    };
+                }
+
+                const refreshedInvite = await getInviteByCode(code);
+                if (!refreshedInvite) {
+                    return {
+                        success: false,
+                        error: "Invite is no longer available",
+                    };
+                }
+
+                snapshot = refreshedInvite;
+            }
+        }
+
+        if (!reservedUsageId) {
+            return {
+                success: false,
+                error: "Invite is currently being used. Please try again.",
+            };
+        }
+    }
+
     // Create membership
     try {
         await databases.createDocument(
@@ -210,19 +314,54 @@ export async function useInvite(
             {
                 serverId: invite.serverId,
                 userId,
-                    role: "member",
+                role: "member",
             },
         );
     } catch (error) {
+        if (reservedUsageId) {
+            try {
+                await databases.deleteDocument(
+                    DATABASE_ID,
+                    INVITE_USAGE_COLLECTION_ID,
+                    reservedUsageId,
+                );
+            } catch {
+                // Best-effort rollback for slot reservation.
+            }
+        }
+
+        if (isConflictError(error)) {
+            return {
+                success: false,
+                error: "You are already a member of this server",
+            };
+        }
+
         console.error("Failed to create membership:", error);
         return { success: false, error: "Failed to join server" };
     }
 
+    try {
+        await assignDefaultRoleServer(invite.serverId, userId);
+    } catch {
+        // Non-fatal; proceed even if default role assignment fails
+    }
+
+    if (!reservedUsageId) {
+        // Unlimited invites keep historical behavior: record usage after successful join.
         try {
-            await assignDefaultRoleServer(invite.serverId, userId);
-        } catch {
-            // Non-fatal; proceed even if default role assignment fails
+            await databases.createDocument(
+                DATABASE_ID,
+                INVITE_USAGE_COLLECTION_ID,
+                ID.unique(),
+                usagePayload,
+            );
+        } catch (error) {
+            console.error("Failed to record invite usage:", error);
+            // Non-fatal - membership was created successfully
         }
+    }
+
     // Increment invite usage count
     try {
         await databases.updateDocument(
@@ -230,29 +369,11 @@ export async function useInvite(
             INVITES_COLLECTION_ID,
             invite.$id,
             {
-                currentUses: invite.currentUses + 1,
+                currentUses: reservedUseIndex ?? invite.currentUses + 1,
             },
         );
     } catch (error) {
         console.error("Failed to update invite usage count:", error);
-        // Non-fatal - membership was created successfully
-    }
-
-    // Record invite usage
-    try {
-        await databases.createDocument(
-            DATABASE_ID,
-            INVITE_USAGE_COLLECTION_ID,
-            ID.unique(),
-            {
-                inviteCode: code,
-                userId,
-                serverId: invite.serverId,
-                joinedAt: new Date().toISOString(),
-            },
-        );
-    } catch (error) {
-        console.error("Failed to record invite usage:", error);
         // Non-fatal - membership was created successfully
     }
 
@@ -355,7 +476,7 @@ export async function getServerPreview(serverId: string): Promise<{
             SERVERS_COLLECTION_ID,
             serverId,
         );
-        
+
         // Get actual member count from memberships (single source of truth)
         const { getActualMemberCount } = await import("./membership-count");
         const actualCount = await getActualMemberCount(databases, serverId);
