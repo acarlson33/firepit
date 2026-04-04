@@ -365,14 +365,13 @@ export function useDirectMessages({
                 }
 
                 untrack = trackSubscription(messageChannelKey);
-            } catch {
-                untrack?.();
-                await closeSubscriptionSafely(subscription);
-            } finally {
                 cleanupFn = () => {
                     untrack?.();
                     void closeSubscriptionSafely(subscription);
                 };
+            } catch {
+                untrack?.();
+                await closeSubscriptionSafely(subscription);
             }
         })();
 
@@ -725,6 +724,7 @@ export function useDirectMessages({
                             typing.channelId !==
                             currentConversationIdRef.current
                         ) {
+                            // Shared typing subscription receives all DM typing events; guard against stale conversation switches.
                             return;
                         }
 
@@ -762,14 +762,13 @@ export function useDirectMessages({
                 }
 
                 untrack = trackSubscription(typingChannelKey);
-            } catch {
-                untrack?.();
-                await closeSubscriptionSafely(subscription);
-            } finally {
                 cleanupFn = () => {
                     untrack?.();
                     void closeSubscriptionSafely(subscription);
                 };
+            } catch {
+                untrack?.();
+                await closeSubscriptionSafely(subscription);
             }
         })();
 

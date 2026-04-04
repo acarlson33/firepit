@@ -26,8 +26,8 @@ vi.mock("appwrite", () => ({
         isNull: (field: string) => `isNull(${field})`,
         isNotNull: (field: string) => `isNotNull(${field})`,
         search: (field: string, value: string) => `search(${field},${value})`,
-        contains: (field: string, value: string) =>
-            `contains(${field},${value})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
     },
     Permission: {
         read: (role: string) => `read(${role})`,
@@ -121,8 +121,8 @@ vi.mock("node-appwrite", () => ({
         isNull: (field: string) => `isNull(${field})`,
         isNotNull: (field: string) => `isNotNull(${field})`,
         search: (field: string, value: string) => `search(${field},${value})`,
-        contains: (field: string, value: string) =>
-            `contains(${field},${value})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
         greaterThanEqual: (field: string, value: string) =>
             `greaterThanEqual(${field},${value})`,
     },

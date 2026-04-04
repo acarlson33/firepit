@@ -137,12 +137,6 @@ export function useCustomEmojis() {
 
                     untrack = trackSubscription(channelKey);
 
-                    if (cancelled) {
-                        untrack();
-                        void subscription.close();
-                        return;
-                    }
-
                     unsubscribe = () => {
                         void subscription.close();
                         untrack?.();

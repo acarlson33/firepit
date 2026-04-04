@@ -42,8 +42,12 @@ async function listMessagesNeedingServerId(limit: number) {
                 | Record<string, unknown>[]
                 | undefined) || []
         );
-    } catch {
-        return [];
+    } catch (error) {
+        console.error("Failed to list messages needing serverId", {
+            error,
+            limit,
+        });
+        throw error;
     }
 }
 
@@ -69,8 +73,12 @@ async function buildChannelServerMap(
                 map[String(c.$id)] = String(c.serverId);
             }
         }
-    } catch {
-        // swallow channel lookup errors
+    } catch (error) {
+        console.error("Failed to build channel-to-server map", {
+            channelCount: channelIds.length,
+            error,
+        });
+        throw error;
     }
     return map;
 }
@@ -139,17 +147,43 @@ export async function getFeatureFlagsAction(
     }
 
     const flags = await getAllFeatureFlags();
-    return flags.map((flag) => ({
-        $id: String(flag.$id),
-        key: String(flag.key),
-        enabled: Boolean(flag.enabled),
-        description:
-            typeof flag.description === "string" ? flag.description : undefined,
-        updatedAt:
-            typeof flag.updatedAt === "string" ? flag.updatedAt : undefined,
-        updatedBy:
-            typeof flag.updatedBy === "string" ? flag.updatedBy : undefined,
-    }));
+    const validatedFlags: FeatureFlag[] = [];
+
+    for (const rawFlag of flags) {
+        const flag = rawFlag as Record<string, unknown>;
+        if (
+            typeof flag.$id !== "string" ||
+            typeof flag.key !== "string" ||
+            typeof flag.enabled !== "boolean"
+        ) {
+            console.error("Discarding malformed feature flag row", {
+                row: rawFlag,
+            });
+            continue;
+        }
+
+        const normalizedFlag: FeatureFlag = {
+            $id: flag.$id,
+            key: flag.key,
+            enabled: flag.enabled,
+        };
+
+        if (typeof flag.description === "string") {
+            normalizedFlag.description = flag.description;
+        }
+
+        if (typeof flag.updatedAt === "string") {
+            normalizedFlag.updatedAt = flag.updatedAt;
+        }
+
+        if (typeof flag.updatedBy === "string") {
+            normalizedFlag.updatedBy = flag.updatedBy;
+        }
+
+        validatedFlags.push(normalizedFlag);
+    }
+
+    return validatedFlags;
 }
 
 /**

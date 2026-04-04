@@ -21,7 +21,7 @@ vi.mock("node-appwrite", () => ({
         equal: (field: string, value: unknown) =>
             `equal(${field},${JSON.stringify(value)})`,
         contains: (field: string, value: unknown) =>
-            `contains(${field},${JSON.stringify(value)})`,
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
         greaterThan: (field: string, value: unknown) =>
             `greaterThan(${field},${String(value)})`,
         isNull: (field: string) => `isNull(${field})`,
