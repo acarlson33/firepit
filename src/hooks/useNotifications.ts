@@ -3,8 +3,29 @@
 import { Channel, Query } from "appwrite";
 import { useEffect, useRef, useCallback } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
+
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore close errors when websocket is already unavailable.
+    }
+}
 
 interface NotificationOptions {
     /** Current user's ID */
@@ -240,12 +261,12 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                     return;
                 }
 
                 unsubscribe = () => {
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                 };
                 untrack = trackSubscription(messageChannelKey);
             })
@@ -374,7 +395,7 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                     return;
                 }
 
@@ -382,7 +403,7 @@ export function useNotifications({
 
                 // Store combined cleanup function
                 cleanup = () => {
-                    void subscription.close();
+                    void closeSubscriptionSafely(subscription);
                     trackCleanup?.();
                 };
             })

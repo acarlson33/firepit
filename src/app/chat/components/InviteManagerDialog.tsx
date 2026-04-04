@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
     Copy,
     Trash2,
@@ -17,6 +17,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { logger } from "@/lib/client-logger";
 import { toast } from "sonner";
 import type { ServerInvite } from "@/lib/types";
 
@@ -37,14 +38,7 @@ export function InviteManagerDialog({
     const [loading, setLoading] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
 
-    // Load invites when dialog opens
-    useEffect(() => {
-        if (open) {
-            void loadInvites();
-        }
-    }, [open, serverId]);
-
-    const loadInvites = async () => {
+    const loadInvites = useCallback(async () => {
         setLoading(true);
         try {
             const response = await fetch(`/api/servers/${serverId}/invites`);
@@ -55,7 +49,11 @@ export function InviteManagerDialog({
             const data = await response.json();
             setInvites(data);
         } catch (error) {
-            console.error("Failed to load invites:", error);
+            logger.error(
+                "Failed to load invites",
+                error instanceof Error ? error : String(error),
+                { serverId },
+            );
             toast.error(
                 error instanceof Error
                     ? error.message
@@ -64,7 +62,14 @@ export function InviteManagerDialog({
         } finally {
             setLoading(false);
         }
-    };
+    }, [serverId]);
+
+    // Load invites when dialog opens
+    useEffect(() => {
+        if (open) {
+            void loadInvites();
+        }
+    }, [open, serverId, loadInvites]);
 
     const copyInviteLink = (code: string) => {
         const inviteUrl = `${window.location.origin}/invite/${code}`;
@@ -89,7 +94,11 @@ export function InviteManagerDialog({
             // Reload invites
             await loadInvites();
         } catch (error) {
-            console.error("Failed to delete invite:", error);
+            logger.error(
+                "Failed to delete invite",
+                error instanceof Error ? error : String(error),
+                { serverId, code },
+            );
             toast.error(
                 error instanceof Error
                     ? error.message
@@ -117,7 +126,7 @@ export function InviteManagerDialog({
     };
 
     const formatUses = (invite: ServerInvite) => {
-        if (invite.maxUses === null) {
+        if (invite.maxUses == null) {
             return `${String(invite.currentUses)} uses`;
         }
         return `${String(invite.currentUses)}/${String(invite.maxUses)} uses`;
@@ -131,7 +140,7 @@ export function InviteManagerDialog({
     };
 
     const isMaxedOut = (invite: ServerInvite) => {
-        if (invite.maxUses === null) {
+        if (invite.maxUses == null) {
             return false;
         }
         return invite.currentUses >= invite.maxUses;
@@ -158,7 +167,7 @@ export function InviteManagerDialog({
                             <p className="text-muted-foreground mb-4">
                                 No invites yet
                             </p>
-                            <Button onClick={onCreateInvite}>
+                            <Button type="button" onClick={onCreateInvite}>
                                 <Plus className="h-4 w-4 mr-2" />
                                 Create Invite
                             </Button>
@@ -229,6 +238,7 @@ export function InviteManagerDialog({
                                         {/* Actions */}
                                         <div className="flex items-center gap-2">
                                             <Button
+                                                type="button"
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() =>
@@ -239,6 +249,7 @@ export function InviteManagerDialog({
                                                 <Copy className="h-4 w-4" />
                                             </Button>
                                             <Button
+                                                type="button"
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() =>
@@ -269,7 +280,7 @@ export function InviteManagerDialog({
                             {invites.length} invite
                             {invites.length === 1 ? "" : "s"}
                         </p>
-                        <Button onClick={onCreateInvite}>
+                        <Button type="button" onClick={onCreateInvite}>
                             <Plus className="h-4 w-4 mr-2" />
                             Create Invite
                         </Button>

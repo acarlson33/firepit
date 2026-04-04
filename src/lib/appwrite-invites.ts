@@ -80,7 +80,7 @@ async function generateUniqueCode(): Promise<string> {
             }
         } catch (error) {
             // Continue to next attempt if query fails
-            console.error("Code uniqueness check failed:", error);
+            logger.error("Code uniqueness check failed:", { error });
         }
     }
 
@@ -146,7 +146,7 @@ export async function getInviteByCode(
 
         return result.documents[0] as unknown as ServerInvite;
     } catch (error) {
-        console.error("Failed to get invite by code:", error);
+        logger.error("Failed to get invite by code:", { error });
         return null;
     }
 }
@@ -173,7 +173,7 @@ export async function validateInvite(code: string): Promise<ValidationResult> {
     }
 
     // Check max uses
-    if (invite.maxUses !== null) {
+    if (typeof invite.maxUses === "number" && Number.isFinite(invite.maxUses)) {
         if (invite.currentUses >= invite.maxUses) {
             return {
                 valid: false,
@@ -235,7 +235,7 @@ export async function useInvite(
             };
         }
     } catch (error) {
-        console.error("Failed to check existing membership:", error);
+        logger.error("Failed to check existing membership:", { error });
         return { success: false, error: "Failed to verify membership status" };
     }
 
@@ -263,6 +263,14 @@ export async function useInvite(
                 snapshot.currentUses + 1,
                 highestAttemptedIndex + 1,
             );
+
+            if (nextUseIndex > snapshot.maxUses) {
+                return {
+                    success: false,
+                    error: "Invite has reached maximum uses",
+                };
+            }
+
             const usageDocId = createInviteUsageSlotDocumentId(
                 snapshot.$id,
                 nextUseIndex,
@@ -280,10 +288,9 @@ export async function useInvite(
                 break;
             } catch (error) {
                 if (!isConflictError(error)) {
-                    console.error(
-                        "Failed to reserve invite usage slot:",
+                    logger.error("Failed to reserve invite usage slot:", {
                         error,
-                    );
+                    });
                     return {
                         success: false,
                         error: "Failed to join server",
@@ -350,7 +357,7 @@ export async function useInvite(
             };
         }
 
-        console.error("Failed to create membership:", error);
+        logger.error("Failed to create membership:", { error });
         return { success: false, error: "Failed to join server" };
     }
 
@@ -370,23 +377,33 @@ export async function useInvite(
                 usagePayload,
             );
         } catch (error) {
-            console.error("Failed to record invite usage:", error);
+            logger.error("Failed to record invite usage:", { error });
             // Non-fatal - membership was created successfully
         }
     }
 
     // Increment invite usage count
     try {
+        const latestInvite = await getInviteByCode(code);
+        const latestCurrentUses =
+            typeof latestInvite?.currentUses === "number"
+                ? latestInvite.currentUses
+                : invite.currentUses;
+        const nextCurrentUses = Math.max(
+            latestCurrentUses,
+            reservedUseIndex ?? invite.currentUses + 1,
+        );
+
         await databases.updateDocument(
             DATABASE_ID,
             INVITES_COLLECTION_ID,
             invite.$id,
             {
-                currentUses: reservedUseIndex ?? invite.currentUses + 1,
+                currentUses: nextCurrentUses,
             },
         );
     } catch (error) {
-        console.error("Failed to update invite usage count:", error);
+        logger.error("Failed to update invite usage count:", { error });
         // Non-fatal - membership was created successfully
     }
 
@@ -417,7 +434,7 @@ export async function listServerInvites(
 
         return result.documents as unknown as ServerInvite[];
     } catch (error) {
-        console.error("Failed to list server invites:", error);
+        logger.error("Failed to list server invites:", { error });
         return [];
     }
 }
@@ -439,7 +456,7 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
         );
         return true;
     } catch (error) {
-        console.error("Failed to revoke invite:", error);
+        logger.error("Failed to revoke invite:", { error });
         return false;
     }
 }
@@ -466,7 +483,7 @@ export async function getInviteUsage(code: string): Promise<InviteUsage[]> {
 
         return result.documents as unknown as InviteUsage[];
     } catch (error) {
-        console.error("Failed to get invite usage:", error);
+        logger.error("Failed to get invite usage:", { error });
         return [];
     }
 }
@@ -499,7 +516,7 @@ export async function getServerPreview(serverId: string): Promise<{
             memberCount: actualCount,
         };
     } catch (error) {
-        console.error("Failed to get server preview:", error);
+        logger.error("Failed to get server preview:", { error });
         return null;
     }
 }

@@ -141,12 +141,32 @@ export function useCustomEmojis() {
                         void subscription.close();
                         untrack?.();
                     };
-                } catch {
-                    // Failed to set up realtime; ignore silently
+                } catch (error) {
+                    if (!cancelled) {
+                        logger.error(
+                            "Failed to subscribe to custom emoji realtime updates",
+                            error instanceof Error ? error : String(error),
+                            {
+                                cancelled,
+                                channelKey,
+                                hasUntrack: Boolean(untrack),
+                                step: "realtime.subscribe",
+                            },
+                        );
+                    }
                 }
             })
-            .catch(() => {
-                // Failed to import realtime pool; ignore silently
+            .catch((error) => {
+                if (!cancelled) {
+                    logger.error(
+                        "Failed to import realtime pool for custom emojis",
+                        error instanceof Error ? error : String(error),
+                        {
+                            cancelled,
+                            step: "import_realtime_pool",
+                        },
+                    );
+                }
             });
 
         return () => {

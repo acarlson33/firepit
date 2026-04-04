@@ -31,6 +31,7 @@ import {
     unpinChannelMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { logger } from "@/lib/client-logger";
 import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { useThreadPinState } from "./useThreadPinState";
 
@@ -85,6 +86,7 @@ export function useMessages({
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(
         null,
     );
+    const [realtimeDegraded, setRealtimeDegraded] = useState(false);
     const mentionedNamesRef = useRef<string[]>([]);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -114,11 +116,18 @@ export function useMessages({
         userId: string;
         userName?: string;
         updatedAt: string;
+        channelId: string;
         action: "add" | "remove";
     }>((updates) => {
+        const activeChannelId = currentChannelIdRef.current;
+
         setTypingUsers((prev) => {
             const updated = { ...prev };
             for (const update of updates) {
+                if (!activeChannelId || update.channelId !== activeChannelId) {
+                    continue;
+                }
+
                 if (update.action === "remove") {
                     delete updated[update.userId];
                 } else {
@@ -229,6 +238,7 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        setRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -355,35 +365,74 @@ export function useMessages({
                         applyDelete(base);
                     }
                 }
-                const subscription = await realtime.subscribe(
-                    messageChannel,
-                    (event: RealtimeResponseEvent<Record<string, unknown>>) => {
-                        const base = parseBase(event);
-                        if (!isTopLevelMessage(base)) {
-                            return;
-                        }
-                        if (!includeMessage(base)) {
-                            return;
-                        }
-                        dispatchByEvents(event.events, base);
-                    },
-                    [Query.equal("channelId", channelId)],
-                );
+                try {
+                    const subscription = await realtime.subscribe(
+                        messageChannel,
+                        (
+                            event: RealtimeResponseEvent<
+                                Record<string, unknown>
+                            >,
+                        ) => {
+                            const base = parseBase(event);
+                            if (!isTopLevelMessage(base)) {
+                                return;
+                            }
+                            if (!includeMessage(base)) {
+                                return;
+                            }
+                            dispatchByEvents(event.events, base);
+                        },
+                        [Query.equal("channelId", channelId)],
+                    );
 
+                    if (cancelled) {
+                        await closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
+                    const untrack = trackSubscription(messageChannelKey);
+                    setRealtimeDegraded(false);
+
+                    cleanupFn = () => {
+                        untrack();
+                        void closeSubscriptionSafely(subscription);
+                    };
+                } catch (error) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    setRealtimeDegraded(true);
+                    logger.error(
+                        "Message realtime subscription failed",
+                        error instanceof Error ? error : String(error),
+                        {
+                            collectionId,
+                            databaseId,
+                            messageChannelKey,
+                        },
+                    );
+                    return;
+                }
+            })
+            .catch((error) => {
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
-                const untrack = trackSubscription(messageChannelKey);
-
-                cleanupFn = () => {
-                    untrack();
-                    void closeSubscriptionSafely(subscription);
-                };
-            })
-            .catch(() => {
-                /* failed to set up realtime; ignore silently */
+                setRealtimeDegraded(true);
+                logger.error(
+                    "Failed to initialize message realtime dependencies",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId,
+                        databaseId,
+                        messageChannelKey: Channel.database(databaseId)
+                            .collection(collectionId)
+                            .document()
+                            .toString(),
+                    },
+                );
             });
 
         return () => {
@@ -409,6 +458,7 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        setRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -456,6 +506,7 @@ export function useMessages({
                             userId: typing.userId,
                             userName: typing.userName,
                             updatedAt: typing.updatedAt,
+                            channelId: typing.channelId,
                             action: "remove",
                         });
                     } else if (
@@ -469,30 +520,66 @@ export function useMessages({
                             userId: typing.userId,
                             userName: typing.userName,
                             updatedAt: typing.updatedAt,
+                            channelId: typing.channelId,
                             action: "add",
                         });
                     }
                 }
 
-                const subscription = await realtime.subscribe(
-                    typingChannel,
-                    handleTypingEvent,
-                    [Query.equal("channelId", channelId)],
-                );
+                try {
+                    const subscription = await realtime.subscribe(
+                        typingChannel,
+                        handleTypingEvent,
+                        [Query.equal("channelId", channelId)],
+                    );
 
+                    if (cancelled) {
+                        await closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
+                    const untrack = trackSubscription(typingChannelKey);
+                    setRealtimeDegraded(false);
+                    cleanupFn = () => {
+                        untrack();
+                        void closeSubscriptionSafely(subscription);
+                    };
+                } catch (error) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    setRealtimeDegraded(true);
+                    logger.error(
+                        "Typing realtime subscription failed",
+                        error instanceof Error ? error : String(error),
+                        {
+                            collectionId: typingCollectionId,
+                            databaseId,
+                            messageChannelKey: typingChannelKey,
+                        },
+                    );
+                    return;
+                }
+            })
+            .catch((error) => {
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
-                const untrack = trackSubscription(typingChannelKey);
-                cleanupFn = () => {
-                    untrack();
-                    void closeSubscriptionSafely(subscription);
-                };
-            })
-            .catch(() => {
-                /* failed to set up typing realtime; ignore silently */
+                setRealtimeDegraded(true);
+                logger.error(
+                    "Failed to initialize typing realtime dependencies",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId: typingCollectionId,
+                        databaseId,
+                        messageChannelKey: Channel.database(databaseId)
+                            .collection(typingCollectionId)
+                            .document()
+                            .toString(),
+                    },
+                );
             });
 
         return () => {
@@ -931,6 +1018,7 @@ export function useMessages({
         editingMessageId,
         replyingToMessage,
         typingUsers,
+        realtimeDegraded,
         setTypingUsers,
         listRef,
         loadOlder,

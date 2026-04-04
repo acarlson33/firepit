@@ -6,12 +6,12 @@ import { Settings } from "lucide-react";
 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { FeatureFlag } from "@/lib/types";
 import {
     FEATURE_FLAGS,
     getFeatureFlagDescription,
     type FeatureFlagKey,
-} from "@/lib/feature-flags";
+} from "@/lib/feature-flags-definitions";
+import type { FeatureFlag } from "@/lib/types";
 
 import { getFeatureFlagsAction, updateFeatureFlagAction } from "./actions";
 

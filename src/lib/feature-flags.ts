@@ -1,17 +1,20 @@
 import { ID, Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
+import {
+    FEATURE_FLAGS,
+    getFeatureFlagDescription,
+    type FeatureFlagKey,
+} from "./feature-flags-definitions";
 import { logger } from "./newrelic-utils";
 import { getServerClient } from "./appwrite-server";
 import type { FeatureFlag } from "./types";
 
-// Known feature flag keys
-export const FEATURE_FLAGS = {
-    ALLOW_USER_SERVERS: "allow_user_servers",
-    ENABLE_AUDIT_LOGGING: "enable_audit_logging",
-} as const;
-
-export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
+export {
+    FEATURE_FLAGS,
+    getFeatureFlagDescription,
+} from "./feature-flags-definitions";
+export type { FeatureFlagKey } from "./feature-flags-definitions";
 
 // Default values for feature flags
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
@@ -55,7 +58,9 @@ export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
             return value;
         }
     } catch (error) {
-        console.error(`Failed to get feature flag ${key}:`, error);
+        logger.error(`Failed to get feature flag ${key}:`, {
+            error,
+        });
     }
 
     // Return default value if not found or error
@@ -83,7 +88,9 @@ export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
 
         return response.documents as unknown as FeatureFlag[];
     } catch (error) {
-        console.error("Failed to get all feature flags:", error);
+        logger.error("Failed to get all feature flags:", {
+            error,
+        });
         return [];
     }
 }
@@ -149,27 +156,6 @@ export async function setFeatureFlag(
         });
         return false;
     }
-}
-
-/**
- * Returns a human-readable description for getFeatureFlagDescription keys.
- * Key descriptions:
- * - allow_user_servers: Allow members to create their own servers.
- * - enable_audit_logging: Enable audit logging for moderation actions.
- * Unknown keys return an empty string.
- *
- * @param {FeatureFlagKey} key - Feature key to describe.
- * @returns {string} Human-readable description, or an empty string for unknown keys.
- */
-export function getFeatureFlagDescription(key: FeatureFlagKey): string {
-    const descriptions: Record<FeatureFlagKey, string> = {
-        [FEATURE_FLAGS.ALLOW_USER_SERVERS]:
-            "Allow members to create their own servers",
-        [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
-            "Enable audit logging for moderation actions",
-    };
-
-    return descriptions[key] || "";
 }
 
 /**

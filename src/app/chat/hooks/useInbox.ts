@@ -13,6 +13,7 @@ import {
     type InboxScope,
 } from "@/lib/inbox-client";
 import { logger } from "@/lib/client-logger";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
@@ -173,7 +174,9 @@ export function useInbox(userId: string | null) {
                 }
 
                 try {
-                    await subscription.close();
+                    await withSuppressedRealtimeCloseErrors(async () =>
+                        subscription.close(),
+                    );
                 } catch {
                     // Ignore close errors when websocket is already unavailable.
                 }

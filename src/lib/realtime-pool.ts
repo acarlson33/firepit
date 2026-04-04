@@ -11,6 +11,12 @@ let sharedClient: Client | null = null;
 let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 
+type RealtimeWithDispose = Realtime & {
+    activeSubscriptions?: Map<number, unknown>;
+    closeSocket?: () => Promise<void>;
+    reconnect?: boolean;
+};
+
 /**
  * Get or create shared Appwrite client
  * @returns {Client} The return value.
@@ -75,6 +81,35 @@ export function trackSubscription(channel: string): () => void {
  */
 export function hasActiveSubscriptions(channel: string): boolean {
     return (subscriptionRefs.get(channel) ?? 0) > 0;
+}
+
+/**
+ * Close active realtime websocket resources before resetting singleton state.
+ */
+export async function disposeSharedRealtime(): Promise<void> {
+    if (!sharedRealtime) {
+        subscriptionRefs.clear();
+        return;
+    }
+
+    const realtime = sharedRealtime as RealtimeWithDispose;
+
+    try {
+        if (realtime.activeSubscriptions) {
+            realtime.activeSubscriptions.clear();
+        }
+
+        if (typeof realtime.reconnect === "boolean") {
+            realtime.reconnect = false;
+        }
+
+        if (typeof realtime.closeSocket === "function") {
+            await realtime.closeSocket();
+        }
+    } finally {
+        sharedRealtime = null;
+        subscriptionRefs.clear();
+    }
 }
 
 /**

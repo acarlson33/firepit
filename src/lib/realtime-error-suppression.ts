@@ -2,7 +2,7 @@ let suppressionDepth = 0;
 let originalConsoleError: typeof console.error | null = null;
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
-    const [firstArg, secondArg] = args;
+    const [firstArg] = args;
 
     if (typeof firstArg !== "string") {
         return false;
@@ -12,11 +12,9 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
         return false;
     }
 
-    if (secondArg instanceof Error) {
-        return secondArg.message === "WebSocket error";
-    }
-
-    return secondArg === "WebSocket error";
+    // Appwrite emits WebSocket teardown noise with differing second-arg shapes
+    // across browsers (Error/Event/string). During explicit close, suppress all.
+    return true;
 }
 
 function beginSuppression(): () => void {

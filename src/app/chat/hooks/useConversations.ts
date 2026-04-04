@@ -6,12 +6,33 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
+
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore teardown errors when websocket is already unavailable.
+    }
+}
 
 function getConversationsQueryKey(userId: string | null) {
     return ["conversations", userId] as const;
@@ -130,7 +151,7 @@ export function useConversations(userId: string | null, enabled = true) {
 
             cleanupFn = () => {
                 untrack();
-                void subscription.close();
+                void closeSubscriptionSafely(subscription);
             };
         });
 

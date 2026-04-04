@@ -44,7 +44,7 @@ async function listMessagesNeedingServerId(limit: number) {
                 | undefined) || []
         );
     } catch (error) {
-        console.error("Failed to list messages needing serverId", {
+        logger.error("Failed to list messages needing serverId", {
             error,
             limit,
         });
@@ -75,7 +75,7 @@ async function buildChannelServerMap(
             }
         }
     } catch (error) {
-        console.error("Failed to build channel-to-server map", {
+        logger.error("Failed to build channel-to-server map", {
             channelCount: channelIds.length,
             error,
         });
@@ -162,8 +162,8 @@ export async function getFeatureFlagsAction(
             typeof flag.key !== "string" ||
             typeof flag.enabled !== "boolean"
         ) {
-            console.error("Discarding malformed feature flag row", {
-                row: rawFlag,
+            logger.error("Discarding malformed feature flag row", {
+                rawFlag,
             });
             continue;
         }

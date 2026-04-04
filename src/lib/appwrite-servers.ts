@@ -1,7 +1,6 @@
 import { ID, Query } from "node-appwrite";
 
 import {
-    AppwriteIntegrationError,
     getBrowserDatabases,
     getEnvConfig,
     normalizeError,
@@ -32,6 +31,36 @@ const DEFAULT_SERVER_PAGE_SIZE = 25;
 const DEFAULT_CHANNEL_PAGE_SIZE = 50;
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
+
+async function assertUserServerCreationEnabled(): Promise<void> {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/feature-flags/allow-user-servers", {
+            cache: "no-store",
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const payload = (await response.json()) as { enabled?: boolean };
+        if (payload.enabled === false) {
+            throw normalizeError(
+                new Error(
+                    "Server creation is currently disabled. Contact an administrator.",
+                ),
+            );
+        }
+    } catch (error) {
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw normalizeError(error);
+    }
+}
 
 /**
  * Returns databases.
@@ -138,31 +167,9 @@ export function createServer(
     return withSession(async ({ userId }) => {
         const ownerId = userId;
 
-        // Check feature flag unless bypassed (e.g., for admin creation or tests)
+        // Check feature flag for browser calls unless bypassed.
         if (!options?.bypassFeatureCheck) {
-            try {
-                const { getFeatureFlag, FEATURE_FLAGS } =
-                    await import("./feature-flags");
-                const allowUserServers = await getFeatureFlag(
-                    FEATURE_FLAGS.ALLOW_USER_SERVERS,
-                );
-                if (!allowUserServers) {
-                    throw normalizeError(
-                        new Error(
-                            "Server creation is currently disabled. Contact an administrator.",
-                        ),
-                    );
-                }
-            } catch (error) {
-                // In test environments or when feature flags aren't configured, allow creation
-                // This ensures backward compatibility with existing tests
-                const isConfigError =
-                    error instanceof Error &&
-                    error instanceof AppwriteIntegrationError;
-                if (!isConfigError) {
-                    throw error;
-                }
-            }
+            await assertUserServerCreationEnabled();
         }
 
         try {

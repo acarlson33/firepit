@@ -234,12 +234,10 @@ export function useStatusSubscription(userIds: string[]) {
                     void closeSubscriptionSafely(subscription);
                 };
             } catch (err) {
-                if (process.env.NODE_ENV !== "production") {
-                    logger.error(
-                        "Status subscription failed:",
-                        err instanceof Error ? err : String(err),
-                    );
-                }
+                logger.error(
+                    "Status subscription failed:",
+                    err instanceof Error ? err : String(err),
+                );
             }
         })();
 

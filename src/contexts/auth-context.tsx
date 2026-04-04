@@ -21,13 +21,34 @@ import {
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
 import {
+    disposeSharedRealtime,
     getSharedRealtime,
     resetSharedClient,
-    resetSharedRealtime,
     trackSubscription,
 } from "@/lib/realtime-pool";
+import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
+
+type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
+async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore teardown errors when websocket is already disconnected.
+    }
+}
 
 type UserData = {
     userId: string;
@@ -76,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // or by the calling UI to avoid interfering with auth flows (e.g. the
                 // user trying to navigate from home -> /login). This avoids races
                 // caused by concurrent client-side navigation.
-                resetSharedRealtime();
+                await disposeSharedRealtime();
                 resetSharedClient();
                 setUserData(null);
                 setUserStatusState(null);
@@ -113,8 +134,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const previousUserId = realtimeUserIdRef.current;
 
         if (previousUserId && previousUserId !== currentUserId) {
-            resetSharedRealtime();
-            resetSharedClient();
+            void (async () => {
+                await disposeSharedRealtime();
+                resetSharedClient();
+            })();
         }
 
         realtimeUserIdRef.current = currentUserId;
@@ -272,13 +295,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     if (cancelled) {
                         untrack();
-                        void subscription.close();
+                        void closeSubscriptionSafely(subscription);
                         return;
                     }
 
                     cleanup = () => {
                         untrack();
-                        void subscription.close();
+                        void closeSubscriptionSafely(subscription);
                     };
                 } catch (err) {
                     if (process.env.NODE_ENV !== "production") {
