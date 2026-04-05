@@ -1,9 +1,14 @@
-let suppressionDepth = 0;
-let originalConsoleError: typeof console.error | null = null;
-
 export type RealtimeSubscription = {
     close: () => Promise<void>;
 };
+
+type ScopedConsoleErrorPredicate = (
+    args: unknown[],
+    marker: string,
+) => boolean;
+
+const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+let subscriptionMarkerCounter = 0;
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
@@ -21,37 +26,48 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     return true;
 }
 
-function beginSuppression(): () => void {
+function getSubscriptionMarker(subscription: RealtimeSubscription): string {
+    const existingMarker = subscriptionMarkers.get(subscription);
+    if (existingMarker) {
+        return existingMarker;
+    }
+
+    subscriptionMarkerCounter += 1;
+    const marker = `realtime-close-${subscriptionMarkerCounter}`;
+    subscriptionMarkers.set(subscription, marker);
+    return marker;
+}
+
+async function runWithScopedConsoleErrorSuppressed<T>(
+    operation: () => Promise<T>,
+    marker: string,
+    shouldSuppress: ScopedConsoleErrorPredicate,
+): Promise<T> {
     if (typeof window === "undefined") {
-        return () => {
-            // No-op during server execution.
-        };
+        return operation();
     }
 
-    if (suppressionDepth === 0) {
-        // biome-ignore lint/suspicious/noConsole: Intentional scoped interception of noisy Appwrite websocket close logs.
-        originalConsoleError = console.error;
-        // biome-ignore lint/suspicious/noConsole: Intentional scoped interception of noisy Appwrite websocket close logs.
-        console.error = (...args: unknown[]) => {
-            if (isExpectedAppwriteWebSocketError(args)) {
-                return;
-            }
-
-            originalConsoleError?.(...args);
-        };
-    }
-
-    suppressionDepth += 1;
-
-    return () => {
-        suppressionDepth = Math.max(0, suppressionDepth - 1);
-
-        if (suppressionDepth === 0 && originalConsoleError) {
-            // biome-ignore lint/suspicious/noConsole: Restore original console.error after scoped suppression.
-            console.error = originalConsoleError;
-            originalConsoleError = null;
+    // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
+    const previousConsoleError = console.error;
+    // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
+    console.error = (...args: unknown[]) => {
+        if (shouldSuppress(args, marker)) {
+            return;
         }
+
+        previousConsoleError(...args);
     };
+
+    try {
+        return await operation();
+    } finally {
+        // biome-ignore lint/suspicious/noConsole: Restore console.error immediately after scoped suppression.
+        console.error = previousConsoleError;
+    }
+}
+
+function defaultSuppressionPredicate(args: unknown[]): boolean {
+    return isExpectedAppwriteWebSocketError(args);
 }
 
 /**
@@ -60,14 +76,21 @@ function beginSuppression(): () => void {
  */
 export async function withSuppressedRealtimeCloseErrors<T>(
     operation: () => Promise<T>,
+    options?: {
+        marker?: string;
+        shouldSuppress?: ScopedConsoleErrorPredicate;
+    },
 ): Promise<T> {
-    const restore = beginSuppression();
+    const marker = options?.marker ?? "realtime-close";
+    const shouldSuppress =
+        options?.shouldSuppress ??
+        ((args: unknown[]) => defaultSuppressionPredicate(args));
 
-    try {
-        return await operation();
-    } finally {
-        restore();
-    }
+    return runWithScopedConsoleErrorSuppressed(
+        operation,
+        marker,
+        shouldSuppress,
+    );
 }
 
 /**
@@ -80,10 +103,14 @@ export async function closeSubscriptionSafely(
         return;
     }
 
+    const marker = getSubscriptionMarker(subscription);
+
     try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
+        await withSuppressedRealtimeCloseErrors(async () => subscription.close(), {
+            marker,
+            shouldSuppress: (args: unknown[], activeMarker: string) =>
+                defaultSuppressionPredicate(args) && activeMarker === marker,
+        });
     } catch (_err) {
         // Ignore teardown errors when websocket is already disconnected.
     }

@@ -142,9 +142,11 @@ export function useInbox(userId: string | null) {
     });
 
     useEffect(() => {
-        if (!isEnabled) {
+        if (!isEnabled || !userId) {
             return;
         }
+
+        const activeUserId = userId;
 
         const channels = [
             env.collections.directMessages,
@@ -154,7 +156,7 @@ export function useInbox(userId: string | null) {
         ].map((collectionId) =>
             Channel.database(env.databaseId)
                 .collection(collectionId)
-                .document(),
+                .document(activeUserId),
         );
         const channelKeys = channels.map((channel) => channel.toString());
 
@@ -172,10 +174,19 @@ export function useInbox(userId: string | null) {
             try {
                 const realtime = getSharedRealtime();
                 subscription = await realtime.subscribe(channels, () => {
-                    void queryClient.invalidateQueries({
-                        queryKey: getInboxQueryKey(userId),
-                        refetchType: "active",
-                    });
+                    queryClient
+                        .invalidateQueries({
+                            queryKey: getInboxQueryKey(activeUserId),
+                            refetchType: "active",
+                        })
+                        .catch((error) => {
+                            logger.warn("Failed to refresh inbox query", {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                            });
+                        });
                 });
 
                 if (cancelled) {

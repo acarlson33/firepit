@@ -70,10 +70,40 @@ async function buildChannelServerMap(
         const list =
             (res as unknown as { documents?: unknown[] }).documents || [];
         for (const raw of list) {
-            const c = raw as Record<string, unknown>;
-            if (c.$id && c.serverId) {
-                map[String(c.$id)] = String(c.serverId);
+            if (!raw || typeof raw !== "object") {
+                logger.error("Discarding malformed channel row", {
+                    raw,
+                });
+                continue;
             }
+
+            const c = raw as Record<string, unknown>;
+            const rawChannelId = c.$id;
+            const rawServerId = c.serverId;
+            const validChannelId =
+                typeof rawChannelId === "string" ||
+                typeof rawChannelId === "number";
+            const validServerId =
+                typeof rawServerId === "string" ||
+                typeof rawServerId === "number";
+
+            if (!validChannelId || !validServerId) {
+                logger.error("Discarding malformed channel row", {
+                    raw,
+                });
+                continue;
+            }
+
+            const channelId = String(rawChannelId).trim();
+            const serverId = String(rawServerId).trim();
+            if (!channelId || !serverId) {
+                logger.error("Discarding malformed channel row", {
+                    raw,
+                });
+                continue;
+            }
+
+            map[channelId] = serverId;
         }
     } catch (error) {
         logger.error("Failed to build channel-to-server map", {
@@ -157,6 +187,13 @@ export async function getFeatureFlagsAction(
     const validatedFlags: FeatureFlag[] = [];
 
     for (const rawFlag of flags) {
+        if (!rawFlag || typeof rawFlag !== "object") {
+            logger.error("Discarding malformed feature flag row", {
+                rawFlag,
+            });
+            continue;
+        }
+
         const flag = rawFlag as Record<string, unknown>;
         if (
             typeof flag.$id !== "string" ||

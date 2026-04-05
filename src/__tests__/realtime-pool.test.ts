@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 
 const { mockCloseSocket, mockPublicClose } = vi.hoisted(() => ({
@@ -268,10 +269,7 @@ describe("Realtime Pool", () => {
     describe("sdk compatibility", () => {
         it("should keep appwrite on the expected major for realtime cleanup assumptions", () => {
             const packageJson = JSON.parse(
-                readFileSync(
-                    new URL("../../package.json", import.meta.url),
-                    "utf8",
-                ),
+                readFileSync(join(process.cwd(), "package.json"), "utf8"),
             ) as {
                 dependencies?: Record<string, string>;
             };
