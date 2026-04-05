@@ -177,7 +177,7 @@ export function createServer(
         }
 
         try {
-            const { Permission, Role } = await import("node-appwrite");
+            const { Permission, Role } = await import("appwrite");
             const permissions = [
                 Permission.read(Role.any()),
                 Permission.update(Role.user(ownerId)),

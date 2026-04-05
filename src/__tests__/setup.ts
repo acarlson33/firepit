@@ -113,6 +113,8 @@ vi.mock("node-appwrite", () => ({
         }
     },
     Query: {
+        // node-appwrite query strings include quoted JSON payloads in tests,
+        // so keep JSON.stringify here to mirror server SDK behavior.
         equal: (field: string, value: string | string[]) =>
             `equal(${field},${JSON.stringify(value)})`,
         limit: (n: number) => `limit(${n})`,

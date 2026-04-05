@@ -84,7 +84,7 @@ export async function closeSubscriptionSafely(
         await withSuppressedRealtimeCloseErrors(async () =>
             subscription.close(),
         );
-    } catch {
+    } catch (_err) {
         // Ignore teardown errors when websocket is already disconnected.
     }
 }
