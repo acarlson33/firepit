@@ -3,13 +3,14 @@
  * Shares a single Appwrite Client instance across components
  */
 
-import { Client } from "appwrite";
-import { Realtime } from "appwrite";
+import { Client, Realtime } from "appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
 
 let sharedClient: Client | null = null;
 let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
+let warnedAboutFallbackTeardown = false;
 
 async function callPublicRealtimeTeardown(
     realtime: Realtime,
@@ -22,10 +23,14 @@ async function callPublicRealtimeTeardown(
             continue;
         }
 
-        await (method as (this: Realtime) => Promise<void> | void).call(
-            realtime,
-        );
-        return true;
+        try {
+            await (method as (this: Realtime) => Promise<void> | void).call(
+                realtime,
+            );
+            return true;
+        } catch {
+            // Try the next lifecycle method if this one throws.
+        }
     }
 
     return false;
@@ -35,6 +40,24 @@ async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
     const disposedViaPublicApi = await callPublicRealtimeTeardown(realtime);
     if (disposedViaPublicApi) {
         return;
+    }
+
+    if (!warnedAboutFallbackTeardown) {
+        warnedAboutFallbackTeardown = true;
+        logger.warn(
+            "safeCleanupRealtime fallback path used; realtime public teardown API failed or unavailable",
+            {
+                hasClose:
+                    typeof Reflect.get(realtime as object, "close") ===
+                    "function",
+                hasDisconnect:
+                    typeof Reflect.get(realtime as object, "disconnect") ===
+                    "function",
+                hasDispose:
+                    typeof Reflect.get(realtime as object, "dispose") ===
+                    "function",
+            },
+        );
     }
 
     // Track an upstream request for a stable public teardown API:
@@ -54,7 +77,15 @@ async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
 
     const closeSocket = Reflect.get(realtime as object, "closeSocket");
     if (typeof closeSocket === "function") {
-        await (closeSocket as (this: Realtime) => Promise<void>).call(realtime);
+        const result = (closeSocket as (this: Realtime) => unknown).call(
+            realtime,
+        );
+        if (
+            result &&
+            typeof (result as { then?: unknown }).then === "function"
+        ) {
+            await result;
+        }
     }
 }
 
@@ -140,8 +171,8 @@ export async function disposeSharedRealtime(): Promise<void> {
     } finally {
         if (sharedRealtime === realtime) {
             sharedRealtime = null;
+            subscriptionRefs.clear();
         }
-        subscriptionRefs.clear();
     }
 }
 

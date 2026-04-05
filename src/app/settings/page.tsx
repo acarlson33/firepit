@@ -289,7 +289,6 @@ export default async function SettingsPage() {
                                 </CardHeader>
                                 <CardContent>
                                     <ProfileAppearanceSettings
-                                        accountCreatedAt={user.$createdAt}
                                         avatarFramePreset={
                                             profile.avatarFramePreset
                                         }

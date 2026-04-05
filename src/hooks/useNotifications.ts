@@ -1,7 +1,7 @@
 "use client";
 
 import { Channel, Query } from "appwrite";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
@@ -33,12 +33,35 @@ export function useNotifications({
     conversationId,
 }: NotificationOptions) {
     const notificationPermissionRef = useRef<NotificationPermission>("default");
+    const [isPageVisible, setIsPageVisible] = useState(() => {
+        if (typeof document === "undefined") {
+            return true;
+        }
+
+        return document.visibilityState !== "hidden";
+    });
 
     // Check notification permission on mount
     useEffect(() => {
         if (typeof window !== "undefined" && "Notification" in window) {
             notificationPermissionRef.current = Notification.permission;
         }
+    }, []);
+
+    useEffect(() => {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        const updateVisibility = () => {
+            setIsPageVisible(document.visibilityState !== "hidden");
+        };
+
+        document.addEventListener("visibilitychange", updateVisibility);
+
+        return () => {
+            document.removeEventListener("visibilitychange", updateVisibility);
+        };
     }, []);
 
     // Request notification permission
@@ -122,11 +145,7 @@ export function useNotifications({
 
     // Subscribe to channel messages for notifications
     useEffect(() => {
-        const isPageVisible =
-            typeof document !== "undefined" &&
-            document.visibilityState !== "hidden";
-
-        if (!userId || !channelId || isWindowFocused || isPageVisible) {
+        if (!userId || !channelId || (isWindowFocused && isPageVisible)) {
             return;
         }
 
@@ -280,6 +299,7 @@ export function useNotifications({
     }, [
         userId,
         channelId,
+        isPageVisible,
         isWindowFocused,
         serverId,
         showDesktopNotification,
@@ -288,11 +308,7 @@ export function useNotifications({
 
     // Subscribe to DM messages for notifications
     useEffect(() => {
-        const isPageVisible =
-            typeof document !== "undefined" &&
-            document.visibilityState !== "hidden";
-
-        if (!userId || !conversationId || isWindowFocused || isPageVisible) {
+        if (!userId || !conversationId || (isWindowFocused && isPageVisible)) {
             return;
         }
 
@@ -432,6 +448,7 @@ export function useNotifications({
     }, [
         userId,
         conversationId,
+        isPageVisible,
         isWindowFocused,
         showDesktopNotification,
         playNotificationSound,

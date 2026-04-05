@@ -3,9 +3,18 @@ export type RealtimeSubscription = {
 };
 
 type ScopedConsoleErrorPredicate = (args: unknown[], marker: string) => boolean;
+type ConsoleErrorHandler = typeof console.error;
+type ActiveSuppression = {
+    id: number;
+    marker: string;
+    shouldSuppress: ScopedConsoleErrorPredicate;
+};
 
 const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+const activeSuppressions: ActiveSuppression[] = [];
 let subscriptionMarkerCounter = 0;
+let activeSuppressionCounter = 0;
+let originalConsoleError: ConsoleErrorHandler | null = null;
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
@@ -52,26 +61,58 @@ async function runWithScopedConsoleErrorSuppressed<T>(
         return operation();
     }
 
-    // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
-    const previousConsoleError = console.error;
-    // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
-    console.error = (...args: unknown[]) => {
-        if (shouldSuppress(args, marker)) {
-            return;
-        }
+    if (!originalConsoleError) {
+        // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
+        originalConsoleError = console.error;
+        // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
+        console.error = (...args: unknown[]) => {
+            // Evaluate only the most-recent scoped suppression to avoid
+            // concurrent teardown operations globally suppressing each other's
+            // websocket noise.
+            const suppression = activeSuppressions.at(-1);
+            if (suppression) {
+                if (suppression.shouldSuppress(args, suppression.marker)) {
+                    return;
+                }
+            }
 
-        previousConsoleError(...args);
-    };
+            originalConsoleError?.(...args);
+        };
+    }
+
+    activeSuppressionCounter += 1;
+    const suppressionId = activeSuppressionCounter;
+    activeSuppressions.push({
+        id: suppressionId,
+        marker,
+        shouldSuppress,
+    });
 
     try {
         return await operation();
     } finally {
-        // biome-ignore lint/suspicious/noConsole: Restore console.error immediately after scoped suppression.
-        console.error = previousConsoleError;
+        const suppressionIndex = activeSuppressions.findIndex(
+            (suppression) => suppression.id === suppressionId,
+        );
+        if (suppressionIndex !== -1) {
+            activeSuppressions.splice(suppressionIndex, 1);
+        }
+
+        if (activeSuppressions.length === 0 && originalConsoleError) {
+            // biome-ignore lint/suspicious/noConsole: Restore original console.error when no scoped suppressions remain.
+            console.error = originalConsoleError;
+            originalConsoleError = null;
+        }
     }
 }
 
-function defaultSuppressionPredicate(args: unknown[]): boolean {
+function defaultSuppressionPredicate(
+    args: unknown[],
+    _marker: string,
+): boolean {
+    // Appwrite websocket teardown logs do not embed marker context, so marker
+    // scoping is enforced by the active suppression selection in
+    // runWithScopedConsoleErrorSuppressed.
     return isExpectedAppwriteWebSocketError(args);
 }
 
@@ -88,8 +129,7 @@ export async function withSuppressedRealtimeCloseErrors<T>(
 ): Promise<T> {
     const marker = options?.marker ?? "realtime-close";
     const shouldSuppress =
-        options?.shouldSuppress ??
-        ((args: unknown[]) => defaultSuppressionPredicate(args));
+        options?.shouldSuppress ?? defaultSuppressionPredicate;
 
     return runWithScopedConsoleErrorSuppressed(
         operation,
@@ -115,9 +155,7 @@ export async function closeSubscriptionSafely(
             async () => subscription.close(),
             {
                 marker,
-                shouldSuppress: (args: unknown[], activeMarker: string) =>
-                    defaultSuppressionPredicate(args) &&
-                    activeMarker === marker,
+                shouldSuppress: defaultSuppressionPredicate,
             },
         );
     } catch {

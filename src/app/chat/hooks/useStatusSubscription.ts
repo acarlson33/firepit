@@ -34,8 +34,10 @@ export function useStatusSubscription(userIds: string[]) {
         ).sort((a, b) => a.localeCompare(b));
     }, [userIds]);
 
-    const userIdsKey = stableUserIds.join(",");
-    const trackedUserIds = useMemo(() => new Set(stableUserIds), [userIdsKey]);
+    const trackedUserIds = useMemo(
+        () => new Set(stableUserIds),
+        [stableUserIds],
+    );
 
     // Fetch initial statuses
     const fetchStatuses = useCallback(async () => {
@@ -85,7 +87,7 @@ export function useStatusSubscription(userIds: string[]) {
         } finally {
             setLoading(false);
         }
-    }, [trackedUserIds, userIdsKey]); // Only re-fetch when user IDs change
+    }, [trackedUserIds]); // Only re-fetch when user IDs change
 
     useEffect(() => {
         void fetchStatuses();
@@ -111,11 +113,6 @@ export function useStatusSubscription(userIds: string[]) {
                     .collection(STATUSES_COLLECTION)
                     .document();
                 const channelKey = channel.toString();
-
-                const trackedIds = [...trackedUserIds];
-                if (trackedIds.length === 0) {
-                    return;
-                }
 
                 const handleStatusEvent = (response: {
                     payload?: Record<string, unknown> | null;
@@ -173,7 +170,7 @@ export function useStatusSubscription(userIds: string[]) {
             cancelled = true;
             cleanup?.();
         };
-    }, [trackedUserIds, userIdsKey]); // Re-subscribe when user IDs change
+    }, [trackedUserIds]); // Re-subscribe when user IDs change
 
     return {
         statuses,

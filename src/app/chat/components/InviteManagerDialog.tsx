@@ -67,13 +67,7 @@ export function InviteManagerDialog({
     // Load invites when dialog opens
     useEffect(() => {
         if (open) {
-            loadInvites().catch((error) => {
-                logger.warn("Invite load trigger failed", {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                    serverId,
-                });
-            });
+            void loadInvites();
         }
     }, [open, loadInvites]);
 

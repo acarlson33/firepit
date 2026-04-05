@@ -616,8 +616,7 @@ export default function ChatPage() {
     });
 
     const dmApi = useDirectMessages({
-        conversationId:
-            viewMode === "dms" ? (selectedConversationId ?? null) : null,
+        conversationId: viewMode === "dms" ? selectedConversationId : null,
         userId,
         userName,
     });

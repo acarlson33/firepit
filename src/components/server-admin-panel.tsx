@@ -104,8 +104,8 @@ export function ServerAdminPanel({
         mutedUsers: 0,
     });
     const [loading, setLoading] = useState(false);
-    const [_rolesLoading, setRolesLoading] = useState(false);
-    const [_rolesError, setRolesError] = useState<string | null>(null);
+    const [rolesLoading, setRolesLoading] = useState(false);
+    const [rolesError, setRolesError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [memberFilter, setMemberFilter] = useState<
         "all" | "banned" | "muted"
@@ -556,6 +556,27 @@ export function ServerAdminPanel({
                                     </Badge>
                                 </div>
                             </div>
+
+                            {rolesLoading && (
+                                <div
+                                    className="text-sm text-muted-foreground"
+                                    role="status"
+                                    aria-live="polite"
+                                    aria-busy="true"
+                                >
+                                    Loading roles...
+                                </div>
+                            )}
+
+                            {rolesError && (
+                                <div
+                                    className="text-sm text-destructive"
+                                    role="alert"
+                                    aria-live="assertive"
+                                >
+                                    {rolesError}
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 {loading ? (
