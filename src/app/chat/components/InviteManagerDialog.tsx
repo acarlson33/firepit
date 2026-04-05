@@ -67,14 +67,29 @@ export function InviteManagerDialog({
     // Load invites when dialog opens
     useEffect(() => {
         if (open) {
-            void loadInvites();
+            loadInvites().catch((error) => {
+                logger.warn("Invite load trigger failed", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    serverId,
+                });
+            });
         }
-    }, [open, serverId, loadInvites]);
+    }, [open, loadInvites]);
 
-    const copyInviteLink = (code: string) => {
+    const copyInviteLink = async (code: string) => {
         const inviteUrl = `${window.location.origin}/invite/${code}`;
-        void navigator.clipboard.writeText(inviteUrl);
-        toast.success("Invite link copied to clipboard");
+        try {
+            await navigator.clipboard.writeText(inviteUrl);
+            toast.success("Invite link copied to clipboard");
+        } catch (error) {
+            logger.error(
+                "Failed to copy invite link",
+                error instanceof Error ? error : String(error),
+                { code, serverId },
+            );
+            toast.error("Failed to copy invite link");
+        }
     };
 
     const deleteInvite = async (code: string) => {
@@ -244,6 +259,7 @@ export function InviteManagerDialog({
                                                 onClick={() =>
                                                     copyInviteLink(invite.code)
                                                 }
+                                                aria-label={`Copy invite ${invite.code}`}
                                                 disabled={isInactive(invite)}
                                             >
                                                 <Copy className="h-4 w-4" />
@@ -255,6 +271,7 @@ export function InviteManagerDialog({
                                                 onClick={() =>
                                                     deleteInvite(invite.code)
                                                 }
+                                                aria-label={`Delete invite ${invite.code}`}
                                                 disabled={
                                                     deleting === invite.code
                                                 }

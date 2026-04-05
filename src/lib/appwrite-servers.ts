@@ -1,4 +1,4 @@
-import { ID, Query } from "node-appwrite";
+import { ID, Permission, Query, Role } from "appwrite";
 
 import {
     getBrowserDatabases,
@@ -37,32 +37,24 @@ async function assertUserServerCreationEnabled(): Promise<void> {
         return;
     }
 
+    let response: Response;
+    let payload: { enabled?: unknown };
+
     try {
-        const response = await fetch("/api/feature-flags/allow-user-servers", {
+        response = await fetch("/api/feature-flags/allow-user-servers", {
             cache: "no-store",
         });
-
-        if (!response.ok) {
-            throw normalizeError(
-                new Error(
-                    "Server creation is currently disabled. Contact an administrator.",
-                ),
-            );
-        }
-
-        const payload = (await response.json()) as { enabled?: boolean };
-        if (payload.enabled === false) {
-            throw normalizeError(
-                new Error(
-                    "Server creation is currently disabled. Contact an administrator.",
-                ),
-            );
-        }
+        payload = (await response.json()) as { enabled?: unknown };
     } catch (error) {
-        if (error instanceof Error) {
-            throw error;
-        }
         throw normalizeError(error);
+    }
+
+    if (!response.ok || payload.enabled !== true) {
+        throw normalizeError(
+            new Error(
+                "Server creation is currently disabled. Contact an administrator.",
+            ),
+        );
     }
 }
 
@@ -177,7 +169,6 @@ export function createServer(
         }
 
         try {
-            const { Permission, Role } = await import("appwrite");
             const permissions = [
                 Permission.read(Role.any()),
                 Permission.update(Role.user(ownerId)),
@@ -331,7 +322,6 @@ export async function createChannel(
     name: string,
     _ownerId: string,
 ): Promise<Channel> {
-    const { Permission, Role } = await import("node-appwrite");
     const permissions = [Permission.read(Role.any())];
     const res = await getDatabases().createDocument({
         databaseId: DATABASE_ID,
@@ -434,7 +424,6 @@ export async function joinServer(
     if (!membershipsCollectionId) {
         return null;
     }
-    const { Permission, Role } = await import("node-appwrite");
     const permissions = [
         Permission.read(Role.any()),
         Permission.update(Role.user(userId)),

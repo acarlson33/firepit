@@ -210,7 +210,7 @@ export async function setFeatureFlag(
         logger.error("Failed to update feature flag", {
             key,
             userId,
-            error: error instanceof Error ? error.message : String(error),
+            error,
         });
         return false;
     }
@@ -255,8 +255,7 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
                 logger.error("Failed to initialize feature flag", {
                     key: featureKey,
                     userId,
-                    error:
-                        error instanceof Error ? error.message : String(error),
+                    error,
                 });
             }
         }

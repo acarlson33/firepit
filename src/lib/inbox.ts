@@ -255,7 +255,15 @@ async function countUnreadRepliesByParent(params: {
                     parent.parentMessageId,
                     Math.max(1, result.total || 0),
                 );
-            } catch {
+            } catch (error) {
+                recordMetric("inbox.unread_thread_count_query_fallback", 1);
+                recordEvent("inbox.unread_thread_count_query_failed", {
+                    contextId: parent.contextId,
+                    parentDocumentId: parent.id,
+                    parentMessageId: parent.parentMessageId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
                 // Fallback to cached count if the per-parent query fails.
                 const fallbackCount =
                     typeof parent.threadMessageCount === "number" &&

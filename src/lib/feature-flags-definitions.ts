@@ -8,14 +8,13 @@ export const FEATURE_FLAGS = {
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 
 /**
- * Returns a human-readable description for getFeatureFlagDescription keys.
+ * Returns a human-readable description for known feature flag keys.
  * Key descriptions:
  * - allow_user_servers: Allow members to create their own servers.
  * - enable_audit_logging: Enable audit logging for moderation actions.
- * Unknown keys return an empty string.
  *
  * @param {FeatureFlagKey} key - Feature key to describe.
- * @returns {string} Human-readable description, or an empty string for unknown keys.
+ * @returns {string} Human-readable description for the provided feature key.
  */
 export function getFeatureFlagDescription(key: FeatureFlagKey): string {
     const descriptions: Record<FeatureFlagKey, string> = {
@@ -25,5 +24,5 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
             "Enable audit logging for moderation actions",
     };
 
-    return descriptions[key] || "";
+    return descriptions[key];
 }

@@ -103,7 +103,7 @@ export function useConversations(userId: string | null, enabled = true) {
             .document();
         const conversationChannelKey = conversationChannel.toString();
 
-        void (async () => {
+        (async () => {
             if (cancelled) {
                 return;
             }
@@ -125,10 +125,23 @@ export function useConversations(userId: string | null, enabled = true) {
                             return;
                         }
 
-                        void queryClient.invalidateQueries({
-                            queryKey: getConversationsQueryKey(userId),
-                            refetchType: "active",
-                        });
+                        queryClient
+                            .invalidateQueries({
+                                queryKey: getConversationsQueryKey(userId),
+                                refetchType: "active",
+                            })
+                            .catch((invalidateError) => {
+                                logger.warn(
+                                    "Failed to refresh conversations after realtime event",
+                                    {
+                                        conversationChannelKey,
+                                        error:
+                                            invalidateError instanceof Error
+                                                ? invalidateError.message
+                                                : String(invalidateError),
+                                    },
+                                );
+                            });
                     },
                     [Query.contains("participants", userId)],
                 );
@@ -141,16 +154,20 @@ export function useConversations(userId: string | null, enabled = true) {
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    void closeSubscriptionSafely(subscription);
+                    closeSubscriptionSafely(subscription).catch(() => {
+                        // closeSubscriptionSafely already suppresses expected teardown errors.
+                    });
                 };
-            } catch (error) {
+            } catch (realtimeError) {
                 if (cancelled) {
                     return;
                 }
 
                 logger.error(
                     "Conversation realtime subscription failed",
-                    error instanceof Error ? error : String(error),
+                    realtimeError instanceof Error
+                        ? realtimeError
+                        : String(realtimeError),
                     {
                         collectionId: CONVERSATIONS_COLLECTION,
                         conversationChannelKey,
@@ -158,7 +175,23 @@ export function useConversations(userId: string | null, enabled = true) {
                     },
                 );
             }
-        })();
+        })().catch((subscriptionError) => {
+            if (cancelled) {
+                return;
+            }
+
+            logger.error(
+                "Conversation realtime subscription bootstrap failed",
+                subscriptionError instanceof Error
+                    ? subscriptionError
+                    : String(subscriptionError),
+                {
+                    collectionId: CONVERSATIONS_COLLECTION,
+                    conversationChannelKey,
+                    databaseId: env.databaseId,
+                },
+            );
+        });
 
         return () => {
             cancelled = true;

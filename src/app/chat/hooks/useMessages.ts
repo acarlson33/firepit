@@ -542,7 +542,7 @@ export function useMessages({
                         {
                             collectionId: typingCollectionId,
                             databaseId,
-                            messageChannelKey: typingChannelKey,
+                            typingChannelKey,
                         },
                     );
                     return;
@@ -560,7 +560,7 @@ export function useMessages({
                     {
                         collectionId: typingCollectionId,
                         databaseId,
-                        messageChannelKey: Channel.database(databaseId)
+                        typingChannelKey: Channel.database(databaseId)
                             .collection(typingCollectionId)
                             .document()
                             .toString(),

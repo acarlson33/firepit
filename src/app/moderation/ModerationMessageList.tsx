@@ -124,7 +124,7 @@ export function ModerationMessageList({
         let cleanup: (() => void) | undefined = () => {};
         let cancelled = false;
 
-        void (async () => {
+        (async () => {
             let subscription: { close: () => Promise<void> } | undefined;
             try {
                 subscription = await realtime.subscribe(
@@ -132,7 +132,7 @@ export function ModerationMessageList({
                         .collection(messagesCollectionId)
                         .document(),
                     (response: { events: string[]; payload: unknown }) => {
-                        const event = response.events[0];
+                        const event = response.events.at(0);
                         const payload = response.payload as ModerationMessage;
 
                         if (event?.includes(".update")) {
@@ -161,16 +161,46 @@ export function ModerationMessageList({
                 );
 
                 if (cancelled) {
-                    await subscription.close();
+                    await subscription.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription during cancellation",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
                     return;
                 }
 
                 cleanup = () => {
-                    void subscription?.close();
+                    subscription?.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription during cleanup",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
                 };
             } catch (error) {
                 if (subscription) {
-                    await subscription.close();
+                    await subscription.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription after subscribe error",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
                 }
                 logger.error(
                     "Moderation realtime subscription failed:",
@@ -178,7 +208,12 @@ export function ModerationMessageList({
                 );
                 cleanup = () => {};
             }
-        })();
+        })().catch((setupError) => {
+            logger.error(
+                "Moderation realtime subscription setup failed:",
+                setupError instanceof Error ? setupError : String(setupError),
+            );
+        });
 
         return () => {
             cancelled = true;

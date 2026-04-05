@@ -363,7 +363,12 @@ export async function useInvite(
 
     try {
         await assignDefaultRoleServer(invite.serverId, userId);
-    } catch {
+    } catch (error) {
+        logger.warn("Failed to assign default role after invite join", {
+            serverId: invite.serverId,
+            userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
         // Non-fatal; proceed even if default role assignment fails
     }
 

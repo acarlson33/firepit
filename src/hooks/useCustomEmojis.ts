@@ -111,8 +111,6 @@ export function useCustomEmojis() {
                 ) => {
                     // Refetch emojis when a new emoji file is created in the target bucket.
                     if (
-                        event.events.includes(`buckets.*.files.*.create`) ||
-                        event.events.includes(`buckets.*.files.*.delete`) ||
                         event.events.includes(
                             `buckets.${bucketId}.files.*.create`,
                         ) ||
@@ -215,7 +213,19 @@ export function useCustomEmojis() {
                     );
                 }
 
-                const result = await response.json();
+                const result = (await response.json()) as {
+                    fileId?: unknown;
+                    name?: unknown;
+                    url?: unknown;
+                };
+
+                if (
+                    typeof result.fileId !== "string" ||
+                    typeof result.url !== "string" ||
+                    typeof result.name !== "string"
+                ) {
+                    throw new Error("Invalid upload response");
+                }
 
                 // Replace temporary emoji with real one
                 queryClient.setQueryData<CustomEmoji[]>(

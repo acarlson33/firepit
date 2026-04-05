@@ -21,7 +21,6 @@ import {
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
 import {
-    disposeSharedRealtime,
     getSharedRealtime,
     resetSharedClient,
     trackSubscription,
@@ -75,8 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Continue with the latest reset attempt even if an earlier one failed.
             })
             .then(async () => {
-                await disposeSharedRealtime();
-                resetSharedClient();
+                await resetSharedClient();
             });
 
         const trackedReset = nextReset.finally(() => {

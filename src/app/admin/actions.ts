@@ -23,7 +23,7 @@ export type BackfillResult = {
     updated: number;
     scanned: number;
     hasMore: boolean;
-    remaining: number;
+    skipped: number;
 };
 
 // Smaller helpers to keep complexity below threshold
@@ -89,6 +89,7 @@ async function updateMessageServerIds(
     docs: Record<string, unknown>[],
     channelMap: Record<string, string>,
 ) {
+    const { databases } = getAdminClient();
     let updated = 0;
     for (const d of docs) {
         const channelId = d.channelId as string | undefined;
@@ -100,7 +101,6 @@ async function updateMessageServerIds(
             continue;
         }
         try {
-            const { databases } = getAdminClient();
             await databases.updateDocument(
                 databaseId,
                 messagesCollection,
@@ -136,10 +136,10 @@ export async function backfillServerIds(
     const channelMap = await buildChannelServerMap(channelIds);
     const updated = await updateMessageServerIds(docs, channelMap);
     const hasMore = docs.length === limit;
-    const remaining = Math.max(0, docs.length - updated);
+    const skipped = Math.max(0, docs.length - updated);
     recordMetric("admin.backfill_server_ids.count", updated);
     recordTiming("admin.backfill_server_ids.ms", start, { updated });
-    return { updated, scanned: docs.length, hasMore, remaining };
+    return { updated, scanned: docs.length, hasMore, skipped };
 }
 
 /**

@@ -120,12 +120,19 @@ vi.mock("appwrite", () => {
                         ? rawValue.split(QUERY_VALUE_SEPARATOR).filter(Boolean)
                         : (() => {
                               try {
-                                  const parsed = JSON.parse(rawValue) as
-                                      | string
-                                      | string[];
-                                  return (
-                                      Array.isArray(parsed) ? parsed : [parsed]
-                                  ).map((item) => String(item));
+                                  const parsed = JSON.parse(rawValue);
+                                  if (typeof parsed === "string") {
+                                      return [parsed];
+                                  }
+                                  if (
+                                      Array.isArray(parsed) &&
+                                      parsed.every(
+                                          (item) => typeof item === "string",
+                                      )
+                                  ) {
+                                      return parsed;
+                                  }
+                                  return [rawValue];
                               } catch {
                                   return [rawValue];
                               }

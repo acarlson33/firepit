@@ -143,8 +143,8 @@ export default async function AdminPage(props: {
                 {backfill && (
                     <p className="mt-4 rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
                         Backfill updated {backfill.updated} / scanned{" "}
-                        {backfill.scanned} (remaining this batch{" "}
-                        {backfill.remaining};{" "}
+                        {backfill.scanned} (skipped this batch{" "}
+                        {backfill.skipped};{" "}
                         {backfill.hasMore
                             ? "more batches likely"
                             : "no additional batch detected"}

@@ -182,19 +182,13 @@ export function useStatusSubscription(userIds: string[]) {
                             ? queryError
                             : String(queryError);
 
-                    if (process.env.NODE_ENV !== "production") {
-                        logger.warn(
-                            "Status subscription query failed; retrying without query filter",
-                            {
-                                trackedCount: trackedIds.length,
-                            },
-                        );
-                    }
-
-                    logger.error(
+                    logger.warn(
                         "Status subscription degraded to unfiltered fallback",
-                        fallbackError,
                         {
+                            fallbackError:
+                                fallbackError instanceof Error
+                                    ? fallbackError.message
+                                    : String(fallbackError),
                             trackedCount: trackedIds.length,
                         },
                     );

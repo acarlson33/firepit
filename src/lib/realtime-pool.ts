@@ -11,6 +11,53 @@ let sharedClient: Client | null = null;
 let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 
+async function callPublicRealtimeTeardown(
+    realtime: Realtime,
+): Promise<boolean> {
+    const lifecycleMethods = ["close", "disconnect", "dispose"] as const;
+
+    for (const methodName of lifecycleMethods) {
+        const method = Reflect.get(realtime as object, methodName);
+        if (typeof method !== "function") {
+            continue;
+        }
+
+        await (method as (this: Realtime) => Promise<void> | void).call(
+            realtime,
+        );
+        return true;
+    }
+
+    return false;
+}
+
+async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
+    const disposedViaPublicApi = await callPublicRealtimeTeardown(realtime);
+    if (disposedViaPublicApi) {
+        return;
+    }
+
+    // Track an upstream request for a stable public teardown API:
+    // https://github.com/acarlson33/firepit/issues/175
+    const activeSubscriptions = Reflect.get(
+        realtime as object,
+        "activeSubscriptions",
+    );
+    if (activeSubscriptions instanceof Map) {
+        activeSubscriptions.clear();
+    }
+
+    const reconnect = Reflect.get(realtime as object, "reconnect");
+    if (typeof reconnect === "boolean") {
+        Reflect.set(realtime as object, "reconnect", false);
+    }
+
+    const closeSocket = Reflect.get(realtime as object, "closeSocket");
+    if (typeof closeSocket === "function") {
+        await (closeSocket as (this: Realtime) => Promise<void>).call(realtime);
+    }
+}
+
 /**
  * Get or create shared Appwrite client
  * @returns {Client} The return value.
@@ -86,31 +133,14 @@ export async function disposeSharedRealtime(): Promise<void> {
         return;
     }
 
+    const realtime = sharedRealtime;
+
     try {
-        const activeSubscriptions = Reflect.get(
-            sharedRealtime as object,
-            "activeSubscriptions",
-        );
-        if (activeSubscriptions instanceof Map) {
-            activeSubscriptions.clear();
-        }
-
-        const reconnect = Reflect.get(sharedRealtime as object, "reconnect");
-        if (typeof reconnect === "boolean") {
-            Reflect.set(sharedRealtime as object, "reconnect", false);
-        }
-
-        const closeSocket = Reflect.get(
-            sharedRealtime as object,
-            "closeSocket",
-        );
-        if (typeof closeSocket === "function") {
-            await (closeSocket as (this: Realtime) => Promise<void>).call(
-                sharedRealtime,
-            );
-        }
+        await safeCleanupRealtime(realtime);
     } finally {
-        sharedRealtime = null;
+        if (sharedRealtime === realtime) {
+            sharedRealtime = null;
+        }
         subscriptionRefs.clear();
     }
 }
@@ -119,15 +149,14 @@ export async function disposeSharedRealtime(): Promise<void> {
  * Reset the shared realtime helper and tracked subscription references.
  * Use this on auth/session transitions so a fresh realtime context is created.
  */
-export function resetSharedRealtime(): void {
-    sharedRealtime = null;
-    subscriptionRefs.clear();
+export async function resetSharedRealtime(): Promise<void> {
+    await disposeSharedRealtime();
 }
 
 /**
  * Reset the shared Appwrite client singleton.
  */
-export function resetSharedClient(): void {
+export async function resetSharedClient(): Promise<void> {
+    await disposeSharedRealtime();
     sharedClient = null;
-    resetSharedRealtime();
 }
