@@ -227,17 +227,19 @@ export function useCustomEmojis() {
                     throw new Error("Invalid upload response");
                 }
 
+                const uploadedEmoji: CustomEmoji = {
+                    fileId: result.fileId,
+                    url: result.url,
+                    name: result.name,
+                };
+
                 // Replace temporary emoji with real one
                 queryClient.setQueryData<CustomEmoji[]>(
                     ["customEmojis"],
                     (old = []) => {
                         return old.map((emoji) =>
                             emoji.fileId === tempEmojiId
-                                ? {
-                                      fileId: result.fileId,
-                                      url: result.url,
-                                      name: result.name,
-                                  }
+                                ? uploadedEmoji
                                 : emoji,
                         );
                     },

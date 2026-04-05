@@ -259,7 +259,7 @@ async function countUnreadRepliesByParent(params: {
                 recordMetric("inbox.unread_thread_count_query_fallback", 1);
                 recordEvent("inbox.unread_thread_count_query_failed", {
                     contextId: parent.contextId,
-                    parentDocumentId: parent.id,
+                    parentDocumentId: parent.parentMessageId,
                     parentMessageId: parent.parentMessageId,
                     error:
                         error instanceof Error ? error.message : String(error),
