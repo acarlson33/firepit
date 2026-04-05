@@ -66,7 +66,9 @@ export function useMessages({
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(
         null,
     );
-    const [realtimeDegraded, setRealtimeDegraded] = useState(false);
+    const [messageRealtimeDegraded, setMessageRealtimeDegraded] =
+        useState(false);
+    const [typingRealtimeDegraded, setTypingRealtimeDegraded] = useState(false);
     const mentionedNamesRef = useRef<string[]>([]);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -218,7 +220,7 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        setRealtimeDegraded(false);
+        setMessageRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -267,11 +269,14 @@ export function useMessages({
                             : undefined,
                     } as Message;
                 }
-                function includeMessage(base: { channelId?: string }) {
-                    if (channelId && base.channelId !== channelId) {
+                function includeMessage(
+                    base: { channelId?: string },
+                    activeChannelId: string | null,
+                ) {
+                    if (activeChannelId && base.channelId !== activeChannelId) {
                         return false;
                     }
-                    if (!channelId && base.channelId) {
+                    if (!activeChannelId && base.channelId) {
                         return false;
                     }
                     return true;
@@ -357,7 +362,8 @@ export function useMessages({
                             if (!isTopLevelMessage(base)) {
                                 return;
                             }
-                            if (!includeMessage(base)) {
+                            const activeChannelId = currentChannelIdRef.current;
+                            if (!includeMessage(base, activeChannelId)) {
                                 return;
                             }
                             dispatchByEvents(event.events, base);
@@ -371,7 +377,7 @@ export function useMessages({
                     }
 
                     const untrack = trackSubscription(messageChannelKey);
-                    setRealtimeDegraded(false);
+                    setMessageRealtimeDegraded(false);
 
                     cleanupFn = () => {
                         untrack();
@@ -382,7 +388,7 @@ export function useMessages({
                         return;
                     }
 
-                    setRealtimeDegraded(true);
+                    setMessageRealtimeDegraded(true);
                     logger.error(
                         "Message realtime subscription failed",
                         error instanceof Error ? error : String(error),
@@ -400,7 +406,7 @@ export function useMessages({
                     return;
                 }
 
-                setRealtimeDegraded(true);
+                setMessageRealtimeDegraded(true);
                 logger.error(
                     "Failed to initialize message realtime dependencies",
                     error instanceof Error ? error : String(error),
@@ -438,7 +444,7 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        setRealtimeDegraded(false);
+        setTypingRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -519,7 +525,7 @@ export function useMessages({
                     }
 
                     const untrack = trackSubscription(typingChannelKey);
-                    setRealtimeDegraded(false);
+                    setTypingRealtimeDegraded(false);
                     cleanupFn = () => {
                         untrack();
                         void closeSubscriptionSafely(subscription);
@@ -529,7 +535,7 @@ export function useMessages({
                         return;
                     }
 
-                    setRealtimeDegraded(true);
+                    setTypingRealtimeDegraded(true);
                     logger.error(
                         "Typing realtime subscription failed",
                         error instanceof Error ? error : String(error),
@@ -547,7 +553,7 @@ export function useMessages({
                     return;
                 }
 
-                setRealtimeDegraded(true);
+                setTypingRealtimeDegraded(true);
                 logger.error(
                     "Failed to initialize typing realtime dependencies",
                     error instanceof Error ? error : String(error),
@@ -987,6 +993,8 @@ export function useMessages({
         });
     }, [channelId, isThreadUnread, messages, serverId, threadReadByMessageId]);
 
+    const realtimeDegraded = messageRealtimeDegraded || typingRealtimeDegraded;
+
     return {
         messages,
         surfaceMessages,
@@ -999,6 +1007,8 @@ export function useMessages({
         replyingToMessage,
         typingUsers,
         realtimeDegraded,
+        messageRealtimeDegraded,
+        typingRealtimeDegraded,
         setTypingUsers,
         listRef,
         loadOlder,

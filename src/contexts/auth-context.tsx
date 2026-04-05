@@ -65,6 +65,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
     const lastIdentifiedUserId = useRef<string | null>(null);
     const realtimeUserIdRef = useRef<string | null>(null);
+    const realtimeResetPromiseRef = useRef<Promise<void> | null>(null);
+
+    const queueRealtimeReset = useCallback(() => {
+        const previousReset =
+            realtimeResetPromiseRef.current ?? Promise.resolve();
+        const nextReset = previousReset
+            .catch(() => {
+                // Continue with the latest reset attempt even if an earlier one failed.
+            })
+            .then(async () => {
+                await disposeSharedRealtime();
+                resetSharedClient();
+            });
+
+        const trackedReset = nextReset.finally(() => {
+            if (realtimeResetPromiseRef.current === trackedReset) {
+                realtimeResetPromiseRef.current = null;
+            }
+        });
+
+        realtimeResetPromiseRef.current = trackedReset;
+        return trackedReset;
+    }, []);
+
+    const waitForRealtimeReset = useCallback(async () => {
+        const pendingReset = realtimeResetPromiseRef.current;
+        if (!pendingReset) {
+            return;
+        }
+
+        try {
+            await pendingReset;
+        } catch (error) {
+            logger.error(
+                "Realtime reset failed",
+                error instanceof Error ? error : String(error),
+            );
+        }
+    }, []);
 
     const fetchUserData = useCallback(async () => {
         try {
@@ -77,8 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // or by the calling UI to avoid interfering with auth flows (e.g. the
                 // user trying to navigate from home -> /login). This avoids races
                 // caused by concurrent client-side navigation.
-                await disposeSharedRealtime();
-                resetSharedClient();
+                await queueRealtimeReset();
                 setUserData(null);
                 setUserStatusState(null);
                 setTelemetryEnabled(null);
@@ -102,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [queueRealtimeReset]);
 
     useEffect(() => {
         void fetchUserData();
@@ -114,14 +152,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const previousUserId = realtimeUserIdRef.current;
 
         if (previousUserId && previousUserId !== currentUserId) {
-            void (async () => {
-                await disposeSharedRealtime();
-                resetSharedClient();
-            })();
+            void queueRealtimeReset();
         }
 
         realtimeUserIdRef.current = currentUserId;
-    }, [userData?.userId]);
+    }, [queueRealtimeReset, userData?.userId]);
 
     useEffect(() => {
         if (!userData?.userId) {
@@ -226,6 +261,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         return;
                     }
 
+                    await waitForRealtimeReset();
+                    if (cancelled) {
+                        return;
+                    }
+
                     const realtime = getSharedRealtime();
                     const channel = Channel.database(env.databaseId)
                         .collection(statusesCollection)
@@ -293,7 +333,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             clearTimeout(timeoutId);
             cleanup?.();
         };
-    }, [userData?.userId]);
+    }, [userData?.userId, waitForRealtimeReset]);
 
     const updateUserStatus = useCallback(
         async (

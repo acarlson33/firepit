@@ -30,11 +30,11 @@ vi.mock("appwrite", () => ({
             `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
     },
     Permission: {
-        read: (role: string) => `read(${role})`,
-        write: (role: string) => `write(${role})`,
-        update: (role: string) => `update(${role})`,
-        delete: (role: string) => `delete(${role})`,
-        create: (role: string) => `create(${role})`,
+        read: (role: string) => `read("${role}")`,
+        write: (role: string) => `write("${role}")`,
+        update: (role: string) => `update("${role}")`,
+        delete: (role: string) => `delete("${role}")`,
+        create: (role: string) => `create("${role}")`,
     },
     Role: {
         any: () => "any",
@@ -75,13 +75,13 @@ vi.mock("appwrite", () => ({
     },
     Realtime: vi.fn().mockImplementation(() => ({
         activeSubscriptions: new Map(),
-        closeSocket: vi.fn(async () => {}),
+        closeSocket: vi.fn().mockResolvedValue(undefined),
         reconnect: false,
-        subscribe: vi.fn(async () => ({
-            close: vi.fn(async () => {}),
-        })),
-        close: vi.fn(async () => {}),
-        unsubscribe: vi.fn(async () => {}),
+        subscribe: vi.fn().mockResolvedValue({
+            close: vi.fn().mockResolvedValue(undefined),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        unsubscribe: vi.fn().mockResolvedValue(undefined),
     })),
 }));
 

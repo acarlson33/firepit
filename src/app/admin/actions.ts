@@ -201,19 +201,33 @@ export async function updateFeatureFlagAction(
     key: FeatureFlagKey,
     enabled: boolean,
 ): Promise<{ success: boolean; error?: string }> {
-    const roles = await getUserRoles(userId);
-    if (!roles.isAdmin) {
-        return { success: false, error: "Forbidden" };
+    try {
+        const roles = await getUserRoles(userId);
+        if (!roles.isAdmin) {
+            return { success: false, error: "Forbidden" };
+        }
+
+        const success = await setFeatureFlag(key, enabled, userId);
+
+        if (success) {
+            recordMetric("admin.feature_flag.updated", 1, { key, enabled });
+        }
+
+        return {
+            success,
+            error: success ? undefined : "Failed to update feature flag",
+        };
+    } catch (error) {
+        logger.error("Failed to update feature flag", {
+            enabled,
+            error: error instanceof Error ? error.message : String(error),
+            key,
+            userId,
+        });
+
+        return {
+            success: false,
+            error: "Failed to update feature flag",
+        };
     }
-
-    const success = await setFeatureFlag(key, enabled, userId);
-
-    if (success) {
-        recordMetric("admin.feature_flag.updated", 1, { key, enabled });
-    }
-
-    return {
-        success,
-        error: success ? undefined : "Failed to update feature flag",
-    };
 }

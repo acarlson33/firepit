@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -276,7 +276,7 @@ export function useDirectMessages({
 
     // Real-time subscription
     useEffect(() => {
-        if (!userId || !DIRECT_MESSAGES_COLLECTION) {
+        if (!conversationId || !userId || !DIRECT_MESSAGES_COLLECTION) {
             return;
         }
 
@@ -348,6 +348,7 @@ export function useDirectMessages({
                             );
                         }
                     },
+                    [Query.equal("conversationId", conversationId)],
                 );
 
                 if (cancelled) {
@@ -379,7 +380,7 @@ export function useDirectMessages({
             cancelled = true;
             cleanupFn?.();
         };
-    }, [userId]);
+    }, [conversationId, userId]);
 
     const send = useCallback(
         async (
@@ -677,7 +678,7 @@ export function useDirectMessages({
     }, [conversationId]);
 
     useEffect(() => {
-        if (!userId || !TYPING_COLLECTION_ID) {
+        if (!conversationId || !userId || !TYPING_COLLECTION_ID) {
             return;
         }
 
@@ -756,6 +757,7 @@ export function useDirectMessages({
                             });
                         }
                     },
+                    [Query.equal("channelId", conversationId)],
                 );
 
                 if (cancelled) {
@@ -787,7 +789,7 @@ export function useDirectMessages({
             cancelled = true;
             cleanupFn?.();
         };
-    }, [userId]);
+    }, [conversationId, userId]);
 
     // Cleanup stale typing indicators
     useEffect(() => {

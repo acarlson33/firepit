@@ -213,7 +213,13 @@ describe("Realtime Pool", () => {
         });
 
         it("should safely no-op when realtime was never created", async () => {
-            await disposeSharedRealtime();
+            vi.resetModules();
+            mockCloseSocket.mockClear();
+
+            const module = await import("@/lib/realtime-pool");
+            const freshDisposeSharedRealtime = module.disposeSharedRealtime;
+
+            await freshDisposeSharedRealtime();
 
             expect(mockCloseSocket).not.toHaveBeenCalled();
         });
