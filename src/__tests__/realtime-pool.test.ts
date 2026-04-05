@@ -8,8 +8,8 @@ const testDir = dirname(testFilePath);
 const packageJsonPath = join(testDir, "..", "..", "package.json");
 
 const { mockCloseSocket, mockPublicClose } = vi.hoisted(() => ({
-    mockCloseSocket: vi.fn(async () => {}),
-    mockPublicClose: vi.fn(async () => {}),
+    mockCloseSocket: vi.fn().mockResolvedValue(undefined),
+    mockPublicClose: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock Appwrite Client
@@ -272,6 +272,9 @@ describe("Realtime Pool", () => {
     });
 
     describe("sdk compatibility", () => {
+        // realtime-pool teardown still relies on SDK-specific internals
+        // (reflection and fallback cleanup assumptions). Guarding major 24.x
+        // prevents silent breakage from upstream major changes.
         it("should keep appwrite on the expected major for realtime cleanup assumptions", () => {
             const packageJson = JSON.parse(
                 readFileSync(packageJsonPath, "utf8"),

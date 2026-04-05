@@ -75,7 +75,13 @@ export function useDirectMessages({
     const userProfileCache = useRef<
         Record<
             string,
-            { displayName?: string; avatarUrl?: string; pronouns?: string }
+            {
+                displayName?: string;
+                avatarUrl?: string;
+                avatarFramePreset?: string;
+                avatarFrameUrl?: string;
+                pronouns?: string;
+            }
         >
     >({});
 
@@ -440,6 +446,8 @@ export function useDirectMessages({
                             userProfileCache.current[userId] = {
                                 displayName: profile.displayName,
                                 avatarUrl: profile.avatarUrl,
+                                avatarFramePreset: profile.avatarFramePreset,
+                                avatarFrameUrl: profile.avatarFrameUrl,
                                 pronouns: profile.pronouns,
                             };
                         } else if (process.env.NODE_ENV === "development") {
@@ -465,6 +473,8 @@ export function useDirectMessages({
                     ...message,
                     senderDisplayName: profile?.displayName,
                     senderAvatarUrl: profile?.avatarUrl,
+                    senderAvatarFramePreset: profile?.avatarFramePreset,
+                    senderAvatarFrameUrl: profile?.avatarFrameUrl,
                     senderPronouns: profile?.pronouns,
                     // Parse reactions if present, otherwise use empty array
                     reactions: message.reactions

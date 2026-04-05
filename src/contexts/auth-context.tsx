@@ -265,9 +265,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     }
 
                     const realtime = getSharedRealtime();
+                    const activeUserId = realtimeUserIdRef.current;
+                    if (!activeUserId) {
+                        return;
+                    }
+
                     const channel = Channel.database(env.databaseId)
                         .collection(statusesCollection)
-                        .document();
+                        .document(activeUserId);
                     const channelKey = channel.toString();
 
                     const subscription = await realtime.subscribe(

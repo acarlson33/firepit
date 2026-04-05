@@ -522,7 +522,7 @@ export function ServerAdminPanel({
                                     onChange={(e) =>
                                         setSearchQuery(e.target.value)
                                     }
-                                    className="flex-1 min-w-[200px]"
+                                    className="flex-1 min-w-50"
                                 />
                                 <div className="flex items-center gap-2">
                                     <Select

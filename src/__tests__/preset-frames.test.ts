@@ -4,6 +4,8 @@ import {
     getDefaultPresetFrames,
     getSeasonalPresetFrames,
     getPresetFrameById,
+    getPresetFrameImageUrl,
+    getPresetFrameStorageFileId,
     isValidPresetFrameId,
     getSeasonalFramesForUser,
     isUserEligibleForFrame,
@@ -46,6 +48,32 @@ describe("preset-frames", () => {
         it("returns undefined when not found", () => {
             const frame = getPresetFrameById("nonexistent-frame");
             expect(frame).toBeUndefined();
+        });
+
+        it("returns static image URL for winter 2025", () => {
+            const imageUrl = getPresetFrameImageUrl("seasonal-winter-2025");
+            expect(imageUrl).toContain("storage/buckets/");
+            expect(imageUrl).toContain("/files/seasonal-winter-2025/view");
+        });
+
+        it("returns no storage file id for winter 2025", () => {
+            const storageFileId = getPresetFrameStorageFileId(
+                "seasonal-winter-2025",
+            );
+            expect(storageFileId).toBe("seasonal-winter-2025");
+        });
+
+        it("returns static image URL for winter 2026", () => {
+            const imageUrl = getPresetFrameImageUrl("seasonal-winter-2026");
+            expect(imageUrl).toContain("storage/buckets/");
+            expect(imageUrl).toContain("/files/seasonal-winter-2026/view");
+        });
+
+        it("returns no storage file id for winter 2026", () => {
+            const storageFileId = getPresetFrameStorageFileId(
+                "seasonal-winter-2026",
+            );
+            expect(storageFileId).toBe("seasonal-winter-2026");
         });
     });
 

@@ -11,29 +11,130 @@ let sharedClient: Client | null = null;
 let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 let warnedAboutFallbackTeardown = false;
+let inFlightDispose: Promise<void> | null = null;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as { then?: unknown }).then === "function"
+    );
+}
+
+async function callLifecycleMethodIfPresent(
+    target: object,
+    methodName: string,
+): Promise<boolean> {
+    const method = Reflect.get(target, methodName);
+    if (typeof method !== "function") {
+        return false;
+    }
+
+    const result = (method as (...args: unknown[]) => unknown).call(target);
+    if (isPromiseLike(result)) {
+        await result;
+    }
+
+    return true;
+}
+
+function collectSubscriptionLikeValues(candidate: unknown): unknown[] {
+    if (!candidate) {
+        return [];
+    }
+
+    if (candidate instanceof Map) {
+        return Array.from(candidate.values());
+    }
+
+    if (candidate instanceof Set) {
+        return Array.from(candidate.values());
+    }
+
+    if (Array.isArray(candidate)) {
+        return candidate;
+    }
+
+    if (typeof candidate === "object") {
+        return Object.values(candidate as Record<string, unknown>);
+    }
+
+    return [];
+}
 
 async function callPublicRealtimeTeardown(
     realtime: Realtime,
 ): Promise<boolean> {
     const lifecycleMethods = ["close", "disconnect", "dispose"] as const;
+    let didTeardown = false;
 
     for (const methodName of lifecycleMethods) {
-        const method = Reflect.get(realtime as object, methodName);
-        if (typeof method !== "function") {
-            continue;
-        }
-
         try {
-            await (method as (this: Realtime) => Promise<void> | void).call(
-                realtime,
+            const called = await callLifecycleMethodIfPresent(
+                realtime as object,
+                methodName,
             );
-            return true;
+            if (called) {
+                didTeardown = true;
+                break;
+            }
         } catch {
             // Try the next lifecycle method if this one throws.
         }
     }
 
-    return false;
+    if (didTeardown) {
+        return true;
+    }
+
+    const subscriptionContainers = [
+        Reflect.get(realtime as object, "subscriptions"),
+        Reflect.get(realtime as object, "activeSubscriptions"),
+    ];
+
+    for (const container of subscriptionContainers) {
+        const maybeSubscriptions = collectSubscriptionLikeValues(container);
+        for (const maybeSubscription of maybeSubscriptions) {
+            if (!maybeSubscription || typeof maybeSubscription !== "object") {
+                continue;
+            }
+
+            try {
+                const didClose =
+                    (await callLifecycleMethodIfPresent(
+                        maybeSubscription,
+                        "close",
+                    )) ||
+                    (await callLifecycleMethodIfPresent(
+                        maybeSubscription,
+                        "unsubscribe",
+                    ));
+
+                if (didClose) {
+                    didTeardown = true;
+                }
+            } catch {
+                // Continue trying additional subscription-like values.
+            }
+        }
+    }
+
+    const internalClient = Reflect.get(realtime as object, "client");
+    if (internalClient && typeof internalClient === "object") {
+        try {
+            const closedClient = await callLifecycleMethodIfPresent(
+                internalClient,
+                "close",
+            );
+            if (closedClient) {
+                didTeardown = true;
+            }
+        } catch {
+            // Let the caller continue to fallback internals.
+        }
+    }
+
+    return didTeardown;
 }
 
 async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
@@ -159,19 +260,36 @@ export function hasActiveSubscriptions(channel: string): boolean {
  * Close active realtime websocket resources before resetting singleton state.
  */
 export async function disposeSharedRealtime(): Promise<void> {
-    if (!sharedRealtime) {
-        subscriptionRefs.clear();
+    if (inFlightDispose) {
+        await inFlightDispose;
         return;
     }
 
-    const realtime = sharedRealtime;
+    const disposePromise = (async () => {
+        if (!sharedRealtime) {
+            subscriptionRefs.clear();
+            return;
+        }
+
+        const realtime = sharedRealtime;
+
+        try {
+            await safeCleanupRealtime(realtime);
+        } finally {
+            if (sharedRealtime === realtime) {
+                sharedRealtime = null;
+                subscriptionRefs.clear();
+            }
+        }
+    })();
+
+    inFlightDispose = disposePromise;
 
     try {
-        await safeCleanupRealtime(realtime);
+        await disposePromise;
     } finally {
-        if (sharedRealtime === realtime) {
-            sharedRealtime = null;
-            subscriptionRefs.clear();
+        if (inFlightDispose === disposePromise) {
+            inFlightDispose = null;
         }
     }
 }

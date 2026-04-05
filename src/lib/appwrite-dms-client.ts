@@ -124,6 +124,8 @@ async function fetchUserProfilesBatchAPI(
             profileMap.set(userId, {
                 displayName: profile.displayName,
                 avatarUrl: profile.avatarUrl,
+                avatarFramePreset: profile.avatarFramePreset,
+                avatarFrameUrl: profile.avatarFrameUrl,
                 status: profile.status,
             });
         });
@@ -239,6 +241,8 @@ export async function listConversations(
                 userId: id,
                 displayName: profile?.displayName,
                 avatarUrl: profile?.avatarUrl,
+                avatarFramePreset: profile?.avatarFramePreset,
+                avatarFrameUrl: profile?.avatarFrameUrl,
                 status: profile?.status?.status,
             };
         });
@@ -273,6 +277,8 @@ export async function listConversations(
                           userId: otherUserProfile.userId,
                           displayName: otherUserProfile.displayName,
                           avatarUrl: otherUserProfile.avatarUrl,
+                          avatarFramePreset: otherUserProfile.avatarFramePreset,
+                          avatarFrameUrl: otherUserProfile.avatarFrameUrl,
                           status: otherUserProfile.status,
                       }
                     : base.otherUser,
@@ -369,6 +375,8 @@ async function fetchUserProfilesBatch(
                 profileMap.set(result.value.userId, {
                     displayName: result.value.profile.displayName,
                     avatarUrl: result.value.profile.avatarUrl,
+                    avatarFramePreset: result.value.profile.avatarFramePreset,
+                    avatarFrameUrl: result.value.profile.avatarFrameUrl,
                     status: result.value.profile.status,
                 });
             }
@@ -460,6 +468,8 @@ export async function listDirectMessages(
             ...msg,
             senderDisplayName: profile?.displayName,
             senderAvatarUrl: profile?.avatarUrl,
+            senderAvatarFramePreset: profile?.avatarFramePreset,
+            senderAvatarFrameUrl: profile?.avatarFrameUrl,
             // Parse reactions if they're a JSON string
             reactions: parseReactions(msg.reactions),
         };

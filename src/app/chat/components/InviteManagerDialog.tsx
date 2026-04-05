@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
     Copy,
     Trash2,
@@ -37,18 +37,34 @@ export function InviteManagerDialog({
     const [invites, setInvites] = useState<ServerInvite[]>([]);
     const [loading, setLoading] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
+    const loadInvitesAbortRef = useRef<AbortController | null>(null);
 
     const loadInvites = useCallback(async () => {
+        loadInvitesAbortRef.current?.abort();
+        const controller = new AbortController();
+        loadInvitesAbortRef.current = controller;
+
         setLoading(true);
         try {
-            const response = await fetch(`/api/servers/${serverId}/invites`);
+            const response = await fetch(`/api/servers/${serverId}/invites`, {
+                signal: controller.signal,
+            });
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || "Failed to load invites");
             }
             const data = await response.json();
+
+            if (controller.signal.aborted) {
+                return;
+            }
+
             setInvites(data);
         } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+                return;
+            }
+
             logger.error(
                 "Failed to load invites",
                 error instanceof Error ? error : String(error),
@@ -60,15 +76,29 @@ export function InviteManagerDialog({
                     : "Failed to load invites",
             );
         } finally {
-            setLoading(false);
+            if (loadInvitesAbortRef.current === controller) {
+                loadInvitesAbortRef.current = null;
+                setLoading(false);
+            }
         }
     }, [serverId]);
+
+    useEffect(() => {
+        return () => {
+            loadInvitesAbortRef.current?.abort();
+            loadInvitesAbortRef.current = null;
+        };
+    }, []);
 
     // Load invites when dialog opens
     useEffect(() => {
         if (open) {
             void loadInvites();
         }
+
+        return () => {
+            loadInvitesAbortRef.current?.abort();
+        };
     }, [open, loadInvites]);
 
     const copyInviteLink = async (code: string) => {

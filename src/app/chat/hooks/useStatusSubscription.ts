@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
@@ -42,6 +42,7 @@ export function useStatusSubscription(userIds: string[]) {
     // Fetch initial statuses
     const fetchStatuses = useCallback(async () => {
         if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
+            setStatuses(new Map());
             setLoading(false);
             return;
         }
@@ -96,6 +97,8 @@ export function useStatusSubscription(userIds: string[]) {
     // Real-time subscription to status updates
     useEffect(() => {
         if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
+            setStatuses(new Map());
+            setLoading(false);
             return;
         }
 
@@ -143,10 +146,12 @@ export function useStatusSubscription(userIds: string[]) {
                 };
 
                 // Query-filtered status subscriptions can trigger reconnect churn in
-                // some Appwrite environments; keep a single unfiltered channel and
-                // scope updates client-side by tracked user IDs.
+                // Use a filtered subscription to avoid receiving unrelated status events.
+                const trackedIds = [...trackedUserIds];
                 const subscription: RealtimeSubscription =
-                    await realtime.subscribe(channel, handleStatusEvent);
+                    await realtime.subscribe(channel, handleStatusEvent, [
+                        Query.equal("userId", trackedIds),
+                    ]);
 
                 if (cancelled) {
                     await closeSubscriptionSafely(subscription);

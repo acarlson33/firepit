@@ -66,14 +66,11 @@ async function runWithScopedConsoleErrorSuppressed<T>(
         originalConsoleError = console.error;
         // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
         console.error = (...args: unknown[]) => {
-            // Evaluate only the most-recent scoped suppression to avoid
-            // concurrent teardown operations globally suppressing each other's
-            // websocket noise.
-            const suppression = activeSuppressions.at(-1);
-            if (suppression) {
-                if (suppression.shouldSuppress(args, suppression.marker)) {
-                    return;
-                }
+            const shouldSuppressError = activeSuppressions.some((suppression) =>
+                suppression.shouldSuppress(args, suppression.marker),
+            );
+            if (shouldSuppressError) {
+                return;
             }
 
             originalConsoleError?.(...args);

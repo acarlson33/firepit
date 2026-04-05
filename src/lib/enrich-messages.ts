@@ -8,6 +8,8 @@ type BatchProfileData = {
     pronouns?: string;
     avatarFileId?: string;
     avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
 };
 
 type BatchProfileLookup = {
@@ -55,6 +57,8 @@ async function fetchProfilesBatch(
                     displayName?: string;
                     pronouns?: string;
                     avatarUrl?: string;
+                    avatarFramePreset?: string;
+                    avatarFrameUrl?: string;
                 }
             >;
             visibleUserIds?: string[];
@@ -66,6 +70,8 @@ async function fetchProfilesBatch(
                 displayName: profile.displayName,
                 pronouns: profile.pronouns,
                 avatarUrl: profile.avatarUrl,
+                avatarFramePreset: profile.avatarFramePreset,
+                avatarFrameUrl: profile.avatarFrameUrl,
             });
         }
 
@@ -137,6 +143,14 @@ export async function enrichMessagesWithProfiles(
 
             if (profile?.avatarUrl !== undefined) {
                 enriched.avatarUrl = profile.avatarUrl;
+            }
+
+            if (profile?.avatarFramePreset !== undefined) {
+                enriched.avatarFramePreset = profile.avatarFramePreset;
+            }
+
+            if (profile?.avatarFrameUrl !== undefined) {
+                enriched.avatarFrameUrl = profile.avatarFrameUrl;
             }
 
             // Add reply context if this message is a reply
@@ -220,6 +234,14 @@ export async function enrichMessageWithProfile(
 
         if (lookup.profile.avatarUrl !== undefined) {
             enriched.avatarUrl = lookup.profile.avatarUrl;
+        }
+
+        if (lookup.profile.avatarFramePreset !== undefined) {
+            enriched.avatarFramePreset = lookup.profile.avatarFramePreset;
+        }
+
+        if (lookup.profile.avatarFrameUrl !== undefined) {
+            enriched.avatarFrameUrl = lookup.profile.avatarFrameUrl;
         }
 
         return enriched;
