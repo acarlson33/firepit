@@ -4,6 +4,8 @@
 import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 
+// TODO: Align node-appwrite to ^24.x once available so SDK majors match appwrite.
+
 /**
  * Get server-side Appwrite client with API key authentication.
  * This function should ONLY be called from server-side code (server components, API routes, server actions).

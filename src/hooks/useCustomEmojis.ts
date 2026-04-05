@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Channel, type RealtimeResponseEvent } from "appwrite";
 import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import type { CustomEmoji } from "@/lib/types";
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
@@ -131,15 +132,15 @@ export function useCustomEmojis() {
                         handleStorageEvent,
                     );
                     if (cancelled) {
-                        void subscription.close();
+                        await closeSubscriptionSafely(subscription);
                         return;
                     }
 
                     untrack = trackSubscription(channelKey);
 
                     unsubscribe = () => {
-                        void subscription.close();
                         untrack?.();
+                        void closeSubscriptionSafely(subscription);
                     };
                 } catch (error) {
                     if (!cancelled) {
@@ -149,7 +150,6 @@ export function useCustomEmojis() {
                             {
                                 cancelled,
                                 channelKey,
-                                hasUntrack: Boolean(untrack),
                                 step: "realtime.subscribe",
                             },
                         );

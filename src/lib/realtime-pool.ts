@@ -11,12 +11,6 @@ let sharedClient: Client | null = null;
 let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 
-type RealtimeWithDispose = Realtime & {
-    activeSubscriptions?: Map<number, unknown>;
-    closeSocket?: () => Promise<void>;
-    reconnect?: boolean;
-};
-
 /**
  * Get or create shared Appwrite client
  * @returns {Client} The return value.
@@ -92,19 +86,28 @@ export async function disposeSharedRealtime(): Promise<void> {
         return;
     }
 
-    const realtime = sharedRealtime as RealtimeWithDispose;
-
     try {
-        if (realtime.activeSubscriptions) {
-            realtime.activeSubscriptions.clear();
+        const activeSubscriptions = Reflect.get(
+            sharedRealtime as object,
+            "activeSubscriptions",
+        );
+        if (activeSubscriptions instanceof Map) {
+            activeSubscriptions.clear();
         }
 
-        if (typeof realtime.reconnect === "boolean") {
-            realtime.reconnect = false;
+        const reconnect = Reflect.get(sharedRealtime as object, "reconnect");
+        if (typeof reconnect === "boolean") {
+            Reflect.set(sharedRealtime as object, "reconnect", false);
         }
 
-        if (typeof realtime.closeSocket === "function") {
-            await realtime.closeSocket();
+        const closeSocket = Reflect.get(
+            sharedRealtime as object,
+            "closeSocket",
+        );
+        if (typeof closeSocket === "function") {
+            await (closeSocket as (this: Realtime) => Promise<void>).call(
+                sharedRealtime,
+            );
         }
     } finally {
         sharedRealtime = null;

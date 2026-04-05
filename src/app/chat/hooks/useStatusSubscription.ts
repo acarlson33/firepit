@@ -4,7 +4,7 @@ import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus, type StatusLike } from "@/lib/status-normalization";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
@@ -42,22 +42,6 @@ function isUnsupportedQueryRealtimeError(error: unknown): boolean {
     }
 
     return false;
-}
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore teardown errors when websocket is already disconnected.
-    }
 }
 
 /**
@@ -170,12 +154,10 @@ export function useStatusSubscription(userIds: string[]) {
                             });
                         }
                     } catch (err) {
-                        if (process.env.NODE_ENV !== "production") {
-                            logger.error(
-                                "Status subscription handler failed:",
-                                err instanceof Error ? err : String(err),
-                            );
-                        }
+                        logger.error(
+                            "Status subscription handler failed:",
+                            err instanceof Error ? err : String(err),
+                        );
                     }
                 };
 

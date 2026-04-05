@@ -74,6 +74,9 @@ vi.mock("appwrite", () => ({
         }),
     },
     Realtime: vi.fn().mockImplementation(() => ({
+        activeSubscriptions: new Map(),
+        closeSocket: vi.fn(async () => {}),
+        reconnect: false,
         subscribe: vi.fn(async () => ({
             close: vi.fn(async () => {}),
         })),

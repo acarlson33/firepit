@@ -26,29 +26,9 @@ import {
     resetSharedClient,
     trackSubscription,
 } from "@/lib/realtime-pool";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
-
-type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore teardown errors when websocket is already disconnected.
-    }
-}
 
 type UserData = {
     userId: string;
@@ -278,14 +258,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                     setUserStatusState(normalized);
                                 }
                             } catch (err) {
-                                if (process.env.NODE_ENV !== "production") {
-                                    logger.error(
-                                        "Status subscription handler failed:",
-                                        err instanceof Error
-                                            ? err
-                                            : String(err),
-                                    );
-                                }
+                                logger.error(
+                                    "Status subscription handler failed:",
+                                    err instanceof Error ? err : String(err),
+                                );
                             }
                         },
                         [Query.equal("userId", activeUserId)],
@@ -304,12 +280,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         void closeSubscriptionSafely(subscription);
                     };
                 } catch (err) {
-                    if (process.env.NODE_ENV !== "production") {
-                        logger.error(
-                            "Status subscription failed:",
-                            err instanceof Error ? err : String(err),
-                        );
-                    }
+                    logger.error(
+                        "Status subscription failed:",
+                        err instanceof Error ? err : String(err),
+                    );
                 }
             })();
         }, 5000); // Defer for 5 seconds to prioritize initial page load

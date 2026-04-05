@@ -1,4 +1,5 @@
-import { ID, Query } from "node-appwrite";
+import { createHash } from "node:crypto";
+import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
 import {
@@ -9,6 +10,8 @@ import {
 import { logger } from "./newrelic-utils";
 import { getServerClient } from "./appwrite-server";
 import type { FeatureFlag } from "./types";
+
+// TODO: Align SDK majors by upgrading node-appwrite to ^24.x once available.
 
 export {
     FEATURE_FLAGS,
@@ -25,6 +28,61 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 // Cache for feature flags to reduce database calls
 const flagCache = new Map<string, { value: boolean; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute
+
+function createFeatureFlagDocumentId(flagKey: string): string {
+    const maxPrefixLength = 18;
+    const readablePrefix = flagKey
+        .replace(/[^a-z0-9_-]/gi, "_")
+        .toLowerCase()
+        .replace(/^_+|_+$/g, "")
+        .slice(0, maxPrefixLength)
+        .replace(/^_+|_+$/g, "");
+    const hashSuffix = createHash("sha256")
+        .update(flagKey)
+        .digest("hex")
+        .slice(0, 12);
+
+    return `flag_${readablePrefix || "key"}_${hashSuffix}`;
+}
+
+function isDuplicateConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: unknown;
+        message?: unknown;
+        response?: { code?: unknown; message?: unknown };
+        type?: unknown;
+    };
+
+    let code: number | null = null;
+    if (typeof candidate.code === "number") {
+        code = candidate.code;
+    } else if (typeof candidate.response?.code === "number") {
+        code = candidate.response.code;
+    }
+
+    if (code === 409) {
+        return true;
+    }
+
+    const messageParts = [
+        candidate.message,
+        candidate.response?.message,
+        candidate.type,
+    ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+
+    return (
+        messageParts.includes("duplicate") ||
+        messageParts.includes("already exists") ||
+        messageParts.includes("conflict")
+    );
+}
 
 /**
  * Returns the effective enabled state for a feature flag.
@@ -179,7 +237,7 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
                 await databases.createDocument(
                     databaseId,
                     collections.featureFlags,
-                    ID.unique(),
+                    createFeatureFlagDocumentId(featureKey),
                     {
                         key: featureKey,
                         enabled: defaultValue,
@@ -189,6 +247,10 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
                     },
                 );
             } catch (error) {
+                if (isDuplicateConflictError(error)) {
+                    continue;
+                }
+
                 failedKeys.push(featureKey);
                 logger.error("Failed to initialize feature flag", {
                     key: featureKey,

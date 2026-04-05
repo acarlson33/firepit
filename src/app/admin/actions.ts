@@ -22,6 +22,7 @@ const channelsCollection = ids.channels;
 export type BackfillResult = {
     updated: number;
     scanned: number;
+    hasMore: boolean;
     remaining: number;
 };
 
@@ -134,11 +135,11 @@ export async function backfillServerIds(
     ) as string[];
     const channelMap = await buildChannelServerMap(channelIds);
     const updated = await updateMessageServerIds(docs, channelMap);
-    const remaining =
-        docs.length === limit ? limit : Math.max(0, docs.length - updated);
+    const hasMore = docs.length === limit;
+    const remaining = Math.max(0, docs.length - updated);
     recordMetric("admin.backfill_server_ids.count", updated);
     recordTiming("admin.backfill_server_ids.ms", start, { updated });
-    return { updated, scanned: docs.length, remaining };
+    return { updated, scanned: docs.length, hasMore, remaining };
 }
 
 /**

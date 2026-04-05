@@ -6,33 +6,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
-
-type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore teardown errors when websocket is already unavailable.
-    }
-}
 
 function getConversationsQueryKey(userId: string | null) {
     return ["conversations", userId] as const;
@@ -122,38 +103,62 @@ export function useConversations(userId: string | null, enabled = true) {
             .document();
         const conversationChannelKey = conversationChannel.toString();
 
-        void Promise.resolve().then(async () => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
 
-            const realtime = getSharedRealtime();
-            const subscription = await realtime.subscribe(
-                conversationChannel,
-                (response) => {
-                    const payload = response.payload as Record<string, unknown>;
-                    const participants = payload.participants as
-                        | string[]
-                        | undefined;
+            try {
+                const realtime = getSharedRealtime();
+                const subscription = await realtime.subscribe(
+                    conversationChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const participants = payload.participants as
+                            | string[]
+                            | undefined;
 
-                    if (!participants?.includes(userId)) {
-                        return;
-                    }
+                        if (!participants?.includes(userId)) {
+                            return;
+                        }
 
-                    void queryClient.invalidateQueries({
-                        queryKey: getConversationsQueryKey(userId),
-                        refetchType: "active",
-                    });
-                },
-                [Query.contains("participants", userId)],
-            );
-            const untrack = trackSubscription(conversationChannelKey);
+                        void queryClient.invalidateQueries({
+                            queryKey: getConversationsQueryKey(userId),
+                            refetchType: "active",
+                        });
+                    },
+                    [Query.contains("participants", userId)],
+                );
 
-            cleanupFn = () => {
-                untrack();
-                void closeSubscriptionSafely(subscription);
-            };
-        });
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                const untrack = trackSubscription(conversationChannelKey);
+                cleanupFn = () => {
+                    untrack();
+                    void closeSubscriptionSafely(subscription);
+                };
+            } catch (error) {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "Conversation realtime subscription failed",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId: CONVERSATIONS_COLLECTION,
+                        conversationChannelKey,
+                        databaseId: env.databaseId,
+                    },
+                );
+            }
+        })();
 
         return () => {
             cancelled = true;

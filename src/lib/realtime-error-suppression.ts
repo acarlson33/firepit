@@ -1,6 +1,10 @@
 let suppressionDepth = 0;
 let originalConsoleError: typeof console.error | null = null;
 
+export type RealtimeSubscription = {
+    close: () => Promise<void>;
+};
+
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
 
@@ -63,5 +67,24 @@ export async function withSuppressedRealtimeCloseErrors<T>(
         return await operation();
     } finally {
         restore();
+    }
+}
+
+/**
+ * Close a realtime subscription while suppressing expected websocket teardown noise.
+ */
+export async function closeSubscriptionSafely(
+    subscription?: RealtimeSubscription,
+): Promise<void> {
+    if (!subscription) {
+        return;
+    }
+
+    try {
+        await withSuppressedRealtimeCloseErrors(async () =>
+            subscription.close(),
+        );
+    } catch {
+        // Ignore teardown errors when websocket is already disconnected.
     }
 }

@@ -27,7 +27,7 @@ import {
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { logger } from "@/lib/client-logger";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
@@ -41,26 +41,6 @@ type UseDirectMessagesProps = {
     receiverId?: string;
     userName?: string | null;
 };
-
-type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore teardown errors when websocket is already unavailable.
-    }
-}
 
 export function useDirectMessages({
     conversationId,

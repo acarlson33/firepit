@@ -13,7 +13,7 @@ import {
     type InboxScope,
 } from "@/lib/inbox-client";
 import { logger } from "@/lib/client-logger";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
@@ -168,19 +168,6 @@ export function useInbox(userId: string | null) {
 
             let subscription: { close: () => Promise<void> } | undefined;
             let untrack: Array<() => void> = [];
-            async function closeSubscriptionSafely() {
-                if (!subscription) {
-                    return;
-                }
-
-                try {
-                    await withSuppressedRealtimeCloseErrors(async () =>
-                        subscription.close(),
-                    );
-                } catch {
-                    // Ignore close errors when websocket is already unavailable.
-                }
-            }
 
             try {
                 const realtime = getSharedRealtime();
@@ -192,7 +179,7 @@ export function useInbox(userId: string | null) {
                 });
 
                 if (cancelled) {
-                    await closeSubscriptionSafely();
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
@@ -209,7 +196,7 @@ export function useInbox(userId: string | null) {
                     for (const stopTracking of untrack) {
                         stopTracking();
                     }
-                    void closeSubscriptionSafely();
+                    void closeSubscriptionSafely(subscription);
                 };
             }
         })();

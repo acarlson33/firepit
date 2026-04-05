@@ -43,7 +43,11 @@ async function assertUserServerCreationEnabled(): Promise<void> {
         });
 
         if (!response.ok) {
-            return;
+            throw normalizeError(
+                new Error(
+                    "Server creation is currently disabled. Contact an administrator.",
+                ),
+            );
         }
 
         const payload = (await response.json()) as { enabled?: boolean };

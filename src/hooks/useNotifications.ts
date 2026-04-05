@@ -3,29 +3,10 @@
 import { Channel, Query } from "appwrite";
 import { useEffect, useRef, useCallback } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
-
-type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore close errors when websocket is already unavailable.
-    }
-}
 
 interface NotificationOptions {
     /** Current user's ID */
@@ -270,8 +251,21 @@ export function useNotifications({
                 };
                 untrack = trackSubscription(messageChannelKey);
             })
-            .catch(() => {
-                // Failed to set up realtime
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "Channel notification realtime setup failed",
+                    error instanceof Error ? error : String(error),
+                    {
+                        channelId,
+                        collectionId,
+                        databaseId,
+                        serverId,
+                    },
+                );
             });
 
         return () => {
@@ -407,8 +401,20 @@ export function useNotifications({
                     trackCleanup?.();
                 };
             })
-            .catch(() => {
-                // Failed to set up realtime
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "DM notification realtime setup failed",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId,
+                        conversationId,
+                        databaseId,
+                    },
+                );
             });
 
         return () => {

@@ -32,7 +32,7 @@ import {
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { logger } from "@/lib/client-logger";
-import { withSuppressedRealtimeCloseErrors } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -43,26 +43,6 @@ type UseMessagesOptions = {
     userId: string | null;
     userName: string | null;
 };
-
-type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
-
-async function closeSubscriptionSafely(
-    subscription?: RealtimeSubscription,
-): Promise<void> {
-    if (!subscription) {
-        return;
-    }
-
-    try {
-        await withSuppressedRealtimeCloseErrors(async () =>
-            subscription.close(),
-        );
-    } catch {
-        // Ignore close failures during teardown; socket may already be disconnected.
-    }
-}
 
 export function useMessages({
     channelId,
