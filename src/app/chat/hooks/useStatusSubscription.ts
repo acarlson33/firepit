@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel, Query } from "appwrite";
+import { Channel } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
@@ -17,48 +17,34 @@ type RealtimeSubscription = {
     close: () => Promise<void>;
 };
 
-function isUnsupportedQueryRealtimeError(error: unknown): boolean {
-    if (!error || typeof error !== "object") {
-        return false;
-    }
-
-    const candidate = error as {
-        code?: number;
-        message?: string;
-        name?: string;
-        type?: string;
-    };
-
-    const name = (candidate.name ?? "").toLowerCase();
-    const type = (candidate.type ?? "").toLowerCase();
-    const message = (candidate.message ?? "").toLowerCase();
-
-    if (name.includes("unsupportedquery") || type.includes("unsupported")) {
-        return true;
-    }
-
-    if (candidate.code === 400 || candidate.code === 422) {
-        return message.includes("query") && message.includes("unsupported");
-    }
-
-    return false;
-}
-
 /**
  * Hook to subscribe to real-time status updates for multiple users
  */
 export function useStatusSubscription(userIds: string[]) {
     const [statuses, setStatuses] = useState<StatusMap>(new Map());
     const [loading, setLoading] = useState(true);
-    const trackedUserIds = useMemo(() => new Set(userIds), [userIds]);
-    const userIdsKey = userIds.join(",");
+    const stableUserIds = useMemo(() => {
+        return Array.from(
+            new Set(
+                userIds.filter(
+                    (id): id is string =>
+                        typeof id === "string" && id.length > 0,
+                ),
+            ),
+        ).sort((a, b) => a.localeCompare(b));
+    }, [userIds]);
+
+    const userIdsKey = stableUserIds.join(",");
+    const trackedUserIds = useMemo(() => new Set(stableUserIds), [userIdsKey]);
 
     // Fetch initial statuses
     const fetchStatuses = useCallback(async () => {
-        if (!STATUSES_COLLECTION || userIds.length === 0) {
+        if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
             setLoading(false);
             return;
         }
+
+        const requestedUserIds = [...trackedUserIds];
 
         try {
             setLoading(true);
@@ -67,7 +53,7 @@ export function useStatusSubscription(userIds: string[]) {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ userIds }),
+                body: JSON.stringify({ userIds: requestedUserIds }),
             });
 
             if (response.ok) {
@@ -99,7 +85,7 @@ export function useStatusSubscription(userIds: string[]) {
         } finally {
             setLoading(false);
         }
-    }, [userIdsKey]); // Only re-fetch when user IDs change
+    }, [trackedUserIds, userIdsKey]); // Only re-fetch when user IDs change
 
     useEffect(() => {
         void fetchStatuses();
@@ -107,7 +93,7 @@ export function useStatusSubscription(userIds: string[]) {
 
     // Real-time subscription to status updates
     useEffect(() => {
-        if (!STATUSES_COLLECTION || userIds.length === 0) {
+        if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
             return;
         }
 
@@ -126,9 +112,7 @@ export function useStatusSubscription(userIds: string[]) {
                     .document();
                 const channelKey = channel.toString();
 
-                const trackedIds = [...trackedUserIds].filter(
-                    (id) => typeof id === "string" && id.length > 0,
-                );
+                const trackedIds = [...trackedUserIds];
                 if (trackedIds.length === 0) {
                     return;
                 }
@@ -161,43 +145,11 @@ export function useStatusSubscription(userIds: string[]) {
                     }
                 };
 
-                let subscription: RealtimeSubscription;
-                try {
-                    subscription = await realtime.subscribe(
-                        channel,
-                        handleStatusEvent,
-                        [Query.equal("userId", trackedIds)],
-                    );
-                } catch (queryError) {
-                    if (cancelled) {
-                        return;
-                    }
-
-                    if (!isUnsupportedQueryRealtimeError(queryError)) {
-                        throw queryError;
-                    }
-
-                    const fallbackError =
-                        queryError instanceof Error
-                            ? queryError
-                            : String(queryError);
-
-                    logger.warn(
-                        "Status subscription degraded to unfiltered fallback",
-                        {
-                            fallbackError:
-                                fallbackError instanceof Error
-                                    ? fallbackError.message
-                                    : String(fallbackError),
-                            trackedCount: trackedIds.length,
-                        },
-                    );
-
-                    subscription = await realtime.subscribe(
-                        channel,
-                        handleStatusEvent,
-                    );
-                }
+                // Query-filtered status subscriptions can trigger reconnect churn in
+                // some Appwrite environments; keep a single unfiltered channel and
+                // scope updates client-side by tracked user IDs.
+                const subscription: RealtimeSubscription =
+                    await realtime.subscribe(channel, handleStatusEvent);
 
                 if (cancelled) {
                     await closeSubscriptionSafely(subscription);

@@ -122,7 +122,11 @@ export function useNotifications({
 
     // Subscribe to channel messages for notifications
     useEffect(() => {
-        if (!userId || !channelId || isWindowFocused) {
+        const isPageVisible =
+            typeof document !== "undefined" &&
+            document.visibilityState !== "hidden";
+
+        if (!userId || !channelId || isWindowFocused || isPageVisible) {
             return;
         }
 
@@ -284,7 +288,11 @@ export function useNotifications({
 
     // Subscribe to DM messages for notifications
     useEffect(() => {
-        if (!userId || !conversationId || isWindowFocused) {
+        const isPageVisible =
+            typeof document !== "undefined" &&
+            document.visibilityState !== "hidden";
+
+        if (!userId || !conversationId || isWindowFocused || isPageVisible) {
             return;
         }
 

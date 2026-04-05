@@ -104,8 +104,8 @@ export function ServerAdminPanel({
         mutedUsers: 0,
     });
     const [loading, setLoading] = useState(false);
-    const [rolesLoading, setRolesLoading] = useState(false);
-    const [rolesError, setRolesError] = useState<string | null>(null);
+    const [_rolesLoading, setRolesLoading] = useState(false);
+    const [_rolesError, setRolesError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [memberFilter, setMemberFilter] = useState<
         "all" | "banned" | "muted"

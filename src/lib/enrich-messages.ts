@@ -223,7 +223,7 @@ export async function enrichMessageWithProfile(
         }
 
         return enriched;
-    } catch (error) {
+    } catch {
         // If enrichment fails, return original message
         return message;
     }

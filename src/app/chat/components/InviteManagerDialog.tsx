@@ -141,7 +141,7 @@ export function InviteManagerDialog({
     };
 
     const formatUses = (invite: ServerInvite) => {
-        if (invite.maxUses == null) {
+        if (invite.maxUses === null || invite.maxUses === undefined) {
             return `${String(invite.currentUses)} uses`;
         }
         return `${String(invite.currentUses)}/${String(invite.maxUses)} uses`;
@@ -155,7 +155,7 @@ export function InviteManagerDialog({
     };
 
     const isMaxedOut = (invite: ServerInvite) => {
-        if (invite.maxUses == null) {
+        if (invite.maxUses === null || invite.maxUses === undefined) {
             return false;
         }
         return invite.currentUses >= invite.maxUses;

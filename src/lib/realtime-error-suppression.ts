@@ -2,10 +2,7 @@ export type RealtimeSubscription = {
     close: () => Promise<void>;
 };
 
-type ScopedConsoleErrorPredicate = (
-    args: unknown[],
-    marker: string,
-) => boolean;
+type ScopedConsoleErrorPredicate = (args: unknown[], marker: string) => boolean;
 
 const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
 let subscriptionMarkerCounter = 0;
@@ -17,13 +14,21 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
         return false;
     }
 
-    if (!firstArg.startsWith("WebSocket error:")) {
-        return false;
+    if (firstArg.startsWith("WebSocket error:")) {
+        // Appwrite emits WebSocket teardown noise with differing second-arg shapes
+        // across browsers (Error/Event/string). During explicit close, suppress all.
+        return true;
     }
 
-    // Appwrite emits WebSocket teardown noise with differing second-arg shapes
-    // across browsers (Error/Event/string). During explicit close, suppress all.
-    return true;
+    // Firefox/Appwrite can log this on intentional subscription churn during route switches.
+    if (
+        firstArg.includes("was interrupted while the page was loading") &&
+        firstArg.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 function getSubscriptionMarker(subscription: RealtimeSubscription): string {
@@ -106,12 +111,16 @@ export async function closeSubscriptionSafely(
     const marker = getSubscriptionMarker(subscription);
 
     try {
-        await withSuppressedRealtimeCloseErrors(async () => subscription.close(), {
-            marker,
-            shouldSuppress: (args: unknown[], activeMarker: string) =>
-                defaultSuppressionPredicate(args) && activeMarker === marker,
-        });
-    } catch (_err) {
+        await withSuppressedRealtimeCloseErrors(
+            async () => subscription.close(),
+            {
+                marker,
+                shouldSuppress: (args: unknown[], activeMarker: string) =>
+                    defaultSuppressionPredicate(args) &&
+                    activeMarker === marker,
+            },
+        );
+    } catch {
         // Ignore teardown errors when websocket is already disconnected.
     }
 }

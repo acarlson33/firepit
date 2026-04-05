@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -146,19 +146,10 @@ export function useInbox(userId: string | null) {
             return;
         }
 
-        const activeUserId = userId;
-
-        const channels = [
-            env.collections.directMessages,
-            env.collections.inboxItems,
-            env.collections.messages,
-            env.collections.threadReads,
-        ].map((collectionId) =>
-            Channel.database(env.databaseId)
-                .collection(collectionId)
-                .document(activeUserId),
-        );
-        const channelKeys = channels.map((channel) => channel.toString());
+        const inboxChannel = Channel.database(env.databaseId)
+            .collection(env.collections.inboxItems)
+            .document();
+        const inboxChannelKey = inboxChannel.toString();
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
@@ -169,14 +160,14 @@ export function useInbox(userId: string | null) {
             }
 
             let subscription: { close: () => Promise<void> } | undefined;
-            let untrack: Array<() => void> = [];
+            let untrack: (() => void) | undefined;
 
             try {
                 const realtime = getSharedRealtime();
-                subscription = await realtime.subscribe(channels, () => {
+                subscription = await realtime.subscribe(inboxChannel, () => {
                     queryClient
                         .invalidateQueries({
-                            queryKey: getInboxQueryKey(activeUserId),
+                            queryKey: getInboxQueryKey(userId),
                             refetchType: "active",
                         })
                         .catch((error) => {
@@ -187,16 +178,14 @@ export function useInbox(userId: string | null) {
                                         : String(error),
                             });
                         });
-                });
+                }, [Query.equal("userId", userId)]);
 
                 if (cancelled) {
                     await closeSubscriptionSafely(subscription);
                     return;
                 }
 
-                untrack = channelKeys.map((channel) =>
-                    trackSubscription(channel),
-                );
+                untrack = trackSubscription(inboxChannelKey);
             } catch (error) {
                 logger.error(
                     "Inbox realtime subscription failed:",
@@ -204,9 +193,7 @@ export function useInbox(userId: string | null) {
                 );
             } finally {
                 cleanupFn = () => {
-                    for (const stopTracking of untrack) {
-                        stopTracking();
-                    }
+                    untrack?.();
                     void closeSubscriptionSafely(subscription);
                 };
             }
@@ -217,10 +204,7 @@ export function useInbox(userId: string | null) {
             cleanupFn?.();
         };
     }, [
-        env.collections.directMessages,
         env.collections.inboxItems,
-        env.collections.messages,
-        env.collections.threadReads,
         env.databaseId,
         isEnabled,
         queryClient,

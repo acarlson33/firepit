@@ -42,7 +42,7 @@ export function ProfileAppearanceSettings({
     profileBackgroundImageUrl,
     avatarFramePreset,
     currentAvatarUrl,
-    accountCreatedAt = "2020-01-01T00:00:00.000Z",
+    accountCreatedAt: _accountCreatedAt = "2020-01-01T00:00:00.000Z",
     updateBackgroundAction,
     uploadBackgroundAction,
     removeBackgroundAction,
