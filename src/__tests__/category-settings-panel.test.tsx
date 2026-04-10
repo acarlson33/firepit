@@ -76,7 +76,7 @@ describe("CategorySettingsPanel", () => {
         );
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalledWith(
-                "/api/roles?serverId=server-1",
+                expect.stringMatching(/^\/api\/roles\?serverId=server-1$/),
             );
         });
     });

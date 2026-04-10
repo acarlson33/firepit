@@ -214,7 +214,7 @@ export function ModerationMessageList({
                             logger.warn(
                                 "Ignoring malformed moderation realtime payload",
                                 {
-                                    events,
+                                    events: events.join(","),
                                 },
                             );
                             return;

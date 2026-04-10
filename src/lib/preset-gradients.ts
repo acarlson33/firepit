@@ -6,7 +6,7 @@ export type PresetGradient = {
     id: string;
     name: string;
     cssValue: string;
-    colors: string[];
+    colors: readonly string[];
 };
 
 export const PRESET_GRADIENTS = [

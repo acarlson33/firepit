@@ -11,7 +11,7 @@ const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const profileCache = new Map<string, CachedProfileEntry>();
 const prefetchInProgress = new Set<string>();
 
-function getCachedProfileValue(userId: string) {
+function getCachedProfileValue(userId: string): unknown | undefined {
     const entry = profileCache.get(userId);
     if (!entry) {
         return undefined;
@@ -25,7 +25,7 @@ function getCachedProfileValue(userId: string) {
     return entry.data;
 }
 
-function setCachedProfileValue(userId: string, data: unknown) {
+function setCachedProfileValue(userId: string, data: unknown): void {
     profileCache.set(userId, {
         data,
         cachedAt: Date.now(),
@@ -79,7 +79,7 @@ export const profilePrefetchPool = {
     processing: false,
     maxConcurrent: 3,
 
-    getCachedProfile(userId: string): unknown {
+    getCachedProfile(userId: string): unknown | undefined {
         return getCachedProfileValue(userId);
     },
 
@@ -96,7 +96,10 @@ export const profilePrefetchPool = {
     },
 
     async process() {
-        if (profilePrefetchPool.processing || profilePrefetchPool.queue.size === 0) {
+        if (
+            profilePrefetchPool.processing ||
+            profilePrefetchPool.queue.size === 0
+        ) {
             return;
         }
 

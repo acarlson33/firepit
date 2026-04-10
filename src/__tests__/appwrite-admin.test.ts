@@ -13,6 +13,13 @@ const { mockDeleteDocument } = vi.hoisted(() => ({
     mockDeleteDocument: vi.fn(),
 }));
 
+const tablesDbStub = {
+    createTransaction: vi.fn(),
+    getRow: vi.fn(),
+    updateRow: vi.fn(),
+    updateTransaction: vi.fn(),
+};
+
 const SMALL_LIMIT = 5;
 const DEFAULT_LIMIT = 10;
 const MIN_EXPECTED_EXTRA = 3; // used to validate additional filters added
@@ -129,9 +136,9 @@ vi.mock("../lib/appwrite-server", () => {
         getServerClient: () => ({
             client: {},
             databases,
-            tablesDB: {} as any,
-            teams: {} as any,
-            storage: {} as any,
+            tablesDB: tablesDbStub,
+            teams: {},
+            storage: {},
         }),
     };
 });
@@ -170,9 +177,9 @@ describe("admin channel & global message listing", () => {
                 databases: {
                     listDocuments: () => Promise.reject(new Error("boom")),
                 },
-                tablesDB: {} as any,
-                teams: {} as any,
-                storage: {} as any,
+                tablesDB: tablesDbStub,
+                teams: {},
+                storage: {},
             }),
         }));
         (process.env as any).APPWRITE_ENDPOINT = "http://x";

@@ -227,6 +227,7 @@ export async function GET(request: NextRequest) {
                 )
                 .filter((value): value is string => Boolean(value));
             const unreadThreadsByConversationId = new Map<string, number>();
+            let unreadThreadCountsTruncated = false;
             let readStatesByConversationId = new Map<
                 string,
                 Record<string, string>
@@ -335,6 +336,7 @@ export async function GET(request: NextRequest) {
                     }
 
                     if (pageCount === maxThreadParentPages && cursorAfterId) {
+                        unreadThreadCountsTruncated = true;
                         logger.warn(
                             "Thread unread aggregation reached pagination cap",
                             {
@@ -363,6 +365,7 @@ export async function GET(request: NextRequest) {
                         ...conversation,
                         hasUnread: unreadThreadCount > 0,
                         unreadThreadCount,
+                        unreadThreadCountTruncated: unreadThreadCountsTruncated,
                     };
                 }
 
@@ -374,6 +377,7 @@ export async function GET(request: NextRequest) {
                         ...conversation,
                         hasUnread: unreadThreadCount > 0,
                         unreadThreadCount,
+                        unreadThreadCountTruncated: unreadThreadCountsTruncated,
                     };
                 }
 
@@ -391,6 +395,7 @@ export async function GET(request: NextRequest) {
                         : undefined,
                     relationship,
                     unreadThreadCount,
+                    unreadThreadCountTruncated: unreadThreadCountsTruncated,
                 };
             });
 
@@ -457,6 +462,7 @@ export async function GET(request: NextRequest) {
                 const pageSize = 100;
                 const maxConversationSearchPages = 20;
                 let searchPageCount = 0;
+                let conversationLookupTruncated = false;
 
                 while (
                     !oneToOne &&
@@ -512,6 +518,7 @@ export async function GET(request: NextRequest) {
                     searchPageCount === maxConversationSearchPages &&
                     existingDocuments.length === pageSize
                 ) {
+                    conversationLookupTruncated = true;
                     logger.warn(
                         "One-to-one conversation lookup reached pagination cap",
                         {
@@ -554,6 +561,15 @@ export async function GET(request: NextRequest) {
                             relationship,
                         },
                     });
+                }
+
+                if (conversationLookupTruncated) {
+                    return jsonResponse(
+                        {
+                            error: "Unable to safely determine whether a direct message already exists. Please try again.",
+                        },
+                        { status: 409 },
+                    );
                 }
             } catch {
                 // Continue to create new conversation if not found

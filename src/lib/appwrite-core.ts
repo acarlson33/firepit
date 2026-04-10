@@ -77,7 +77,7 @@ export type EnvConfig = {
         inboxItems: string;
         threadReads: string;
         reports: string;
-        roles?: string;
+        roles: string;
     };
     buckets: {
         avatars: string;

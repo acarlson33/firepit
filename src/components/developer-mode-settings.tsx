@@ -157,6 +157,7 @@ export function DeveloperModeSettings() {
                                     aria-disabled={
                                         controlsDisabled || index === 0
                                     }
+                                    disabled={controlsDisabled || index === 0}
                                     className={
                                         controlsDisabled || index === 0
                                             ? "pointer-events-none opacity-50"
@@ -172,6 +173,10 @@ export function DeveloperModeSettings() {
                                 <Button
                                     aria-label={`Move ${copy.label} later in navigation`}
                                     aria-disabled={
+                                        controlsDisabled ||
+                                        index === orderedItems.length - 1
+                                    }
+                                    disabled={
                                         controlsDisabled ||
                                         index === orderedItems.length - 1
                                     }

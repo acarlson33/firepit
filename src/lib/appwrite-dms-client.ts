@@ -183,8 +183,20 @@ export async function getOrCreateConversation(
         throw new Error(error.error || "Failed to get conversation");
     }
 
-    const data = await response.json();
-    return data.conversation;
+    const data = (await response.json()) as {
+        conversation?: unknown;
+    };
+
+    if (!data.conversation || typeof data.conversation !== "object") {
+        throw new Error("Invalid conversation response");
+    }
+
+    const conversation = data.conversation as Record<string, unknown>;
+    if (typeof conversation.$id !== "string") {
+        throw new Error("Invalid conversation response");
+    }
+
+    return data.conversation as Conversation;
 }
 
 /**

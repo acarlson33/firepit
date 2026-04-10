@@ -13,6 +13,7 @@ const subscriptionRefs = new Map<string, number>();
 let warnedAboutFallbackTeardown = false;
 let inFlightDispose: Promise<void> | null = null;
 let subscribeQueueTail: Promise<void> = Promise.resolve();
+let sharedRealtimeGeneration = 0;
 
 function queueRealtimeSubscribe<T>(operation: () => Promise<T>): Promise<T> {
     const nextOperation = subscribeQueueTail
@@ -258,7 +259,10 @@ export function getSharedClient(): Client {
  */
 export function getSharedRealtime(): Realtime {
     if (!sharedRealtime) {
-        sharedRealtime = patchRealtimeSubscribe(new Realtime(getSharedClient()));
+        sharedRealtimeGeneration += 1;
+        sharedRealtime = patchRealtimeSubscribe(
+            new Realtime(getSharedClient()),
+        );
     }
 
     return sharedRealtime;
@@ -310,11 +314,15 @@ export async function disposeSharedRealtime(): Promise<void> {
         }
 
         const realtime = sharedRealtime;
+        const generationAtDisposeStart = sharedRealtimeGeneration;
 
         try {
             await safeCleanupRealtime(realtime);
         } finally {
-            if (sharedRealtime === realtime) {
+            if (
+                sharedRealtime === realtime &&
+                sharedRealtimeGeneration === generationAtDisposeStart
+            ) {
                 sharedRealtime = null;
                 subscriptionRefs.clear();
                 subscribeQueueTail = Promise.resolve();

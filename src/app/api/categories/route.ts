@@ -12,6 +12,15 @@ const databaseId = env.databaseId || "main";
 const categoriesCollectionId = env.collections.categories;
 const channelsCollectionId = env.collections.channels;
 const rolesCollectionId = env.collections.roles;
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number) {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
 
 function getDatabases() {
     return getServerClient().databases;
@@ -276,22 +285,31 @@ export async function PUT(request: NextRequest) {
                         );
                     }
 
-                    const existingRoles = await databases.listDocuments(
-                        databaseId,
-                        rolesCollectionId,
-                        [
-                            Query.equal(
-                                "serverId",
-                                String(existingCategory.serverId),
-                            ),
-                            Query.equal("$id", dedupedRoleIds),
-                            Query.limit(dedupedRoleIds.length),
-                        ],
+                    const validRoleIds = new Set<string>();
+                    const roleIdChunks = chunkValues(
+                        dedupedRoleIds,
+                        QUERY_ARRAY_LIMIT,
                     );
 
-                    const validRoleIds = new Set(
-                        existingRoles.documents.map((role) => String(role.$id)),
-                    );
+                    for (const roleIdChunk of roleIdChunks) {
+                        const existingRoles = await databases.listDocuments(
+                            databaseId,
+                            rolesCollectionId,
+                            [
+                                Query.equal(
+                                    "serverId",
+                                    String(existingCategory.serverId),
+                                ),
+                                Query.equal("$id", roleIdChunk),
+                                Query.limit(roleIdChunk.length),
+                            ],
+                        );
+
+                        for (const role of existingRoles.documents) {
+                            validRoleIds.add(String(role.$id));
+                        }
+                    }
+
                     const invalidRoleIds = dedupedRoleIds.filter(
                         (roleId) => !validRoleIds.has(roleId),
                     );

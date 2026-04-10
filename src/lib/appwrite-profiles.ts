@@ -68,24 +68,20 @@ function chunkValues<T>(values: T[], size: number) {
 export async function getUserProfile(
     userId: string,
 ): Promise<UserProfile | null> {
-    try {
-        const { databases } = getAdminClient();
-        const env = getEnvConfig();
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
 
-        const profiles = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            [Query.equal("userId", userId), Query.limit(1)],
-        );
+    const profiles = await databases.listDocuments(
+        env.databaseId,
+        env.collections.profiles,
+        [Query.equal("userId", userId), Query.limit(1)],
+    );
 
-        if (profiles.documents.length === 0) {
-            return null;
-        }
-
-        return profiles.documents[0] as unknown as UserProfile;
-    } catch {
+    if (profiles.documents.length === 0) {
         return null;
     }
+
+    return profiles.documents[0] as unknown as UserProfile;
 }
 
 /**
@@ -246,10 +242,15 @@ export async function updateUserProfile(
     const cleanData: UserProfileUpdatePayload = {};
     const mutableCleanData = cleanData as Record<
         string,
-        Exclude<UserProfileUpdatePayload[keyof UserProfileUpdatePayload], undefined>
+        Exclude<
+            UserProfileUpdatePayload[keyof UserProfileUpdatePayload],
+            undefined
+        >
     >;
 
-    for (const key of Object.keys(data) as Array<keyof UserProfileUpdatePayload>) {
+    for (const key of Object.keys(data) as Array<
+        keyof UserProfileUpdatePayload
+    >) {
         const value = data[key];
         if (value !== undefined) {
             mutableCleanData[key] = value;
@@ -257,9 +258,12 @@ export async function updateUserProfile(
     }
 
     if (Object.keys(cleanData).length === 0) {
-        logger.warn("Skipped profile update because payload had no defined keys", {
-            profileId,
-        });
+        logger.warn(
+            "Skipped profile update because payload had no defined keys",
+            {
+                profileId,
+            },
+        );
         const existing = await databases.getDocument(
             env.databaseId,
             env.collections.profiles,

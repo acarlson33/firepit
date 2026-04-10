@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         const {
             text,
             channelId,
-            serverId,
+            serverId: _serverId,
             imageFileId,
             imageUrl,
             replyToId,
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
         addTransactionAttributes({
             userId,
             channelId,
-            serverId: serverId || "none",
+            serverId: "unresolved",
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
             isReply: !!replyToId,
@@ -146,12 +146,20 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
+        const normalizedChannelId = String(channelId);
+        const normalizedServerId = access.serverId;
+
+        addTransactionAttributes({
+            channelId: normalizedChannelId,
+            serverId: normalizedServerId,
+        });
+
         const messageData: Record<string, unknown> = {
             userId,
             text: text || "",
             userName,
-            channelId,
-            serverId,
+            channelId: normalizedChannelId,
+            serverId: normalizedServerId,
         };
 
         // Add image fields if provided
@@ -209,7 +217,7 @@ export async function POST(request: NextRequest) {
                 mentions,
                 messageId: String(res.$id),
                 previewText: text || "",
-                serverId: serverId ?? undefined,
+                serverId: normalizedServerId,
             });
         }
 
@@ -237,7 +245,7 @@ export async function POST(request: NextRequest) {
             messageId: message.$id,
             userId,
             channelId,
-            serverId: serverId ?? undefined,
+            serverId: normalizedServerId,
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
             attachmentCount: attachments?.length || 0,
@@ -253,7 +261,7 @@ export async function POST(request: NextRequest) {
             isReply: Boolean(replyToId),
             messageId: message.$id,
             messageType: "channel",
-            serverId: serverId ?? undefined,
+            serverId: normalizedServerId,
             totalQueryTimeMs: Date.now() - startTime,
         });
 

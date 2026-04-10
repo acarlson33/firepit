@@ -49,10 +49,9 @@ function isAuthFailure(error: unknown) {
 
     const message = error.message.toLowerCase();
     return (
-        message.includes("auth") ||
         message.includes("unauthorized") ||
         message.includes("forbidden") ||
-        message.includes("session")
+        message.includes("authentication required")
     );
 }
 

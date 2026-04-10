@@ -48,11 +48,7 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
         setUpdating(key);
         try {
             await updateFeatureFlagAction(userId, key, enabled);
-            setFlags((prev) =>
-                prev.map((flag) =>
-                    flag.key === key ? { ...flag, enabled } : flag,
-                ),
-            );
+            await loadFlags();
             toast.success(`Feature flag ${enabled ? "enabled" : "disabled"}`);
         } catch (error) {
             logger.error(

@@ -102,8 +102,8 @@ export default function Header({ onSearchClick }: HeaderProps) {
             });
             posthog.reset();
             await logoutAction();
-            resetAttempted = true;
             await resetSharedClient();
+            resetAttempted = true;
             setUserData(null);
             router.push("/");
         } catch {

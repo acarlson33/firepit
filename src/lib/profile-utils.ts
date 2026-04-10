@@ -55,6 +55,7 @@ function toSafeBackgroundImageUrl(rawUrl: string): string | undefined {
         const encoded = encodeURI(parsed.toString())
             .replaceAll('"', "%22")
             .replaceAll("'", "%27")
+            .replaceAll("`", "%60")
             .replaceAll("(", "%28")
             .replaceAll(")", "%29")
             .replaceAll("\\", "%5C")

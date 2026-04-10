@@ -40,9 +40,13 @@ export function Avatar({
 
     const presetFrame = framePreset ? getPresetFrameById(framePreset) : null;
     const candidateFrameUrl = frameUrl ?? presetFrame?.imageUrl;
+    const trimmedFrameUrl =
+        typeof candidateFrameUrl === "string"
+            ? candidateFrameUrl.trim()
+            : undefined;
     const resolvedFrameUrl =
-        typeof candidateFrameUrl === "string" && candidateFrameUrl.trim()
-            ? candidateFrameUrl
+        trimmedFrameUrl && trimmedFrameUrl.length > 0
+            ? trimmedFrameUrl
             : undefined;
     const hasFrameAsset = Boolean(resolvedFrameUrl);
     const configuredInset = presetFrame?.avatarInsetPercent ?? 12;

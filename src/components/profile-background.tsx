@@ -75,9 +75,13 @@ export function AvatarWithFrame({
         ? getPresetFrameById(avatarFramePreset)
         : null;
     const candidateFrameUrl = avatarFrameUrl ?? presetFrame?.imageUrl;
+    const trimmedFrameUrl =
+        typeof candidateFrameUrl === "string"
+            ? candidateFrameUrl.trim()
+            : undefined;
     const resolvedFrameUrl =
-        typeof candidateFrameUrl === "string" && candidateFrameUrl.trim()
-            ? candidateFrameUrl
+        trimmedFrameUrl && trimmedFrameUrl.length > 0
+            ? trimmedFrameUrl
             : undefined;
     const frameEmoji = getFrameEmoji(avatarFramePreset);
 

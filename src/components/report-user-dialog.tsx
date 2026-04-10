@@ -41,6 +41,10 @@ export function ReportUserDialog({
     const isValid = charCount >= MIN_LENGTH && charCount <= MAX_LENGTH;
 
     function handleOpenChange(nextOpen: boolean) {
+        if (!nextOpen && submitting) {
+            return;
+        }
+
         setOpen(nextOpen);
         if (!nextOpen) {
             setJustification("");
@@ -122,6 +126,7 @@ export function ReportUserDialog({
                     </div>
                     <div className="flex justify-end gap-2">
                         <Button
+                            disabled={submitting}
                             onClick={() => handleOpenChange(false)}
                             type="button"
                             variant="ghost"

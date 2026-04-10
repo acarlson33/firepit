@@ -39,6 +39,8 @@ vi.mock("appwrite", () => ({
         orderDesc: (field: string) => `orderDesc(${field})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+        greaterThan: (field: string, value: string | number) =>
+            `greaterThan(${field},${JSON.stringify(value)})`,
         // appwrite client tests expect plain query value interpolation;
         // node-appwrite.Query.equal below intentionally uses JSON.stringify.
         equal: (field: string, value: string) => `equal(${field},${value})`,
@@ -131,6 +133,8 @@ vi.mock("node-appwrite", () => ({
         orderAsc: (field: string) => `orderAsc(${field})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
         cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+        greaterThan: (field: string, value: string | number) =>
+            `greaterThan(${field},${JSON.stringify(value)})`,
         and: (...queries: string[]) => `and(${queries.join(",")})`,
         or: (...queries: string[]) => `or(${queries.join(",")})`,
         isNull: (field: string) => `isNull(${field})`,

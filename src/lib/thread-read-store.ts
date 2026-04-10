@@ -74,6 +74,20 @@ function mapThreadReadDocument(
     };
 }
 
+function mergeReadsAcrossDocuments(
+    documents: ThreadReadDocument[],
+    initialReads: Record<string, string> = {},
+) {
+    return documents.reduce<Record<string, string>>(
+        (accumulator, currentDocument) =>
+            mergeThreadReadsByMax({
+                existingReads: accumulator,
+                incomingReads: currentDocument.reads,
+            }),
+        initialReads,
+    );
+}
+
 /**
  * Lists thread read documents for one context.
  *
@@ -120,14 +134,7 @@ export async function getThreadReads(params: {
         return null;
     }
 
-    const mergedReads = documents.reduce<Record<string, string>>(
-        (accumulator, currentDocument) =>
-            mergeThreadReadsByMax({
-                existingReads: accumulator,
-                incomingReads: currentDocument.reads,
-            }),
-        {},
-    );
+    const mergedReads = mergeReadsAcrossDocuments(documents);
 
     return {
         ...document,
@@ -201,12 +208,8 @@ export async function upsertThreadReads(params: {
 
     if (existingDocuments.length > 0) {
         const primaryDocument = existingDocuments[0];
-        const mergedReads = existingDocuments.reduce<Record<string, string>>(
-            (accumulator, currentDocument) =>
-                mergeThreadReadsByMax({
-                    existingReads: accumulator,
-                    incomingReads: currentDocument.reads,
-                }),
+        const mergedReads = mergeReadsAcrossDocuments(
+            existingDocuments,
             incomingReads,
         );
 
@@ -249,20 +252,15 @@ export async function upsertThreadReads(params: {
         }
 
         // A concurrent create won the race; merge and update the now-existing record.
-        const concurrentDocuments = await listThreadReadDocumentsForContext(
-            params,
-        );
+        const concurrentDocuments =
+            await listThreadReadDocumentsForContext(params);
         if (concurrentDocuments.length === 0) {
             throw error;
         }
 
         const primaryDocument = concurrentDocuments[0];
-        const mergedReads = concurrentDocuments.reduce<Record<string, string>>(
-            (accumulator, currentDocument) =>
-                mergeThreadReadsByMax({
-                    existingReads: accumulator,
-                    incomingReads: currentDocument.reads,
-                }),
+        const mergedReads = mergeReadsAcrossDocuments(
+            concurrentDocuments,
             incomingReads,
         );
 

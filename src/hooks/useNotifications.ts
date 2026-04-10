@@ -8,6 +8,29 @@ import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
+function createRealtimeCleanup(params: {
+    contextId: string;
+    contextLabel: string;
+    subscription: { close: () => Promise<void> };
+    untrack?: () => void;
+}) {
+    return () => {
+        closeSubscriptionSafely(params.subscription).catch((closeError) => {
+            logger.warn(
+                `Failed to close ${params.contextLabel} notification realtime subscription`,
+                {
+                    contextId: params.contextId,
+                    error:
+                        closeError instanceof Error
+                            ? closeError.message
+                            : String(closeError),
+                },
+            );
+        });
+        params.untrack?.();
+    };
+}
+
 interface NotificationOptions {
     /** Current user's ID */
     userId: string | null;
@@ -265,40 +288,21 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    closeSubscriptionSafely(subscription).catch(
-                        (closeError) => {
-                            logger.warn(
-                                "Failed to close channel notification realtime subscription",
-                                {
-                                    channelId,
-                                    error:
-                                        closeError instanceof Error
-                                            ? closeError.message
-                                            : String(closeError),
-                                },
-                            );
-                        },
-                    );
+                    createRealtimeCleanup({
+                        contextId: channelId,
+                        contextLabel: "channel",
+                        subscription,
+                    })();
                     return;
                 }
 
-                unsubscribe = () => {
-                    closeSubscriptionSafely(subscription).catch(
-                        (closeError) => {
-                            logger.warn(
-                                "Failed to close channel notification realtime subscription",
-                                {
-                                    channelId,
-                                    error:
-                                        closeError instanceof Error
-                                            ? closeError.message
-                                            : String(closeError),
-                                },
-                            );
-                        },
-                    );
-                };
                 untrack = trackSubscription(messageChannelKey);
+                unsubscribe = createRealtimeCleanup({
+                    contextId: channelId,
+                    contextLabel: "channel",
+                    subscription,
+                    untrack,
+                });
             })
             .catch((error) => {
                 if (cancelled) {
@@ -439,42 +443,22 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    closeSubscriptionSafely(subscription).catch((closeError) => {
-                        logger.warn(
-                            "Failed to close DM notification realtime subscription",
-                            {
-                                conversationId,
-                                error:
-                                    closeError instanceof Error
-                                        ? closeError.message
-                                        : String(closeError),
-                            },
-                        );
-                    });
+                    createRealtimeCleanup({
+                        contextId: conversationId,
+                        contextLabel: "DM",
+                        subscription,
+                    })();
                     return;
                 }
 
                 const untrack = trackSubscription(messageChannelKey);
-                const unsubscribe = () => {
-                    closeSubscriptionSafely(subscription).catch(
-                        (closeError) => {
-                            logger.warn(
-                                "Failed to close DM notification realtime subscription",
-                                {
-                                    conversationId,
-                                    error:
-                                        closeError instanceof Error
-                                            ? closeError.message
-                                            : String(closeError),
-                                },
-                            );
-                        },
-                    );
-                };
-
                 cleanup = () => {
-                    unsubscribe();
-                    untrack?.();
+                    createRealtimeCleanup({
+                        contextId: conversationId,
+                        contextLabel: "DM",
+                        subscription,
+                        untrack,
+                    })();
                 };
             })
             .catch((error) => {

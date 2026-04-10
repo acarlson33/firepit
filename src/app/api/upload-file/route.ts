@@ -42,6 +42,27 @@ function getAllowedOrigin(request?: Request) {
     return ALLOWED_ORIGINS.includes(origin) ? origin : undefined;
 }
 
+function isSameOrigin(request: Request, originHeader: string): boolean {
+    try {
+        return new URL(request.url).origin === originHeader;
+    } catch {
+        return false;
+    }
+}
+
+function ensureAllowedRequestOrigin(request: Request): string | null {
+    const origin = request.headers.get("origin");
+    if (!origin) {
+        return null;
+    }
+
+    if (isSameOrigin(request, origin)) {
+        return null;
+    }
+
+    return ALLOWED_ORIGINS.includes(origin) ? null : origin;
+}
+
 // Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit, request?: Request) {
     const headers = new Headers(init?.headers);
@@ -62,6 +83,15 @@ function jsonResponse(data: unknown, init?: ResponseInit, request?: Request) {
 
 // Handle preflight requests
 export async function OPTIONS(request: NextRequest) {
+    const disallowedOrigin = ensureAllowedRequestOrigin(request);
+    if (disallowedOrigin) {
+        return jsonResponse(
+            { error: "Origin is not allowed" },
+            { status: 403 },
+            request,
+        );
+    }
+
     return jsonResponse({}, undefined, request);
 }
 
@@ -208,6 +238,37 @@ function startsWithSignature(
 function isLikelyTextContent(sample: Buffer): boolean {
     if (sample.length === 0) {
         return false;
+    }
+
+    // UTF-16 text often includes alternating null bytes.
+    if (sample.length >= 2) {
+        const isUtf16LeBom = sample[0] === 0xff && sample[1] === 0xfe;
+        const isUtf16BeBom = sample[0] === 0xfe && sample[1] === 0xff;
+        if (isUtf16LeBom || isUtf16BeBom) {
+            return true;
+        }
+
+        const pairCount = Math.floor(sample.length / 2);
+        if (pairCount > 0) {
+            let evenNullCount = 0;
+            let oddNullCount = 0;
+
+            for (let index = 0; index < sample.length; index += 2) {
+                if (sample[index] === 0) {
+                    evenNullCount += 1;
+                }
+                if (index + 1 < sample.length && sample[index + 1] === 0) {
+                    oddNullCount += 1;
+                }
+            }
+
+            if (
+                evenNullCount / pairCount > 0.3 ||
+                oddNullCount / pairCount > 0.3
+            ) {
+                return true;
+            }
+        }
     }
 
     let suspiciousByteCount = 0;
@@ -389,11 +450,28 @@ function isContentCompatibleWithDeclaredMime(
     return false;
 }
 
+async function* toAsyncIterable(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader();
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                return;
+            }
+
+            if (value) {
+                yield value;
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
+}
+
 async function writeUploadToTempFile(file: File): Promise<string> {
     const tempPath = join(tmpdir(), `firepit-upload-${randomUUID()}`);
-    const source = Readable.fromWeb(
-        file.stream() as ReadableStream<Uint8Array>,
-    );
+    const source = Readable.from(toAsyncIterable(file.stream()));
     const destination = createWriteStream(tempPath, { flags: "wx" });
 
     try {
@@ -441,6 +519,11 @@ export async function POST(request: NextRequest) {
         jsonResponse(data, init, request);
 
     try {
+        const disallowedOrigin = ensureAllowedRequestOrigin(request);
+        if (disallowedOrigin) {
+            return respond({ error: "Origin is not allowed" }, { status: 403 });
+        }
+
         setTransactionName("POST /api/upload-file");
 
         logger.info("Starting file upload");
@@ -555,7 +638,9 @@ export async function POST(request: NextRequest) {
                 );
             } finally {
                 if (tempFilePath) {
-                    await rm(tempFilePath, { force: true });
+                    await rm(tempFilePath, { force: true }).catch(
+                        () => undefined,
+                    );
                 }
             }
         })();
@@ -644,6 +729,11 @@ export async function DELETE(request: NextRequest) {
         jsonResponse(data, init, request);
 
     try {
+        const disallowedOrigin = ensureAllowedRequestOrigin(request);
+        if (disallowedOrigin) {
+            return respond({ error: "Origin is not allowed" }, { status: 403 });
+        }
+
         setTransactionName("DELETE /api/upload-file");
 
         const session = await getServerSession();

@@ -6,8 +6,8 @@ const packageJsonPath = join(process.cwd(), "package.json");
 
 const { mockCloseSocket, mockPublicClose, mockRealtimeSubscribe } = vi.hoisted(
     () => ({
-    mockCloseSocket: vi.fn().mockResolvedValue(undefined),
-    mockPublicClose: vi.fn().mockResolvedValue(undefined),
+        mockCloseSocket: vi.fn().mockResolvedValue(undefined),
+        mockPublicClose: vi.fn().mockResolvedValue(undefined),
         mockRealtimeSubscribe: vi.fn(async () => ({
             close: vi.fn(async () => {}),
         })),
@@ -126,14 +126,17 @@ describe("Realtime Pool", () => {
                 )
                 .mockResolvedValueOnce({ close: vi.fn(async () => {}) });
 
-            const wrappedSubscribe = (getSharedRealtime() as {
-                subscribe: (...args: unknown[]) => Promise<unknown>;
-            }).subscribe;
+            const wrappedSubscribe = (
+                getSharedRealtime() as {
+                    subscribe: (...args: unknown[]) => Promise<unknown>;
+                }
+            ).subscribe;
 
             const firstCall = wrappedSubscribe("channel-1", vi.fn());
             const secondCall = wrappedSubscribe("channel-2", vi.fn());
 
-            await new Promise((resolve) => setTimeout(resolve, 0));
+            await Promise.resolve();
+            await Promise.resolve();
             expect(mockRealtimeSubscribe).toHaveBeenCalledTimes(1);
 
             releaseFirstSubscribe?.();

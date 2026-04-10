@@ -1936,6 +1936,17 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many upload requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another upload attempt is allowed.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
         delete:
             tags: [Uploads]
             summary: Delete an uploaded image
@@ -2062,6 +2073,17 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "404":
                     description: File not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many delete requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another delete attempt is allowed.
                     content:
                         application/json:
                             schema:

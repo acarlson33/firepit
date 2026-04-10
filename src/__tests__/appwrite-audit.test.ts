@@ -4,6 +4,15 @@ const { mockServerCreateDocument } = vi.hoisted(() => ({
     mockServerCreateDocument: vi.fn(),
 }));
 
+function parseEqualQueryValue(query: string): string | undefined {
+    const value = query.match(/equal\([^,]+,(.+)\)/)?.[1];
+    if (!value) {
+        return undefined;
+    }
+
+    return value.replace(/^"/, "").replace(/"$/, "");
+}
+
 // Mock appwrite
 vi.mock("appwrite", () => ({
     ID: {
@@ -75,26 +84,17 @@ vi.mock("../lib/appwrite-core", () => ({
                     }
                 }
                 if (q.startsWith("equal(action,")) {
-                    const action = q
-                        .match(/equal\(action,(.+)\)/)?.[1]
-                        ?.replace(/^"/, "")
-                        .replace(/"$/, "");
+                    const action = parseEqualQueryValue(q);
                     filtered = filtered.filter((d: any) => d.action === action);
                 }
                 if (q.startsWith("equal(actorId,")) {
-                    const actorId = q
-                        .match(/equal\(actorId,(.+)\)/)?.[1]
-                        ?.replace(/^"/, "")
-                        .replace(/"$/, "");
+                    const actorId = parseEqualQueryValue(q);
                     filtered = filtered.filter(
                         (d: any) => d.actorId === actorId,
                     );
                 }
                 if (q.startsWith("equal(targetId,")) {
-                    const targetId = q
-                        .match(/equal\(targetId,(.+)\)/)?.[1]
-                        ?.replace(/^"/, "")
-                        .replace(/"$/, "");
+                    const targetId = parseEqualQueryValue(q);
                     filtered = filtered.filter(
                         (d: any) => d.targetId === targetId,
                     );
@@ -145,10 +145,7 @@ vi.mock("../lib/appwrite-admin", () => ({
                             }
                         }
                         if (q.startsWith("equal(action,")) {
-                            const action = q
-                                .match(/equal\(action,(.+)\)/)?.[1]
-                                ?.replace(/^"/, "")
-                                .replace(/"$/, "");
+                            const action = parseEqualQueryValue(q);
                             filtered = filtered.filter(
                                 (d: any) => d.action === action,
                             );

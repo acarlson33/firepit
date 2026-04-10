@@ -579,6 +579,10 @@ async function ensureIndex(
     } catch {
         // Wait for all attributes to be available before creating index
         for (const attr of attributes) {
+            if (attr.startsWith("$")) {
+                // System attributes are always available and are not returned by attribute APIs.
+                continue;
+            }
             await waitForAttribute(collection, attr);
         }
 
@@ -620,6 +624,9 @@ async function ensureIndex(
                 // If it's an "attribute not available" error, retry
                 if (isAttributePropagationError(errMsg)) {
                     for (const attr of attributes) {
+                        if (attr.startsWith("$")) {
+                            continue;
+                        }
                         await waitForAttribute(collection, attr);
                     }
                     continue;

@@ -27,6 +27,7 @@ const ALLOWED_IMAGE_TYPES = [
     "image/gif",
     "image/webp",
 ] as const;
+const ALLOWED_IMAGE_TYPE_SET = new Set<string>(ALLOWED_IMAGE_TYPES);
 
 if (ALLOWED_ORIGINS.length === 0) {
     logger.warn(
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Validate file type against explicit allowlist.
-        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        if (!ALLOWED_IMAGE_TYPE_SET.has(file.type)) {
             logger.warn("Invalid file type", { type: file.type });
             return respond(
                 {

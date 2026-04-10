@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ArrowDown,
     ArrowUp,
@@ -91,17 +91,6 @@ export function CategorySettingsPanel({
     >({});
     const loadRequestId = useRef(0);
 
-    useEffect(() => {
-        if (!serverId) {
-            return;
-        }
-
-        const task = loadData();
-        task.catch(() => {
-            // Errors are already surfaced in loadData.
-        });
-    }, [serverId]);
-
     const uncategorizedChannels = useMemo(
         () => sortChannels(channels.filter((channel) => !channel.categoryId)),
         [channels],
@@ -164,76 +153,90 @@ export function CategorySettingsPanel({
         return (pendingChannelCounts[channelId] ?? 0) > 0;
     }
 
-    async function loadData(options?: { silent?: boolean }) {
-        const requestId = ++loadRequestId.current;
-        if (options?.silent) {
-            setRefreshing(true);
-        } else {
-            setLoading(true);
-        }
+    const loadData = useCallback(
+        async (options?: { silent?: boolean }) => {
+            const requestId = ++loadRequestId.current;
+            if (options?.silent) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
 
-        try {
-            const [categoriesResponse, channelsResponse, rolesResponse] =
-                await Promise.all([
-                    fetch(`/api/categories?serverId=${serverId}`),
-                    fetch(`/api/channels?serverId=${serverId}&limit=100`),
-                    fetch(`/api/roles?serverId=${serverId}`),
-                ]);
+            try {
+                const [categoriesResponse, channelsResponse, rolesResponse] =
+                    await Promise.all([
+                        fetch(`/api/categories?serverId=${serverId}`),
+                        fetch(`/api/channels?serverId=${serverId}&limit=100`),
+                        fetch(`/api/roles?serverId=${serverId}`),
+                    ]);
 
-            if (
-                !categoriesResponse.ok ||
-                !channelsResponse.ok ||
-                !rolesResponse.ok
-            ) {
-                const failedResources: string[] = [];
-                if (!categoriesResponse.ok) {
-                    failedResources.push(
-                        `categories (${categoriesResponse.status})`,
+                if (
+                    !categoriesResponse.ok ||
+                    !channelsResponse.ok ||
+                    !rolesResponse.ok
+                ) {
+                    const failedResources: string[] = [];
+                    if (!categoriesResponse.ok) {
+                        failedResources.push(
+                            `categories (${categoriesResponse.status})`,
+                        );
+                    }
+                    if (!channelsResponse.ok) {
+                        failedResources.push(
+                            `channels (${channelsResponse.status})`,
+                        );
+                    }
+                    if (!rolesResponse.ok) {
+                        failedResources.push(`roles (${rolesResponse.status})`);
+                    }
+
+                    throw new Error(
+                        `Failed to load resources: ${failedResources.join(", ")}`,
                     );
                 }
-                if (!channelsResponse.ok) {
-                    failedResources.push(
-                        `channels (${channelsResponse.status})`,
-                    );
-                }
-                if (!rolesResponse.ok) {
-                    failedResources.push(`roles (${rolesResponse.status})`);
+
+                const categoriesData =
+                    (await categoriesResponse.json()) as CategoriesResponse;
+                const channelsData =
+                    (await channelsResponse.json()) as ChannelsResponse;
+                const rolesData = (await rolesResponse.json()) as RolesResponse;
+
+                if (requestId !== loadRequestId.current) {
+                    return;
                 }
 
-                throw new Error(
-                    `Failed to load resources: ${failedResources.join(", ")}`,
+                setCategories(sortCategories(categoriesData.categories));
+                setChannels(sortChannels(channelsData.channels));
+                setRoles(rolesData.roles);
+            } catch (error) {
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to load categories",
                 );
-            }
-
-            const categoriesData =
-                (await categoriesResponse.json()) as CategoriesResponse;
-            const channelsData =
-                (await channelsResponse.json()) as ChannelsResponse;
-            const rolesData = (await rolesResponse.json()) as RolesResponse;
-
-            if (requestId !== loadRequestId.current) {
-                return;
-            }
-
-            setCategories(sortCategories(categoriesData.categories));
-            setChannels(sortChannels(channelsData.channels));
-            setRoles(rolesData.roles);
-        } catch (error) {
-            toast.error(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load categories",
-            );
-        } finally {
-            if (requestId === loadRequestId.current) {
-                if (options?.silent) {
-                    setRefreshing(false);
-                } else {
-                    setLoading(false);
+            } finally {
+                if (requestId === loadRequestId.current) {
+                    if (options?.silent) {
+                        setRefreshing(false);
+                    } else {
+                        setLoading(false);
+                    }
                 }
             }
+        },
+        [serverId],
+    );
+
+    useEffect(() => {
+        if (!serverId) {
+            return;
         }
-    }
+
+        const task = loadData();
+        task.catch(() => {
+            // Errors are already surfaced in loadData.
+        });
+    }, [serverId, loadData]);
 
     function notifySidebar() {
         apiCache.clear(`categories:${serverId}:initial`);

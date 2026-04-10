@@ -115,13 +115,17 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
         return null;
     }
 
+    const rawReactions = payload.reactions;
+    const serializedReactions =
+        typeof rawReactions === "string"
+            ? rawReactions
+            : Array.isArray(rawReactions)
+              ? JSON.stringify(rawReactions)
+              : undefined;
+
     return {
         ...(payload as unknown as DirectMessage),
-        reactions: parseReactions(
-            typeof payload.reactions === "string"
-                ? payload.reactions
-                : undefined,
-        ),
+        reactions: parseReactions(serializedReactions),
     };
 }
 
