@@ -44,6 +44,27 @@ function getAllowedOrigin(request?: Request) {
     return ALLOWED_ORIGINS.includes(origin) ? origin : undefined;
 }
 
+function isSameOrigin(request: Request, originHeader: string): boolean {
+    try {
+        return new URL(request.url).origin === originHeader;
+    } catch {
+        return false;
+    }
+}
+
+function ensureAllowedRequestOrigin(request: Request): string | null {
+    const origin = request.headers.get("origin");
+    if (!origin) {
+        return null;
+    }
+
+    if (isSameOrigin(request, origin)) {
+        return null;
+    }
+
+    return ALLOWED_ORIGINS.includes(origin) ? null : origin;
+}
+
 function hasPrefix(bytes: Uint8Array, signature: number[]) {
     return signature.every((value, index) => bytes[index] === value);
 }
@@ -95,6 +116,15 @@ function jsonResponse(data: unknown, init?: ResponseInit, request?: Request) {
 
 // Handle preflight requests
 export async function OPTIONS(request: NextRequest) {
+    const disallowedOrigin = ensureAllowedRequestOrigin(request);
+    if (disallowedOrigin) {
+        return jsonResponse(
+            { error: "Origin is not allowed" },
+            { status: 403 },
+            request,
+        );
+    }
+
     return jsonResponse({}, undefined, request);
 }
 
@@ -108,6 +138,11 @@ export async function POST(request: NextRequest) {
         jsonResponse(data, init, request);
 
     try {
+        const disallowedOrigin = ensureAllowedRequestOrigin(request);
+        if (disallowedOrigin) {
+            return respond({ error: "Origin is not allowed" }, { status: 403 });
+        }
+
         setTransactionName("POST /api/upload-image");
 
         logger.info("Starting image upload");
@@ -128,7 +163,12 @@ export async function POST(request: NextRequest) {
         if (!rateLimitResult.allowed) {
             return respond(
                 { error: "Too many upload requests. Please try again later." },
-                { status: 429 },
+                {
+                    status: 429,
+                    headers: {
+                        "Retry-After": String(rateLimitResult.retryAfter || 60),
+                    },
+                },
             );
         }
 
@@ -288,6 +328,11 @@ export async function DELETE(request: NextRequest) {
         jsonResponse(data, init, request);
 
     try {
+        const disallowedOrigin = ensureAllowedRequestOrigin(request);
+        if (disallowedOrigin) {
+            return respond({ error: "Origin is not allowed" }, { status: 403 });
+        }
+
         setTransactionName("DELETE /api/upload-image");
 
         const session = await getServerSession();
@@ -303,7 +348,12 @@ export async function DELETE(request: NextRequest) {
         if (!rateLimitResult.allowed) {
             return respond(
                 { error: "Too many delete requests. Please try again later." },
-                { status: 429 },
+                {
+                    status: 429,
+                    headers: {
+                        "Retry-After": String(rateLimitResult.retryAfter || 60),
+                    },
+                },
             );
         }
 

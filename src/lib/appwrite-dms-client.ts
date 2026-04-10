@@ -51,9 +51,18 @@ export async function uploadImage(
         url?: string;
     };
     const resolvedUrl =
-        typeof data.fileUrl === "string" ? data.fileUrl : (data.url ?? "");
+        typeof data.fileUrl === "string"
+            ? data.fileUrl
+            : typeof data.url === "string"
+              ? data.url
+              : undefined;
 
-    if (!data.fileId || !resolvedUrl) {
+    if (
+        typeof data.fileId !== "string" ||
+        data.fileId.length === 0 ||
+        typeof resolvedUrl !== "string" ||
+        resolvedUrl.length === 0
+    ) {
         throw new Error("Invalid upload response");
     }
 

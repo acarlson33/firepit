@@ -9,6 +9,7 @@ type CachedProfileEntry = {
 
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const profileCache = new Map<string, CachedProfileEntry>();
+const inFlightProfileFetches = new Map<string, Promise<void>>();
 const prefetchInProgress = new Set<string>();
 
 function getCachedProfileValue(userId: string): unknown | undefined {
@@ -32,18 +33,15 @@ function setCachedProfileValue(userId: string, data: unknown): void {
     });
 }
 
-export function useProfilePrefetch() {
-    const prefetchProfile = useCallback(async (userId: string) => {
-        if (getCachedProfileValue(userId) !== undefined) {
-            return;
-        }
+function fetchProfileIntoCache(userId: string): Promise<void> {
+    const existing = inFlightProfileFetches.get(userId);
+    if (existing) {
+        return existing;
+    }
 
-        if (prefetchInProgress.has(userId)) {
-            return;
-        }
+    prefetchInProgress.add(userId);
 
-        prefetchInProgress.add(userId);
-
+    const requestPromise = (async () => {
         try {
             const response = await fetch(
                 `/api/users/${encodeURIComponent(userId)}/profile`,
@@ -53,10 +51,32 @@ export function useProfilePrefetch() {
                 setCachedProfileValue(userId, data);
             }
         } catch {
-            // Silently fail - profile will be fetched when needed
+            // Silently fail - profile will be fetched when needed.
         } finally {
+            inFlightProfileFetches.delete(userId);
             prefetchInProgress.delete(userId);
         }
+    })();
+
+    inFlightProfileFetches.set(userId, requestPromise);
+    return requestPromise;
+}
+
+export function useProfilePrefetch() {
+    const prefetchProfile = useCallback(async (userId: string) => {
+        if (getCachedProfileValue(userId) !== undefined) {
+            return;
+        }
+
+        if (prefetchInProgress.has(userId)) {
+            const existing = inFlightProfileFetches.get(userId);
+            if (existing) {
+                await existing;
+            }
+            return;
+        }
+
+        await fetchProfileIntoCache(userId);
     }, []);
 
     const getCachedProfile = useCallback((userId: string) => {
@@ -79,6 +99,16 @@ export const profilePrefetchPool = {
     processing: false,
     maxConcurrent: 3,
 
+    dequeueNext(): string | undefined {
+        const iterator = profilePrefetchPool.queue.values().next();
+        if (iterator.done || typeof iterator.value !== "string") {
+            return undefined;
+        }
+
+        profilePrefetchPool.queue.delete(iterator.value);
+        return iterator.value;
+    },
+
     getCachedProfile(userId: string): unknown | undefined {
         return getCachedProfileValue(userId);
     },
@@ -86,11 +116,14 @@ export const profilePrefetchPool = {
     add(userId: string) {
         if (
             getCachedProfileValue(userId) !== undefined ||
-            profilePrefetchPool.queue.has(userId)
+            profilePrefetchPool.queue.has(userId) ||
+            inFlightProfileFetches.has(userId) ||
+            prefetchInProgress.has(userId)
         ) {
             return;
         }
 
+        prefetchInProgress.add(userId);
         profilePrefetchPool.queue.add(userId);
         profilePrefetchPool.process().catch(() => {});
     },
@@ -106,46 +139,31 @@ export const profilePrefetchPool = {
         profilePrefetchPool.processing = true;
         const concurrency = Math.max(1, profilePrefetchPool.maxConcurrent);
 
-        const processNextBatch = async (): Promise<void> => {
-            while (profilePrefetchPool.queue.size > 0) {
-                const batch: string[] = [];
-                for (const id of profilePrefetchPool.queue) {
-                    if (batch.length >= concurrency) {
-                        break;
-                    }
-                    batch.push(id);
-                }
-
-                for (const id of batch) {
-                    profilePrefetchPool.queue.delete(id);
-                }
-
-                await Promise.all(
-                    batch.map(async (userId) => {
-                        if (getCachedProfileValue(userId) !== undefined) {
-                            return;
-                        }
-
-                        try {
-                            const response = await fetch(
-                                `/api/users/${encodeURIComponent(userId)}/profile`,
-                            );
-                            if (response.ok) {
-                                const data = await response.json();
-                                setCachedProfileValue(userId, data);
-                            }
-                        } catch {
-                            // Silently fail; modal can still fetch directly when needed.
-                        }
-                    }),
-                );
-            }
-        };
-
         try {
-            await processNextBatch();
+            const runWorker = async (): Promise<void> => {
+                const userId = profilePrefetchPool.dequeueNext();
+                if (!userId) {
+                    return;
+                }
+
+                if (getCachedProfileValue(userId) !== undefined) {
+                    prefetchInProgress.delete(userId);
+                    return runWorker();
+                }
+
+                await fetchProfileIntoCache(userId);
+                return runWorker();
+            };
+
+            const workers = Array.from({ length: concurrency }, runWorker);
+
+            await Promise.all(workers);
         } finally {
             profilePrefetchPool.processing = false;
+
+            if (profilePrefetchPool.queue.size > 0) {
+                profilePrefetchPool.process().catch(() => {});
+            }
         }
     },
 };

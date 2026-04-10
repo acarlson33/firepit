@@ -1977,6 +1977,18 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Error"
+                "400":
+                    description: Missing or invalid fileId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too many delete requests
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/upload-file:
         post:
@@ -2026,7 +2038,6 @@ paths:
                                             - audio
                                             - archives
                                             - code
-                                            - other
                                         example: images
                                 required: [fileId, fileName, fileSize, fileUrl]
                 "400":

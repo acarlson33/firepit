@@ -140,9 +140,6 @@ export default function OnboardingPage() {
     }
 
     function handleSkip() {
-        if (telemetryEnabled) {
-            posthog.capture("onboarding_skipped");
-        }
         router.push("/chat");
     }
 
@@ -168,7 +165,7 @@ export default function OnboardingPage() {
                                         ? "step"
                                         : undefined
                                 }
-                                aria-label={`Step ${index + 1}: ${step}${index === currentStepIndex ? " (current step)" : ""}`}
+                                aria-label={`Step ${index + 1}: ${step} - ${index < currentStepIndex ? "Completed" : index === currentStepIndex ? "Current step (current step)" : "Not started"}`}
                                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
                                     index <= currentStepIndex
                                         ? "bg-primary text-primary-foreground"

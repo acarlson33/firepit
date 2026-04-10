@@ -571,8 +571,24 @@ export async function GET(request: NextRequest) {
                         { status: 409 },
                     );
                 }
-            } catch {
-                // Continue to create new conversation if not found
+            } catch (error) {
+                logger.error(
+                    "Failed to lookup existing one-to-one conversation",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        requesterId: session.$id,
+                        targetUserId,
+                    },
+                );
+                return jsonResponse(
+                    {
+                        error: "Failed to verify existing direct message conversation",
+                    },
+                    { status: 500 },
+                );
             }
 
             const relationship = await getRelationshipStatus(

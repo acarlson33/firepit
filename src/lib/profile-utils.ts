@@ -75,15 +75,13 @@ export function getProfileBackgroundStyle(opts: {
 }): CSSProperties | undefined {
     if (opts.backgroundUrl) {
         const safeBackgroundUrl = toSafeBackgroundImageUrl(opts.backgroundUrl);
-        if (!safeBackgroundUrl) {
-            return undefined;
+        if (safeBackgroundUrl) {
+            return {
+                backgroundImage: `url("${safeBackgroundUrl}")`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+            };
         }
-
-        return {
-            backgroundImage: `url("${safeBackgroundUrl}")`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-        };
     }
     if (opts.gradient) {
         const safeGradient = sanitizeGradient(opts.gradient);

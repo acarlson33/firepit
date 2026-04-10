@@ -123,8 +123,80 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
               ? JSON.stringify(rawReactions)
               : undefined;
 
+    const mentions = Array.isArray(payload.mentions)
+        ? payload.mentions.filter(
+              (mention): mention is string => typeof mention === "string",
+          )
+        : undefined;
+    const threadParticipants = Array.isArray(payload.threadParticipants)
+        ? payload.threadParticipants.filter(
+              (participant): participant is string =>
+                  typeof participant === "string",
+          )
+        : undefined;
+
     return {
-        ...(payload as unknown as DirectMessage),
+        $id: payload.$id,
+        conversationId: payload.conversationId,
+        senderId: payload.senderId,
+        $createdAt: payload.$createdAt,
+        text: typeof payload.text === "string" ? payload.text : "",
+        receiverId:
+            typeof payload.receiverId === "string"
+                ? payload.receiverId
+                : undefined,
+        imageFileId:
+            typeof payload.imageFileId === "string"
+                ? payload.imageFileId
+                : undefined,
+        imageUrl:
+            typeof payload.imageUrl === "string" ? payload.imageUrl : undefined,
+        editedAt:
+            typeof payload.editedAt === "string" ? payload.editedAt : undefined,
+        removedAt:
+            typeof payload.removedAt === "string"
+                ? payload.removedAt
+                : undefined,
+        removedBy:
+            typeof payload.removedBy === "string"
+                ? payload.removedBy
+                : undefined,
+        replyToId:
+            typeof payload.replyToId === "string"
+                ? payload.replyToId
+                : undefined,
+        threadId:
+            typeof payload.threadId === "string" ? payload.threadId : undefined,
+        threadMessageCount:
+            typeof payload.threadMessageCount === "number"
+                ? payload.threadMessageCount
+                : undefined,
+        threadParticipants,
+        lastThreadReplyAt:
+            typeof payload.lastThreadReplyAt === "string"
+                ? payload.lastThreadReplyAt
+                : undefined,
+        mentions,
+        senderDisplayName:
+            typeof payload.senderDisplayName === "string"
+                ? payload.senderDisplayName
+                : undefined,
+        senderAvatarUrl:
+            typeof payload.senderAvatarUrl === "string"
+                ? payload.senderAvatarUrl
+                : undefined,
+        senderAvatarFramePreset:
+            typeof payload.senderAvatarFramePreset === "string"
+                ? payload.senderAvatarFramePreset
+                : undefined,
+        senderAvatarFrameUrl:
+            typeof payload.senderAvatarFrameUrl === "string"
+                ? payload.senderAvatarFrameUrl
+                : undefined,
+        senderPronouns:
+            typeof payload.senderPronouns === "string"
+                ? payload.senderPronouns
+                : undefined,
         reactions: parseReactions(serializedReactions),
     };
 }

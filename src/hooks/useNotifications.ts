@@ -324,7 +324,6 @@ export function useNotifications({
         return () => {
             cancelled = true;
             unsubscribe?.();
-            untrack?.();
         };
     }, [
         userId,
@@ -452,14 +451,12 @@ export function useNotifications({
                 }
 
                 const untrack = trackSubscription(messageChannelKey);
-                cleanup = () => {
-                    createRealtimeCleanup({
-                        contextId: conversationId,
-                        contextLabel: "DM",
-                        subscription,
-                        untrack,
-                    })();
-                };
+                cleanup = createRealtimeCleanup({
+                    contextId: conversationId,
+                    contextLabel: "DM",
+                    subscription,
+                    untrack,
+                });
             })
             .catch((error) => {
                 if (cancelled) {

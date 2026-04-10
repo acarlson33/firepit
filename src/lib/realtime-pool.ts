@@ -15,12 +15,23 @@ let inFlightDispose: Promise<void> | null = null;
 let subscribeQueueTail: Promise<void> = Promise.resolve();
 let sharedRealtimeGeneration = 0;
 
-function queueRealtimeSubscribe<T>(operation: () => Promise<T>): Promise<T> {
+function queueRealtimeSubscribe<T>(
+    generationAtEnqueue: number,
+    operation: () => Promise<T>,
+): Promise<T> {
     const nextOperation = subscribeQueueTail
         .catch(() => {
             // Keep subscribe queue progressing even if an earlier subscribe failed.
         })
-        .then(operation);
+        .then(() => {
+            if (generationAtEnqueue !== sharedRealtimeGeneration) {
+                throw new Error(
+                    "Skipped stale realtime subscribe after generation change",
+                );
+            }
+
+            return operation();
+        });
 
     subscribeQueueTail = nextOperation.then(
         () => undefined,
@@ -33,6 +44,7 @@ function queueRealtimeSubscribe<T>(operation: () => Promise<T>): Promise<T> {
 function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     const realtimeWithMetadata = realtime as Realtime & {
         __firepitSubscribePatched?: boolean;
+        __firepitGeneration?: number;
     };
 
     if (realtimeWithMetadata.__firepitSubscribePatched) {
@@ -40,9 +52,13 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     }
 
     const baseSubscribe = realtime.subscribe.bind(realtime);
+    const generation = realtimeWithMetadata.__firepitGeneration;
     realtime.subscribe = ((...args: Parameters<Realtime["subscribe"]>) =>
-        queueRealtimeSubscribe(() =>
-            baseSubscribe(...args),
+        queueRealtimeSubscribe(
+            typeof generation === "number"
+                ? generation
+                : sharedRealtimeGeneration,
+            () => baseSubscribe(...args),
         )) as Realtime["subscribe"];
 
     realtimeWithMetadata.__firepitSubscribePatched = true;
@@ -260,9 +276,11 @@ export function getSharedClient(): Client {
 export function getSharedRealtime(): Realtime {
     if (!sharedRealtime) {
         sharedRealtimeGeneration += 1;
-        sharedRealtime = patchRealtimeSubscribe(
-            new Realtime(getSharedClient()),
-        );
+        const realtime = new Realtime(getSharedClient()) as Realtime & {
+            __firepitGeneration?: number;
+        };
+        realtime.__firepitGeneration = sharedRealtimeGeneration;
+        sharedRealtime = patchRealtimeSubscribe(realtime);
     }
 
     return sharedRealtime;
@@ -308,20 +326,23 @@ export async function disposeSharedRealtime(): Promise<void> {
     }
 
     const disposePromise = (async () => {
+        sharedRealtimeGeneration += 1;
+        const disposeGeneration = sharedRealtimeGeneration;
+
         if (!sharedRealtime) {
             subscriptionRefs.clear();
+            subscribeQueueTail = Promise.resolve();
             return;
         }
 
         const realtime = sharedRealtime;
-        const generationAtDisposeStart = sharedRealtimeGeneration;
 
         try {
             await safeCleanupRealtime(realtime);
         } finally {
             if (
                 sharedRealtime === realtime &&
-                sharedRealtimeGeneration === generationAtDisposeStart
+                sharedRealtimeGeneration === disposeGeneration
             ) {
                 sharedRealtime = null;
                 subscriptionRefs.clear();

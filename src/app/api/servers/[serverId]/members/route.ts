@@ -14,6 +14,7 @@ const roleAssignmentsCollectionId = "role_assignments";
 const bannedUsersCollectionId = env.collections.bannedUsers || "banned_users";
 const mutedUsersCollectionId = env.collections.mutedUsers || "muted_users";
 const QUERY_ARRAY_LIMIT = 100;
+const PAGE_SIZE = 100;
 
 function chunkValues<T>(values: T[], size: number) {
     const chunks: T[][] = [];
@@ -21,6 +22,48 @@ function chunkValues<T>(values: T[], size: number) {
         chunks.push(values.slice(index, index + size));
     }
     return chunks;
+}
+
+async function listAllServerDocuments(serverId: string, collectionId: string) {
+    const { databases } = getServerClient();
+    const documents: Array<Record<string, unknown>> = [];
+    let cursorAfter: string | null = null;
+
+    while (true) {
+        const queries = [
+            Query.equal("serverId", serverId),
+            Query.orderAsc("$id"),
+            Query.limit(PAGE_SIZE),
+        ];
+
+        if (cursorAfter) {
+            queries.push(Query.cursorAfter(cursorAfter));
+        }
+
+        const page = await databases.listDocuments(
+            databaseId,
+            collectionId,
+            queries,
+        );
+        const pageDocuments = page.documents as Array<Record<string, unknown>>;
+        documents.push(...pageDocuments);
+
+        if (pageDocuments.length < PAGE_SIZE) {
+            break;
+        }
+
+        const lastDocument = pageDocuments.at(-1);
+        cursorAfter =
+            lastDocument && typeof lastDocument.$id === "string"
+                ? lastDocument.$id
+                : null;
+
+        if (!cursorAfter) {
+            break;
+        }
+    }
+
+    return documents;
 }
 
 type RouteContext = {
@@ -52,21 +95,19 @@ export async function GET(request: Request, context: RouteContext) {
         }
 
         // Get all memberships for this server
-        const memberships = await databases.listDocuments(
-            databaseId,
+        const memberships = await listAllServerDocuments(
+            serverId,
             membershipsCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(100)],
         );
 
-        const membershipUserIds = memberships.documents.map((membership) =>
+        const membershipUserIds = memberships.map((membership) =>
             String(membership.userId),
         );
 
         // Get role assignments for this server
-        const roleAssignments = await databases.listDocuments(
-            databaseId,
+        const roleAssignments = await listAllServerDocuments(
+            serverId,
             roleAssignmentsCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(100)],
         );
 
         // Get banned/muted status for this server
@@ -121,7 +162,7 @@ export async function GET(request: Request, context: RouteContext) {
 
         // Create a map of userId to roleIds
         const roleMap = new Map<string, string[]>();
-        for (const assignment of roleAssignments.documents) {
+        for (const assignment of roleAssignments) {
             roleMap.set(
                 assignment.userId as string,
                 (assignment.roleIds as string[]) || [],
@@ -159,17 +200,18 @@ export async function GET(request: Request, context: RouteContext) {
             isMuted: boolean;
         }>;
 
-        for (const membership of memberships.documents) {
+        for (const membership of memberships) {
             const userId = membership.userId as string;
             try {
                 const profile = profilesByUserId.get(userId);
 
                 if (!profile) {
                     // User profile is gone (likely account deleted) — remove membership and any role assignments
+                    const membershipDocumentId = String(membership.$id);
                     await databases.deleteDocument(
                         databaseId,
                         membershipsCollectionId,
-                        membership.$id,
+                        membershipDocumentId,
                     );
 
                     const orphanAssignments = await databases.listDocuments(
@@ -187,7 +229,7 @@ export async function GET(request: Request, context: RouteContext) {
                             databases.deleteDocument(
                                 databaseId,
                                 roleAssignmentsCollectionId,
-                                assignment.$id,
+                                String(assignment.$id),
                             ),
                         ),
                     );

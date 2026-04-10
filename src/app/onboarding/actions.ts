@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { AuthError, requireAuth } from "@/lib/auth-server";
 import {
     getOrCreateUserProfile,
@@ -38,6 +39,10 @@ const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_PRONOUNS_LENGTH = 50;
 const MAX_BIO_LENGTH = 1000;
 
+function hashIdentifier(identifier: string) {
+    return createHash("sha256").update(identifier).digest("hex").slice(0, 16);
+}
+
 function isAuthFailure(error: unknown) {
     if (error instanceof AuthError) {
         return true;
@@ -66,6 +71,8 @@ export async function completeOnboardingAction(
 
         // Get or create profile
         const profile = await getOrCreateUserProfile(user.$id, user.name);
+        const userHash = hashIdentifier(user.$id);
+        const profileHash = hashIdentifier(profile.$id);
 
         // Extract profile form data
         const rawDisplayName = formData.get("displayName");
@@ -128,7 +135,7 @@ export async function completeOnboardingAction(
                 "Invalid onboarding notification level, using default",
                 {
                     rawLevel,
-                    userId: user.$id,
+                    userId: userHash,
                 },
             );
         }
@@ -138,7 +145,7 @@ export async function completeOnboardingAction(
                 "Invalid onboarding direct message privacy, using default",
                 {
                     rawPrivacy,
-                    userId: user.$id,
+                    userId: userHash,
                 },
             );
         }
@@ -169,7 +176,8 @@ export async function completeOnboardingAction(
                         rollbackError instanceof Error
                             ? rollbackError.message
                             : String(rollbackError),
-                    userId: user.$id,
+                    profileId: profileHash,
+                    userId: userHash,
                 });
             }
 
@@ -178,7 +186,7 @@ export async function completeOnboardingAction(
                     settingsError instanceof Error
                         ? settingsError.message
                         : String(settingsError),
-                userId: user.$id,
+                userId: userHash,
             });
 
             return {

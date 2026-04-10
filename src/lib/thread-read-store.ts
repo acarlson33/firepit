@@ -9,6 +9,7 @@ import {
 
 type ThreadReadDocument = {
     $id: string;
+    $updatedAt?: string;
     contextId: string;
     contextType: ThreadReadContextType;
     reads: Record<string, string>;
@@ -67,6 +68,10 @@ function mapThreadReadDocument(
 ): ThreadReadDocument {
     return {
         $id: String(document.$id),
+        $updatedAt:
+            typeof document.$updatedAt === "string"
+                ? document.$updatedAt
+                : undefined,
         contextId: String(document.contextId),
         contextType: String(document.contextType) as ThreadReadContextType,
         reads: normalizeThreadReads(document.reads),
@@ -86,6 +91,72 @@ function mergeReadsAcrossDocuments(
             }),
         initialReads,
     );
+}
+
+function areReadMapsEqual(
+    leftReads: Record<string, string>,
+    rightReads: Record<string, string>,
+) {
+    const leftKeys = Object.keys(leftReads);
+    const rightKeys = Object.keys(rightReads);
+    if (leftKeys.length !== rightKeys.length) {
+        return false;
+    }
+
+    for (const key of leftKeys) {
+        if (leftReads[key] !== rightReads[key]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+async function mergeIntoExistingThreadReadDocument(params: {
+    contextId: string;
+    contextType: ThreadReadContextType;
+    incomingReads: Record<string, string>;
+    userId: string;
+}) {
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    let expectedReads = params.incomingReads;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        const documents = await listThreadReadDocumentsForContext(params);
+        const primaryDocument = documents[0];
+        if (!primaryDocument) {
+            return null;
+        }
+
+        const mergedReads = mergeReadsAcrossDocuments(documents, expectedReads);
+        const updatedDocument = await databases.updateDocument(
+            env.databaseId,
+            env.collections.threadReads,
+            primaryDocument.$id,
+            {
+                reads: JSON.stringify(mergedReads),
+            },
+        );
+        const mappedUpdated = mapThreadReadDocument(
+            updatedDocument as unknown as Record<string, unknown>,
+        );
+
+        const verifiedDocuments =
+            await listThreadReadDocumentsForContext(params);
+        const verifiedReads = mergeReadsAcrossDocuments(
+            verifiedDocuments,
+            expectedReads,
+        );
+
+        if (areReadMapsEqual(mappedUpdated.reads, verifiedReads)) {
+            return mappedUpdated;
+        }
+
+        expectedReads = verifiedReads;
+    }
+
+    throw new Error("Unable to apply merged thread reads without conflicts");
 }
 
 /**
@@ -204,27 +275,12 @@ export async function upsertThreadReads(params: {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
     const incomingReads = normalizeThreadReads(params.reads);
-    const existingDocuments = await listThreadReadDocumentsForContext(params);
-
-    if (existingDocuments.length > 0) {
-        const primaryDocument = existingDocuments[0];
-        const mergedReads = mergeReadsAcrossDocuments(
-            existingDocuments,
-            incomingReads,
-        );
-
-        const updatedDocument = await databases.updateDocument(
-            env.databaseId,
-            env.collections.threadReads,
-            primaryDocument.$id,
-            {
-                reads: JSON.stringify(mergedReads),
-            },
-        );
-
-        return mapThreadReadDocument(
-            updatedDocument as unknown as Record<string, unknown>,
-        );
+    const updatedExisting = await mergeIntoExistingThreadReadDocument({
+        ...params,
+        incomingReads,
+    });
+    if (updatedExisting) {
+        return updatedExisting;
     }
 
     const payload = {
@@ -258,23 +314,14 @@ export async function upsertThreadReads(params: {
             throw error;
         }
 
-        const primaryDocument = concurrentDocuments[0];
-        const mergedReads = mergeReadsAcrossDocuments(
-            concurrentDocuments,
+        const merged = await mergeIntoExistingThreadReadDocument({
+            ...params,
             incomingReads,
-        );
+        });
+        if (!merged) {
+            throw error;
+        }
 
-        const updatedDocument = await databases.updateDocument(
-            env.databaseId,
-            env.collections.threadReads,
-            primaryDocument.$id,
-            {
-                reads: JSON.stringify(mergedReads),
-            },
-        );
-
-        return mapThreadReadDocument(
-            updatedDocument as unknown as Record<string, unknown>,
-        );
+        return merged;
     }
 }

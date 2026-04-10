@@ -85,7 +85,6 @@ export async function POST(request: NextRequest) {
         const {
             text,
             channelId,
-            serverId: _serverId,
             imageFileId,
             imageUrl,
             replyToId,
@@ -209,7 +208,7 @@ export async function POST(request: NextRequest) {
         if (mentions && Array.isArray(mentions) && mentions.length > 0) {
             await upsertMentionInboxItems({
                 authorUserId: userId,
-                contextId: String(channelId),
+                contextId: normalizedChannelId,
                 contextKind: "channel",
                 latestActivityAt: String(
                     res.$createdAt ?? new Date().toISOString(),
@@ -244,7 +243,7 @@ export async function POST(request: NextRequest) {
         trackMessage("sent", "channel", {
             messageId: message.$id,
             userId,
-            channelId,
+            channelId: normalizedChannelId,
             serverId: normalizedServerId,
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
@@ -255,7 +254,7 @@ export async function POST(request: NextRequest) {
 
         recordEvent("message_sent", {
             actorUserId: userId,
-            channelId,
+            channelId: normalizedChannelId,
             hasAttachments: Boolean(attachments && attachments.length > 0),
             hasImage: Boolean(imageFileId),
             isReply: Boolean(replyToId),
@@ -463,12 +462,23 @@ export async function DELETE(request: NextRequest) {
             messageId,
         );
 
+        const normalizedDeletedChannelId =
+            typeof existing.channelId === "string" &&
+            existing.channelId.trim().length > 0
+                ? existing.channelId.trim()
+                : undefined;
+        const normalizedDeletedServerId =
+            typeof existing.serverId === "string" &&
+            existing.serverId.trim().length > 0
+                ? existing.serverId.trim()
+                : undefined;
+
         recordEvent("message_deleted", {
             actorUserId: user.$id,
-            channelId: existing.channelId ?? undefined,
+            channelId: normalizedDeletedChannelId,
             messageId,
             messageType: "channel",
-            serverId: existing.serverId ?? undefined,
+            serverId: normalizedDeletedServerId,
             totalQueryTimeMs: Date.now() - startTime,
         });
 

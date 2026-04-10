@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppwriteException } from "node-appwrite";
+import { AppwriteException, type TablesDB } from "node-appwrite";
 
 import {
     adminDeleteMessage,
@@ -18,7 +18,10 @@ const tablesDbStub = {
     getRow: vi.fn(),
     updateRow: vi.fn(),
     updateTransaction: vi.fn(),
-};
+} satisfies Pick<
+    TablesDB,
+    "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
+>;
 
 const SMALL_LIMIT = 5;
 const DEFAULT_LIMIT = 10;

@@ -40,13 +40,31 @@ export type UserProfile = {
     $updatedAt: string;
 };
 
-type UserProfileUpdatePayload = {
-    [K in keyof MutableUserProfileFields]?: MutableUserProfileFields[K] | null;
-};
+const editableProfileKeys = [
+    "userName",
+    "displayName",
+    "bio",
+    "pronouns",
+    "avatarFileId",
+    "location",
+    "website",
+    "showDocsInNavigation",
+    "showFriendsInNavigation",
+    "showSettingsInNavigation",
+    "showAddFriendInHeader",
+    "telemetryEnabled",
+    "navigationItemOrder",
+    "profileBackgroundColor",
+    "profileBackgroundGradient",
+    "profileBackgroundImageFileId",
+    "profileBackgroundImageChangedAt",
+    "avatarFramePreset",
+] as const;
 
-type MutableUserProfileFields = Omit<
-    UserProfile,
-    "$id" | "userId" | "$createdAt" | "$updatedAt"
+type EditableProfileKey = (typeof editableProfileKeys)[number];
+
+type UserProfileUpdatePayload = Partial<
+    Record<EditableProfileKey, UserProfile[EditableProfileKey] | null>
 >;
 
 function chunkValues<T>(values: T[], size: number) {
@@ -240,20 +258,10 @@ export async function updateUserProfile(
     const env = getEnvConfig();
 
     const cleanData: UserProfileUpdatePayload = {};
-    const mutableCleanData = cleanData as Record<
-        string,
-        Exclude<
-            UserProfileUpdatePayload[keyof UserProfileUpdatePayload],
-            undefined
-        >
-    >;
-
-    for (const key of Object.keys(data) as Array<
-        keyof UserProfileUpdatePayload
-    >) {
+    for (const key of editableProfileKeys) {
         const value = data[key];
         if (value !== undefined) {
-            mutableCleanData[key] = value;
+            cleanData[key] = value;
         }
     }
 
