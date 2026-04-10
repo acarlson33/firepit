@@ -144,17 +144,9 @@ export function DeveloperModeSettings() {
                             <div className="flex items-center gap-2 self-start">
                                 <Switch
                                     checked={isVisible}
-                                    aria-disabled={controlsDisabled}
-                                    className={
-                                        controlsDisabled
-                                            ? "pointer-events-none opacity-50"
-                                            : ""
-                                    }
+                                    disabled={controlsDisabled}
                                     id={`navigation-${item}`}
                                     onCheckedChange={(checked) => {
-                                        if (controlsDisabled) {
-                                            return;
-                                        }
                                         updateNavigationPreferences({
                                             [visibilityKey]: checked,
                                         });
@@ -219,19 +211,12 @@ export function DeveloperModeSettings() {
 
                     <Switch
                         checked={navigationPreferences.showAddFriendInHeader}
-                        aria-disabled={controlsDisabled}
-                        className={
-                            controlsDisabled
-                                ? "pointer-events-none opacity-50"
-                                : ""
-                        }
+                        disabled={controlsDisabled}
                         id="header-add-friend"
                         onCheckedChange={(checked) =>
-                            controlsDisabled
-                                ? undefined
-                                : updateNavigationPreferences({
-                                      showAddFriendInHeader: checked,
-                                  })
+                            updateNavigationPreferences({
+                                showAddFriendInHeader: checked,
+                            })
                         }
                     />
                 </div>

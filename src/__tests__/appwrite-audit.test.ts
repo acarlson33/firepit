@@ -77,13 +77,15 @@ vi.mock("../lib/appwrite-core", () => ({
                 if (q.startsWith("equal(action,")) {
                     const action = q
                         .match(/equal\(action,(.+)\)/)?.[1]
-                        ?.replace(/^"|"$/g, "");
+                        ?.replace(/^"/, "")
+                        .replace(/"$/, "");
                     filtered = filtered.filter((d: any) => d.action === action);
                 }
                 if (q.startsWith("equal(actorId,")) {
                     const actorId = q
                         .match(/equal\(actorId,(.+)\)/)?.[1]
-                        ?.replace(/^"|"$/g, "");
+                        ?.replace(/^"/, "")
+                        .replace(/"$/, "");
                     filtered = filtered.filter(
                         (d: any) => d.actorId === actorId,
                     );
@@ -91,7 +93,8 @@ vi.mock("../lib/appwrite-core", () => ({
                 if (q.startsWith("equal(targetId,")) {
                     const targetId = q
                         .match(/equal\(targetId,(.+)\)/)?.[1]
-                        ?.replace(/^"|"$/g, "");
+                        ?.replace(/^"/, "")
+                        .replace(/"$/, "");
                     filtered = filtered.filter(
                         (d: any) => d.targetId === targetId,
                     );
@@ -144,7 +147,8 @@ vi.mock("../lib/appwrite-admin", () => ({
                         if (q.startsWith("equal(action,")) {
                             const action = q
                                 .match(/equal\(action,(.+)\)/)?.[1]
-                                ?.replace(/^"|"$/g, "");
+                                ?.replace(/^"/, "")
+                                .replace(/"$/, "");
                             filtered = filtered.filter(
                                 (d: any) => d.action === action,
                             );

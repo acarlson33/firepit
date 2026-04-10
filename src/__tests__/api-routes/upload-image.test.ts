@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import { AppwriteException } from "node-appwrite";
 
 // Create persistent mocks
 const {
@@ -65,6 +66,16 @@ vi.mock("@/lib/newrelic-utils", () => ({
 }));
 
 vi.mock("node-appwrite", () => ({
+    AppwriteException: class AppwriteException extends Error {
+        code: number;
+        type: string;
+
+        constructor(message: string, code = 500, type = "unknown") {
+            super(message);
+            this.code = code;
+            this.type = type;
+        }
+    },
     ID: {
         unique: () => "mock-file-id",
     },
@@ -82,9 +93,17 @@ vi.mock("node-appwrite", () => ({
 describe("Upload Image API", () => {
     let POST: (request: NextRequest) => Promise<Response>;
     let DELETE: (request: NextRequest) => Promise<Response>;
+    const validPngBytes = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03,
+    ]);
 
     beforeEach(async () => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
+        mockGetFile.mockResolvedValue({
+            $id: "file-123",
+            $permissions: ['delete("user:user-1")', 'read("user:user-1")'],
+        });
+        mockCheckRateLimit.mockReturnValue({ allowed: true });
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/upload-image/route");
@@ -93,6 +112,37 @@ describe("Upload Image API", () => {
     });
 
     describe("POST /api/upload-image", () => {
+        it("should return 429 when rate limit is exceeded", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockCheckRateLimit.mockReturnValueOnce({ allowed: false });
+
+            const formData = new FormData();
+            formData.append(
+                "file",
+                new File(["test image content"], "test.png", {
+                    type: "image/png",
+                }),
+            );
+
+            const request = new NextRequest(
+                "http://localhost/api/upload-image",
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(429);
+            expect(data.error).toContain("Too many upload requests");
+            expect(mockCreateFile).not.toHaveBeenCalled();
+        });
+
         it("should return 401 if user is not authenticated", async () => {
             mockGetServerSession.mockResolvedValue(null);
 
@@ -163,7 +213,7 @@ describe("Upload Image API", () => {
             expect(data.error).toContain("Only JPEG, PNG, GIF");
         });
 
-        it("should return 400 if file is too large", async () => {
+        it("should return 413 if file is too large", async () => {
             mockGetServerSession.mockResolvedValue({
                 $id: "user-1",
                 name: "Test User",
@@ -171,7 +221,7 @@ describe("Upload Image API", () => {
 
             const formData = new FormData();
             // Create a file larger than 5MB
-            const largeContent = new Array(6 * 1024 * 1024).join("a");
+            const largeContent = "a".repeat(6 * 1024 * 1024);
             const file = new File([largeContent], "large.png", {
                 type: "image/png",
             });
@@ -188,7 +238,7 @@ describe("Upload Image API", () => {
             const response = await POST(request);
             const data = await response.json();
 
-            expect(response.status).toBe(400);
+            expect(response.status).toBe(413);
             expect(data.error).toContain("5MB");
         });
 
@@ -203,7 +253,7 @@ describe("Upload Image API", () => {
             });
 
             const formData = new FormData();
-            const file = new File(["test image content"], "test.png", {
+            const file = new File([validPngBytes], "test.png", {
                 type: "image/png",
             });
             formData.append("file", file);
@@ -221,7 +271,7 @@ describe("Upload Image API", () => {
 
             expect(response.status).toBe(200);
             expect(data.fileId).toBe("file-123");
-            expect(data.url).toContain("file-123");
+            expect(data.fileUrl).toContain("file-123");
             expect(mockCreateFile).toHaveBeenCalled();
         });
 
@@ -234,7 +284,9 @@ describe("Upload Image API", () => {
             mockCreateFile.mockRejectedValue(new Error("Storage error"));
 
             const formData = new FormData();
-            const file = new File(["test"], "test.png", { type: "image/png" });
+            const file = new File([validPngBytes], "test.png", {
+                type: "image/png",
+            });
             formData.append("file", file);
 
             const request = new NextRequest(
@@ -309,6 +361,33 @@ describe("Upload Image API", () => {
 
             expect(response.status).toBe(200);
             expect(data.success).toBe(true);
+            expect(mockDeleteFile).toHaveBeenCalledWith(
+                "test-bucket",
+                "file-123",
+            );
+        });
+
+        it("should return 403 when delete is forbidden by storage permissions", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockDeleteFile.mockRejectedValueOnce(
+                new AppwriteException("Forbidden", 403, "user_unauthorized"),
+            );
+
+            const url = new URL(
+                "http://localhost/api/upload-image?fileId=file-123",
+            );
+            const request = new NextRequest(url, {
+                method: "DELETE",
+            });
+
+            const response = await DELETE(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(403);
+            expect(data.error).toBe("Forbidden");
             expect(mockDeleteFile).toHaveBeenCalledWith(
                 "test-bucket",
                 "file-123",

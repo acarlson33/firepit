@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST, DELETE } from "@/app/api/upload-file/route";
+import { AppwriteException } from "node-appwrite";
 
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
@@ -25,16 +26,27 @@ vi.mock("node-appwrite", () => ({
 }));
 
 // Create persistent mocks using vi.hoisted
-const { mockGetServerSession, mockCreateFile, mockGetFile, mockDeleteFile } =
-    vi.hoisted(() => ({
-        mockGetServerSession: vi.fn(),
-        mockCreateFile: vi.fn(),
-        mockGetFile: vi.fn().mockResolvedValue({
-            $id: "file123",
-            $permissions: ['delete("user:user123")', 'read("user:user123")'],
-        }),
-        mockDeleteFile: vi.fn(),
-    }));
+const {
+    mockGetServerSession,
+    mockCreateFile,
+    mockGetFile,
+    mockDeleteFile,
+    mockCheckRateLimit,
+} = vi.hoisted(() => ({
+    mockGetServerSession: vi.fn(),
+    mockCreateFile: vi.fn(),
+    mockGetFile: vi.fn().mockResolvedValue({
+        $id: "file123",
+        $permissions: ['delete("user:user123")', 'read("user:user123")'],
+    }),
+    mockDeleteFile: vi.fn(),
+    mockCheckRateLimit: vi.fn(() => ({
+        allowed: true,
+        remaining: 9,
+        resetAt: Date.now() + 300_000,
+        retryAfter: 60,
+    })),
+}));
 
 // Mock dependencies
 vi.mock("@/lib/auth-server", () => ({
@@ -94,11 +106,30 @@ vi.mock("@/lib/newrelic-utils", () => ({
     recordEvent: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limiter", () => ({
+    checkRateLimit: mockCheckRateLimit,
+}));
+
+function createFileFromBytes(
+    bytes: number[],
+    fileName: string,
+    type: string,
+): File {
+    return new File([new Uint8Array(bytes)], fileName, { type });
+}
+
 describe("POST /api/upload-file", () => {
     beforeEach(() => {
         mockGetServerSession.mockClear();
         mockCreateFile.mockClear();
         mockDeleteFile.mockClear();
+        mockCheckRateLimit.mockClear();
+        mockCheckRateLimit.mockReturnValue({
+            allowed: true,
+            remaining: 9,
+            resetAt: Date.now() + 300_000,
+            retryAfter: 60,
+        });
     });
 
     it("should reject unauthorized requests", async () => {
@@ -120,6 +151,38 @@ describe("POST /api/upload-file", () => {
 
         const data = await response.json();
         expect(data).toEqual({ error: "Unauthorized" });
+    });
+
+    it("should return 429 when upload rate limit is exceeded", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCheckRateLimit.mockReturnValueOnce({
+            allowed: false,
+            remaining: 0,
+            resetAt: Date.now() + 60_000,
+            retryAfter: 60,
+        });
+
+        const formData = new FormData();
+        formData.append(
+            "file",
+            createFileFromBytes(
+                [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31],
+                "test.pdf",
+                "application/pdf",
+            ),
+        );
+
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
+
+        const response = await POST(request);
+        expect(response.status).toBe(429);
+
+        const data = await response.json();
+        expect(data.error).toContain("Too many upload requests");
+        expect(mockCreateFile).not.toHaveBeenCalled();
     });
 
     it("should reject requests without a file", async () => {
@@ -194,7 +257,11 @@ describe("POST /api/upload-file", () => {
         const formData = new FormData();
         formData.append(
             "file",
-            new File(["test content"], "test.pdf", { type: "application/pdf" }),
+            createFileFromBytes(
+                [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37],
+                "test.pdf",
+                "application/pdf",
+            ),
         );
 
         const request = new Request("http://localhost/api/upload-file", {
@@ -222,7 +289,14 @@ describe("POST /api/upload-file", () => {
         const formData = new FormData();
         formData.append(
             "file",
-            new File(["video content"], "test.mp4", { type: "video/mp4" }),
+            createFileFromBytes(
+                [
+                    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73,
+                    0x6f, 0x6d,
+                ],
+                "test.mp4",
+                "video/mp4",
+            ),
         );
 
         const request = new Request("http://localhost/api/upload-file", {
@@ -247,7 +321,11 @@ describe("POST /api/upload-file", () => {
         const formData = new FormData();
         formData.append(
             "file",
-            new File(["audio content"], "test.mp3", { type: "audio/mpeg" }),
+            createFileFromBytes(
+                [0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00],
+                "test.mp3",
+                "audio/mpeg",
+            ),
         );
 
         const request = new Request("http://localhost/api/upload-file", {
@@ -270,7 +348,11 @@ describe("POST /api/upload-file", () => {
         const formData = new FormData();
         formData.append(
             "file",
-            new File(["test"], "test.pdf", { type: "application/pdf" }),
+            createFileFromBytes(
+                [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37],
+                "test.pdf",
+                "application/pdf",
+            ),
         );
 
         const request = new Request("http://localhost/api/upload-file", {
@@ -288,15 +370,15 @@ describe("POST /api/upload-file", () => {
 
 describe("DELETE /api/upload-file", () => {
     beforeEach(() => {
-        mockGetFile.mockResolvedValue({
-            $id: "file123",
-            $permissions: ['delete("user:user123")', 'read("user:user123")'],
-        });
-    });
-    beforeEach(() => {
         mockGetServerSession.mockClear();
-        mockCreateFile.mockClear();
         mockDeleteFile.mockClear();
+        mockCheckRateLimit.mockClear();
+        mockCheckRateLimit.mockReturnValue({
+            allowed: true,
+            remaining: 19,
+            resetAt: Date.now() + 300_000,
+            retryAfter: 60,
+        });
     });
 
     it("should reject unauthorized requests", async () => {
@@ -330,6 +412,30 @@ describe("DELETE /api/upload-file", () => {
         expect(data).toEqual({ error: "No fileId provided" });
     });
 
+    it("should return 429 when delete rate limit is exceeded", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCheckRateLimit.mockReturnValueOnce({
+            allowed: false,
+            remaining: 0,
+            resetAt: Date.now() + 60_000,
+            retryAfter: 60,
+        });
+
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            {
+                method: "DELETE",
+            },
+        );
+
+        const response = await DELETE(request);
+        expect(response.status).toBe(429);
+
+        const data = await response.json();
+        expect(data.error).toContain("Too many delete requests");
+        expect(mockDeleteFile).not.toHaveBeenCalled();
+    });
+
     it("should delete a file successfully", async () => {
         mockGetServerSession.mockResolvedValue({ $id: "user123" });
         mockDeleteFile.mockResolvedValue(undefined);
@@ -349,12 +455,11 @@ describe("DELETE /api/upload-file", () => {
         expect(mockDeleteFile).toHaveBeenCalledWith("files", "file123");
     });
 
-    it("should return 403 when user does not own the file", async () => {
+    it("should return 403 when Appwrite rejects with forbidden", async () => {
         mockGetServerSession.mockResolvedValue({ $id: "differentUser" });
-        mockGetFile.mockResolvedValue({
-            $id: "file123",
-            $permissions: ['delete("user:user123")', 'read("user:user123")'],
-        });
+        mockDeleteFile.mockRejectedValue(
+            new AppwriteException("Forbidden", 403, "user_unauthorized"),
+        );
 
         const request = new Request(
             "http://localhost/api/upload-file?fileId=file123",
@@ -366,13 +471,12 @@ describe("DELETE /api/upload-file", () => {
 
         const data = await response.json();
         expect(data).toEqual({ error: "Forbidden" });
-        expect(mockDeleteFile).not.toHaveBeenCalled();
+        expect(mockDeleteFile).toHaveBeenCalledWith("files", "file123");
     });
 
     it("should return 404 when file does not exist", async () => {
-        const { AppwriteException } = await import("node-appwrite");
         mockGetServerSession.mockResolvedValue({ $id: "user123" });
-        mockGetFile.mockRejectedValue(
+        mockDeleteFile.mockRejectedValue(
             new AppwriteException("Not found", 404, "document_not_found"),
         );
 

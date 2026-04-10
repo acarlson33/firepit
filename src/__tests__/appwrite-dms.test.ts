@@ -20,6 +20,42 @@ const mockDocuments: Record<string, Models.Document[]> = {};
 const QUERY_VALUE_SEPARATOR = "|||";
 let uniqueCounter = 0;
 
+const EQUAL_PATTERN_QUOTED = /^equal\("([A-Za-z0-9_.$-]+)","(.*)"\)$/;
+const EQUAL_PATTERN_UNQUOTED = /^equal\(([A-Za-z0-9_.$-]+),"(.*)"\)$/;
+const CONTAINS_PATTERN_QUOTED = /^contains\("([A-Za-z0-9_.$-]+)","(.*)"\)$/;
+const CONTAINS_PATTERN_UNQUOTED = /^contains\(([A-Za-z0-9_.$-]+),"(.*)"\)$/;
+const CONTAINS_ARRAY_PATTERN_QUOTED =
+    /^contains\("([A-Za-z0-9_.$-]+)",(\[.*\])\)$/;
+const CONTAINS_ARRAY_PATTERN_UNQUOTED =
+    /^contains\(([A-Za-z0-9_.$-]+),(\[.*\])\)$/;
+const ORDER_DESC_PATTERN_QUOTED = /^orderDesc\("([A-Za-z0-9_.$-]+)"\)$/;
+const ORDER_DESC_PATTERN_UNQUOTED = /^orderDesc\(([A-Za-z0-9_.$-]+)\)$/;
+const CURSOR_AFTER_PATTERN_QUOTED = /^cursorAfter\("([A-Za-z0-9_.$-]+)"\)$/;
+const CURSOR_AFTER_PATTERN_UNQUOTED = /^cursorAfter\(([A-Za-z0-9_.$-]+)\)$/;
+const LIMIT_PATTERN = /^limit\((\d+)\)$/;
+
+function parseQueryValues(rawValue: string): string[] {
+    if (rawValue.includes(QUERY_VALUE_SEPARATOR)) {
+        return rawValue.split(QUERY_VALUE_SEPARATOR).filter(Boolean);
+    }
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        if (typeof parsed === "string") {
+            return [parsed];
+        }
+        if (
+            Array.isArray(parsed) &&
+            parsed.every((item) => typeof item === "string")
+        ) {
+            return parsed;
+        }
+        return [rawValue];
+    } catch {
+        return [rawValue];
+    }
+}
+
 // Mock environment variables
 beforeEach(() => {
     process.env.APPWRITE_ENDPOINT = "http://localhost";
@@ -51,33 +87,34 @@ vi.mock("appwrite", () => {
             const queries = params.queries || [];
             const equalQueries = queries.filter(
                 (query) =>
-                    /^equal\("[^"]+",".*"\)$/.test(query) ||
-                    /^equal\([^"]+,".*"\)$/.test(query),
+                    EQUAL_PATTERN_QUOTED.test(query) ||
+                    EQUAL_PATTERN_UNQUOTED.test(query),
             );
             const containsQueries = queries.filter(
                 (query) =>
-                    /^contains\("[^"]+",".*"\)$/.test(query) ||
-                    /^contains\([^"]+,".*"\)$/.test(query) ||
-                    /^contains\([A-Za-z0-9_.$-]+,\[.*\]\)$/.test(query),
+                    CONTAINS_PATTERN_QUOTED.test(query) ||
+                    CONTAINS_PATTERN_UNQUOTED.test(query) ||
+                    CONTAINS_ARRAY_PATTERN_QUOTED.test(query) ||
+                    CONTAINS_ARRAY_PATTERN_UNQUOTED.test(query),
             );
             const orderDescQuery = queries.find(
                 (query) =>
-                    /^orderDesc\("[^"]+"\)$/.test(query) ||
-                    /^orderDesc\([^"]+\)$/.test(query),
+                    ORDER_DESC_PATTERN_QUOTED.test(query) ||
+                    ORDER_DESC_PATTERN_UNQUOTED.test(query),
             );
             const cursorQuery = queries.find(
                 (query) =>
-                    /^cursorAfter\("[^"]+"\)$/.test(query) ||
-                    /^cursorAfter\([^"]+\)$/.test(query),
+                    CURSOR_AFTER_PATTERN_QUOTED.test(query) ||
+                    CURSOR_AFTER_PATTERN_UNQUOTED.test(query),
             );
             const limitQuery = queries.find((query) =>
-                /^limit\(\d+\)$/.test(query),
+                LIMIT_PATTERN.test(query),
             );
 
             const filtered = equalQueries.reduce((currentDocs, query) => {
                 const equalMatch =
-                    /^equal\("([^"]+)","(.*)"\)$/.exec(query) ||
-                    /^equal\(([^,]+),"(.*)"\)$/.exec(query);
+                    EQUAL_PATTERN_QUOTED.exec(query) ||
+                    EQUAL_PATTERN_UNQUOTED.exec(query);
                 if (!equalMatch) {
                     return currentDocs;
                 }
@@ -102,10 +139,11 @@ vi.mock("appwrite", () => {
             const containsFiltered = containsQueries.reduce(
                 (currentDocs, query) => {
                     const quotedContainsMatch =
-                        /^contains\("([^"]+)","(.*)"\)$/.exec(query) ||
-                        /^contains\(([^,]+),"(.*)"\)$/.exec(query);
+                        CONTAINS_PATTERN_QUOTED.exec(query) ||
+                        CONTAINS_PATTERN_UNQUOTED.exec(query);
                     const arrayContainsMatch =
-                        /^contains\(([A-Za-z0-9_.$-]+),(\[.*\])\)$/.exec(query);
+                        CONTAINS_ARRAY_PATTERN_QUOTED.exec(query) ||
+                        CONTAINS_ARRAY_PATTERN_UNQUOTED.exec(query);
 
                     const field =
                         quotedContainsMatch?.[1] ?? arrayContainsMatch?.[1];
@@ -116,27 +154,7 @@ vi.mock("appwrite", () => {
                         return currentDocs;
                     }
 
-                    const values = rawValue.includes(QUERY_VALUE_SEPARATOR)
-                        ? rawValue.split(QUERY_VALUE_SEPARATOR).filter(Boolean)
-                        : (() => {
-                              try {
-                                  const parsed = JSON.parse(rawValue);
-                                  if (typeof parsed === "string") {
-                                      return [parsed];
-                                  }
-                                  if (
-                                      Array.isArray(parsed) &&
-                                      parsed.every(
-                                          (item) => typeof item === "string",
-                                      )
-                                  ) {
-                                      return parsed;
-                                  }
-                                  return [rawValue];
-                              } catch {
-                                  return [rawValue];
-                              }
-                          })();
+                    const values = parseQueryValues(rawValue);
 
                     return currentDocs.filter((doc) => {
                         const value = (doc as Record<string, unknown>)[field];
@@ -158,8 +176,8 @@ vi.mock("appwrite", () => {
                 }
 
                 const orderDescMatch =
-                    /^orderDesc\("([^"]+)"\)$/.exec(orderDescQuery) ||
-                    /^orderDesc\(([^)]+)\)$/.exec(orderDescQuery);
+                    ORDER_DESC_PATTERN_QUOTED.exec(orderDescQuery) ||
+                    ORDER_DESC_PATTERN_UNQUOTED.exec(orderDescQuery);
                 if (!orderDescMatch) {
                     return containsFiltered;
                 }
@@ -186,8 +204,8 @@ vi.mock("appwrite", () => {
                 }
 
                 const cursorMatch =
-                    /^cursorAfter\("([^"]+)"\)$/.exec(cursorQuery) ||
-                    /^cursorAfter\(([^)]+)\)$/.exec(cursorQuery);
+                    CURSOR_AFTER_PATTERN_QUOTED.exec(cursorQuery) ||
+                    CURSOR_AFTER_PATTERN_UNQUOTED.exec(cursorQuery);
                 if (!cursorMatch) {
                     return sorted;
                 }
@@ -206,7 +224,7 @@ vi.mock("appwrite", () => {
                     return afterCursor;
                 }
 
-                const limitMatch = /^limit\((\d+)\)$/.exec(limitQuery);
+                const limitMatch = LIMIT_PATTERN.exec(limitQuery);
                 if (!limitMatch) {
                     return afterCursor;
                 }
@@ -299,7 +317,7 @@ vi.mock("appwrite", () => {
             equal: (attr: string, val: string | string[]) =>
                 `equal("${attr}","${Array.isArray(val) ? val.join(QUERY_VALUE_SEPARATOR) : val}")`,
             contains: (attr: string, val: string | string[]) =>
-                `contains(${attr},${JSON.stringify(Array.isArray(val) ? val : [val])})`,
+                `contains("${attr}",${JSON.stringify(Array.isArray(val) ? val : [val])})`,
             orderDesc: (attr: string) => `orderDesc("${attr}")`,
             limit: (num: number) => `limit(${num})`,
             cursorAfter: (id: string) => `cursorAfter("${id}")`,

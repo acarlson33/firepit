@@ -333,7 +333,7 @@ async function listAccessibleConversationsById(
         env.collections.conversations,
         [
             Query.equal("$id", conversationIds),
-            Query.contains("participants", userId),
+            Query.equal("participants", userId),
             Query.limit(LABEL_LOOKUP_LIMIT),
         ],
     );

@@ -4,7 +4,7 @@
 import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 
-// TODO: Align node-appwrite to ^24.x once available so SDK majors match appwrite.
+// Tracked dependency alignment: https://github.com/acarlson33/firepit/issues?q=is%3Aissue+is%3Aopen+node-appwrite
 
 /**
  * Get server-side Appwrite client with API key authentication.
@@ -19,7 +19,7 @@ export function getServerClient(): {
     storage: Storage;
 } {
     const env = getEnvConfig();
-    const apiKey = process.env.APPWRITE_API_KEY;
+    const apiKey = process.env.APPWRITE_API_KEY?.trim();
 
     if (!env.project) {
         throw new AppwriteIntegrationError(

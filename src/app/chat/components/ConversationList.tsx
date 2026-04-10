@@ -630,7 +630,7 @@ export function ConversationList({
             <div className="flex-1 overflow-y-auto">
                 {sidebarMode === "inbox" ? (
                     <>
-                        <fieldset className="grid grid-cols-4 gap-1 border-0 border-border border-b p-2">
+                        <fieldset className="grid grid-cols-4 gap-1 border-border border-b p-2">
                             <legend className="sr-only">Inbox filter</legend>
                             <Button
                                 aria-pressed={inboxFilter === "all"}

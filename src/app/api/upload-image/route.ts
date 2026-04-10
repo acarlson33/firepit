@@ -15,12 +15,76 @@ import {
     recordEvent,
 } from "@/lib/newrelic-utils";
 
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const ALLOWED_IMAGE_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+] as const;
+
+if (ALLOWED_ORIGINS.length === 0) {
+    logger.warn(
+        "ALLOWED_ORIGINS is empty; upload-image route will only allow same-origin requests",
+    );
+}
+
+function getAllowedOrigin(request?: Request) {
+    const origin = request?.headers.get("origin");
+    if (!origin) {
+        return undefined;
+    }
+
+    return ALLOWED_ORIGINS.includes(origin) ? origin : undefined;
+}
+
+function hasPrefix(bytes: Uint8Array, signature: number[]) {
+    return signature.every((value, index) => bytes[index] === value);
+}
+
+function matchesImageSignature(mimeType: string, bytes: Uint8Array) {
+    if (mimeType === "image/jpeg") {
+        return hasPrefix(bytes, [0xff, 0xd8, 0xff]);
+    } else if (mimeType === "image/png") {
+        return hasPrefix(
+            bytes,
+            [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+        );
+    } else if (mimeType === "image/gif") {
+        return hasPrefix(bytes, [0x47, 0x49, 0x46, 0x38]);
+    } else if (mimeType === "image/webp") {
+        if (bytes.length < 12) {
+            return false;
+        }
+
+        return (
+            hasPrefix(bytes, [0x52, 0x49, 0x46, 0x46]) &&
+            bytes[8] === 0x57 &&
+            bytes[9] === 0x45 &&
+            bytes[10] === 0x42 &&
+            bytes[11] === 0x50
+        );
+    }
+
+    return false;
+}
+
 // Helper to create JSON responses with CORS headers
-function jsonResponse(data: unknown, init?: ResponseInit) {
+function jsonResponse(data: unknown, init?: ResponseInit, request?: Request) {
     const headers = new Headers(init?.headers);
-    headers.set("Access-Control-Allow-Origin", "*");
     headers.set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS");
     headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    const allowedOrigin = getAllowedOrigin(request);
+    if (allowedOrigin) {
+        headers.set("Access-Control-Allow-Origin", allowedOrigin);
+        headers.set("Access-Control-Allow-Credentials", "true");
+    }
 
     return NextResponse.json(data, {
         ...init,
@@ -29,8 +93,8 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
 }
 
 // Handle preflight requests
-export async function OPTIONS() {
-    return jsonResponse({});
+export async function OPTIONS(request: NextRequest) {
+    return jsonResponse({}, undefined, request);
 }
 
 /**
@@ -39,6 +103,8 @@ export async function OPTIONS() {
  */
 export async function POST(request: NextRequest) {
     const startTime = Date.now();
+    const respond = (data: unknown, init?: ResponseInit) =>
+        jsonResponse(data, init, request);
 
     try {
         setTransactionName("POST /api/upload-image");
@@ -47,7 +113,7 @@ export async function POST(request: NextRequest) {
         const session = await getServerSession();
         if (!session?.$id) {
             logger.warn("Unauthorized upload attempt");
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return respond({ error: "Unauthorized" }, { status: 401 });
         }
         logger.info("Session verified", { userId: session.$id });
 
@@ -59,23 +125,19 @@ export async function POST(request: NextRequest) {
             windowMs: 5 * 60 * 1000,
         });
         if (!rateLimitResult.allowed) {
-            return jsonResponse(
+            return respond(
                 { error: "Too many upload requests. Please try again later." },
                 { status: 429 },
             );
         }
 
-        const env = getEnvConfig() as {
-            endpoint: string;
-            buckets: { images: string };
-            project: string;
-        };
+        const env = getEnvConfig();
         logger.info("Using bucket", { bucketId: env.buckets.images });
 
         // Validate request content before parsing body.
         const contentType = request.headers.get("content-type") ?? "";
         if (!contentType.includes("multipart/form-data")) {
-            return jsonResponse(
+            return respond(
                 { error: "Expected multipart/form-data" },
                 { status: 400 },
             );
@@ -84,7 +146,7 @@ export async function POST(request: NextRequest) {
         const contentLength = Number(request.headers.get("content-length"));
         const maxSize = 5 * 1024 * 1024; // 5MB
         if (Number.isFinite(contentLength) && contentLength > maxSize) {
-            return jsonResponse(
+            return respond(
                 { error: "File size must be less than 5MB" },
                 { status: 413 },
             );
@@ -95,7 +157,7 @@ export async function POST(request: NextRequest) {
 
         if (!(file instanceof File)) {
             logger.warn("No file in upload request");
-            return jsonResponse({ error: "No file provided" }, { status: 400 });
+            return respond({ error: "No file provided" }, { status: 400 });
         }
         logger.info("File received", {
             name: file.name,
@@ -104,15 +166,9 @@ export async function POST(request: NextRequest) {
         });
 
         // Validate file type against explicit allowlist.
-        const ALLOWED_IMAGE_TYPES = [
-            "image/jpeg",
-            "image/png",
-            "image/gif",
-            "image/webp",
-        ];
         if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
             logger.warn("Invalid file type", { type: file.type });
-            return jsonResponse(
+            return respond(
                 {
                     error: "Only JPEG, PNG, GIF, and WebP images are allowed",
                 },
@@ -123,9 +179,9 @@ export async function POST(request: NextRequest) {
         // Validate file size (max 5MB)
         if (file.size > maxSize) {
             logger.warn("File too large", { size: file.size, maxSize });
-            return jsonResponse(
+            return respond(
                 { error: "File size must be less than 5MB" },
-                { status: 400 },
+                { status: 413 },
             );
         }
 
@@ -133,6 +189,21 @@ export async function POST(request: NextRequest) {
 
         // Convert File to InputFile for node-appwrite
         const arrayBuffer = await file.arrayBuffer();
+        const signatureBytes = new Uint8Array(arrayBuffer.slice(0, 16));
+        if (!matchesImageSignature(file.type, signatureBytes)) {
+            logger.warn("Image signature mismatch", {
+                name: file.name,
+                type: file.type,
+                userId: session.$id,
+            });
+            return respond(
+                {
+                    error: "Only JPEG, PNG, GIF, and WebP images are allowed",
+                },
+                { status: 400 },
+            );
+        }
+
         const uploadFile = InputFile.fromBuffer(
             Buffer.from(arrayBuffer),
             file.name,
@@ -187,9 +258,9 @@ export async function POST(request: NextRequest) {
                         : String(obsError),
             });
         }
-        return jsonResponse({
+        return respond({
             fileId: uploadedFile.$id,
-            url: imageUrl,
+            fileUrl: imageUrl,
         });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
@@ -202,10 +273,7 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        return jsonResponse(
-            { error: "Internal server error" },
-            { status: 500 },
-        );
+        return respond({ error: "Internal server error" }, { status: 500 });
     }
 }
 
@@ -215,6 +283,8 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
     const startTime = Date.now();
+    const respond = (data: unknown, init?: ResponseInit) =>
+        jsonResponse(data, init, request);
 
     try {
         setTransactionName("DELETE /api/upload-image");
@@ -222,7 +292,18 @@ export async function DELETE(request: NextRequest) {
         const session = await getServerSession();
         if (!session?.$id) {
             logger.warn("Unauthorized delete attempt");
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return respond({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const rateLimitResult = checkRateLimit(`delete-image:${session.$id}`, {
+            maxRequests: 10,
+            windowMs: 5 * 60 * 1000,
+        });
+        if (!rateLimitResult.allowed) {
+            return respond(
+                { error: "Too many delete requests. Please try again later." },
+                { status: 429 },
+            );
         }
 
         addTransactionAttributes({ userId: session.$id });
@@ -234,39 +315,30 @@ export async function DELETE(request: NextRequest) {
 
         if (!fileId) {
             logger.warn("No fileId provided for delete");
-            return jsonResponse(
-                { error: "No fileId provided" },
-                { status: 400 },
-            );
+            return respond({ error: "No fileId provided" }, { status: 400 });
+        }
+
+        if (!APPWRITE_ID_PATTERN.test(fileId)) {
+            logger.warn("Invalid fileId provided for delete", { fileId });
+            return respond({ error: "Invalid fileId" }, { status: 400 });
         }
 
         addTransactionAttributes({ fileId });
 
         const { storage } = getServerClient();
-
-        // Verify file ownership before deleting.
-        try {
-            const fileMeta = await storage.getFile(env.buckets.images, fileId);
-            const canDelete = fileMeta.$permissions.some(
-                (p) =>
-                    p.includes(`delete("user:${session.$id}")`) ||
-                    p.includes(`write("user:${session.$id}")`),
-            );
-            if (!canDelete) {
-                return jsonResponse({ error: "Forbidden" }, { status: 403 });
-            }
-        } catch (err) {
-            if (err instanceof AppwriteException && err.code === 404) {
-                return jsonResponse(
-                    { error: "Image not found" },
-                    { status: 404 },
-                );
-            }
-            throw err;
-        }
-
         const deleteStartTime = Date.now();
-        await storage.deleteFile(env.buckets.images, fileId);
+
+        try {
+            await storage.deleteFile(env.buckets.images, fileId);
+        } catch (error) {
+            if (error instanceof AppwriteException && error.code === 404) {
+                return respond({ error: "Image not found" }, { status: 404 });
+            }
+            if (error instanceof AppwriteException && error.code === 403) {
+                return respond({ error: "Forbidden" }, { status: 403 });
+            }
+            throw error;
+        }
 
         // Best-effort observability — must not change the successful response.
         try {
@@ -297,7 +369,7 @@ export async function DELETE(request: NextRequest) {
             });
         }
 
-        return jsonResponse({ success: true });
+        return respond({ success: true });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "DELETE /api/upload-image",
@@ -308,9 +380,6 @@ export async function DELETE(request: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
         });
 
-        return jsonResponse(
-            { error: "Failed to delete image" },
-            { status: 500 },
-        );
+        return respond({ error: "Failed to delete image" }, { status: 500 });
     }
 }

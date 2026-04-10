@@ -624,7 +624,6 @@ describe("inbox", () => {
 
         const digest = await listInboxDigest({
             limit: 10,
-
             userId: "user-1",
         });
 
@@ -718,12 +717,10 @@ describe("inbox", () => {
 
         const firstDigest = await listInboxDigest({
             limit: 10,
-
             userId: "user-1",
         });
         const secondDigest = await listInboxDigest({
             limit: 10,
-
             userId: "user-1",
         });
 

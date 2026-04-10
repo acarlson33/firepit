@@ -148,18 +148,18 @@ export async function markInboxContextRead(params?: {
     }
 }
 
-/**
- * Marks all inbox items in a scope as read.
- *
- * @param {InboxScope} scope - The scope: "all", "direct" (DMs), or "server" (channels).
- * @returns {Promise<void>} The return value.
- */
 const SCOPE_TO_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> = {
     all: ["channel", "conversation"],
     direct: ["conversation"],
     server: ["channel"],
 };
 
+/**
+ * Marks all inbox items in a scope as read.
+ *
+ * @param {InboxScope} scope - The scope: "all", "direct" (DMs), or "server" (channels).
+ * @returns {Promise<void>} The return value.
+ */
 export async function markInboxScopeRead(scope: InboxScope): Promise<void> {
     const contextKinds = SCOPE_TO_CONTEXT_KINDS[scope];
 
@@ -167,7 +167,21 @@ export async function markInboxScopeRead(scope: InboxScope): Promise<void> {
         markInboxContextRead({ contextKind }),
     );
 
-    await Promise.all(promises);
+    const results = await Promise.allSettled(promises);
+    const failures: string[] = [];
+
+    for (const result of results) {
+        if (result.status !== "rejected") {
+            continue;
+        }
+
+        const reason = result.reason;
+        failures.push(reason instanceof Error ? reason.message : String(reason));
+    }
+
+    if (failures.length > 0) {
+        throw new Error(`Failed to mark some inbox scopes as read: ${failures.join("; ")}`);
+    }
 }
 
 /**

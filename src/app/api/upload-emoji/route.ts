@@ -84,7 +84,9 @@ export async function POST(request: NextRequest) {
 
         // Convert File to InputFile for node-appwrite
         const arrayBuffer = await file.arrayBuffer();
-        const fileExtension = file.name.split(".").pop() || "png";
+        const fileExtension = file.name.includes(".")
+            ? file.name.split(".").pop() || "png"
+            : "png";
         const fileName = `${name}.${fileExtension}`;
         const uploadFile = InputFile.fromBuffer(
             Buffer.from(arrayBuffer),

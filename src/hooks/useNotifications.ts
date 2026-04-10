@@ -265,12 +265,38 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void closeSubscriptionSafely(subscription);
+                    closeSubscriptionSafely(subscription).catch(
+                        (closeError) => {
+                            logger.warn(
+                                "Failed to close channel notification realtime subscription",
+                                {
+                                    channelId,
+                                    error:
+                                        closeError instanceof Error
+                                            ? closeError.message
+                                            : String(closeError),
+                                },
+                            );
+                        },
+                    );
                     return;
                 }
 
                 unsubscribe = () => {
-                    void closeSubscriptionSafely(subscription);
+                    closeSubscriptionSafely(subscription).catch(
+                        (closeError) => {
+                            logger.warn(
+                                "Failed to close channel notification realtime subscription",
+                                {
+                                    channelId,
+                                    error:
+                                        closeError instanceof Error
+                                            ? closeError.message
+                                            : String(closeError),
+                                },
+                            );
+                        },
+                    );
                 };
                 untrack = trackSubscription(messageChannelKey);
             })
@@ -413,16 +439,42 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void closeSubscriptionSafely(subscription);
+                    closeSubscriptionSafely(subscription).catch((closeError) => {
+                        logger.warn(
+                            "Failed to close DM notification realtime subscription",
+                            {
+                                conversationId,
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
                     return;
                 }
 
-                const trackCleanup = trackSubscription(messageChannelKey);
+                const untrack = trackSubscription(messageChannelKey);
+                const unsubscribe = () => {
+                    closeSubscriptionSafely(subscription).catch(
+                        (closeError) => {
+                            logger.warn(
+                                "Failed to close DM notification realtime subscription",
+                                {
+                                    conversationId,
+                                    error:
+                                        closeError instanceof Error
+                                            ? closeError.message
+                                            : String(closeError),
+                                },
+                            );
+                        },
+                    );
+                };
 
-                // Store combined cleanup function
                 cleanup = () => {
-                    void closeSubscriptionSafely(subscription);
-                    trackCleanup?.();
+                    unsubscribe();
+                    untrack?.();
                 };
             })
             .catch((error) => {

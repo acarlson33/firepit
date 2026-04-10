@@ -124,14 +124,16 @@ export async function POST(request: NextRequest) {
                 return [String(profile.userId), profile] as const;
             }),
         );
-        const avatarFramePresetIds = profilesResult.documents
-            .map((document) => {
-                const profile = document as Record<string, unknown>;
-                return typeof profile.avatarFramePreset === "string"
-                    ? profile.avatarFramePreset
-                    : undefined;
-            })
-            .filter((presetId) => typeof presetId === "string") as string[];
+        const avatarFramePresetIds = Array.from(
+            new Set(
+                profilesResult.documents.flatMap((document) => {
+                    const profile = document as Record<string, unknown>;
+                    return typeof profile.avatarFramePreset === "string"
+                        ? [profile.avatarFramePreset]
+                        : [];
+                }),
+            ),
+        );
         const existingPredefinedAvatarFrameIds =
             await getExistingPredefinedAvatarFrameIds(avatarFramePresetIds);
         const statusesByUserId = new Map(

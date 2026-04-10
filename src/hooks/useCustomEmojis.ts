@@ -1,11 +1,82 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Channel, type RealtimeResponseEvent } from "appwrite";
+import { Channel } from "appwrite";
+import type { RealtimeResponseEvent } from "appwrite";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import type { CustomEmoji } from "@/lib/types";
 
 const EMOJIS_STORAGE_KEY = "firepit_custom_emojis";
+
+function isCustomEmoji(value: unknown): value is CustomEmoji {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        typeof candidate.fileId === "string" &&
+        typeof candidate.name === "string" &&
+        typeof candidate.url === "string"
+    );
+}
+
+function validateCustomEmojis(value: unknown): CustomEmoji[] {
+    if (!Array.isArray(value)) {
+        throw new Error("Custom emoji response is not an array");
+    }
+
+    if (!value.every((emoji) => isCustomEmoji(emoji))) {
+        throw new Error("Custom emoji response has invalid items");
+    }
+
+    return value;
+}
+
+function parseDeleteEmojiErrorResponse(errorText: string): string {
+    const trimmedErrorText = errorText.trim();
+    if (!trimmedErrorText) {
+        return "Failed to delete emoji";
+    }
+
+    try {
+        const parsed = JSON.parse(trimmedErrorText) as {
+            error?: unknown;
+            message?: unknown;
+        };
+
+        const parsedError =
+            (typeof parsed.error === "string" ? parsed.error : undefined) ||
+            (typeof parsed.message === "string" ? parsed.message : undefined);
+
+        return parsedError || trimmedErrorText;
+    } catch {
+        return trimmedErrorText;
+    }
+}
+
+function isEmojiStorageMutationEvent(
+    events: string[],
+    bucketId: string,
+): boolean {
+    if (events.length === 0) {
+        return false;
+    }
+
+    const isCreateOrDeleteEvent = events.some(
+        (eventName) =>
+            eventName.endsWith(".create") || eventName.endsWith(".delete"),
+    );
+    if (!isCreateOrDeleteEvent) {
+        return false;
+    }
+
+    return events.some(
+        (eventName) =>
+            eventName.startsWith(`buckets.${bucketId}.files.`) ||
+            eventName.startsWith("buckets.*.files."),
+    );
+}
 
 // Helper to get emojis from localStorage (for offline cache)
 function getStoredEmojis(): CustomEmoji[] {
@@ -15,7 +86,12 @@ function getStoredEmojis(): CustomEmoji[] {
 
     try {
         const stored = localStorage.getItem(EMOJIS_STORAGE_KEY);
-        return stored ? JSON.parse(stored) : [];
+        if (!stored) {
+            return [];
+        }
+
+        const parsedStoredValue = JSON.parse(stored) as unknown;
+        return validateCustomEmojis(parsedStoredValue);
     } catch {
         return [];
     }
@@ -46,7 +122,8 @@ async function fetchEmojisFromServer(): Promise<CustomEmoji[]> {
         if (!response.ok) {
             throw new Error("Failed to fetch emojis");
         }
-        const emojis: CustomEmoji[] = await response.json();
+        const rawEmojis = (await response.json()) as unknown;
+        const emojis = validateCustomEmojis(rawEmojis);
         // Cache in localStorage for offline access
         storeEmojis(emojis);
         return emojis;
@@ -109,15 +186,8 @@ export function useCustomEmojis() {
                 const handleStorageEvent = (
                     event: RealtimeResponseEvent<Record<string, unknown>>,
                 ) => {
-                    // Refetch emojis when a new emoji file is created in the target bucket.
-                    if (
-                        event.events.includes(
-                            `buckets.${bucketId}.files.*.create`,
-                        ) ||
-                        event.events.includes(
-                            `buckets.${bucketId}.files.*.delete`,
-                        )
-                    ) {
+                    // Refetch when files in the configured emoji bucket are created/deleted.
+                    if (isEmojiStorageMutationEvent(event.events, bucketId)) {
                         void queryClient.invalidateQueries({
                             queryKey: ["customEmojis"],
                         });
@@ -295,7 +365,13 @@ export function useCustomEmojis() {
                 );
 
                 if (!response.ok) {
-                    throw new Error("Failed to delete emoji");
+                    const errorText = await response
+                        .text()
+                        .then((text) => text)
+                        .catch(() => "");
+                    throw new Error(
+                        parseDeleteEmojiErrorResponse(errorText),
+                    );
                 }
 
                 // Trigger full refetch to sync with server (in background)

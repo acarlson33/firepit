@@ -1,10 +1,11 @@
 /**
  * Tests for Appwrite server client initialization
  */
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 describe("Appwrite Server Client", () => {
     beforeEach(() => {
+        vi.resetModules();
         // Reset env vars
         process.env.APPWRITE_ENDPOINT = "http://localhost";
         process.env.APPWRITE_PROJECT_ID = "test-project";

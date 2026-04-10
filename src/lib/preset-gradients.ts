@@ -9,7 +9,7 @@ export type PresetGradient = {
     colors: string[];
 };
 
-export const PRESET_GRADIENTS: PresetGradient[] = [
+export const PRESET_GRADIENTS = [
     {
         id: "blessed-calm",
         name: "Blessed Calm",
@@ -83,7 +83,7 @@ export const PRESET_GRADIENTS: PresetGradient[] = [
         cssValue: "linear-gradient(135deg, #134e5e 0%, #71b280 100%)",
         colors: ["#134e5e", "#71b280"],
     },
-];
+] as const satisfies readonly PresetGradient[];
 
 export const PRESET_COLORS = [
     "#1a1a2e",
@@ -102,7 +102,7 @@ export const PRESET_COLORS = [
     "#a29bfe",
     "#fd79a8",
     "#81ecec",
-];
+] as const;
 
 export function getPresetGradientById(id: string): PresetGradient | undefined {
     return PRESET_GRADIENTS.find((g) => g.id === id);

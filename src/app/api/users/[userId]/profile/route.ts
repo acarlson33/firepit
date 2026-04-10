@@ -6,13 +6,16 @@ import {
     getAvatarFrameUrlForProfile,
 } from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
+import { logger } from "@/lib/newrelic-utils";
 
 export async function GET(
-    request: Request,
+    _request: Request,
     { params }: { params: Promise<{ userId: string }> },
 ) {
+    let userId: string | undefined;
+
     try {
-        const { userId } = await params;
+        ({ userId } = await params);
 
         if (!userId) {
             return NextResponse.json(
@@ -21,7 +24,30 @@ export async function GET(
             );
         }
 
-        const profile = await getUserProfile(userId);
+        const [profileResult, statusResult] = await Promise.allSettled([
+            getUserProfile(userId),
+            getUserStatus(userId),
+        ]);
+
+        if (profileResult.status === "rejected") {
+            throw profileResult.reason;
+        }
+
+        const profile = profileResult.value;
+        const status =
+            statusResult.status === "fulfilled"
+                ? statusResult.value
+                : undefined;
+
+        if (statusResult.status === "rejected") {
+            logger.warn("Failed to fetch user status for profile response", {
+                error:
+                    statusResult.reason instanceof Error
+                        ? statusResult.reason.message
+                        : String(statusResult.reason),
+                userId,
+            });
+        }
 
         if (!profile) {
             return NextResponse.json(
@@ -29,8 +55,6 @@ export async function GET(
                 { status: 404 },
             );
         }
-
-        const status = await getUserStatus(userId);
 
         const profileBackgroundUrl = profile.profileBackgroundImageFileId
             ? getProfileBackgroundUrl(profile.profileBackgroundImageFileId)
@@ -52,9 +76,9 @@ export async function GET(
             profileBackgroundColor: profile.profileBackgroundColor,
             profileBackgroundGradient: profile.profileBackgroundGradient,
             profileBackgroundImageFileId: profile.profileBackgroundImageFileId,
-            profileBackgroundUrl,
+            profileBackgroundUrl: profileBackgroundUrl,
             avatarFramePreset: profile.avatarFramePreset,
-            avatarFrameUrl,
+            avatarFrameUrl: avatarFrameUrl,
             status: status
                 ? {
                       status: status.status,
@@ -63,7 +87,11 @@ export async function GET(
                   }
                 : undefined,
         });
-    } catch {
+    } catch (err) {
+        logger.error("Failed to fetch user profile", {
+            error: err instanceof Error ? err.message : String(err),
+            userId,
+        });
         return NextResponse.json(
             { error: "Failed to fetch user profile" },
             { status: 500 },

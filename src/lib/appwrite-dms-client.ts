@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { parseReactions } from "./reactions-utils";
 import { extractMentionedUsernames } from "./mention-utils";
+import { logger } from "./client-logger";
 
 type FetchedUserProfile = Partial<UserProfileData>;
 
@@ -32,12 +33,31 @@ export async function uploadImage(
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to upload image");
+        let message = "Failed to upload image";
+        try {
+            const error = (await response.json()) as { error?: string };
+            if (typeof error.error === "string" && error.error) {
+                message = error.error;
+            }
+        } catch {
+            // Keep fallback error message.
+        }
+        throw new Error(message);
     }
 
-    const data = await response.json();
-    return { fileId: data.fileId, url: data.url };
+    const data = (await response.json()) as {
+        fileId?: string;
+        fileUrl?: string;
+        url?: string;
+    };
+    const resolvedUrl =
+        typeof data.fileUrl === "string" ? data.fileUrl : (data.url ?? "");
+
+    if (!data.fileId || !resolvedUrl) {
+        throw new Error("Invalid upload response");
+    }
+
+    return { fileId: data.fileId, url: resolvedUrl };
 }
 
 /**
@@ -109,7 +129,7 @@ async function fetchUserProfilesBatchAPI(
 
         if (!response.ok) {
             // Fallback to individual fetches if batch endpoint fails
-            console.warn(
+            logger.warn(
                 "Batch profile fetch failed, falling back to individual fetches",
             );
             return fetchUserProfilesBatch(userIds);
@@ -132,7 +152,10 @@ async function fetchUserProfilesBatchAPI(
 
         return profileMap;
     } catch (error) {
-        console.error("Batch profile fetch error:", error);
+        logger.error(
+            "Batch profile fetch failed",
+            error instanceof Error ? error : String(error),
+        );
         // Fallback to individual fetches
         return fetchUserProfilesBatch(userIds);
     }

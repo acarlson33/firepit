@@ -9,12 +9,31 @@ config({ path: path.resolve(process.cwd(), ".env.local") });
 // happy-dom environment is configured in vitest.config.ts
 // No need to manually set up DOM globals - Vitest does this automatically
 
+const Permission = {
+    read: (role: string) => `read("${role}")`,
+    write: (role: string) => `write("${role}")`,
+    update: (role: string) => `update("${role}")`,
+    delete: (role: string) => `delete("${role}")`,
+    create: (role: string) => `create("${role}")`,
+};
+
+const Role = {
+    any: () => "any",
+    user: (id: string) => `user:${id}`,
+    users: () => "users",
+    guests: () => "guests",
+    team: (id: string, role?: string) =>
+        role ? `team:${id}/${role}` : `team:${id}`,
+};
+
+const ID = {
+    unique: () => "mock-id-123",
+};
+
 // Global mock for appwrite SDK - applied to all tests
 // This ensures all tests have consistent mocking for the appwrite SDK
 vi.mock("appwrite", () => ({
-    ID: {
-        unique: () => "mock-id-123",
-    },
+    ID,
     Query: {
         limit: (n: number) => `limit(${n})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
@@ -31,21 +50,8 @@ vi.mock("appwrite", () => ({
         contains: (field: string, value: string | string[]) =>
             `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
     },
-    Permission: {
-        read: (role: string) => `read("${role}")`,
-        write: (role: string) => `write("${role}")`,
-        update: (role: string) => `update("${role}")`,
-        delete: (role: string) => `delete("${role}")`,
-        create: (role: string) => `create("${role}")`,
-    },
-    Role: {
-        any: () => "any",
-        user: (id: string) => `user:${id}`,
-        users: () => "users",
-        guests: () => "guests",
-        team: (id: string, role?: string) =>
-            role ? `team:${id}/${role}` : `team:${id}`,
-    },
+    Permission,
+    Role,
     Client: vi.fn(() => ({
         setEndpoint: vi.fn().mockReturnThis(),
         setProject: vi.fn().mockReturnThis(),
@@ -110,8 +116,10 @@ vi.mock("node-appwrite", () => ({
         type: string;
         constructor(message: string, code = 500, type = "unknown") {
             super(message);
+            this.name = "AppwriteException";
             this.code = code;
             this.type = type;
+            Object.setPrototypeOf(this, new.target.prototype);
         }
     },
     Query: {
@@ -130,25 +138,10 @@ vi.mock("node-appwrite", () => ({
         search: (field: string, value: string) => `search(${field},${value})`,
         contains: (field: string, value: string | string[]) =>
             `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
-        greaterThanEqual: (field: string, value: string) =>
-            `greaterThanEqual(${field},${value})`,
+        greaterThanEqual: (field: string, value: string | number) =>
+            `greaterThanEqual(${field},${JSON.stringify(value)})`,
     },
-    Permission: {
-        read: (role: string) => `read("${role}")`,
-        write: (role: string) => `write("${role}")`,
-        update: (role: string) => `update("${role}")`,
-        delete: (role: string) => `delete("${role}")`,
-        create: (role: string) => `create("${role}")`,
-    },
-    Role: {
-        any: () => "any",
-        user: (id: string) => `user:${id}`,
-        users: () => "users",
-        guests: () => "guests",
-        team: (id: string, role?: string) =>
-            role ? `team:${id}/${role}` : `team:${id}`,
-    },
-    ID: {
-        unique: () => "mock-id-123",
-    },
+    Permission,
+    Role,
+    ID,
 }));

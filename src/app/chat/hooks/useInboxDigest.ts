@@ -6,14 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import { listInboxDigest } from "@/lib/inbox-client";
 import type { InboxContextKind, InboxDigestResponse } from "@/lib/types";
 
-const EMPTY_DIGEST: InboxDigestResponse = {
+const EMPTY_DIGEST = {
     contractVersion: "message_v2",
     navigationFallback: "context_catch_up",
     ordering: "newest_first",
     presentation: "flat",
     items: [],
     totalUnreadCount: 0,
-};
+} satisfies InboxDigestResponse;
 
 function getInboxDigestQueryKey(params: {
     contextId?: string;

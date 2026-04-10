@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { completeOnboardingAction } from "../app/onboarding/actions";
+import { toast } from "sonner";
 
 // Mock router
 const mockPush = vi.fn();
@@ -43,6 +44,21 @@ describe("Onboarding Page", () => {
         vi.clearAllMocks();
     });
 
+    async function navigateToFinalStep(
+        user: ReturnType<typeof userEvent.setup>,
+    ) {
+        const displayNameInput = screen.getByLabelText("Display Name *");
+        await user.type(displayNameInput, "John Doe");
+
+        let continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+
+        await screen.findByText("Notification preferences");
+
+        continueButton = screen.getByRole("button", { name: "Continue" });
+        await user.click(continueButton);
+    }
+
     it("should render onboarding form with welcome message", () => {
         render(<OnboardingPage />);
 
@@ -59,7 +75,8 @@ describe("Onboarding Page", () => {
 
         const displayNameInput = screen.getByLabelText("Display Name *");
         expect(displayNameInput).toBeInTheDocument();
-        expect(displayNameInput).toHaveAttribute("required");
+        // The asterisk is a visual required indicator; native required is intentionally omitted.
+        expect(displayNameInput).not.toHaveAttribute("required");
     });
 
     it("should render bio textarea", () => {
@@ -120,17 +137,7 @@ describe("Onboarding Page", () => {
 
         render(<OnboardingPage />);
 
-        // Step 1: Fill profile
-        const displayNameInput = screen.getByLabelText("Display Name *");
-        await user.type(displayNameInput, "John Doe");
-
-        // Click continue to go to step 2
-        let continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
-
-        // Step 2: Click continue to go to step 3
-        continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
+        await navigateToFinalStep(user);
 
         // Step 3: Click Complete Setup
         const submitButton = screen.getByRole("button", {
@@ -140,27 +147,23 @@ describe("Onboarding Page", () => {
 
         await waitFor(() => {
             expect(mockAction).toHaveBeenCalled();
+            expect(mockAction).toHaveBeenCalledWith(expect.any(FormData));
+            const submittedData = mockAction.mock.calls.at(0)?.at(0) as
+                | FormData
+                | undefined;
+            expect(submittedData).toBeDefined();
+            expect(submittedData?.get("displayName")).toBe("John Doe");
         });
     });
 
     it("should show success toast and navigate to /chat on successful submission", async () => {
         const user = userEvent.setup();
-        const { toast } = await import("sonner");
         const mockAction = vi.mocked(completeOnboardingAction);
         mockAction.mockResolvedValue({ success: true });
 
         render(<OnboardingPage />);
 
-        // Step 1
-        const displayNameInput = screen.getByLabelText("Display Name *");
-        await user.type(displayNameInput, "John Doe");
-
-        let continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
-
-        // Step 2
-        continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
+        await navigateToFinalStep(user);
 
         // Step 3
         const submitButton = screen.getByRole("button", {
@@ -179,7 +182,6 @@ describe("Onboarding Page", () => {
 
     it("should show error toast on submission failure", async () => {
         const user = userEvent.setup();
-        const { toast } = await import("sonner");
         const mockAction = vi.mocked(completeOnboardingAction);
         mockAction.mockResolvedValue({
             success: false,
@@ -188,16 +190,7 @@ describe("Onboarding Page", () => {
 
         render(<OnboardingPage />);
 
-        // Step 1
-        const displayNameInput = screen.getByLabelText("Display Name *");
-        await user.type(displayNameInput, "John Doe");
-
-        let continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
-
-        // Step 2
-        continueButton = screen.getByRole("button", { name: "Continue" });
-        await user.click(continueButton);
+        await navigateToFinalStep(user);
 
         // Step 3
         const submitButton = screen.getByRole("button", {
@@ -217,11 +210,11 @@ describe("Onboarding Page", () => {
 
         render(<OnboardingPage />);
 
-        // Try to continue without entering display name - form validation should prevent it
+        // Try to continue without entering display name; step logic should keep the user on step 1.
         const continueButton = screen.getByRole("button", { name: "Continue" });
         await user.click(continueButton);
 
-        // Should still be on first step (native form validation prevents submit)
+        // Should still be on first step.
         expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
     });
 });

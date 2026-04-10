@@ -1,24 +1,60 @@
 import { redirect } from "next/navigation";
 import { CheckCircle2, UploadCloud, XCircle } from "lucide-react";
+import { AppwriteException } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { requireAdmin } from "@/lib/auth-server";
+import { AuthError, requireAdmin } from "@/lib/auth-server";
+import { logger } from "@/lib/newrelic-utils";
 import {
     getAllPresetFrames,
     getPresetFrameStorageFileId,
 } from "@/lib/preset-frames";
 
-import {
-    deletePredefinedFrameAssetAction,
-    uploadPredefinedFrameAssetAction,
-} from "./actions";
+import { uploadPredefinedFrameAssetAction } from "./actions";
+import { ConfirmDeleteFrameAssetForm } from "./confirm-delete-frame-asset-form";
 
 type FrameAssetStatus = {
     frameId: string;
     exists: boolean;
     updatedAt?: string;
+    errorMessage?: string;
 };
+
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+});
+
+function getAppwriteErrorCode(error: unknown): number | null {
+    if (!(error instanceof AppwriteException)) {
+        return null;
+    }
+
+    if (typeof error.code === "number" && Number.isFinite(error.code)) {
+        return error.code;
+    }
+
+    if (typeof error.code === "string") {
+        const parsed = Number(error.code);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return String(error);
+}
 
 async function getFrameAssetStatuses() {
     const frames = getAllPresetFrames();
@@ -26,25 +62,54 @@ async function getFrameAssetStatuses() {
     const env = getEnvConfig();
     const bucketId = env.buckets.avatarFramesPredefined;
 
-    const statuses = await Promise.all(
+    const statusResults = await Promise.allSettled(
         frames.map(async (frame): Promise<FrameAssetStatus> => {
             const storageFileId =
                 getPresetFrameStorageFileId(frame.id) ?? frame.id;
-            try {
-                const file = await storage.getFile(bucketId, storageFileId);
-                return {
-                    frameId: frame.id,
-                    exists: true,
-                    updatedAt: file.$updatedAt,
-                };
-            } catch {
-                return {
-                    frameId: frame.id,
-                    exists: false,
-                };
-            }
+            const file = await storage.getFile(bucketId, storageFileId);
+            return {
+                frameId: frame.id,
+                exists: true,
+                updatedAt: file.$updatedAt,
+            };
         }),
     );
+
+    const statuses = statusResults.map((result, index): FrameAssetStatus => {
+        const frame = frames.at(index);
+        if (!frame) {
+            return {
+                frameId: `unknown-${String(index)}`,
+                exists: false,
+                errorMessage: "Status unavailable",
+            };
+        }
+
+        const storageFileId = getPresetFrameStorageFileId(frame.id) ?? frame.id;
+
+        if (result.status === "fulfilled") {
+            return result.value;
+        }
+
+        if (getAppwriteErrorCode(result.reason) === 404) {
+            return {
+                frameId: frame.id,
+                exists: false,
+            };
+        }
+
+        logger.error("Failed to fetch preset frame asset status", {
+            error: getErrorMessage(result.reason),
+            frameId: frame.id,
+            storageFileId,
+        });
+
+        return {
+            frameId: frame.id,
+            exists: false,
+            errorMessage: "Status unavailable",
+        };
+    });
 
     const statusByFrameId = new Map(
         statuses.map((item) => [item.frameId, item]),
@@ -57,9 +122,18 @@ async function getFrameAssetStatuses() {
 }
 
 export default async function AdminPresetFramesPage() {
-    await requireAdmin().catch(() => {
-        redirect("/");
-    });
+    try {
+        await requireAdmin();
+    } catch (error) {
+        if (
+            error instanceof AuthError &&
+            (error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN")
+        ) {
+            redirect("/");
+        }
+
+        throw error;
+    }
 
     const frames = await getFrameAssetStatuses();
 
@@ -83,7 +157,12 @@ export default async function AdminPresetFramesPage() {
                 {frames.map((frame) => {
                     const storageFileId =
                         getPresetFrameStorageFileId(frame.id) ?? frame.id;
-                    const exists = Boolean(frame.status?.exists);
+                    const exists = frame.status?.exists;
+                    const statusLabel = frame.status?.errorMessage
+                        ? "Unavailable"
+                        : exists
+                          ? "Uploaded"
+                          : "Missing";
 
                     return (
                         <article
@@ -106,7 +185,7 @@ export default async function AdminPresetFramesPage() {
                                                 aria-hidden="true"
                                                 className="h-4 w-4 text-emerald-500"
                                             />
-                                            <span>Uploaded</span>
+                                            <span>{statusLabel}</span>
                                         </>
                                     ) : (
                                         <>
@@ -114,7 +193,7 @@ export default async function AdminPresetFramesPage() {
                                                 aria-hidden="true"
                                                 className="h-4 w-4 text-amber-500"
                                             />
-                                            <span>Missing</span>
+                                            <span>{statusLabel}</span>
                                         </>
                                     )}
                                 </div>
@@ -137,13 +216,21 @@ export default async function AdminPresetFramesPage() {
                                     <div className="flex items-center justify-between gap-2">
                                         <dt>Last updated</dt>
                                         <dd className="text-foreground">
-                                            {new Date(
-                                                frame.status.updatedAt,
-                                            ).toLocaleString()}
+                                            {UPDATED_AT_FORMATTER.format(
+                                                new Date(
+                                                    frame.status.updatedAt,
+                                                ),
+                                            )}
                                         </dd>
                                     </div>
                                 )}
                             </dl>
+
+                            {frame.status?.errorMessage && (
+                                <p className="mt-2 text-xs text-amber-600">
+                                    {frame.status.errorMessage}
+                                </p>
+                            )}
 
                             <form
                                 action={uploadPredefinedFrameAssetAction}
@@ -154,9 +241,16 @@ export default async function AdminPresetFramesPage() {
                                     type="hidden"
                                     value={frame.id}
                                 />
+                                <label
+                                    className="sr-only"
+                                    htmlFor={`frame-file-${frame.id}`}
+                                >
+                                    Upload frame image for {frame.name}
+                                </label>
                                 <input
                                     accept="image/png"
                                     className="w-full rounded-xl border border-border/60 bg-background px-3 py-2 text-sm"
+                                    id={`frame-file-${frame.id}`}
                                     name="file"
                                     required
                                     type="file"
@@ -174,22 +268,10 @@ export default async function AdminPresetFramesPage() {
                             </form>
 
                             {exists && (
-                                <form
-                                    action={deletePredefinedFrameAssetAction}
+                                <ConfirmDeleteFrameAssetForm
                                     className="mt-3"
-                                >
-                                    <input
-                                        name="frameId"
-                                        type="hidden"
-                                        value={frame.id}
-                                    />
-                                    <button
-                                        className="w-full rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
-                                        type="submit"
-                                    >
-                                        Remove asset
-                                    </button>
-                                </form>
+                                    frameId={frame.id}
+                                />
                             )}
                         </article>
                     );

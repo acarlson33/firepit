@@ -48,18 +48,12 @@ export function TelemetrySettings() {
 
                 <Switch
                     checked={navigationPreferences.telemetryEnabled}
-                    aria-disabled={isDisabled}
-                    className={
-                        isDisabled ? "pointer-events-none opacity-50" : ""
-                    }
+                    disabled={isDisabled}
                     id="telemetry-enabled"
-                    tabIndex={isDisabled ? -1 : 0}
                     onCheckedChange={(checked) =>
-                        isDisabled
-                            ? undefined
-                            : updateNavigationPreferences({
-                                  telemetryEnabled: checked,
-                              })
+                        updateNavigationPreferences({
+                            telemetryEnabled: checked,
+                        })
                     }
                 />
             </div>

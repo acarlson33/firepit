@@ -9,6 +9,57 @@ import { requireAdmin } from "@/lib/auth-server";
 import { getPresetFrameStorageFileId } from "@/lib/preset-frames";
 
 const MAX_PRESET_FRAME_SIZE = 1 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+const MAX_CREATE_ATTEMPTS = 3;
+
+function toErrorDetails(err: unknown): string {
+    if (err instanceof Error) {
+        return err.message;
+    }
+
+    if (typeof err === "string") {
+        return err;
+    }
+
+    try {
+        return JSON.stringify(err);
+    } catch {
+        return String(err);
+    }
+}
+
+function getAppwriteErrorCode(err: unknown): number | null {
+    if (!(err instanceof AppwriteException)) {
+        return null;
+    }
+
+    if (typeof err.code === "number" && Number.isFinite(err.code)) {
+        return err.code;
+    }
+
+    if (typeof err.code === "string") {
+        const parsed = Number(err.code);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+}
+
+function isNotFoundAppwriteError(err: unknown): boolean {
+    return getAppwriteErrorCode(err) === 404;
+}
+
+function isConflictAppwriteError(err: unknown): boolean {
+    return getAppwriteErrorCode(err) === 409;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
 
 export async function uploadPredefinedFrameAssetAction(
     formData: FormData,
@@ -36,9 +87,6 @@ export async function uploadPredefinedFrameAssetAction(
 
         // Verify PNG signature (magic bytes), not just filename/MIME.
         const header = Buffer.from(await file.slice(0, 8).arrayBuffer());
-        const PNG_SIGNATURE = Buffer.from([
-            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-        ]);
         if (!header.equals(PNG_SIGNATURE)) {
             throw new Error("File must be a PNG image");
         }
@@ -47,24 +95,37 @@ export async function uploadPredefinedFrameAssetAction(
         const env = getEnvConfig();
         const bucketId = env.buckets.avatarFramesPredefined;
 
-        // Delete existing file first since createFile does not overwrite.
-        try {
-            await storage.deleteFile(bucketId, storageFileId);
-        } catch (err) {
-            if (!(err instanceof AppwriteException) || err.code !== 404) {
+        for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
+            try {
+                await storage.createFile(bucketId, storageFileId, file);
+                revalidatePath("/admin/preset-frames");
+                revalidatePath("/settings");
+                return;
+            } catch (err) {
+                if (!isConflictAppwriteError(err)) {
+                    throw err;
+                }
+
+                try {
+                    await storage.deleteFile(bucketId, storageFileId);
+                } catch (deleteError) {
+                    if (!isNotFoundAppwriteError(deleteError)) {
+                        throw deleteError;
+                    }
+                }
+
+                if (attempt < MAX_CREATE_ATTEMPTS - 1) {
+                    await sleep(100 * 2 ** attempt);
+                    continue;
+                }
+
                 throw err;
             }
-            // No existing file — continue with create.
         }
-
-        await storage.createFile(bucketId, storageFileId, file);
-
-        revalidatePath("/admin/preset-frames");
-        revalidatePath("/settings");
     } catch (err) {
         throw err instanceof Error
             ? err
-            : new Error("Failed to upload frame asset");
+            : new Error(`Failed to upload frame asset: ${toErrorDetails(err)}`);
     }
 }
 
@@ -88,7 +149,7 @@ export async function deletePredefinedFrameAssetAction(
         try {
             await storage.deleteFile(bucketId, storageFileId);
         } catch (err) {
-            if (!(err instanceof AppwriteException) || err.code !== 404) {
+            if (!isNotFoundAppwriteError(err)) {
                 throw err;
             }
         }
@@ -98,6 +159,6 @@ export async function deletePredefinedFrameAssetAction(
     } catch (err) {
         throw err instanceof Error
             ? err
-            : new Error("Failed to delete frame asset");
+            : new Error(`Failed to delete frame asset: ${toErrorDetails(err)}`);
     }
 }

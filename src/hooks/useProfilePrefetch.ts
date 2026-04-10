@@ -1,15 +1,40 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 
-const profileCache = new Map<string, unknown>();
+type CachedProfileEntry = {
+    data: unknown;
+    cachedAt: number;
+};
+
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const profileCache = new Map<string, CachedProfileEntry>();
 const prefetchInProgress = new Set<string>();
 
-export function useProfilePrefetch() {
-    const cacheRef = useRef<Map<string, unknown>>(profileCache);
+function getCachedProfileValue(userId: string) {
+    const entry = profileCache.get(userId);
+    if (!entry) {
+        return undefined;
+    }
 
+    if (Date.now() - entry.cachedAt > PROFILE_CACHE_TTL_MS) {
+        profileCache.delete(userId);
+        return undefined;
+    }
+
+    return entry.data;
+}
+
+function setCachedProfileValue(userId: string, data: unknown) {
+    profileCache.set(userId, {
+        data,
+        cachedAt: Date.now(),
+    });
+}
+
+export function useProfilePrefetch() {
     const prefetchProfile = useCallback(async (userId: string) => {
-        if (cacheRef.current.has(userId)) {
+        if (getCachedProfileValue(userId) !== undefined) {
             return;
         }
 
@@ -20,10 +45,12 @@ export function useProfilePrefetch() {
         prefetchInProgress.add(userId);
 
         try {
-            const response = await fetch(`/api/users/${userId}/profile`);
+            const response = await fetch(
+                `/api/users/${encodeURIComponent(userId)}/profile`,
+            );
             if (response.ok) {
                 const data = await response.json();
-                cacheRef.current.set(userId, data);
+                setCachedProfileValue(userId, data);
             }
         } catch {
             // Silently fail - profile will be fetched when needed
@@ -33,11 +60,11 @@ export function useProfilePrefetch() {
     }, []);
 
     const getCachedProfile = useCallback((userId: string) => {
-        return cacheRef.current.get(userId);
+        return getCachedProfileValue(userId);
     }, []);
 
     const clearCache = useCallback(() => {
-        cacheRef.current.clear();
+        profileCache.clear();
     }, []);
 
     return {
@@ -52,61 +79,70 @@ export const profilePrefetchPool = {
     processing: false,
     maxConcurrent: 3,
 
-    getCachedProfile(userId: string): unknown | undefined {
-        return profileCache.get(userId);
+    getCachedProfile(userId: string): unknown {
+        return getCachedProfileValue(userId);
     },
 
     add(userId: string) {
-        if (profileCache.has(userId) || this.queue.has(userId)) {
+        if (
+            getCachedProfileValue(userId) !== undefined ||
+            profilePrefetchPool.queue.has(userId)
+        ) {
             return;
         }
-        this.queue.add(userId);
-        this.process().catch(() => {});
+
+        profilePrefetchPool.queue.add(userId);
+        profilePrefetchPool.process().catch(() => {});
     },
 
     async process() {
-        if (this.processing || this.queue.size === 0) {
+        if (profilePrefetchPool.processing || profilePrefetchPool.queue.size === 0) {
             return;
         }
 
-        this.processing = true;
-        const concurrency = Math.max(1, this.maxConcurrent);
+        profilePrefetchPool.processing = true;
+        const concurrency = Math.max(1, profilePrefetchPool.maxConcurrent);
 
-        try {
-            while (this.queue.size > 0) {
+        const processNextBatch = async (): Promise<void> => {
+            while (profilePrefetchPool.queue.size > 0) {
                 const batch: string[] = [];
-                for (const id of this.queue) {
+                for (const id of profilePrefetchPool.queue) {
                     if (batch.length >= concurrency) {
                         break;
                     }
                     batch.push(id);
                 }
+
                 for (const id of batch) {
-                    this.queue.delete(id);
+                    profilePrefetchPool.queue.delete(id);
                 }
+
                 await Promise.all(
                     batch.map(async (userId) => {
-                        if (!profileCache.has(userId)) {
-                            try {
-                                const response = await fetch(
-                                    `/api/users/${userId}/profile`,
-                                );
-                                if (response.ok) {
-                                    const data = await response.json();
-                                    profileCache.set(userId, data);
-                                }
-                            } catch (err) {
-                                console.error(
-                                    `[profile-prefetch] Failed for ${userId}:`,
-                                    err instanceof Error ? err.message : err,
-                                );
+                        if (getCachedProfileValue(userId) !== undefined) {
+                            return;
+                        }
+
+                        try {
+                            const response = await fetch(
+                                `/api/users/${encodeURIComponent(userId)}/profile`,
+                            );
+                            if (response.ok) {
+                                const data = await response.json();
+                                setCachedProfileValue(userId, data);
                             }
+                        } catch {
+                            // Silently fail; modal can still fetch directly when needed.
                         }
                     }),
                 );
             }
+        };
+
+        try {
+            await processNextBatch();
         } finally {
-            this.processing = false;
+            profilePrefetchPool.processing = false;
         }
     },
 };

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
-import { getAvatarUrl, getProfilesByUserIds } from "@/lib/appwrite-profiles";
+import {
+    getAvatarUrl,
+    getPredefinedAvatarFrameUrlByPresetId,
+    getProfilesByUserIds,
+} from "@/lib/appwrite-profiles";
 import {
     getFriendshipOtherUserId,
     listFriendshipsForUser,
@@ -14,12 +18,18 @@ function serializeUserSummary(
     profiles: Awaited<ReturnType<typeof getProfilesByUserIds>>,
 ) {
     const profile = profiles.get(userId);
+    const avatarFramePreset = profile?.avatarFramePreset;
+
     return {
         userId,
         displayName: profile?.displayName,
         pronouns: profile?.pronouns,
         avatarUrl: profile?.avatarFileId
             ? getAvatarUrl(profile.avatarFileId)
+            : undefined,
+        avatarFramePreset,
+        avatarFrameUrl: avatarFramePreset
+            ? getPredefinedAvatarFrameUrlByPresetId(avatarFramePreset)
             : undefined,
     };
 }

@@ -6,11 +6,18 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import type { UserStatus } from "@/lib/types";
-import { normalizeStatus, type StatusLike } from "@/lib/status-normalization";
+import { normalizeStatus } from "@/lib/status-normalization";
+import type { StatusLike } from "@/lib/status-normalization";
 import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 const STATUSES_COLLECTION = env.collections.statuses;
+
+const toError = (value: unknown): Error =>
+    value instanceof Error ? value : new Error(String(value));
+
+const toErrorMessage = (value: unknown): string =>
+    value instanceof Error ? value.message : String(value);
 
 type StatusMap = Map<string, UserStatus>;
 type RealtimeSubscription = {
@@ -23,31 +30,21 @@ type RealtimeSubscription = {
 export function useStatusSubscription(userIds: string[]) {
     const [statuses, setStatuses] = useState<StatusMap>(new Map());
     const [loading, setLoading] = useState(true);
-    const stableUserIds = useMemo(() => {
-        return Array.from(
-            new Set(
-                userIds.filter(
-                    (id): id is string =>
-                        typeof id === "string" && id.length > 0,
-                ),
+    const normalizedUserIds = useMemo(
+        () =>
+            Array.from(new Set(userIds.filter((id) => id.length > 0))).sort(
+                (a, b) => a.localeCompare(b),
             ),
-        ).sort((a, b) => a.localeCompare(b));
-    }, [userIds]);
-
-    const trackedUserIds = useMemo(
-        () => new Set(stableUserIds),
-        [stableUserIds],
+        [userIds],
     );
 
     // Fetch initial statuses
     const fetchStatuses = useCallback(async () => {
-        if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
+        if (!STATUSES_COLLECTION || normalizedUserIds.length === 0) {
             setStatuses(new Map());
             setLoading(false);
             return;
         }
-
-        const requestedUserIds = [...trackedUserIds];
 
         try {
             setLoading(true);
@@ -56,7 +53,7 @@ export function useStatusSubscription(userIds: string[]) {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ userIds: requestedUserIds }),
+                body: JSON.stringify({ userIds: normalizedUserIds }),
             });
 
             if (response.ok) {
@@ -65,11 +62,13 @@ export function useStatusSubscription(userIds: string[]) {
 
                 // data.statuses is a Record<userId, UserStatus>
                 if (data.statuses) {
-                    const statuses = data.statuses as Record<
+                    const responseStatuses = data.statuses as Record<
                         string,
                         StatusLike | undefined
                     >;
-                    for (const [userId, status] of Object.entries(statuses)) {
+                    for (const [userId, status] of Object.entries(
+                        responseStatuses,
+                    )) {
                         if (!status) {
                             continue;
                         }
@@ -81,14 +80,13 @@ export function useStatusSubscription(userIds: string[]) {
                 setStatuses(statusMap);
             }
         } catch (error) {
-            logger.error(
-                "Failed to fetch statuses:",
-                error instanceof Error ? error : String(error),
-            );
+            logger.error("Failed to fetch statuses", toError(error), {
+                error: toErrorMessage(error),
+            });
         } finally {
             setLoading(false);
         }
-    }, [trackedUserIds]); // Only re-fetch when user IDs change
+    }, [normalizedUserIds]);
 
     useEffect(() => {
         void fetchStatuses();
@@ -96,16 +94,16 @@ export function useStatusSubscription(userIds: string[]) {
 
     // Real-time subscription to status updates
     useEffect(() => {
-        if (!STATUSES_COLLECTION || trackedUserIds.size === 0) {
-            setStatuses(new Map());
-            setLoading(false);
+        if (!STATUSES_COLLECTION || normalizedUserIds.length === 0) {
             return;
         }
+
+        const trackedUserIds = new Set(normalizedUserIds);
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
 
-        void (async () => {
+        (async () => {
             try {
                 if (cancelled) {
                     return;
@@ -139,18 +137,17 @@ export function useStatusSubscription(userIds: string[]) {
                         }
                     } catch (err) {
                         logger.error(
-                            "Status subscription handler failed:",
-                            err instanceof Error ? err : String(err),
+                            "Status subscription handler failed",
+                            toError(err),
+                            { error: toErrorMessage(err) },
                         );
                     }
                 };
 
-                // Query-filtered status subscriptions can trigger reconnect churn in
-                // Use a filtered subscription to avoid receiving unrelated status events.
-                const trackedIds = [...trackedUserIds];
+                // Keep a query filter so status updates are scoped to tracked users.
                 const subscription: RealtimeSubscription =
                     await realtime.subscribe(channel, handleStatusEvent, [
-                        Query.equal("userId", trackedIds),
+                        Query.equal("userId", normalizedUserIds),
                     ]);
 
                 if (cancelled) {
@@ -161,13 +158,19 @@ export function useStatusSubscription(userIds: string[]) {
                 const untrack = trackSubscription(channelKey);
                 cleanup = () => {
                     untrack();
-                    void closeSubscriptionSafely(subscription);
+                    closeSubscriptionSafely(subscription).catch((error) => {
+                        logger.warn("Status subscription cleanup failed", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        });
+                    });
                 };
             } catch (err) {
-                logger.error(
-                    "Status subscription failed:",
-                    err instanceof Error ? err : String(err),
-                );
+                logger.error("Status subscription failed", toError(err), {
+                    error: toErrorMessage(err),
+                });
             }
         })();
 
@@ -175,7 +178,7 @@ export function useStatusSubscription(userIds: string[]) {
             cancelled = true;
             cleanup?.();
         };
-    }, [trackedUserIds]); // Re-subscribe when user IDs change
+    }, [normalizedUserIds]);
 
     return {
         statuses,

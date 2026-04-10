@@ -117,16 +117,26 @@ components:
                     type: string
                 profileBackgroundColor:
                     type: string
+                    description: Hex color used for the user's profile background when no gradient/image is set.
+                    pattern: "^#[0-9A-Fa-f]{6}$"
+                    example: "#1a1a2e"
                 profileBackgroundGradient:
                     type: string
+                    description: CSS gradient string used for the profile background when selected. The server sanitizes this value and only accepts linear-gradient, radial-gradient, or conic-gradient function syntax.
+                    pattern: '^(?!.*(?:url\s*\(|data:|javascript:))(linear-gradient|radial-gradient|conic-gradient)\([^;{}<>`\\]+\)$'
+                    example: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
                 profileBackgroundUrl:
                     type: string
                     format: uri
+                    description: Resource URI for the uploaded profile background image.
                 avatarFramePreset:
                     type: string
+                    description: Preset avatar frame ID (for example default-round, seasonal-winter-2026).
+                    example: "default-round"
                 avatarFrameUrl:
                     type: string
                     format: uri
+                    description: Resource URI for the resolved avatar frame image asset.
 
         CurrentUser:
             allOf:
@@ -1904,9 +1914,22 @@ paths:
                                 properties:
                                     fileId:
                                         type: string
-                                    url:
+                                    fileUrl:
                                         type: string
                                         format: uri
+                                required: [fileId, fileUrl]
+                "400":
+                    description: Invalid upload request (missing file, unsupported type, or malformed body)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "413":
                     description: File too large
                     content:
@@ -1984,6 +2007,29 @@ paths:
                                         format: uri
                                     category:
                                         type: string
+                                        description: Derived attachment category based on validated MIME type
+                                        enum:
+                                            - documents
+                                            - images
+                                            - videos
+                                            - audio
+                                            - archives
+                                            - code
+                                            - other
+                                        example: images
+                                required: [fileId, fileName, fileSize, fileUrl]
+                "400":
+                    description: Invalid upload payload or unsupported file type
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Authentication required
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "413":
                     description: File too large
                     content:

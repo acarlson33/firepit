@@ -42,6 +42,89 @@ type UseDirectMessagesProps = {
     userName?: string | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type TypingPayload = {
+    $id: string;
+    userId: string;
+    userName?: string;
+    channelId: string;
+    updatedAt: string;
+};
+
+function parseTypingPayload(payload: unknown): TypingPayload | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    const id = payload.$id;
+    const userId = payload.userId;
+    const channelId = payload.channelId;
+    const updatedAt = payload.$updatedAt ?? payload.updatedAt;
+
+    if (
+        typeof id !== "string" ||
+        typeof userId !== "string" ||
+        typeof channelId !== "string" ||
+        typeof updatedAt !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        $id: id,
+        userId,
+        userName:
+            typeof payload.userName === "string" ? payload.userName : undefined,
+        channelId,
+        updatedAt,
+    };
+}
+
+function parseMessagePayload(payload: unknown): DirectMessage | null {
+    if (!isRecord(payload)) {
+        return null;
+    }
+
+    if (
+        typeof payload.$id !== "string" ||
+        typeof payload.conversationId !== "string" ||
+        typeof payload.senderId !== "string" ||
+        typeof payload.$createdAt !== "string"
+    ) {
+        return null;
+    }
+
+    if (payload.text !== undefined && typeof payload.text !== "string") {
+        return null;
+    }
+
+    if (
+        payload.receiverId !== undefined &&
+        typeof payload.receiverId !== "string"
+    ) {
+        return null;
+    }
+
+    if (
+        payload.threadId !== undefined &&
+        typeof payload.threadId !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        ...(payload as unknown as DirectMessage),
+        reactions: parseReactions(
+            typeof payload.reactions === "string"
+                ? payload.reactions
+                : undefined,
+        ),
+    };
+}
+
 export function useDirectMessages({
     conversationId,
     userId,
@@ -306,19 +389,16 @@ export function useDirectMessages({
                 subscription = await realtime.subscribe(
                     messageChannel,
                     (response) => {
-                        const payload = response.payload as Record<
-                            string,
-                            unknown
-                        >;
-                        const events = response.events as string[];
+                        const events = Array.isArray(response.events)
+                            ? response.events
+                            : [];
+                        const messageData = parseMessagePayload(
+                            response.payload,
+                        );
 
-                        const messageData = {
-                            ...(payload as unknown as DirectMessage),
-                            reactions: parseReactions(
-                                (payload as Record<string, unknown>)
-                                    .reactions as string | undefined,
-                            ),
-                        };
+                        if (!messageData) {
+                            return;
+                        }
 
                         if (
                             !messageData.conversationId ||
@@ -715,21 +795,14 @@ export function useDirectMessages({
                 subscription = await realtime.subscribe(
                     typingChannel,
                     (response) => {
-                        const payload = response.payload as Record<
-                            string,
-                            unknown
-                        >;
-                        const events = response.events as string[];
+                        const events = Array.isArray(response.events)
+                            ? response.events
+                            : [];
+                        const typing = parseTypingPayload(response.payload);
 
-                        const typing = {
-                            $id: String(payload.$id),
-                            userId: String(payload.userId),
-                            userName: payload.userName as string | undefined,
-                            channelId: String(payload.channelId),
-                            updatedAt: String(
-                                payload.$updatedAt || payload.updatedAt,
-                            ),
-                        };
+                        if (!typing) {
+                            return;
+                        }
 
                         if (
                             typing.channelId !==

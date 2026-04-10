@@ -770,6 +770,14 @@ async function setupReports() {
         "reportedUserId",
     ]);
     await ensureIndex("reports", "idx_status", "key", ["status"]);
+    await ensureIndex("reports", "idx_reported_user_status", "key", [
+        "reportedUserId",
+        "status",
+    ]);
+    await ensureIndex("reports", "idx_status_createdAt", "key", [
+        "status",
+        "$createdAt",
+    ]);
 }
 
 async function setupTyping() {

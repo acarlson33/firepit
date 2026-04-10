@@ -7,6 +7,7 @@
 import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
+import { logger } from "./newrelic-utils";
 import {
     getPresetFrameImageUrl,
     getPresetFrameStorageFileId,
@@ -38,6 +39,15 @@ export type UserProfile = {
     $createdAt: string;
     $updatedAt: string;
 };
+
+type UserProfileUpdatePayload = {
+    [K in keyof MutableUserProfileFields]?: MutableUserProfileFields[K] | null;
+};
+
+type MutableUserProfileFields = Omit<
+    UserProfile,
+    "$id" | "userId" | "$createdAt" | "$updatedAt"
+>;
 
 function chunkValues<T>(values: T[], size: number) {
     const chunks: T[][] = [];
@@ -228,27 +238,28 @@ export async function createUserProfile(
  */
 export async function updateUserProfile(
     profileId: string,
-    data: Partial<
-        Record<
-            keyof Omit<
-                UserProfile,
-                "$id" | "userId" | "$createdAt" | "$updatedAt"
-            >,
-            string | boolean | string[] | null
-        >
-    >,
+    data: UserProfileUpdatePayload,
 ): Promise<UserProfile> {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
 
-    const cleanData: Record<string, string | boolean | string[] | null> = {};
-    for (const [key, value] of Object.entries(data)) {
+    const cleanData: UserProfileUpdatePayload = {};
+    const mutableCleanData = cleanData as Record<
+        string,
+        Exclude<UserProfileUpdatePayload[keyof UserProfileUpdatePayload], undefined>
+    >;
+
+    for (const key of Object.keys(data) as Array<keyof UserProfileUpdatePayload>) {
+        const value = data[key];
         if (value !== undefined) {
-            cleanData[key] = value as string | boolean | string[] | null;
+            mutableCleanData[key] = value;
         }
     }
 
     if (Object.keys(cleanData).length === 0) {
+        logger.warn("Skipped profile update because payload had no defined keys", {
+            profileId,
+        });
         const existing = await databases.getDocument(
             env.databaseId,
             env.collections.profiles,
@@ -410,8 +421,8 @@ export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
         // Limit concurrency to avoid overwhelming Appwrite at scale.
         const CHUNK_SIZE = 10;
         const existingPresetIds: (string | undefined)[] = [];
-        for (let i = 0; i < uniquePresetIds.length; i += CHUNK_SIZE) {
-            const chunk = uniquePresetIds.slice(i, i + CHUNK_SIZE);
+        for (const chunk of chunkValues(uniquePresetIds, CHUNK_SIZE)) {
+            // Intentionally process chunks sequentially to cap concurrent getFile calls.
             const results = await Promise.all(
                 chunk.map(async (presetId) => {
                     const storageFileId = getPresetFrameStorageFileId(presetId);
@@ -433,14 +444,11 @@ export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
             existingPresetIds.push(...results);
         }
 
-        const existingSet = new Set<string>();
-        for (const presetId of existingPresetIds) {
-            if (typeof presetId === "string") {
-                existingSet.add(presetId);
-            }
-        }
-
-        return existingSet;
+        return new Set(
+            existingPresetIds.filter(
+                (presetId): presetId is string => typeof presetId === "string",
+            ),
+        );
     } catch {
         return new Set<string>();
     }

@@ -36,6 +36,42 @@ export type ListReportsOpts = {
 
 const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 200;
+export const DUPLICATE_REPORT_ERROR_MESSAGE =
+    "You already have a pending report for this user.";
+
+const REPORT_STATUS_VALUES = ["pending", "resolved", "dismissed"] as const;
+const REPORT_STATUS_SET = new Set<ReportStatus>(REPORT_STATUS_VALUES);
+
+function isReportStatus(value: unknown): value is ReportStatus {
+    return typeof value === "string" && REPORT_STATUS_SET.has(value as ReportStatus);
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== "object") {
+        return {};
+    }
+
+    return value as Record<string, unknown>;
+}
+
+function getRequiredStringField(
+    record: Record<string, unknown>,
+    key: string,
+): string {
+    const value = record[key];
+    if (typeof value !== "string" || value.length === 0) {
+        throw new Error(`Invalid report document: missing ${key}`);
+    }
+
+    return value;
+}
+
+export class DuplicateReportError extends Error {
+    constructor(message = DUPLICATE_REPORT_ERROR_MESSAGE) {
+        super(message);
+        this.name = "DuplicateReportError";
+    }
+}
 
 export function clampLimit(value: unknown): number {
     const parsed = Math.floor(Number(value));
@@ -45,20 +81,25 @@ export function clampLimit(value: unknown): number {
     return Math.min(parsed, MAX_LIST_LIMIT);
 }
 
-function parseReport(doc: Record<string, unknown>): Report {
+function parseReport(doc: unknown): Report {
+    const parsed = toRecord(doc);
+    const status = isReportStatus(parsed.status) ? parsed.status : "pending";
+
     return {
-        $id: String(doc.$id),
-        reporterId: String(doc.reporterId),
-        reportedUserId: String(doc.reportedUserId),
-        justification: String(doc.justification),
-        status: String(doc.status) as ReportStatus,
+        $id: getRequiredStringField(parsed, "$id"),
+        reporterId: getRequiredStringField(parsed, "reporterId"),
+        reportedUserId: getRequiredStringField(parsed, "reportedUserId"),
+        justification: getRequiredStringField(parsed, "justification"),
+        status,
         resolvedBy:
-            typeof doc.resolvedBy === "string" ? doc.resolvedBy : undefined,
-        resolutionNotes:
-            typeof doc.resolutionNotes === "string"
-                ? doc.resolutionNotes
+            typeof parsed.resolvedBy === "string"
+                ? parsed.resolvedBy
                 : undefined,
-        $createdAt: String(doc.$createdAt),
+        resolutionNotes:
+            typeof parsed.resolutionNotes === "string"
+                ? parsed.resolutionNotes
+                : undefined,
+        $createdAt: getRequiredStringField(parsed, "$createdAt"),
     };
 }
 
@@ -71,7 +112,7 @@ export async function createReport(input: CreateReportInput): Promise<Report> {
         input.reportedUserId,
     );
     if (existing) {
-        throw new Error("You already have a pending report for this user.");
+        throw new DuplicateReportError();
     }
 
     const { databases } = getServerClient();
@@ -89,7 +130,7 @@ export async function createReport(input: CreateReportInput): Promise<Report> {
         [`read("user:${input.reporterId}")`],
     );
 
-    return parseReport(doc as unknown as Record<string, unknown>);
+    return parseReport(doc);
 }
 
 export async function listReports(
@@ -125,11 +166,15 @@ export async function listReports(
         queries,
     );
 
-    const rawDocuments =
-        (res as unknown as { documents?: unknown[] }).documents || [];
-    const items = rawDocuments.map((d) =>
-        parseReport(d as Record<string, unknown>),
-    );
+    const rawDocuments = Array.isArray(res.documents) ? res.documents : [];
+    const items: Report[] = [];
+    for (const document of rawDocuments) {
+        try {
+            items.push(parseReport(document));
+        } catch {
+            // Skip malformed rows so one bad document does not break listing.
+        }
+    }
     const last = items.at(-1);
 
     return {
@@ -139,15 +184,23 @@ export async function listReports(
 }
 
 export async function getReportById(reportId: string): Promise<Report> {
+    const trimmedReportId = reportId.trim();
+    if (!trimmedReportId) {
+        throw new Error("Report id is required");
+    }
+    if (!REPORTS_COLLECTION_ID) {
+        throw new Error("Reports collection is not configured");
+    }
+
     const { databases } = getServerClient();
 
     const doc = await databases.getDocument(
         DATABASE_ID,
         REPORTS_COLLECTION_ID,
-        reportId,
+        trimmedReportId,
     );
 
-    return parseReport(doc as unknown as Record<string, unknown>);
+    return parseReport(doc);
 }
 
 export async function resolveReport(
@@ -157,6 +210,21 @@ export async function resolveReport(
     resolutionNotes?: string,
 ): Promise<void> {
     const { tablesDB } = getServerClient();
+    const transactionApi = tablesDB as unknown as {
+        createTransaction?: typeof tablesDB.createTransaction;
+        getRow?: typeof tablesDB.getRow;
+        updateRow?: typeof tablesDB.updateRow;
+        updateTransaction?: typeof tablesDB.updateTransaction;
+    };
+
+    if (
+        typeof transactionApi.createTransaction !== "function" ||
+        typeof transactionApi.getRow !== "function" ||
+        typeof transactionApi.updateRow !== "function" ||
+        typeof transactionApi.updateTransaction !== "function"
+    ) {
+        throw new Error("TablesDB transaction APIs are unavailable");
+    }
 
     // Use a transaction for atomic read-check-and-write.
     // On commit, Appwrite verifies the row hasn't changed externally.
@@ -172,7 +240,12 @@ export async function resolveReport(
             tx.$id,
         );
 
-        if (existing.status !== "pending") {
+        const existingRecord = toRecord(existing);
+        const existingStatus = isReportStatus(existingRecord.status)
+            ? existingRecord.status
+            : null;
+
+        if (existingStatus !== "pending") {
             throw new Error("Report has already been processed");
         }
 
@@ -255,7 +328,7 @@ export async function countRecentReportsByUser(
         [
             Query.equal("reporterId", reporterId),
             Query.greaterThanEqual("$createdAt", cutoff),
-            Query.limit(20),
+            Query.limit(1),
         ],
     );
 

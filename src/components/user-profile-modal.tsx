@@ -20,6 +20,7 @@ import { AvatarWithFrame } from "./profile-background";
 import { ReportUserDialog } from "./report-user-dialog";
 import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 import { getProfileBackgroundStyle } from "@/lib/profile-utils";
+import { logger } from "@/lib/client-logger";
 
 type UserProfile = {
     userId: string;
@@ -53,6 +54,65 @@ type UserProfileModalProps = {
     onStartDM?: (conversationId: string) => void;
 };
 
+function isUserProfile(value: unknown): value is UserProfile {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+
+    const hasValidStatus = (() => {
+        if (candidate.status === undefined) {
+            return true;
+        }
+
+        if (!candidate.status || typeof candidate.status !== "object") {
+            return false;
+        }
+
+        const status = candidate.status as Record<string, unknown>;
+        const validStatusValues = ["online", "away", "busy", "offline"];
+
+        return (
+            typeof status.status === "string" &&
+            validStatusValues.includes(status.status) &&
+            (status.customMessage === undefined ||
+                typeof status.customMessage === "string") &&
+            typeof status.lastSeenAt === "string"
+        );
+    })();
+
+    return (
+        typeof candidate.userId === "string" &&
+        (candidate.bio === undefined || typeof candidate.bio === "string") &&
+        (candidate.displayName === undefined ||
+            typeof candidate.displayName === "string") &&
+        (candidate.pronouns === undefined ||
+            typeof candidate.pronouns === "string") &&
+        (candidate.location === undefined ||
+            typeof candidate.location === "string") &&
+        (candidate.website === undefined ||
+            typeof candidate.website === "string") &&
+        (candidate.avatarFileId === undefined ||
+            typeof candidate.avatarFileId === "string") &&
+        (candidate.avatarUrl === undefined ||
+            typeof candidate.avatarUrl === "string") &&
+        (candidate.profileBackgroundColor === undefined ||
+            typeof candidate.profileBackgroundColor === "string") &&
+        (candidate.profileBackgroundGradient === undefined ||
+            typeof candidate.profileBackgroundGradient === "string") &&
+        (candidate.profileBackgroundImageFileId === undefined ||
+            typeof candidate.profileBackgroundImageFileId === "string") &&
+        (candidate.profileBackgroundUrl === undefined ||
+            typeof candidate.profileBackgroundUrl === "string") &&
+        (candidate.avatarFramePreset === undefined ||
+            typeof candidate.avatarFramePreset === "string") &&
+        (candidate.avatarFrameUrl === undefined ||
+            typeof candidate.avatarFrameUrl === "string") &&
+        hasValidStatus
+    );
+}
+
 function getStatusColor(
     status: NonNullable<UserProfile["status"]>["status"],
 ): string {
@@ -66,6 +126,23 @@ function getStatusColor(
         default:
             return "bg-gray-400";
     }
+}
+
+function getSafeUrl(candidateUrl: string | undefined): string | null {
+    if (!candidateUrl) {
+        return null;
+    }
+
+    try {
+        const parsed = new URL(candidateUrl);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            return parsed.toString();
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
 }
 
 export function UserProfileModal({
@@ -89,13 +166,18 @@ export function UserProfileModal({
             return;
         }
 
+        let cancelled = false;
+
         const fetchProfile = async () => {
             setLoading(true);
             setError(null);
 
             const cached = profilePrefetchPool.getCachedProfile(userId);
-            if (cached) {
-                setProfile(cached as UserProfile);
+            if (cached && isUserProfile(cached) && cached.userId === userId) {
+                if (cancelled) {
+                    return;
+                }
+                setProfile(cached);
                 setLoading(false);
                 return;
             }
@@ -107,16 +189,43 @@ export function UserProfileModal({
                     throw new Error("Failed to fetch profile");
                 }
 
-                const data = (await response.json()) as UserProfile;
+                const data: unknown = await response.json();
+                if (cancelled) {
+                    return;
+                }
+
+                if (!isUserProfile(data)) {
+                    logger.error(
+                        "Invalid profile response payload",
+                        "Response failed UserProfile guard",
+                        { userId },
+                    );
+                    setError("Unable to load profile");
+                    setProfile(null);
+                    return;
+                }
+
                 setProfile(data);
             } catch {
+                if (cancelled) {
+                    return;
+                }
                 setError("Unable to load profile");
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         };
 
-        void fetchProfile();
+        const profileTask = fetchProfile();
+        profileTask.catch(() => {
+            // fetchProfile already handles errors and state updates.
+        });
+
+        return () => {
+            cancelled = true;
+        };
     }, [userId, open]);
 
     const displayName =
@@ -124,6 +233,7 @@ export function UserProfileModal({
         initialDisplayName ||
         userName ||
         "Unknown User";
+    const safeWebsiteUrl = getSafeUrl(profile?.website);
     const avatarUrl = profile?.avatarUrl || initialAvatarUrl;
 
     const cardStyle = getProfileBackgroundStyle({
@@ -132,7 +242,7 @@ export function UserProfileModal({
         color: profile?.profileBackgroundColor,
     });
 
-    const hasBackground = Boolean(cardStyle);
+    const hasBackground = cardStyle !== undefined;
 
     async function handleStartDM() {
         if (!onStartDM) {
@@ -203,7 +313,11 @@ export function UserProfileModal({
                             <div className="absolute inset-0 bg-black/40" />
                         )}
                         <div
-                            className={`relative ${hasBackground ? "z-10" : ""} space-y-4 p-6`}
+                            className={
+                                hasBackground
+                                    ? "relative z-10 space-y-4 p-6"
+                                    : "relative space-y-4 p-6"
+                            }
                         >
                             <div className="rounded-lg bg-black/20 backdrop-blur-sm p-4">
                                 {/* Avatar and Name */}
@@ -278,14 +392,14 @@ export function UserProfileModal({
                                                     </span>
                                                 </div>
                                             )}
-                                            {profile.website && (
+                                            {safeWebsiteUrl && (
                                                 <div className="flex gap-2">
                                                     <span className="text-foreground/80">
                                                         Website:
                                                     </span>
                                                     <a
                                                         className="text-primary hover:underline"
-                                                        href={profile.website}
+                                                        href={safeWebsiteUrl}
                                                         rel="noopener noreferrer"
                                                         target="_blank"
                                                     >
@@ -304,12 +418,15 @@ export function UserProfileModal({
                                             className="w-full"
                                             disabled={
                                                 startingDM ||
-                                                Boolean(
-                                                    relationship &&
-                                                    !relationship.canSendDirectMessage,
-                                                )
+                                                relationship?.canSendDirectMessage ===
+                                                    false
                                             }
-                                            onClick={() => void handleStartDM()}
+                                            onClick={() => {
+                                                const task = handleStartDM();
+                                                task.catch(() => {
+                                                    // handleStartDM already handles errors.
+                                                });
+                                            }}
                                             type="button"
                                             variant="default"
                                         >

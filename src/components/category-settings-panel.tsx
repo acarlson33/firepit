@@ -83,15 +83,23 @@ export function CategorySettingsPanel({
         null,
     );
     const [editingName, setEditingName] = useState("");
-    const [pendingCategoryIds, setPendingCategoryIds] = useState<string[]>([]);
-    const [pendingChannelIds, setPendingChannelIds] = useState<string[]>([]);
+    const [pendingCategoryCounts, setPendingCategoryCounts] = useState<
+        Record<string, number>
+    >({});
+    const [pendingChannelCounts, setPendingChannelCounts] = useState<
+        Record<string, number>
+    >({});
     const loadRequestId = useRef(0);
 
     useEffect(() => {
         if (!serverId) {
             return;
         }
-        void loadData();
+
+        const task = loadData();
+        task.catch(() => {
+            // Errors are already surfaced in loadData.
+        });
     }, [serverId]);
 
     const uncategorizedChannels = useMemo(
@@ -105,23 +113,55 @@ export function CategorySettingsPanel({
     );
 
     function setCategoryPending(categoryIds: string[], pending: boolean) {
-        setPendingCategoryIds((currentValue) => {
-            if (pending) {
-                return [...new Set([...currentValue, ...categoryIds])];
+        setPendingCategoryCounts((currentValue) => {
+            const nextValue = { ...currentValue };
+
+            for (const categoryId of categoryIds) {
+                if (pending) {
+                    nextValue[categoryId] = (nextValue[categoryId] ?? 0) + 1;
+                    continue;
+                }
+
+                const currentCount = nextValue[categoryId] ?? 0;
+                if (currentCount <= 1) {
+                    delete nextValue[categoryId];
+                } else {
+                    nextValue[categoryId] = currentCount - 1;
+                }
             }
 
-            return currentValue.filter((value) => !categoryIds.includes(value));
+            return nextValue;
         });
     }
 
     function setChannelPending(channelIds: string[], pending: boolean) {
-        setPendingChannelIds((currentValue) => {
-            if (pending) {
-                return [...new Set([...currentValue, ...channelIds])];
+        setPendingChannelCounts((currentValue) => {
+            const nextValue = { ...currentValue };
+
+            for (const channelId of channelIds) {
+                if (pending) {
+                    nextValue[channelId] = (nextValue[channelId] ?? 0) + 1;
+                    continue;
+                }
+
+                const currentCount = nextValue[channelId] ?? 0;
+                if (currentCount <= 1) {
+                    delete nextValue[channelId];
+                } else {
+                    nextValue[channelId] = currentCount - 1;
+                }
             }
 
-            return currentValue.filter((value) => !channelIds.includes(value));
+            return nextValue;
         });
+    }
+
+    function isCategoryPending(categoryId: string) {
+        return (pendingCategoryCounts[categoryId] ?? 0) > 0;
+    }
+
+    function isChannelPending(channelId: string) {
+        return (pendingChannelCounts[channelId] ?? 0) > 0;
     }
 
     async function loadData(options?: { silent?: boolean }) {
@@ -145,7 +185,24 @@ export function CategorySettingsPanel({
                 !channelsResponse.ok ||
                 !rolesResponse.ok
             ) {
-                throw new Error("Failed to load categories");
+                const failedResources: string[] = [];
+                if (!categoriesResponse.ok) {
+                    failedResources.push(
+                        `categories (${categoriesResponse.status})`,
+                    );
+                }
+                if (!channelsResponse.ok) {
+                    failedResources.push(
+                        `channels (${channelsResponse.status})`,
+                    );
+                }
+                if (!rolesResponse.ok) {
+                    failedResources.push(`roles (${rolesResponse.status})`);
+                }
+
+                throw new Error(
+                    `Failed to load resources: ${failedResources.join(", ")}`,
+                );
             }
 
             const categoriesData =
@@ -187,7 +244,10 @@ export function CategorySettingsPanel({
 
     function refreshAfterMutation() {
         notifySidebar();
-        void loadData({ silent: true });
+        const task = loadData({ silent: true });
+        task.catch(() => {
+            // Errors are already surfaced in loadData.
+        });
     }
 
     function getChannelsForCategory(categoryId: string) {
@@ -675,15 +735,13 @@ export function CategorySettingsPanel({
                                             {category.name}
                                         </div>
                                     )}
-                                    {pendingCategoryIds.includes(
-                                        category.$id,
-                                    ) && (
+                                    {isCategoryPending(category.$id) && (
                                         <span className="text-xs text-muted-foreground">
                                             Saving...
                                         </span>
                                     )}
                                     <Button
-                                        disabled={pendingCategoryIds.includes(
+                                        disabled={isCategoryPending(
                                             category.$id,
                                         )}
                                         onClick={() =>
@@ -696,7 +754,7 @@ export function CategorySettingsPanel({
                                         <ArrowUp className="h-4 w-4" />
                                     </Button>
                                     <Button
-                                        disabled={pendingCategoryIds.includes(
+                                        disabled={isCategoryPending(
                                             category.$id,
                                         )}
                                         onClick={() =>
@@ -711,7 +769,7 @@ export function CategorySettingsPanel({
                                     {editingCategoryId === category.$id ? (
                                         <Button
                                             disabled={
-                                                pendingCategoryIds.includes(
+                                                isCategoryPending(
                                                     category.$id,
                                                 ) || !editingName.trim()
                                             }
@@ -728,7 +786,7 @@ export function CategorySettingsPanel({
                                         </Button>
                                     ) : (
                                         <Button
-                                            disabled={pendingCategoryIds.includes(
+                                            disabled={isCategoryPending(
                                                 category.$id,
                                             )}
                                             onClick={() => {
@@ -745,7 +803,7 @@ export function CategorySettingsPanel({
                                         </Button>
                                     )}
                                     <Button
-                                        disabled={pendingCategoryIds.includes(
+                                        disabled={isCategoryPending(
                                             category.$id,
                                         )}
                                         onClick={() =>
@@ -769,7 +827,10 @@ export function CategorySettingsPanel({
                                                     ) ?? false;
                                                 return (
                                                     <button
-                                                        disabled={pendingCategoryIds.includes(
+                                                        aria-pressed={
+                                                            isSelected
+                                                        }
+                                                        disabled={isCategoryPending(
                                                             category.$id,
                                                         )}
                                                         key={role.$id}
@@ -810,14 +871,15 @@ export function CategorySettingsPanel({
                                         <span className="ml-auto text-xs text-muted-foreground">
                                             {category.allowedRoleIds &&
                                             category.allowedRoleIds.length > 0
-                                                ? `Restricted to ${category.allowedRoleIds
+                                                ? `Restricted to ${sortedRoles
+                                                      .filter((role) =>
+                                                          category.allowedRoleIds?.includes(
+                                                              role.$id,
+                                                          ),
+                                                      )
                                                       .map(
-                                                          (id) =>
-                                                              roles.find(
-                                                                  (r) =>
-                                                                      r.$id ===
-                                                                      id,
-                                                              )?.name ||
+                                                          (role) =>
+                                                              role.name ||
                                                               "a role",
                                                       )
                                                       .join(", ")}`
@@ -836,7 +898,7 @@ export function CategorySettingsPanel({
                                                     {channel.name}
                                                 </div>
                                                 <Button
-                                                    disabled={pendingChannelIds.includes(
+                                                    disabled={isChannelPending(
                                                         channel.$id,
                                                     )}
                                                     onClick={() =>
@@ -852,7 +914,7 @@ export function CategorySettingsPanel({
                                                     <ArrowUp className="h-4 w-4" />
                                                 </Button>
                                                 <Button
-                                                    disabled={pendingChannelIds.includes(
+                                                    disabled={isChannelPending(
                                                         channel.$id,
                                                     )}
                                                     onClick={() =>
@@ -906,9 +968,7 @@ export function CategorySettingsPanel({
                                 </div>
                             </div>
                             <Select
-                                disabled={pendingChannelIds.includes(
-                                    channel.$id,
-                                )}
+                                disabled={isChannelPending(channel.$id)}
                                 onValueChange={(value) => {
                                     void assignChannel(channel.$id, value);
                                 }}

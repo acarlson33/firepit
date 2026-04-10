@@ -11,7 +11,9 @@ import { logger } from "./newrelic-utils";
 import { getServerClient } from "./appwrite-server";
 import type { FeatureFlag } from "./types";
 
-// TODO: Align SDK majors by upgrading node-appwrite to ^24.x once available.
+// Tracked dependency alignment: https://github.com/acarlson33/firepit/issues?q=is%3Aissue+is%3Aopen+node-appwrite
+// Keep node-appwrite usage behind server-only wrappers and rerun
+// src/__tests__/feature-flags.test.ts after SDK upgrades.
 
 export {
     FEATURE_FLAGS,
@@ -31,6 +33,8 @@ const CACHE_TTL = 60000; // 1 minute
 
 function createFeatureFlagDocumentId(flagKey: string): string {
     const maxPrefixLength = 18;
+    // Trim once before slicing, and again after slicing in case the cut leaves
+    // an underscore on either edge.
     const readablePrefix = flagKey
         .replace(/[^a-z0-9_-]/gi, "_")
         .toLowerCase()
@@ -229,36 +233,50 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
     const existingKeys = new Set(existingFlags.map((f) => f.key));
     const failedKeys: string[] = [];
 
-    // Create any missing flags with default values
-    for (const [key, defaultValue] of Object.entries(DEFAULT_FLAGS)) {
-        if (!existingKeys.has(key)) {
-            const featureKey = key as FeatureFlagKey;
-            try {
-                await databases.createDocument(
-                    databaseId,
-                    collections.featureFlags,
-                    createFeatureFlagDocumentId(featureKey),
-                    {
-                        key: featureKey,
-                        enabled: defaultValue,
-                        description: getFeatureFlagDescription(featureKey),
-                        updatedAt: new Date().toISOString(),
-                        updatedBy: userId,
-                    },
-                );
-            } catch (error) {
-                if (isDuplicateConflictError(error)) {
-                    continue;
-                }
+    const missingFlags = Object.entries(DEFAULT_FLAGS).filter(
+        ([key]) => !existingKeys.has(key),
+    ) as Array<[FeatureFlagKey, boolean]>;
 
-                failedKeys.push(featureKey);
-                logger.error("Failed to initialize feature flag", {
-                    key: featureKey,
-                    userId,
-                    error,
-                });
-            }
+    const createTasks = missingFlags.map(([featureKey, defaultValue]) => ({
+        featureKey,
+        task: databases.createDocument(
+            databaseId,
+            collections.featureFlags,
+            createFeatureFlagDocumentId(featureKey),
+            {
+                key: featureKey,
+                enabled: defaultValue,
+                description: getFeatureFlagDescription(featureKey),
+                updatedAt: new Date().toISOString(),
+                updatedBy: userId,
+            },
+        ),
+    }));
+
+    const results = await Promise.allSettled(
+        createTasks.map((createTask) => createTask.task),
+    );
+
+    for (const [index, result] of results.entries()) {
+        if (result.status === "fulfilled") {
+            continue;
         }
+
+        const featureKey = createTasks[index]?.featureKey;
+        if (!featureKey) {
+            continue;
+        }
+
+        if (isDuplicateConflictError(result.reason)) {
+            continue;
+        }
+
+        failedKeys.push(featureKey);
+        logger.error("Failed to initialize feature flag", {
+            key: featureKey,
+            userId,
+            error: result.reason,
+        });
     }
 
     if (failedKeys.length > 0) {

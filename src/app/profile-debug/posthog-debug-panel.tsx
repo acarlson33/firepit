@@ -11,7 +11,8 @@ type DebugResult = {
     status: "idle" | "ok" | "error";
 };
 
-const STATUS_CLASS_MAP: Record<string, string> = {
+const STATUS_CLASS_MAP: Record<DebugResult["status"], string> = {
+    idle: "text-muted-foreground",
     error: "text-destructive",
     ok: "text-green-600",
 };
@@ -126,8 +127,12 @@ export function PostHogDebugPanel() {
         try {
             // Validate host before using it in fetch to avoid opaque TypeErrors.
             new URL(host);
-        } catch {
-            markError(eventName, new Error("Invalid PostHog host URL"));
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            markError(
+                eventName,
+                new Error(`Invalid PostHog host URL: ${detail}`),
+            );
             return;
         }
 

@@ -47,26 +47,23 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
     const handleToggle = async (key: FeatureFlagKey, enabled: boolean) => {
         setUpdating(key);
         try {
-            const result = await updateFeatureFlagAction(userId, key, enabled);
-
-            if (result.success) {
-                setFlags((prev) =>
-                    prev.map((flag) =>
-                        flag.key === key ? { ...flag, enabled } : flag,
-                    ),
-                );
-                toast.success(
-                    `Feature flag ${enabled ? "enabled" : "disabled"}`,
-                );
-            } else {
-                toast.error(result.error || "Failed to update feature flag");
-            }
+            await updateFeatureFlagAction(userId, key, enabled);
+            setFlags((prev) =>
+                prev.map((flag) =>
+                    flag.key === key ? { ...flag, enabled } : flag,
+                ),
+            );
+            toast.success(`Feature flag ${enabled ? "enabled" : "disabled"}`);
         } catch (error) {
             logger.error(
                 "Failed to update feature flag:",
                 error instanceof Error ? error : String(error),
             );
-            toast.error("Failed to update feature flag");
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "Failed to update feature flag";
+            toast.error(message);
         } finally {
             setUpdating(null);
         }

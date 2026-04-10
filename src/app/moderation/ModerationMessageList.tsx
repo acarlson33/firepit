@@ -39,6 +39,73 @@ type Props = {
     isAdmin: boolean;
 };
 
+function isOptionalString(value: unknown): value is string | undefined {
+    return value === undefined || typeof value === "string";
+}
+
+function isOptionalStringArray(value: unknown): value is string[] | undefined {
+    return (
+        value === undefined ||
+        (Array.isArray(value) &&
+            value.every((entry) => typeof entry === "string"))
+    );
+}
+
+function isFileAttachment(value: unknown): value is FileAttachment {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        typeof candidate.fileId === "string" &&
+        typeof candidate.fileName === "string" &&
+        typeof candidate.fileSize === "number" &&
+        Number.isFinite(candidate.fileSize) &&
+        typeof candidate.fileType === "string" &&
+        typeof candidate.fileUrl === "string" &&
+        (candidate.thumbnailUrl === undefined ||
+            typeof candidate.thumbnailUrl === "string")
+    );
+}
+
+function isOptionalFileAttachmentArray(
+    value: unknown,
+): value is FileAttachment[] | undefined {
+    return (
+        value === undefined ||
+        (Array.isArray(value) &&
+            value.every((entry) => isFileAttachment(entry)))
+    );
+}
+
+function isModerationMessagePayload(
+    payload: unknown,
+): payload is ModerationMessage {
+    if (!payload || typeof payload !== "object") {
+        return false;
+    }
+
+    const candidate = payload as Record<string, unknown>;
+    return (
+        typeof candidate.$id === "string" &&
+        isOptionalFileAttachmentArray(candidate.attachments) &&
+        isOptionalString(candidate.channelDisplay) &&
+        isOptionalString(candidate.channelId) &&
+        isOptionalString(candidate.imageUrl) &&
+        isOptionalStringArray(candidate.mentions) &&
+        isOptionalString(candidate.removedAt) &&
+        isOptionalString(candidate.removedBy) &&
+        isOptionalString(candidate.removedByDisplay) &&
+        isOptionalString(candidate.senderDisplay) &&
+        isOptionalString(candidate.serverDisplay) &&
+        isOptionalString(candidate.serverId) &&
+        isOptionalString(candidate.text) &&
+        isOptionalString(candidate.userId) &&
+        isOptionalString(candidate.userName)
+    );
+}
+
 // Action buttons for each message
 function ActionButtons({
     message,
@@ -121,7 +188,7 @@ export function ModerationMessageList({
             return;
         }
 
-        let cleanup: (() => void) | undefined = () => {};
+        let cleanup = () => {};
         let cancelled = false;
 
         (async () => {
@@ -132,10 +199,40 @@ export function ModerationMessageList({
                         .collection(messagesCollectionId)
                         .document(),
                     (response: { events: string[]; payload: unknown }) => {
-                        const event = response.events.at(0);
-                        const payload = response.payload as ModerationMessage;
+                        if (cancelled) {
+                            return;
+                        }
 
-                        if (event?.includes(".update")) {
+                        const events = Array.isArray(response.events)
+                            ? response.events
+                            : [];
+                        if (events.length === 0) {
+                            return;
+                        }
+
+                        if (!isModerationMessagePayload(response.payload)) {
+                            logger.warn(
+                                "Ignoring malformed moderation realtime payload",
+                                {
+                                    events,
+                                },
+                            );
+                            return;
+                        }
+
+                        const payload = response.payload;
+
+                        const hasUpdateEvent = events.some((event) =>
+                            event.includes(".update"),
+                        );
+                        const hasDeleteEvent = events.some((event) =>
+                            event.includes(".delete"),
+                        );
+                        const hasCreateEvent = events.some((event) =>
+                            event.includes(".create"),
+                        );
+
+                        if (hasUpdateEvent) {
                             // Update existing message
                             setMessages((prev) =>
                                 prev.map((m) =>
@@ -144,12 +241,12 @@ export function ModerationMessageList({
                                         : m,
                                 ),
                             );
-                        } else if (event?.includes(".delete")) {
+                        } else if (hasDeleteEvent) {
                             // Remove deleted message
                             setMessages((prev) =>
                                 prev.filter((m) => m.$id !== payload.$id),
                             );
-                        } else if (event?.includes(".create")) {
+                        } else if (hasCreateEvent) {
                             // Add new message at the top if it does not already exist
                             setMessages((prev) =>
                                 prev.some((m) => m.$id === payload.$id)
@@ -217,7 +314,7 @@ export function ModerationMessageList({
 
         return () => {
             cancelled = true;
-            cleanup?.();
+            cleanup();
         };
     }, []);
 

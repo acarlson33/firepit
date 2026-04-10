@@ -1,6 +1,14 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+    describe,
+    expect,
+    it,
+    vi,
+    beforeEach,
+    type MockedFunction,
+} from "vitest";
 import { NextRequest } from "next/server";
 import { GET } from "../../app/api/users/[userId]/profile/route";
+import { getUserProfile } from "@/lib/appwrite-profiles";
 
 // Mock dependencies
 vi.mock("@/lib/appwrite-profiles", () => ({
@@ -22,13 +30,13 @@ vi.mock("@/lib/appwrite-status", () => ({
     ),
 }));
 
-describe("User Profile API Route", () => {
-    let mockGetUserProfile: any;
+const mockGetUserProfile = getUserProfile as MockedFunction<
+    typeof getUserProfile
+>;
 
-    beforeEach(async () => {
+describe("User Profile API Route", () => {
+    beforeEach(() => {
         vi.clearAllMocks();
-        const profiles = await import("@/lib/appwrite-profiles");
-        mockGetUserProfile = profiles.getUserProfile;
     });
 
     describe("GET /api/users/[userId]/profile", () => {

@@ -170,12 +170,7 @@ describe("admin channel & global message listing", () => {
                 databases: {
                     listDocuments: () => Promise.reject(new Error("boom")),
                 },
-                tablesDB: {
-                    createTransaction: vi.fn(),
-                    getRow: vi.fn(),
-                    updateRow: vi.fn(),
-                    updateTransaction: vi.fn(),
-                },
+                tablesDB: {} as any,
                 teams: {} as any,
                 storage: {} as any,
             }),

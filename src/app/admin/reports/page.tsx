@@ -11,10 +11,16 @@ import {
     getProfilesByUserIds,
     resolveProfileUserId,
 } from "@/lib/appwrite-profiles";
-import { requireAdmin } from "@/lib/auth-server";
+import { AuthError, requireAdmin } from "@/lib/auth-server";
 import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
 import { Badge } from "@/components/ui/badge";
 import { actionResolveReportBound, actionDismissReportBound } from "./actions";
+
+const REPORT_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+});
 
 function statusVariant(status: string) {
     switch (status) {
@@ -35,8 +41,10 @@ export default async function ReportsPage(props: {
     try {
         await requireAdmin();
     } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.startsWith("Forbidden") || message === "Unauthorized") {
+        if (
+            error instanceof AuthError &&
+            (error.code === "FORBIDDEN" || error.code === "UNAUTHORIZED")
+        ) {
             redirect("/");
         }
         throw error;
@@ -63,11 +71,16 @@ export default async function ReportsPage(props: {
             ? searchParams.reported
             : undefined;
 
+    const [resolvedReporter, resolvedReported] = await Promise.all([
+        reporterInput ? resolveProfileUserId(reporterInput) : undefined,
+        reportedInput ? resolveProfileUserId(reportedInput) : undefined,
+    ]);
+
     const resolvedReporterId = reporterInput
-        ? ((await resolveProfileUserId(reporterInput)) ?? reporterInput)
+        ? (resolvedReporter ?? reporterInput)
         : undefined;
     const resolvedReportedId = reportedInput
-        ? ((await resolveProfileUserId(reportedInput)) ?? reportedInput)
+        ? (resolvedReported ?? reportedInput)
         : undefined;
 
     const [pendingCount, { items, nextCursor }] = await Promise.all([
@@ -122,7 +135,7 @@ export default async function ReportsPage(props: {
                     </div>
                     <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-xs text-muted-foreground">
                         <div className="flex items-center gap-2 font-semibold uppercase tracking-wide">
-                            <Flag className="h-4 w-4" />
+                            <Flag aria-hidden="true" className="h-4 w-4" />
                             <span>Pending</span>
                         </div>
                         <p className="mt-1 text-lg font-bold text-foreground">
@@ -211,12 +224,12 @@ export default async function ReportsPage(props: {
                         >
                             Apply filters
                         </button>
-                        <a
+                        <Link
                             className="rounded-2xl border border-border/60 bg-muted/50 px-4 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
                             href="/admin/reports"
                         >
                             Reset
-                        </a>
+                        </Link>
                     </div>
                 </form>
             </section>
@@ -240,9 +253,7 @@ export default async function ReportsPage(props: {
                             >
                                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     <span>
-                                        {new Date(
-                                            report.$createdAt,
-                                        ).toLocaleString()}
+                                        {`${REPORT_DATE_FORMATTER.format(new Date(report.$createdAt))} UTC`}
                                     </span>
                                     <Badge
                                         variant={statusVariant(report.status)}

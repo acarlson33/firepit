@@ -141,6 +141,18 @@ describe("server members route", () => {
         expect(response.status).toBe(200);
         expect(Array.isArray(data.members)).toBe(true);
         expect(data.members).toHaveLength(2);
+        expect(mockListDocuments).toHaveBeenNthCalledWith(
+            3,
+            "test-db",
+            "banned_users",
+            expect.any(Array),
+        );
+        expect(mockListDocuments).toHaveBeenNthCalledWith(
+            4,
+            "test-db",
+            "muted_users",
+            expect.any(Array),
+        );
         expect(data.members[0].userId).toBe("user-1");
         expect(data.members[0].roleIds).toEqual(["role-1"]);
         expect(data.members[0].isBanned).toBe(true);

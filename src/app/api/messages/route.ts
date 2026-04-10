@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
                 mentions,
                 messageId: String(res.$id),
                 previewText: text || "",
-                serverId: serverId || undefined,
+                serverId: serverId ?? undefined,
             });
         }
 
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
             messageId: message.$id,
             userId,
             channelId,
-            serverId: serverId || undefined,
+            serverId: serverId ?? undefined,
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
             attachmentCount: attachments?.length || 0,
@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
             isReply: Boolean(replyToId),
             messageId: message.$id,
             messageType: "channel",
-            serverId: serverId || undefined,
+            serverId: serverId ?? undefined,
             totalQueryTimeMs: Date.now() - startTime,
         });
 
@@ -363,14 +363,24 @@ export async function PATCH(request: NextRequest) {
             userName: doc.userName as string | undefined,
             text: String(doc.text),
             $createdAt: String(doc.$createdAt ?? ""),
-            channelId: doc.channelId as string | undefined,
-            editedAt: doc.editedAt as string | undefined,
-            removedAt: doc.removedAt as string | undefined,
-            removedBy: doc.removedBy as string | undefined,
-            serverId: doc.serverId as string | undefined,
-            imageFileId: doc.imageFileId as string | undefined,
-            imageUrl: doc.imageUrl as string | undefined,
-            replyToId: doc.replyToId as string | undefined,
+            channelId:
+                typeof doc.channelId === "string" ? doc.channelId : undefined,
+            editedAt:
+                typeof doc.editedAt === "string" ? doc.editedAt : undefined,
+            removedAt:
+                typeof doc.removedAt === "string" ? doc.removedAt : undefined,
+            removedBy:
+                typeof doc.removedBy === "string" ? doc.removedBy : undefined,
+            serverId:
+                typeof doc.serverId === "string" ? doc.serverId : undefined,
+            imageFileId:
+                typeof doc.imageFileId === "string"
+                    ? doc.imageFileId
+                    : undefined,
+            imageUrl:
+                typeof doc.imageUrl === "string" ? doc.imageUrl : undefined,
+            replyToId:
+                typeof doc.replyToId === "string" ? doc.replyToId : undefined,
         };
 
         recordEvent("message_edited", {
@@ -447,10 +457,10 @@ export async function DELETE(request: NextRequest) {
 
         recordEvent("message_deleted", {
             actorUserId: user.$id,
-            channelId: existing.channelId || undefined,
+            channelId: existing.channelId ?? undefined,
             messageId,
             messageType: "channel",
-            serverId: existing.serverId || undefined,
+            serverId: existing.serverId ?? undefined,
             totalQueryTimeMs: Date.now() - startTime,
         });
 

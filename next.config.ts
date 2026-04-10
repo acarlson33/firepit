@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
         const rewritePath = normalizeRewritePath(
             process.env.POSTHOG_REWRITE_PATH ?? "/ingest",
         );
+        if (!rewritePath) {
+            return [];
+        }
         const ingestHost = stripTrailingSlash(
             process.env.POSTHOG_REWRITE_INGEST_HOST ??
                 "https://us.i.posthog.com",

@@ -3,6 +3,7 @@
  * Handles predefined frames (everyone has access) and seasonal frames (earned based on account age)
  */
 
+import type { CSSProperties } from "react";
 import { getEnvConfig } from "./appwrite-core";
 
 export type PresetFrame = {
@@ -188,7 +189,8 @@ function getPresetFrameBucketUrl(fileId: string): string {
             "Missing env config: buckets.avatarFramesPredefined is not configured",
         );
     }
-    return `${env.endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${env.project}`;
+    const encodedFileId = encodeURIComponent(fileId);
+    return `${env.endpoint}/storage/buckets/${bucketId}/files/${encodedFileId}/view?project=${env.project}`;
 }
 
 function hydrateFrameWithImageUrl(frame: PresetFrame): PresetFrame {
@@ -251,6 +253,10 @@ export function getSeasonalFramesForUser(
     accountCreatedAt: string,
 ): PresetFrame[] {
     const createdDate = new Date(accountCreatedAt);
+    if (Number.isNaN(createdDate.getTime())) {
+        return [];
+    }
+
     const now = new Date();
 
     return PRESET_FRAMES.filter((frame) => {
@@ -277,7 +283,11 @@ export function isUserEligibleForFrame(
     frameId: string,
 ): boolean {
     const frame = getPresetFrameById(frameId);
-    if (!frame || frame.type !== "seasonal") {
+    if (!frame) {
+        return false;
+    }
+
+    if (frame.type !== "seasonal") {
         return true;
     }
 
@@ -294,10 +304,17 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-export function getFramePreviewStyle(frame: PresetFrame): React.CSSProperties {
+export function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
     if (frame.imageUrl) {
+        const encodedImageUrl = encodeURI(frame.imageUrl)
+            .replaceAll('"', "%22")
+            .replaceAll("'", "%27")
+            .replaceAll("\\", "%5C")
+            .replaceAll("\n", "")
+            .replaceAll("\r", "");
+
         return {
-            backgroundImage: `url(${frame.imageUrl})`,
+            backgroundImage: `url("${encodedImageUrl}")`,
             backgroundSize: "contain",
             backgroundRepeat: "no-repeat",
         };

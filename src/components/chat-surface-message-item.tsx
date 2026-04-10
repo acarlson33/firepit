@@ -108,6 +108,7 @@ export function ChatSurfaceMessageItem({
             } ${compactMessages ? "gap-2 p-2" : "gap-3 p-3"}`}
             data-message-id={message.id}
             id={`message-${message.id}`}
+            onFocusCapture={() => profilePrefetchPool.add(message.authorId)}
             onMouseEnter={() => profilePrefetchPool.add(message.authorId)}
         >
             {onOpenProfileModal ? (

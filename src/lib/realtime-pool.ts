@@ -12,6 +12,41 @@ let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 let warnedAboutFallbackTeardown = false;
 let inFlightDispose: Promise<void> | null = null;
+let subscribeQueueTail: Promise<void> = Promise.resolve();
+
+function queueRealtimeSubscribe<T>(operation: () => Promise<T>): Promise<T> {
+    const nextOperation = subscribeQueueTail
+        .catch(() => {
+            // Keep subscribe queue progressing even if an earlier subscribe failed.
+        })
+        .then(operation);
+
+    subscribeQueueTail = nextOperation.then(
+        () => undefined,
+        () => undefined,
+    );
+
+    return nextOperation;
+}
+
+function patchRealtimeSubscribe(realtime: Realtime): Realtime {
+    const realtimeWithMetadata = realtime as Realtime & {
+        __firepitSubscribePatched?: boolean;
+    };
+
+    if (realtimeWithMetadata.__firepitSubscribePatched) {
+        return realtime;
+    }
+
+    const baseSubscribe = realtime.subscribe.bind(realtime);
+    realtime.subscribe = ((...args: Parameters<Realtime["subscribe"]>) =>
+        queueRealtimeSubscribe(() =>
+            baseSubscribe(...args),
+        )) as Realtime["subscribe"];
+
+    realtimeWithMetadata.__firepitSubscribePatched = true;
+    return realtime;
+}
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     return (
@@ -66,7 +101,7 @@ async function callPublicRealtimeTeardown(
     realtime: Realtime,
 ): Promise<boolean> {
     const lifecycleMethods = ["close", "disconnect", "dispose"] as const;
-    let didTeardown = false;
+    let instanceLevelTeardown = false;
 
     for (const methodName of lifecycleMethods) {
         try {
@@ -75,7 +110,7 @@ async function callPublicRealtimeTeardown(
                 methodName,
             );
             if (called) {
-                didTeardown = true;
+                instanceLevelTeardown = true;
                 break;
             }
         } catch {
@@ -83,7 +118,7 @@ async function callPublicRealtimeTeardown(
         }
     }
 
-    if (didTeardown) {
+    if (instanceLevelTeardown) {
         return true;
     }
 
@@ -91,6 +126,8 @@ async function callPublicRealtimeTeardown(
         Reflect.get(realtime as object, "subscriptions"),
         Reflect.get(realtime as object, "activeSubscriptions"),
     ];
+
+    let closedAnySubscription = false;
 
     for (const container of subscriptionContainers) {
         const maybeSubscriptions = collectSubscriptionLikeValues(container);
@@ -111,12 +148,16 @@ async function callPublicRealtimeTeardown(
                     ));
 
                 if (didClose) {
-                    didTeardown = true;
+                    closedAnySubscription = true;
                 }
             } catch {
                 // Continue trying additional subscription-like values.
             }
         }
+    }
+
+    if (closedAnySubscription) {
+        return true;
     }
 
     const internalClient = Reflect.get(realtime as object, "client");
@@ -127,14 +168,14 @@ async function callPublicRealtimeTeardown(
                 "close",
             );
             if (closedClient) {
-                didTeardown = true;
+                return true;
             }
         } catch {
             // Let the caller continue to fallback internals.
         }
     }
 
-    return didTeardown;
+    return false;
 }
 
 async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
@@ -181,10 +222,7 @@ async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
         const result = (closeSocket as (this: Realtime) => unknown).call(
             realtime,
         );
-        if (
-            result &&
-            typeof (result as { then?: unknown }).then === "function"
-        ) {
+        if (isPromiseLike(result)) {
             await result;
         }
     }
@@ -220,7 +258,7 @@ export function getSharedClient(): Client {
  */
 export function getSharedRealtime(): Realtime {
     if (!sharedRealtime) {
-        sharedRealtime = new Realtime(getSharedClient());
+        sharedRealtime = patchRealtimeSubscribe(new Realtime(getSharedClient()));
     }
 
     return sharedRealtime;
@@ -279,6 +317,7 @@ export async function disposeSharedRealtime(): Promise<void> {
             if (sharedRealtime === realtime) {
                 sharedRealtime = null;
                 subscriptionRefs.clear();
+                subscribeQueueTail = Promise.resolve();
             }
         }
     })();

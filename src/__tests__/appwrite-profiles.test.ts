@@ -109,8 +109,18 @@ vi.mock("node-appwrite", () => {
             return true;
         }
 
-        async getFile() {
-            return true;
+        async getFile(_bucketId: string, fileId: string) {
+            if (
+                fileId === "nonexistent-frame" ||
+                fileId === "seasonal-spring-2026"
+            ) {
+                throw Object.assign(new Error("File not found"), {
+                    code: 404,
+                    type: "storage_file_not_found",
+                });
+            }
+
+            return { $id: fileId };
         }
     }
 
@@ -404,6 +414,29 @@ describe("User Profiles", () => {
 
             expect(url).toContain("storage/buckets/avatar-frames-predefined");
             expect(url).toContain("/files/seasonal-winter-2026/view");
+        });
+
+        it("should return undefined when frame URL backing file is missing", async () => {
+            const { getPredefinedAvatarFrameUrlIfExists } =
+                await import("../lib/appwrite-profiles");
+
+            const url = await getPredefinedAvatarFrameUrlIfExists(
+                "seasonal-spring-2026",
+            );
+            expect(url).toBeUndefined();
+        });
+
+        it("should exclude missing preset IDs from existing frame ID set", async () => {
+            const { getExistingPredefinedAvatarFrameIds } =
+                await import("../lib/appwrite-profiles");
+
+            const existing = await getExistingPredefinedAvatarFrameIds([
+                "seasonal-spring-2026",
+                "seasonal-winter-2025",
+            ]);
+
+            expect(existing.has("seasonal-spring-2026")).toBe(false);
+            expect(existing.has("seasonal-winter-2025")).toBe(true);
         });
     });
 

@@ -27,20 +27,14 @@ export function ProfileBackground({
     className = "",
     children,
 }: ProfileBackgroundProps) {
-    function getBackgroundStyle() {
-        if (backgroundGradient) {
-            return { background: backgroundGradient };
-        }
-        if (backgroundColor) {
-            return { background: backgroundColor };
-        }
-        return { background: "transparent" };
-    }
+    const backgroundStyle = {
+        background: backgroundGradient ?? backgroundColor ?? "transparent",
+    };
 
     return (
         <div
             className={`relative z-0 w-full overflow-hidden rounded-t-xl ${heightClasses[height]} ${className}`}
-            style={getBackgroundStyle()}
+            style={backgroundStyle}
         >
             {children && (
                 <div className="absolute inset-0 z-20 flex items-end overflow-visible px-6 pb-3">
@@ -80,7 +74,11 @@ export function AvatarWithFrame({
     const presetFrame = avatarFramePreset
         ? getPresetFrameById(avatarFramePreset)
         : null;
-    const resolvedFrameUrl = avatarFrameUrl ?? presetFrame?.imageUrl;
+    const candidateFrameUrl = avatarFrameUrl ?? presetFrame?.imageUrl;
+    const resolvedFrameUrl =
+        typeof candidateFrameUrl === "string" && candidateFrameUrl.trim()
+            ? candidateFrameUrl
+            : undefined;
     const frameEmoji = getFrameEmoji(avatarFramePreset);
 
     const frameBorderStyle = presetFrame?.borderStyle || "solid";
@@ -91,6 +89,7 @@ export function AvatarWithFrame({
     const avatarInsetPercent = hasFrameAsset
         ? Math.min(35, Math.max(0, configuredInset))
         : 0;
+    const avatarInitial = displayName.trim().charAt(0).toUpperCase() || "?";
 
     return (
         <div
@@ -98,13 +97,13 @@ export function AvatarWithFrame({
             style={{ width: sizes.container, height: sizes.container }}
         >
             {/* Frame image rendered behind the avatar */}
-            {hasFrameAsset && (
+            {resolvedFrameUrl && (
                 <Image
                     alt="Avatar frame"
                     className="absolute inset-0 z-10 pointer-events-none"
                     fill
                     sizes={`${sizes.container + 20}px`}
-                    src={resolvedFrameUrl as string}
+                    src={resolvedFrameUrl}
                     style={{ objectFit: "contain" }}
                     unoptimized
                 />
@@ -137,7 +136,7 @@ export function AvatarWithFrame({
                     />
                 ) : (
                     <span className="text-foreground/70 font-semibold">
-                        {displayName[0]?.toUpperCase() ?? "?"}
+                        {avatarInitial}
                     </span>
                 )}
             </div>
@@ -147,40 +146,35 @@ export function AvatarWithFrame({
                     className="absolute -bottom-1 -right-1 z-30 flex size-5 items-center justify-center rounded-full bg-background text-xs"
                     title={`Frame: ${presetFrame?.name || "Custom"}`}
                 >
-                    {frameEmoji}
+                    <span aria-hidden="true">{frameEmoji}</span>
                 </div>
             )}
         </div>
     );
 }
 
+const FRAME_EMOJI_LOOKUP = [
+    ["star", "⭐"],
+    ["diamond", "💎"],
+    ["square", "⬜"],
+    ["round", "⚪"],
+    ["spring", "🌸"],
+    ["summer", "☀️"],
+    ["fall", "🍂"],
+    ["winter", "❄️"],
+] as const;
+
 function getFrameEmoji(framePreset?: string): string | null {
     if (!framePreset) {
         return null;
     }
-    if (framePreset.includes("star")) {
-        return "⭐";
+    const normalizedPreset = framePreset.toLowerCase();
+
+    for (const [presetKey, emoji] of FRAME_EMOJI_LOOKUP) {
+        if (normalizedPreset.includes(presetKey)) {
+            return emoji;
+        }
     }
-    if (framePreset.includes("diamond")) {
-        return "💎";
-    }
-    if (framePreset.includes("square")) {
-        return "⬜";
-    }
-    if (framePreset.includes("round")) {
-        return "⚪";
-    }
-    if (framePreset.includes("spring")) {
-        return "🌸";
-    }
-    if (framePreset.includes("summer")) {
-        return "☀️";
-    }
-    if (framePreset.includes("fall")) {
-        return "🍂";
-    }
-    if (framePreset.includes("winter")) {
-        return "❄️";
-    }
+
     return "✨";
 }

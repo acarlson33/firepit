@@ -7,6 +7,7 @@ import { listInboxDigest, markInboxScopeRead } from "@/lib/inbox-client";
 
 describe("inbox-client", () => {
     beforeEach(() => {
+        vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
 

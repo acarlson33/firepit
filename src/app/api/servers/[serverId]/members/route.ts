@@ -61,29 +61,36 @@ export async function GET(request: Request, context: RouteContext) {
         );
 
         // Get banned/muted status for this server
-        const bannedUsers = await databases.listDocuments(
-            databaseId,
-            bannedUsersCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(5000)],
-        );
+        const [bannedUsers, mutedUsers] =
+            membershipUserIds.length === 0
+                ? [{ documents: [] }, { documents: [] }]
+                : await Promise.all([
+                      databases.listDocuments(
+                          databaseId,
+                          bannedUsersCollectionId,
+                          [
+                              Query.equal("serverId", serverId),
+                              Query.equal("userId", membershipUserIds),
+                              Query.limit(membershipUserIds.length),
+                          ],
+                      ),
+                      databases.listDocuments(
+                          databaseId,
+                          mutedUsersCollectionId,
+                          [
+                              Query.equal("serverId", serverId),
+                              Query.equal("userId", membershipUserIds),
+                              Query.limit(membershipUserIds.length),
+                          ],
+                      ),
+                  ]);
 
-        const mutedUsers = await databases.listDocuments(
-            databaseId,
-            mutedUsersCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(5000)],
-        );
-
-        // Create sets of banned/muted user IDs restricted to returned members
-        const membershipIdSet = new Set(membershipUserIds);
+        // Build fast lookup sets for moderation flags.
         const bannedUserIds = new Set(
-            bannedUsers.documents
-                .map((doc) => String(doc.userId))
-                .filter((id) => membershipIdSet.has(id)),
+            bannedUsers.documents.map((doc) => String(doc.userId)),
         );
         const mutedUserIds = new Set(
-            mutedUsers.documents
-                .map((doc) => String(doc.userId))
-                .filter((id) => membershipIdSet.has(id)),
+            mutedUsers.documents.map((doc) => String(doc.userId)),
         );
 
         // Create a map of userId to roleIds
@@ -119,8 +126,8 @@ export async function GET(request: Request, context: RouteContext) {
             displayName?: string;
             avatarUrl?: string;
             roleIds: string[];
-            isBanned?: boolean;
-            isMuted?: boolean;
+            isBanned: boolean;
+            isMuted: boolean;
         }>;
 
         for (const membership of memberships.documents) {

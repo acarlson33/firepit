@@ -211,17 +211,20 @@ async function countUnreadRepliesByParent(params: {
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
+    // When we cannot compute an exact unread delta, we fall back to a minimal
+    // non-zero count and rely on a cached unread counter for better precision.
     const countsByParentId = new Map<string, number>();
     const parentsThatNeedQuery: UnreadThreadParentInput[] = [];
 
     for (const parent of parents) {
-        const fallbackCount =
-            typeof parent.threadMessageCount === "number" &&
-            parent.threadMessageCount > 0
-                ? parent.threadMessageCount
-                : 1;
-
+        // Without lastReadAt we cannot calculate unread deltas, so thread totals
+        // are the only approximation available unless a cached unread counter exists.
         if (!parent.lastReadAt) {
+            const fallbackCount =
+                typeof parent.threadMessageCount === "number" &&
+                parent.threadMessageCount > 0
+                    ? parent.threadMessageCount
+                    : 1;
             countsByParentId.set(parent.parentMessageId, fallbackCount);
             continue;
         }
@@ -263,13 +266,9 @@ async function countUnreadRepliesByParent(params: {
                     error:
                         error instanceof Error ? error.message : String(error),
                 });
-                // Fallback to cached count if the per-parent query fails.
-                const fallbackCount =
-                    typeof parent.threadMessageCount === "number" &&
-                    parent.threadMessageCount > 0
-                        ? parent.threadMessageCount
-                        : 1;
-                countsByParentId.set(parent.parentMessageId, fallbackCount);
+                // threadMessageCount is total replies, not unread replies. Any
+                // closer approximation here must come from a cached unread counter.
+                countsByParentId.set(parent.parentMessageId, 1);
             }
         },
     });

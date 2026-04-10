@@ -154,7 +154,7 @@ export function useInbox(userId: string | null) {
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        void (async () => {
+        const subscriptionTask = (async () => {
             if (cancelled) {
                 return;
             }
@@ -181,23 +181,47 @@ export function useInbox(userId: string | null) {
                 }, [Query.equal("userId", userId)]);
 
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
+                    if (subscription) {
+                        await closeSubscriptionSafely(subscription);
+                    }
                     return;
                 }
 
                 untrack = trackSubscription(inboxChannelKey);
             } catch (error) {
                 logger.error(
-                    "Inbox realtime subscription failed:",
-                    error instanceof Error ? error : String(error),
+                    "Inbox realtime subscription failed",
+                    error instanceof Error ? error : new Error(String(error)),
+                    {
+                        inboxChannelKey,
+                        userId,
+                    },
                 );
             } finally {
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscription);
+                    if (subscription) {
+                        closeSubscriptionSafely(subscription).catch((error) => {
+                            logger.warn(
+                                "Failed to close inbox realtime subscription",
+                                {
+                                    error:
+                                        error instanceof Error
+                                            ? error.message
+                                            : String(error),
+                                },
+                            );
+                        });
+                    }
                 };
             }
         })();
+        subscriptionTask.catch((error) => {
+            logger.warn("Inbox subscription task failed", {
+                error: error instanceof Error ? error.message : String(error),
+                inboxChannelKey,
+            });
+        });
 
         return () => {
             cancelled = true;
@@ -299,7 +323,13 @@ export function useInbox(userId: string | null) {
                 if (matchingItems.length > 0) {
                     await markInboxContextRead({ contextId, contextKind });
                 }
-            } catch {
+            } catch (error) {
+                logger.warn("Failed to mark inbox context as read", {
+                    contextId,
+                    contextKind,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
                 await refetch();
             }
         },
@@ -317,7 +347,12 @@ export function useInbox(userId: string | null) {
 
             try {
                 await markInboxItemsRead({ itemIds: [item.id] });
-            } catch {
+            } catch (error) {
+                logger.warn("Failed to mark inbox item as read", {
+                    itemId: item.id,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
                 await refetch();
             }
         },
@@ -341,7 +376,12 @@ export function useInbox(userId: string | null) {
 
             try {
                 await markInboxScopeRead(scope);
-            } catch {
+            } catch (error) {
+                logger.warn("Failed to mark inbox scope as read", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    scope,
+                });
                 await refetch();
             } finally {
                 setBulkLoading(null);

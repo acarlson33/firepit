@@ -17,6 +17,21 @@ type ThreadReadDocument = {
 
 const THREAD_READ_QUERY_LIMIT = 500;
 
+function isAlreadyExistsConflict(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { code?: unknown; message?: unknown };
+    if (candidate.code === 409) {
+        return true;
+    }
+
+    return typeof candidate.message === "string"
+        ? candidate.message.toLowerCase().includes("already exists")
+        : false;
+}
+
 /**
  * Handles merge thread reads by max.
  *
@@ -182,6 +197,33 @@ export async function upsertThreadReads(params: {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
     const incomingReads = normalizeThreadReads(params.reads);
+    const existingDocuments = await listThreadReadDocumentsForContext(params);
+
+    if (existingDocuments.length > 0) {
+        const primaryDocument = existingDocuments[0];
+        const mergedReads = existingDocuments.reduce<Record<string, string>>(
+            (accumulator, currentDocument) =>
+                mergeThreadReadsByMax({
+                    existingReads: accumulator,
+                    incomingReads: currentDocument.reads,
+                }),
+            incomingReads,
+        );
+
+        const updatedDocument = await databases.updateDocument(
+            env.databaseId,
+            env.collections.threadReads,
+            primaryDocument.$id,
+            {
+                reads: JSON.stringify(mergedReads),
+            },
+        );
+
+        return mapThreadReadDocument(
+            updatedDocument as unknown as Record<string, unknown>,
+        );
+    }
+
     const payload = {
         contextId: params.contextId,
         contextType: params.contextType,
@@ -189,24 +231,52 @@ export async function upsertThreadReads(params: {
         userId: params.userId,
     };
 
-    await databases.createDocument(
-        env.databaseId,
-        env.collections.threadReads,
-        ID.unique(),
-        payload,
-        perms.serverOwner(params.userId),
-    );
+    try {
+        const createdDocument = await databases.createDocument(
+            env.databaseId,
+            env.collections.threadReads,
+            ID.unique(),
+            payload,
+            perms.serverOwner(params.userId),
+        );
 
-    const merged = await getThreadReads(params);
-    if (merged) {
-        return merged;
+        return mapThreadReadDocument(
+            createdDocument as unknown as Record<string, unknown>,
+        );
+    } catch (error) {
+        if (!isAlreadyExistsConflict(error)) {
+            throw error;
+        }
+
+        // A concurrent create won the race; merge and update the now-existing record.
+        const concurrentDocuments = await listThreadReadDocumentsForContext(
+            params,
+        );
+        if (concurrentDocuments.length === 0) {
+            throw error;
+        }
+
+        const primaryDocument = concurrentDocuments[0];
+        const mergedReads = concurrentDocuments.reduce<Record<string, string>>(
+            (accumulator, currentDocument) =>
+                mergeThreadReadsByMax({
+                    existingReads: accumulator,
+                    incomingReads: currentDocument.reads,
+                }),
+            incomingReads,
+        );
+
+        const updatedDocument = await databases.updateDocument(
+            env.databaseId,
+            env.collections.threadReads,
+            primaryDocument.$id,
+            {
+                reads: JSON.stringify(mergedReads),
+            },
+        );
+
+        return mapThreadReadDocument(
+            updatedDocument as unknown as Record<string, unknown>,
+        );
     }
-
-    return {
-        $id: "",
-        contextId: params.contextId,
-        contextType: params.contextType,
-        reads: incomingReads,
-        userId: params.userId,
-    };
 }

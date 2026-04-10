@@ -275,12 +275,13 @@ export type UserProfileData = {
     userId: string;
     displayName?: string;
     avatarUrl?: string;
+    avatarFileId?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
     bio?: string;
     pronouns?: string;
     location?: string;
     website?: string;
-    avatarFileId?: string;
-    avatarFrameUrl?: string;
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
@@ -291,7 +292,6 @@ export type UserProfileData = {
     profileBackgroundGradient?: string;
     profileBackgroundImageFileId?: string;
     profileBackgroundImageChangedAt?: string;
-    avatarFramePreset?: string;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;
@@ -336,8 +336,8 @@ export type ServerInvite = {
     serverId: string;
     code: string; // Unique 8-10 char code
     creatorId: string;
-    channelId?: string; // Default channel to show after joining
-    expiresAt?: string; // ISO timestamp or null for never
+    channelId?: string | null; // Default channel to show after joining
+    expiresAt?: string | null; // ISO timestamp or null for never
     maxUses: number | null; // null for unlimited
     currentUses: number;
     temporary: boolean; // Kick user if they go offline without role
@@ -446,7 +446,13 @@ export type PinnedMessage = {
 /**
  * Notification level determines what messages trigger notifications
  */
-export type NotificationLevel = "all" | "mentions" | "nothing";
+export const NOTIFICATION_LEVEL_VALUES = [
+    "all",
+    "mentions",
+    "nothing",
+] as const;
+
+export type NotificationLevel = (typeof NOTIFICATION_LEVEL_VALUES)[number];
 
 /**
  * Mute duration options for temporary muting

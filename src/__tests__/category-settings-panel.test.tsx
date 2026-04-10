@@ -74,6 +74,11 @@ describe("CategorySettingsPanel", () => {
         expect((await screen.findAllByText("welcome")).length).toBeGreaterThan(
             0,
         );
+        await waitFor(() => {
+            expect(global.fetch).toHaveBeenCalledWith(
+                "/api/roles?serverId=server-1",
+            );
+        });
     });
 
     it("creates a category and refreshes sidebar caches", async () => {

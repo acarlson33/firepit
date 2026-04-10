@@ -1,6 +1,6 @@
 "use server";
 
-import { requireAuth } from "@/lib/auth-server";
+import { AuthError, requireAuth } from "@/lib/auth-server";
 import {
     getOrCreateUserProfile,
     updateUserProfile,
@@ -10,20 +10,18 @@ import {
     updateNotificationSettings,
 } from "@/lib/notification-settings";
 import type { NotificationLevel, DirectMessagePrivacy } from "@/lib/types";
-import { DIRECT_MESSAGE_PRIVACY_VALUES } from "@/lib/types";
-
-const VALID_NOTIFICATION_LEVELS: readonly NotificationLevel[] = [
-    "all",
-    "mentions",
-    "nothing",
-] as const;
+import {
+    DIRECT_MESSAGE_PRIVACY_VALUES,
+    NOTIFICATION_LEVEL_VALUES,
+} from "@/lib/types";
+import { logger } from "@/lib/newrelic-utils";
 
 function isNotificationLevel(
     value: FormDataEntryValue | null,
 ): value is NotificationLevel {
     return (
         typeof value === "string" &&
-        (VALID_NOTIFICATION_LEVELS as readonly string[]).includes(value)
+        (NOTIFICATION_LEVEL_VALUES as readonly string[]).includes(value)
     );
 }
 
@@ -33,6 +31,28 @@ function isDirectMessagePrivacy(
     return (
         typeof value === "string" &&
         (DIRECT_MESSAGE_PRIVACY_VALUES as readonly string[]).includes(value)
+    );
+}
+
+const MAX_DISPLAY_NAME_LENGTH = 100;
+const MAX_PRONOUNS_LENGTH = 50;
+const MAX_BIO_LENGTH = 1000;
+
+function isAuthFailure(error: unknown) {
+    if (error instanceof AuthError) {
+        return true;
+    }
+
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+        message.includes("auth") ||
+        message.includes("unauthorized") ||
+        message.includes("forbidden") ||
+        message.includes("session")
     );
 }
 
@@ -54,27 +74,76 @@ export async function completeOnboardingAction(
         const rawBio = formData.get("bio");
 
         const displayName =
-            typeof rawDisplayName === "string" ? rawDisplayName : "";
-        const pronouns = typeof rawPronouns === "string" ? rawPronouns : "";
-        const bio = typeof rawBio === "string" ? rawBio : "";
+            typeof rawDisplayName === "string" ? rawDisplayName.trim() : "";
+        const pronouns =
+            typeof rawPronouns === "string" ? rawPronouns.trim() : "";
+        const bio = typeof rawBio === "string" ? rawBio.trim() : "";
 
-        if (!displayName.trim()) {
+        if (!displayName) {
             return { success: false, error: "Display name is required" };
+        }
+
+        if (displayName.length > MAX_DISPLAY_NAME_LENGTH) {
+            return {
+                success: false,
+                error: `Display name must be at most ${MAX_DISPLAY_NAME_LENGTH} characters.`,
+            };
+        }
+
+        if (pronouns.length > MAX_PRONOUNS_LENGTH) {
+            return {
+                success: false,
+                error: `Pronouns must be at most ${MAX_PRONOUNS_LENGTH} characters.`,
+            };
+        }
+
+        if (bio.length > MAX_BIO_LENGTH) {
+            return {
+                success: false,
+                error: `Bio must be at most ${MAX_BIO_LENGTH} characters.`,
+            };
         }
 
         // Update profile with onboarding data (including pronouns and telemetry)
         const telemetryEnabled = formData.get("telemetryEnabled") === "true";
+        const previousProfileSnapshot = {
+            bio: profile.bio ?? null,
+            displayName: profile.displayName ?? user.name,
+            pronouns: profile.pronouns ?? null,
+            telemetryEnabled: profile.telemetryEnabled ?? null,
+        };
 
         await updateUserProfile(profile.$id, {
-            bio: bio.trim() || undefined,
-            displayName: displayName.trim(),
-            pronouns: pronouns.trim() || undefined,
+            bio: bio || null,
+            displayName,
+            pronouns: pronouns || null,
             telemetryEnabled,
         });
 
         // Extract notification settings
         const rawLevel = formData.get("notificationLevel");
         const rawPrivacy = formData.get("directMessagePrivacy");
+
+        if (rawLevel !== null && !isNotificationLevel(rawLevel)) {
+            logger.warn(
+                "Invalid onboarding notification level, using default",
+                {
+                    rawLevel,
+                    userId: user.$id,
+                },
+            );
+        }
+
+        if (rawPrivacy !== null && !isDirectMessagePrivacy(rawPrivacy)) {
+            logger.warn(
+                "Invalid onboarding direct message privacy, using default",
+                {
+                    rawPrivacy,
+                    userId: user.$id,
+                },
+            );
+        }
+
         const notificationLevel: NotificationLevel = isNotificationLevel(
             rawLevel,
         )
@@ -85,18 +154,50 @@ export async function completeOnboardingAction(
         const notificationSound = formData.get("notificationSound") === "true";
 
         // Get or create notification settings and update them
-        const settings = await getOrCreateNotificationSettings(user.$id);
-        await updateNotificationSettings(settings.$id, {
-            directMessagePrivacy,
-            globalNotifications: notificationLevel,
-            notificationSound,
-        });
+        try {
+            const settings = await getOrCreateNotificationSettings(user.$id);
+            await updateNotificationSettings(settings.$id, {
+                directMessagePrivacy,
+                globalNotifications: notificationLevel,
+                notificationSound,
+            });
+        } catch (settingsError) {
+            try {
+                await updateUserProfile(profile.$id, previousProfileSnapshot);
+            } catch (rollbackError) {
+                logger.warn("Failed to rollback onboarding profile update", {
+                    error:
+                        rollbackError instanceof Error
+                            ? rollbackError.message
+                            : String(rollbackError),
+                    userId: user.$id,
+                });
+            }
+
+            logger.error("Failed to update onboarding notification settings", {
+                error:
+                    settingsError instanceof Error
+                        ? settingsError.message
+                        : String(settingsError),
+                userId: user.$id,
+            });
+
+            return {
+                success: false,
+                error: "Failed to save notification settings. Please try again.",
+            };
+        }
 
         return { success: true };
     } catch (error) {
-        if (error instanceof Error) {
-            return { success: false, error: error.message };
+        logger.error("Failed to complete onboarding", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        if (isAuthFailure(error)) {
+            return { success: false, error: "Authentication required" };
         }
+
         return { success: false, error: "Failed to complete onboarding" };
     }
 }
