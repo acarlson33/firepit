@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RefreshCcw } from "lucide-react";
+import { recordClientError } from "@/lib/client-telemetry";
 
 export default function GlobalError({
     error,
@@ -12,25 +13,11 @@ export default function GlobalError({
     reset: () => void;
 }) {
     useEffect(() => {
-        // Log critical error to New Relic
-        if (typeof window !== "undefined") {
-            const newrelic = (
-                window as unknown as {
-                    newrelic?: {
-                        noticeError: (
-                            error: Error,
-                            attrs?: Record<string, unknown>,
-                        ) => void;
-                    };
-                }
-            ).newrelic;
-            if (newrelic) {
-                newrelic.noticeError(error, {
-                    level: "critical",
-                    source: "global-error-boundary",
-                });
-            }
-        }
+        recordClientError(error, {
+            level: "critical",
+            source: "global-error-boundary",
+            digest: error.digest,
+        });
     }, [error]);
 
     const isLocalDev =

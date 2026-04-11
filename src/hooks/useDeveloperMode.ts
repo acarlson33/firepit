@@ -91,6 +91,7 @@ export function useDeveloperMode(userId: string | null) {
             showFriendsInNavigation: true,
             showSettingsInNavigation: true,
             showAddFriendInHeader: true,
+            telemetryEnabled: true,
             navigationItemOrder: ["docs", "friends", "settings"],
         };
 

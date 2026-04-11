@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
@@ -36,6 +37,7 @@ export default function OnboardingPage() {
 			const result = await completeOnboardingAction(formData);
 
 			if (result.success) {
+				posthog.capture("onboarding_completed");
 				toast.success("Profile setup complete!");
 				await refreshUser();
 				router.push("/chat");
@@ -54,6 +56,7 @@ export default function OnboardingPage() {
 	}
 
 	function handleSkip() {
+		posthog.capture("onboarding_skipped");
 		router.push("/chat");
 	}
 

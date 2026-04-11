@@ -3,40 +3,19 @@
  * Falls back to console in development
  */
 
+import { recordClientAction, recordClientError } from "@/lib/client-telemetry";
+
 interface LogAttributes {
     [key: string]: string | number | boolean | null | undefined;
 }
 
 class ClientLogger {
-    private getNewRelic() {
-        if (typeof window === "undefined") {
-            return null;
-        }
-        return (
-            window as unknown as {
-                newrelic?: {
-                    addPageAction: (
-                        name: string,
-                        attrs?: Record<string, unknown>,
-                    ) => void;
-                    noticeError: (
-                        error: Error,
-                        attrs?: Record<string, unknown>,
-                    ) => void;
-                };
-            }
-        ).newrelic;
-    }
-
     private shouldLog(): boolean {
         return process.env.NODE_ENV !== "production";
     }
 
     info(message: string, attributes?: LogAttributes): void {
-        const newrelic = this.getNewRelic();
-        if (newrelic) {
-            newrelic.addPageAction("log_info", { message, ...attributes });
-        }
+        recordClientAction("log_info", { message, ...attributes });
 
         if (this.shouldLog()) {
             console.log(`[INFO] ${message}`, attributes ?? "");
@@ -44,10 +23,7 @@ class ClientLogger {
     }
 
     warn(message: string, attributes?: LogAttributes): void {
-        const newrelic = this.getNewRelic();
-        if (newrelic) {
-            newrelic.addPageAction("log_warn", { message, ...attributes });
-        }
+        recordClientAction("log_warn", { message, ...attributes });
 
         if (this.shouldLog()) {
             console.warn(`[WARN] ${message}`, attributes ?? "");
@@ -59,18 +35,14 @@ class ClientLogger {
         error?: Error | string,
         attributes?: LogAttributes,
     ): void {
-        const newrelic = this.getNewRelic();
-
-        if (newrelic) {
-            if (error instanceof Error) {
-                newrelic.noticeError(error, { message, ...attributes });
-            } else {
-                newrelic.addPageAction("log_error", {
-                    message,
-                    error: error?.toString(),
-                    ...attributes,
-                });
-            }
+        if (error instanceof Error) {
+            recordClientError(error, { message, ...attributes });
+        } else {
+            recordClientAction("log_error", {
+                message,
+                error: error?.toString(),
+                ...attributes,
+            });
         }
 
         if (this.shouldLog()) {

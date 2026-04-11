@@ -1,12 +1,56 @@
-/** @type {import('next').NextConfig} */
+import { withPostHogConfig } from "@posthog/nextjs-config";
+import type { NextConfig } from "next";
 
 // Bundle analyzer for analyzing bundle size
 const withBundleAnalyzer = require("@next/bundle-analyzer")({
     enabled: process.env.ANALYZE === "true",
 });
 
-const nextConfig = {
+function normalizeRewritePath(path: string) {
+    if (path.startsWith("/")) {
+        return path;
+    }
+
+    return `/${path}`;
+}
+
+function stripTrailingSlash(url: string) {
+    return url.replace(/\/$/, "");
+}
+
+const nextConfig: NextConfig = {
     typedRoutes: true,
+    async rewrites() {
+        const rewritesEnabled = process.env.POSTHOG_REWRITE_ENABLED !== "false";
+        if (!rewritesEnabled) {
+            return [];
+        }
+
+        const rewritePath = normalizeRewritePath(
+            process.env.POSTHOG_REWRITE_PATH ?? "/ingest",
+        );
+        const ingestHost = stripTrailingSlash(
+            process.env.POSTHOG_REWRITE_INGEST_HOST ??
+                "https://us.i.posthog.com",
+        );
+        const staticHost = stripTrailingSlash(
+            process.env.POSTHOG_REWRITE_STATIC_HOST ??
+                "https://us-assets.i.posthog.com",
+        );
+
+        return [
+            {
+                source: `${rewritePath}/static/:path*`,
+                destination: `${staticHost}/static/:path*`,
+            },
+            {
+                source: `${rewritePath}/:path*`,
+                destination: `${ingestHost}/:path*`,
+            },
+        ];
+    },
+    // This is required to support PostHog trailing slash API requests
+    skipTrailingSlashRedirect: true,
     reactStrictMode: true,
     poweredByHeader: false,
     compress: true,
@@ -145,4 +189,24 @@ const nextConfig = {
     },
 };
 
-export default withBundleAnalyzer(nextConfig);
+const posthogProjectId = process.env.POSTHOG_PROJECT_ID;
+const posthogPersonalApiKey = process.env.POSTHOG_API_KEY;
+const posthogConfigHost =
+    process.env.POSTHOG_HOST ??
+    process.env.NEXT_PUBLIC_POSTHOG_HOST ??
+    "https://us.posthog.com";
+
+const configWithPostHog =
+    posthogProjectId && posthogPersonalApiKey
+        ? withPostHogConfig(nextConfig, {
+              personalApiKey: posthogPersonalApiKey,
+              projectId: posthogProjectId,
+              host: posthogConfigHost,
+              sourcemaps: {
+                  enabled: process.env.NODE_ENV === "production",
+                  deleteAfterUpload: true,
+              },
+          })
+        : nextConfig;
+
+export default withBundleAnalyzer(configWithPostHog);

@@ -257,6 +257,7 @@ export type NavigationPreferences = {
     showFriendsInNavigation: boolean;
     showSettingsInNavigation: boolean;
     showAddFriendInHeader: boolean;
+    telemetryEnabled: boolean;
     navigationItemOrder: NavigationItemPreferenceId[];
 };
 
@@ -273,6 +274,7 @@ export type UserProfileData = {
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
     showAddFriendInHeader?: boolean;
+    telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[];
     status?: {
         status: "online" | "away" | "busy" | "offline";

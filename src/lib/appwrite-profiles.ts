@@ -24,6 +24,7 @@ export type UserProfile = {
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
     showAddFriendInHeader?: boolean;
+    telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[] | string;
     $createdAt: string;
     $updatedAt: string;

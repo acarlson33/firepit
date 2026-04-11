@@ -238,6 +238,7 @@ describe("Setup Appwrite Script", () => {
                 "showFriendsInNavigation",
                 "showSettingsInNavigation",
                 "showAddFriendInHeader",
+                "telemetryEnabled",
                 "navigationItemOrder",
             ];
 

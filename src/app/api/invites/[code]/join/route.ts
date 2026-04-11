@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { useInvite } from "@/lib/appwrite-invites";
 import { logger, recordError } from "@/lib/newrelic-utils";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 /**
  * POST /api/invites/[code]/join - Join a server via invite code
@@ -44,6 +45,12 @@ export async function POST(
       userId,
       serverId: result.serverId,
       duration: Date.now() - startTime,
+    });
+
+    getPostHogClient().capture({
+      distinctId: userId,
+      event: "server_joined_via_invite",
+      properties: { serverId: result.serverId },
     });
 
     return NextResponse.json({

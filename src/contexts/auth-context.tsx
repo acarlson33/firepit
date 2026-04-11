@@ -6,9 +6,11 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
+import posthog from "posthog-js";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { UserStatus } from "@/lib/types";
 import {
@@ -49,7 +51,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [userData, setUserData] = useState<UserData | null>(null);
     const [userStatus, setUserStatusState] = useState<UserStatus | null>(null);
+    const [telemetryEnabled, setTelemetryEnabled] = useState<boolean | null>(
+        null,
+    );
     const [loading, setLoading] = useState(true);
+    const lastIdentifiedUserId = useRef<string | null>(null);
 
     const fetchUserData = useCallback(async () => {
         try {
@@ -64,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // caused by concurrent client-side navigation.
                 setUserData(null);
                 setUserStatusState(null);
+                setTelemetryEnabled(null);
                 return;
             }
 
@@ -89,6 +96,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         void fetchUserData();
     }, [fetchUserData]);
+
+    useEffect(() => {
+        if (!userData?.userId) {
+            setTelemetryEnabled(null);
+            return;
+        }
+
+        let cancelled = false;
+
+        void (async () => {
+            try {
+                const response = await fetch("/api/me/preferences", {
+                    credentials: "include",
+                });
+
+                if (!response.ok) {
+                    if (!cancelled) {
+                        setTelemetryEnabled(true);
+                    }
+                    return;
+                }
+
+                const data = (await response.json()) as {
+                    telemetryEnabled?: boolean;
+                };
+
+                if (!cancelled) {
+                    setTelemetryEnabled(data.telemetryEnabled ?? true);
+                }
+            } catch {
+                if (!cancelled) {
+                    setTelemetryEnabled(true);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userData?.userId]);
+
+    useEffect(() => {
+        if (telemetryEnabled == null) {
+            return;
+        }
+
+        if (telemetryEnabled) {
+            posthog.opt_in_capturing();
+            return;
+        }
+
+        posthog.opt_out_capturing();
+    }, [telemetryEnabled]);
+
+    useEffect(() => {
+        if (!userData?.userId) {
+            lastIdentifiedUserId.current = null;
+            return;
+        }
+
+        if (telemetryEnabled !== true) {
+            return;
+        }
+
+        // Use Appwrite user ID as the PostHog distinct ID for cross-client/server consistency.
+        const shouldReidentify =
+            lastIdentifiedUserId.current !== userData.userId;
+        if (!shouldReidentify) {
+            return;
+        }
+
+        posthog.identify(userData.userId, {
+            appwriteUserId: userData.userId,
+            email: userData.email,
+            username: userData.name,
+        });
+
+        lastIdentifiedUserId.current = userData.userId;
+    }, [telemetryEnabled, userData]);
 
     // Subscribe to real-time status updates for this user
     // Defer subscription to avoid blocking initial render
