@@ -220,7 +220,6 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        setMessageRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -273,13 +272,7 @@ export function useMessages({
                     base: { channelId?: string },
                     activeChannelId: string | null,
                 ) {
-                    if (activeChannelId && base.channelId !== activeChannelId) {
-                        return false;
-                    }
-                    if (!activeChannelId && base.channelId) {
-                        return false;
-                    }
-                    return true;
+                    return base.channelId === activeChannelId;
                 }
                 async function applyCreate(base: Message) {
                     const activeChannelId = currentChannelIdRef.current;
@@ -444,7 +437,6 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        setTypingRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {

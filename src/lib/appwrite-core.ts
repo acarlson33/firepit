@@ -77,6 +77,7 @@ export type EnvConfig = {
         inboxItems: string;
         threadReads: string;
         reports: string;
+        roles: string;
     };
     buckets: {
         avatars: string;
@@ -113,7 +114,7 @@ function firstDefined(
 
 /**
  * Returns env config.
- * @returns {{ endpoint: string; project: string; databaseId: string; collections: { servers: string; channels: string; categories: string; messages: string; audit: string; typing: string; memberships: string; bannedUsers: string; mutedUsers: string; friendships: string; blocks: string; profiles: string; conversations: string; directMessages: string; statuses: string; messageAttachments: string; pinnedMessages: string; featureFlags: string; notificationSettings: string; inboxItems: string; threadReads: string; }; buckets: { avatars: string; emojis: string; images: string; files: string; }; teams: { adminTeamId: string | null; moderatorTeamId: string | null; }; }} The return value.
+ * @returns {EnvConfig} The return value.
  */
 export function getEnvConfig(): EnvConfig {
     if (cachedEnv) {
@@ -279,6 +280,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_REPORTS_COLLECTION_ID,
                 "reports",
             ) || "reports",
+        roles:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_ROLES_COLLECTION_ID,
+                process.env.APPWRITE_ROLES_COLLECTION_ID,
+                "roles",
+            ) || "roles",
     };
     const buckets = {
         avatars:

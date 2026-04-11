@@ -40,6 +40,17 @@ export function ReportUserDialog({
     const charCount = trimmed.length;
     const isValid = charCount >= MIN_LENGTH && charCount <= MAX_LENGTH;
 
+    function handleOpenChange(nextOpen: boolean) {
+        if (!nextOpen && submitting) {
+            return;
+        }
+
+        setOpen(nextOpen);
+        if (!nextOpen) {
+            setJustification("");
+        }
+    }
+
     async function handleSubmit() {
         if (!isValid || submitting) {
             return;
@@ -53,7 +64,7 @@ export function ReportUserDialog({
                 setOpen(false);
                 setJustification("");
             } else {
-                toast.error(result.error);
+                toast.error(result.error || "Failed to submit report");
             }
         } catch {
             toast.error("Failed to submit report.");
@@ -63,7 +74,7 @@ export function ReportUserDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
                 <Button
                     className={fullWidth ? "w-full" : undefined}
@@ -97,6 +108,7 @@ export function ReportUserDialog({
                             minLength={MIN_LENGTH}
                             onChange={(e) => setJustification(e.target.value)}
                             placeholder="Describe what is inappropriate about this user's profile..."
+                            required
                             rows={4}
                             value={justification}
                         />
@@ -114,7 +126,8 @@ export function ReportUserDialog({
                     </div>
                     <div className="flex justify-end gap-2">
                         <Button
-                            onClick={() => setOpen(false)}
+                            disabled={submitting}
+                            onClick={() => handleOpenChange(false)}
                             type="button"
                             variant="ghost"
                         >

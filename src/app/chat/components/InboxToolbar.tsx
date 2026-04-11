@@ -10,7 +10,20 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { InboxScope } from "@/lib/inbox-client";
+import { logger } from "@/lib/client-logger";
 import { toast } from "sonner";
+
+const scopeMessages: Record<InboxScope, string> = {
+    all: "Marked all conversations as read",
+    direct: "Marked all direct messages as read",
+    server: "Marked all servers as read",
+};
+
+const loadingLabels: Record<InboxScope, string> = {
+    all: "Marking all as read...",
+    direct: "Marking DMs as read...",
+    server: "Marking servers as read...",
+};
 
 interface InboxToolbarProps {
     bulkLoading: InboxScope | null;
@@ -25,32 +38,34 @@ export function InboxToolbar({
 }: InboxToolbarProps) {
     const [open, setOpen] = useState(false);
 
-    const handleMarkRead = async (scope: InboxScope) => {
-        try {
-            await onMarkScopeRead(scope);
-            const scopeMessages: Record<InboxScope, string> = {
-                all: "Marked all conversations as read",
-                direct: "Marked all direct messages as read",
-                server: "Marked all servers as read",
-            };
-            toast.success(scopeMessages[scope]);
-        } catch {
-            toast.error("Failed to mark as read");
-        }
-        setOpen(false);
+    const handleMarkRead = (scope: InboxScope) => {
+        onMarkScopeRead(scope)
+            .then(() => {
+                toast.success(scopeMessages[scope]);
+            })
+            .catch((error) => {
+                logger.warn("Failed to mark inbox scope as read", {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    scope,
+                });
+                toast.error("Failed to mark as read");
+            })
+            .finally(() => {
+                setOpen(false);
+            });
     };
 
     const isLoading = bulkLoading !== null;
-    const loadingLabels: Record<InboxScope, string> = {
-        all: "Marking all as read...",
-        direct: "Marking DMs as read...",
-        server: "Marking servers as read...",
-    };
     const loadingLabel = bulkLoading ? loadingLabels[bulkLoading] : "";
 
     return (
         <div className="flex items-center justify-between border-b border-border/60 p-2">
-            <span className="text-xs text-muted-foreground">
+            <span
+                aria-atomic="true"
+                aria-live="polite"
+                className="text-xs text-muted-foreground"
+            >
                 {unreadCount > 0
                     ? `${unreadCount} unread item${unreadCount === 1 ? "" : "s"}`
                     : "All caught up"}
@@ -60,6 +75,7 @@ export function InboxToolbar({
                     <Button
                         disabled={isLoading || unreadCount === 0}
                         size="sm"
+                        type="button"
                         variant="outline"
                     >
                         {isLoading ? (
@@ -78,19 +94,25 @@ export function InboxToolbar({
                 <DropdownMenuContent align="end">
                     <DropdownMenuItem
                         disabled={isLoading}
-                        onClick={() => void handleMarkRead("all")}
+                        onClick={() => {
+                            handleMarkRead("all");
+                        }}
                     >
                         Mark all as read
                     </DropdownMenuItem>
                     <DropdownMenuItem
                         disabled={isLoading}
-                        onClick={() => void handleMarkRead("direct")}
+                        onClick={() => {
+                            handleMarkRead("direct");
+                        }}
                     >
                         Mark all DMs as read
                     </DropdownMenuItem>
                     <DropdownMenuItem
                         disabled={isLoading}
-                        onClick={() => void handleMarkRead("server")}
+                        onClick={() => {
+                            handleMarkRead("server");
+                        }}
                     >
                         Mark all servers as read
                     </DropdownMenuItem>

@@ -7,6 +7,7 @@
 import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
+import { logger } from "./newrelic-utils";
 import {
     getPresetFrameImageUrl,
     getPresetFrameStorageFileId,
@@ -39,6 +40,32 @@ export type UserProfile = {
     $updatedAt: string;
 };
 
+const editableProfileKeys = [
+    "userName",
+    "displayName",
+    "bio",
+    "pronouns",
+    "avatarFileId",
+    "location",
+    "website",
+    "showDocsInNavigation",
+    "showFriendsInNavigation",
+    "showSettingsInNavigation",
+    "showAddFriendInHeader",
+    "telemetryEnabled",
+    "navigationItemOrder",
+    "profileBackgroundColor",
+    "profileBackgroundGradient",
+    "profileBackgroundImageFileId",
+    "avatarFramePreset",
+] as const;
+
+type EditableProfileKey = (typeof editableProfileKeys)[number];
+
+type UserProfileUpdatePayload = Partial<
+    Record<EditableProfileKey, UserProfile[EditableProfileKey] | null>
+>;
+
 function chunkValues<T>(values: T[], size: number) {
     const chunks: T[][] = [];
 
@@ -58,24 +85,20 @@ function chunkValues<T>(values: T[], size: number) {
 export async function getUserProfile(
     userId: string,
 ): Promise<UserProfile | null> {
-    try {
-        const { databases } = getAdminClient();
-        const env = getEnvConfig();
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
 
-        const profiles = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            [Query.equal("userId", userId), Query.limit(1)],
-        );
+    const profiles = await databases.listDocuments(
+        env.databaseId,
+        env.collections.profiles,
+        [Query.equal("userId", userId), Query.limit(1)],
+    );
 
-        if (profiles.documents.length === 0) {
-            return null;
-        }
-
-        return profiles.documents[0] as unknown as UserProfile;
-    } catch {
+    if (profiles.documents.length === 0) {
         return null;
     }
+
+    return profiles.documents[0] as unknown as UserProfile;
 }
 
 /**
@@ -228,27 +251,26 @@ export async function createUserProfile(
  */
 export async function updateUserProfile(
     profileId: string,
-    data: Partial<
-        Record<
-            keyof Omit<
-                UserProfile,
-                "$id" | "userId" | "$createdAt" | "$updatedAt"
-            >,
-            string | boolean | string[] | null
-        >
-    >,
+    data: UserProfileUpdatePayload,
 ): Promise<UserProfile> {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
 
-    const cleanData: Record<string, string | boolean | string[] | null> = {};
-    for (const [key, value] of Object.entries(data)) {
+    const cleanData: UserProfileUpdatePayload = {};
+    for (const key of editableProfileKeys) {
+        const value = data[key];
         if (value !== undefined) {
-            cleanData[key] = value as string | boolean | string[] | null;
+            cleanData[key] = value;
         }
     }
 
     if (Object.keys(cleanData).length === 0) {
+        logger.warn(
+            "Skipped profile update because payload had no defined keys",
+            {
+                profileId,
+            },
+        );
         const existing = await databases.getDocument(
             env.databaseId,
             env.collections.profiles,
@@ -262,6 +284,42 @@ export async function updateUserProfile(
         env.collections.profiles,
         profileId,
         cleanData,
+    );
+
+    return profile as unknown as UserProfile;
+}
+
+/**
+ * Update profile background image state.
+ * This path is intentionally separate from generic profile updates.
+ *
+ * @param {string} profileId - The profile id value.
+ * @param {{ profileBackgroundImageFileId: string | null; profileBackgroundImageChangedAt: string; profileBackgroundColor?: string | null; profileBackgroundGradient?: string | null; }} data - The data value.
+ * @returns {Promise<UserProfile>} The return value.
+ */
+export async function updateProfileBackgroundImageState(
+    profileId: string,
+    data: {
+        profileBackgroundImageFileId: string | null;
+        profileBackgroundImageChangedAt: string;
+        profileBackgroundColor?: string | null;
+        profileBackgroundGradient?: string | null;
+    },
+): Promise<UserProfile> {
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const profile = await databases.updateDocument(
+        env.databaseId,
+        env.collections.profiles,
+        profileId,
+        {
+            profileBackgroundImageFileId: data.profileBackgroundImageFileId,
+            profileBackgroundImageChangedAt:
+                data.profileBackgroundImageChangedAt,
+            profileBackgroundColor: data.profileBackgroundColor ?? null,
+            profileBackgroundGradient: data.profileBackgroundGradient ?? null,
+        },
     );
 
     return profile as unknown as UserProfile;
@@ -410,8 +468,8 @@ export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
         // Limit concurrency to avoid overwhelming Appwrite at scale.
         const CHUNK_SIZE = 10;
         const existingPresetIds: (string | undefined)[] = [];
-        for (let i = 0; i < uniquePresetIds.length; i += CHUNK_SIZE) {
-            const chunk = uniquePresetIds.slice(i, i + CHUNK_SIZE);
+        for (const chunk of chunkValues(uniquePresetIds, CHUNK_SIZE)) {
+            // Intentionally process chunks sequentially to cap concurrent getFile calls.
             const results = await Promise.all(
                 chunk.map(async (presetId) => {
                     const storageFileId = getPresetFrameStorageFileId(presetId);
@@ -433,14 +491,11 @@ export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
             existingPresetIds.push(...results);
         }
 
-        const existingSet = new Set<string>();
-        for (const presetId of existingPresetIds) {
-            if (typeof presetId === "string") {
-                existingSet.add(presetId);
-            }
-        }
-
-        return existingSet;
+        return new Set(
+            existingPresetIds.filter(
+                (presetId): presetId is string => typeof presetId === "string",
+            ),
+        );
     } catch {
         return new Set<string>();
     }

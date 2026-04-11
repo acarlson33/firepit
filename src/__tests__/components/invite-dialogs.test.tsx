@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { InviteManagerDialog } from "@/app/chat/components/InviteManagerDialog";
 import { CreateInviteDialog } from "@/app/chat/components/CreateInviteDialog";
@@ -8,19 +8,44 @@ import { toast } from "sonner";
 // Store original fetch
 const originalFetch = global.fetch;
 const getMockFetch = () => global.fetch as ReturnType<typeof vi.fn>;
+const testGlobal = globalThis as {
+    window?: Partial<Window>;
+    navigator?: Partial<Navigator>;
+};
+
+function createMockResponse(body: unknown, status = 200): Response {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+    } as Response;
+}
+
+function getFetchBodyPayload<T = unknown>(callIndex = 0): T {
+    const options = getMockFetch().mock.calls[callIndex]?.[1] as
+        | { body?: string }
+        | undefined;
+    const payloadText = typeof options?.body === "string" ? options.body : "{}";
+    return JSON.parse(payloadText) as T;
+}
 
 // Mock window and navigator for browser APIs
-global.window = global.window || ({} as any);
-global.navigator = global.navigator || ({} as any);
+if (!testGlobal.window) {
+    testGlobal.window = {};
+}
+if (!testGlobal.navigator) {
+    testGlobal.navigator = {};
+}
 
 // Set up location mock
-Object.defineProperty(global.window, "location", {
+Object.defineProperty(testGlobal.window, "location", {
     value: { origin: "http://localhost:3000" },
     writable: true,
 });
 
 // Set up clipboard mock
-Object.defineProperty(global.navigator, "clipboard", {
+Object.defineProperty(testGlobal.navigator, "clipboard", {
     value: {
         writeText: vi.fn(() => Promise.resolve()),
     },
@@ -41,7 +66,7 @@ vi.mock("sonner", () => {
 describe("InviteManagerDialog Component", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        global.fetch = vi.fn();
+        global.fetch = vi.fn(async () => createMockResponse([]));
     });
 
     afterEach(() => {
@@ -62,7 +87,7 @@ describe("InviteManagerDialog Component", () => {
     });
 
     it("should not render when closed", () => {
-        const { container } = render(
+        render(
             <InviteManagerDialog
                 open={false}
                 onOpenChange={() => {}}
@@ -71,9 +96,7 @@ describe("InviteManagerDialog Component", () => {
             />,
         );
 
-        expect(
-            container.querySelector('[role="dialog"]'),
-        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
     it("should load and display invites", async () => {
@@ -95,15 +118,13 @@ describe("InviteManagerDialog Component", () => {
                 serverId: "server-1",
                 creatorId: "user-1",
                 currentUses: 0,
+                maxUses: null,
                 temporary: false,
                 $createdAt: new Date().toISOString(),
             },
         ];
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => mockInvites,
-        } as Response);
+        getMockFetch().mockResolvedValueOnce(createMockResponse(mockInvites));
 
         render(
             <InviteManagerDialog
@@ -127,7 +148,14 @@ describe("InviteManagerDialog Component", () => {
         );
     });
 
-    it("should display loading state initially", () => {
+    it("should display loading state while request is pending", async () => {
+        getMockFetch().mockImplementationOnce(
+            () =>
+                new Promise(() => {
+                    // Never resolves to keep pending state visible.
+                }),
+        );
+
         render(
             <InviteManagerDialog
                 open={true}
@@ -137,8 +165,17 @@ describe("InviteManagerDialog Component", () => {
             />,
         );
 
-        // Component shows loading spinner, not text
-        expect(screen.getByText("Server Invites")).toBeInTheDocument();
+        await waitFor(() => {
+            expect(getMockFetch()).toHaveBeenCalledWith(
+                "/api/servers/server-1/invites",
+                expect.objectContaining({
+                    signal: expect.anything(),
+                }),
+            );
+            expect(screen.getByRole("status")).toBeInTheDocument();
+        });
+
+        expect(screen.queryByText("No invites yet")).not.toBeInTheDocument();
     });
 
     it("should show usage information correctly", async () => {
@@ -159,15 +196,13 @@ describe("InviteManagerDialog Component", () => {
                 serverId: "server-1",
                 creatorId: "user-1",
                 currentUses: 100,
+                maxUses: null,
                 temporary: false,
                 $createdAt: new Date().toISOString(),
             },
         ];
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => mockInvites,
-        } as Response);
+        getMockFetch().mockResolvedValueOnce(createMockResponse(mockInvites));
 
         render(
             <InviteManagerDialog
@@ -187,10 +222,7 @@ describe("InviteManagerDialog Component", () => {
     it("should call onCreateInvite when create button is clicked", async () => {
         const mockOnCreate = vi.fn();
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => [],
-        } as Response);
+        getMockFetch().mockResolvedValueOnce(createMockResponse([]));
 
         render(
             <InviteManagerDialog
@@ -205,7 +237,7 @@ describe("InviteManagerDialog Component", () => {
             expect(screen.getByText("Create Invite")).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText("Create Invite"));
+        await userEvent.click(screen.getByText("Create Invite"));
         expect(mockOnCreate).toHaveBeenCalled();
     });
 
@@ -217,22 +249,13 @@ describe("InviteManagerDialog Component", () => {
                 serverId: "server-1",
                 creatorId: "user-1",
                 currentUses: 0,
+                maxUses: null,
                 temporary: false,
                 $createdAt: new Date().toISOString(),
             },
         ];
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => mockInvites,
-        } as Response);
-
-        // Mock clipboard API
-        Object.assign(navigator, {
-            clipboard: {
-                writeText: vi.fn(() => Promise.resolve()),
-            },
-        });
+        getMockFetch().mockResolvedValueOnce(createMockResponse(mockInvites));
 
         render(
             <InviteManagerDialog
@@ -247,14 +270,10 @@ describe("InviteManagerDialog Component", () => {
             expect(screen.getByText("copytest123")).toBeInTheDocument();
         });
 
-        // Get all buttons - first two in the invite card are copy and delete
-        const buttons = screen.getAllByRole("button");
-        const copyButton = buttons.find((btn) =>
-            btn.querySelector('[class*="lucide-copy"]'),
-        );
-
-        if (!copyButton) throw new Error("Copy button not found");
-        fireEvent.click(copyButton);
+        const copyButton = screen.getByRole("button", {
+            name: /copy invite copytest123/i,
+        });
+        await userEvent.click(copyButton);
 
         await waitFor(() => {
             expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -271,20 +290,16 @@ describe("InviteManagerDialog Component", () => {
                 serverId: "server-1",
                 creatorId: "user-1",
                 currentUses: 0,
+                maxUses: null,
                 temporary: false,
                 $createdAt: new Date().toISOString(),
             },
         ];
 
         getMockFetch()
-            .mockResolvedValueOnce({
-                ok: true,
-                json: async () => mockInvites,
-            } as Response)
-            .mockResolvedValueOnce({
-                ok: true,
-                json: async () => ({ success: true }),
-            } as Response);
+            .mockResolvedValueOnce(createMockResponse(mockInvites))
+            .mockResolvedValueOnce(createMockResponse({ success: true }))
+            .mockResolvedValueOnce(createMockResponse([]));
 
         render(
             <InviteManagerDialog
@@ -299,14 +314,10 @@ describe("InviteManagerDialog Component", () => {
             expect(screen.getByText("delete123")).toBeInTheDocument();
         });
 
-        // Get all buttons - the delete button has the trash icon
-        const buttons = screen.getAllByRole("button");
-        const deleteButton = buttons.find((btn) =>
-            btn.querySelector('[class*="lucide-trash"]'),
-        );
-
-        if (!deleteButton) throw new Error("Delete button not found");
-        fireEvent.click(deleteButton);
+        const deleteButton = screen.getByRole("button", {
+            name: /delete invite delete123/i,
+        });
+        await userEvent.click(deleteButton);
 
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalledWith(
@@ -341,7 +352,11 @@ describe("InviteManagerDialog Component", () => {
 describe("CreateInviteDialog Component", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        global.fetch = vi.fn();
+        global.fetch = vi.fn(async () => createMockResponse({ success: true }));
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
     });
 
     it("should render dialog when open", () => {
@@ -363,9 +378,8 @@ describe("CreateInviteDialog Component", () => {
     it("should create invite with default settings", async () => {
         const mockOnCreated = vi.fn();
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({
+        getMockFetch().mockResolvedValueOnce(
+            createMockResponse({
                 $id: "invite-1",
                 code: "newcode123",
                 serverId: "server-1",
@@ -374,7 +388,7 @@ describe("CreateInviteDialog Component", () => {
                 temporary: false,
                 $createdAt: new Date().toISOString(),
             }),
-        } as Response);
+        );
 
         render(
             <CreateInviteDialog
@@ -449,13 +463,12 @@ describe("CreateInviteDialog Component", () => {
     it("should handle temporary membership checkbox", async () => {
         const mockOnCreated = vi.fn();
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({
+        getMockFetch().mockResolvedValueOnce(
+            createMockResponse({
                 code: "tempcode123",
                 temporary: true,
             }),
-        } as Response);
+        );
 
         render(
             <CreateInviteDialog
@@ -467,7 +480,9 @@ describe("CreateInviteDialog Component", () => {
         );
 
         // Find and click the temporary checkbox
-        const temporaryCheckbox = screen.getByRole("checkbox");
+        const temporaryCheckbox = screen.getByRole("checkbox", {
+            name: /temporary membership/i,
+        });
         await userEvent.click(temporaryCheckbox);
 
         const generateButton = screen.getByRole("button", {
@@ -476,15 +491,23 @@ describe("CreateInviteDialog Component", () => {
         await userEvent.click(generateButton);
 
         await waitFor(() => {
-            expect(global.fetch).toHaveBeenCalled();
+            expect(global.fetch).toHaveBeenCalledWith(
+                "/api/servers/server-1/invites",
+                expect.objectContaining({ method: "POST" }),
+            );
         });
+
+        expect(getFetchBodyPayload<{ temporary?: boolean }>()).toEqual(
+            expect.objectContaining({
+                temporary: true,
+            }),
+        );
     });
 
     it("should handle creation error from API", async () => {
-        getMockFetch().mockResolvedValueOnce({
-            ok: false,
-            json: async () => ({ error: "Server not found" }),
-        } as Response);
+        getMockFetch().mockResolvedValueOnce(
+            createMockResponse({ error: "Server not found" }, 500),
+        );
 
         render(
             <CreateInviteDialog
@@ -528,19 +551,11 @@ describe("CreateInviteDialog Component", () => {
     });
 
     it("should copy invite link to clipboard", async () => {
-        const writeTextMock = vi.fn(() => Promise.resolve());
-        Object.assign(navigator, {
-            clipboard: {
-                writeText: writeTextMock,
-            },
-        });
-
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({
+        getMockFetch().mockResolvedValueOnce(
+            createMockResponse({
                 code: "copytest123",
             }),
-        } as Response);
+        );
 
         render(
             <CreateInviteDialog
@@ -560,12 +575,13 @@ describe("CreateInviteDialog Component", () => {
             expect(screen.getByText("Invite Link")).toBeInTheDocument();
         });
 
-        // Find and click the copy button (it has the Copy icon but no text)
-        const copyButton = screen.getByRole("button", { name: "" });
+        const copyButton = screen.getByRole("button", {
+            name: "Copy invite link",
+        });
         await userEvent.click(copyButton);
 
         await waitFor(() => {
-            expect(writeTextMock).toHaveBeenCalledWith(
+            expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
                 "http://localhost:3000/invite/copytest123",
             );
             expect(toast.success).toHaveBeenCalledWith(
@@ -577,10 +593,9 @@ describe("CreateInviteDialog Component", () => {
     it("should reset form when dialog closes", async () => {
         const mockOnOpenChange = vi.fn();
 
-        getMockFetch().mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({ code: "test123" }),
-        } as Response);
+        getMockFetch().mockResolvedValueOnce(
+            createMockResponse({ code: "test123" }),
+        );
 
         render(
             <CreateInviteDialog
@@ -602,7 +617,7 @@ describe("CreateInviteDialog Component", () => {
         });
 
         // Click Done to close
-        const doneButton = screen.getByText("Done");
+        const doneButton = screen.getByRole("button", { name: /done/i });
         await userEvent.click(doneButton);
 
         expect(mockOnOpenChange).toHaveBeenCalledWith(false);

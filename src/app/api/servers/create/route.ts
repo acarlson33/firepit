@@ -53,13 +53,13 @@ export async function POST(request: Request) {
             bypassFeatureCheck: true,
         });
 
-        try {
-            getPostHogClient().capture({
-                distinctId: session.$id,
-                event: "server_created",
-                properties: { serverId: server.$id },
-            });
-        } catch (telemetryError) {
+        const telemetryTask = getPostHogClient().capture({
+            distinctId: session.$id,
+            event: "server_created",
+            properties: { serverId: server.$id },
+        });
+
+        void Promise.resolve(telemetryTask).catch((telemetryError) => {
             logger.warn("Telemetry capture failed", {
                 event: "server_created",
                 userId: session.$id,
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
                         ? telemetryError.message
                         : String(telemetryError),
             });
-        }
+        });
 
         return NextResponse.json({
             success: true,

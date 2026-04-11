@@ -13,6 +13,7 @@ const {
     mockGetFriendshipOtherUserId,
     mockGetProfilesByUserIds,
     mockGetAvatarUrl,
+    mockGetPredefinedAvatarFrameUrlByPresetId,
 } = vi.hoisted(() => ({
     mockGetServerSession: vi.fn(),
     mockCreateFriendRequest: vi.fn(),
@@ -26,6 +27,7 @@ const {
     mockGetFriendshipOtherUserId: vi.fn(),
     mockGetProfilesByUserIds: vi.fn(),
     mockGetAvatarUrl: vi.fn(),
+    mockGetPredefinedAvatarFrameUrlByPresetId: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-server", () => ({
@@ -54,6 +56,8 @@ vi.mock("@/lib/appwrite-friendships", async () => {
 vi.mock("@/lib/appwrite-profiles", () => ({
     getProfilesByUserIds: mockGetProfilesByUserIds,
     getAvatarUrl: mockGetAvatarUrl,
+    getPredefinedAvatarFrameUrlByPresetId:
+        mockGetPredefinedAvatarFrameUrlByPresetId,
 }));
 
 describe("friend system API routes", () => {
@@ -105,6 +109,7 @@ describe("friend system API routes", () => {
         mockGetAvatarUrl.mockImplementation(
             (fileId: string) => `https://cdn.test/${fileId}`,
         );
+        mockGetPredefinedAvatarFrameUrlByPresetId.mockReturnValue(undefined);
     });
 
     it("lists friends, incoming requests, and outgoing requests with profile summaries", async () => {

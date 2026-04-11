@@ -1,4 +1,4 @@
-import { ID, Query } from "node-appwrite";
+import { AppwriteException, ID, Query } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -9,6 +9,7 @@ import {
 
 type ThreadReadDocument = {
     $id: string;
+    $updatedAt?: string;
     contextId: string;
     contextType: ThreadReadContextType;
     reads: Record<string, string>;
@@ -16,6 +17,22 @@ type ThreadReadDocument = {
 };
 
 const THREAD_READ_QUERY_LIMIT = 500;
+const MAX_THREAD_READ_MERGE_ATTEMPTS = 4;
+
+function isAlreadyExistsConflict(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { code?: unknown; message?: unknown };
+    if (candidate.code === 409) {
+        return true;
+    }
+
+    return typeof candidate.message === "string"
+        ? candidate.message.toLowerCase().includes("already exists")
+        : false;
+}
 
 /**
  * Handles merge thread reads by max.
@@ -52,11 +69,142 @@ function mapThreadReadDocument(
 ): ThreadReadDocument {
     return {
         $id: String(document.$id),
+        $updatedAt:
+            typeof document.$updatedAt === "string"
+                ? document.$updatedAt
+                : undefined,
         contextId: String(document.contextId),
         contextType: String(document.contextType) as ThreadReadContextType,
         reads: normalizeThreadReads(document.reads),
         userId: String(document.userId),
     };
+}
+
+function mergeReadsAcrossDocuments(
+    documents: ThreadReadDocument[],
+    initialReads: Record<string, string> = {},
+) {
+    return documents.reduce<Record<string, string>>(
+        (accumulator, currentDocument) =>
+            mergeThreadReadsByMax({
+                existingReads: accumulator,
+                incomingReads: currentDocument.reads,
+            }),
+        initialReads,
+    );
+}
+
+async function mergeIntoExistingThreadReadDocument(params: {
+    contextId: string;
+    contextType: ThreadReadContextType;
+    concurrentDocuments?: ThreadReadDocument[];
+    incomingReads: Record<string, string>;
+    userId: string;
+}) {
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    let expectedReads = params.incomingReads;
+    let providedConcurrentDocuments = params.concurrentDocuments;
+
+    for (
+        let attempt = 0;
+        attempt < MAX_THREAD_READ_MERGE_ATTEMPTS;
+        attempt += 1
+    ) {
+        const documents =
+            providedConcurrentDocuments ??
+            (await listThreadReadDocumentsForContext(params));
+        providedConcurrentDocuments = undefined;
+        const primaryDocument = documents[0];
+        if (!primaryDocument) {
+            return null;
+        }
+
+        const mergedReads = mergeReadsAcrossDocuments(documents, expectedReads);
+
+        if (
+            primaryDocument.$updatedAt &&
+            typeof databases.getDocument === "function"
+        ) {
+            try {
+                const latestPrimaryDocument = await databases.getDocument(
+                    env.databaseId,
+                    env.collections.threadReads,
+                    primaryDocument.$id,
+                );
+                const latestPrimary = mapThreadReadDocument(
+                    latestPrimaryDocument as unknown as Record<string, unknown>,
+                );
+
+                if (
+                    latestPrimary.$updatedAt &&
+                    latestPrimary.$updatedAt !== primaryDocument.$updatedAt
+                ) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+            } catch (error) {
+                if (error instanceof AppwriteException && error.code === 404) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+
+                if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+
+                throw error;
+            }
+        }
+
+        let updatedDocument: unknown;
+        try {
+            updatedDocument = await databases.updateDocument(
+                env.databaseId,
+                env.collections.threadReads,
+                primaryDocument.$id,
+                {
+                    reads: JSON.stringify(mergedReads),
+                },
+            );
+        } catch (error) {
+            if (error instanceof AppwriteException && error.code === 404) {
+                expectedReads = mergeReadsAcrossDocuments(
+                    documents,
+                    expectedReads,
+                );
+                continue;
+            }
+
+            if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+                expectedReads = mergeReadsAcrossDocuments(
+                    documents,
+                    expectedReads,
+                );
+                continue;
+            }
+
+            throw error;
+        }
+
+        const mappedUpdated = mapThreadReadDocument(
+            updatedDocument as unknown as Record<string, unknown>,
+        );
+        return mappedUpdated;
+    }
+
+    throw new Error("Unable to apply merged thread reads without conflicts");
 }
 
 /**
@@ -105,14 +253,7 @@ export async function getThreadReads(params: {
         return null;
     }
 
-    const mergedReads = documents.reduce<Record<string, string>>(
-        (accumulator, currentDocument) =>
-            mergeThreadReadsByMax({
-                existingReads: accumulator,
-                incomingReads: currentDocument.reads,
-            }),
-        {},
-    );
+    const mergedReads = mergeReadsAcrossDocuments(documents);
 
     return {
         ...document,
@@ -182,6 +323,14 @@ export async function upsertThreadReads(params: {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
     const incomingReads = normalizeThreadReads(params.reads);
+    const updatedExisting = await mergeIntoExistingThreadReadDocument({
+        ...params,
+        incomingReads,
+    });
+    if (updatedExisting) {
+        return updatedExisting;
+    }
+
     const payload = {
         contextId: params.contextId,
         contextType: params.contextType,
@@ -189,24 +338,39 @@ export async function upsertThreadReads(params: {
         userId: params.userId,
     };
 
-    await databases.createDocument(
-        env.databaseId,
-        env.collections.threadReads,
-        ID.unique(),
-        payload,
-        perms.serverOwner(params.userId),
-    );
+    try {
+        const createdDocument = await databases.createDocument(
+            env.databaseId,
+            env.collections.threadReads,
+            ID.unique(),
+            payload,
+            perms.serverOwner(params.userId),
+        );
 
-    const merged = await getThreadReads(params);
-    if (merged) {
+        return mapThreadReadDocument(
+            createdDocument as unknown as Record<string, unknown>,
+        );
+    } catch (error) {
+        if (!isAlreadyExistsConflict(error)) {
+            throw error;
+        }
+
+        // A concurrent create won the race; merge and update the now-existing record.
+        const concurrentDocuments =
+            await listThreadReadDocumentsForContext(params);
+        if (concurrentDocuments.length === 0) {
+            throw error;
+        }
+
+        const merged = await mergeIntoExistingThreadReadDocument({
+            ...params,
+            concurrentDocuments,
+            incomingReads,
+        });
+        if (!merged) {
+            throw error;
+        }
+
         return merged;
     }
-
-    return {
-        $id: "",
-        contextId: params.contextId,
-        contextType: params.contextType,
-        reads: incomingReads,
-        userId: params.userId,
-    };
 }

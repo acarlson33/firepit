@@ -1,5 +1,5 @@
 import type { Teams } from "appwrite";
-import { Query } from "node-appwrite";
+import { Query } from "appwrite";
 import type { Teams as ServerTeams } from "node-appwrite";
 
 import { getBrowserTeams, getEnvConfig } from "./appwrite-core";
@@ -38,6 +38,15 @@ function getModeratorUserOverrides(): string[] {
         .filter(Boolean);
 }
 
+function getMembershipUserId(membership: unknown): string | undefined {
+    if (!membership || typeof membership !== "object") {
+        return undefined;
+    }
+
+    const candidate = membership as { userId?: unknown };
+    return typeof candidate.userId === "string" ? candidate.userId : undefined;
+}
+
 // Robust membership check with pagination; avoids false negatives for large teams.
 /**
  * Determines whether is member.
@@ -69,8 +78,7 @@ async function isMember(
             const list = res.memberships || [];
             if (
                 list.some(
-                    (m) =>
-                        (m as unknown as { userId?: string }).userId === userId,
+                    (membership) => getMembershipUserId(membership) === userId,
                 )
             ) {
                 return true;
@@ -240,10 +248,7 @@ async function fetchCustomTeamTags(
     const entries = Object.entries(teamMap);
     for (const [teamId, cfg] of entries) {
         try {
-            const res = await teams.listMemberships(teamId);
-            const match = res.memberships.some(
-                (m) => (m as unknown as { userId?: string }).userId === userId,
-            );
+            const match = await isMember(teamId, userId, teams);
             if (match) {
                 tags.push({ id: teamId, label: cfg.label, color: cfg.color });
             }

@@ -11,6 +11,20 @@ const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const categoriesCollectionId = env.collections.categories;
 const channelsCollectionId = env.collections.channels;
+const rolesCollectionId = env.collections.roles;
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number) {
+    if (!Number.isInteger(size) || size <= 0) {
+        throw new Error("size must be a positive integer");
+    }
+
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
 
 function getDatabases() {
     return getServerClient().databases;
@@ -109,13 +123,14 @@ export async function GET(request: NextRequest) {
             ],
         );
 
-        const userRoleIds = auth.access.roleIds;
+        const userRoleIds = auth.access.roleIds ?? [];
         const isOwner = auth.access.isServerOwner;
         const isAdmin = auth.access.permissions?.administrator ?? false;
 
         const accessibleCategories = categories.documents.filter((category) => {
             const allowedRoleIds = category.allowedRoleIds as
                 | string[]
+                | null
                 | undefined;
             if (!allowedRoleIds || allowedRoleIds.length === 0) {
                 return true;
@@ -238,10 +253,87 @@ export async function PUT(request: NextRequest) {
             updateData.position = body.position;
         }
         if (body.allowedRoleIds !== undefined) {
-            updateData.allowedRoleIds =
-                body.allowedRoleIds === null || body.allowedRoleIds.length === 0
-                    ? null
-                    : body.allowedRoleIds;
+            if (body.allowedRoleIds === null) {
+                updateData.allowedRoleIds = null;
+            } else if (!Array.isArray(body.allowedRoleIds)) {
+                return NextResponse.json(
+                    { error: "allowedRoleIds must be an array or null" },
+                    { status: 400 },
+                );
+            } else {
+                const filteredRoleIds = body.allowedRoleIds
+                    .filter(
+                        (roleId): roleId is string =>
+                            typeof roleId === "string",
+                    )
+                    .map((roleId) => roleId.trim())
+                    .filter((roleId) => roleId.length > 0);
+                const dedupedRoleIds = [...new Set(filteredRoleIds)];
+
+                if (dedupedRoleIds.length === 0) {
+                    updateData.allowedRoleIds = null;
+                } else {
+                    if (!rolesCollectionId) {
+                        logger.error(
+                            "roles collection is not configured for category role validation",
+                            {
+                                categoryId: body.categoryId,
+                                serverId: String(existingCategory.serverId),
+                            },
+                        );
+                        return NextResponse.json(
+                            {
+                                error: "Server role validation is unavailable",
+                            },
+                            { status: 500 },
+                        );
+                    }
+
+                    const validRoleIds = new Set<string>();
+                    const roleIdChunks = chunkValues(
+                        dedupedRoleIds,
+                        QUERY_ARRAY_LIMIT,
+                    );
+                    const existingRolePages = await Promise.all(
+                        roleIdChunks.map((roleIdChunk) =>
+                            databases.listDocuments(
+                                databaseId,
+                                rolesCollectionId,
+                                [
+                                    Query.equal(
+                                        "serverId",
+                                        String(existingCategory.serverId),
+                                    ),
+                                    Query.equal("$id", roleIdChunk),
+                                    Query.limit(roleIdChunk.length),
+                                ],
+                            ),
+                        ),
+                    );
+
+                    for (const existingRoles of existingRolePages) {
+                        for (const role of existingRoles.documents) {
+                            validRoleIds.add(String(role.$id));
+                        }
+                    }
+
+                    const invalidRoleIds = dedupedRoleIds.filter(
+                        (roleId) => !validRoleIds.has(roleId),
+                    );
+
+                    if (invalidRoleIds.length > 0) {
+                        return NextResponse.json(
+                            {
+                                error: "Some allowedRoleIds do not exist for this server",
+                                invalidRoleIds,
+                            },
+                            { status: 400 },
+                        );
+                    }
+
+                    updateData.allowedRoleIds = dedupedRoleIds;
+                }
+            }
         }
 
         if (Object.keys(updateData).length === 0) {

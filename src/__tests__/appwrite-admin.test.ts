@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AppwriteException } from "node-appwrite";
+import { AppwriteException, type TablesDB } from "node-appwrite";
 
 import {
     adminDeleteMessage,
@@ -12,6 +12,16 @@ import {
 const { mockDeleteDocument } = vi.hoisted(() => ({
     mockDeleteDocument: vi.fn(),
 }));
+
+const tablesDbStub = {
+    createTransaction: vi.fn(),
+    getRow: vi.fn(),
+    updateRow: vi.fn(),
+    updateTransaction: vi.fn(),
+} satisfies Pick<
+    TablesDB,
+    "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
+>;
 
 const SMALL_LIMIT = 5;
 const DEFAULT_LIMIT = 10;
@@ -129,9 +139,9 @@ vi.mock("../lib/appwrite-server", () => {
         getServerClient: () => ({
             client: {},
             databases,
-            tablesDB: {} as any,
-            teams: {} as any,
-            storage: {} as any,
+            tablesDB: tablesDbStub,
+            teams: {},
+            storage: {},
         }),
     };
 });
@@ -170,14 +180,9 @@ describe("admin channel & global message listing", () => {
                 databases: {
                     listDocuments: () => Promise.reject(new Error("boom")),
                 },
-                tablesDB: {
-                    createTransaction: vi.fn(),
-                    getRow: vi.fn(),
-                    updateRow: vi.fn(),
-                    updateTransaction: vi.fn(),
-                },
-                teams: {} as any,
-                storage: {} as any,
+                tablesDB: tablesDbStub,
+                teams: {},
+                storage: {},
             }),
         }));
         (process.env as any).APPWRITE_ENDPOINT = "http://x";

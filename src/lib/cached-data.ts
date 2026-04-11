@@ -69,15 +69,15 @@ export async function getCachedProfileBackgroundUrl(fileId: string) {
 /**
  * Get avatar frame URL (predefined preset) with caching.
  *
- * @param {{ avatarFramePreset?: string }} profile - Minimal frame profile.
+ * @param {string | undefined} avatarFramePreset - Predefined avatar frame preset id.
  * @returns {Promise<string | undefined>} The return value.
  */
-export async function getCachedAvatarFrameUrlForProfile(profile: {
-    avatarFramePreset?: string;
-}) {
+export async function getCachedAvatarFrameUrlForProfile(
+    avatarFramePreset?: string,
+) {
     "use cache";
     cacheLife("hours");
-    return _getAvatarFrameUrlForProfile(profile);
+    return _getAvatarFrameUrlForProfile({ avatarFramePreset });
 }
 
 /**
@@ -100,7 +100,7 @@ export async function getCachedUserRoleTags(userId: string) {
  */
 export async function getCachedBasicStats() {
     "use cache";
-    cacheLife("seconds");
+    cacheLife("minutes");
     return _getBasicStats();
 }
 

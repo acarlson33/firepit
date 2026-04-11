@@ -98,6 +98,7 @@ describe("Servers create route", () => {
         expect(data.error).toBe(
             "Server creation is currently disabled. Contact an administrator.",
         );
+        expect(mockGetFeatureFlag).toHaveBeenCalledWith("allow_user_servers");
         expect(mockCreateServer).not.toHaveBeenCalled();
     });
 

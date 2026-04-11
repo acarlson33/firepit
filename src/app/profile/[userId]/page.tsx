@@ -21,6 +21,7 @@ import { StartDMButton } from "./start-dm-button";
 import { AvatarWithFrame } from "@/components/profile-background";
 import { ReportUserDialog } from "@/components/report-user-dialog";
 import { getProfileBackgroundStyle } from "@/lib/profile-utils";
+import { cn } from "@/lib/utils";
 
 type Props = {
     params: Promise<{ userId: string }>;
@@ -28,6 +29,7 @@ type Props = {
 
 export default async function ProfilePage({ params }: Props) {
     const { userId } = await params;
+    const sessionPromise = getServerSession();
 
     const profile = await getCachedUserProfile(userId);
 
@@ -35,24 +37,22 @@ export default async function ProfilePage({ params }: Props) {
         notFound();
     }
 
-    const session = await getServerSession();
+    const session = await sessionPromise;
     const isOwnProfile = session?.$id === userId;
 
-    const roles = await getUserRoleTags(userId);
-
-    const avatarUrl = profile.avatarFileId
-        ? await getCachedAvatarUrl(profile.avatarFileId)
-        : undefined;
-
-    const profileBackgroundUrl = profile.profileBackgroundImageFileId
-        ? await getCachedProfileBackgroundUrl(
-              profile.profileBackgroundImageFileId,
-          )
-        : undefined;
-
-    const avatarFrameUrl = await getCachedAvatarFrameUrlForProfile({
-        avatarFramePreset: profile.avatarFramePreset,
-    });
+    const [roles, avatarUrl, profileBackgroundUrl, avatarFrameUrl] =
+        await Promise.all([
+            getUserRoleTags(userId),
+            profile.avatarFileId
+                ? getCachedAvatarUrl(profile.avatarFileId)
+                : Promise.resolve(undefined),
+            profile.profileBackgroundImageFileId
+                ? getCachedProfileBackgroundUrl(
+                      profile.profileBackgroundImageFileId,
+                  )
+                : Promise.resolve(undefined),
+            getCachedAvatarFrameUrlForProfile(profile.avatarFramePreset),
+        ]);
 
     const roleLabel = roles.isAdmin
         ? "Administrator"
@@ -66,17 +66,18 @@ export default async function ProfilePage({ params }: Props) {
         color: profile.profileBackgroundColor,
     });
 
-    const hasBackground = Boolean(cardStyle);
-
     return (
         <div className="container mx-auto max-w-4xl px-4 py-8">
             <div className="grid gap-8">
-                <Card style={cardStyle}>
-                    {hasBackground && (
-                        <div className="absolute inset-0 rounded-lg bg-black/40" />
+                <Card className="relative" style={cardStyle}>
+                    {cardStyle && (
+                        <div
+                            aria-hidden="true"
+                            className="absolute inset-0 rounded-lg bg-black/40"
+                        />
                     )}
                     <CardContent
-                        className={`relative ${hasBackground ? "z-10" : ""} pt-6`}
+                        className={cn("relative pt-6", cardStyle && "z-10")}
                     >
                         <div className="rounded-lg bg-black/20 backdrop-blur-sm p-4">
                             <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">

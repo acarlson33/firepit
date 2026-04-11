@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Plus,
     Settings,
@@ -30,6 +30,44 @@ type RoleListProperties = {
     onManageMembers: (role: Role) => void;
 };
 
+function getPermissionTags(role: Role) {
+    if (role.administrator) {
+        return [
+            {
+                label: "All permissions",
+                className: "bg-destructive/10 text-destructive",
+            },
+        ];
+    }
+
+    const tags: { label: string; className: string }[] = [];
+    if (role.manageServer) {
+        tags.push({
+            label: "Manage server",
+            className: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+        });
+    }
+    if (role.manageChannels) {
+        tags.push({
+            label: "Manage channels",
+            className: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+        });
+    }
+    if (role.manageMessages) {
+        tags.push({
+            label: "Manage messages",
+            className: "bg-green-500/10 text-green-600 dark:text-green-400",
+        });
+    }
+    if (role.sendMessages) {
+        tags.push({
+            label: "Can message",
+            className: "bg-muted text-muted-foreground",
+        });
+    }
+    return tags;
+}
+
 export function RoleList({
     roles,
     isOwner,
@@ -39,47 +77,54 @@ export function RoleList({
     onManageMembers,
 }: RoleListProperties) {
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const clearDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+        null,
+    );
+
+    const clearDeleteTimer = () => {
+        if (!clearDeleteTimerRef.current) {
+            return;
+        }
+
+        clearTimeout(clearDeleteTimerRef.current);
+        clearDeleteTimerRef.current = null;
+    };
 
     const sortedRoles = calculateRoleHierarchy(roles);
 
-    function getPermissionTags(role: Role) {
-        if (role.administrator) {
-            return [
-                {
-                    label: "All permissions",
-                    className: "bg-destructive/10 text-destructive",
-                },
-            ];
+    useEffect(() => {
+        if (!deletingId) {
+            clearDeleteTimer();
+            return;
         }
 
-        const tags: { label: string; className: string }[] = [];
-        if (role.manageServer) {
-            tags.push({
-                label: "Manage server",
-                className:
-                    "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-            });
+        clearDeleteTimerRef.current = setTimeout(() => {
+            setDeletingId((current) =>
+                current === deletingId ? null : current,
+            );
+        }, 5000);
+
+        return () => {
+            clearDeleteTimer();
+        };
+    }, [deletingId]);
+
+    useEffect(() => {
+        if (!deletingId) {
+            return;
         }
-        if (role.manageChannels) {
-            tags.push({
-                label: "Manage channels",
-                className: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-            });
-        }
-        if (role.manageMessages) {
-            tags.push({
-                label: "Manage messages",
-                className: "bg-green-500/10 text-green-600 dark:text-green-400",
-            });
-        }
-        if (role.sendMessages) {
-            tags.push({
-                label: "Can message",
-                className: "bg-muted text-muted-foreground",
-            });
-        }
-        return tags;
-    }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setDeletingId(null);
+            }
+        };
+
+        document.addEventListener("keydown", handleKeyDown);
+        return () => {
+            document.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [deletingId]);
 
     const handleDelete = (roleId: string) => {
         if (deletingId === roleId) {
@@ -101,7 +146,7 @@ export function RoleList({
                         </CardDescription>
                     </div>
                     {isOwner && (
-                        <Button onClick={onCreateRole} size="sm">
+                        <Button onClick={onCreateRole} size="sm" type="button">
                             <Plus className="mr-2 h-4 w-4" />
                             Create Role
                         </Button>
@@ -213,6 +258,7 @@ export function RoleList({
                                                     onManageMembers(role)
                                                 }
                                                 size="sm"
+                                                type="button"
                                                 variant="ghost"
                                                 aria-label="Manage members"
                                             >
@@ -221,6 +267,7 @@ export function RoleList({
                                             <Button
                                                 onClick={() => onEditRole(role)}
                                                 size="sm"
+                                                type="button"
                                                 variant="ghost"
                                                 aria-label="Edit role"
                                             >
@@ -231,6 +278,7 @@ export function RoleList({
                                                     handleDelete(role.$id)
                                                 }
                                                 size="sm"
+                                                type="button"
                                                 variant={
                                                     deletingId === role.$id
                                                         ? "destructive"

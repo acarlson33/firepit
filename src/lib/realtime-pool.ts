@@ -12,6 +12,157 @@ let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
 let warnedAboutFallbackTeardown = false;
 let inFlightDispose: Promise<void> | null = null;
+let subscribeQueueTail: Promise<void> = Promise.resolve();
+let sharedRealtimeGeneration = 0;
+
+function queueRealtimeOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const nextOperation = subscribeQueueTail
+        .catch(() => {
+            // Keep realtime operation queue progressing even if an earlier operation failed.
+        })
+        .then(() => operation());
+
+    subscribeQueueTail = nextOperation.then(
+        () => undefined,
+        () => undefined,
+    );
+
+    return nextOperation;
+}
+
+function queueRealtimeSubscribe<T>(
+    generationAtEnqueue: number,
+    operation: () => Promise<T>,
+): Promise<T> {
+    return queueRealtimeOperation(() => {
+        if (generationAtEnqueue !== sharedRealtimeGeneration) {
+            throw new Error(
+                "Skipped stale realtime subscribe after generation change",
+            );
+        }
+
+        return operation();
+    });
+}
+
+function toUnsubscribeFn(subscription: unknown): () => void {
+    if (typeof subscription === "function") {
+        return subscription as () => void;
+    }
+
+    if (
+        subscription &&
+        typeof subscription === "object" &&
+        typeof (subscription as { close?: unknown }).close === "function"
+    ) {
+        const close = (subscription as { close: () => unknown }).close.bind(
+            subscription,
+        );
+        return () => {
+            const closeResult = close();
+            if (isPromiseLike(closeResult)) {
+                void Promise.resolve(closeResult).catch((error) => {
+                    logger.warn(
+                        "Realtime subscription close failed in unsubscribe wrapper",
+                        {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        },
+                    );
+                });
+            }
+        };
+    }
+
+    throw new Error("Realtime subscribe returned an invalid handle");
+}
+
+function toErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function isTransientRealtimeSubscribeError(error: unknown): boolean {
+    const message = toErrorMessage(error).toLowerCase();
+
+    return (
+        message.includes("was interrupted while the page was loading") ||
+        message.includes("can't establish a connection") ||
+        message.includes("can’t establish a connection") ||
+        message.includes("websocket error")
+    );
+}
+
+function patchRealtimeSubscribe(realtime: Realtime): Realtime {
+    const realtimeWithMetadata = realtime as Realtime & {
+        __firepitSubscribePatched?: boolean;
+        __firepitGeneration?: number;
+    };
+
+    if (realtimeWithMetadata.__firepitSubscribePatched) {
+        return realtime;
+    }
+
+    const baseSubscribe = realtime.subscribe.bind(realtime);
+    const wrappedSubscribe = (...args: Parameters<Realtime["subscribe"]>) => {
+        const generation = realtimeWithMetadata.__firepitGeneration;
+        const queuedUnsubscribe = queueRealtimeSubscribe(
+            typeof generation === "number"
+                ? generation
+                : sharedRealtimeGeneration,
+            async () => {
+                try {
+                    const subscription = await Promise.resolve(
+                        baseSubscribe(...args),
+                    );
+                    return toUnsubscribeFn(subscription);
+                } catch (error) {
+                    if (!isTransientRealtimeSubscribeError(error)) {
+                        throw error;
+                    }
+
+                    logger.info(
+                        "Retrying realtime subscribe after transient connection failure",
+                        {
+                            error: toErrorMessage(error),
+                        },
+                    );
+
+                    await Promise.resolve();
+
+                    const retrySubscription = await Promise.resolve(
+                        baseSubscribe(...args),
+                    );
+                    return toUnsubscribeFn(retrySubscription);
+                }
+            },
+        );
+
+        const deferredUnsubscribe = (() => {
+            void queuedUnsubscribe
+                .then((unsubscribe) => {
+                    unsubscribe();
+                })
+                .catch((error) => {
+                    logger.warn("Deferred realtime unsubscribe failed", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    });
+                });
+        }) as (() => void) & PromiseLike<() => void>;
+        deferredUnsubscribe.then =
+            queuedUnsubscribe.then.bind(queuedUnsubscribe);
+
+        return deferredUnsubscribe;
+    };
+    realtime.subscribe = wrappedSubscribe as unknown as Realtime["subscribe"];
+
+    realtimeWithMetadata.__firepitSubscribePatched = true;
+    return realtime;
+}
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     return (
@@ -66,7 +217,7 @@ async function callPublicRealtimeTeardown(
     realtime: Realtime,
 ): Promise<boolean> {
     const lifecycleMethods = ["close", "disconnect", "dispose"] as const;
-    let didTeardown = false;
+    let instanceLevelTeardown = false;
 
     for (const methodName of lifecycleMethods) {
         try {
@@ -75,7 +226,7 @@ async function callPublicRealtimeTeardown(
                 methodName,
             );
             if (called) {
-                didTeardown = true;
+                instanceLevelTeardown = true;
                 break;
             }
         } catch {
@@ -83,7 +234,7 @@ async function callPublicRealtimeTeardown(
         }
     }
 
-    if (didTeardown) {
+    if (instanceLevelTeardown) {
         return true;
     }
 
@@ -91,6 +242,8 @@ async function callPublicRealtimeTeardown(
         Reflect.get(realtime as object, "subscriptions"),
         Reflect.get(realtime as object, "activeSubscriptions"),
     ];
+
+    let closedAnySubscription = false;
 
     for (const container of subscriptionContainers) {
         const maybeSubscriptions = collectSubscriptionLikeValues(container);
@@ -111,12 +264,16 @@ async function callPublicRealtimeTeardown(
                     ));
 
                 if (didClose) {
-                    didTeardown = true;
+                    closedAnySubscription = true;
                 }
             } catch {
                 // Continue trying additional subscription-like values.
             }
         }
+    }
+
+    if (closedAnySubscription) {
+        return true;
     }
 
     const internalClient = Reflect.get(realtime as object, "client");
@@ -127,14 +284,14 @@ async function callPublicRealtimeTeardown(
                 "close",
             );
             if (closedClient) {
-                didTeardown = true;
+                return true;
             }
         } catch {
             // Let the caller continue to fallback internals.
         }
     }
 
-    return didTeardown;
+    return false;
 }
 
 async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
@@ -181,13 +338,16 @@ async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
         const result = (closeSocket as (this: Realtime) => unknown).call(
             realtime,
         );
-        if (
-            result &&
-            typeof (result as { then?: unknown }).then === "function"
-        ) {
+        if (isPromiseLike(result)) {
             await result;
         }
     }
+}
+
+async function waitForSubscribeQueueToDrain(): Promise<void> {
+    await subscribeQueueTail.catch(() => {
+        // Ignore stale subscribe failures while draining queue during teardown.
+    });
 }
 
 /**
@@ -220,7 +380,12 @@ export function getSharedClient(): Client {
  */
 export function getSharedRealtime(): Realtime {
     if (!sharedRealtime) {
-        sharedRealtime = new Realtime(getSharedClient());
+        sharedRealtimeGeneration += 1;
+        const realtime = new Realtime(getSharedClient()) as Realtime & {
+            __firepitGeneration?: number;
+        };
+        realtime.__firepitGeneration = sharedRealtimeGeneration;
+        sharedRealtime = patchRealtimeSubscribe(realtime);
     }
 
     return sharedRealtime;
@@ -266,8 +431,14 @@ export async function disposeSharedRealtime(): Promise<void> {
     }
 
     const disposePromise = (async () => {
+        sharedRealtimeGeneration += 1;
+        const disposeGeneration = sharedRealtimeGeneration;
+
+        await waitForSubscribeQueueToDrain();
+
         if (!sharedRealtime) {
             subscriptionRefs.clear();
+            subscribeQueueTail = Promise.resolve();
             return;
         }
 
@@ -276,9 +447,13 @@ export async function disposeSharedRealtime(): Promise<void> {
         try {
             await safeCleanupRealtime(realtime);
         } finally {
-            if (sharedRealtime === realtime) {
+            if (
+                sharedRealtime === realtime &&
+                sharedRealtimeGeneration === disposeGeneration
+            ) {
                 sharedRealtime = null;
                 subscriptionRefs.clear();
+                subscribeQueueTail = Promise.resolve();
             }
         }
     })();

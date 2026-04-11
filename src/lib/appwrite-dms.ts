@@ -11,6 +11,42 @@ const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
 
+function isConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { code?: unknown; message?: unknown };
+    if (candidate.code === 409) {
+        return true;
+    }
+
+    return typeof candidate.message === "string"
+        ? candidate.message.toLowerCase().includes("already exists")
+        : false;
+}
+
+/**
+ * Create a deterministic direct-message conversation document ID for two users.
+ * Inputs are canonicalized by sorting and encoded as a JSON array before hashing
+ * so ordering is stable and delimiter collisions are impossible.
+ */
+async function createDirectConversationDocumentId(
+    user1: string,
+    user2: string,
+): Promise<string> {
+    const canonicalUserIds = [user1, user2].sort((a, b) => a.localeCompare(b));
+    const input = JSON.stringify(canonicalUserIds);
+    const inputBytes = new TextEncoder().encode(input);
+    const digestBuffer = await crypto.subtle.digest("SHA-256", inputBytes);
+    const digestHex = Array.from(new Uint8Array(digestBuffer))
+        .slice(0, 16)
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
+
+    return `dm_${digestHex}`;
+}
+
 type ProfileData = {
     displayName?: string;
     avatarUrl?: string;
@@ -18,6 +54,26 @@ type ProfileData = {
     avatarFrameUrl?: string;
     pronouns?: string;
 };
+
+function isProfileData(value: unknown): value is ProfileData {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        (candidate.displayName === undefined ||
+            typeof candidate.displayName === "string") &&
+        (candidate.avatarUrl === undefined ||
+            typeof candidate.avatarUrl === "string") &&
+        (candidate.avatarFramePreset === undefined ||
+            typeof candidate.avatarFramePreset === "string") &&
+        (candidate.avatarFrameUrl === undefined ||
+            typeof candidate.avatarFrameUrl === "string") &&
+        (candidate.pronouns === undefined ||
+            typeof candidate.pronouns === "string")
+    );
+}
 
 type ReactionsInput =
     | string
@@ -48,11 +104,18 @@ async function fetchProfilesBatch(
         if (!response.ok) {
             return profileMap;
         }
-        const data = (await response.json()) as {
-            profiles: Record<string, ProfileData>;
+        const payload = (await response.json()) as {
+            profiles?: unknown;
         };
-        for (const [uid, profile] of Object.entries(data.profiles)) {
-            profileMap.set(uid, profile);
+        const profiles = payload.profiles;
+        if (!profiles || typeof profiles !== "object") {
+            return profileMap;
+        }
+
+        for (const [uid, profile] of Object.entries(profiles)) {
+            if (isProfileData(profile)) {
+                profileMap.set(uid, profile);
+            }
         }
     } catch {
         // Fail silently — callers handle missing profiles gracefully
@@ -201,21 +264,91 @@ export async function getOrCreateConversation(
     // Sort user IDs to ensure consistent ordering
     const [user1, user2] = [userId1, userId2].sort();
     const participants = [user1, user2];
+    const deterministicConversationId =
+        await createDirectConversationDocumentId(user1, user2);
+
+    try {
+        const existingById = await getDatabases().getDocument({
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            documentId: deterministicConversationId,
+        });
+        const existingByIdRecord = existingById as Record<string, unknown>;
+        const participantList = Array.isArray(existingByIdRecord.participants)
+            ? (existingByIdRecord.participants as string[])
+            : [];
+
+        if (
+            participantList.length === 2 &&
+            participantList.includes(user1) &&
+            participantList.includes(user2)
+        ) {
+            return {
+                $id: String(existingByIdRecord.$id),
+                $permissions: Array.isArray(existingByIdRecord.$permissions)
+                    ? (existingByIdRecord.$permissions as string[])
+                    : undefined,
+                participants: participantList,
+                lastMessageAt: existingByIdRecord.lastMessageAt
+                    ? String(existingByIdRecord.lastMessageAt)
+                    : undefined,
+                $createdAt: String(existingByIdRecord.$createdAt),
+            };
+        }
+    } catch {
+        // Fall back to legacy paginated contains lookup for older records.
+    }
 
     try {
         // Try to find existing conversation
-        const existing = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: CONVERSATIONS_COLLECTION,
-            queries: [
+        let oneToOne: Record<string, unknown> | undefined;
+        let cursorAfter: string | null = null;
+
+        while (!oneToOne) {
+            const queries = [
                 Query.contains("participants", user1),
                 Query.contains("participants", user2),
-                Query.limit(1),
-            ],
-        });
+                Query.orderAsc("$createdAt"),
+                Query.limit(100),
+            ];
+            if (cursorAfter) {
+                queries.push(Query.cursorAfter(cursorAfter));
+            }
 
-        if (existing.documents.length > 0) {
-            const doc = existing.documents[0] as Record<string, unknown>;
+            const existing = await getDatabases().listDocuments({
+                databaseId: DATABASE_ID,
+                collectionId: CONVERSATIONS_COLLECTION,
+                queries,
+            });
+
+            oneToOne = existing.documents.find((document) => {
+                const participantsList = (document as Record<string, unknown>)
+                    .participants;
+                return (
+                    Array.isArray(participantsList) &&
+                    participantsList.length === 2 &&
+                    participantsList.includes(user1) &&
+                    participantsList.includes(user2)
+                );
+            }) as Record<string, unknown> | undefined;
+
+            if (oneToOne || existing.documents.length < 100) {
+                break;
+            }
+
+            const lastDocument = existing.documents.at(-1) as
+                | Record<string, unknown>
+                | undefined;
+            cursorAfter =
+                typeof lastDocument?.$id === "string" ? lastDocument.$id : null;
+
+            if (!cursorAfter) {
+                break;
+            }
+        }
+
+        if (oneToOne) {
+            const doc = oneToOne;
             return {
                 $id: String(doc.$id),
                 $permissions: Array.isArray(doc.$permissions)
@@ -242,16 +375,44 @@ export async function getOrCreateConversation(
         Permission.delete(Role.user(user2)),
     ];
 
-    const newConv = await getDatabases().createDocument({
-        databaseId: DATABASE_ID,
-        collectionId: CONVERSATIONS_COLLECTION,
-        documentId: ID.unique(),
-        data: {
+    let newConv: unknown;
+    try {
+        newConv = await getDatabases().createDocument({
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            documentId: deterministicConversationId,
+            data: {
+                participants,
+                lastMessageAt: new Date().toISOString(),
+            },
+            permissions,
+        });
+    } catch (error) {
+        if (!isConflictError(error)) {
+            throw error;
+        }
+
+        const existing = await getDatabases().getDocument({
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            documentId: deterministicConversationId,
+        });
+        const existingRecord = existing as Record<string, unknown>;
+        const participants = Array.isArray(existingRecord.participants)
+            ? (existingRecord.participants as string[])
+            : [];
+        return {
+            $id: String(existingRecord.$id),
+            $permissions: Array.isArray(existingRecord.$permissions)
+                ? (existingRecord.$permissions as string[])
+                : undefined,
             participants,
-            lastMessageAt: new Date().toISOString(),
-        },
-        permissions,
-    });
+            lastMessageAt: existingRecord.lastMessageAt
+                ? String(existingRecord.lastMessageAt)
+                : undefined,
+            $createdAt: String(existingRecord.$createdAt),
+        };
+    }
 
     const doc = newConv as unknown as Record<string, unknown>;
     return {
@@ -566,7 +727,8 @@ export async function listDirectMessages(
                     : undefined,
                 conversationId: String(d.conversationId),
                 senderId: String(d.senderId),
-                receiverId: String(d.receiverId),
+                receiverId:
+                    typeof d.receiverId === "string" ? d.receiverId : undefined,
                 text: String(d.text),
                 $createdAt: String(d.$createdAt),
                 editedAt: d.editedAt ? String(d.editedAt) : undefined,

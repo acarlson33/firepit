@@ -15,6 +15,22 @@ import { useStatusSubscription } from "./useStatusSubscription";
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 
+function toError(value: unknown) {
+    return value instanceof Error ? value : new Error(String(value));
+}
+
+function toErrorMessage(value: unknown) {
+    return value instanceof Error ? value.message : String(value);
+}
+
+function formatConversationsError(error: unknown) {
+    if (!error) {
+        return null;
+    }
+
+    return toErrorMessage(error);
+}
+
 function getConversationsQueryKey(userId: string | null) {
     return ["conversations", userId] as const;
 }
@@ -103,7 +119,7 @@ export function useConversations(userId: string | null, enabled = true) {
             .document();
         const conversationChannelKey = conversationChannel.toString();
 
-        (async () => {
+        const subscriptionTask = (async () => {
             if (cancelled) {
                 return;
             }
@@ -135,10 +151,7 @@ export function useConversations(userId: string | null, enabled = true) {
                                     "Failed to refresh conversations after realtime event",
                                     {
                                         conversationChannelKey,
-                                        error:
-                                            invalidateError instanceof Error
-                                                ? invalidateError.message
-                                                : String(invalidateError),
+                                        error: toErrorMessage(invalidateError),
                                     },
                                 );
                             });
@@ -153,8 +166,14 @@ export function useConversations(userId: string | null, enabled = true) {
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    closeSubscriptionSafely(subscription).catch(() => {
-                        // closeSubscriptionSafely already suppresses expected teardown errors.
+                    closeSubscriptionSafely(subscription).catch((error) => {
+                        logger.warn(
+                            "Conversation subscription cleanup failed",
+                            {
+                                conversationChannelKey,
+                                error: toErrorMessage(error),
+                            },
+                        );
                     });
                 };
             } catch (realtimeError) {
@@ -164,9 +183,7 @@ export function useConversations(userId: string | null, enabled = true) {
 
                 logger.error(
                     "Conversation realtime subscription failed",
-                    realtimeError instanceof Error
-                        ? realtimeError
-                        : String(realtimeError),
+                    toError(realtimeError),
                     {
                         collectionId: CONVERSATIONS_COLLECTION,
                         conversationChannelKey,
@@ -174,22 +191,12 @@ export function useConversations(userId: string | null, enabled = true) {
                     },
                 );
             }
-        })().catch((subscriptionError) => {
-            if (cancelled) {
-                return;
-            }
-
-            logger.error(
-                "Conversation realtime subscription bootstrap failed",
-                subscriptionError instanceof Error
-                    ? subscriptionError
-                    : String(subscriptionError),
-                {
-                    collectionId: CONVERSATIONS_COLLECTION,
-                    conversationChannelKey,
-                    databaseId: env.databaseId,
-                },
-            );
+        })();
+        subscriptionTask.catch((error) => {
+            logger.warn("Conversation subscription task failed", {
+                error: toErrorMessage(error),
+                conversationChannelKey,
+            });
         });
 
         return () => {
@@ -201,12 +208,7 @@ export function useConversations(userId: string | null, enabled = true) {
     return {
         conversations: conversationsWithStatus,
         loading: isEnabled ? isLoading : false,
-        error:
-            error instanceof Error
-                ? error.message
-                : error
-                  ? "Failed to load conversations"
-                  : null,
+        error: formatConversationsError(error),
         refresh: refetch,
     };
 }

@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { requireAuth } from "@/lib/auth-server";
+import { AuthError, requireAuth } from "@/lib/auth-server";
 
 import { ErrorIngestionTester } from "./error-ingestion-tester";
 
@@ -9,9 +9,20 @@ export default async function PostHogErrorsDebugPage() {
         notFound();
     }
 
-    await requireAuth().catch(() => {
+    let user: Awaited<ReturnType<typeof requireAuth>> | null = null;
+    try {
+        user = await requireAuth();
+    } catch (error) {
+        if (error instanceof AuthError) {
+            redirect("/login");
+        }
+
+        throw error;
+    }
+
+    if (!user) {
         redirect("/login");
-    });
+    }
 
     return (
         <div className="container mx-auto max-w-4xl px-4 py-8">

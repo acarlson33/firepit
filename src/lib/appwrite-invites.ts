@@ -6,6 +6,7 @@ import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
+import { getActualMemberCount } from "./membership-count";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -13,6 +14,7 @@ const INVITES_COLLECTION_ID = "invites";
 const INVITE_USAGE_COLLECTION_ID = "invite_usage";
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || "memberships";
 const SERVERS_COLLECTION_ID = env.collections.servers;
+export const ROLE_MEMBER = "member";
 
 export type CreateInviteOptions = {
     serverId: string;
@@ -27,6 +29,12 @@ export type ValidationResult = {
     valid: boolean;
     error?: string;
     invite?: ServerInvite;
+};
+
+type ReconcileInviteUsageResult = {
+    scanned: number;
+    removed: number;
+    flagged: number;
 };
 
 function isConflictError(error: unknown): boolean {
@@ -54,6 +62,186 @@ function createInviteUsageSlotDocumentId(
         .slice(0, 28);
 
     return `invuse_${digest}`;
+}
+
+/**
+ * Reconcile orphaned invite usage documents that do not map to an existing membership.
+ * This routine is idempotent and safe to run periodically.
+ */
+export async function reconcileOrphanedInviteUsageSlots(options?: {
+    limit?: number;
+}): Promise<ReconcileInviteUsageResult> {
+    const { databases } = getServerClient();
+    const hardLimit = options?.limit && options.limit > 0 ? options.limit : 250;
+    const pageSize = Math.min(hardLimit, 100);
+
+    let scanned = 0;
+    let removed = 0;
+    let flagged = 0;
+    let cursorAfter: string | null = null;
+
+    while (scanned < hardLimit) {
+        const queries = [Query.orderAsc("$createdAt"), Query.limit(pageSize)];
+        if (cursorAfter) {
+            queries.push(Query.cursorAfter(cursorAfter));
+        }
+
+        const usagePage = await databases.listDocuments(
+            DATABASE_ID,
+            INVITE_USAGE_COLLECTION_ID,
+            queries,
+        );
+
+        if (usagePage.documents.length === 0) {
+            break;
+        }
+
+        const remaining = hardLimit - scanned;
+        const usageBatch = usagePage.documents.slice(0, remaining);
+        scanned += usageBatch.length;
+
+        const validUsageEntries: Array<{
+            usageId: string;
+            userId: string;
+            serverId: string;
+        }> = [];
+        const userIdsByServerId = new Map<string, Set<string>>();
+
+        for (const usageDocument of usageBatch) {
+            const userId = (usageDocument as Record<string, unknown>).userId;
+            const serverId = (usageDocument as Record<string, unknown>)
+                .serverId;
+
+            if (typeof userId !== "string" || typeof serverId !== "string") {
+                flagged += 1;
+                logger.error(
+                    "Invalid invite usage document shape during reconciliation",
+                    {
+                        usageId: usageDocument.$id,
+                        userId,
+                        serverId,
+                    },
+                );
+                continue;
+            }
+
+            validUsageEntries.push({
+                usageId: String(usageDocument.$id),
+                userId,
+                serverId,
+            });
+
+            const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
+            serverUserIds.add(userId);
+            userIdsByServerId.set(serverId, serverUserIds);
+        }
+
+        const existingMembershipKeys = new Set<string>();
+        const failedMembershipKeys = new Set<string>();
+        const membershipFetchTasks: Promise<void>[] = [];
+
+        for (const [serverId, userIdsSet] of userIdsByServerId) {
+            const userIds = [...userIdsSet];
+
+            for (let index = 0; index < userIds.length; index += 100) {
+                const userIdChunk = userIds.slice(index, index + 100);
+                const task = databases
+                    .listDocuments(DATABASE_ID, MEMBERSHIPS_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.equal("userId", userIdChunk),
+                        Query.limit(100),
+                    ])
+                    .then((membershipPage) => {
+                        for (const membershipDocument of membershipPage.documents) {
+                            const membershipRecord =
+                                membershipDocument as Record<string, unknown>;
+                            const membershipUserId = membershipRecord.userId;
+                            const membershipServerId =
+                                membershipRecord.serverId;
+
+                            if (
+                                typeof membershipUserId === "string" &&
+                                typeof membershipServerId === "string"
+                            ) {
+                                existingMembershipKeys.add(
+                                    `${membershipServerId}:${membershipUserId}`,
+                                );
+                            }
+                        }
+                    })
+                    .catch((error) => {
+                        for (const failedUserId of userIdChunk) {
+                            failedMembershipKeys.add(
+                                `${serverId}:${failedUserId}`,
+                            );
+                        }
+
+                        logger.error(
+                            "Failed to query memberships during invite usage reconciliation",
+                            {
+                                serverId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                            },
+                        );
+                    });
+
+                membershipFetchTasks.push(task);
+            }
+        }
+
+        await Promise.all(membershipFetchTasks);
+
+        const orphanUsageIds = validUsageEntries
+            .filter((entry) => {
+                const membershipKey = `${entry.serverId}:${entry.userId}`;
+                return (
+                    !existingMembershipKeys.has(membershipKey) &&
+                    !failedMembershipKeys.has(membershipKey)
+                );
+            })
+            .map((entry) => entry.usageId);
+
+        const deleteResults = await Promise.allSettled(
+            orphanUsageIds.map((usageId) =>
+                databases.deleteDocument(
+                    DATABASE_ID,
+                    INVITE_USAGE_COLLECTION_ID,
+                    usageId,
+                ),
+            ),
+        );
+
+        for (const [index, result] of deleteResults.entries()) {
+            if (result.status === "fulfilled") {
+                removed += 1;
+                continue;
+            }
+
+            flagged += 1;
+            logger.error("Failed to delete orphaned invite usage document", {
+                usageId: orphanUsageIds[index],
+                error:
+                    result.reason instanceof Error
+                        ? result.reason.message
+                        : String(result.reason),
+            });
+        }
+
+        const lastDocument = usagePage.documents.at(-1);
+        cursorAfter = lastDocument ? String(lastDocument.$id) : null;
+        if (usagePage.documents.length < pageSize || !cursorAfter) {
+            break;
+        }
+    }
+
+    return {
+        scanned,
+        removed,
+        flagged,
+    };
 }
 
 /**
@@ -215,6 +403,7 @@ export async function useInvite(
     };
     let reservedUsageId: string | undefined;
     let reservedUseIndex: number | undefined;
+    let enforceMaxUsesReservation = typeof invite.maxUses === "number";
 
     // Check if user is already a member
     try {
@@ -239,12 +428,18 @@ export async function useInvite(
         return { success: false, error: "Failed to verify membership status" };
     }
 
-    if (typeof invite.maxUses === "number") {
+    if (enforceMaxUsesReservation) {
         let snapshot = invite;
         const maxReservationAttempts = 5;
         let highestAttemptedIndex = snapshot.currentUses;
 
         for (let attempt = 0; attempt < maxReservationAttempts; attempt++) {
+            if (snapshot.maxUses === null) {
+                // Invite was switched to unlimited while we were reserving slots.
+                enforceMaxUsesReservation = false;
+                break;
+            }
+
             if (typeof snapshot.maxUses !== "number") {
                 return {
                     success: false,
@@ -311,7 +506,7 @@ export async function useInvite(
             }
         }
 
-        if (!reservedUsageId) {
+        if (enforceMaxUsesReservation && !reservedUsageId) {
             return {
                 success: false,
                 error: "Invite is currently being used. Please try again.",
@@ -328,7 +523,7 @@ export async function useInvite(
             {
                 serverId: invite.serverId,
                 userId,
-                role: "member",
+                role: ROLE_MEMBER,
             },
         );
     } catch (error) {
@@ -340,12 +535,29 @@ export async function useInvite(
                     reservedUsageId,
                 );
             } catch (rollbackError) {
-                logger.warn("Failed to rollback reserved invite usage slot", {
+                logger.error("Failed to rollback reserved invite usage slot", {
                     reservedUsageId,
+                    inviteId: invite.$id,
+                    serverId: invite.serverId,
+                    userId,
                     error:
                         rollbackError instanceof Error
                             ? rollbackError.message
                             : String(rollbackError),
+                });
+
+                const reconciliationTask = reconcileOrphanedInviteUsageSlots({
+                    limit: 250,
+                });
+                reconciliationTask.catch((reconcileError) => {
+                    logger.error("Invite usage reconciliation failed", {
+                        inviteId: invite.$id,
+                        reservedUsageId,
+                        error:
+                            reconcileError instanceof Error
+                                ? reconcileError.message
+                                : String(reconcileError),
+                    });
                 });
             }
         }
@@ -387,29 +599,30 @@ export async function useInvite(
         }
     }
 
-    // Increment invite usage count
-    try {
-        const latestInvite = await getInviteByCode(code);
-        const latestCurrentUses =
-            typeof latestInvite?.currentUses === "number"
-                ? latestInvite.currentUses
-                : invite.currentUses;
-        const nextCurrentUses = Math.max(
-            latestCurrentUses,
-            reservedUseIndex ?? invite.currentUses + 1,
-        );
+    // For limited invites, slot reservation gives us a monotonic use index.
+    // Unlimited invites skip read-modify-write updates; usage is tracked via invite_usage and can be reconciled periodically.
+    if (reservedUseIndex !== undefined) {
+        try {
+            const latestInvite = await getInviteByCode(code);
+            const latestCurrentUses =
+                typeof latestInvite?.currentUses === "number"
+                    ? latestInvite.currentUses
+                    : invite.currentUses;
 
-        await databases.updateDocument(
-            DATABASE_ID,
-            INVITES_COLLECTION_ID,
-            invite.$id,
-            {
-                currentUses: nextCurrentUses,
-            },
-        );
-    } catch (error) {
-        logger.error("Failed to update invite usage count:", { error });
-        // Non-fatal - membership was created successfully
+            if (latestCurrentUses < reservedUseIndex) {
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    INVITES_COLLECTION_ID,
+                    invite.$id,
+                    {
+                        currentUses: reservedUseIndex,
+                    },
+                );
+            }
+        } catch (error) {
+            logger.error("Failed to update invite usage count:", { error });
+            // Non-fatal - membership was created successfully
+        }
     }
 
     return { success: true, serverId: invite.serverId };
@@ -513,7 +726,6 @@ export async function getServerPreview(serverId: string): Promise<{
         );
 
         // Get actual member count from memberships (single source of truth)
-        const { getActualMemberCount } = await import("./membership-count");
         const actualCount = await getActualMemberCount(databases, serverId);
 
         return {

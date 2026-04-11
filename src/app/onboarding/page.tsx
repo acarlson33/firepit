@@ -20,11 +20,56 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth-context";
 import { completeOnboardingAction } from "./actions";
-import type { NotificationLevel, DirectMessagePrivacy } from "@/lib/types";
+import {
+    DIRECT_MESSAGE_PRIVACY_VALUES,
+    NOTIFICATION_LEVEL_VALUES,
+    type NotificationLevel,
+    type DirectMessagePrivacy,
+} from "@/lib/types";
 
 type Step = "profile" | "notifications" | "telemetry";
 
 const STEPS: Step[] = ["profile", "notifications", "telemetry"];
+
+function isNotificationLevel(value: string): value is NotificationLevel {
+    return (NOTIFICATION_LEVEL_VALUES as readonly string[]).includes(value);
+}
+
+function isDirectMessagePrivacy(value: string): value is DirectMessagePrivacy {
+    return (DIRECT_MESSAGE_PRIVACY_VALUES as readonly string[]).includes(value);
+}
+
+function parseNotificationLevel(value: string): NotificationLevel {
+    if (isNotificationLevel(value)) {
+        return value;
+    }
+
+    return "all";
+}
+
+function parseDirectMessagePrivacy(value: string): DirectMessagePrivacy {
+    if (isDirectMessagePrivacy(value)) {
+        return value;
+    }
+
+    return "everyone";
+}
+
+function getStepAriaLabel(
+    step: Step,
+    index: number,
+    currentStepIndex: number,
+): string {
+    const status =
+        index < currentStepIndex
+            ? "Completed"
+            : index === currentStepIndex
+              ? "Current step"
+              : "Not started";
+    const formattedStep = `${step.at(0)?.toUpperCase() ?? ""}${step.slice(1)}`;
+
+    return `Step ${index + 1}: ${formattedStep} - ${status}`;
+}
 
 export default function OnboardingPage() {
     const router = useRouter();
@@ -35,6 +80,18 @@ export default function OnboardingPage() {
     const currentStep = STEPS[currentStepIndex];
     const isFirstStep = currentStepIndex === 0;
     const isLastStep = currentStepIndex === STEPS.length - 1;
+
+    function getPrimaryButtonLabel() {
+        if (loading) {
+            return "Setting up...";
+        }
+
+        if (isLastStep) {
+            return "Complete Setup";
+        }
+
+        return "Continue";
+    }
 
     // Step 1: Profile
     const [displayName, setDisplayName] = useState("");
@@ -49,7 +106,7 @@ export default function OnboardingPage() {
     const [notificationSound, setNotificationSound] = useState(true);
 
     // Step 3: Telemetry
-    const [telemetryEnabled, setTelemetryEnabled] = useState(true);
+    const [telemetryEnabled, setTelemetryEnabled] = useState(false);
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -78,7 +135,9 @@ export default function OnboardingPage() {
             const result = await completeOnboardingAction(formData);
 
             if (result.success) {
-                posthog.capture("onboarding_completed");
+                if (telemetryEnabled) {
+                    posthog.capture("onboarding_completed");
+                }
                 toast.success("Profile setup complete!");
                 await refreshUser();
                 router.push("/chat");
@@ -97,7 +156,6 @@ export default function OnboardingPage() {
     }
 
     function handleSkip() {
-        posthog.capture("onboarding_skipped");
         router.push("/chat");
     }
 
@@ -111,10 +169,23 @@ export default function OnboardingPage() {
         <div className="container mx-auto max-w-2xl px-4 py-12">
             <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
                 {/* Progress indicator */}
-                <div className="mb-8 flex items-center justify-center gap-2">
+                <ul
+                    aria-label="Onboarding progress"
+                    className="mb-8 flex items-center justify-center gap-2"
+                >
                     {STEPS.map((step, index) => (
-                        <div key={step} className="flex items-center gap-2">
+                        <li className="flex items-center gap-2" key={step}>
                             <div
+                                aria-current={
+                                    index === currentStepIndex
+                                        ? "step"
+                                        : undefined
+                                }
+                                aria-label={getStepAriaLabel(
+                                    step,
+                                    index,
+                                    currentStepIndex,
+                                )}
                                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
                                     index <= currentStepIndex
                                         ? "bg-primary text-primary-foreground"
@@ -122,7 +193,10 @@ export default function OnboardingPage() {
                                 }`}
                             >
                                 {index < currentStepIndex ? (
-                                    <Check className="size-4" />
+                                    <Check
+                                        aria-hidden="true"
+                                        className="size-4"
+                                    />
                                 ) : (
                                     index + 1
                                 )}
@@ -136,14 +210,17 @@ export default function OnboardingPage() {
                                     }`}
                                 />
                             )}
-                        </div>
+                        </li>
                     ))}
-                </div>
+                </ul>
 
                 {/* Step header */}
                 <div className="mb-8 space-y-4 text-center">
-                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-gradient-to-br from-sky-400/60 via-purple-400/60 to-transparent p-3 shadow-lg">
-                        <Sparkles className="size-8 text-primary" />
+                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-linear-to-br from-sky-400/60 via-purple-400/60 to-transparent p-3 shadow-lg">
+                        <Sparkles
+                            aria-hidden="true"
+                            className="size-8 text-primary"
+                        />
                     </div>
                     {currentStep === "profile" && (
                         <>
@@ -202,7 +279,6 @@ export default function OnboardingPage() {
                                         setDisplayName(e.target.value)
                                     }
                                     placeholder="How should others see your name?"
-                                    required
                                     type="text"
                                     value={displayName}
                                 />
@@ -267,9 +343,9 @@ export default function OnboardingPage() {
                                     Notification level
                                 </Label>
                                 <Select
-                                    onValueChange={(v) =>
+                                    onValueChange={(value) =>
                                         setNotificationLevel(
-                                            v as NotificationLevel,
+                                            parseNotificationLevel(value),
                                         )
                                     }
                                     value={notificationLevel}
@@ -298,9 +374,9 @@ export default function OnboardingPage() {
                                     Direct message privacy
                                 </Label>
                                 <Select
-                                    onValueChange={(v) =>
+                                    onValueChange={(value) =>
                                         setDirectMessagePrivacy(
-                                            v as DirectMessagePrivacy,
+                                            parseDirectMessagePrivacy(value),
                                         )
                                     }
                                     value={directMessagePrivacy}
@@ -396,7 +472,10 @@ export default function OnboardingPage() {
                                 type="button"
                                 variant="outline"
                             >
-                                <ChevronLeft className="mr-2 size-4" />
+                                <ChevronLeft
+                                    aria-hidden="true"
+                                    className="mr-2 size-4"
+                                />
                                 Back
                             </Button>
                         )}
@@ -405,13 +484,12 @@ export default function OnboardingPage() {
                             disabled={loading}
                             type="submit"
                         >
-                            {loading
-                                ? "Setting up..."
-                                : isLastStep
-                                  ? "Complete Setup"
-                                  : "Continue"}
+                            {getPrimaryButtonLabel()}
                             {!isLastStep && (
-                                <ChevronRight className="ml-2 size-4" />
+                                <ChevronRight
+                                    aria-hidden="true"
+                                    className="ml-2 size-4"
+                                />
                             )}
                         </Button>
                     </div>

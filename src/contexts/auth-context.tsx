@@ -150,7 +150,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const previousUserId = realtimeUserIdRef.current;
 
         if (previousUserId && previousUserId !== currentUserId) {
-            void queueRealtimeReset();
+            queueRealtimeReset().catch((error) => {
+                logger.warn("Failed to reset realtime client after user swap", {
+                    previousUserId,
+                    currentUserId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
+            });
         }
 
         realtimeUserIdRef.current = currentUserId;
@@ -272,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     const channel = Channel.database(env.databaseId)
                         .collection(statusesCollection)
-                        .document(activeUserId);
+                        .document();
                     const channelKey = channel.toString();
 
                     const subscription = await realtime.subscribe(
@@ -365,6 +372,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         "Failed to change status:",
                         err instanceof Error ? err : String(err),
                     );
+                } else {
+                    logger.warn("Failed to change status", {
+                        error: err instanceof Error ? err.message : String(err),
+                    });
                 }
             }
         },

@@ -6,13 +6,16 @@ import {
     getAvatarFrameUrlForProfile,
 } from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
+import { logger } from "@/lib/newrelic-utils";
 
 export async function GET(
-    request: Request,
+    _request: Request,
     { params }: { params: Promise<{ userId: string }> },
 ) {
+    let userId: string | undefined;
+
     try {
-        const { userId } = await params;
+        ({ userId } = await params);
 
         if (!userId) {
             return NextResponse.json(
@@ -21,7 +24,30 @@ export async function GET(
             );
         }
 
-        const profile = await getUserProfile(userId);
+        const [profileResult, statusResult] = await Promise.allSettled([
+            getUserProfile(userId),
+            getUserStatus(userId),
+        ]);
+
+        if (profileResult.status === "rejected") {
+            throw profileResult.reason;
+        }
+
+        const profile = profileResult.value;
+        const status =
+            statusResult.status === "fulfilled"
+                ? statusResult.value
+                : undefined;
+
+        if (statusResult.status === "rejected") {
+            logger.warn("Failed to fetch user status for profile response", {
+                error:
+                    statusResult.reason instanceof Error
+                        ? statusResult.reason.message
+                        : String(statusResult.reason),
+                userId,
+            });
+        }
 
         if (!profile) {
             return NextResponse.json(
@@ -30,13 +56,19 @@ export async function GET(
             );
         }
 
-        const status = await getUserStatus(userId);
-
         const profileBackgroundUrl = profile.profileBackgroundImageFileId
             ? getProfileBackgroundUrl(profile.profileBackgroundImageFileId)
             : undefined;
-
-        const avatarFrameUrl = await getAvatarFrameUrlForProfile(profile);
+        let avatarFrameUrl: string | undefined;
+        try {
+            avatarFrameUrl = await getAvatarFrameUrlForProfile(profile);
+        } catch (error) {
+            logger.warn("Failed to resolve avatar frame URL for profile", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+            });
+            avatarFrameUrl = undefined;
+        }
 
         return NextResponse.json({
             userId: profile.userId,
@@ -63,7 +95,11 @@ export async function GET(
                   }
                 : undefined,
         });
-    } catch {
+    } catch (err) {
+        logger.error("Failed to fetch user profile", {
+            error: err instanceof Error ? err.message : String(err),
+            userId,
+        });
         return NextResponse.json(
             { error: "Failed to fetch user profile" },
             { status: 500 },

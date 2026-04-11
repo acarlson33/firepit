@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.7.0] - 2026-03-29
 
+### ⚠️ Breaking Changes
+
+- **Node.js 20.9.0 minimum** - Enforced via the engines field in package.json.
+- **Next.js 16.2.x** - Updated Next.js ecosystem packages; align your app/runtime and CI accordingly.
+- **Appwrite TablesDB** - Added TablesDB client for transaction support (notably report resolution flow), which may affect Appwrite API behavior assumptions in custom integrations.
+
 ### ✨ Features
 
 #### Profile Backgrounds and Avatar Frames
 
-- **Custom profile backgrounds** - Solid colors, gradients, or uploaded images with cooldown enforcement
+- **Custom profile backgrounds** - Solid colors, gradients, or uploaded images with a 24-hour cooldown per user
 - **Preset avatar frames** - Seasonal and themed frames with admin-configurable assets
 - **Profile appearance settings** - In-app UI for selecting backgrounds, frames, and previewing changes
 
@@ -27,24 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Safe form validation** - Type-guarded formData parsing with proper fallbacks
 - **Notification settings** - Onboarding now correctly sets notification preferences
 
-#### Build and Infrastructure
+### Build and Infrastructure
 
-- **Next.js 16.2.1** - Updated Next.js ecosystem packages
-- **Node.js 20.9.0 minimum** - Enforced via engines field
-- **Appwrite TablesDB** - Added TablesDB client for transaction support
-- **InputFile.fromBuffer** - Replaced redundant ArrayBuffer→Blob→File conversion in upload routes
-- **AppwriteException** - Proper typed error handling replacing duck-typed error checks
-- **PostHog deduplication** - Removed duplicate PostHog initialization (instrumentation-client.ts + component)
+- **Runtime/tooling alignment** - CI and production runtime checks now enforce the upgraded framework/runtime baseline
+- **Transaction-backed moderation flow** - Report resolution path now uses Appwrite transactions to prevent double-processing
 
-#### Bug Fixes
+### Bug Fixes
 
 - **Profile background clearing** - Fixed clearing not working for color/gradient backgrounds
 - **Background type switching** - Fixed image file ID not being cleared when switching to color/gradient
 - **Moderation toast grammar** - Fixed "Successfully kickned" → "Successfully kicked"
-- **Upload error message leak** - Generic error messages returned to clients instead of raw exceptions
+- **Fixed upload endpoints leaking raw exceptions to clients** - Generic error messages returned to clients instead of raw exceptions
 - **File ownership on delete** - Upload delete endpoints now verify file ownership before deletion
 - **Inbox query fix** - Fixed `Query.equal` on array attribute `participants` → `Query.contains`
-- **PostHog re-initialization** - Removed duplicate init causing "already initialized" warning
+- **PostHog deduplication** - Removed duplicate initialization in `instrumentation-client.ts` and the PostHog provider component to prevent "already initialized" warnings
 
 ## [1.0.0] - 2025-11-02
 
@@ -186,4 +188,5 @@ This is the first release. For future upgrades, see the [DEPLOYMENT.md](./DEPLOY
 - **Discussions**: [GitHub Discussions](https://github.com/acarlson33/firepit/discussions)
 - **Documentation**: See `/docs` folder
 
+[1.7.0]: https://github.com/acarlson33/firepit/releases/tag/v1.7.0
 [1.0.0]: https://github.com/acarlson33/firepit/releases/tag/v1.0.0

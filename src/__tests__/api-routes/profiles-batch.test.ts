@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/profiles/batch/route";
 import { NextRequest } from "next/server";
+import type { MockedFunction } from "vitest";
 
 const { mockGetServerSession, mockGetRelationshipMap, mockListDocuments } =
     vi.hoisted(() => ({
@@ -77,12 +78,26 @@ vi.mock("@/lib/api-compression", () => ({
     compressedResponse: vi.fn((data: unknown) => Response.json(data)),
 }));
 
-import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
+import {
+    getAvatarUrl,
+    getProfileBackgroundUrl,
+    getPredefinedAvatarFrameUrlByPresetId,
+    getExistingPredefinedAvatarFrameIds,
+} from "@/lib/appwrite-profiles";
 
 describe("POST /api/profiles/batch", () => {
-    let mockGetAvatarUrl: any;
+    let mockGetAvatarUrl: MockedFunction<typeof getAvatarUrl>;
+    let mockGetProfileBackgroundUrl: MockedFunction<
+        typeof getProfileBackgroundUrl
+    >;
+    let mockGetPredefinedAvatarFrameUrlByPresetId: MockedFunction<
+        typeof getPredefinedAvatarFrameUrlByPresetId
+    >;
+    let mockGetExistingPredefinedAvatarFrameIds: MockedFunction<
+        typeof getExistingPredefinedAvatarFrameIds
+    >;
 
-    beforeEach(async () => {
+    beforeEach(() => {
         vi.clearAllMocks();
         mockListDocuments.mockReset();
         mockGetServerSession.mockResolvedValue({
@@ -101,12 +116,22 @@ describe("POST /api/profiles/batch", () => {
                     ]),
                 ),
         );
-        const profiles = await import("@/lib/appwrite-profiles");
-        mockGetAvatarUrl = profiles.getAvatarUrl;
+
+        mockGetAvatarUrl = vi.mocked(getAvatarUrl);
+        mockGetProfileBackgroundUrl = vi.mocked(getProfileBackgroundUrl);
+        mockGetPredefinedAvatarFrameUrlByPresetId = vi.mocked(
+            getPredefinedAvatarFrameUrlByPresetId,
+        );
+        mockGetExistingPredefinedAvatarFrameIds = vi.mocked(
+            getExistingPredefinedAvatarFrameIds,
+        );
+
         mockGetAvatarUrl.mockReturnValue("https://example.com/avatar.png");
-        mockListDocuments
-            .mockResolvedValue({ documents: [] })
-            .mockResolvedValue({ documents: [] });
+        mockGetProfileBackgroundUrl.mockReturnValue(undefined);
+        mockGetPredefinedAvatarFrameUrlByPresetId.mockReturnValue(undefined);
+        mockGetExistingPredefinedAvatarFrameIds.mockResolvedValue(new Set());
+
+        mockListDocuments.mockResolvedValue({ documents: [] });
     });
 
     const createRequest = (body: unknown) => {
@@ -287,6 +312,109 @@ describe("POST /api/profiles/batch", () => {
             "https://example.com/avatar/avatar123.png",
         );
         expect(mockGetAvatarUrl).toHaveBeenCalledWith("avatar123");
+    });
+
+    it("should include backgroundUrl when profileBackgroundImageFileId exists", async () => {
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        profileBackgroundImageFileId: "bg-file-123",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
+        mockGetProfileBackgroundUrl.mockReturnValue(
+            "https://example.com/background/bg-file-123.png",
+        );
+
+        const request = createRequest({ userIds: ["user1"] });
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.profiles.user1.profileBackgroundUrl).toBe(
+            "https://example.com/background/bg-file-123.png",
+        );
+        expect(mockGetProfileBackgroundUrl).toHaveBeenCalledWith("bg-file-123");
+    });
+
+    it("should include avatarFrameUrl when predefined frame preset exists", async () => {
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Test User",
+                        avatarFramePreset: "default-star",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
+        mockGetExistingPredefinedAvatarFrameIds.mockResolvedValue(
+            new Set(["default-star"]),
+        );
+        mockGetPredefinedAvatarFrameUrlByPresetId.mockReturnValue(
+            "https://example.com/frames/default-star.png",
+        );
+
+        const request = createRequest({ userIds: ["user1"] });
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.profiles.user1.avatarFrameUrl).toBe(
+            "https://example.com/frames/default-star.png",
+        );
+        expect(mockGetExistingPredefinedAvatarFrameIds).toHaveBeenCalledWith([
+            "default-star",
+        ]);
+        expect(mockGetPredefinedAvatarFrameUrlByPresetId).toHaveBeenCalledWith(
+            "default-star",
+        );
+    });
+
+    it("should omit avatarFrameUrl for non-existing predefined frame IDs", async () => {
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user1",
+                        displayName: "Frame User",
+                        avatarFramePreset: "default-star",
+                    },
+                    {
+                        userId: "user2",
+                        displayName: "Missing Frame User",
+                        avatarFramePreset: "missing-frame",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ documents: [] });
+        mockGetExistingPredefinedAvatarFrameIds.mockResolvedValue(
+            new Set(["default-star"]),
+        );
+        mockGetPredefinedAvatarFrameUrlByPresetId.mockImplementation(
+            (presetId?: string) =>
+                presetId
+                    ? `https://example.com/frames/${presetId}.png`
+                    : undefined,
+        );
+
+        const request = createRequest({ userIds: ["user1", "user2"] });
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.profiles.user1.avatarFrameUrl).toBe(
+            "https://example.com/frames/default-star.png",
+        );
+        expect(data.profiles.user2.avatarFrameUrl).toBeUndefined();
+        expect(
+            mockGetPredefinedAvatarFrameUrlByPresetId,
+        ).not.toHaveBeenCalledWith("missing-frame");
     });
 
     it("should not include avatarUrl when avatarFileId is missing", async () => {

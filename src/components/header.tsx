@@ -85,6 +85,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
     async function handleLogout(e: React.FormEvent) {
         e.preventDefault();
         setLoggingOut(true);
+        let resetAttempted = false;
         try {
             posthog.capture(
                 "user_logged_out",
@@ -102,11 +103,18 @@ export default function Header({ onSearchClick }: HeaderProps) {
             posthog.reset();
             await logoutAction();
             await resetSharedClient();
+            resetAttempted = true;
             setUserData(null);
             router.push("/");
         } catch {
             // Ignore errors, redirect anyway
-            await resetSharedClient();
+            if (!resetAttempted) {
+                try {
+                    await resetSharedClient();
+                } catch {
+                    // Ignore cleanup errors during forced logout fallback.
+                }
+            }
             setUserData(null);
             location.href = "/";
         } finally {

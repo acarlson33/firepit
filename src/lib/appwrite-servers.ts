@@ -37,24 +37,40 @@ async function assertUserServerCreationEnabled(): Promise<void> {
         return;
     }
 
-    let response: Response;
-    let payload: { enabled?: unknown };
-
     try {
-        response = await fetch("/api/feature-flags/allow-user-servers", {
+        const response = await fetch("/api/feature-flags/allow-user-servers", {
             cache: "no-store",
         });
-        payload = (await response.json()) as { enabled?: unknown };
+
+        if (!response.ok) {
+            throw new Error(
+                `Failed to verify server creation policy (${response.status}). Contact an administrator.`,
+            );
+        }
+
+        let payload: unknown;
+        try {
+            payload = await response.json();
+        } catch {
+            throw new Error("Invalid feature flag response JSON");
+        }
+
+        if (!payload || typeof payload !== "object") {
+            throw new Error("Invalid feature flag response payload");
+        }
+
+        const enabled = (payload as { enabled?: unknown }).enabled;
+        if (typeof enabled !== "boolean") {
+            throw new Error("Invalid feature flag response payload");
+        }
+
+        if (enabled !== true) {
+            throw new Error(
+                "Server creation is currently disabled. Contact an administrator.",
+            );
+        }
     } catch (error) {
         throw normalizeError(error);
-    }
-
-    if (!response.ok || payload.enabled !== true) {
-        throw normalizeError(
-            new Error(
-                "Server creation is currently disabled. Contact an administrator.",
-            ),
-        );
     }
 }
 

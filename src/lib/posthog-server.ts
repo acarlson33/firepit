@@ -7,7 +7,7 @@ type PostHogShim = {
 
 function createNoOpShim(): PostHogShim {
     return {
-        capture() {
+        capture(..._args) {
             // no-op: PostHog project API key not configured
         },
         async shutdown() {

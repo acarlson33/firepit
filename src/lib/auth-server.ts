@@ -4,6 +4,20 @@ import { cookies } from "next/headers";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getUserRoles } from "./appwrite-roles";
 
+export type AuthErrorCode = "UNAUTHORIZED" | "FORBIDDEN";
+
+export class AuthError extends Error {
+    readonly code: AuthErrorCode;
+
+    constructor(code: AuthErrorCode, message?: string) {
+        super(
+            message ?? (code === "UNAUTHORIZED" ? "Unauthorized" : "Forbidden"),
+        );
+        this.name = "AuthError";
+        this.code = code;
+    }
+}
+
 /**
  * Server-side auth helper for RSC and server actions.
  * Returns null if no valid session exists.
@@ -31,14 +45,26 @@ export async function getServerSession() {
         const account = new Account(client);
         const user = await account.get().catch(() => null);
 
-        return user && "$id" in user
-            ? (user as {
-                  $id: string;
-                  name: string;
-                  email: string;
-                  $createdAt: string;
-              })
-            : null;
+        if (
+            !user ||
+            typeof user !== "object" ||
+            !("$id" in user) ||
+            typeof user.$id !== "string" ||
+            typeof user.name !== "string" ||
+            typeof user.email !== "string"
+        ) {
+            return null;
+        }
+
+        return {
+            $id: user.$id,
+            name: user.name,
+            email: user.email,
+            $createdAt:
+                "$createdAt" in user && typeof user.$createdAt === "string"
+                    ? user.$createdAt
+                    : undefined,
+        };
     } catch {
         return null;
     }
@@ -56,12 +82,12 @@ export async function checkUserRoles(userId: string) {
 
 /**
  * Require authentication - throws if no session.
- * @returns {Promise<{ $id: string; name: string; email: string; $createdAt: string; }>} The return value.
+ * @returns {Promise<{ $id: string; name: string; email: string; $createdAt?: string; }>} The return value.
  */
 export async function requireAuth() {
     const user = await getServerSession();
     if (!user) {
-        throw new Error("Unauthorized");
+        throw new AuthError("UNAUTHORIZED");
     }
     return user;
 }
@@ -74,7 +100,7 @@ export async function requireAdmin() {
     const user = await requireAuth();
     const roles = await checkUserRoles(user.$id);
     if (!roles.isAdmin) {
-        throw new Error("Forbidden: Admin access required");
+        throw new AuthError("FORBIDDEN", "Forbidden: Admin access required");
     }
     return { user, roles };
 }
@@ -87,7 +113,10 @@ export async function requireModerator() {
     const user = await requireAuth();
     const roles = await checkUserRoles(user.$id);
     if (!roles.isModerator && !roles.isAdmin) {
-        throw new Error("Forbidden: Moderator access required");
+        throw new AuthError(
+            "FORBIDDEN",
+            "Forbidden: Moderator access required",
+        );
     }
     return { user, roles };
 }

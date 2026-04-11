@@ -13,6 +13,7 @@ import {
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,6 +29,47 @@ type InviteManagerDialogProps = {
     onCreateInvite: () => void;
 };
 
+function formatExpiration(expiresAt?: string | null) {
+    if (!expiresAt) {
+        return "Never";
+    }
+    const date = new Date(expiresAt);
+    const now = new Date();
+    const expired = date < now;
+    const formatted = date.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+    return expired ? `Expired ${formatted}` : formatted;
+}
+
+function formatUses(invite: ServerInvite) {
+    if (invite.maxUses === null) {
+        return `${String(invite.currentUses)} uses`;
+    }
+    return `${String(invite.currentUses)}/${String(invite.maxUses)} uses`;
+}
+
+function isExpired(invite: ServerInvite) {
+    if (!invite.expiresAt) {
+        return false;
+    }
+    return new Date(invite.expiresAt) < new Date();
+}
+
+function isMaxedOut(invite: ServerInvite) {
+    if (invite.maxUses === null) {
+        return false;
+    }
+    return invite.currentUses >= invite.maxUses;
+}
+
+function isInactive(invite: ServerInvite) {
+    return isExpired(invite) || isMaxedOut(invite);
+}
+
 export function InviteManagerDialog({
     open,
     onOpenChange,
@@ -36,8 +78,57 @@ export function InviteManagerDialog({
 }: InviteManagerDialogProps) {
     const [invites, setInvites] = useState<ServerInvite[]>([]);
     const [loading, setLoading] = useState(false);
-    const [deleting, setDeleting] = useState<string | null>(null);
+    const [deletingCodes, setDeletingCodes] = useState<Set<string>>(
+        () => new Set(),
+    );
+    const isMountedRef = useRef(true);
     const loadInvitesAbortRef = useRef<AbortController | null>(null);
+    const deleteInviteAbortControllersRef = useRef(
+        new Map<string, AbortController>(),
+    );
+
+    const handleDialogOpenChange = useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen && deleteInviteAbortControllersRef.current.size > 0) {
+                toast.info("Please wait for invite deletions to finish.");
+                return;
+            }
+
+            onOpenChange(nextOpen);
+        },
+        [onOpenChange],
+    );
+
+    const getResponseErrorMessage = useCallback(
+        async (response: Response, fallbackMessage: string) => {
+            const statusPrefix = `${fallbackMessage} (status ${response.status})`;
+
+            try {
+                const body = (await response.clone().json()) as {
+                    error?: string;
+                    message?: string;
+                };
+                const message = body.error ?? body.message;
+                if (message) {
+                    return `${statusPrefix}: ${message}`;
+                }
+            } catch {
+                // Fall through to text parsing.
+            }
+
+            try {
+                const text = (await response.clone().text()).trim();
+                if (text) {
+                    return `${statusPrefix}: ${text}`;
+                }
+            } catch {
+                // Fall through to generic message.
+            }
+
+            return statusPrefix;
+        },
+        [],
+    );
 
     const loadInvites = useCallback(async () => {
         loadInvitesAbortRef.current?.abort();
@@ -50,19 +141,24 @@ export function InviteManagerDialog({
                 signal: controller.signal,
             });
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || "Failed to load invites");
+                throw new Error(
+                    await getResponseErrorMessage(
+                        response,
+                        "Failed to load invites",
+                    ),
+                );
             }
-            const data = await response.json();
+            const data: ServerInvite[] = await response.json();
 
             if (controller.signal.aborted) {
-                return;
+                return false;
             }
 
             setInvites(data);
+            return true;
         } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") {
-                return;
+                return false;
             }
 
             logger.error(
@@ -75,16 +171,21 @@ export function InviteManagerDialog({
                     ? error.message
                     : "Failed to load invites",
             );
+            return false;
         } finally {
-            if (loadInvitesAbortRef.current === controller) {
+            if (
+                isMountedRef.current &&
+                loadInvitesAbortRef.current === controller
+            ) {
                 loadInvitesAbortRef.current = null;
                 setLoading(false);
             }
         }
-    }, [serverId]);
+    }, [getResponseErrorMessage, serverId]);
 
     useEffect(() => {
         return () => {
+            isMountedRef.current = false;
             loadInvitesAbortRef.current?.abort();
             loadInvitesAbortRef.current = null;
         };
@@ -117,22 +218,48 @@ export function InviteManagerDialog({
     };
 
     const deleteInvite = async (code: string) => {
-        setDeleting(code);
+        deleteInviteAbortControllersRef.current.get(code)?.abort();
+        const controller = new AbortController();
+        deleteInviteAbortControllersRef.current.set(code, controller);
+
+        setDeletingCodes((previous) => {
+            const next = new Set(previous);
+            next.add(code);
+            return next;
+        });
+
         try {
             const response = await fetch(`/api/invites/${code}`, {
                 method: "DELETE",
+                signal: controller.signal,
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || "Failed to delete invite");
+                throw new Error(
+                    await getResponseErrorMessage(
+                        response,
+                        "Failed to delete invite",
+                    ),
+                );
             }
 
             toast.success("Invite successfully revoked");
 
-            // Reload invites
-            await loadInvites();
+            const refreshed = await loadInvites();
+            if (!refreshed) {
+                logger.warn("Invite deleted but invite list refresh failed", {
+                    code,
+                    serverId,
+                });
+                toast.error(
+                    "Invite deleted, but failed to refresh invite list",
+                );
+            }
         } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+                return;
+            }
+
             logger.error(
                 "Failed to delete invite",
                 error instanceof Error ? error : String(error),
@@ -144,62 +271,48 @@ export function InviteManagerDialog({
                     : "Failed to delete invite",
             );
         } finally {
-            setDeleting(null);
+            deleteInviteAbortControllersRef.current.delete(code);
+            if (isMountedRef.current) {
+                setDeletingCodes((previous) => {
+                    const next = new Set(previous);
+                    next.delete(code);
+                    return next;
+                });
+            }
         }
-    };
-
-    const formatExpiration = (expiresAt?: string) => {
-        if (!expiresAt) {
-            return "Never";
-        }
-        const date = new Date(expiresAt);
-        const now = new Date();
-        const isExpired = date < now;
-        const formatted = date.toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-        });
-        return isExpired ? `Expired ${formatted}` : formatted;
-    };
-
-    const formatUses = (invite: ServerInvite) => {
-        if (invite.maxUses === null || invite.maxUses === undefined) {
-            return `${String(invite.currentUses)} uses`;
-        }
-        return `${String(invite.currentUses)}/${String(invite.maxUses)} uses`;
-    };
-
-    const isExpired = (invite: ServerInvite) => {
-        if (!invite.expiresAt) {
-            return false;
-        }
-        return new Date(invite.expiresAt) < new Date();
-    };
-
-    const isMaxedOut = (invite: ServerInvite) => {
-        if (invite.maxUses === null || invite.maxUses === undefined) {
-            return false;
-        }
-        return invite.currentUses >= invite.maxUses;
-    };
-
-    const isInactive = (invite: ServerInvite) => {
-        return isExpired(invite) || isMaxedOut(invite);
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleDialogOpenChange}>
             <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>Server Invites</DialogTitle>
+                    <DialogDescription>
+                        Review active invite links, copy them for sharing, or
+                        revoke invites you no longer need.
+                    </DialogDescription>
                 </DialogHeader>
+
+                {deletingCodes.size > 0 && (
+                    <p
+                        aria-atomic="true"
+                        aria-live="polite"
+                        className="text-sm text-muted-foreground"
+                        role="status"
+                    >
+                        Deletions in progress. Please wait before closing this
+                        dialog.
+                    </p>
+                )}
 
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
-                        <div className="flex items-center justify-center py-8">
+                        <div
+                            className="flex items-center justify-center py-8"
+                            role="status"
+                        >
                             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            <span className="sr-only">Loading invites</span>
                         </div>
                     ) : invites.length === 0 ? (
                         <div className="text-center py-8">
@@ -213,103 +326,130 @@ export function InviteManagerDialog({
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {invites.map((invite) => (
-                                <div
-                                    key={invite.$id}
-                                    className={`border rounded-lg p-4 ${
-                                        isInactive(invite)
-                                            ? "opacity-50 bg-muted/30"
-                                            : ""
-                                    }`}
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            {/* Invite Code */}
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                                                    {invite.code}
-                                                </code>
-                                                {isExpired(invite) && (
-                                                    <span className="text-xs text-destructive font-medium">
-                                                        Expired
-                                                    </span>
-                                                )}
-                                                {isMaxedOut(invite) && (
-                                                    <span className="text-xs text-destructive font-medium">
-                                                        Max uses reached
-                                                    </span>
-                                                )}
-                                                {invite.temporary && (
-                                                    <span className="text-xs text-blue-600 font-medium">
-                                                        Temporary
-                                                    </span>
-                                                )}
+                            {invites.map((invite) => {
+                                const isDeleting = deletingCodes.has(
+                                    invite.code,
+                                );
+
+                                return (
+                                    <div
+                                        key={invite.$id}
+                                        className={`border rounded-lg p-4 ${
+                                            isInactive(invite)
+                                                ? "opacity-50 bg-muted/30"
+                                                : ""
+                                        }`}
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1 min-w-0">
+                                                {/* Invite Code */}
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                                                        {invite.code}
+                                                    </code>
+                                                    {isExpired(invite) && (
+                                                        <span className="text-xs text-destructive font-medium">
+                                                            Expired
+                                                        </span>
+                                                    )}
+                                                    {isMaxedOut(invite) && (
+                                                        <span className="text-xs text-destructive font-medium">
+                                                            Max uses reached
+                                                        </span>
+                                                    )}
+                                                    {invite.temporary && (
+                                                        <span className="text-xs text-blue-600 font-medium">
+                                                            Temporary
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Stats */}
+                                                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Users
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            {formatUses(invite)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Clock
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            {formatExpiration(
+                                                                invite.expiresAt,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Calendar
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            Created{" "}
+                                                            {new Date(
+                                                                invite.$createdAt,
+                                                            ).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
 
-                                            {/* Stats */}
-                                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Users className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        {formatUses(invite)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Clock className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        {formatExpiration(
-                                                            invite.expiresAt,
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Calendar className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        Created{" "}
-                                                        {new Date(
-                                                            invite.$createdAt,
-                                                        ).toLocaleDateString()}
-                                                    </span>
-                                                </div>
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        copyInviteLink(
+                                                            invite.code,
+                                                        ).catch(() => {
+                                                            // copyInviteLink already reports failures.
+                                                        });
+                                                    }}
+                                                    aria-label={`Copy invite ${invite.code}`}
+                                                    disabled={isInactive(
+                                                        invite,
+                                                    )}
+                                                >
+                                                    <Copy className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        deleteInvite(
+                                                            invite.code,
+                                                        ).catch(() => {
+                                                            // deleteInvite already reports failures.
+                                                        });
+                                                    }}
+                                                    aria-label={`${
+                                                        isDeleting
+                                                            ? "Deleting"
+                                                            : "Delete"
+                                                    } invite ${invite.code}`}
+                                                    disabled={isDeleting}
+                                                >
+                                                    {isDeleting ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="h-4 w-4" />
+                                                    )}
+                                                </Button>
                                             </div>
-                                        </div>
-
-                                        {/* Actions */}
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    copyInviteLink(invite.code)
-                                                }
-                                                aria-label={`Copy invite ${invite.code}`}
-                                                disabled={isInactive(invite)}
-                                            >
-                                                <Copy className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    deleteInvite(invite.code)
-                                                }
-                                                aria-label={`Delete invite ${invite.code}`}
-                                                disabled={
-                                                    deleting === invite.code
-                                                }
-                                            >
-                                                {deleting === invite.code ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <Trash2 className="h-4 w-4" />
-                                                )}
-                                            </Button>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

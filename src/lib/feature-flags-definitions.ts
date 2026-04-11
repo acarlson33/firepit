@@ -7,22 +7,19 @@ export const FEATURE_FLAGS = {
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
 
+const descriptions = {
+    [FEATURE_FLAGS.ALLOW_USER_SERVERS]:
+        "Allow members to create their own servers",
+    [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
+        "Enable audit logging for moderation actions",
+} satisfies Record<FeatureFlagKey, string>;
+
 /**
  * Returns a human-readable description for known feature flag keys.
- * Key descriptions:
- * - allow_user_servers: Allow members to create their own servers.
- * - enable_audit_logging: Enable audit logging for moderation actions.
  *
  * @param {FeatureFlagKey} key - Feature key to describe.
  * @returns {string} Human-readable description for the provided feature key.
  */
 export function getFeatureFlagDescription(key: FeatureFlagKey): string {
-    const descriptions: Record<FeatureFlagKey, string> = {
-        [FEATURE_FLAGS.ALLOW_USER_SERVERS]:
-            "Allow members to create their own servers",
-        [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
-            "Enable audit logging for moderation actions",
-    };
-
     return descriptions[key];
 }

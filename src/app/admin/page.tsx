@@ -2,14 +2,38 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Database, Hash, MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
+import { createHash } from "node:crypto";
 
 import { getBasicStats } from "@/lib/appwrite-admin";
 import { requireAdmin } from "@/lib/auth-server";
+import { logger } from "@/lib/newrelic-utils";
 
 import { type BackfillResult, backfillServerIds } from "./actions";
 import { ServerManagement } from "./server-management";
 import { VersionCheck } from "./version-check";
 import { FeatureFlags } from "./feature-flags";
+
+const quickLinkClassName =
+    "inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40";
+
+const ADMIN_QUICK_LINKS = [
+    {
+        href: "/moderation",
+        label: "Open Moderation Panel",
+    },
+    {
+        href: "/admin/audit",
+        label: "View Audit Log",
+    },
+    {
+        href: "/admin/preset-frames",
+        label: "Manage Preset Frame Assets",
+    },
+    {
+        href: "/admin/reports",
+        label: "Review User Reports",
+    },
+] as const;
 
 export default async function AdminPage(props: {
     searchParams?: Promise<Record<string, string | string[]>>;
@@ -23,11 +47,25 @@ export default async function AdminPage(props: {
     });
     const stats = await getBasicStats();
     let backfill: BackfillResult | null = null;
-    if (searchParams?.backfill === "1" && user) {
+    let backfillError: string | null = null;
+    const backfillParam = searchParams?.backfill;
+    const shouldRunBackfill = Array.isArray(backfillParam)
+        ? backfillParam.includes("1")
+        : backfillParam === "1";
+
+    if (shouldRunBackfill) {
         try {
             backfill = await backfillServerIds(user.$id);
-        } catch {
-            backfill = null;
+        } catch (error) {
+            const userIdHash = createHash("sha256")
+                .update(user.$id)
+                .digest("hex")
+                .slice(0, 16);
+            logger.error("backfillServerIds failed", {
+                error: error instanceof Error ? error.message : String(error),
+                userIdHash,
+            });
+            backfillError = "Backfill failed. Check server logs for details.";
         }
     }
     return (
@@ -55,34 +93,16 @@ export default async function AdminPage(props: {
                             Quick links
                         </p>
                         <div className="grid gap-2">
-                            <Link
-                                className="inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40"
-                                href="/moderation"
-                            >
-                                <span>Open Moderation Panel</span>
-                                <span aria-hidden="true">→</span>
-                            </Link>
-                            <Link
-                                className="inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40"
-                                href="/admin/audit"
-                            >
-                                <span>View Audit Log</span>
-                                <span aria-hidden="true">→</span>
-                            </Link>
-                            <Link
-                                className="inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40"
-                                href="/admin/preset-frames"
-                            >
-                                <span>Manage Preset Frame Assets</span>
-                                <span aria-hidden="true">→</span>
-                            </Link>
-                            <Link
-                                className="inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40"
-                                href="/admin/reports"
-                            >
-                                <span>Review User Reports</span>
-                                <span aria-hidden="true">→</span>
-                            </Link>
+                            {ADMIN_QUICK_LINKS.map((link) => (
+                                <Link
+                                    className={quickLinkClassName}
+                                    href={link.href}
+                                    key={link.href}
+                                >
+                                    <span>{link.label}</span>
+                                    <span aria-hidden="true">→</span>
+                                </Link>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -151,6 +171,11 @@ export default async function AdminPage(props: {
                         ).
                     </p>
                 )}
+                {backfillError && (
+                    <p className="mt-4 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+                        {backfillError}
+                    </p>
+                )}
             </section>
         </main>
     );
@@ -165,6 +190,10 @@ function StatCard({
     label: string;
     value: number;
 }) {
+    const formattedValue = Number.isFinite(value)
+        ? value.toLocaleString()
+        : String(value);
+
     return (
         <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -172,7 +201,7 @@ function StatCard({
                 {icon}
             </div>
             <p className="mt-4 text-3xl font-semibold text-foreground">
-                {value}
+                {formattedValue}
             </p>
         </div>
     );

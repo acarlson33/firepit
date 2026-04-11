@@ -227,6 +227,7 @@ export async function GET(request: NextRequest) {
                 )
                 .filter((value): value is string => Boolean(value));
             const unreadThreadsByConversationId = new Map<string, number>();
+            let unreadThreadCountsTruncated = false;
             let readStatesByConversationId = new Map<
                 string,
                 Record<string, string>
@@ -252,9 +253,12 @@ export async function GET(request: NextRequest) {
             if (conversations.length > 0 && !threadReadLookupFailed) {
                 try {
                     const pageSize = 500;
+                    const maxThreadParentPages = 20;
                     let cursorAfterId: string | null = null;
+                    let pageCount = 0;
 
-                    while (true) {
+                    while (pageCount < maxThreadParentPages) {
+                        pageCount += 1;
                         const page = await databases.listDocuments(
                             DATABASE_ID,
                             DIRECT_MESSAGES_COLLECTION,
@@ -330,6 +334,18 @@ export async function GET(request: NextRequest) {
                             break;
                         }
                     }
+
+                    if (pageCount === maxThreadParentPages && cursorAfterId) {
+                        unreadThreadCountsTruncated = true;
+                        logger.warn(
+                            "Thread unread aggregation reached pagination cap",
+                            {
+                                conversationCount: conversations.length,
+                                pageSize,
+                                userId: session.$id,
+                            },
+                        );
+                    }
                 } catch {
                     // Skip unread aggregates if the supporting query fails.
                 }
@@ -349,6 +365,7 @@ export async function GET(request: NextRequest) {
                         ...conversation,
                         hasUnread: unreadThreadCount > 0,
                         unreadThreadCount,
+                        unreadThreadCountTruncated: unreadThreadCountsTruncated,
                     };
                 }
 
@@ -360,6 +377,7 @@ export async function GET(request: NextRequest) {
                         ...conversation,
                         hasUnread: unreadThreadCount > 0,
                         unreadThreadCount,
+                        unreadThreadCountTruncated: unreadThreadCountsTruncated,
                     };
                 }
 
@@ -377,6 +395,7 @@ export async function GET(request: NextRequest) {
                         : undefined,
                     relationship,
                     unreadThreadCount,
+                    unreadThreadCountTruncated: unreadThreadCountsTruncated,
                 };
             });
 
@@ -429,43 +448,113 @@ export async function GET(request: NextRequest) {
 
             // Try to find existing conversation
             try {
-                const existing = await databases.listDocuments(
-                    DATABASE_ID,
-                    CONVERSATIONS_COLLECTION,
-                    [
+                type ConversationCandidate = {
+                    $id: string;
+                    $createdAt?: string;
+                    participants?: unknown;
+                    lastMessageAt?: unknown;
+                    [key: string]: unknown;
+                };
+
+                let oneToOne: ConversationCandidate | undefined;
+                let cursorAfter: string | null = null;
+                let existingDocuments: ConversationCandidate[] = [];
+                const pageSize = 100;
+                const maxConversationSearchPages = 20;
+                let searchPageCount = 0;
+                let conversationLookupTruncated = false;
+
+                while (
+                    !oneToOne &&
+                    searchPageCount < maxConversationSearchPages
+                ) {
+                    searchPageCount += 1;
+                    const queries = [
                         Query.contains("participants", user1),
                         Query.contains("participants", user2),
-                        Query.limit(1),
-                    ],
-                );
+                        Query.orderAsc("$createdAt"),
+                        Query.limit(pageSize),
+                    ];
 
-                if (existing.documents.length > 0) {
-                    const doc = existing.documents[0];
+                    if (cursorAfter) {
+                        queries.push(Query.cursorAfter(cursorAfter));
+                    }
+
+                    const existing = await databases.listDocuments(
+                        DATABASE_ID,
+                        CONVERSATIONS_COLLECTION,
+                        queries,
+                    );
+
+                    existingDocuments =
+                        existing.documents as ConversationCandidate[];
+                    oneToOne = existingDocuments.find((doc) => {
+                        const participantsList = doc.participants;
+                        return (
+                            Array.isArray(participantsList) &&
+                            participantsList.length === 2 &&
+                            participantsList.includes(user1) &&
+                            participantsList.includes(user2)
+                        );
+                    });
+
+                    if (oneToOne || existingDocuments.length < pageSize) {
+                        break;
+                    }
+
+                    const lastDocument = existingDocuments.at(-1);
+                    cursorAfter =
+                        typeof lastDocument?.$id === "string"
+                            ? lastDocument.$id
+                            : null;
+
+                    if (!cursorAfter) {
+                        break;
+                    }
+                }
+
+                if (
+                    !oneToOne &&
+                    searchPageCount === maxConversationSearchPages &&
+                    existingDocuments.length === pageSize
+                ) {
+                    conversationLookupTruncated = true;
+                    logger.warn(
+                        "One-to-one conversation lookup reached pagination cap",
+                        {
+                            requesterId: session.$id,
+                            targetUserId,
+                            maxConversationSearchPages,
+                            pageSize,
+                        },
+                    );
+                }
+
+                if (oneToOne) {
                     const relationship = await getRelationshipStatus(
                         session.$id,
                         targetUserId,
                     );
                     return jsonResponse({
                         conversation: {
-                            $id: doc.$id,
-                            participants: doc.participants,
-                            lastMessageAt: doc.lastMessageAt,
-                            $createdAt: doc.$createdAt,
-                            isGroup:
-                                Boolean(
-                                    (doc as Record<string, unknown>).isGroup,
-                                ) ||
-                                (Array.isArray(doc.participants) &&
-                                    doc.participants.length > 2),
-                            name: (doc as Record<string, unknown>).name as
+                            $id: oneToOne.$id,
+                            participants: oneToOne.participants,
+                            lastMessageAt: oneToOne.lastMessageAt,
+                            $createdAt: oneToOne.$createdAt,
+                            isGroup: Boolean(
+                                (oneToOne as Record<string, unknown>).isGroup,
+                            ),
+                            name: (oneToOne as Record<string, unknown>).name as
                                 | string
                                 | undefined,
-                            avatarUrl: (doc as Record<string, unknown>)
+                            avatarUrl: (oneToOne as Record<string, unknown>)
                                 .avatarUrl as string | undefined,
-                            createdBy: (doc as Record<string, unknown>)
+                            createdBy: (oneToOne as Record<string, unknown>)
                                 .createdBy as string | undefined,
-                            participantCount: Array.isArray(doc.participants)
-                                ? (doc.participants as unknown[]).length
+                            participantCount: Array.isArray(
+                                oneToOne.participants,
+                            )
+                                ? (oneToOne.participants as unknown[]).length
                                 : undefined,
                             readOnly: !relationship.canSendDirectMessage,
                             readOnlyReason: getReadOnlyReason(relationship),
@@ -473,8 +562,33 @@ export async function GET(request: NextRequest) {
                         },
                     });
                 }
-            } catch {
-                // Continue to create new conversation if not found
+
+                if (conversationLookupTruncated) {
+                    return jsonResponse(
+                        {
+                            error: "Unable to safely determine whether a direct message already exists. Please try again.",
+                        },
+                        { status: 409 },
+                    );
+                }
+            } catch (error) {
+                logger.error(
+                    "Failed to lookup existing one-to-one conversation",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        requesterId: session.$id,
+                        targetUserId,
+                    },
+                );
+                return jsonResponse(
+                    {
+                        error: "Failed to verify existing direct message conversation",
+                    },
+                    { status: 500 },
+                );
             }
 
             const relationship = await getRelationshipStatus(

@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+    type ChangeEvent,
+    useCallback,
+    useEffect,
+    useId,
+    useRef,
+    useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Palette, Upload, Check, Clock } from "lucide-react";
@@ -27,12 +34,43 @@ type ProfileAppearanceSettingsProps = {
         remainingMs: number;
         remainingHours?: number;
     }>;
-    setFramePresetAction: (frameId: string) => Promise<{ success: boolean }>;
+    setFramePresetAction: (
+        frameId: string | null,
+    ) => Promise<{ success: boolean }>;
     getAvailableFrames: () => Promise<{
         frames: PresetFrame[];
         currentPreset?: string;
     }>;
 };
+
+function determineInitialBackgroundType(params: {
+    profileBackgroundColor?: string;
+    profileBackgroundGradient?: string;
+    profileBackgroundImageFileId?: string;
+}): "none" | "color" | "gradient" | "image" {
+    if (params.profileBackgroundImageFileId) {
+        return "image";
+    }
+    if (params.profileBackgroundGradient) {
+        return "gradient";
+    }
+    if (params.profileBackgroundColor) {
+        return "color";
+    }
+
+    return "none";
+}
+
+function toSafeCssUrl(rawUrl?: string): string | undefined {
+    if (!rawUrl) {
+        return undefined;
+    }
+
+    return encodeURI(rawUrl)
+        .replaceAll('"', "%22")
+        .replaceAll("\n", "")
+        .replaceAll("\r", "");
+}
 
 export function ProfileAppearanceSettings({
     profileBackgroundColor,
@@ -48,22 +86,26 @@ export function ProfileAppearanceSettings({
     setFramePresetAction,
     getAvailableFrames,
 }: ProfileAppearanceSettingsProps) {
+    const colorInputId = useId();
+    const backgroundImageInputId = useId();
+
     const [selectedBackgroundType, setSelectedBackgroundType] = useState<
         "none" | "color" | "gradient" | "image"
     >(
-        profileBackgroundImageFileId
-            ? "image"
-            : profileBackgroundGradient
-              ? "gradient"
-              : profileBackgroundColor
-                ? "color"
-                : "none",
+        determineInitialBackgroundType({
+            profileBackgroundColor,
+            profileBackgroundGradient,
+            profileBackgroundImageFileId,
+        }),
     );
     const [selectedColor, setSelectedColor] = useState(
         profileBackgroundColor || "",
     );
     const [selectedGradient, setSelectedGradient] = useState(
         profileBackgroundGradient || "",
+    );
+    const [activeBackgroundImageUrl, setActiveBackgroundImageUrl] = useState(
+        profileBackgroundImageUrl,
     );
     const [uploadingBackground, setUploadingBackground] = useState(false);
     const [cooldown, setCooldown] = useState<{
@@ -74,8 +116,38 @@ export function ProfileAppearanceSettings({
     const [availableFrames, setAvailableFrames] = useState<PresetFrame[]>([]);
     const [framesLoaded, setFramesLoaded] = useState(false);
     const [avatarPreviewErrored, setAvatarPreviewErrored] = useState(false);
+    const [selectedFramePreset, setSelectedFramePreset] =
+        useState(avatarFramePreset);
     const colorInputRef = useRef<HTMLInputElement>(null);
     const backgroundImageInputRef = useRef<HTMLInputElement>(null);
+    const uploadedBackgroundPreviewRef = useRef<string | null>(null);
+
+    const cooldownRemainingHours =
+        cooldown?.remainingHours ??
+        (cooldown
+            ? Math.max(1, Math.ceil(cooldown.remainingMs / (60 * 60 * 1000)))
+            : 0);
+    const uploadCooldownLabel = `Available in ${cooldownRemainingHours}h`;
+    const uploadButtonLabel = (() => {
+        if (uploadingBackground) {
+            return "Uploading...";
+        }
+
+        if (cooldown && !cooldown.canChange) {
+            return uploadCooldownLabel;
+        }
+
+        return "Upload Image";
+    })();
+
+    function assertActionSucceeded(
+        result: { success: boolean },
+        fallbackMessage: string,
+    ) {
+        if (!result.success) {
+            throw new Error(fallbackMessage);
+        }
+    }
 
     const loadFrames = useCallback(async () => {
         if (framesLoaded) {
@@ -90,18 +162,35 @@ export function ProfileAppearanceSettings({
         }
     }, [framesLoaded, getAvailableFrames]);
 
-    useEffect(() => {
-        void loadFrames();
-    }, [loadFrames]);
-
-    async function loadCooldown() {
+    const loadCooldown = useCallback(async () => {
         try {
             const result = await getBackgroundCooldown();
             setCooldown(result);
         } catch {
             setCooldown({ canChange: true, remainingMs: 0 });
         }
-    }
+    }, [getBackgroundCooldown]);
+
+    useEffect(() => {
+        const frameLoadTask = loadFrames();
+        frameLoadTask.catch(() => {
+            // loadFrames already applies fallback state on failure.
+        });
+
+        const cooldownTask = loadCooldown();
+        cooldownTask.catch(() => {
+            // loadCooldown already applies fallback state on failure.
+        });
+    }, [loadFrames, loadCooldown]);
+
+    useEffect(() => {
+        return () => {
+            if (uploadedBackgroundPreviewRef.current) {
+                URL.revokeObjectURL(uploadedBackgroundPreviewRef.current);
+                uploadedBackgroundPreviewRef.current = null;
+            }
+        };
+    }, []);
 
     function getBackgroundStyle() {
         if (selectedBackgroundType === "color" && selectedColor) {
@@ -110,9 +199,12 @@ export function ProfileAppearanceSettings({
         if (selectedBackgroundType === "gradient" && selectedGradient) {
             return { background: selectedGradient };
         }
-        if (selectedBackgroundType === "image" && profileBackgroundImageUrl) {
+        const encodedBackgroundImageUrl = toSafeCssUrl(
+            activeBackgroundImageUrl,
+        );
+        if (selectedBackgroundType === "image" && encodedBackgroundImageUrl) {
             return {
-                backgroundImage: `url(${profileBackgroundImageUrl})`,
+                backgroundImage: `url("${encodedBackgroundImageUrl}")`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
             };
@@ -127,7 +219,8 @@ export function ProfileAppearanceSettings({
             const formData = new FormData();
             formData.append("backgroundColor", color);
             formData.append("backgroundGradient", "");
-            await updateBackgroundAction(formData);
+            const result = await updateBackgroundAction(formData);
+            assertActionSucceeded(result, "Failed to update background");
             toast.success("Background color updated!");
         } catch (error) {
             toast.error(
@@ -147,7 +240,8 @@ export function ProfileAppearanceSettings({
             const formData = new FormData();
             formData.append("backgroundColor", "");
             formData.append("backgroundGradient", gradient.cssValue);
-            await updateBackgroundAction(formData);
+            const result = await updateBackgroundAction(formData);
+            assertActionSucceeded(result, "Failed to update background");
             toast.success("Background gradient updated!");
         } catch (error) {
             toast.error(
@@ -162,8 +256,14 @@ export function ProfileAppearanceSettings({
         setSelectedBackgroundType("none");
         setSelectedColor("");
         setSelectedGradient("");
+        setActiveBackgroundImageUrl(undefined);
+        if (uploadedBackgroundPreviewRef.current) {
+            URL.revokeObjectURL(uploadedBackgroundPreviewRef.current);
+            uploadedBackgroundPreviewRef.current = null;
+        }
         try {
-            await removeBackgroundAction();
+            const result = await removeBackgroundAction();
+            assertActionSucceeded(result, "Failed to clear background");
             toast.success("Background cleared!");
         } catch (error) {
             toast.error(
@@ -175,7 +275,7 @@ export function ProfileAppearanceSettings({
     }
 
     async function handleBackgroundImageUpload(
-        event: React.ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>,
     ) {
         const file = event.target.files?.[0];
         if (!file) {
@@ -184,7 +284,7 @@ export function ProfileAppearanceSettings({
 
         if (cooldown && !cooldown.canChange) {
             toast.error(
-                `You can change your background again in ${cooldown?.remainingHours} hour(s).`,
+                `You can change your background again in ${cooldownRemainingHours} hour(s).`,
             );
             return;
         }
@@ -206,11 +306,18 @@ export function ProfileAppearanceSettings({
         try {
             const formData = new FormData();
             formData.append("background", file);
-            await uploadBackgroundAction(formData);
+            const result = await uploadBackgroundAction(formData);
+            assertActionSucceeded(result, "Failed to upload background");
+
+            if (uploadedBackgroundPreviewRef.current) {
+                URL.revokeObjectURL(uploadedBackgroundPreviewRef.current);
+            }
+            uploadedBackgroundPreviewRef.current = URL.createObjectURL(file);
+            setActiveBackgroundImageUrl(uploadedBackgroundPreviewRef.current);
+
             setSelectedBackgroundType("image");
             toast.success("Background image uploaded!");
             await loadCooldown();
-            window.location.reload();
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -219,18 +326,22 @@ export function ProfileAppearanceSettings({
             );
         } finally {
             setUploadingBackground(false);
+            event.target.value = "";
         }
     }
 
     async function handleFrameSelect(frameId: string) {
         try {
-            if (avatarFramePreset === frameId) {
-                await setFramePresetAction("");
+            if (selectedFramePreset === frameId) {
+                const result = await setFramePresetAction(null);
+                assertActionSucceeded(result, "Failed to update frame");
+                setSelectedFramePreset(undefined);
             } else {
-                await setFramePresetAction(frameId);
+                const result = await setFramePresetAction(frameId);
+                assertActionSucceeded(result, "Failed to update frame");
+                setSelectedFramePreset(frameId);
             }
             toast.success("Avatar frame updated!");
-            window.location.reload();
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -291,13 +402,16 @@ export function ProfileAppearanceSettings({
 
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <Label className="text-sm font-medium">
-                                Solid Colors
-                            </Label>
+                            <Label>Solid Colors</Label>
                         </div>
                         <div className="flex flex-wrap gap-2">
                             {PRESET_COLORS.map((color) => (
                                 <button
+                                    aria-label={`Set profile color ${color}`}
+                                    aria-pressed={
+                                        selectedBackgroundType === "color" &&
+                                        selectedColor === color
+                                    }
                                     className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${
                                         selectedBackgroundType === "color" &&
                                         selectedColor === color
@@ -305,9 +419,9 @@ export function ProfileAppearanceSettings({
                                             : "border-border"
                                     }`}
                                     key={color}
-                                    onClick={() =>
-                                        void handleColorSelect(color)
-                                    }
+                                    onClick={async () => {
+                                        await handleColorSelect(color);
+                                    }}
                                     style={{ backgroundColor: color }}
                                     title={color}
                                     type="button"
@@ -315,16 +429,21 @@ export function ProfileAppearanceSettings({
                             ))}
                             <input
                                 className="hidden"
+                                id={colorInputId}
                                 onChange={(e) => {
                                     const color = e.target.value;
                                     if (color) {
-                                        void handleColorSelect(color);
+                                        const task = handleColorSelect(color);
+                                        task.catch(() => {
+                                            // handleColorSelect already reports errors.
+                                        });
                                     }
                                 }}
                                 ref={colorInputRef}
                                 type="color"
                             />
                             <button
+                                aria-label="Pick custom profile color"
                                 className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-border bg-muted/50 hover:border-primary"
                                 onClick={() => colorInputRef.current?.click()}
                                 title="Custom color"
@@ -336,10 +455,15 @@ export function ProfileAppearanceSettings({
                     </div>
 
                     <div className="space-y-2">
-                        <Label className="text-sm font-medium">Gradients</Label>
+                        <Label>Gradients</Label>
                         <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                             {PRESET_GRADIENTS.map((gradient) => (
                                 <button
+                                    aria-label={`Set profile gradient ${gradient.name}`}
+                                    aria-pressed={
+                                        selectedBackgroundType === "gradient" &&
+                                        selectedGradient === gradient.cssValue
+                                    }
                                     className={`h-10 w-full rounded-lg border-2 transition-transform hover:scale-105 ${
                                         selectedBackgroundType === "gradient" &&
                                         selectedGradient === gradient.cssValue
@@ -347,9 +471,9 @@ export function ProfileAppearanceSettings({
                                             : "border-border"
                                     }`}
                                     key={gradient.id}
-                                    onClick={() =>
-                                        void handleGradientSelect(gradient)
-                                    }
+                                    onClick={async () => {
+                                        await handleGradientSelect(gradient);
+                                    }}
                                     style={{ background: gradient.cssValue }}
                                     title={gradient.name}
                                     type="button"
@@ -360,21 +484,25 @@ export function ProfileAppearanceSettings({
 
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <Label className="text-sm font-medium">
+                            <Label htmlFor={backgroundImageInputId}>
                                 Custom Image
                             </Label>
                             {cooldown && !cooldown.canChange && (
                                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                     <Clock className="h-3 w-3" />
-                                    Available in {cooldown.remainingHours}h
+                                    {uploadCooldownLabel}
                                 </span>
                             )}
                         </div>
                         <input
                             accept="image/jpeg,image/png,image/webp"
                             className="hidden"
+                            id={backgroundImageInputId}
                             onChange={(e) => {
-                                void handleBackgroundImageUpload(e);
+                                const task = handleBackgroundImageUpload(e);
+                                task.catch(() => {
+                                    // handleBackgroundImageUpload already reports errors.
+                                });
                             }}
                             ref={backgroundImageInputRef}
                             type="file"
@@ -392,11 +520,7 @@ export function ProfileAppearanceSettings({
                             variant="outline"
                         >
                             <Upload className="mr-2 h-4 w-4" />
-                            {uploadingBackground
-                                ? "Uploading..."
-                                : cooldown && !cooldown.canChange
-                                  ? `Available in ${cooldown.remainingHours}h`
-                                  : "Upload Image"}
+                            {uploadButtonLabel}
                         </Button>
                         <p className="text-muted-foreground text-xs">
                             JPG, PNG, or WebP. Max 5MB. You can change once
@@ -412,18 +536,21 @@ export function ProfileAppearanceSettings({
                 <div className="space-y-4">
                     <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
                         {availableFrames.map((frame) => {
-                            const isSelected = avatarFramePreset === frame.id;
+                            const isSelected = selectedFramePreset === frame.id;
+                            const frameImageUrl = toSafeCssUrl(frame.imageUrl);
                             return (
                                 <button
+                                    aria-label={`Select avatar frame ${frame.name}`}
+                                    aria-pressed={isSelected}
                                     className={`group relative flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors ${
                                         isSelected
                                             ? "border-primary bg-primary/10"
                                             : "border-border hover:border-primary/50"
                                     }`}
                                     key={frame.id}
-                                    onClick={() =>
-                                        void handleFrameSelect(frame.id)
-                                    }
+                                    onClick={async () => {
+                                        await handleFrameSelect(frame.id);
+                                    }}
                                     title={frame.name}
                                     type="button"
                                 >
@@ -436,11 +563,11 @@ export function ProfileAppearanceSettings({
                                             borderWidth: "2px",
                                         }}
                                     >
-                                        {frame.imageUrl ? (
+                                        {frameImageUrl ? (
                                             <div
                                                 className="h-8 w-8 bg-center bg-contain bg-no-repeat"
                                                 style={{
-                                                    backgroundImage: `url(${frame.imageUrl})`,
+                                                    backgroundImage: `url("${frameImageUrl}")`,
                                                 }}
                                             />
                                         ) : (
@@ -470,10 +597,23 @@ export function ProfileAppearanceSettings({
 function Label({
     children,
     className,
+    htmlFor,
 }: {
     children: React.ReactNode;
     className?: string;
+    htmlFor?: string;
 }) {
+    if (htmlFor) {
+        return (
+            <label
+                className={`text-sm font-medium ${className || ""}`}
+                htmlFor={htmlFor}
+            >
+                {children}
+            </label>
+        );
+    }
+
     return (
         <span className={`text-sm font-medium ${className || ""}`}>
             {children}

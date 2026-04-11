@@ -118,6 +118,10 @@ export function ServerAdminPanel({
         "ban" | "mute" | "kick" | null
     >(null);
     const [moderationReason, setModerationReason] = useState("");
+    const [moderationReasonTouched, setModerationReasonTouched] =
+        useState(false);
+    const [attemptedModerationSubmit, setAttemptedModerationSubmit] =
+        useState(false);
     const [inviteManagerOpen, setInviteManagerOpen] = useState(false);
     const [createInviteOpen, setCreateInviteOpen] = useState(false);
 
@@ -237,6 +241,8 @@ export function ServerAdminPanel({
     }, [open, loadServerStats, loadMembers, loadRoles, loadAuditLogs]);
 
     const handleModerationAction = async () => {
+        setAttemptedModerationSubmit(true);
+
         if (!selectedMember || !moderationAction) {
             return;
         }
@@ -261,12 +267,20 @@ export function ServerAdminPanel({
             );
 
             if (response.ok) {
+                const actionLabelByVerb = {
+                    ban: "banned",
+                    mute: "muted",
+                    kick: "kicked",
+                } as const;
+                const actionLabel = actionLabelByVerb[moderationAction];
                 toast.success(
-                    `Successfully ${moderationAction === "ban" ? "banned" : moderationAction === "mute" ? "muted" : "kicked"} ${selectedMember.displayName || selectedMember.userName}`,
+                    `Successfully ${actionLabel} ${selectedMember.displayName || selectedMember.userName}`,
                 );
                 setModerationDialogOpen(false);
                 setSelectedMember(null);
                 setModerationReason("");
+                setModerationReasonTouched(false);
+                setAttemptedModerationSubmit(false);
                 void loadMembers();
                 void loadAuditLogs();
                 void loadServerStats();
@@ -289,25 +303,27 @@ export function ServerAdminPanel({
         setSelectedMember(member);
         setModerationAction(action);
         setModerationReason("");
+        setModerationReasonTouched(false);
+        setAttemptedModerationSubmit(false);
         setModerationDialogOpen(true);
     };
 
-    const getMemberHighestRole = (member: MemberData) => {
+    const getMemberRoles = (member: MemberData): Role[] => {
         if (member.roleIds.length === 0) {
-            return null;
+            return [];
         }
 
-        const memberRoles = roles.filter((role) =>
-            member.roleIds.includes(role.$id),
-        );
+        return roles.filter((role) => member.roleIds.includes(role.$id));
+    };
 
+    const getMemberHighestRole = (memberRoles: Role[]) => {
         if (memberRoles.length === 0) {
             return null;
         }
 
         // Sort by position descending to get highest role
         const sorted = [...memberRoles].sort((a, b) => b.position - a.position);
-        return sorted[0];
+        return sorted.at(0) ?? null;
     };
 
     const filteredMembers = members.filter((m) => {
@@ -522,7 +538,7 @@ export function ServerAdminPanel({
                                     onChange={(e) =>
                                         setSearchQuery(e.target.value)
                                     }
-                                    className="flex-1 min-w-50"
+                                    className="flex-1 min-w-52"
                                 />
                                 <div className="flex items-center gap-2">
                                     <Select
@@ -588,144 +604,148 @@ export function ServerAdminPanel({
                                         No members found
                                     </div>
                                 ) : (
-                                    filteredMembers.map((member) => (
-                                        <Card
-                                            key={member.userId}
-                                            className="p-3"
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <Avatar
-                                                        src={member.avatarUrl}
-                                                        alt={
-                                                            member.displayName ||
-                                                            member.userName ||
-                                                            "User"
-                                                        }
-                                                        fallback={
-                                                            member.displayName ||
-                                                            member.userName ||
-                                                            "?"
-                                                        }
-                                                        size="md"
-                                                    />
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="font-medium truncate">
-                                                            {member.displayName ||
+                                    filteredMembers.map((member) => {
+                                        const memberRoles =
+                                            getMemberRoles(member);
+                                        const highestRole =
+                                            getMemberHighestRole(memberRoles);
+                                        const additionalRoleCount =
+                                            memberRoles.length > 0
+                                                ? memberRoles.length - 1
+                                                : 0;
+
+                                        return (
+                                            <Card
+                                                key={member.userId}
+                                                className="p-3"
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <Avatar
+                                                            src={
+                                                                member.avatarUrl
+                                                            }
+                                                            alt={
+                                                                member.displayName ||
                                                                 member.userName ||
-                                                                member.userId}
-                                                        </p>
-                                                        {(() => {
-                                                            const highestRole =
-                                                                getMemberHighestRole(
-                                                                    member,
-                                                                );
-                                                            if (highestRole) {
-                                                                return (
-                                                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                                                        <div
-                                                                            className="h-2 w-2 rounded-full"
-                                                                            style={{
-                                                                                backgroundColor:
-                                                                                    highestRole.color,
-                                                                            }}
-                                                                        />
-                                                                        <span className="text-xs truncate">
+                                                                "User"
+                                                            }
+                                                            fallback={
+                                                                member.displayName ||
+                                                                member.userName ||
+                                                                "?"
+                                                            }
+                                                            size="md"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-medium truncate">
+                                                                {member.displayName ||
+                                                                    member.userName ||
+                                                                    member.userId}
+                                                            </p>
+                                                            {highestRole ? (
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <div
+                                                                        className="h-2 w-2 rounded-full"
+                                                                        style={{
+                                                                            backgroundColor:
+                                                                                highestRole.color,
+                                                                        }}
+                                                                    />
+                                                                    <span className="text-xs truncate">
+                                                                        {
+                                                                            highestRole.name
+                                                                        }
+                                                                    </span>
+                                                                    {additionalRoleCount >
+                                                                        0 && (
+                                                                        <span className="text-xs text-muted-foreground">
+                                                                            +
                                                                             {
-                                                                                highestRole.name
+                                                                                additionalRoleCount
                                                                             }
                                                                         </span>
-                                                                        {member
-                                                                            .roleIds
-                                                                            .length >
-                                                                            1 && (
-                                                                            <span className="text-xs text-muted-foreground">
-                                                                                +
-                                                                                {member
-                                                                                    .roleIds
-                                                                                    .length -
-                                                                                    1}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            }
-                                                            return (
+                                                                    )}
+                                                                </div>
+                                                            ) : (
                                                                 <p className="text-xs text-muted-foreground mt-0.5">
                                                                     No roles
                                                                 </p>
-                                                            );
-                                                        })()}
+                                                            )}
+                                                        </div>
+                                                        {member.isBanned && (
+                                                            <Badge
+                                                                variant="destructive"
+                                                                className="ml-2"
+                                                            >
+                                                                Banned
+                                                            </Badge>
+                                                        )}
+                                                        {member.isMuted && (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="ml-2"
+                                                            >
+                                                                Muted
+                                                            </Badge>
+                                                        )}
                                                     </div>
-                                                    {member.isBanned && (
-                                                        <Badge
-                                                            variant="destructive"
-                                                            className="ml-2"
-                                                        >
-                                                            Banned
-                                                        </Badge>
-                                                    )}
-                                                    {member.isMuted && (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="ml-2"
-                                                        >
-                                                            Muted
-                                                        </Badge>
+                                                    {isOwner && (
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    openModerationDialog(
+                                                                        member,
+                                                                        "mute",
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    member.isMuted
+                                                                }
+                                                            >
+                                                                <UserX className="h-4 w-4 mr-1" />
+                                                                Mute
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    openModerationDialog(
+                                                                        member,
+                                                                        "kick",
+                                                                    )
+                                                                }
+                                                            >
+                                                                <UserX className="h-4 w-4 mr-1" />
+                                                                Kick
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="destructive"
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    openModerationDialog(
+                                                                        member,
+                                                                        "ban",
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    member.isBanned
+                                                                }
+                                                            >
+                                                                <Ban className="h-4 w-4 mr-1" />
+                                                                Ban
+                                                            </Button>
+                                                        </div>
                                                     )}
                                                 </div>
-                                                {isOwner && (
-                                                    <div className="flex gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() =>
-                                                                openModerationDialog(
-                                                                    member,
-                                                                    "mute",
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                member.isMuted
-                                                            }
-                                                        >
-                                                            <UserX className="h-4 w-4 mr-1" />
-                                                            Mute
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() =>
-                                                                openModerationDialog(
-                                                                    member,
-                                                                    "kick",
-                                                                )
-                                                            }
-                                                        >
-                                                            <UserX className="h-4 w-4 mr-1" />
-                                                            Kick
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="destructive"
-                                                            onClick={() =>
-                                                                openModerationDialog(
-                                                                    member,
-                                                                    "ban",
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                member.isBanned
-                                                            }
-                                                        >
-                                                            <Ban className="h-4 w-4 mr-1" />
-                                                            Ban
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </Card>
-                                    ))
+                                            </Card>
+                                        );
+                                    })
                                 )}
                             </div>
                         </TabsContent>
@@ -1042,6 +1062,7 @@ export function ServerAdminPanel({
                     <Button
                         variant="outline"
                         onClick={() => onOpenChange(false)}
+                        type="button"
                     >
                         Close
                     </Button>
@@ -1055,6 +1076,8 @@ export function ServerAdminPanel({
                     setModerationDialogOpen(open);
                     if (!open) {
                         setModerationReason("");
+                        setModerationReasonTouched(false);
+                        setAttemptedModerationSubmit(false);
                     }
                 }}
             >
@@ -1116,14 +1139,16 @@ export function ServerAdminPanel({
                                         : "Enter reason for this action..."
                                 }
                                 value={moderationReason}
-                                onChange={(e) =>
-                                    setModerationReason(e.target.value)
-                                }
+                                onChange={(e) => {
+                                    setModerationReason(e.target.value);
+                                }}
+                                onBlur={() => setModerationReasonTouched(true)}
                                 className="mt-2"
-                                required={moderationAction === "ban"}
                             />
                             {moderationAction === "ban" &&
-                                !moderationReason.trim() && (
+                                !moderationReason.trim() &&
+                                (moderationReasonTouched ||
+                                    attemptedModerationSubmit) && (
                                     <p className="text-xs text-destructive mt-1">
                                         A reason is required when banning a user
                                     </p>
@@ -1135,6 +1160,7 @@ export function ServerAdminPanel({
                         <Button
                             variant="outline"
                             onClick={() => setModerationDialogOpen(false)}
+                            type="button"
                         >
                             Cancel
                         </Button>
@@ -1145,6 +1171,7 @@ export function ServerAdminPanel({
                                     : "default"
                             }
                             onClick={handleModerationAction}
+                            type="button"
                         >
                             Confirm {moderationAction}
                         </Button>

@@ -10,7 +10,7 @@ import {
     getSeasonalFramesForUser,
     isUserEligibleForFrame,
     getEligibleFramesForUser,
-} from "@/lib/preset-frames";
+} from "../lib/preset-frames";
 
 describe("preset-frames", () => {
     describe("getAllPresetFrames", () => {
@@ -49,18 +49,13 @@ describe("preset-frames", () => {
             const frame = getPresetFrameById("nonexistent-frame");
             expect(frame).toBeUndefined();
         });
+    });
 
+    describe("getPresetFrameImageUrl", () => {
         it("returns static image URL for winter 2025", () => {
             const imageUrl = getPresetFrameImageUrl("seasonal-winter-2025");
             expect(imageUrl).toContain("storage/buckets/");
             expect(imageUrl).toContain("/files/seasonal-winter-2025/view");
-        });
-
-        it("returns no storage file id for winter 2025", () => {
-            const storageFileId = getPresetFrameStorageFileId(
-                "seasonal-winter-2025",
-            );
-            expect(storageFileId).toBe("seasonal-winter-2025");
         });
 
         it("returns static image URL for winter 2026", () => {
@@ -68,8 +63,17 @@ describe("preset-frames", () => {
             expect(imageUrl).toContain("storage/buckets/");
             expect(imageUrl).toContain("/files/seasonal-winter-2026/view");
         });
+    });
 
-        it("returns no storage file id for winter 2026", () => {
+    describe("getPresetFrameStorageFileId", () => {
+        it("returns preset storage file id for winter 2025", () => {
+            const storageFileId = getPresetFrameStorageFileId(
+                "seasonal-winter-2025",
+            );
+            expect(storageFileId).toBe("seasonal-winter-2025");
+        });
+
+        it("returns preset storage file id for winter 2026", () => {
             const storageFileId = getPresetFrameStorageFileId(
                 "seasonal-winter-2026",
             );
@@ -95,9 +99,20 @@ describe("preset-frames", () => {
             );
         });
 
-        it("returns frames for user active across multiple seasons", () => {
+        it("returns frames spanning multiple seasons for long-tenured users", () => {
             const frames = getSeasonalFramesForUser("2025-01-01T10:00:00.000Z");
-            expect(frames.length).toBeGreaterThan(0);
+            const seasons = new Set(
+                frames
+                    .map((frame) => frame.season)
+                    .filter(
+                        (season): season is string =>
+                            season !== null && season !== undefined,
+                    ),
+            );
+
+            expect([...seasons]).toEqual(
+                expect.arrayContaining(["spring", "summer", "fall", "winter"]),
+            );
         });
 
         // Use far-future date so no seasonal frame definition can reach it.

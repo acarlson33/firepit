@@ -271,29 +271,30 @@ async function hasAccessToCategory(
         return true;
     }
 
-    let category;
     try {
-        category = await databases.getDocument(
+        const category = await databases.getDocument(
             env.databaseId,
             env.collections.categories,
             categoryId,
         );
-    } catch (error) {
-        // Only treat not-found (404) as permissive; re-throw other errors.
-        if (error instanceof AppwriteException && error.code === 404) {
+
+        const allowedRoleIds = Array.isArray(category.allowedRoleIds)
+            ? (category.allowedRoleIds as string[])
+            : undefined;
+        if (!allowedRoleIds || allowedRoleIds.length === 0) {
             return true;
+        }
+
+        return allowedRoleIds.some((roleId) =>
+            serverAccess.roleIds.includes(roleId),
+        );
+    } catch (error) {
+        // Fail closed on missing category documents to avoid over-permissive access.
+        if (error instanceof AppwriteException && error.code === 404) {
+            return false;
         }
         throw error;
     }
-
-    const allowedRoleIds = category.allowedRoleIds as string[] | undefined;
-    if (!allowedRoleIds || allowedRoleIds.length === 0) {
-        return true;
-    }
-
-    return allowedRoleIds.some((roleId) =>
-        serverAccess.roleIds.includes(roleId),
-    );
 }
 
 /**
@@ -349,7 +350,7 @@ export async function getChannelAccessForUser(
         const categoryAccess = await hasAccessToCategory(
             databases,
             env,
-            channel.categoryId,
+            String(channel.categoryId),
             serverAccess,
         );
         if (!categoryAccess) {

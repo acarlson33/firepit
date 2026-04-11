@@ -144,17 +144,9 @@ export function DeveloperModeSettings() {
                             <div className="flex items-center gap-2 self-start">
                                 <Switch
                                     checked={isVisible}
-                                    aria-disabled={controlsDisabled}
-                                    className={
-                                        controlsDisabled
-                                            ? "pointer-events-none opacity-50"
-                                            : ""
-                                    }
+                                    disabled={controlsDisabled}
                                     id={`navigation-${item}`}
                                     onCheckedChange={(checked) => {
-                                        if (controlsDisabled) {
-                                            return;
-                                        }
                                         updateNavigationPreferences({
                                             [visibilityKey]: checked,
                                         });
@@ -165,6 +157,7 @@ export function DeveloperModeSettings() {
                                     aria-disabled={
                                         controlsDisabled || index === 0
                                     }
+                                    disabled={controlsDisabled || index === 0}
                                     className={
                                         controlsDisabled || index === 0
                                             ? "pointer-events-none opacity-50"
@@ -180,6 +173,10 @@ export function DeveloperModeSettings() {
                                 <Button
                                     aria-label={`Move ${copy.label} later in navigation`}
                                     aria-disabled={
+                                        controlsDisabled ||
+                                        index === orderedItems.length - 1
+                                    }
+                                    disabled={
                                         controlsDisabled ||
                                         index === orderedItems.length - 1
                                     }
@@ -219,19 +216,12 @@ export function DeveloperModeSettings() {
 
                     <Switch
                         checked={navigationPreferences.showAddFriendInHeader}
-                        aria-disabled={controlsDisabled}
-                        className={
-                            controlsDisabled
-                                ? "pointer-events-none opacity-50"
-                                : ""
-                        }
+                        disabled={controlsDisabled}
                         id="header-add-friend"
                         onCheckedChange={(checked) =>
-                            controlsDisabled
-                                ? undefined
-                                : updateNavigationPreferences({
-                                      showAddFriendInHeader: checked,
-                                  })
+                            updateNavigationPreferences({
+                                showAddFriendInHeader: checked,
+                            })
                         }
                     />
                 </div>

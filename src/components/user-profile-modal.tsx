@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
+import { z } from "zod";
 import {
     Dialog,
     DialogContent,
@@ -20,28 +21,33 @@ import { AvatarWithFrame } from "./profile-background";
 import { ReportUserDialog } from "./report-user-dialog";
 import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 import { getProfileBackgroundStyle } from "@/lib/profile-utils";
+import { logger } from "@/lib/client-logger";
 
-type UserProfile = {
-    userId: string;
-    displayName?: string;
-    bio?: string;
-    pronouns?: string;
-    location?: string;
-    website?: string;
-    avatarFileId?: string;
-    avatarUrl?: string;
-    profileBackgroundColor?: string;
-    profileBackgroundGradient?: string;
-    profileBackgroundImageFileId?: string;
-    profileBackgroundUrl?: string;
-    avatarFramePreset?: string;
-    avatarFrameUrl?: string;
-    status?: {
-        status: "online" | "away" | "busy" | "offline";
-        customMessage?: string;
-        lastSeenAt: string;
-    };
-};
+const UserStatusSchema = z.object({
+    status: z.enum(["online", "away", "busy", "offline"]),
+    customMessage: z.string().optional().nullable(),
+    lastSeenAt: z.string(),
+});
+
+const UserProfileSchema = z.object({
+    userId: z.string(),
+    displayName: z.string().optional().nullable(),
+    bio: z.string().optional().nullable(),
+    pronouns: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    website: z.string().optional().nullable(),
+    avatarFileId: z.string().optional().nullable(),
+    avatarUrl: z.string().optional().nullable(),
+    profileBackgroundColor: z.string().optional().nullable(),
+    profileBackgroundGradient: z.string().optional().nullable(),
+    profileBackgroundImageFileId: z.string().optional().nullable(),
+    profileBackgroundUrl: z.string().optional().nullable(),
+    avatarFramePreset: z.string().optional().nullable(),
+    avatarFrameUrl: z.string().optional().nullable(),
+    status: UserStatusSchema.optional(),
+});
+
+type UserProfile = z.infer<typeof UserProfileSchema>;
 
 type UserProfileModalProps = {
     userId: string;
@@ -52,6 +58,10 @@ type UserProfileModalProps = {
     onOpenChange: (open: boolean) => void;
     onStartDM?: (conversationId: string) => void;
 };
+
+function isUserProfile(value: unknown): value is UserProfile {
+    return UserProfileSchema.safeParse(value).success;
+}
 
 function getStatusColor(
     status: NonNullable<UserProfile["status"]>["status"],
@@ -66,6 +76,23 @@ function getStatusColor(
         default:
             return "bg-gray-400";
     }
+}
+
+function getSafeUrl(candidateUrl: string | null | undefined): string | null {
+    if (!candidateUrl) {
+        return null;
+    }
+
+    try {
+        const parsed = new URL(candidateUrl);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            return parsed.toString();
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
 }
 
 export function UserProfileModal({
@@ -89,13 +116,18 @@ export function UserProfileModal({
             return;
         }
 
+        let cancelled = false;
+
         const fetchProfile = async () => {
             setLoading(true);
             setError(null);
 
             const cached = profilePrefetchPool.getCachedProfile(userId);
-            if (cached) {
-                setProfile(cached as UserProfile);
+            if (isUserProfile(cached) && cached.userId === userId) {
+                if (cancelled) {
+                    return;
+                }
+                setProfile(cached);
                 setLoading(false);
                 return;
             }
@@ -107,16 +139,43 @@ export function UserProfileModal({
                     throw new Error("Failed to fetch profile");
                 }
 
-                const data = (await response.json()) as UserProfile;
+                const data: unknown = await response.json();
+                if (cancelled) {
+                    return;
+                }
+
+                if (!isUserProfile(data)) {
+                    logger.error(
+                        "Invalid profile response payload",
+                        "Response failed UserProfile guard",
+                        { userId },
+                    );
+                    setError("Unable to load profile");
+                    setProfile(null);
+                    return;
+                }
+
                 setProfile(data);
             } catch {
+                if (cancelled) {
+                    return;
+                }
                 setError("Unable to load profile");
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         };
 
-        void fetchProfile();
+        const profileTask = fetchProfile();
+        profileTask.catch(() => {
+            // fetchProfile already handles errors and state updates.
+        });
+
+        return () => {
+            cancelled = true;
+        };
     }, [userId, open]);
 
     const displayName =
@@ -124,6 +183,7 @@ export function UserProfileModal({
         initialDisplayName ||
         userName ||
         "Unknown User";
+    const safeWebsiteUrl = getSafeUrl(profile?.website);
     const avatarUrl = profile?.avatarUrl || initialAvatarUrl;
 
     const cardStyle = getProfileBackgroundStyle({
@@ -132,7 +192,7 @@ export function UserProfileModal({
         color: profile?.profileBackgroundColor,
     });
 
-    const hasBackground = Boolean(cardStyle);
+    const hasBackground = cardStyle !== undefined;
 
     async function handleStartDM() {
         if (!onStartDM) {
@@ -203,16 +263,23 @@ export function UserProfileModal({
                             <div className="absolute inset-0 bg-black/40" />
                         )}
                         <div
-                            className={`relative ${hasBackground ? "z-10" : ""} space-y-4 p-6`}
+                            className={
+                                hasBackground
+                                    ? "relative z-10 space-y-4 p-6"
+                                    : "relative space-y-4 p-6"
+                            }
                         >
                             <div className="rounded-lg bg-black/20 backdrop-blur-sm p-4">
                                 {/* Avatar and Name */}
                                 <div className="flex items-center gap-4">
                                     <AvatarWithFrame
                                         avatarFramePreset={
-                                            profile?.avatarFramePreset
+                                            profile?.avatarFramePreset ??
+                                            undefined
                                         }
-                                        avatarFrameUrl={profile?.avatarFrameUrl}
+                                        avatarFrameUrl={
+                                            profile?.avatarFrameUrl ?? undefined
+                                        }
                                         avatarUrl={avatarUrl}
                                         displayName={displayName}
                                         size="lg"
@@ -278,14 +345,14 @@ export function UserProfileModal({
                                                     </span>
                                                 </div>
                                             )}
-                                            {profile.website && (
+                                            {safeWebsiteUrl && (
                                                 <div className="flex gap-2">
                                                     <span className="text-foreground/80">
                                                         Website:
                                                     </span>
                                                     <a
                                                         className="text-primary hover:underline"
-                                                        href={profile.website}
+                                                        href={safeWebsiteUrl}
                                                         rel="noopener noreferrer"
                                                         target="_blank"
                                                     >
@@ -304,12 +371,15 @@ export function UserProfileModal({
                                             className="w-full"
                                             disabled={
                                                 startingDM ||
-                                                Boolean(
-                                                    relationship &&
-                                                    !relationship.canSendDirectMessage,
-                                                )
+                                                relationship?.canSendDirectMessage ===
+                                                    false
                                             }
-                                            onClick={() => void handleStartDM()}
+                                            onClick={() => {
+                                                const task = handleStartDM();
+                                                task.catch(() => {
+                                                    // handleStartDM already handles errors.
+                                                });
+                                            }}
                                             type="button"
                                             variant="default"
                                         >

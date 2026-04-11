@@ -1,6 +1,10 @@
-export type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
+import { logger } from "@/lib/client-logger";
+
+export type RealtimeSubscription =
+    | {
+          close: () => Promise<void> | void;
+      }
+    | (() => void);
 
 type ScopedConsoleErrorPredicate = (args: unknown[], marker: string) => boolean;
 type ConsoleErrorHandler = typeof console.error;
@@ -10,11 +14,31 @@ type ActiveSuppression = {
     shouldSuppress: ScopedConsoleErrorPredicate;
 };
 
-const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+let subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
 const activeSuppressions: ActiveSuppression[] = [];
 let subscriptionMarkerCounter = 0;
 let activeSuppressionCounter = 0;
 let originalConsoleError: ConsoleErrorHandler | null = null;
+
+const shouldExposeTestingReset = process.env.NODE_ENV === "test";
+
+function resetInternalState() {
+    subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+    activeSuppressions.length = 0;
+    subscriptionMarkerCounter = 0;
+    activeSuppressionCounter = 0;
+
+    if (originalConsoleError) {
+        // biome-ignore lint/suspicious/noConsole: Restoring captured console.error during test reset.
+        console.error = originalConsoleError;
+    }
+
+    originalConsoleError = null;
+}
+
+export const resetForTesting = shouldExposeTestingReset
+    ? resetInternalState
+    : undefined;
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
@@ -32,6 +56,20 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     // Firefox/Appwrite can log this on intentional subscription churn during route switches.
     if (
         firstArg.includes("was interrupted while the page was loading") &&
+        firstArg.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    if (
+        firstArg.toLowerCase().includes("can’t establish a connection") &&
+        firstArg.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    if (
+        firstArg.toLowerCase().includes("can't establish a connection") &&
         firstArg.includes("/v1/realtime")
     ) {
         return true;
@@ -63,7 +101,8 @@ async function runWithScopedConsoleErrorSuppressed<T>(
 
     if (!originalConsoleError) {
         // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
-        originalConsoleError = console.error;
+        const capturedConsoleError = console.error;
+        originalConsoleError = capturedConsoleError;
         // biome-ignore lint/suspicious/noConsole: Intentionally scoped interception for explicit realtime teardown.
         console.error = (...args: unknown[]) => {
             const shouldSuppressError = activeSuppressions.some((suppression) =>
@@ -73,7 +112,7 @@ async function runWithScopedConsoleErrorSuppressed<T>(
                 return;
             }
 
-            originalConsoleError?.(...args);
+            capturedConsoleError(...args);
         };
     }
 
@@ -146,16 +185,34 @@ export async function closeSubscriptionSafely(
     }
 
     const marker = getSubscriptionMarker(subscription);
+    const close =
+        typeof subscription === "function"
+            ? subscription
+            : subscription.close.bind(subscription);
 
     try {
         await withSuppressedRealtimeCloseErrors(
-            async () => subscription.close(),
+            async () => {
+                await Promise.resolve(close());
+            },
             {
                 marker,
                 shouldSuppress: defaultSuppressionPredicate,
             },
         );
-    } catch {
+    } catch (error) {
+        if (process.env.NODE_ENV !== "production") {
+            logger.warn("Realtime subscription close failed", {
+                marker,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        } else {
+            logger.info("Realtime subscription close failed (prod)", {
+                marker,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
         // Ignore teardown errors when websocket is already disconnected.
     }
 }

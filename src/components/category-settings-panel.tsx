@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ArrowDown,
     ArrowUp,
@@ -83,16 +83,13 @@ export function CategorySettingsPanel({
         null,
     );
     const [editingName, setEditingName] = useState("");
-    const [pendingCategoryIds, setPendingCategoryIds] = useState<string[]>([]);
-    const [pendingChannelIds, setPendingChannelIds] = useState<string[]>([]);
+    const [pendingCategoryCounts, setPendingCategoryCounts] = useState<
+        Record<string, number>
+    >({});
+    const [pendingChannelCounts, setPendingChannelCounts] = useState<
+        Record<string, number>
+    >({});
     const loadRequestId = useRef(0);
-
-    useEffect(() => {
-        if (!serverId) {
-            return;
-        }
-        void loadData();
-    }, [serverId]);
 
     const uncategorizedChannels = useMemo(
         () => sortChannels(channels.filter((channel) => !channel.categoryId)),
@@ -105,78 +102,141 @@ export function CategorySettingsPanel({
     );
 
     function setCategoryPending(categoryIds: string[], pending: boolean) {
-        setPendingCategoryIds((currentValue) => {
-            if (pending) {
-                return [...new Set([...currentValue, ...categoryIds])];
+        setPendingCategoryCounts((currentValue) => {
+            const nextValue = { ...currentValue };
+
+            for (const categoryId of categoryIds) {
+                if (pending) {
+                    nextValue[categoryId] = (nextValue[categoryId] ?? 0) + 1;
+                    continue;
+                }
+
+                const currentCount = nextValue[categoryId] ?? 0;
+                if (currentCount <= 1) {
+                    delete nextValue[categoryId];
+                } else {
+                    nextValue[categoryId] = currentCount - 1;
+                }
             }
 
-            return currentValue.filter((value) => !categoryIds.includes(value));
+            return nextValue;
         });
     }
 
     function setChannelPending(channelIds: string[], pending: boolean) {
-        setPendingChannelIds((currentValue) => {
-            if (pending) {
-                return [...new Set([...currentValue, ...channelIds])];
+        setPendingChannelCounts((currentValue) => {
+            const nextValue = { ...currentValue };
+
+            for (const channelId of channelIds) {
+                if (pending) {
+                    nextValue[channelId] = (nextValue[channelId] ?? 0) + 1;
+                    continue;
+                }
+
+                const currentCount = nextValue[channelId] ?? 0;
+                if (currentCount <= 1) {
+                    delete nextValue[channelId];
+                } else {
+                    nextValue[channelId] = currentCount - 1;
+                }
             }
 
-            return currentValue.filter((value) => !channelIds.includes(value));
+            return nextValue;
         });
     }
 
-    async function loadData(options?: { silent?: boolean }) {
-        const requestId = ++loadRequestId.current;
-        if (options?.silent) {
-            setRefreshing(true);
-        } else {
-            setLoading(true);
-        }
+    function isCategoryPending(categoryId: string) {
+        return (pendingCategoryCounts[categoryId] ?? 0) > 0;
+    }
 
-        try {
-            const [categoriesResponse, channelsResponse, rolesResponse] =
-                await Promise.all([
-                    fetch(`/api/categories?serverId=${serverId}`),
-                    fetch(`/api/channels?serverId=${serverId}&limit=100`),
-                    fetch(`/api/roles?serverId=${serverId}`),
-                ]);
+    function isChannelPending(channelId: string) {
+        return (pendingChannelCounts[channelId] ?? 0) > 0;
+    }
 
-            if (
-                !categoriesResponse.ok ||
-                !channelsResponse.ok ||
-                !rolesResponse.ok
-            ) {
-                throw new Error("Failed to load categories");
+    const loadData = useCallback(
+        async (options?: { silent?: boolean }) => {
+            const requestId = ++loadRequestId.current;
+            if (options?.silent) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
             }
 
-            const categoriesData =
-                (await categoriesResponse.json()) as CategoriesResponse;
-            const channelsData =
-                (await channelsResponse.json()) as ChannelsResponse;
-            const rolesData = (await rolesResponse.json()) as RolesResponse;
+            try {
+                const [categoriesResponse, channelsResponse, rolesResponse] =
+                    await Promise.all([
+                        fetch(`/api/categories?serverId=${serverId}`),
+                        fetch(`/api/channels?serverId=${serverId}&limit=100`),
+                        fetch(`/api/roles?serverId=${serverId}`),
+                    ]);
 
-            if (requestId !== loadRequestId.current) {
-                return;
-            }
+                if (
+                    !categoriesResponse.ok ||
+                    !channelsResponse.ok ||
+                    !rolesResponse.ok
+                ) {
+                    const failedResources: string[] = [];
+                    if (!categoriesResponse.ok) {
+                        failedResources.push(
+                            `categories (${categoriesResponse.status})`,
+                        );
+                    }
+                    if (!channelsResponse.ok) {
+                        failedResources.push(
+                            `channels (${channelsResponse.status})`,
+                        );
+                    }
+                    if (!rolesResponse.ok) {
+                        failedResources.push(`roles (${rolesResponse.status})`);
+                    }
 
-            setCategories(sortCategories(categoriesData.categories));
-            setChannels(sortChannels(channelsData.channels));
-            setRoles(rolesData.roles);
-        } catch (error) {
-            toast.error(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load categories",
-            );
-        } finally {
-            if (requestId === loadRequestId.current) {
-                if (options?.silent) {
-                    setRefreshing(false);
-                } else {
-                    setLoading(false);
+                    throw new Error(
+                        `Failed to load resources: ${failedResources.join(", ")}`,
+                    );
+                }
+
+                const categoriesData =
+                    (await categoriesResponse.json()) as CategoriesResponse;
+                const channelsData =
+                    (await channelsResponse.json()) as ChannelsResponse;
+                const rolesData = (await rolesResponse.json()) as RolesResponse;
+
+                if (requestId !== loadRequestId.current) {
+                    return;
+                }
+
+                setCategories(sortCategories(categoriesData.categories));
+                setChannels(sortChannels(channelsData.channels));
+                setRoles(rolesData.roles);
+            } catch (error) {
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to load categories",
+                );
+            } finally {
+                if (requestId === loadRequestId.current) {
+                    if (options?.silent) {
+                        setRefreshing(false);
+                    } else {
+                        setLoading(false);
+                    }
                 }
             }
+        },
+        [serverId],
+    );
+
+    useEffect(() => {
+        if (!serverId) {
+            return;
         }
-    }
+
+        const task = loadData();
+        task.catch(() => {
+            // Errors are already surfaced in loadData.
+        });
+    }, [serverId, loadData]);
 
     function notifySidebar() {
         apiCache.clear(`categories:${serverId}:initial`);
@@ -187,7 +247,10 @@ export function CategorySettingsPanel({
 
     function refreshAfterMutation() {
         notifySidebar();
-        void loadData({ silent: true });
+        const task = loadData({ silent: true });
+        task.catch(() => {
+            // Errors are already surfaced in loadData.
+        });
     }
 
     function getChannelsForCategory(categoryId: string) {
@@ -655,179 +718,203 @@ export function CategorySettingsPanel({
                             No categories created yet.
                         </p>
                     ) : (
-                        categories.map((category) => (
-                            <div
-                                key={category.$id}
-                                className="space-y-3 rounded-lg border border-border/60 p-3"
-                            >
-                                <div className="flex items-center gap-2">
-                                    {editingCategoryId === category.$id ? (
-                                        <Input
-                                            onChange={(event) =>
-                                                setEditingName(
-                                                    event.target.value,
-                                                )
-                                            }
-                                            value={editingName}
-                                        />
-                                    ) : (
-                                        <div className="flex-1 font-medium">
-                                            {category.name}
-                                        </div>
-                                    )}
-                                    {pendingCategoryIds.includes(
-                                        category.$id,
-                                    ) && (
-                                        <span className="text-xs text-muted-foreground">
-                                            Saving...
-                                        </span>
-                                    )}
-                                    <Button
-                                        disabled={pendingCategoryIds.includes(
-                                            category.$id,
+                        categories.map((category) => {
+                            const filteredRoles = sortedRoles.filter((role) =>
+                                category.allowedRoleIds?.includes(role.$id),
+                            );
+
+                            const visibilityLabel = (() => {
+                                if (
+                                    !category.allowedRoleIds ||
+                                    category.allowedRoleIds.length === 0
+                                ) {
+                                    return "Visible to all members";
+                                }
+
+                                if (filteredRoles.length === 0) {
+                                    return "Restricted (roles not found)";
+                                }
+
+                                return `Restricted to ${filteredRoles
+                                    .map((role) => role.name || "a role")
+                                    .join(", ")}`;
+                            })();
+
+                            return (
+                                <div
+                                    key={category.$id}
+                                    className="space-y-3 rounded-lg border border-border/60 p-3"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        {editingCategoryId === category.$id ? (
+                                            <Input
+                                                onChange={(event) =>
+                                                    setEditingName(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                value={editingName}
+                                            />
+                                        ) : (
+                                            <div className="flex-1 font-medium">
+                                                {category.name}
+                                            </div>
                                         )}
-                                        onClick={() =>
-                                            void moveCategory(category.$id, -1)
-                                        }
-                                        size="icon"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        <ArrowUp className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                        disabled={pendingCategoryIds.includes(
-                                            category.$id,
+                                        {isCategoryPending(category.$id) && (
+                                            <span className="text-xs text-muted-foreground">
+                                                Saving...
+                                            </span>
                                         )}
-                                        onClick={() =>
-                                            void moveCategory(category.$id, 1)
-                                        }
-                                        size="icon"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        <ArrowDown className="h-4 w-4" />
-                                    </Button>
-                                    {editingCategoryId === category.$id ? (
                                         <Button
-                                            disabled={
-                                                pendingCategoryIds.includes(
-                                                    category.$id,
-                                                ) || !editingName.trim()
-                                            }
-                                            onClick={() =>
-                                                void saveCategoryName(
-                                                    category.$id,
-                                                )
-                                            }
-                                            size="icon"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Save className="h-4 w-4" />
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            disabled={pendingCategoryIds.includes(
+                                            disabled={isCategoryPending(
                                                 category.$id,
                                             )}
-                                            onClick={() => {
-                                                setEditingCategoryId(
+                                            onClick={() =>
+                                                void moveCategory(
                                                     category.$id,
-                                                );
-                                                setEditingName(category.name);
-                                            }}
+                                                    -1,
+                                                )
+                                            }
                                             size="icon"
                                             type="button"
                                             variant="ghost"
                                         >
-                                            <Pencil className="h-4 w-4" />
+                                            <ArrowUp className="h-4 w-4" />
                                         </Button>
-                                    )}
-                                    <Button
-                                        disabled={pendingCategoryIds.includes(
-                                            category.$id,
+                                        <Button
+                                            disabled={isCategoryPending(
+                                                category.$id,
+                                            )}
+                                            onClick={() =>
+                                                void moveCategory(
+                                                    category.$id,
+                                                    1,
+                                                )
+                                            }
+                                            size="icon"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <ArrowDown className="h-4 w-4" />
+                                        </Button>
+                                        {editingCategoryId === category.$id ? (
+                                            <Button
+                                                disabled={
+                                                    isCategoryPending(
+                                                        category.$id,
+                                                    ) || !editingName.trim()
+                                                }
+                                                onClick={() =>
+                                                    void saveCategoryName(
+                                                        category.$id,
+                                                    )
+                                                }
+                                                size="icon"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                <Save className="h-4 w-4" />
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                disabled={isCategoryPending(
+                                                    category.$id,
+                                                )}
+                                                onClick={() => {
+                                                    setEditingCategoryId(
+                                                        category.$id,
+                                                    );
+                                                    setEditingName(
+                                                        category.name,
+                                                    );
+                                                }}
+                                                size="icon"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                            </Button>
                                         )}
-                                        onClick={() =>
-                                            void deleteCategory(category.$id)
-                                        }
-                                        size="icon"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                                {sortedRoles.length > 0 && (
-                                    <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2">
-                                        <Shield className="h-4 w-4 text-muted-foreground" />
-                                        <div className="flex flex-wrap gap-1">
-                                            {sortedRoles.map((role) => {
-                                                const isSelected =
-                                                    category.allowedRoleIds?.includes(
-                                                        role.$id,
-                                                    ) ?? false;
-                                                return (
-                                                    <button
-                                                        disabled={pendingCategoryIds.includes(
-                                                            category.$id,
-                                                        )}
-                                                        key={role.$id}
-                                                        onClick={() => {
-                                                            const current =
-                                                                category.allowedRoleIds ||
-                                                                [];
-                                                            const newAllowed =
-                                                                isSelected
-                                                                    ? current.filter(
-                                                                          (
-                                                                              id,
-                                                                          ) =>
-                                                                              id !==
-                                                                              role.$id,
-                                                                      )
-                                                                    : [
-                                                                          ...current,
-                                                                          role.$id,
-                                                                      ];
-                                                            void saveAllowedRoles(
-                                                                category.$id,
-                                                                newAllowed,
-                                                            );
-                                                        }}
-                                                        type="button"
-                                                        className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
-                                                            isSelected
-                                                                ? "border-primary bg-primary/10 text-primary"
-                                                                : "border-border bg-background text-muted-foreground hover:border-primary/50"
-                                                        }`}
-                                                    >
-                                                        {role.name}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                        <span className="ml-auto text-xs text-muted-foreground">
-                                            {category.allowedRoleIds &&
-                                            category.allowedRoleIds.length > 0
-                                                ? `Restricted to ${category.allowedRoleIds
-                                                      .map(
-                                                          (id) =>
-                                                              roles.find(
-                                                                  (r) =>
-                                                                      r.$id ===
-                                                                      id,
-                                                              )?.name ||
-                                                              "a role",
-                                                      )
-                                                      .join(", ")}`
-                                                : "Visible to all members"}
-                                        </span>
+                                        <Button
+                                            disabled={isCategoryPending(
+                                                category.$id,
+                                            )}
+                                            onClick={() =>
+                                                void deleteCategory(
+                                                    category.$id,
+                                                )
+                                            }
+                                            size="icon"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
                                     </div>
-                                )}
-                                <div className="space-y-2">
-                                    {getChannelsForCategory(category.$id).map(
-                                        (channel) => (
+                                    {sortedRoles.length > 0 && (
+                                        <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2">
+                                            <Shield
+                                                aria-hidden="true"
+                                                className="h-4 w-4 text-muted-foreground"
+                                            />
+                                            <div className="flex flex-wrap gap-1">
+                                                {sortedRoles.map((role) => {
+                                                    const isSelected =
+                                                        category.allowedRoleIds?.includes(
+                                                            role.$id,
+                                                        ) ?? false;
+                                                    return (
+                                                        <button
+                                                            aria-pressed={
+                                                                isSelected
+                                                            }
+                                                            disabled={isCategoryPending(
+                                                                category.$id,
+                                                            )}
+                                                            key={role.$id}
+                                                            onClick={() => {
+                                                                const current =
+                                                                    category.allowedRoleIds ||
+                                                                    [];
+                                                                const newAllowed =
+                                                                    isSelected
+                                                                        ? current.filter(
+                                                                              (
+                                                                                  id,
+                                                                              ) =>
+                                                                                  id !==
+                                                                                  role.$id,
+                                                                          )
+                                                                        : [
+                                                                              ...current,
+                                                                              role.$id,
+                                                                          ];
+                                                                void saveAllowedRoles(
+                                                                    category.$id,
+                                                                    newAllowed,
+                                                                );
+                                                            }}
+                                                            type="button"
+                                                            className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                                                                isSelected
+                                                                    ? "border-primary bg-primary/10 text-primary"
+                                                                    : "border-border bg-background text-muted-foreground hover:border-primary/50"
+                                                            }`}
+                                                        >
+                                                            {role.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <span className="ml-auto text-xs text-muted-foreground">
+                                                {visibilityLabel}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="space-y-2">
+                                        {getChannelsForCategory(
+                                            category.$id,
+                                        ).map((channel) => (
                                             <div
                                                 key={channel.$id}
                                                 className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2"
@@ -836,7 +923,7 @@ export function CategorySettingsPanel({
                                                     {channel.name}
                                                 </div>
                                                 <Button
-                                                    disabled={pendingChannelIds.includes(
+                                                    disabled={isChannelPending(
                                                         channel.$id,
                                                     )}
                                                     onClick={() =>
@@ -852,7 +939,7 @@ export function CategorySettingsPanel({
                                                     <ArrowUp className="h-4 w-4" />
                                                 </Button>
                                                 <Button
-                                                    disabled={pendingChannelIds.includes(
+                                                    disabled={isChannelPending(
                                                         channel.$id,
                                                     )}
                                                     onClick={() =>
@@ -868,11 +955,11 @@ export function CategorySettingsPanel({
                                                     <ArrowDown className="h-4 w-4" />
                                                 </Button>
                                             </div>
-                                        ),
-                                    )}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </CardContent>
             </Card>
@@ -906,9 +993,7 @@ export function CategorySettingsPanel({
                                 </div>
                             </div>
                             <Select
-                                disabled={pendingChannelIds.includes(
-                                    channel.$id,
-                                )}
+                                disabled={isChannelPending(channel.$id)}
                                 onValueChange={(value) => {
                                     void assignChannel(channel.$id, value);
                                 }}

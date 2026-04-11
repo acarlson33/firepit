@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getPresetFrameById } from "@/lib/preset-frames";
 
 type AvatarProps = {
@@ -12,6 +12,20 @@ type AvatarProps = {
     frameUrl?: string;
 };
 
+const sizeClasses = {
+    sm: "h-6 w-6 text-xs",
+    md: "h-8 w-8 text-sm",
+    lg: "h-12 w-12 text-base",
+} as const;
+
+const sizePx = {
+    sm: 24,
+    md: 32,
+    lg: 48,
+} as const;
+
+const WHITESPACE_REGEX = /\s+/;
+
 export function Avatar({
     src,
     alt,
@@ -21,58 +35,69 @@ export function Avatar({
     frameUrl,
 }: AvatarProps) {
     const [imageError, setImageError] = useState(false);
-    const sizeClasses = {
-        sm: "h-6 w-6 text-xs",
-        md: "h-8 w-8 text-sm",
-        lg: "h-12 w-12 text-base",
-    };
-    const sizePx = {
-        sm: 24,
-        md: 32,
-        lg: 48,
-    };
+
+    useEffect(() => {
+        setImageError(false);
+    }, [src]);
 
     const presetFrame = framePreset ? getPresetFrameById(framePreset) : null;
-    const resolvedFrameUrl = frameUrl ?? presetFrame?.imageUrl;
+    const candidateFrameUrl = frameUrl ?? presetFrame?.imageUrl;
+    const trimmedFrameUrl =
+        typeof candidateFrameUrl === "string"
+            ? candidateFrameUrl.trim()
+            : undefined;
+    const resolvedFrameUrl =
+        trimmedFrameUrl && trimmedFrameUrl.length > 0
+            ? trimmedFrameUrl
+            : undefined;
     const hasFrameAsset = Boolean(resolvedFrameUrl);
     const configuredInset = presetFrame?.avatarInsetPercent ?? 12;
     const avatarInsetPercent = hasFrameAsset
         ? Math.min(35, Math.max(0, configuredInset))
         : 0;
     const avatarInsetPx = Math.round((sizePx[size] * avatarInsetPercent) / 100);
+    const actualAvatarSize = Math.max(
+        0,
+        sizePx[size] - (resolvedFrameUrl ? avatarInsetPx * 2 : 0),
+    );
 
     const containerClass = `relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ${sizeClasses[size]}`;
 
     // Fallback to initials or first letter
-    const initials = fallback
-        ? fallback
-              .split(" ")
+    const normalizedFallback = fallback?.trim() || alt.trim();
+    const initials = normalizedFallback
+        ? normalizedFallback
+              .split(WHITESPACE_REGEX)
               .slice(0, 2)
-              .map((n) => n[0])
+              .map((segment) => segment.charAt(0))
               .join("")
               .toUpperCase()
-        : alt[0].toUpperCase();
+        : "?";
 
     const avatarContent =
         src && src.trim() !== "" && !imageError ? (
             <Image
                 alt={alt}
                 className="h-full w-full object-cover"
-                height={sizePx[size]}
+                height={actualAvatarSize}
                 loading="lazy"
                 placeholder="blur"
                 blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
                 src={src}
-                width={sizePx[size]}
+                width={actualAvatarSize}
                 onError={() => setImageError(true)}
             />
         ) : (
-            <span className="font-medium text-muted-foreground">
+            <span
+                aria-label={alt}
+                className="font-medium text-muted-foreground"
+                role="img"
+            >
                 {initials}
             </span>
         );
 
-    if (hasFrameAsset) {
+    if (resolvedFrameUrl) {
         return (
             <div
                 className="relative inline-flex shrink-0 overflow-visible"
@@ -84,7 +109,7 @@ export function Avatar({
                     className="pointer-events-none absolute inset-0"
                     fill
                     sizes={`${sizePx[size]}px`}
-                    src={resolvedFrameUrl as string}
+                    src={resolvedFrameUrl}
                     unoptimized
                 />
                 <div
@@ -92,8 +117,8 @@ export function Avatar({
                     style={{
                         left: avatarInsetPx,
                         top: avatarInsetPx,
-                        width: sizePx[size] - avatarInsetPx * 2,
-                        height: sizePx[size] - avatarInsetPx * 2,
+                        width: actualAvatarSize,
+                        height: actualAvatarSize,
                     }}
                 >
                     {avatarContent}

@@ -1,16 +1,18 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 
-const testFilePath = fileURLToPath(import.meta.url);
-const testDir = dirname(testFilePath);
-const packageJsonPath = join(testDir, "..", "..", "package.json");
+const packageJsonPath = join(process.cwd(), "package.json");
 
-const { mockCloseSocket, mockPublicClose } = vi.hoisted(() => ({
-    mockCloseSocket: vi.fn().mockResolvedValue(undefined),
-    mockPublicClose: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockCloseSocket, mockPublicClose, mockRealtimeSubscribe } = vi.hoisted(
+    () => ({
+        mockCloseSocket: vi.fn().mockResolvedValue(undefined),
+        mockPublicClose: vi.fn().mockResolvedValue(undefined),
+        mockRealtimeSubscribe: vi.fn(async () => ({
+            close: vi.fn(async () => {}),
+        })),
+    }),
+);
 
 // Mock Appwrite Client
 vi.mock("appwrite", () => ({
@@ -23,9 +25,7 @@ vi.mock("appwrite", () => ({
             activeSubscriptions: new Map<number, unknown>(),
             closeSocket: mockCloseSocket,
             reconnect: true,
-            subscribe: vi.fn(async () => ({
-                close: vi.fn(async () => {}),
-            })),
+            subscribe: mockRealtimeSubscribe,
         };
 
         return instance;
@@ -60,8 +60,6 @@ describe("Realtime Pool", () => {
 
         vi.clearAllMocks();
         vi.resetModules();
-        mockCloseSocket.mockClear();
-        mockPublicClose.mockClear();
 
         // Re-import the module to get fresh state
         const module = await import("@/lib/realtime-pool");
@@ -109,6 +107,45 @@ describe("Realtime Pool", () => {
             expect(() => module.getSharedClient()).toThrow(
                 "Missing Appwrite configuration",
             );
+        });
+    });
+
+    describe("getSharedRealtime", () => {
+        it("should serialize concurrent subscribe calls", async () => {
+            getSharedRealtime();
+
+            let releaseFirstSubscribe: (() => void) | undefined;
+
+            mockRealtimeSubscribe
+                .mockImplementationOnce(
+                    () =>
+                        new Promise((resolve) => {
+                            releaseFirstSubscribe = () =>
+                                resolve({ close: vi.fn(async () => {}) });
+                        }),
+                )
+                .mockResolvedValueOnce({ close: vi.fn(async () => {}) });
+
+            const wrappedSubscribe = (
+                getSharedRealtime() as {
+                    subscribe: (...args: unknown[]) => Promise<unknown>;
+                }
+            ).subscribe;
+
+            const firstCall = wrappedSubscribe("channel-1", vi.fn());
+            const secondCall = wrappedSubscribe("channel-2", vi.fn());
+
+            // Flush microtasks twice so the first queued subscribe starts and blocks
+            // before asserting the second subscribe has not executed yet.
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(mockRealtimeSubscribe).toHaveBeenCalledTimes(1);
+
+            releaseFirstSubscribe?.();
+            await firstCall;
+            await secondCall;
+
+            expect(mockRealtimeSubscribe).toHaveBeenCalledTimes(2);
         });
     });
 

@@ -3,6 +3,7 @@
  * Handles predefined frames (everyone has access) and seasonal frames (earned based on account age)
  */
 
+import type { CSSProperties } from "react";
 import { getEnvConfig } from "./appwrite-core";
 
 export type PresetFrame = {
@@ -188,7 +189,10 @@ function getPresetFrameBucketUrl(fileId: string): string {
             "Missing env config: buckets.avatarFramesPredefined is not configured",
         );
     }
-    return `${env.endpoint}/storage/buckets/${bucketId}/files/${fileId}/view?project=${env.project}`;
+    const encodedBucketId = encodeURIComponent(bucketId);
+    const encodedFileId = encodeURIComponent(fileId);
+    const encodedProjectId = encodeURIComponent(env.project);
+    return `${env.endpoint}/storage/buckets/${encodedBucketId}/files/${encodedFileId}/view?project=${encodedProjectId}`;
 }
 
 function hydrateFrameWithImageUrl(frame: PresetFrame): PresetFrame {
@@ -201,12 +205,16 @@ function hydrateFrameWithImageUrl(frame: PresetFrame): PresetFrame {
 }
 
 export function getPresetFrameStorageFileId(id: string): string | undefined {
-    const frame = PRESET_FRAMES.find((candidate) => candidate.id === id);
+    const frame = getPresetFrameMetaById(id);
     if (!frame) {
         return undefined;
     }
 
     return frame.storageFileId ?? frame.id;
+}
+
+export function getPresetFrameMetaById(id: string): PresetFrame | undefined {
+    return PRESET_FRAMES.find((candidate) => candidate.id === id);
 }
 
 export function getPresetFrameImageUrl(id: string): string | undefined {
@@ -215,7 +223,11 @@ export function getPresetFrameImageUrl(id: string): string | undefined {
         return undefined;
     }
 
-    return getPresetFrameBucketUrl(storageFileId);
+    try {
+        return getPresetFrameBucketUrl(storageFileId);
+    } catch {
+        return undefined;
+    }
 }
 
 export function getAllPresetFrames(): PresetFrame[] {
@@ -235,7 +247,7 @@ export function getSeasonalPresetFrames(): PresetFrame[] {
 }
 
 export function getPresetFrameById(id: string): PresetFrame | undefined {
-    const frame = PRESET_FRAMES.find((candidate) => candidate.id === id);
+    const frame = getPresetFrameMetaById(id);
     if (!frame) {
         return undefined;
     }
@@ -250,7 +262,19 @@ export function isValidPresetFrameId(id: string): boolean {
 export function getSeasonalFramesForUser(
     accountCreatedAt: string,
 ): PresetFrame[] {
+    const frameIds = getSeasonalFrameIdsForUser(accountCreatedAt);
+
+    return frameIds
+        .map((frameId) => getPresetFrameById(frameId))
+        .filter((frame): frame is PresetFrame => frame !== undefined);
+}
+
+export function getSeasonalFrameIdsForUser(accountCreatedAt: string): string[] {
     const createdDate = new Date(accountCreatedAt);
+    if (Number.isNaN(createdDate.getTime())) {
+        return [];
+    }
+
     const now = new Date();
 
     return PRESET_FRAMES.filter((frame) => {
@@ -264,25 +288,35 @@ export function getSeasonalFramesForUser(
 
         const seasonStart = new Date(frame.startDate);
         const seasonEnd = new Date(frame.endDate);
+        if (
+            Number.isNaN(seasonStart.getTime()) ||
+            Number.isNaN(seasonEnd.getTime())
+        ) {
+            return false;
+        }
 
         const userWasActiveDuringSeason =
             createdDate <= seasonEnd && now >= seasonStart;
 
         return userWasActiveDuringSeason;
-    }).map(hydrateFrameWithImageUrl);
+    }).map((frame) => frame.id);
 }
 
 export function isUserEligibleForFrame(
     accountCreatedAt: string,
     frameId: string,
 ): boolean {
-    const frame = getPresetFrameById(frameId);
-    if (!frame || frame.type !== "seasonal") {
+    const frame = getPresetFrameMetaById(frameId);
+    if (!frame) {
+        return false;
+    }
+
+    if (frame.type !== "seasonal") {
         return true;
     }
 
-    const eligibleFrames = getSeasonalFramesForUser(accountCreatedAt);
-    return eligibleFrames.some((f) => f.id === frameId);
+    const eligibleFrameIds = getSeasonalFrameIdsForUser(accountCreatedAt);
+    return eligibleFrameIds.includes(frameId);
 }
 
 export function getEligibleFramesForUser(
@@ -294,10 +328,17 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-export function getFramePreviewStyle(frame: PresetFrame): React.CSSProperties {
+export function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
     if (frame.imageUrl) {
+        const encodedImageUrl = encodeURI(frame.imageUrl)
+            .replaceAll('"', "%22")
+            .replaceAll("'", "%27")
+            .replaceAll("\\", "%5C")
+            .replaceAll("\n", "")
+            .replaceAll("\r", "");
+
         return {
-            backgroundImage: `url(${frame.imageUrl})`,
+            backgroundImage: `url("${encodedImageUrl}")`,
             backgroundSize: "contain",
             backgroundRepeat: "no-repeat",
         };

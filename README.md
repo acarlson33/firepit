@@ -25,7 +25,9 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Direct messages and group DMs** - Shared DM infrastructure for 1:1 and multi-user conversations
 - **Search and attachments** - Message search plus image, file, video, audio, and document attachments
 - **Roles, permissions, categories, and moderation** - Server roles, permission overrides, category management, invite management, bans, kicks, mutes, and audit logs
+- **User reporting and admin review** - End-user reporting plus admin triage flows in `src/components/report-user-dialog.tsx`, `src/lib/appwrite-reports.ts`, and `src/app/admin/reports/page.tsx`
 - **Profiles and status** - User profile enrichment, avatars, pronouns, bios, and custom status messages
+- **Profile backgrounds and avatar frames** - Appearance customization in `src/components/profile-appearance-settings.tsx`, rendering support in `src/components/profile-background.tsx`, and preset frame definitions in `src/lib/preset-frames.ts`
 - **Friend system and blocking** - Social graph controls for safer private messaging
 - **Notification settings and mute controls** - Consistent override behavior across servers, channels, and DMs with server-enriched labels and quiet hours
 - **TypeScript** - Full type safety across the entire codebase

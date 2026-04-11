@@ -26,6 +26,15 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
 
+function normalizeStringField(value: unknown): string | undefined {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
 // Helper function to create attachment records
 async function createAttachments(
     messageId: string,
@@ -85,7 +94,6 @@ export async function POST(request: NextRequest) {
         const {
             text,
             channelId,
-            serverId,
             imageFileId,
             imageUrl,
             replyToId,
@@ -123,7 +131,7 @@ export async function POST(request: NextRequest) {
         addTransactionAttributes({
             userId,
             channelId,
-            serverId: serverId || "none",
+            serverId: "unresolved",
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
             isReply: !!replyToId,
@@ -146,13 +154,35 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
+        const normalizedChannelId = normalizeStringField(channelId);
+        if (!normalizedChannelId) {
+            return NextResponse.json(
+                { error: "Invalid channelId" },
+                { status: 400 },
+            );
+        }
+        const normalizedServerId = normalizeStringField(access.serverId);
+
+        const transactionAttributes: Record<string, string | number | boolean> =
+            {
+                channelId: normalizedChannelId,
+            };
+        if (normalizedServerId) {
+            transactionAttributes.serverId = normalizedServerId;
+        }
+
+        addTransactionAttributes(transactionAttributes);
+
         const messageData: Record<string, unknown> = {
             userId,
             text: text || "",
             userName,
-            channelId,
-            serverId,
+            channelId: normalizedChannelId,
         };
+
+        if (normalizedServerId) {
+            messageData.serverId = normalizedServerId;
+        }
 
         // Add image fields if provided
         if (imageFileId) {
@@ -201,7 +231,7 @@ export async function POST(request: NextRequest) {
         if (mentions && Array.isArray(mentions) && mentions.length > 0) {
             await upsertMentionInboxItems({
                 authorUserId: userId,
-                contextId: String(channelId),
+                contextId: normalizedChannelId,
                 contextKind: "channel",
                 latestActivityAt: String(
                     res.$createdAt ?? new Date().toISOString(),
@@ -209,7 +239,7 @@ export async function POST(request: NextRequest) {
                 mentions,
                 messageId: String(res.$id),
                 previewText: text || "",
-                serverId: serverId || undefined,
+                serverId: normalizedServerId,
             });
         }
 
@@ -236,8 +266,8 @@ export async function POST(request: NextRequest) {
         trackMessage("sent", "channel", {
             messageId: message.$id,
             userId,
-            channelId,
-            serverId: serverId || undefined,
+            channelId: normalizedChannelId,
+            serverId: normalizedServerId,
             hasImage: !!imageFileId,
             hasAttachments: attachments && attachments.length > 0,
             attachmentCount: attachments?.length || 0,
@@ -247,13 +277,13 @@ export async function POST(request: NextRequest) {
 
         recordEvent("message_sent", {
             actorUserId: userId,
-            channelId,
+            channelId: normalizedChannelId,
             hasAttachments: Boolean(attachments && attachments.length > 0),
             hasImage: Boolean(imageFileId),
             isReply: Boolean(replyToId),
             messageId: message.$id,
             messageType: "channel",
-            serverId: serverId || undefined,
+            serverId: normalizedServerId,
             totalQueryTimeMs: Date.now() - startTime,
         });
 
@@ -363,14 +393,14 @@ export async function PATCH(request: NextRequest) {
             userName: doc.userName as string | undefined,
             text: String(doc.text),
             $createdAt: String(doc.$createdAt ?? ""),
-            channelId: doc.channelId as string | undefined,
-            editedAt: doc.editedAt as string | undefined,
-            removedAt: doc.removedAt as string | undefined,
-            removedBy: doc.removedBy as string | undefined,
-            serverId: doc.serverId as string | undefined,
-            imageFileId: doc.imageFileId as string | undefined,
-            imageUrl: doc.imageUrl as string | undefined,
-            replyToId: doc.replyToId as string | undefined,
+            channelId: normalizeStringField(doc.channelId),
+            editedAt: normalizeStringField(doc.editedAt),
+            removedAt: normalizeStringField(doc.removedAt),
+            removedBy: normalizeStringField(doc.removedBy),
+            serverId: normalizeStringField(doc.serverId),
+            imageFileId: normalizeStringField(doc.imageFileId),
+            imageUrl: normalizeStringField(doc.imageUrl),
+            replyToId: normalizeStringField(doc.replyToId),
         };
 
         recordEvent("message_edited", {
@@ -445,12 +475,19 @@ export async function DELETE(request: NextRequest) {
             messageId,
         );
 
+        const normalizedDeletedChannelId = normalizeStringField(
+            existing.channelId,
+        );
+        const normalizedDeletedServerId = normalizeStringField(
+            existing.serverId,
+        );
+
         recordEvent("message_deleted", {
             actorUserId: user.$id,
-            channelId: existing.channelId || undefined,
+            channelId: normalizedDeletedChannelId,
             messageId,
             messageType: "channel",
-            serverId: existing.serverId || undefined,
+            serverId: normalizedDeletedServerId,
             totalQueryTimeMs: Date.now() - startTime,
         });
 

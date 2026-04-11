@@ -8,6 +8,29 @@ import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
+function createRealtimeCleanup(params: {
+    contextId: string;
+    contextLabel: string;
+    subscription: { close: () => Promise<void> };
+    untrack?: () => void;
+}) {
+    return () => {
+        closeSubscriptionSafely(params.subscription).catch((closeError) => {
+            logger.warn(
+                `Failed to close ${params.contextLabel} notification realtime subscription`,
+                {
+                    contextId: params.contextId,
+                    error:
+                        closeError instanceof Error
+                            ? closeError.message
+                            : String(closeError),
+                },
+            );
+        });
+        params.untrack?.();
+    };
+}
+
 interface NotificationOptions {
     /** Current user's ID */
     userId: string | null;
@@ -265,14 +288,21 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void closeSubscriptionSafely(subscription);
+                    createRealtimeCleanup({
+                        contextId: channelId,
+                        contextLabel: "channel",
+                        subscription,
+                    })();
                     return;
                 }
 
-                unsubscribe = () => {
-                    void closeSubscriptionSafely(subscription);
-                };
                 untrack = trackSubscription(messageChannelKey);
+                unsubscribe = createRealtimeCleanup({
+                    contextId: channelId,
+                    contextLabel: "channel",
+                    subscription,
+                    untrack,
+                });
             })
             .catch((error) => {
                 if (cancelled) {
@@ -294,7 +324,6 @@ export function useNotifications({
         return () => {
             cancelled = true;
             unsubscribe?.();
-            untrack?.();
         };
     }, [
         userId,
@@ -413,17 +442,21 @@ export function useNotifications({
                 );
 
                 if (cancelled) {
-                    void closeSubscriptionSafely(subscription);
+                    createRealtimeCleanup({
+                        contextId: conversationId,
+                        contextLabel: "DM",
+                        subscription,
+                    })();
                     return;
                 }
 
-                const trackCleanup = trackSubscription(messageChannelKey);
-
-                // Store combined cleanup function
-                cleanup = () => {
-                    void closeSubscriptionSafely(subscription);
-                    trackCleanup?.();
-                };
+                const untrack = trackSubscription(messageChannelKey);
+                cleanup = createRealtimeCleanup({
+                    contextId: conversationId,
+                    contextLabel: "DM",
+                    subscription,
+                    untrack,
+                });
             })
             .catch((error) => {
                 if (cancelled) {
