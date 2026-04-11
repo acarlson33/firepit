@@ -193,6 +193,9 @@ export type InboxDigestItem = {
 
 export type InboxDigestResponse = {
     contractVersion: InboxContractVersion;
+    navigationFallback: "context_catch_up";
+    ordering: "newest_first" | "triage_priority";
+    presentation: "flat";
     contextId?: string;
     contextKind?: InboxContextKind;
     items: InboxDigestItem[];

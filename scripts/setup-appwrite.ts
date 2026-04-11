@@ -957,6 +957,11 @@ async function setupFeatureFlags() {
         enabled: false,
         key: "enable_inbox_digest_v1_5",
     });
+    await ensureFeatureFlagDocument({
+        description: "Enable bulk catch-up UI for inbox triage actions",
+        enabled: false,
+        key: "enable_bulk_catch_up",
+    });
 }
 
 async function ensureFeatureFlagDocument(params: {

@@ -856,6 +856,9 @@ export async function listInboxDigest(params: {
 
     return {
         contractVersion: inbox.contractVersion,
+        navigationFallback: "context_catch_up",
+        ordering: useDigestV15 ? "triage_priority" : "newest_first",
+        presentation: "flat",
         contextId,
         contextKind,
         items: pagedItems,
