@@ -73,7 +73,6 @@ export function checkRateLimit(
     if (entry.count < config.maxRequests) {
         // Still have quota - allow and increment
         entry.count += 1;
-        rateLimitStore.set(identifier, entry);
 
         return {
             allowed: true,
