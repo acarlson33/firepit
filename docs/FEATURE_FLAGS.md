@@ -39,6 +39,15 @@ Rollout note for `enable_inbox_digest_v1_5`:
 - Keep the public digest response contract backward-compatible while this flag is enabled.
 - Remove this flag and related branching before the 1.7 release cut; final Digest API v1 behavior should be enabled by default.
 
+Cleanup commit plan for `enable_inbox_digest_v1_5` (within 1.7):
+
+1. Merge final v1.5 digest behavior as default path in `listInboxDigest`.
+2. Remove route-level reads of `enable_inbox_digest_v1_5` and all `useDigestV15` plumbing.
+3. Delete `ENABLE_INBOX_DIGEST_V1_5` from feature-flag constants, defaults, setup seeding, and descriptions.
+4. Collapse tests to single default-on digest behavior (no temporary v1/v1.5 branching assertions).
+5. Remove this rollout note and keep only final-state digest flag documentation.
+6. Run targeted digest tests + full lint/build before release cut.
+
 ## Phase 3 Rollout Gates
 
 Use these gates before promoting unread-related flags from canary to stable:

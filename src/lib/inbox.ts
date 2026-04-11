@@ -884,7 +884,9 @@ function buildDigestItemsV15(
     items: InboxItem[],
     limit: number,
 ): InboxDigestResponse["items"] {
-    // v1.5 rollout keeps the same public item contract while allowing internal
-    // implementation improvements behind a temporary feature flag.
-    return buildDigestItemsV1(items, limit);
+    // v1.5 keeps the same response schema but prioritizes mentions for triage.
+    const mentions = items.filter((item) => item.kind === "mention");
+    const threads = items.filter((item) => item.kind === "thread");
+
+    return buildDigestItemsV1([...mentions, ...threads], limit);
 }
