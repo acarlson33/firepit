@@ -4,7 +4,6 @@ import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerClient } from "@/lib/appwrite-server";
-import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { recordEvent, recordMetric } from "@/lib/newrelic-utils";
 import {
     getEffectiveNotificationLevel,
@@ -411,12 +410,10 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
  * Lists unread conversation thread items.
  *
  * @param {string} userId - The user id value.
- * @param {boolean} usePerMessageUnread - The use per message unread value.
  * @returns {Promise<InboxItem[]>} The return value.
  */
 async function listUnreadConversationThreadItems(
     userId: string,
-    usePerMessageUnread: boolean,
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const conversations = await listConversationDocuments(userId);
@@ -460,29 +457,27 @@ async function listUnreadConversationThreadItems(
         });
     });
 
-    const unreadCountsByParent = usePerMessageUnread
-        ? await countUnreadRepliesByParent({
-              collectionId: env.collections.directMessages,
-              contextField: "conversationId",
-              parents: unreadDocuments.map((document) => {
-                  const conversationId = String(document.conversationId);
-                  const parentMessageId = String(document.$id);
+    const unreadCountsByParent = await countUnreadRepliesByParent({
+        collectionId: env.collections.directMessages,
+        contextField: "conversationId",
+        parents: unreadDocuments.map((document) => {
+            const conversationId = String(document.conversationId);
+            const parentMessageId = String(document.$id);
 
-                  return {
-                      contextId: conversationId,
-                      lastReadAt:
-                          readStatesByConversationId.get(conversationId)?.[
-                              parentMessageId
-                          ],
-                      parentMessageId,
-                      threadMessageCount:
-                          typeof document.threadMessageCount === "number"
-                              ? document.threadMessageCount
-                              : undefined,
-                  } satisfies UnreadThreadParentInput;
-              }),
-          })
-        : null;
+            return {
+                contextId: conversationId,
+                lastReadAt:
+                    readStatesByConversationId.get(conversationId)?.[
+                        parentMessageId
+                    ],
+                parentMessageId,
+                threadMessageCount:
+                    typeof document.threadMessageCount === "number"
+                        ? document.threadMessageCount
+                        : undefined,
+            } satisfies UnreadThreadParentInput;
+        }),
+    });
 
     const authorIds = Array.from(
         new Set(unreadDocuments.map((document) => String(document.senderId))),
@@ -535,12 +530,10 @@ async function listUnreadConversationThreadItems(
  * Lists unread channel thread items.
  *
  * @param {string} userId - The user id value.
- * @param {boolean} usePerMessageUnread - The use per message unread value.
  * @returns {Promise<InboxItem[]>} The return value.
  */
 async function listUnreadChannelThreadItems(
     userId: string,
-    usePerMessageUnread: boolean,
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const threadParents = await listAllDocuments({
@@ -596,29 +589,25 @@ async function listUnreadChannelThreadItems(
             typeof document.channelId === "string" ? document.channelId : null,
     );
 
-    const unreadCountsByParent = usePerMessageUnread
-        ? await countUnreadRepliesByParent({
-              collectionId: env.collections.messages,
-              contextField: "channelId",
-              parents: readableDocuments.map((document) => {
-                  const channelId = String(document.channelId);
-                  const parentMessageId = String(document.$id);
+    const unreadCountsByParent = await countUnreadRepliesByParent({
+        collectionId: env.collections.messages,
+        contextField: "channelId",
+        parents: readableDocuments.map((document) => {
+            const channelId = String(document.channelId);
+            const parentMessageId = String(document.$id);
 
-                  return {
-                      contextId: channelId,
-                      lastReadAt:
-                          readStatesByChannelId.get(channelId)?.[
-                              parentMessageId
-                          ],
-                      parentMessageId,
-                      threadMessageCount:
-                          typeof document.threadMessageCount === "number"
-                              ? document.threadMessageCount
-                              : undefined,
-                  } satisfies UnreadThreadParentInput;
-              }),
-          })
-        : null;
+            return {
+                contextId: channelId,
+                lastReadAt:
+                    readStatesByChannelId.get(channelId)?.[parentMessageId],
+                parentMessageId,
+                threadMessageCount:
+                    typeof document.threadMessageCount === "number"
+                        ? document.threadMessageCount
+                        : undefined,
+            } satisfies UnreadThreadParentInput;
+        }),
+    });
 
     const authorIds = Array.from(
         new Set(readableDocuments.map((document) => String(document.userId))),
@@ -751,19 +740,12 @@ export async function listInboxItems({
     items: InboxItem[];
     unreadCount: number;
 }> {
-    const usePerMessageUnread = await getFeatureFlag(
-        FEATURE_FLAGS.ENABLE_PER_MESSAGE_UNREAD,
-    ).catch(() => false);
-
     const requestedKinds = new Set(kinds);
     const itemGroups = await Promise.all([
         requestedKinds.has("thread")
             ? Promise.all([
-                  listUnreadChannelThreadItems(userId, usePerMessageUnread),
-                  listUnreadConversationThreadItems(
-                      userId,
-                      usePerMessageUnread,
-                  ),
+                  listUnreadChannelThreadItems(userId),
+                  listUnreadConversationThreadItems(userId),
               ]).then(([channelItems, conversationItems]) => [
                   ...channelItems,
                   ...conversationItems,
@@ -786,7 +768,7 @@ export async function listInboxItems({
     const counts = toCountMap(sortedItems);
 
     return {
-        contractVersion: usePerMessageUnread ? "message_v2" : "thread_v1",
+        contractVersion: "message_v2",
         counts,
         items: sortedItems.slice(0, limit),
         unreadCount: sortedItems.reduce(
@@ -806,17 +788,10 @@ export async function listInboxDigest(params: {
     contextId?: string;
     contextKind?: InboxContextKind;
     limit: number;
-    useDigestV15?: boolean;
     userId: string;
 }): Promise<InboxDigestResponse> {
     const startedAt = Date.now();
-    const {
-        contextId,
-        contextKind,
-        limit,
-        useDigestV15 = false,
-        userId,
-    } = params;
+    const { contextId, contextKind, limit, userId } = params;
     const isContextScoped = Boolean(contextId && contextKind);
     const upstreamLimit = isContextScoped
         ? Number.POSITIVE_INFINITY
@@ -837,7 +812,7 @@ export async function listInboxDigest(params: {
     const totalUnreadCount = isContextScoped
         ? scopedItems.reduce((total, item) => total + item.unreadCount, 0)
         : inbox.unreadCount;
-    const pagedItems = buildDigestItems(scopedItems, limit, useDigestV15);
+    const pagedItems = buildDigestItems(scopedItems, limit);
 
     const durationMs = Date.now() - startedAt;
     recordMetric("Custom/InboxDigest/DurationMs", durationMs);
@@ -846,7 +821,7 @@ export async function listInboxDigest(params: {
     recordEvent("InboxDigestGenerated", {
         contextKind: contextKind ?? "all",
         isContextScoped,
-        mode: useDigestV15 ? "v1_5" : "v1",
+        mode: "v1_5",
         requestedLimit: limit,
         returnedItems: pagedItems.length,
         totalUnreadCount,
@@ -857,7 +832,7 @@ export async function listInboxDigest(params: {
     return {
         contractVersion: inbox.contractVersion,
         navigationFallback: "context_catch_up",
-        ordering: useDigestV15 ? "triage_priority" : "newest_first",
+        ordering: "triage_priority",
         presentation: "flat",
         contextId,
         contextKind,
@@ -867,40 +842,6 @@ export async function listInboxDigest(params: {
 }
 
 function buildDigestItems(
-    items: InboxItem[],
-    limit: number,
-    useDigestV15: boolean,
-): InboxDigestResponse["items"] {
-    if (useDigestV15) {
-        return buildDigestItemsV15(items, limit);
-    }
-
-    return buildDigestItemsV1(items, limit);
-}
-
-function buildDigestItemsV1(
-    items: InboxItem[],
-    limit: number,
-): InboxDigestResponse["items"] {
-    return items.slice(0, limit).map((item) => ({
-        activityAt: item.latestActivityAt,
-        authorAvatarUrl: item.authorAvatarUrl,
-        authorLabel: item.authorLabel,
-        authorUserId: item.authorUserId,
-        contextId: item.contextId,
-        contextKind: item.contextKind,
-        id: item.id,
-        kind: item.kind,
-        messageId: item.messageId,
-        muted: item.muted,
-        parentMessageId: item.parentMessageId,
-        previewText: item.previewText,
-        serverId: item.serverId,
-        unreadCount: item.unreadCount,
-    }));
-}
-
-function buildDigestItemsV15(
     items: InboxItem[],
     limit: number,
 ): InboxDigestResponse["items"] {
@@ -931,5 +872,20 @@ function buildDigestItemsV15(
         return left.id.localeCompare(right.id);
     });
 
-    return buildDigestItemsV1(triagedItems, limit);
+    return triagedItems.slice(0, limit).map((item) => ({
+        activityAt: item.latestActivityAt,
+        authorAvatarUrl: item.authorAvatarUrl,
+        authorLabel: item.authorLabel,
+        authorUserId: item.authorUserId,
+        contextId: item.contextId,
+        contextKind: item.contextKind,
+        id: item.id,
+        kind: item.kind,
+        messageId: item.messageId,
+        muted: item.muted,
+        parentMessageId: item.parentMessageId,
+        previewText: item.previewText,
+        serverId: item.serverId,
+        unreadCount: item.unreadCount,
+    }));
 }

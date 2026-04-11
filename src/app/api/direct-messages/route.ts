@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
                 DATABASE_ID,
                 CONVERSATIONS_COLLECTION,
                 [
-                    Query.equal("participants", session.$id),
+                    Query.contains("participants", session.$id),
                     Query.orderDesc("lastMessageAt"),
                     Query.limit(100),
                 ],
@@ -433,8 +433,8 @@ export async function GET(request: NextRequest) {
                     DATABASE_ID,
                     CONVERSATIONS_COLLECTION,
                     [
-                        Query.equal("participants", user1),
-                        Query.equal("participants", user2),
+                        Query.contains("participants", user1),
+                        Query.contains("participants", user2),
                         Query.limit(1),
                     ],
                 );

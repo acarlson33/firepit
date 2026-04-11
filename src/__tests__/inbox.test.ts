@@ -118,9 +118,7 @@ vi.mock("@/lib/notification-settings", () => ({
 }));
 
 vi.mock("@/lib/feature-flags", () => ({
-    FEATURE_FLAGS: {
-        ENABLE_PER_MESSAGE_UNREAD: "enable_per_message_unread",
-    },
+    FEATURE_FLAGS: {},
     getFeatureFlag: mockGetFeatureFlag,
 }));
 
@@ -183,7 +181,7 @@ describe("inbox", () => {
         expect(result.items[0]?.authorLabel).toBe("Alice");
         expect(result.items[0]?.muted).toBe(true);
         expect(result.counts.mention).toBe(1);
-        expect(result.contractVersion).toBe("thread_v1");
+        expect(result.contractVersion).toBe("message_v2");
     });
 
     it("filters inbox items by context kind", async () => {
@@ -232,7 +230,7 @@ describe("inbox", () => {
 
         expect(result.items).toHaveLength(0);
         expect(result.unreadCount).toBe(0);
-        expect(result.contractVersion).toBe("thread_v1");
+        expect(result.contractVersion).toBe("message_v2");
     });
 
     it("filters unread channel thread items when the user cannot read the channel", async () => {
@@ -342,7 +340,7 @@ describe("inbox", () => {
         expect(result.items[0]?.kind).toBe("mention");
         expect(result.counts).toEqual({ mention: 1, thread: 0 });
         expect(result.unreadCount).toBe(1);
-        expect(result.contractVersion).toBe("thread_v1");
+        expect(result.contractVersion).toBe("message_v2");
     });
 
     it("returns digest items ordered by newest activity first", async () => {
@@ -407,7 +405,7 @@ describe("inbox", () => {
         expect(digest.items).toHaveLength(2);
         expect(digest.items[0]?.id).toBe("mention-new");
         expect(digest.items[1]?.id).toBe("mention-old");
-        expect(digest.contractVersion).toBe("thread_v1");
+        expect(digest.contractVersion).toBe("message_v2");
     });
 
     it("keeps digest total unread count from full scoped set when paginated", async () => {
@@ -471,10 +469,10 @@ describe("inbox", () => {
 
         expect(digest.items).toHaveLength(1);
         expect(digest.totalUnreadCount).toBe(2);
-        expect(digest.contractVersion).toBe("thread_v1");
+        expect(digest.contractVersion).toBe("message_v2");
     });
 
-    it("keeps v1.5 digest mode backward-compatible during rollout", async () => {
+    it("applies v1.5 digest mode with triage ordering", async () => {
         mockListDocuments.mockImplementation(
             async (_databaseId, collectionId) => {
                 if (collectionId === "inbox-items-collection") {
@@ -530,11 +528,11 @@ describe("inbox", () => {
             contextId: "conversation-1",
             contextKind: "conversation",
             limit: 1,
-            useDigestV15: true,
+
             userId: "user-1",
         });
 
-        expect(digest.contractVersion).toBe("thread_v1");
+        expect(digest.contractVersion).toBe("message_v2");
         expect(digest.totalUnreadCount).toBe(2);
         expect(digest.items).toHaveLength(1);
         expect(digest.items[0]?.id).toBe("mention-b");
@@ -626,7 +624,7 @@ describe("inbox", () => {
 
         const digest = await listInboxDigest({
             limit: 10,
-            useDigestV15: true,
+
             userId: "user-1",
         });
 
@@ -720,12 +718,12 @@ describe("inbox", () => {
 
         const firstDigest = await listInboxDigest({
             limit: 10,
-            useDigestV15: true,
+
             userId: "user-1",
         });
         const secondDigest = await listInboxDigest({
             limit: 10,
-            useDigestV15: true,
+
             userId: "user-1",
         });
 
@@ -734,108 +732,59 @@ describe("inbox", () => {
         );
     });
 
-    it.each([
-        {
-            useDigestV15: false,
-            usePerMessageUnread: false,
-            expectedContractVersion: "thread_v1",
-            expectedFirstKind: "thread",
-            expectedTotalUnreadCount: 2,
-        },
-        {
-            useDigestV15: true,
-            usePerMessageUnread: false,
-            expectedContractVersion: "thread_v1",
-            expectedFirstKind: "mention",
-            expectedTotalUnreadCount: 2,
-        },
-        {
-            useDigestV15: false,
-            usePerMessageUnread: true,
-            expectedContractVersion: "message_v2",
-            expectedFirstKind: "thread",
-            expectedTotalUnreadCount: 3,
-        },
-        {
-            useDigestV15: true,
-            usePerMessageUnread: true,
-            expectedContractVersion: "message_v2",
-            expectedFirstKind: "mention",
-            expectedTotalUnreadCount: 3,
-        },
-    ])(
-        "applies digest and unread flags together: $useDigestV15 / $usePerMessageUnread",
-        async ({
-            expectedContractVersion,
-            expectedFirstKind,
-            expectedTotalUnreadCount,
-            useDigestV15,
-            usePerMessageUnread,
-        }) => {
-            mockGetFeatureFlag.mockResolvedValue(usePerMessageUnread);
-            mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
-            mockListDocuments.mockImplementation(
-                async (_databaseId, collectionId) => {
-                    if (collectionId === "inbox-items-collection") {
-                        return {
-                            documents: [
-                                {
-                                    $id: "mention-1",
-                                    userId: "user-1",
-                                    kind: "mention",
-                                    contextKind: "conversation",
-                                    contextId: "conversation-1",
-                                    messageId: "message-mention-1",
-                                    latestActivityAt:
-                                        "2026-03-11T11:00:00.000Z",
-                                    previewText: "mention",
-                                    authorUserId: "user-2",
-                                },
-                            ],
-                        };
-                    }
+    it("digest uses per-message unread contract", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId) => {
+                if (collectionId === "inbox-items-collection") {
+                    return {
+                        documents: [
+                            {
+                                $id: "mention-1",
+                                userId: "user-1",
+                                kind: "mention",
+                                contextKind: "conversation",
+                                contextId: "conversation-1",
+                                messageId: "message-mention-1",
+                                latestActivityAt: "2025-06-01T10:00:00.000Z",
+                                read: false,
+                                muted: false,
+                                threadMessageCount: 0,
+                                // Mention items are normalized to unreadCount 1.
+                                unreadCount: 1,
+                                channelId: null,
+                                channelName: null,
+                                serverId: null,
+                                serverName: null,
+                                contentSnippet: "hey there",
+                                authorUserId: "user-2",
+                                authorDisplayName: "Alice",
+                                authorAvatarUrl: null,
+                            },
+                        ],
+                        total: 1,
+                    };
+                }
 
-                    if (collectionId === "messages-collection") {
-                        return {
-                            documents: [
-                                {
-                                    $id: "thread-1",
-                                    channelId: "channel-1",
-                                    userId: "user-3",
-                                    text: "thread",
-                                    threadMessageCount: 2,
-                                    lastThreadReplyAt:
-                                        "2026-03-11T12:00:00.000Z",
-                                    $createdAt: "2026-03-11T10:00:00.000Z",
-                                    serverId: "server-1",
-                                },
-                            ],
-                        };
-                    }
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [{ userId: "user-2", displayName: "Alice" }],
+                    };
+                }
 
-                    if (collectionId === "profiles-collection") {
-                        return {
-                            documents: [
-                                { userId: "user-2", displayName: "Mention" },
-                                { userId: "user-3", displayName: "Thread" },
-                            ],
-                        };
-                    }
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
 
-                    return { documents: [] };
-                },
-            );
-            mockGetNotificationSettings.mockResolvedValue(null);
+        const digest = await listInboxDigest({
+            limit: 10,
+            userId: "user-1",
+        });
 
-            const digest = await listInboxDigest({
-                limit: 10,
-                useDigestV15,
-                userId: "user-1",
-            });
-
-            expect(digest.contractVersion).toBe(expectedContractVersion);
-            expect(digest.items[0]?.kind).toBe(expectedFirstKind);
-            expect(digest.totalUnreadCount).toBe(expectedTotalUnreadCount);
-        },
-    );
+        expect(digest.contractVersion).toBe("message_v2");
+        expect(digest.items[0]?.kind).toBe("mention");
+        expect(digest.totalUnreadCount).toBe(1);
+    });
 });

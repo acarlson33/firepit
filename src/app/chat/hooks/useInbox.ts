@@ -31,7 +31,7 @@ type InboxContextSummary = {
 };
 
 const EMPTY_INBOX: InboxListResponse = {
-    contractVersion: "thread_v1",
+    contractVersion: "message_v2",
     counts: { mention: 0, thread: 0 },
     items: [],
     unreadCount: 0,
