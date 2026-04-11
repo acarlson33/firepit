@@ -3,19 +3,29 @@
 /**
  * Cached data fetching utilities
  * These functions use Next.js 16's "use cache" directive for optimal performance
- * 
+ *
  * Cache durations:
  * - Profile data: 5 minutes (profiles don't change frequently)
  * - Avatar URLs: 1 hour (file IDs are immutable)
  * - Role tags: 5 minutes (role assignments are relatively stable)
  * - Stats: 1 minute (stats are expensive to compute)
  * - Server/Channel lists: 5 minutes (relatively static data)
+ * - Profile backgrounds/frames: 1 hour (file IDs are immutable)
  */
 
 import { cacheLife } from "next/cache";
-import { getUserProfile as _getUserProfile, getAvatarUrl as _getAvatarUrl } from "./appwrite-profiles";
+import {
+    getUserProfile as _getUserProfile,
+    getAvatarUrl as _getAvatarUrl,
+    getProfileBackgroundUrl as _getProfileBackgroundUrl,
+    getAvatarFrameUrlForProfile as _getAvatarFrameUrlForProfile,
+} from "./appwrite-profiles";
 import { getUserRoleTags as _getUserRoleTags } from "./appwrite-roles";
-import { getBasicStats as _getBasicStats, listAllServersPage as _listAllServersPage, listAllChannelsPage as _listAllChannelsPage } from "./appwrite-admin";
+import {
+    getBasicStats as _getBasicStats,
+    listAllServersPage as _listAllServersPage,
+    listAllChannelsPage as _listAllChannelsPage,
+} from "./appwrite-admin";
 
 /**
  * Get a user's profile with caching
@@ -25,9 +35,9 @@ import { getBasicStats as _getBasicStats, listAllServersPage as _listAllServersP
  * @returns {Promise<UserProfile | null>} The return value.
  */
 export async function getCachedUserProfile(userId: string) {
-	"use cache";
-	cacheLife("minutes");
-	return _getUserProfile(userId);
+    "use cache";
+    cacheLife("minutes");
+    return _getUserProfile(userId);
 }
 
 /**
@@ -38,9 +48,36 @@ export async function getCachedUserProfile(userId: string) {
  * @returns {Promise<string>} The return value.
  */
 export async function getCachedAvatarUrl(fileId: string) {
-	"use cache";
-	cacheLife("hours");
-	return _getAvatarUrl(fileId);
+    "use cache";
+    cacheLife("hours");
+    return _getAvatarUrl(fileId);
+}
+
+/**
+ * Get profile background URL with caching
+ * Background URLs are deterministic based on fileId
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {Promise<string>} The return value.
+ */
+export async function getCachedProfileBackgroundUrl(fileId: string) {
+    "use cache";
+    cacheLife("hours");
+    return _getProfileBackgroundUrl(fileId);
+}
+
+/**
+ * Get avatar frame URL (predefined preset) with caching.
+ *
+ * @param {{ avatarFramePreset?: string }} profile - Minimal frame profile.
+ * @returns {Promise<string | undefined>} The return value.
+ */
+export async function getCachedAvatarFrameUrlForProfile(profile: {
+    avatarFramePreset?: string;
+}) {
+    "use cache";
+    cacheLife("hours");
+    return _getAvatarFrameUrlForProfile(profile);
 }
 
 /**
@@ -51,9 +88,9 @@ export async function getCachedAvatarUrl(fileId: string) {
  * @returns {Promise<ExtendedRoleInfo>} The return value.
  */
 export async function getCachedUserRoleTags(userId: string) {
-	"use cache";
-	cacheLife("minutes");
-	return _getUserRoleTags(userId);
+    "use cache";
+    cacheLife("minutes");
+    return _getUserRoleTags(userId);
 }
 
 /**
@@ -62,9 +99,9 @@ export async function getCachedUserRoleTags(userId: string) {
  * @returns {Promise<{ servers: number; channels: number; messages: number; }>} The return value.
  */
 export async function getCachedBasicStats() {
-	"use cache";
-	cacheLife("seconds");
-	return _getBasicStats();
+    "use cache";
+    cacheLife("seconds");
+    return _getBasicStats();
 }
 
 /**
@@ -76,9 +113,9 @@ export async function getCachedBasicStats() {
  * @returns {Promise<PageResult<{ $id: string; name?: string | undefined; }>>} The return value.
  */
 export async function getCachedServersPage(limit: number, cursor?: string) {
-	"use cache";
-	cacheLife("minutes");
-	return _listAllServersPage(limit, cursor);
+    "use cache";
+    cacheLife("minutes");
+    return _listAllServersPage(limit, cursor);
 }
 
 /**
@@ -90,8 +127,12 @@ export async function getCachedServersPage(limit: number, cursor?: string) {
  * @param {string | undefined} cursor - The cursor value, if provided.
  * @returns {Promise<PageResult<{ $id: string; name?: string | undefined; }>>} The return value.
  */
-export async function getCachedChannelsPage(serverId: string, limit: number, cursor?: string) {
-	"use cache";
-	cacheLife("minutes");
-	return _listAllChannelsPage(serverId, limit, cursor);
+export async function getCachedChannelsPage(
+    serverId: string,
+    limit: number,
+    cursor?: string,
+) {
+    "use cache";
+    cacheLife("minutes");
+    return _listAllChannelsPage(serverId, limit, cursor);
 }

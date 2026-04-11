@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth-server";
-import { getAvatarUrl, getOrCreateUserProfile } from "@/lib/appwrite-profiles";
+import {
+    getAvatarUrl,
+    getProfileBackgroundUrl,
+    getOrCreateUserProfile,
+} from "@/lib/appwrite-profiles";
 import {
     Card,
     CardContent,
@@ -16,8 +20,15 @@ import {
     removeAvatarAction,
     updateProfileAction,
     uploadAvatarAction,
+    updateProfileBackgroundAction,
+    uploadProfileBackgroundAction,
+    removeProfileBackgroundAction,
+    getBackgroundCooldownAction,
+    setAvatarFramePresetAction,
+    getAvailableFramesAction,
 } from "./actions";
 import { AvatarUpload } from "./AvatarUpload";
+import { ProfileAppearanceSettings } from "@/components/profile-appearance-settings";
 import { BlockedUsersSettings } from "@/components/blocked-users-settings";
 import { DeveloperModeSettings } from "@/components/developer-mode-settings";
 import { FriendsSettings } from "@/components/friends-settings";
@@ -43,11 +54,20 @@ export default async function SettingsPage() {
         ? getAvatarUrl(profile.avatarFileId)
         : null;
 
+    const profileBackgroundImageUrl = profile.profileBackgroundImageFileId
+        ? getProfileBackgroundUrl(profile.profileBackgroundImageFileId)
+        : null;
+
     const settingsSections = [
         {
             description: "Photo, profile details, and account basics.",
             href: "#profile-picture",
             title: "Profile",
+        },
+        {
+            description: "Backgrounds and avatar frames.",
+            href: "#profile-appearance",
+            title: "Appearance",
         },
         {
             description: "How and when Firepit reaches you.",
@@ -252,6 +272,64 @@ export default async function SettingsPage() {
                                     </CardFooter>
                                 </Card>
                             </form>
+                        </section>
+
+                        <section
+                            className="scroll-mt-24"
+                            id="profile-appearance"
+                        >
+                            <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                                <CardHeader className="space-y-1">
+                                    <CardTitle>Profile Appearance</CardTitle>
+                                    <CardDescription>
+                                        Customize your profile background and
+                                        avatar frame to express your
+                                        personality.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <ProfileAppearanceSettings
+                                        accountCreatedAt={user.$createdAt}
+                                        avatarFramePreset={
+                                            profile.avatarFramePreset
+                                        }
+                                        currentAvatarUrl={
+                                            avatarUrl ?? undefined
+                                        }
+                                        getAvailableFrames={
+                                            getAvailableFramesAction
+                                        }
+                                        getBackgroundCooldown={
+                                            getBackgroundCooldownAction
+                                        }
+                                        profileBackgroundColor={
+                                            profile.profileBackgroundColor
+                                        }
+                                        profileBackgroundGradient={
+                                            profile.profileBackgroundGradient
+                                        }
+                                        profileBackgroundImageFileId={
+                                            profile.profileBackgroundImageFileId
+                                        }
+                                        profileBackgroundImageUrl={
+                                            profileBackgroundImageUrl ??
+                                            undefined
+                                        }
+                                        removeBackgroundAction={
+                                            removeProfileBackgroundAction
+                                        }
+                                        setFramePresetAction={
+                                            setAvatarFramePresetAction
+                                        }
+                                        updateBackgroundAction={
+                                            updateProfileBackgroundAction
+                                        }
+                                        uploadBackgroundAction={
+                                            uploadProfileBackgroundAction
+                                        }
+                                    />
+                                </CardContent>
+                            </Card>
                         </section>
 
                         <section

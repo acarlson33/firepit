@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, BookOpenText, PanelTop } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -49,6 +50,7 @@ function getVisibilityKey(item: NavigationItemPreferenceId) {
 }
 
 export function DeveloperModeSettings() {
+    const [isMounted, setIsMounted] = useState(false);
     const { userData } = useAuth();
     const userId = userData?.userId ?? null;
     const {
@@ -57,6 +59,12 @@ export function DeveloperModeSettings() {
         navigationPreferences,
         updateNavigationPreferences,
     } = useDeveloperMode(userId);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    const controlsDisabled = !isMounted || !isLoaded || !userId || isSaving;
 
     const orderedItems = navigationPreferences.navigationItemOrder;
 
@@ -136,21 +144,30 @@ export function DeveloperModeSettings() {
                             <div className="flex items-center gap-2 self-start">
                                 <Switch
                                     checked={isVisible}
-                                    disabled={!isLoaded || !userId || isSaving}
+                                    aria-disabled={controlsDisabled}
+                                    className={
+                                        controlsDisabled
+                                            ? "pointer-events-none opacity-50"
+                                            : ""
+                                    }
                                     id={`navigation-${item}`}
                                     onCheckedChange={(checked) =>
-                                        updateNavigationPreferences({
-                                            [visibilityKey]: checked,
-                                        })
+                                        controlsDisabled
+                                            ? undefined
+                                            : updateNavigationPreferences({
+                                                  [visibilityKey]: checked,
+                                              })
                                     }
                                 />
                                 <Button
                                     aria-label={`Move ${copy.label} earlier in navigation`}
-                                    disabled={
-                                        !isLoaded ||
-                                        !userId ||
-                                        isSaving ||
-                                        index === 0
+                                    aria-disabled={
+                                        controlsDisabled || index === 0
+                                    }
+                                    className={
+                                        controlsDisabled || index === 0
+                                            ? "pointer-events-none opacity-50"
+                                            : ""
                                     }
                                     onClick={() => moveItem(item, -1)}
                                     size="icon"
@@ -161,11 +178,15 @@ export function DeveloperModeSettings() {
                                 </Button>
                                 <Button
                                     aria-label={`Move ${copy.label} later in navigation`}
-                                    disabled={
-                                        !isLoaded ||
-                                        !userId ||
-                                        isSaving ||
+                                    aria-disabled={
+                                        controlsDisabled ||
                                         index === orderedItems.length - 1
+                                    }
+                                    className={
+                                        controlsDisabled ||
+                                        index === orderedItems.length - 1
+                                            ? "pointer-events-none opacity-50"
+                                            : ""
                                     }
                                     onClick={() => moveItem(item, 1)}
                                     size="icon"
@@ -197,12 +218,19 @@ export function DeveloperModeSettings() {
 
                     <Switch
                         checked={navigationPreferences.showAddFriendInHeader}
-                        disabled={!isLoaded || !userId || isSaving}
+                        aria-disabled={controlsDisabled}
+                        className={
+                            controlsDisabled
+                                ? "pointer-events-none opacity-50"
+                                : ""
+                        }
                         id="header-add-friend"
                         onCheckedChange={(checked) =>
-                            updateNavigationPreferences({
-                                showAddFriendInHeader: checked,
-                            })
+                            controlsDisabled
+                                ? undefined
+                                : updateNavigationPreferences({
+                                      showAddFriendInHeader: checked,
+                                  })
                         }
                     />
                 </div>

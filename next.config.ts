@@ -184,6 +184,22 @@ const nextConfig: NextConfig = {
                 hostname: "nyc.cloud.appwrite.io",
                 pathname: "/v1/storage/buckets/images/files/**",
             },
+            {
+                protocol: "https",
+                hostname: "nyc.cloud.appwrite.io",
+                pathname: "/v1/storage/buckets/profile-backgrounds/files/**",
+            },
+            {
+                protocol: "https",
+                hostname: "nyc.cloud.appwrite.io",
+                pathname: "/v1/storage/buckets/avatar-frames/files/**",
+            },
+            {
+                protocol: "https",
+                hostname: "nyc.cloud.appwrite.io",
+                pathname:
+                    "/v1/storage/buckets/avatar-frames-predefined/files/**",
+            },
         ],
         formats: ["image/avif", "image/webp"],
     },

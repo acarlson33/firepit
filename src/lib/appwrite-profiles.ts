@@ -7,6 +7,10 @@
 import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
+import {
+    getPresetFrameImageUrl,
+    getPresetFrameStorageFileId,
+} from "./preset-frames";
 
 import type { NavigationItemPreferenceId } from "./types";
 
@@ -26,6 +30,11 @@ export type UserProfile = {
     showAddFriendInHeader?: boolean;
     telemetryEnabled?: boolean;
     navigationItemOrder?: NavigationItemPreferenceId[] | string;
+    profileBackgroundColor?: string;
+    profileBackgroundGradient?: string;
+    profileBackgroundImageFileId?: string;
+    profileBackgroundImageChangedAt?: string;
+    avatarFramePreset?: string;
     $createdAt: string;
     $updatedAt: string;
 };
@@ -226,11 +235,27 @@ export async function updateUserProfile(
     const { databases } = getAdminClient();
     const env = getEnvConfig();
 
+    const cleanData: Record<string, string | boolean | string[] | null> = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (value !== undefined) {
+            cleanData[key] = value as string | boolean | string[] | null;
+        }
+    }
+
+    if (Object.keys(cleanData).length === 0) {
+        const existing = await databases.getDocument(
+            env.databaseId,
+            env.collections.profiles,
+            profileId,
+        );
+        return existing as unknown as UserProfile;
+    }
+
     const profile = await databases.updateDocument(
         env.databaseId,
         env.collections.profiles,
         profileId,
-        data,
+        cleanData,
     );
 
     return profile as unknown as UserProfile;
@@ -274,6 +299,150 @@ export async function deleteAvatarFile(fileId: string): Promise<void> {
     } catch {
         // Don't throw - avatar deletion is not critical
     }
+}
+
+/**
+ * Delete a user's profile background image file
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {Promise<void>} The return value.
+ */
+export async function deleteProfileBackgroundFile(
+    fileId: string,
+): Promise<void> {
+    try {
+        const { storage } = getAdminClient();
+        const env = getEnvConfig();
+
+        await storage.deleteFile(env.buckets.profileBackgrounds, fileId);
+    } catch {
+        // Don't throw - file deletion is not critical
+    }
+}
+
+/**
+ * Get profile background image URL
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {string} The return value.
+ */
+export function getProfileBackgroundUrl(fileId: string): string {
+    const env = getEnvConfig();
+    return `${env.endpoint}/storage/buckets/${env.buckets.profileBackgrounds}/files/${fileId}/view?project=${env.project}`;
+}
+
+/**
+ * Get predefined avatar frame image URL.
+ *
+ * @param {string} fileId - The file id value.
+ * @returns {string} The return value.
+ */
+export function getPredefinedAvatarFrameUrl(fileId: string): string {
+    const env = getEnvConfig();
+    return `${env.endpoint}/storage/buckets/${env.buckets.avatarFramesPredefined}/files/${fileId}/view?project=${env.project}`;
+}
+
+/**
+ * Get predefined avatar frame URL for a preset id.
+ *
+ * @param {string | undefined} presetId - The preset id value.
+ * @returns {string | undefined} The return value.
+ */
+export function getPredefinedAvatarFrameUrlByPresetId(presetId?: string) {
+    if (!presetId) {
+        return undefined;
+    }
+
+    return getPresetFrameImageUrl(presetId);
+}
+
+/**
+ * Get predefined frame URL only when the mapped backing file exists.
+ *
+ * @param {string | undefined} presetId - The preset id value.
+ * @returns {Promise<string | undefined>} The return value.
+ */
+export async function getPredefinedAvatarFrameUrlIfExists(presetId?: string) {
+    if (!presetId) {
+        return undefined;
+    }
+
+    const storageFileId = getPresetFrameStorageFileId(presetId);
+    if (!storageFileId) {
+        return undefined;
+    }
+
+    try {
+        const { storage } = getAdminClient();
+        const env = getEnvConfig();
+        await storage.getFile(
+            env.buckets.avatarFramesPredefined,
+            storageFileId,
+        );
+        return getPredefinedAvatarFrameUrl(storageFileId);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Return the subset of preset frame IDs whose mapped files currently exist.
+ *
+ * @param {string[]} presetIds - Candidate preset IDs.
+ * @returns {Promise<Set<string>>} The return value.
+ */
+export async function getExistingPredefinedAvatarFrameIds(presetIds: string[]) {
+    const uniquePresetIds = [...new Set(presetIds.filter(Boolean))];
+    if (uniquePresetIds.length === 0) {
+        return new Set<string>();
+    }
+
+    try {
+        const { storage } = getAdminClient();
+        const env = getEnvConfig();
+
+        const existingPresetIds = await Promise.all(
+            uniquePresetIds.map(async (presetId) => {
+                const storageFileId = getPresetFrameStorageFileId(presetId);
+                if (!storageFileId) {
+                    return undefined;
+                }
+
+                try {
+                    await storage.getFile(
+                        env.buckets.avatarFramesPredefined,
+                        storageFileId,
+                    );
+                    return presetId;
+                } catch {
+                    return undefined;
+                }
+            }),
+        );
+
+        const existingSet = new Set<string>();
+        for (const presetId of existingPresetIds) {
+            if (typeof presetId === "string") {
+                existingSet.add(presetId);
+            }
+        }
+
+        return existingSet;
+    } catch {
+        return new Set<string>();
+    }
+}
+
+/**
+ * Resolve the best avatar frame URL for a profile.
+ *
+ * @param {{ avatarFramePreset?: string }} profile - Minimal frame profile.
+ * @returns {Promise<string | undefined>} The return value.
+ */
+export async function getAvatarFrameUrlForProfile(profile: {
+    avatarFramePreset?: string;
+}) {
+    return getPredefinedAvatarFrameUrlIfExists(profile.avatarFramePreset);
 }
 
 /**

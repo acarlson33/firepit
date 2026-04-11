@@ -23,6 +23,11 @@ vi.mock("node-appwrite", () => ({
 
 vi.mock("@/lib/appwrite-profiles", () => ({
     getAvatarUrl: vi.fn(),
+    getProfileBackgroundUrl: vi.fn(),
+    getPredefinedAvatarFrameUrlByPresetId: vi.fn(),
+    getExistingPredefinedAvatarFrameIds: vi.fn(() =>
+        Promise.resolve(new Set()),
+    ),
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({

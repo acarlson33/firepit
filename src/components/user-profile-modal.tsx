@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
 import {
@@ -17,6 +16,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
 import { useRelationship } from "@/hooks/useRelationship";
 import { toast } from "sonner";
+import { AvatarWithFrame } from "./profile-background";
+import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 
 type UserProfile = {
     userId: string;
@@ -27,6 +28,12 @@ type UserProfile = {
     website?: string;
     avatarFileId?: string;
     avatarUrl?: string;
+    profileBackgroundColor?: string;
+    profileBackgroundGradient?: string;
+    profileBackgroundImageFileId?: string;
+    profileBackgroundUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;
@@ -69,6 +76,13 @@ export function UserProfileModal({
             setLoading(true);
             setError(null);
 
+            const cached = profilePrefetchPool.getCachedProfile(userId);
+            if (cached) {
+                setProfile(cached as UserProfile);
+                setLoading(false);
+                return;
+            }
+
             try {
                 const response = await fetch(`/api/users/${userId}/profile`);
 
@@ -79,7 +93,6 @@ export function UserProfileModal({
                 const data = (await response.json()) as UserProfile;
                 setProfile(data);
             } catch {
-                // Error already handled by setting error state
                 setError("Unable to load profile");
             } finally {
                 setLoading(false);
@@ -95,6 +108,20 @@ export function UserProfileModal({
         userName ||
         "Unknown User";
     const avatarUrl = profile?.avatarUrl || initialAvatarUrl;
+
+    const cardStyle = profile?.profileBackgroundUrl
+        ? {
+              backgroundImage: `url(${profile.profileBackgroundUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+          }
+        : profile?.profileBackgroundGradient
+          ? { background: profile.profileBackgroundGradient }
+          : profile?.profileBackgroundColor
+            ? { background: profile.profileBackgroundColor }
+            : undefined;
+
+    const hasBackground = Boolean(cardStyle);
 
     async function handleStartDM() {
         if (!onStartDM) {
@@ -136,13 +163,13 @@ export function UserProfileModal({
 
     return (
         <Dialog onOpenChange={onOpenChange} open={open}>
-            <DialogContent className="max-w-lg">
-                <DialogHeader>
+            <DialogContent className="max-w-lg p-0">
+                <DialogHeader className="sr-only">
                     <DialogTitle>User Profile</DialogTitle>
                 </DialogHeader>
 
                 {loading ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 p-6">
                         <div className="flex items-center gap-4">
                             <Skeleton className="size-20 rounded-full" />
                             <div className="flex-1 space-y-2">
@@ -157,141 +184,158 @@ export function UserProfileModal({
                         <p>{error}</p>
                     </div>
                 ) : (
-                    <div className="space-y-4">
-                        {/* Avatar and Name */}
-                        <div className="flex items-center gap-4">
-                            <div className="relative size-20 overflow-hidden rounded-full border-2 border-border bg-muted">
-                                {avatarUrl ? (
-                                    <Image
-                                        alt={displayName}
-                                        className="object-cover"
-                                        fill
-                                        sizes="80px"
-                                        src={avatarUrl}
+                    <div
+                        className="relative overflow-hidden rounded-lg"
+                        style={cardStyle}
+                    >
+                        {hasBackground && (
+                            <div className="absolute inset-0 bg-black/40" />
+                        )}
+                        <div
+                            className={`relative ${hasBackground ? "z-10" : ""} space-y-4 p-6`}
+                        >
+                            <div className="rounded-lg bg-black/20 backdrop-blur-sm p-4">
+                                {/* Avatar and Name */}
+                                <div className="flex items-center gap-4">
+                                    <AvatarWithFrame
+                                        avatarFramePreset={
+                                            profile?.avatarFramePreset
+                                        }
+                                        avatarFrameUrl={profile?.avatarFrameUrl}
+                                        avatarUrl={avatarUrl}
+                                        displayName={displayName}
+                                        size="lg"
                                     />
-                                ) : (
-                                    <div className="flex size-full items-center justify-center text-2xl font-semibold text-muted-foreground">
-                                        {displayName[0]?.toUpperCase() ?? "?"}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="font-semibold text-lg">
-                                    {displayName}
-                                </h3>
-                                {profile?.pronouns && (
-                                    <p className="text-muted-foreground text-sm">
-                                        {profile.pronouns}
-                                    </p>
-                                )}
-                                {profile?.status && (
-                                    <div className="mt-1 flex items-center gap-2 text-sm">
-                                        <span
-                                            className={`inline-block size-2 rounded-full ${
-                                                profile.status.status ===
-                                                "online"
-                                                    ? "bg-green-500"
-                                                    : profile.status.status ===
-                                                        "away"
-                                                      ? "bg-yellow-500"
-                                                      : profile.status
-                                                              .status === "busy"
-                                                        ? "bg-red-500"
-                                                        : "bg-gray-400"
-                                            }`}
-                                        />
-                                        <span className="capitalize text-muted-foreground">
-                                            {profile.status.status}
-                                        </span>
-                                        {profile.status.customMessage && (
-                                            <span className="text-muted-foreground">
-                                                - {profile.status.customMessage}
-                                            </span>
+                                    <div className="flex-1">
+                                        <h3 className="font-semibold text-lg">
+                                            {displayName}
+                                        </h3>
+                                        {profile?.pronouns && (
+                                            <p className="text-foreground/90 text-sm">
+                                                {profile.pronouns}
+                                            </p>
+                                        )}
+                                        {profile?.status && (
+                                            <div className="mt-1 flex items-center gap-2 text-sm">
+                                                <span
+                                                    className={`inline-block size-2 rounded-full ${
+                                                        profile.status
+                                                            .status === "online"
+                                                            ? "bg-green-500"
+                                                            : profile.status
+                                                                    .status ===
+                                                                "away"
+                                                              ? "bg-yellow-500"
+                                                              : profile.status
+                                                                      .status ===
+                                                                  "busy"
+                                                                ? "bg-red-500"
+                                                                : "bg-gray-400"
+                                                    }`}
+                                                />
+                                                <span className="capitalize text-foreground/90">
+                                                    {profile.status.status}
+                                                </span>
+                                                {profile.status
+                                                    .customMessage && (
+                                                    <span className="text-foreground/80">
+                                                        -{" "}
+                                                        {
+                                                            profile.status
+                                                                .customMessage
+                                                        }
+                                                    </span>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* Bio */}
+                                {profile?.bio && (
+                                    <div className="space-y-2 mt-4">
+                                        <h4 className="font-medium text-sm">
+                                            About
+                                        </h4>
+                                        <p className="whitespace-pre-wrap text-foreground text-sm">
+                                            {profile.bio}
+                                        </p>
+                                    </div>
                                 )}
-                            </div>
-                        </div>
 
-                        {/* Bio */}
-                        {profile?.bio && (
-                            <div className="space-y-2">
-                                <h4 className="font-medium text-sm">About</h4>
-                                <p className="whitespace-pre-wrap text-muted-foreground text-sm">
-                                    {profile.bio}
-                                </p>
-                            </div>
-                        )}
+                                {/* Additional Info */}
+                                {(profile?.location || profile?.website) && (
+                                    <div className="space-y-2">
+                                        <h4 className="font-medium text-sm">
+                                            Information
+                                        </h4>
+                                        <div className="space-y-1 text-sm">
+                                            {profile.location && (
+                                                <div className="flex gap-2">
+                                                    <span className="text-foreground/80">
+                                                        Location:
+                                                    </span>
+                                                    <span>
+                                                        {profile.location}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {profile.website && (
+                                                <div className="flex gap-2">
+                                                    <span className="text-foreground/80">
+                                                        Website:
+                                                    </span>
+                                                    <a
+                                                        className="text-primary hover:underline"
+                                                        href={profile.website}
+                                                        rel="noopener noreferrer"
+                                                        target="_blank"
+                                                    >
+                                                        {profile.website}
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
-                        {/* Additional Info */}
-                        {(profile?.location || profile?.website) && (
-                            <div className="space-y-2">
-                                <h4 className="font-medium text-sm">
-                                    Information
-                                </h4>
-                                <div className="space-y-1 text-sm">
-                                    {profile.location && (
-                                        <div className="flex gap-2">
-                                            <span className="text-muted-foreground">
-                                                Location:
-                                            </span>
-                                            <span>{profile.location}</span>
-                                        </div>
+                                {/* Actions */}
+                                <div className="space-y-2 pt-2">
+                                    {onStartDM && (
+                                        <Button
+                                            className="w-full"
+                                            disabled={
+                                                startingDM ||
+                                                Boolean(
+                                                    relationship &&
+                                                    !relationship.canSendDirectMessage,
+                                                )
+                                            }
+                                            onClick={() => void handleStartDM()}
+                                            variant="default"
+                                        >
+                                            <MessageSquare className="mr-2 h-4 w-4" />
+                                            {startingDM
+                                                ? "Starting..."
+                                                : "Send Direct Message"}
+                                        </Button>
                                     )}
-                                    {profile.website && (
-                                        <div className="flex gap-2">
-                                            <span className="text-muted-foreground">
-                                                Website:
-                                            </span>
-                                            <a
-                                                className="text-primary hover:underline"
-                                                href={profile.website}
-                                                rel="noopener noreferrer"
-                                                target="_blank"
-                                            >
-                                                {profile.website}
-                                            </a>
-                                        </div>
-                                    )}
+                                    <RelationshipActions
+                                        displayName={displayName}
+                                        fullWidth
+                                        targetUserId={userId}
+                                    />
+                                    <Button
+                                        asChild
+                                        className="w-full"
+                                        variant="secondary"
+                                    >
+                                        <Link href={`/profile/${userId}`}>
+                                            View Full Profile
+                                        </Link>
+                                    </Button>
                                 </div>
                             </div>
-                        )}
-
-                        {/* Actions */}
-                        <div className="space-y-2 pt-2">
-                            {onStartDM && (
-                                <Button
-                                    className="w-full"
-                                    disabled={
-                                        startingDM ||
-                                        Boolean(
-                                            relationship &&
-                                            !relationship.canSendDirectMessage,
-                                        )
-                                    }
-                                    onClick={() => void handleStartDM()}
-                                    variant="default"
-                                >
-                                    <MessageSquare className="mr-2 h-4 w-4" />
-                                    {startingDM
-                                        ? "Starting..."
-                                        : "Send Direct Message"}
-                                </Button>
-                            )}
-                            <RelationshipActions
-                                displayName={displayName}
-                                fullWidth
-                                targetUserId={userId}
-                            />
-                            <Button
-                                asChild
-                                className="w-full"
-                                variant="outline"
-                            >
-                                <Link href={`/profile/${userId}`}>
-                                    View Full Profile
-                                </Link>
-                            </Button>
                         </div>
                     </div>
                 )}

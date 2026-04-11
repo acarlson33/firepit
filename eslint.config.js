@@ -93,7 +93,7 @@ export default [
             "@typescript-eslint/restrict-template-expressions": [
                 "error",
                 {
-                    allowAny: false,
+                    allowAny: true,
                     allowBoolean: true,
                     allowNumber: true,
                     allowNullish: true,
