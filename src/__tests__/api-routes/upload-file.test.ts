@@ -3,315 +3,406 @@ import { POST, DELETE } from "@/app/api/upload-file/route";
 
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
-	ID: { unique: () => "mock-file-id" },
-	Permission: {
-		read: vi.fn((role) => `read(${role})`),
-		update: vi.fn((role) => `update(${role})`),
-		delete: vi.fn((role) => `delete(${role})`),
-	},
-	Role: {
-		any: vi.fn(() => "any"),
-		user: vi.fn((id) => `user:${id}`),
-	},
+    ID: { unique: () => "mock-file-id" },
+    AppwriteException: class AppwriteException extends Error {
+        code: number;
+        type: string;
+        constructor(message: string, code = 500, type = "unknown") {
+            super(message);
+            this.code = code;
+            this.type = type;
+        }
+    },
+    Permission: {
+        read: vi.fn((role) => `read(${role})`),
+        update: vi.fn((role) => `update(${role})`),
+        delete: vi.fn((role) => `delete(${role})`),
+    },
+    Role: {
+        any: vi.fn(() => "any"),
+        user: vi.fn((id) => `user:${id}`),
+    },
 }));
 
 // Create persistent mocks using vi.hoisted
-const { mockGetServerSession, mockCreateFile, mockDeleteFile } = vi.hoisted(() => ({
-	mockGetServerSession: vi.fn(),
-	mockCreateFile: vi.fn(),
-	mockDeleteFile: vi.fn(),
-}));
+const { mockGetServerSession, mockCreateFile, mockGetFile, mockDeleteFile } =
+    vi.hoisted(() => ({
+        mockGetServerSession: vi.fn(),
+        mockCreateFile: vi.fn(),
+        mockGetFile: vi.fn().mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        }),
+        mockDeleteFile: vi.fn(),
+    }));
 
 // Mock dependencies
 vi.mock("@/lib/auth-server", () => ({
-	getServerSession: mockGetServerSession,
+    getServerSession: mockGetServerSession,
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
-	getServerClient: vi.fn(() => ({
-		storage: {
-			createFile: mockCreateFile,
-			deleteFile: mockDeleteFile,
-		},
-	})),
+    getServerClient: vi.fn(() => ({
+        storage: {
+            createFile: mockCreateFile,
+            getFile: mockGetFile,
+            deleteFile: mockDeleteFile,
+        },
+    })),
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
-	getEnvConfig: vi.fn(() => ({
-		endpoint: "https://cloud.appwrite.io/v1",
-		project: "test-project",
-		databaseId: "main",
-		collections: {
-			servers: "servers",
-			channels: "channels",
-			messages: "messages",
-			audit: "audit",
-			typing: "typing",
-			memberships: "memberships",
-			profiles: "profiles",
-			conversations: "conversations",
-			directMessages: "direct_messages",
-			statuses: "statuses",
-		},
-		buckets: {
-			files: "files",
-			avatars: "avatars",
-			images: "images",
-			emojis: "emojis",
-		},
-		teams: {
-			adminTeamId: null,
-			moderatorTeamId: null,
-		},
-	})),
+    getEnvConfig: vi.fn(() => ({
+        endpoint: "https://cloud.appwrite.io/v1",
+        project: "test-project",
+        databaseId: "main",
+        collections: {
+            servers: "servers",
+            channels: "channels",
+            messages: "messages",
+            audit: "audit",
+            typing: "typing",
+            memberships: "memberships",
+            profiles: "profiles",
+            conversations: "conversations",
+            directMessages: "direct_messages",
+            statuses: "statuses",
+        },
+        buckets: {
+            files: "files",
+            avatars: "avatars",
+            images: "images",
+            emojis: "emojis",
+        },
+        teams: {
+            adminTeamId: null,
+            moderatorTeamId: null,
+        },
+    })),
 }));
 
 vi.mock("@/lib/newrelic-utils", () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-	},
-	recordError: vi.fn(),
-	setTransactionName: vi.fn(),
-	trackApiCall: vi.fn(),
-	addTransactionAttributes: vi.fn(),
-	recordEvent: vi.fn(),
+    logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+    },
+    recordError: vi.fn(),
+    setTransactionName: vi.fn(),
+    trackApiCall: vi.fn(),
+    addTransactionAttributes: vi.fn(),
+    recordEvent: vi.fn(),
 }));
 
 describe("POST /api/upload-file", () => {
-	beforeEach(() => {
-		mockGetServerSession.mockClear();
-		mockCreateFile.mockClear();
-		mockDeleteFile.mockClear();
-	});
+    beforeEach(() => {
+        mockGetServerSession.mockClear();
+        mockCreateFile.mockClear();
+        mockDeleteFile.mockClear();
+    });
 
-	it("should reject unauthorized requests", async () => {
-		mockGetServerSession.mockResolvedValue(null);
+    it("should reject unauthorized requests", async () => {
+        mockGetServerSession.mockResolvedValue(null);
 
-		const formData = new FormData();
-		formData.append("file", new File(["test"], "test.pdf", { type: "application/pdf" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["test"], "test.pdf", { type: "application/pdf" }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(401);
+        const response = await POST(request);
+        expect(response.status).toBe(401);
 
-		const data = await response.json();
-		expect(data).toEqual({ error: "Unauthorized" });
-	});
+        const data = await response.json();
+        expect(data).toEqual({ error: "Unauthorized" });
+    });
 
-	it("should reject requests without a file", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
+    it("should reject requests without a file", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
 
-		const formData = new FormData();
+        const formData = new FormData();
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(400);
+        const response = await POST(request);
+        expect(response.status).toBe(400);
 
-		const data = await response.json();
-		expect(data).toEqual({ error: "No file provided" });
-	});
+        const data = await response.json();
+        expect(data).toEqual({ error: "No file provided" });
+    });
 
-	it("should reject unsupported file types", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
+    it("should reject unsupported file types", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
 
-		const formData = new FormData();
-		formData.append("file", new File(["test"], "test.exe", { type: "application/x-msdownload" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["test"], "test.exe", {
+                type: "application/x-msdownload",
+            }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(400);
+        const response = await POST(request);
+        expect(response.status).toBe(400);
 
-	const data = await response.json();
-	expect(data.error).toBe("File type not supported");
-});
+        const data = await response.json();
+        expect(data.error).toBe("File type not supported");
+    });
 
-it("should reject files that are too large", async () => {
-	mockGetServerSession.mockResolvedValue({ $id: "user123" });
+    it("should reject files that are too large", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
 
-	const formData = new FormData();
-	// Create a buffer that simulates a 60MB file (just create a 60MB buffer for validation)
-	const largeBuffer = new ArrayBuffer(60 * 1024 * 1024);
-	const largeFile = new File([largeBuffer], "large.mp4", { type: "video/mp4" });
-	formData.append("file", largeFile);
+        const formData = new FormData();
+        // Create a buffer that simulates a 60MB file (just create a 60MB buffer for validation)
+        const largeBuffer = new ArrayBuffer(60 * 1024 * 1024);
+        const largeFile = new File([largeBuffer], "large.mp4", {
+            type: "video/mp4",
+        });
+        formData.append("file", largeFile);
 
-	const request = new Request("http://localhost/api/upload-file", {
-		method: "POST",
-		body: formData,
-	});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-	const response = await POST(request);
-	expect(response.status).toBe(400);
+        const response = await POST(request);
+        expect(response.status).toBe(400);
 
-	const data = await response.json();
-	expect(data.error).toContain("File size exceeds maximum");
-}, 30000); // Increase timeout to 30 seconds for large file handling
+        const data = await response.json();
+        expect(data.error).toContain("File size exceeds maximum");
+    }, 30000); // Increase timeout to 30 seconds for large file handling
 
-	it("should accept valid PDF files", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockCreateFile.mockResolvedValue({
-			$id: "file123",
-		});
+    it("should accept valid PDF files", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCreateFile.mockResolvedValue({
+            $id: "file123",
+        });
 
-		const formData = new FormData();
-		formData.append("file", new File(["test content"], "test.pdf", { type: "application/pdf" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["test content"], "test.pdf", { type: "application/pdf" }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(200);
+        const response = await POST(request);
+        expect(response.status).toBe(200);
 
-		const data = await response.json();
-		expect(data.fileId).toBe("file123");
-		expect(data.fileName).toBe("test.pdf");
-		expect(data.fileType).toBe("application/pdf");
-		expect(data.category).toBe("documents");
-		expect(mockCreateFile).toHaveBeenCalled();
-	});
+        const data = await response.json();
+        expect(data.fileId).toBe("file123");
+        expect(data.fileName).toBe("test.pdf");
+        expect(data.fileType).toBe("application/pdf");
+        expect(data.category).toBe("documents");
+        expect(mockCreateFile).toHaveBeenCalled();
+    });
 
-	it("should accept valid video files", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockCreateFile.mockResolvedValue({
-			$id: "video123",
-		});
+    it("should accept valid video files", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCreateFile.mockResolvedValue({
+            $id: "video123",
+        });
 
-		const formData = new FormData();
-		formData.append("file", new File(["video content"], "test.mp4", { type: "video/mp4" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["video content"], "test.mp4", { type: "video/mp4" }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(200);
+        const response = await POST(request);
+        expect(response.status).toBe(200);
 
-		const data = await response.json();
-		expect(data.fileId).toBe("video123");
-		expect(data.category).toBe("videos");
-	});
+        const data = await response.json();
+        expect(data.fileId).toBe("video123");
+        expect(data.category).toBe("videos");
+    });
 
-	it("should accept valid audio files", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockCreateFile.mockResolvedValue({
-			$id: "audio123",
-		});
+    it("should accept valid audio files", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCreateFile.mockResolvedValue({
+            $id: "audio123",
+        });
 
-		const formData = new FormData();
-		formData.append("file", new File(["audio content"], "test.mp3", { type: "audio/mpeg" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["audio content"], "test.mp3", { type: "audio/mpeg" }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(200);
+        const response = await POST(request);
+        expect(response.status).toBe(200);
 
-		const data = await response.json();
-		expect(data.fileId).toBe("audio123");
-		expect(data.category).toBe("audio");
-	});
+        const data = await response.json();
+        expect(data.fileId).toBe("audio123");
+        expect(data.category).toBe("audio");
+    });
 
-	it("should handle upload errors gracefully", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockCreateFile.mockRejectedValue(new Error("Storage error"));
+    it("should handle upload errors gracefully", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockCreateFile.mockRejectedValue(new Error("Storage error"));
 
-		const formData = new FormData();
-		formData.append("file", new File(["test"], "test.pdf", { type: "application/pdf" }));
+        const formData = new FormData();
+        formData.append(
+            "file",
+            new File(["test"], "test.pdf", { type: "application/pdf" }),
+        );
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "POST",
-			body: formData,
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "POST",
+            body: formData,
+        });
 
-		const response = await POST(request);
-		expect(response.status).toBe(500);
+        const response = await POST(request);
+        expect(response.status).toBe(500);
 
-		const data = await response.json();
-		expect(data.error).toBe("Storage error");
-	});
+        const data = await response.json();
+        expect(data.error).toBe("Internal server error");
+    });
 });
 
 describe("DELETE /api/upload-file", () => {
-	beforeEach(() => {
-		mockGetServerSession.mockClear();
-		mockCreateFile.mockClear();
-		mockDeleteFile.mockClear();
-	});
+    beforeEach(() => {
+        mockGetFile.mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        });
+    });
+    beforeEach(() => {
+        mockGetServerSession.mockClear();
+        mockCreateFile.mockClear();
+        mockDeleteFile.mockClear();
+    });
 
-	it("should reject unauthorized requests", async () => {
-		mockGetServerSession.mockResolvedValue(null);
+    it("should reject unauthorized requests", async () => {
+        mockGetServerSession.mockResolvedValue(null);
 
-		const request = new Request("http://localhost/api/upload-file?fileId=file123", {
-			method: "DELETE",
-		});
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            {
+                method: "DELETE",
+            },
+        );
 
-		const response = await DELETE(request);
-		expect(response.status).toBe(401);
+        const response = await DELETE(request);
+        expect(response.status).toBe(401);
 
-		const data = await response.json();
-		expect(data).toEqual({ error: "Unauthorized" });
-	});
+        const data = await response.json();
+        expect(data).toEqual({ error: "Unauthorized" });
+    });
 
-	it("should reject requests without fileId", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
+    it("should reject requests without fileId", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
 
-		const request = new Request("http://localhost/api/upload-file", {
-			method: "DELETE",
-		});
+        const request = new Request("http://localhost/api/upload-file", {
+            method: "DELETE",
+        });
 
-		const response = await DELETE(request);
-		expect(response.status).toBe(400);
+        const response = await DELETE(request);
+        expect(response.status).toBe(400);
 
-		const data = await response.json();
-		expect(data).toEqual({ error: "No fileId provided" });
-	});
+        const data = await response.json();
+        expect(data).toEqual({ error: "No fileId provided" });
+    });
 
-	it("should delete a file successfully", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockDeleteFile.mockResolvedValue(undefined);
+    it("should delete a file successfully", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockDeleteFile.mockResolvedValue(undefined);
 
-		const request = new Request("http://localhost/api/upload-file?fileId=file123", {
-			method: "DELETE",
-		});
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            {
+                method: "DELETE",
+            },
+        );
 
-		const response = await DELETE(request);
-		expect(response.status).toBe(200);
+        const response = await DELETE(request);
+        expect(response.status).toBe(200);
 
-		const data = await response.json();
-		expect(data).toEqual({ success: true });
-		expect(mockDeleteFile).toHaveBeenCalledWith("files", "file123");
-	});
+        const data = await response.json();
+        expect(data).toEqual({ success: true });
+        expect(mockDeleteFile).toHaveBeenCalledWith("files", "file123");
+    });
 
-	it("should handle delete errors gracefully", async () => {
-		mockGetServerSession.mockResolvedValue({ $id: "user123" });
-		mockDeleteFile.mockRejectedValue(new Error("Delete failed"));
+    it("should return 403 when user does not own the file", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "differentUser" });
+        mockGetFile.mockResolvedValue({
+            $id: "file123",
+            $permissions: ['delete("user:user123")', 'read("user:user123")'],
+        });
 
-		const request = new Request("http://localhost/api/upload-file?fileId=file123", {
-			method: "DELETE",
-		});
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            { method: "DELETE" },
+        );
 
-		const response = await DELETE(request);
-		expect(response.status).toBe(500);
+        const response = await DELETE(request);
+        expect(response.status).toBe(403);
 
-		const data = await response.json();
-		expect(data).toEqual({ error: "Failed to delete file" });
-	});
+        const data = await response.json();
+        expect(data).toEqual({ error: "Forbidden" });
+        expect(mockDeleteFile).not.toHaveBeenCalled();
+    });
+
+    it("should return 404 when file does not exist", async () => {
+        const { AppwriteException } = await import("node-appwrite");
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockGetFile.mockRejectedValue(
+            new AppwriteException("Not found", 404, "document_not_found"),
+        );
+
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=missing-file",
+            { method: "DELETE" },
+        );
+
+        const response = await DELETE(request);
+        expect(response.status).toBe(404);
+
+        const data = await response.json();
+        expect(data).toEqual({ error: "File not found" });
+    });
+
+    it("should handle delete errors gracefully", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user123" });
+        mockDeleteFile.mockRejectedValue(new Error("Delete failed"));
+
+        const request = new Request(
+            "http://localhost/api/upload-file?fileId=file123",
+            {
+                method: "DELETE",
+            },
+        );
+
+        const response = await DELETE(request);
+        expect(response.status).toBe(500);
+
+        const data = await response.json();
+        expect(data).toEqual({ error: "Failed to delete file" });
+    });
 });

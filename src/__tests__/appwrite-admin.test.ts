@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AppwriteException } from "node-appwrite";
 
 import {
     adminDeleteMessage,
@@ -128,6 +129,7 @@ vi.mock("../lib/appwrite-server", () => {
         getServerClient: () => ({
             client: {},
             databases,
+            tablesDB: {} as any,
             teams: {} as any,
             storage: {} as any,
         }),
@@ -168,6 +170,12 @@ describe("admin channel & global message listing", () => {
                 databases: {
                     listDocuments: () => Promise.reject(new Error("boom")),
                 },
+                tablesDB: {
+                    createTransaction: vi.fn(),
+                    getRow: vi.fn(),
+                    updateRow: vi.fn(),
+                    updateTransaction: vi.fn(),
+                },
                 teams: {} as any,
                 storage: {} as any,
             }),
@@ -189,14 +197,10 @@ describe("adminDeleteMessage", () => {
         (process.env as any).APPWRITE_PROJECT_ID = "p";
         (process.env as any).APPWRITE_API_KEY = "k";
         mockDeleteDocument.mockRejectedValueOnce(
-            Object.assign(
-                new Error(
-                    "Document with the requested ID 'm1' could not be found.",
-                ),
-                {
-                    code: 404,
-                    type: "document_not_found",
-                },
+            new AppwriteException(
+                "Document with the requested ID 'm1' could not be found.",
+                404,
+                "document_not_found",
             ),
         );
 

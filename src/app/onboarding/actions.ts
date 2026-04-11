@@ -10,6 +10,31 @@ import {
     updateNotificationSettings,
 } from "@/lib/notification-settings";
 import type { NotificationLevel, DirectMessagePrivacy } from "@/lib/types";
+import { DIRECT_MESSAGE_PRIVACY_VALUES } from "@/lib/types";
+
+const VALID_NOTIFICATION_LEVELS: readonly NotificationLevel[] = [
+    "all",
+    "mentions",
+    "nothing",
+] as const;
+
+function isNotificationLevel(
+    value: FormDataEntryValue | null,
+): value is NotificationLevel {
+    return (
+        typeof value === "string" &&
+        (VALID_NOTIFICATION_LEVELS as readonly string[]).includes(value)
+    );
+}
+
+function isDirectMessagePrivacy(
+    value: FormDataEntryValue | null,
+): value is DirectMessagePrivacy {
+    return (
+        typeof value === "string" &&
+        (DIRECT_MESSAGE_PRIVACY_VALUES as readonly string[]).includes(value)
+    );
+}
 
 /**
  * Complete onboarding by setting up user profile and preferences
@@ -24,11 +49,16 @@ export async function completeOnboardingAction(
         const profile = await getOrCreateUserProfile(user.$id, user.name);
 
         // Extract profile form data
-        const displayName = formData.get("displayName") as string;
-        const pronouns = formData.get("pronouns") as string;
-        const bio = formData.get("bio") as string;
+        const rawDisplayName = formData.get("displayName");
+        const rawPronouns = formData.get("pronouns");
+        const rawBio = formData.get("bio");
 
-        if (!displayName?.trim()) {
+        const displayName =
+            typeof rawDisplayName === "string" ? rawDisplayName : "";
+        const pronouns = typeof rawPronouns === "string" ? rawPronouns : "";
+        const bio = typeof rawBio === "string" ? rawBio : "";
+
+        if (!displayName.trim()) {
             return { success: false, error: "Display name is required" };
         }
 
@@ -36,26 +66,29 @@ export async function completeOnboardingAction(
         const telemetryEnabled = formData.get("telemetryEnabled") === "true";
 
         await updateUserProfile(profile.$id, {
-            bio: bio?.trim() || undefined,
+            bio: bio.trim() || undefined,
             displayName: displayName.trim(),
-            pronouns: pronouns?.trim() || undefined,
+            pronouns: pronouns.trim() || undefined,
             telemetryEnabled,
         });
 
         // Extract notification settings
-        const notificationLevel = formData.get(
-            "notificationLevel",
-        ) as NotificationLevel;
-        const directMessagePrivacy = formData.get(
-            "directMessagePrivacy",
-        ) as DirectMessagePrivacy;
+        const rawLevel = formData.get("notificationLevel");
+        const rawPrivacy = formData.get("directMessagePrivacy");
+        const notificationLevel: NotificationLevel = isNotificationLevel(
+            rawLevel,
+        )
+            ? rawLevel
+            : "all";
+        const directMessagePrivacy: DirectMessagePrivacy =
+            isDirectMessagePrivacy(rawPrivacy) ? rawPrivacy : "everyone";
         const notificationSound = formData.get("notificationSound") === "true";
 
         // Get or create notification settings and update them
         const settings = await getOrCreateNotificationSettings(user.$id);
         await updateNotificationSettings(settings.$id, {
-            directMessagePrivacy: directMessagePrivacy ?? "everyone",
-            globalNotifications: notificationLevel ?? "all",
+            directMessagePrivacy,
+            globalNotifications: notificationLevel,
             notificationSound,
         });
 

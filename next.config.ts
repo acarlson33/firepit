@@ -7,11 +7,8 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
 });
 
 function normalizeRewritePath(path: string) {
-    if (path.startsWith("/")) {
-        return path;
-    }
-
-    return `/${path}`;
+    const clean = path.replace(/^\/+|\/+$/g, "");
+    return clean ? `/${clean}` : "";
 }
 
 function stripTrailingSlash(url: string) {
@@ -188,11 +185,6 @@ const nextConfig: NextConfig = {
                 protocol: "https",
                 hostname: "nyc.cloud.appwrite.io",
                 pathname: "/v1/storage/buckets/profile-backgrounds/files/**",
-            },
-            {
-                protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
-                pathname: "/v1/storage/buckets/avatar-frames/files/**",
             },
             {
                 protocol: "https",

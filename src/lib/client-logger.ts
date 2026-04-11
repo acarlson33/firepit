@@ -1,6 +1,7 @@
 /**
- * Client-side logger that integrates with New Relic Browser monitoring
- * Falls back to console in development
+ * Client-side logger that delegates to client-telemetry for routing
+ * events to New Relic or PostHog based on NEXT_PUBLIC_TELEMETRY_PROVIDER.
+ * Falls back to console in development.
  */
 
 import { recordClientAction, recordClientError } from "@/lib/client-telemetry";

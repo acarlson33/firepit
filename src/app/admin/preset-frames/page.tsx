@@ -14,10 +14,6 @@ import {
     uploadPredefinedFrameAssetAction,
 } from "./actions";
 
-type PageProps = {
-    searchParams?: Promise<Record<string, string | string[]>>;
-};
-
 type FrameAssetStatus = {
     frameId: string;
     exists: boolean;
@@ -60,14 +56,10 @@ async function getFrameAssetStatuses() {
     }));
 }
 
-export default async function AdminPresetFramesPage({
-    searchParams,
-}: PageProps) {
+export default async function AdminPresetFramesPage() {
     await requireAdmin().catch(() => {
         redirect("/");
     });
-
-    await searchParams;
 
     const frames = await getFrameAssetStatuses();
 

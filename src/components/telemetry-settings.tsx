@@ -53,6 +53,7 @@ export function TelemetrySettings() {
                         isDisabled ? "pointer-events-none opacity-50" : ""
                     }
                     id="telemetry-enabled"
+                    tabIndex={isDisabled ? -1 : 0}
                     onCheckedChange={(checked) =>
                         isDisabled
                             ? undefined

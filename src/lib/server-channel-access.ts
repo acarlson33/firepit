@@ -1,4 +1,4 @@
-import { Query } from "node-appwrite";
+import { AppwriteException, Query } from "node-appwrite";
 import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
@@ -271,11 +271,20 @@ async function hasAccessToCategory(
         return true;
     }
 
-    const category = await databases.getDocument(
-        env.databaseId,
-        env.collections.categories,
-        categoryId,
-    );
+    let category;
+    try {
+        category = await databases.getDocument(
+            env.databaseId,
+            env.collections.categories,
+            categoryId,
+        );
+    } catch (error) {
+        // Only treat not-found (404) as permissive; re-throw other errors.
+        if (error instanceof AppwriteException && error.code === 404) {
+            return true;
+        }
+        throw error;
+    }
 
     const allowedRoleIds = category.allowedRoleIds as string[] | undefined;
     if (!allowedRoleIds || allowedRoleIds.length === 0) {

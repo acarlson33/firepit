@@ -64,7 +64,7 @@ Add your environment variables to your `.env.local` file and to your hosting pro
 PostHog AI
 
 ```shell
-NEXT_PUBLIC_POSTHOG_TOKEN=<ph_project_token>
+NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=<ph_project_token>
 NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 ```
 
@@ -79,20 +79,20 @@ PostHog AI
 ### instrumentation-client.js
 
 ```javascript
-import posthog from 'posthog-js'
-posthog.init(process.env.NEXT_PUBLIC_POSTHOG_TOKEN, {
-  api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-  defaults: '2026-01-30'
+import posthog from "posthog-js";
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN, {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    defaults: "2026-01-30",
 });
 ```
 
 ### instrumentation-client.ts
 
 ```typescript
-import posthog from 'posthog-js'
-posthog.init(process.env.NEXT_PUBLIC_POSTHOG_TOKEN!, {
-  api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-  defaults: '2026-01-30'
+import posthog from "posthog-js";
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    defaults: "2026-01-30",
 });
 ```
 
@@ -102,8 +102,8 @@ When using `instrumentation-client`, the values you pass to `posthog.init` remai
 
 If you need flag values after the app has rendered, you’ll want to:
 
--   Evaluate the flag on the server and pass the value into your app, or
--   Evaluate the flag in an earlier page/state, then store and re-use it when needed.
+- Evaluate the flag on the server and pass the value into your app, or
+- Evaluate the flag in an earlier page/state, then store and re-use it when needed.
 
 Both approaches avoid flicker and give you the same outcome as bootstrapping, as long as you use the same `distinct_id` across client and server.
 
@@ -148,16 +148,16 @@ JavaScript
 PostHog AI
 
 ```javascript
-'use client'
-import posthog from 'posthog-js'
+"use client";
+import posthog from "posthog-js";
 export default function Home() {
-  return (
-    <div>
-      <button onClick={() => posthog.capture('test_event')}>
-        Click me for an event
-      </button>
-    </div>
-  );
+    return (
+        <div>
+            <button onClick={() => posthog.capture("test_event")}>
+                Click me for an event
+            </button>
+        </div>
+    );
 }
 ```
 
@@ -170,11 +170,11 @@ JavaScript
 PostHog AI
 
 ```javascript
-'use client'
-import { useFeatureFlagEnabled } from 'posthog-js/react'
+"use client";
+import { useFeatureFlagEnabled } from "posthog-js/react";
 export default function FeatureComponent() {
-  const showNewFeature = useFeatureFlagEnabled('new-feature')
-  return showNewFeature ? <NewFeature /> : <OldFeature />
+    const showNewFeature = useFeatureFlagEnabled("new-feature");
+    return showNewFeature ? <NewFeature /> : <OldFeature />;
 }
 ```
 
@@ -182,8 +182,8 @@ export default function FeatureComponent() {
 
 See the [React SDK docs](/docs/libraries/react.md) for examples of how to use:
 
--   [`posthog-js` functions like custom event capture, user identification, and more.](/docs/libraries/react.md#using-posthog-js-functions)
--   [Feature flags including variants and payloads.](/docs/libraries/react.md#feature-flags)
+- [`posthog-js` functions like custom event capture, user identification, and more.](/docs/libraries/react.md#using-posthog-js-functions)
+- [Feature flags including variants and payloads.](/docs/libraries/react.md#feature-flags)
 
 You can also read [the full `posthog-js` documentation](/docs/libraries/js/features.md) for all the usable functions.
 
@@ -233,21 +233,24 @@ PostHog AI
 
 ```javascript
 // app/posthog.js
-import { PostHog } from 'posthog-node'
+import { PostHog } from "posthog-node";
 export default function PostHogClient() {
-  const posthogClient = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_TOKEN, {
-    host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-    flushAt: 1,
-    flushInterval: 0
-  })
-  return posthogClient
+    const posthogClient = new PostHog(
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
+        {
+            host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+            flushAt: 1,
+            flushInterval: 0,
+        },
+    );
+    return posthogClient;
 }
 ```
 
 > **Note:** Because server-side functions in Next.js can be short-lived, we set `flushAt` to `1` and `flushInterval` to `0`.
 >
-> -   `flushAt` sets how many capture calls we should flush the queue (in one batch).
-> -   `flushInterval` sets how many milliseconds we should wait before flushing the queue. Setting them to the lowest number ensures events are sent immediately and not batched. We also need to call `await posthog.shutdown()` once done.
+> - `flushAt` sets how many capture calls we should flush the queue (in one batch).
+> - `flushInterval` sets how many milliseconds we should wait before flushing the queue. Setting them to the lowest number ensures events are sent immediately and not batched. We also need to call `await posthog.shutdown()` once done.
 
 To use this client, we import it into our pages and call it with the `PostHogClient` function:
 
@@ -256,23 +259,23 @@ JavaScript
 PostHog AI
 
 ```javascript
-import Link from 'next/link'
-import PostHogClient from '../posthog'
+import Link from "next/link";
+import PostHogClient from "../posthog";
 export default async function About() {
-  const posthog = PostHogClient()
-  const flags = await posthog.getAllFlags(
-    'user_distinct_id' // replace with a user's distinct ID
-  );
-  await posthog.shutdown()
-  return (
-    <main>
-      <h1>About</h1>
-      <Link href="/">Go home</Link>
-      { flags['main-cta'] &&
-        <Link href="http://posthog.com/">Go to PostHog</Link>
-      }
-    </main>
-  )
+    const posthog = PostHogClient();
+    const flags = await posthog.getAllFlags(
+        "user_distinct_id", // replace with a user's distinct ID
+    );
+    await posthog.shutdown();
+    return (
+        <main>
+            <h1>About</h1>
+            <Link href="/">Go home</Link>
+            {flags["main-cta"] && (
+                <Link href="http://posthog.com/">Go to PostHog</Link>
+            )}
+        </main>
+    );
 }
 ```
 
@@ -288,60 +291,62 @@ PostHog AI
 
 ```javascript
 // pages/posts/[id].js
-import { useContext, useEffect, useState } from 'react'
-import { getServerSession } from "next-auth/next"
-import { PostHog } from 'posthog-node'
+import { useContext, useEffect, useState } from "react";
+import { getServerSession } from "next-auth/next";
+import { PostHog } from "posthog-node";
 export default function Post({ post, flags }) {
-  const [ctaState, setCtaState] = useState()
-  useEffect(() => {
-    if (flags) {
-      setCtaState(flags['blog-cta'])
-    }
-  })
-  return (
-    <div>
-      <h1>{post.title}</h1>
-      <p>By: {post.author}</p>
-      <p>{post.content}</p>
-      {ctaState &&
-        <p><a href="/">Go to PostHog</a></p>
-      }
-      <button onClick={likePost}>Like</button>
-    </div>
-  )
+    const [ctaState, setCtaState] = useState();
+    useEffect(() => {
+        if (flags) {
+            setCtaState(flags["blog-cta"]);
+        }
+    });
+    return (
+        <div>
+            <h1>{post.title}</h1>
+            <p>By: {post.author}</p>
+            <p>{post.content}</p>
+            {ctaState && (
+                <p>
+                    <a href="/">Go to PostHog</a>
+                </p>
+            )}
+            <button onClick={likePost}>Like</button>
+        </div>
+    );
 }
 export async function getServerSideProps(ctx) {
-  const session = await getServerSession(ctx.req, ctx.res)
-  let flags = null
-  if (session) {
-    const client = new PostHog(
-      process.env.NEXT_PUBLIC_POSTHOG_TOKEN,
-      {
-        host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
-      }
-    )
-    flags = await client.getAllFlags(session.user.email);
-    client.capture({
-      distinctId: session.user.email,
-      event: 'loaded blog article',
-      properties: {
-        $current_url: ctx.req.url,
-      },
-    });
-    await client.shutdown()
-  }
-  const { posts } = await import('../../blog.json')
-  const post = posts.find((post) => post.id.toString() === ctx.params.id)
-  return {
-    props: {
-      post,
-      flags
-    },
-  }
+    const session = await getServerSession(ctx.req, ctx.res);
+    let flags = null;
+    if (session) {
+        const client = new PostHog(
+            process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
+            {
+                host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+            },
+        );
+        flags = await client.getAllFlags(session.user.email);
+        client.capture({
+            distinctId: session.user.email,
+            event: "loaded blog article",
+            properties: {
+                $current_url: ctx.req.url,
+            },
+        });
+        await client.shutdown();
+    }
+    const { posts } = await import("../../blog.json");
+    const post = posts.find((post) => post.id.toString() === ctx.params.id);
+    return {
+        props: {
+            post,
+            flags,
+        },
+    };
 }
 ```
 
-> **Note**: Make sure to *always* call `await client.shutdown()` after sending events from the server-side. PostHog queues events into larger batches, and this call forces all batched events to be flushed immediately.
+> **Note**: Make sure to _always_ call `await client.shutdown()` after sending events from the server-side. PostHog queues events into larger batches, and this call forces all batched events to be flushed immediately.
 
 ### Server-side configuration
 
@@ -354,16 +359,17 @@ TSX
 PostHog AI
 
 ```jsx
-posthog.init(process.env.NEXT_PUBLIC_POSTHOG_TOKEN, {
-  // ... your configuration
-  fetch_options: {
-    cache: 'force-cache', // Use Next.js cache
-    next_options: {       // Passed to the `next` option for `fetch`
-      revalidate: 60,     // Cache for 60 seconds
-      tags: ['posthog'],  // Can be used with Next.js `revalidateTag` function
+posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN, {
+    // ... your configuration
+    fetch_options: {
+        cache: "force-cache", // Use Next.js cache
+        next_options: {
+            // Passed to the `next` option for `fetch`
+            revalidate: 60, // Cache for 60 seconds
+            tags: ["posthog"], // Can be used with Next.js `revalidateTag` function
+        },
     },
-  }
-})
+});
 ```
 
 ## Configuring a reverse proxy to PostHog
@@ -372,9 +378,9 @@ To improve the reliability of client-side tracking and make requests less likely
 
 ## Further reading
 
--   [How to set up Next.js analytics, feature flags, and more](/tutorials/nextjs-analytics.md)
--   [How to set up Next.js pages router analytics, feature flags, and more](/tutorials/nextjs-pages-analytics.md)
--   [How to set up Next.js A/B tests](/tutorials/nextjs-ab-tests.md)
+- [How to set up Next.js analytics, feature flags, and more](/tutorials/nextjs-analytics.md)
+- [How to set up Next.js pages router analytics, feature flags, and more](/tutorials/nextjs-pages-analytics.md)
+- [How to set up Next.js A/B tests](/tutorials/nextjs-ab-tests.md)
 
 ### Community questions
 

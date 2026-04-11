@@ -77,10 +77,8 @@ function hasPostHogCredentials() {
     const projectToken =
         process.env.POSTHOG_PROJECT_API_KEY ??
         process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
-    const host =
-        process.env.POSTHOG_HOST ?? process.env.NEXT_PUBLIC_POSTHOG_HOST;
 
-    return Boolean(projectToken && host);
+    return Boolean(projectToken);
 }
 
 function shouldSendToPostHog() {
@@ -117,6 +115,10 @@ function getDistinctId(attributes?: Record<string, unknown>) {
 
 function getPersonProperties(attributes?: Record<string, unknown>) {
     if (!attributes) {
+        return undefined;
+    }
+
+    if (getDistinctId(attributes) === "server") {
         return undefined;
     }
 

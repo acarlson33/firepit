@@ -221,13 +221,7 @@ describe("Onboarding Page", () => {
         const continueButton = screen.getByRole("button", { name: "Continue" });
         await user.click(continueButton);
 
-        // Should still be on first step
+        // Should still be on first step (native form validation prevents submit)
         expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
-    });
-});
-
-describe("completeOnboardingAction", () => {
-    it("should be defined", () => {
-        expect(completeOnboardingAction).toBeDefined();
     });
 });

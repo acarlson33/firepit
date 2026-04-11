@@ -49,6 +49,10 @@ export async function GET(request: Request, context: RouteContext) {
             [Query.equal("serverId", serverId), Query.limit(100)],
         );
 
+        const membershipUserIds = memberships.documents.map((membership) =>
+            String(membership.userId),
+        );
+
         // Get role assignments for this server
         const roleAssignments = await databases.listDocuments(
             databaseId,
@@ -56,26 +60,30 @@ export async function GET(request: Request, context: RouteContext) {
             [Query.equal("serverId", serverId), Query.limit(100)],
         );
 
-        // Get banned users for this server
+        // Get banned/muted status for this server
         const bannedUsers = await databases.listDocuments(
             databaseId,
             bannedUsersCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(1000)],
+            [Query.equal("serverId", serverId), Query.limit(5000)],
         );
 
-        // Get muted users for this server
         const mutedUsers = await databases.listDocuments(
             databaseId,
             mutedUsersCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(1000)],
+            [Query.equal("serverId", serverId), Query.limit(5000)],
         );
 
-        // Create sets of banned/muted user IDs
+        // Create sets of banned/muted user IDs restricted to returned members
+        const membershipIdSet = new Set(membershipUserIds);
         const bannedUserIds = new Set(
-            bannedUsers.documents.map((doc) => String(doc.userId)),
+            bannedUsers.documents
+                .map((doc) => String(doc.userId))
+                .filter((id) => membershipIdSet.has(id)),
         );
         const mutedUserIds = new Set(
-            mutedUsers.documents.map((doc) => String(doc.userId)),
+            mutedUsers.documents
+                .map((doc) => String(doc.userId))
+                .filter((id) => membershipIdSet.has(id)),
         );
 
         // Create a map of userId to roleIds
@@ -87,9 +95,6 @@ export async function GET(request: Request, context: RouteContext) {
             );
         }
 
-        const membershipUserIds = memberships.documents.map((membership) =>
-            String(membership.userId),
-        );
         const profilesResponse =
             membershipUserIds.length === 0
                 ? { documents: [] }
@@ -163,7 +168,7 @@ export async function GET(request: Request, context: RouteContext) {
 
                 members.push({
                     userId,
-                    userName: profile.userId as string,
+                    userName: profile.userName as string | undefined,
                     displayName: profile.displayName as string | undefined,
                     avatarUrl: profile.avatarUrl as string | undefined,
                     roleIds: roleMap.get(userId) || [],

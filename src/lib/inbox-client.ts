@@ -154,13 +154,14 @@ export async function markInboxContextRead(params?: {
  * @param {InboxScope} scope - The scope: "all", "direct" (DMs), or "server" (channels).
  * @returns {Promise<void>} The return value.
  */
+const SCOPE_TO_CONTEXT_KINDS: Record<InboxScope, InboxContextKind[]> = {
+    all: ["channel", "conversation"],
+    direct: ["conversation"],
+    server: ["channel"],
+};
+
 export async function markInboxScopeRead(scope: InboxScope): Promise<void> {
-    const contextKinds: InboxContextKind[] =
-        scope === "direct"
-            ? ["conversation"]
-            : scope === "server"
-              ? ["channel"]
-              : ["channel", "conversation"];
+    const contextKinds = SCOPE_TO_CONTEXT_KINDS[scope];
 
     const promises = contextKinds.map((contextKind) =>
         markInboxContextRead({ contextKind }),

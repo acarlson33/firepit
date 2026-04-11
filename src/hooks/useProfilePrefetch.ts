@@ -48,7 +48,7 @@ export function useProfilePrefetch() {
 }
 
 export const profilePrefetchPool = {
-    queue: [] as string[],
+    queue: new Set<string>(),
     processing: false,
     maxConcurrent: 3,
 
@@ -57,40 +57,56 @@ export const profilePrefetchPool = {
     },
 
     add(userId: string) {
-        if (!this.queue.includes(userId)) {
-            this.queue.push(userId);
+        if (profileCache.has(userId) || this.queue.has(userId)) {
+            return;
         }
-        void this.process();
+        this.queue.add(userId);
+        this.process().catch(() => {});
     },
 
     async process() {
-        if (this.processing || this.queue.length === 0) {
+        if (this.processing || this.queue.size === 0) {
             return;
         }
 
         this.processing = true;
+        const concurrency = Math.max(1, this.maxConcurrent);
 
-        while (this.queue.length > 0) {
-            const batch = this.queue.splice(0, this.maxConcurrent);
-            await Promise.all(
-                batch.map(async (userId) => {
-                    if (!profileCache.has(userId)) {
-                        try {
-                            const response = await fetch(
-                                `/api/users/${userId}/profile`,
-                            );
-                            if (response.ok) {
-                                const data = await response.json();
-                                profileCache.set(userId, data);
-                            }
-                        } catch {
-                            // Silently fail
-                        }
+        try {
+            while (this.queue.size > 0) {
+                const batch: string[] = [];
+                for (const id of this.queue) {
+                    if (batch.length >= concurrency) {
+                        break;
                     }
-                }),
-            );
+                    batch.push(id);
+                }
+                for (const id of batch) {
+                    this.queue.delete(id);
+                }
+                await Promise.all(
+                    batch.map(async (userId) => {
+                        if (!profileCache.has(userId)) {
+                            try {
+                                const response = await fetch(
+                                    `/api/users/${userId}/profile`,
+                                );
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    profileCache.set(userId, data);
+                                }
+                            } catch (err) {
+                                console.error(
+                                    `[profile-prefetch] Failed for ${userId}:`,
+                                    err instanceof Error ? err.message : err,
+                                );
+                            }
+                        }
+                    }),
+                );
+            }
+        } finally {
+            this.processing = false;
         }
-
-        this.processing = false;
     },
 };

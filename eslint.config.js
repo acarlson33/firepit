@@ -93,6 +93,7 @@ export default [
             "@typescript-eslint/restrict-template-expressions": [
                 "error",
                 {
+                    // TODO: Revert allowAny once stricter types are adopted.
                     allowAny: true,
                     allowBoolean: true,
                     allowNumber: true,

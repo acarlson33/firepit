@@ -19,7 +19,8 @@ if (posthogToken && posthogHost) {
         autocapture: autoCaptureEnabled,
         capture_pageview: capturePageviewEnabled,
         disable_session_recording: !sessionRecordingEnabled,
-        // Include the defaults option as required by PostHog
+        // 2026-01-30 is the PostHog configuration snapshot version that
+        // controls default settings; explicit options above override it.
         defaults: "2026-01-30",
         // Enable exception autocapture for PostHog Error Tracking.
         capture_exceptions: {

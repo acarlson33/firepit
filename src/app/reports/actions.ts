@@ -4,28 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth-server";
 import {
     createReport,
-    hasExistingPendingReport,
+    countRecentReportsByUser,
     type Report,
 } from "@/lib/appwrite-reports";
 
-// Rate limiting: max reports per user per hour
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const reportLog: Record<string, number[]> = {};
-
-function checkReportRate(userId: string) {
-    const now = Date.now();
-    const list = reportLog[userId] || [];
-    const cutoff = now - RATE_LIMIT_WINDOW_MS;
-    const pruned = list.filter((t) => t >= cutoff);
-    if (pruned.length >= RATE_LIMIT_MAX) {
-        throw new Error(
-            "You have submitted too many reports recently. Please try again later.",
-        );
-    }
-    pruned.push(now);
-    reportLog[userId] = pruned;
-}
 
 const MIN_JUSTIFICATION_LENGTH = 10;
 const MAX_JUSTIFICATION_LENGTH = 2000;
@@ -67,16 +51,14 @@ export async function submitReportAction(
             };
         }
 
-        checkReportRate(reporterId);
-
-        const existing = await hasExistingPendingReport(
+        const recentCount = await countRecentReportsByUser(
             reporterId,
-            reportedUserId,
+            RATE_LIMIT_WINDOW_MS,
         );
-        if (existing) {
+        if (recentCount >= RATE_LIMIT_MAX) {
             return {
                 success: false,
-                error: "You already have a pending report for this user.",
+                error: "You have submitted too many reports recently. Please try again later.",
             };
         }
 
@@ -91,6 +73,12 @@ export async function submitReportAction(
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Failed to submit report.";
+        if (message.includes("duplicate") || message.includes("already")) {
+            return {
+                success: false,
+                error: "You already have a pending report for this user.",
+            };
+        }
         return { success: false, error: message };
     }
 }
@@ -108,17 +96,6 @@ export async function getCanReportAction(
 
         if (reporterId === reportedUserId) {
             return { canReport: false, reason: "Cannot report yourself." };
-        }
-
-        const existing = await hasExistingPendingReport(
-            reporterId,
-            reportedUserId,
-        );
-        if (existing) {
-            return {
-                canReport: false,
-                reason: "You already have a pending report for this user.",
-            };
         }
 
         return { canReport: true };

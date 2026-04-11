@@ -469,19 +469,33 @@ async function updateStringAttributeSize(
 ) {
     const apiPath = `/databases/${DB_ID}/collections/${collection}/attributes/string/${key}`;
 
-    const response = await fetch(`${endpoint}${apiPath}`, {
-        method: "PATCH",
-        headers: {
-            "content-type": "application/json",
-            "x-appwrite-key": apiKey,
-            "x-appwrite-project": project,
-        },
-        body: JSON.stringify({
-            required,
-            default: null,
-            size,
-        }),
-    });
+    let response: Response;
+    try {
+        response = await fetch(`${endpoint}${apiPath}`, {
+            method: "PATCH",
+            headers: {
+                "content-type": "application/json",
+                "x-appwrite-key": apiKey,
+                "x-appwrite-project": project,
+            },
+            body: JSON.stringify({
+                required,
+                default: null,
+                size,
+            }),
+            signal: AbortSignal.timeout(30_000),
+        });
+    } catch (error) {
+        if (
+            error instanceof DOMException &&
+            (error.name === "TimeoutError" || error.name === "AbortError")
+        ) {
+            throw new Error(
+                `Timed out patching ${collection}.${key} (30s): ${apiPath}`,
+            );
+        }
+        throw error;
+    }
 
     if (!response.ok) {
         const responseBody = await response.text();

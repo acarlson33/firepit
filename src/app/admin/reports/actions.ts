@@ -16,6 +16,7 @@ export async function actionResolveReport(
         throw new Error("Missing report ID");
     }
 
+    // resolveReport enforces the pending-status invariant internally.
     await resolveReport(reportId, userId, "resolved", resolutionNotes);
     await recordAudit("report_resolved", reportId, userId, {
         details: resolutionNotes
@@ -37,6 +38,7 @@ export async function actionDismissReport(
         throw new Error("Missing report ID");
     }
 
+    // resolveReport enforces the pending-status invariant internally.
     await resolveReport(reportId, userId, "dismissed", resolutionNotes);
     await recordAudit("report_dismissed", reportId, userId, {
         details: resolutionNotes
@@ -48,19 +50,29 @@ export async function actionDismissReport(
 }
 
 export async function actionResolveReportBound(formData: FormData) {
-    const reportId = formData.get("reportId") as string;
-    const notes = formData.get("resolutionNotes") as string;
-    if (!reportId) {
+    const reportIdRaw = formData.get("reportId");
+    const notesRaw = formData.get("resolutionNotes");
+
+    if (typeof reportIdRaw !== "string" || !reportIdRaw.trim()) {
         throw new Error("Missing report ID");
     }
-    await actionResolveReport(reportId, notes || undefined);
+
+    const notes =
+        typeof notesRaw === "string" ? notesRaw.trim() || undefined : undefined;
+
+    await actionResolveReport(reportIdRaw.trim(), notes);
 }
 
 export async function actionDismissReportBound(formData: FormData) {
-    const reportId = formData.get("reportId") as string;
-    const notes = formData.get("resolutionNotes") as string;
-    if (!reportId) {
+    const reportIdRaw = formData.get("reportId");
+    const notesRaw = formData.get("resolutionNotes");
+
+    if (typeof reportIdRaw !== "string" || !reportIdRaw.trim()) {
         throw new Error("Missing report ID");
     }
-    await actionDismissReport(reportId, notes || undefined);
+
+    const notes =
+        typeof notesRaw === "string" ? notesRaw.trim() || undefined : undefined;
+
+    await actionDismissReport(reportIdRaw.trim(), notes);
 }

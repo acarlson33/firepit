@@ -20,6 +20,7 @@ import { RelationshipActions } from "@/components/relationship-actions";
 import { StartDMButton } from "./start-dm-button";
 import { AvatarWithFrame } from "@/components/profile-background";
 import { ReportUserDialog } from "@/components/report-user-dialog";
+import { getProfileBackgroundStyle } from "@/lib/profile-utils";
 
 type Props = {
     params: Promise<{ userId: string }>;
@@ -59,17 +60,11 @@ export default async function ProfilePage({ params }: Props) {
           ? "Moderator"
           : "Member";
 
-    const cardStyle = profileBackgroundUrl
-        ? {
-              backgroundImage: `url(${profileBackgroundUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-          }
-        : profile.profileBackgroundGradient
-          ? { background: profile.profileBackgroundGradient }
-          : profile.profileBackgroundColor
-            ? { background: profile.profileBackgroundColor }
-            : undefined;
+    const cardStyle = getProfileBackgroundStyle({
+        backgroundUrl: profileBackgroundUrl,
+        gradient: profile.profileBackgroundGradient,
+        color: profile.profileBackgroundColor,
+    });
 
     const hasBackground = Boolean(cardStyle);
 
@@ -126,7 +121,7 @@ export default async function ProfilePage({ params }: Props) {
                                     }
                                     targetUserId={userId}
                                 />
-                                {!isOwnProfile && (
+                                {session && !isOwnProfile && (
                                     <ReportUserDialog
                                         targetDisplayName={
                                             profile.displayName ?? "this user"

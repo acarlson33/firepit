@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [userData?.userId]);
 
     useEffect(() => {
-        if (telemetryEnabled == null) {
+        if (telemetryEnabled === null) {
             return;
         }
 

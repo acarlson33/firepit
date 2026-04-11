@@ -2,7 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Filter, Flag } from "lucide-react";
 
-import { listReports, getPendingReportCount } from "@/lib/appwrite-reports";
+import {
+    listReports,
+    getPendingReportCount,
+    clampLimit,
+} from "@/lib/appwrite-reports";
 import {
     getProfilesByUserIds,
     resolveProfileUserId,
@@ -11,8 +15,6 @@ import { requireAdmin } from "@/lib/auth-server";
 import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
 import { Badge } from "@/components/ui/badge";
 import { actionResolveReportBound, actionDismissReportBound } from "./actions";
-
-const DEFAULT_LIMIT = 50;
 
 function statusVariant(status: string) {
     switch (status) {
@@ -30,13 +32,19 @@ function statusVariant(status: string) {
 export default async function ReportsPage(props: {
     searchParams?: Promise<Record<string, string | string[]>>;
 }) {
-    await requireAdmin().catch(() => {
-        redirect("/");
-    });
+    try {
+        await requireAdmin();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.startsWith("Forbidden") || message === "Unauthorized") {
+            redirect("/");
+        }
+        throw error;
+    }
 
     const searchParams = await props.searchParams;
 
-    const limit = Number(searchParams?.limit) || DEFAULT_LIMIT;
+    const limit = clampLimit(searchParams?.limit);
     const cursor =
         typeof searchParams?.cursor === "string"
             ? searchParams?.cursor

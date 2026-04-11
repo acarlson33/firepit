@@ -234,6 +234,9 @@ describe("inbox digest route", () => {
 
     it("returns digest payload", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetFeatureFlag
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(true);
         mockListInboxDigest.mockResolvedValue({
             contractVersion: "message_v2",
             contextId: "conversation-1",

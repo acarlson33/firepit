@@ -112,10 +112,10 @@ describe("server members route", () => {
                 ],
             })
             .mockResolvedValueOnce({
-                documents: [],
+                documents: [{ userId: "user-1", reason: "spam" }],
             })
             .mockResolvedValueOnce({
-                documents: [],
+                documents: [{ userId: "user-2", reason: "too fast" }],
             })
             .mockResolvedValueOnce({
                 documents: [
@@ -143,7 +143,10 @@ describe("server members route", () => {
         expect(data.members).toHaveLength(2);
         expect(data.members[0].userId).toBe("user-1");
         expect(data.members[0].roleIds).toEqual(["role-1"]);
-        expect(data.members[0].isBanned).toBe(false);
+        expect(data.members[0].isBanned).toBe(true);
         expect(data.members[0].isMuted).toBe(false);
+        expect(data.members[1].userId).toBe("user-2");
+        expect(data.members[1].isBanned).toBe(false);
+        expect(data.members[1].isMuted).toBe(true);
     });
 });

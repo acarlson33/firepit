@@ -35,6 +35,15 @@ export type ListReportsOpts = {
 };
 
 const DEFAULT_LIST_LIMIT = 50;
+export const MAX_LIST_LIMIT = 200;
+
+export function clampLimit(value: unknown): number {
+    const parsed = Math.floor(Number(value));
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return DEFAULT_LIST_LIMIT;
+    }
+    return Math.min(parsed, MAX_LIST_LIMIT);
+}
 
 function parseReport(doc: Record<string, unknown>): Report {
     return {
@@ -54,6 +63,17 @@ function parseReport(doc: Record<string, unknown>): Report {
 }
 
 export async function createReport(input: CreateReportInput): Promise<Report> {
+    // Best-effort duplicate check. Appwrite lacks unique constraints, so
+    // concurrent requests may still create duplicates. Callers should handle
+    // the "already have a pending report" error gracefully.
+    const existing = await hasExistingPendingReport(
+        input.reporterId,
+        input.reportedUserId,
+    );
+    if (existing) {
+        throw new Error("You already have a pending report for this user.");
+    }
+
     const { databases } = getServerClient();
 
     const doc = await databases.createDocument(
@@ -80,7 +100,7 @@ export async function listReports(
     }
 
     const { databases } = getServerClient();
-    const limit = opts.limit || DEFAULT_LIST_LIMIT;
+    const limit = clampLimit(opts.limit);
     const queries: string[] = [
         Query.limit(limit),
         Query.orderDesc("$createdAt"),
@@ -118,24 +138,67 @@ export async function listReports(
     };
 }
 
+export async function getReportById(reportId: string): Promise<Report> {
+    const { databases } = getServerClient();
+
+    const doc = await databases.getDocument(
+        DATABASE_ID,
+        REPORTS_COLLECTION_ID,
+        reportId,
+    );
+
+    return parseReport(doc as unknown as Record<string, unknown>);
+}
+
 export async function resolveReport(
     reportId: string,
     adminId: string,
     status: "resolved" | "dismissed",
     resolutionNotes?: string,
 ): Promise<void> {
-    const { databases } = getServerClient();
+    const { tablesDB } = getServerClient();
 
-    await databases.updateDocument(
-        DATABASE_ID,
-        REPORTS_COLLECTION_ID,
-        reportId,
-        {
-            status,
-            resolvedBy: adminId,
-            resolutionNotes: resolutionNotes || null,
-        },
-    );
+    // Use a transaction for atomic read-check-and-write.
+    // On commit, Appwrite verifies the row hasn't changed externally.
+    // If another admin resolved it first, the commit fails with a conflict error.
+    const tx = await tablesDB.createTransaction();
+
+    try {
+        const existing = await tablesDB.getRow(
+            DATABASE_ID,
+            REPORTS_COLLECTION_ID,
+            reportId,
+            [],
+            tx.$id,
+        );
+
+        if (existing.status !== "pending") {
+            throw new Error("Report has already been processed");
+        }
+
+        await tablesDB.updateRow(
+            DATABASE_ID,
+            REPORTS_COLLECTION_ID,
+            reportId,
+            {
+                status,
+                resolvedBy: adminId,
+                resolutionNotes: resolutionNotes || null,
+            },
+            undefined,
+            tx.$id,
+        );
+
+        await tablesDB.updateTransaction(tx.$id, true);
+    } catch (err) {
+        // Roll back on any failure before propagating.
+        try {
+            await tablesDB.updateTransaction(tx.$id, undefined, true);
+        } catch {
+            // Best-effort rollback.
+        }
+        throw err;
+    }
 }
 
 export async function getPendingReportCount(): Promise<number> {
@@ -174,4 +237,27 @@ export async function hasExistingPendingReport(
     );
 
     return res.total > 0;
+}
+
+export async function countRecentReportsByUser(
+    reporterId: string,
+    windowMs: number,
+): Promise<number> {
+    if (!REPORTS_COLLECTION_ID) {
+        return 0;
+    }
+
+    const { databases } = getServerClient();
+    const cutoff = new Date(Date.now() - windowMs).toISOString();
+    const res = await databases.listDocuments(
+        DATABASE_ID,
+        REPORTS_COLLECTION_ID,
+        [
+            Query.equal("reporterId", reporterId),
+            Query.greaterThanEqual("$createdAt", cutoff),
+            Query.limit(20),
+        ],
+    );
+
+    return res.total;
 }

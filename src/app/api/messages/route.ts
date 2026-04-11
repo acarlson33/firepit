@@ -447,10 +447,10 @@ export async function DELETE(request: NextRequest) {
 
         recordEvent("message_deleted", {
             actorUserId: user.$id,
-            channelId: String(existing.channelId ?? ""),
+            channelId: existing.channelId || undefined,
             messageId,
             messageType: "channel",
-            serverId: String(existing.serverId ?? ""),
+            serverId: existing.serverId || undefined,
             totalQueryTimeMs: Date.now() - startTime,
         });
 

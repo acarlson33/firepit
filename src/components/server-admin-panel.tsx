@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
 import { toast } from "sonner";
+import type { Role } from "@/lib/types";
 
 interface ServerAdminPanelProps {
     serverId: string;
@@ -81,21 +82,6 @@ interface ServerStats {
     mutedUsers: number;
 }
 
-interface Role {
-    $id: string;
-    name: string;
-    color: string;
-    position: number;
-    readMessages: boolean;
-    sendMessages: boolean;
-    manageMessages: boolean;
-    manageChannels: boolean;
-    manageRoles: boolean;
-    manageServer: boolean;
-    mentionEveryone: boolean;
-    administrator: boolean;
-}
-
 export function ServerAdminPanel({
     serverId,
     serverName,
@@ -118,6 +104,8 @@ export function ServerAdminPanel({
         mutedUsers: 0,
     });
     const [loading, setLoading] = useState(false);
+    const [rolesLoading, setRolesLoading] = useState(false);
+    const [rolesError, setRolesError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [memberFilter, setMemberFilter] = useState<
         "all" | "banned" | "muted"
@@ -164,14 +152,22 @@ export function ServerAdminPanel({
     }, [serverId]);
 
     const loadRoles = useCallback(async () => {
+        setRolesLoading(true);
+        setRolesError(null);
         try {
             const response = await fetch(`/api/roles?serverId=${serverId}`);
             if (response.ok) {
                 const data = await response.json();
                 setRoles(data.roles || []);
+            } else {
+                setRolesError("Failed to load roles");
             }
         } catch (error) {
-            console.error("Failed to load roles:", error);
+            setRolesError(
+                error instanceof Error ? error.message : "Failed to load roles",
+            );
+        } finally {
+            setRolesLoading(false);
         }
     }, [serverId]);
 
@@ -266,7 +262,7 @@ export function ServerAdminPanel({
 
             if (response.ok) {
                 toast.success(
-                    `Successfully ${moderationAction}ned ${selectedMember.displayName || selectedMember.userName}`,
+                    `Successfully ${moderationAction === "ban" ? "banned" : moderationAction === "mute" ? "muted" : "kicked"} ${selectedMember.displayName || selectedMember.userName}`,
                 );
                 setModerationDialogOpen(false);
                 setSelectedMember(null);
@@ -292,48 +288,8 @@ export function ServerAdminPanel({
     ) => {
         setSelectedMember(member);
         setModerationAction(action);
+        setModerationReason("");
         setModerationDialogOpen(true);
-    };
-
-    const getMemberPermissions = (member: MemberData) => {
-        if (member.roleIds.length === 0) {
-            return [];
-        }
-
-        const memberRoles = roles.filter((role) =>
-            member.roleIds.includes(role.$id),
-        );
-
-        // Get all unique permissions from all roles
-        const permissions = new Set<string>();
-        for (const role of memberRoles) {
-            if (role.administrator) {
-                permissions.add("Administrator");
-            }
-            if (role.manageServer) {
-                permissions.add("Manage Server");
-            }
-            if (role.manageChannels) {
-                permissions.add("Manage Channels");
-            }
-            if (role.manageRoles) {
-                permissions.add("Manage Roles");
-            }
-            if (role.manageMessages) {
-                permissions.add("Manage Messages");
-            }
-            if (role.mentionEveryone) {
-                permissions.add("Mention Everyone");
-            }
-            if (role.readMessages) {
-                permissions.add("Read Messages");
-            }
-            if (role.sendMessages) {
-                permissions.add("Send Messages");
-            }
-        }
-
-        return Array.from(permissions);
     };
 
     const getMemberHighestRole = (member: MemberData) => {
@@ -1074,7 +1030,12 @@ export function ServerAdminPanel({
             {/* Moderation Action Dialog */}
             <Dialog
                 open={moderationDialogOpen}
-                onOpenChange={setModerationDialogOpen}
+                onOpenChange={(open) => {
+                    setModerationDialogOpen(open);
+                    if (!open) {
+                        setModerationReason("");
+                    }
+                }}
             >
                 <DialogContent>
                     <DialogHeader>

@@ -23,7 +23,6 @@ import { calculateRoleHierarchy } from "@/lib/permissions";
 
 type RoleListProperties = {
     roles: Role[];
-    serverId: string;
     isOwner: boolean;
     onEditRole: (role: Role) => void;
     onCreateRole: () => void;
@@ -33,7 +32,6 @@ type RoleListProperties = {
 
 export function RoleList({
     roles,
-    serverId: _serverId,
     isOwner,
     onEditRole,
     onCreateRole,
@@ -43,6 +41,45 @@ export function RoleList({
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const sortedRoles = calculateRoleHierarchy(roles);
+
+    function getPermissionTags(role: Role) {
+        if (role.administrator) {
+            return [
+                {
+                    label: "All permissions",
+                    className: "bg-destructive/10 text-destructive",
+                },
+            ];
+        }
+
+        const tags: { label: string; className: string }[] = [];
+        if (role.manageServer) {
+            tags.push({
+                label: "Manage server",
+                className:
+                    "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+            });
+        }
+        if (role.manageChannels) {
+            tags.push({
+                label: "Manage channels",
+                className: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+            });
+        }
+        if (role.manageMessages) {
+            tags.push({
+                label: "Manage messages",
+                className: "bg-green-500/10 text-green-600 dark:text-green-400",
+            });
+        }
+        if (role.sendMessages) {
+            tags.push({
+                label: "Can message",
+                className: "bg-muted text-muted-foreground",
+            });
+        }
+        return tags;
+    }
 
     const handleDelete = (roleId: string) => {
         if (deletingId === roleId) {
@@ -156,41 +193,14 @@ export function RoleList({
                                     </div>
                                     {/* Permission preview */}
                                     <div className="mt-1 flex flex-wrap gap-1">
-                                        {role.administrator && (
-                                            <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
-                                                All permissions
+                                        {getPermissionTags(role).map((tag) => (
+                                            <span
+                                                key={tag.label}
+                                                className={`rounded px-1.5 py-0.5 text-[10px] ${tag.className}`}
+                                            >
+                                                {tag.label}
                                             </span>
-                                        )}
-                                        {!role.administrator &&
-                                            role.manageServer && (
-                                                <span className="rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] text-orange-600 dark:text-orange-400">
-                                                    Manage server
-                                                </span>
-                                            )}
-                                        {!role.administrator &&
-                                            !role.manageServer &&
-                                            role.manageChannels && (
-                                                <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
-                                                    Manage channels
-                                                </span>
-                                            )}
-                                        {!role.administrator &&
-                                            !role.manageServer &&
-                                            !role.manageChannels &&
-                                            role.manageMessages && (
-                                                <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-[10px] text-green-600 dark:text-green-400">
-                                                    Manage messages
-                                                </span>
-                                            )}
-                                        {!role.administrator &&
-                                            !role.manageServer &&
-                                            !role.manageChannels &&
-                                            !role.manageMessages &&
-                                            role.sendMessages && (
-                                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                                    Can message
-                                                </span>
-                                            )}
+                                        ))}
                                     </div>
                                 </div>
 
@@ -204,7 +214,7 @@ export function RoleList({
                                                 }
                                                 size="sm"
                                                 variant="ghost"
-                                                title="Manage members"
+                                                aria-label="Manage members"
                                             >
                                                 <Users className="h-4 w-4" />
                                             </Button>
@@ -212,7 +222,7 @@ export function RoleList({
                                                 onClick={() => onEditRole(role)}
                                                 size="sm"
                                                 variant="ghost"
-                                                title="Edit role"
+                                                aria-label="Edit role"
                                             >
                                                 <Settings className="h-4 w-4" />
                                             </Button>
@@ -226,9 +236,9 @@ export function RoleList({
                                                         ? "destructive"
                                                         : "ghost"
                                                 }
-                                                title={
+                                                aria-label={
                                                     deletingId === role.$id
-                                                        ? "Click again to confirm"
+                                                        ? "Confirm delete role"
                                                         : "Delete role"
                                                 }
                                             >

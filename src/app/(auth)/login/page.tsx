@@ -33,6 +33,9 @@ function LoginFormContent() {
             formData.set("password", password);
             const result = await loginAction(formData);
             if (result.success) {
+                toast.success("Logged in");
+                // Refresh user data in context before navigating
+                await refreshUser();
                 posthog.identify(result.userId, {
                     appwriteUserId: result.userId,
                     email,
@@ -40,9 +43,6 @@ function LoginFormContent() {
                 posthog.capture("user_logged_in", undefined, {
                     send_instantly: true,
                 });
-                toast.success("Logged in");
-                // Refresh user data in context before navigating
-                await refreshUser();
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 router.push(destination as any);
             } else {

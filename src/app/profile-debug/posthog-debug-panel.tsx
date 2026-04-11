@@ -11,6 +11,11 @@ type DebugResult = {
     status: "idle" | "ok" | "error";
 };
 
+const STATUS_CLASS_MAP: Record<string, string> = {
+    error: "text-destructive",
+    ok: "text-green-600",
+};
+
 export function PostHogDebugPanel() {
     const [lastResult, setLastResult] = useState<DebugResult>({
         detail: "No debug event fired yet.",
@@ -119,6 +124,14 @@ export function PostHogDebugPanel() {
         }
 
         try {
+            // Validate host before using it in fetch to avoid opaque TypeErrors.
+            new URL(host);
+        } catch {
+            markError(eventName, new Error("Invalid PostHog host URL"));
+            return;
+        }
+
+        try {
             const response = await fetch(`${host}/e/`, {
                 credentials: "omit",
                 method: "POST",
@@ -142,11 +155,7 @@ export function PostHogDebugPanel() {
     }
 
     const statusClassName =
-        lastResult.status === "error"
-            ? "text-destructive"
-            : lastResult.status === "ok"
-              ? "text-green-600"
-              : "text-muted-foreground";
+        STATUS_CLASS_MAP[lastResult.status] ?? "text-muted-foreground";
 
     return (
         <div className="rounded-lg border p-6">
