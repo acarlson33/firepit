@@ -708,7 +708,6 @@ export function calculateMuteExpiration(
         return undefined; // No expiration
     }
 
-    const now = new Date();
     const durationMs: Record<Exclude<MuteDuration, "forever">, number> = {
         "15m": 15 * 60 * 1000,
         "1h": 60 * 60 * 1000,
@@ -716,7 +715,7 @@ export function calculateMuteExpiration(
         "24h": 24 * 60 * 60 * 1000,
     };
 
-    return new Date(now.getTime() + durationMs[duration]).toISOString();
+    return new Date(Date.now() + durationMs[duration]).toISOString();
 }
 
 /**
@@ -729,7 +728,14 @@ export function isMuteExpired(mutedUntil: string | undefined): boolean {
     if (!mutedUntil) {
         return false; // No expiration means muted forever
     }
-    return new Date(mutedUntil) < new Date();
+
+    const mutedUntilMs = Date.parse(mutedUntil);
+    if (Number.isNaN(mutedUntilMs)) {
+        // Treat invalid timestamps as expired to avoid sticky mutes.
+        return true;
+    }
+
+    return mutedUntilMs <= Date.now();
 }
 
 /**

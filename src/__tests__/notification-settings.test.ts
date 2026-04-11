@@ -145,6 +145,11 @@ describe("Notification Settings", () => {
             const result = isMuteExpired(justPassed);
             expect(result).toBe(true);
         });
+
+        it("should return true for invalid date strings", () => {
+            const result = isMuteExpired("not-a-date");
+            expect(result).toBe(true);
+        });
     });
 
     describe("getEffectiveNotificationLevel", () => {
