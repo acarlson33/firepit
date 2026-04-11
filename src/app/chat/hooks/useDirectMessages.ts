@@ -17,6 +17,7 @@ import type {
     RelationshipStatus,
 } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
+import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {
     MAX_MESSAGE_LENGTH,
@@ -45,6 +46,66 @@ type UseDirectMessagesProps = {
     receiverId?: string;
     userName?: string | null;
 };
+
+type DirectMessageReaction = NonNullable<DirectMessage["reactions"]>[number];
+
+function applyOptimisticReactionUpdate(params: {
+    emoji: string;
+    isAdding: boolean;
+    reactions: DirectMessage["reactions"];
+    userId: string;
+}): DirectMessageReaction[] {
+    const { emoji, isAdding, reactions, userId } = params;
+    const nextReactions = (reactions ?? []).map((reaction) => ({
+        ...reaction,
+        userIds: [...reaction.userIds],
+    }));
+    const existingIndex = nextReactions.findIndex(
+        (reaction) => reaction.emoji === emoji,
+    );
+
+    if (isAdding) {
+        if (existingIndex === -1) {
+            return [...nextReactions, { emoji, userIds: [userId], count: 1 }];
+        }
+
+        const existingReaction = nextReactions[existingIndex];
+        if (existingReaction.userIds.includes(userId)) {
+            return nextReactions;
+        }
+
+        const updatedUserIds = [...existingReaction.userIds, userId];
+        nextReactions[existingIndex] = {
+            ...existingReaction,
+            count: updatedUserIds.length,
+            userIds: updatedUserIds,
+        };
+        return nextReactions;
+    }
+
+    if (existingIndex === -1) {
+        return nextReactions;
+    }
+
+    const existingReaction = nextReactions[existingIndex];
+    if (!existingReaction.userIds.includes(userId)) {
+        return nextReactions;
+    }
+
+    const updatedUserIds = existingReaction.userIds.filter(
+        (existingUserId) => existingUserId !== userId,
+    );
+    if (updatedUserIds.length === 0) {
+        return nextReactions.filter((_, index) => index !== existingIndex);
+    }
+
+    nextReactions[existingIndex] = {
+        ...existingReaction,
+        count: updatedUserIds.length,
+        userIds: updatedUserIds,
+    };
+    return nextReactions;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -764,6 +825,73 @@ export function useDirectMessages({
         [userId],
     );
 
+    const toggleReaction = useCallback(
+        async (messageId: string, emoji: string, isAdding: boolean) => {
+            if (!userId) {
+                return;
+            }
+
+            const targetMessage = messages.find(
+                (message) => message.$id === messageId,
+            );
+            const previousReactions = targetMessage?.reactions;
+
+            if (targetMessage) {
+                setMessages((prev) =>
+                    prev.map((message) => {
+                        if (message.$id !== messageId) {
+                            return message;
+                        }
+
+                        return {
+                            ...message,
+                            reactions: applyOptimisticReactionUpdate({
+                                emoji,
+                                isAdding,
+                                reactions: message.reactions,
+                                userId,
+                            }),
+                        };
+                    }),
+                );
+            }
+
+            try {
+                const result = await toggleReactionRequest(
+                    messageId,
+                    emoji,
+                    isAdding,
+                    true,
+                );
+
+                if (result.reactions && targetMessage) {
+                    setMessages((prev) =>
+                        prev.map((message) =>
+                            message.$id === messageId
+                                ? { ...message, reactions: result.reactions }
+                                : message,
+                        ),
+                    );
+                }
+            } catch (err) {
+                if (targetMessage) {
+                    setMessages((prev) =>
+                        prev.map((message) =>
+                            message.$id === messageId
+                                ? { ...message, reactions: previousReactions }
+                                : message,
+                        ),
+                    );
+                }
+
+                toast.error(
+                    err instanceof Error ? err.message : "Reaction failed",
+                );
+            }
+        },
+        [messages, userId],
+    );
+
     // Typing indicator management
     const sendTypingState = useCallback(
         (state: boolean) => {
@@ -1087,6 +1215,7 @@ export function useDirectMessages({
         send,
         edit,
         deleteMsg,
+        toggleReaction,
         loadOlder,
         refresh: loadMessages,
         shouldShowLoadOlder: Boolean(

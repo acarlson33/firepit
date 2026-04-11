@@ -62,6 +62,11 @@ type DirectMessageViewProps = {
     ) => Promise<void>;
     onEdit: (_messageId: string, _newText: string) => Promise<void>;
     onDelete: (_messageId: string) => Promise<void>;
+    onToggleReaction?: (
+        _messageId: string,
+        _emoji: string,
+        _isAdding: boolean,
+    ) => Promise<void>;
     onBack?: () => void;
     typingUsers?: Record<
         string,
@@ -104,6 +109,7 @@ export function DirectMessageView({
     onSend,
     onEdit,
     onDelete,
+    onToggleReaction,
     onBack,
     typingUsers = {},
     onTypingChange,
@@ -214,6 +220,18 @@ export function DirectMessageView({
     useEffect(() => {
         setThreadReplyText("");
     }, [activeThreadParent?.$id]);
+
+    const handleToggleReaction = useCallback(
+        async (messageId: string, emoji: string, isAdding: boolean) => {
+            if (onToggleReaction) {
+                await onToggleReaction(messageId, emoji, isAdding);
+                return;
+            }
+
+            await toggleReaction(messageId, emoji, isAdding, true);
+        },
+        [onToggleReaction],
+    );
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -574,11 +592,10 @@ export function DirectMessageView({
                                     emoji,
                                     isAdding,
                                 ) => {
-                                    await toggleReaction(
+                                    await handleToggleReaction(
                                         messageId,
                                         emoji,
                                         isAdding,
-                                        true,
                                     );
                                 }}
                                 onUploadCustomEmoji={uploadEmoji}
@@ -848,11 +865,10 @@ export function DirectMessageView({
                                                                             emoji,
                                                                             isAdding,
                                                                         ) => {
-                                                                            await toggleReaction(
+                                                                            await handleToggleReaction(
                                                                                 message.$id,
                                                                                 emoji,
                                                                                 isAdding,
-                                                                                true,
                                                                             );
                                                                         }}
                                                                         reaction={
@@ -898,10 +914,9 @@ export function DirectMessageView({
                                                                 onSelectEmoji={async (
                                                                     emoji,
                                                                 ) => {
-                                                                    await toggleReaction(
+                                                                    await handleToggleReaction(
                                                                         message.$id,
                                                                         emoji,
-                                                                        true,
                                                                         true,
                                                                     );
                                                                 }}
@@ -1274,11 +1289,10 @@ export function DirectMessageView({
                                     emoji,
                                     isAdding,
                                 ) => {
-                                    await toggleReaction(
+                                    await handleToggleReaction(
                                         messageId,
                                         emoji,
                                         isAdding,
-                                        true,
                                     );
                                 }}
                                 parentMessage={threadParentSurfaceMessage}

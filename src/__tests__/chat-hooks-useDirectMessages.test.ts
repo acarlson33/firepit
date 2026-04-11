@@ -16,6 +16,7 @@ const {
     mockListThreadMessages,
     mockPinMessage,
     mockSendDirectMessage,
+    mockToggleReaction,
     mockThreadPinState,
     mockUnpinMessage,
 } = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ const {
     mockListThreadMessages: vi.fn(),
     mockPinMessage: vi.fn(),
     mockSendDirectMessage: vi.fn(),
+    mockToggleReaction: vi.fn(),
     mockThreadPinState: {
         activeThreadParent: null,
         closeThread: vi.fn(),
@@ -59,6 +61,10 @@ vi.mock("@/lib/appwrite-dms-client", () => ({
     editDirectMessage: mockEditDirectMessage,
     listDirectMessages: mockListDirectMessages,
     sendDirectMessage: mockSendDirectMessage,
+}));
+
+vi.mock("@/lib/reactions-client", () => ({
+    toggleReaction: mockToggleReaction,
 }));
 
 vi.mock("@/lib/reactions-utils", () => ({
@@ -141,6 +147,7 @@ describe("useDirectMessages", () => {
             senderId: "user-1",
             text: "Sent message",
         });
+        mockToggleReaction.mockResolvedValue({ success: true });
         mockThreadPinState.activeThreadParent = null;
         mockThreadPinState.closeThread = vi.fn();
         mockThreadPinState.isThreadUnread = vi.fn(() => false);
@@ -570,5 +577,52 @@ describe("useDirectMessages", () => {
         expect(mockDeleteDirectMessage).toHaveBeenCalledWith("dm-1", "user-1");
         expect(result.current.messages).toEqual([]);
         expect(mockListDirectMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it("applies DM reaction updates optimistically", async () => {
+        let resolveToggle: ((value: { success: boolean }) => void) | undefined;
+        mockToggleReaction.mockImplementation(
+            () =>
+                new Promise<{ success: boolean }>((resolve) => {
+                    resolveToggle = resolve;
+                }),
+        );
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.messages).toHaveLength(1);
+        });
+
+        act(() => {
+            void result.current.toggleReaction("dm-1", "👍", true);
+        });
+
+        await waitFor(() => {
+            expect(result.current.messages[0]?.reactions).toEqual([
+                {
+                    count: 1,
+                    emoji: "👍",
+                    userIds: ["user-1"],
+                },
+            ]);
+        });
+
+        await act(async () => {
+            resolveToggle?.({ success: true });
+        });
+
+        expect(mockToggleReaction).toHaveBeenCalledWith(
+            "dm-1",
+            "👍",
+            true,
+            true,
+        );
     });
 });

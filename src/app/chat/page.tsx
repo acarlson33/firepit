@@ -52,7 +52,6 @@ import { useCustomEmojis } from "@/hooks/useCustomEmojis";
 import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 import { listInboxWithFilters } from "@/lib/inbox-client";
-import { toggleReaction } from "@/lib/reactions-client";
 import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
 import { toast } from "sonner";
 
@@ -1269,7 +1268,7 @@ export default function ChatPage() {
         onTogglePinRaw: togglePin,
         onToggleReaction: async (messageId, emoji, isAdding) => {
             try {
-                await toggleReaction(messageId, emoji, isAdding, false);
+                await messagesApi.toggleReaction(messageId, emoji, isAdding);
             } catch {
                 // Error already logged by reaction handler.
             }
@@ -1842,6 +1841,7 @@ export default function ChatPage() {
                             messages={dmApi.messages}
                             onDelete={dmApi.deleteMsg}
                             onEdit={dmApi.edit}
+                            onToggleReaction={dmApi.toggleReaction}
                             activeThreadParent={dmApi.activeThreadParent}
                             onCloseThread={dmApi.closeThread}
                             onOpenProfileModal={openProfileModal}

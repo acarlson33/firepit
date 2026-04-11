@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useMessages } from "@/app/chat/hooks/useMessages";
 import * as appwriteMessages from "@/lib/appwrite-messages";
 import * as appwriteMessagesEnriched from "@/lib/appwrite-messages-enriched";
+import * as reactionsClient from "@/lib/reactions-client";
 import * as threadPinClient from "@/lib/thread-pin-client";
 import type { Message } from "@/lib/types";
 
@@ -41,6 +42,10 @@ vi.mock("@/lib/thread-pin-client", () => ({
 
 vi.mock("@/lib/reactions-utils", () => ({
     parseReactions: vi.fn((reactions) => reactions || {}),
+}));
+
+vi.mock("@/lib/reactions-client", () => ({
+    toggleReaction: vi.fn(),
 }));
 
 vi.mock("@/lib/mention-utils", () => ({
@@ -648,6 +653,68 @@ describe("useMessages", () => {
             } finally {
                 vi.unstubAllGlobals();
             }
+        });
+
+        it("applies reaction updates optimistically", async () => {
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([
+                {
+                    ...mockMessage1,
+                    reactions: [],
+                },
+            ]);
+
+            let resolveToggle:
+                | ((value: { success: boolean }) => void)
+                | undefined;
+            (
+                reactionsClient.toggleReaction as ReturnType<typeof vi.fn>
+            ).mockImplementation(
+                () =>
+                    new Promise<{ success: boolean }>((resolve) => {
+                        resolveToggle = resolve;
+                    }),
+            );
+
+            const { result } = renderHook(() =>
+                useMessages({
+                    channelId: mockChannelId,
+                    userId: mockUserId,
+                    userName: mockUserName,
+                }),
+            );
+
+            await waitFor(() => {
+                expect(result.current.messages).toHaveLength(1);
+            });
+
+            act(() => {
+                void result.current.toggleReaction("msg1", "🔥", true);
+            });
+
+            await waitFor(() => {
+                expect(result.current.messages[0]?.reactions).toEqual([
+                    {
+                        count: 1,
+                        emoji: "🔥",
+                        userIds: [mockUserId],
+                    },
+                ]);
+            });
+
+            await act(async () => {
+                resolveToggle?.({ success: true });
+            });
+
+            expect(reactionsClient.toggleReaction).toHaveBeenCalledWith(
+                "msg1",
+                "🔥",
+                true,
+                false,
+            );
         });
     });
 

@@ -10,6 +10,7 @@ import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
+import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
 import {
     extractMentionedUsernames,
     extractMentionsWithKnownNames,
@@ -43,6 +44,66 @@ type UseMessagesOptions = {
     userId: string | null;
     userName: string | null;
 };
+
+type MessageReaction = NonNullable<Message["reactions"]>[number];
+
+function applyOptimisticReactionUpdate(params: {
+    emoji: string;
+    isAdding: boolean;
+    reactions: Message["reactions"];
+    userId: string;
+}): MessageReaction[] {
+    const { emoji, isAdding, reactions, userId } = params;
+    const nextReactions = (reactions ?? []).map((reaction) => ({
+        ...reaction,
+        userIds: [...reaction.userIds],
+    }));
+    const existingIndex = nextReactions.findIndex(
+        (reaction) => reaction.emoji === emoji,
+    );
+
+    if (isAdding) {
+        if (existingIndex === -1) {
+            return [...nextReactions, { emoji, userIds: [userId], count: 1 }];
+        }
+
+        const existingReaction = nextReactions[existingIndex];
+        if (existingReaction.userIds.includes(userId)) {
+            return nextReactions;
+        }
+
+        const updatedUserIds = [...existingReaction.userIds, userId];
+        nextReactions[existingIndex] = {
+            ...existingReaction,
+            count: updatedUserIds.length,
+            userIds: updatedUserIds,
+        };
+        return nextReactions;
+    }
+
+    if (existingIndex === -1) {
+        return nextReactions;
+    }
+
+    const existingReaction = nextReactions[existingIndex];
+    if (!existingReaction.userIds.includes(userId)) {
+        return nextReactions;
+    }
+
+    const updatedUserIds = existingReaction.userIds.filter(
+        (existingUserId) => existingUserId !== userId,
+    );
+    if (updatedUserIds.length === 0) {
+        return nextReactions.filter((_, index) => index !== existingIndex);
+    }
+
+    nextReactions[existingIndex] = {
+        ...existingReaction,
+        count: updatedUserIds.length,
+        userIds: updatedUserIds,
+    };
+    return nextReactions;
+}
 
 export function useMessages({
     channelId,
@@ -760,6 +821,72 @@ export function useMessages({
         }
     }
 
+    async function toggleReaction(
+        messageId: string,
+        emoji: string,
+        isAdding: boolean,
+    ) {
+        if (!userId) {
+            return;
+        }
+
+        const targetMessage = messages.find(
+            (message) => message.$id === messageId,
+        );
+        const previousReactions = targetMessage?.reactions;
+
+        if (targetMessage) {
+            setMessages((prev) =>
+                prev.map((message) => {
+                    if (message.$id !== messageId) {
+                        return message;
+                    }
+
+                    return {
+                        ...message,
+                        reactions: applyOptimisticReactionUpdate({
+                            emoji,
+                            isAdding,
+                            reactions: message.reactions,
+                            userId,
+                        }),
+                    };
+                }),
+            );
+        }
+
+        try {
+            const result = await toggleReactionRequest(
+                messageId,
+                emoji,
+                isAdding,
+                false,
+            );
+
+            if (result.reactions && targetMessage) {
+                setMessages((prev) =>
+                    prev.map((message) =>
+                        message.$id === messageId
+                            ? { ...message, reactions: result.reactions }
+                            : message,
+                    ),
+                );
+            }
+        } catch (err) {
+            if (targetMessage) {
+                setMessages((prev) =>
+                    prev.map((message) =>
+                        message.$id === messageId
+                            ? { ...message, reactions: previousReactions }
+                            : message,
+                    ),
+                );
+            }
+
+            toast.error(err instanceof Error ? err.message : "Reaction failed");
+        }
+    }
+
     function sendTypingState(state: boolean) {
         if (!userId) {
             return;
@@ -1019,6 +1146,7 @@ export function useMessages({
         cancelReply,
         applyEdit,
         remove,
+        toggleReaction,
         onChangeText,
         send,
         userIdSlice,
