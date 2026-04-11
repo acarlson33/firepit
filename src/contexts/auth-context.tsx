@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -22,6 +22,7 @@ import {
 import { normalizeStatus } from "@/lib/status-normalization";
 import {
     getSharedRealtime,
+    isTransientRealtimeSubscribeError,
     resetSharedClient,
     trackSubscription,
 } from "@/lib/realtime-pool";
@@ -313,6 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 );
                             }
                         },
+                        [Query.equal("userId", activeUserId)],
                     );
 
                     const untrack = trackSubscription(channelKey);
@@ -328,6 +330,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         void closeSubscriptionSafely(subscription);
                     };
                 } catch (err) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    if (isTransientRealtimeSubscribeError(err)) {
+                        logger.warn(
+                            "Status realtime subscription interrupted during connection setup",
+                            {
+                                error:
+                                    err instanceof Error
+                                        ? err.message
+                                        : String(err),
+                                userId: userData.userId,
+                            },
+                        );
+                        return;
+                    }
+
                     logger.error(
                         "Status subscription failed:",
                         err instanceof Error ? err : String(err),

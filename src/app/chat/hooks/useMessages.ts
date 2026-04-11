@@ -747,6 +747,14 @@ export function useMessages({
                 const data = await response.json();
                 throw new Error(data.error || "Failed to delete message");
             }
+
+            setMessages((prev) => prev.filter((m) => m.$id !== id));
+
+            if (activeThreadParent?.$id === id) {
+                closeThread();
+            }
+
+            void refreshPins();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Delete failed");
         }

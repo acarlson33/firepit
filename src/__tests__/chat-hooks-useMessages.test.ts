@@ -607,6 +607,50 @@ describe("useMessages", () => {
         });
     });
 
+    describe("Delete Messages", () => {
+        it("removes a deleted message from local state immediately", async () => {
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([mockMessage1, mockMessage2]);
+
+            const fetchMock = vi.fn().mockResolvedValue({
+                json: async () => ({}),
+                ok: true,
+            } as Response);
+            vi.stubGlobal("fetch", fetchMock);
+
+            try {
+                const { result } = renderHook(() =>
+                    useMessages({
+                        channelId: mockChannelId,
+                        userId: mockUserId,
+                        userName: mockUserName,
+                    }),
+                );
+
+                await waitFor(() => {
+                    expect(result.current.messages).toHaveLength(2);
+                });
+
+                await act(async () => {
+                    await result.current.remove("msg1");
+                });
+
+                expect(fetchMock).toHaveBeenCalledWith(
+                    "/api/messages?id=msg1",
+                    {
+                        method: "DELETE",
+                    },
+                );
+                expect(result.current.messages).toEqual([mockMessage2]);
+            } finally {
+                vi.unstubAllGlobals();
+            }
+        });
+    });
+
     describe("Load Older Messages", () => {
         it("should not show load older button when hasMore is false", async () => {
             (

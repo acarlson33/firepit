@@ -83,7 +83,7 @@ function toErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function isTransientRealtimeSubscribeError(error: unknown): boolean {
+export function isTransientRealtimeSubscribeError(error: unknown): boolean {
     const message = toErrorMessage(error).toLowerCase();
 
     return (
@@ -92,6 +92,18 @@ function isTransientRealtimeSubscribeError(error: unknown): boolean {
         message.includes("can’t establish a connection") ||
         message.includes("websocket error")
     );
+}
+
+function isStaleRealtimeSubscribeError(error: unknown): boolean {
+    return toErrorMessage(error).includes(
+        "Skipped stale realtime subscribe after generation change",
+    );
+}
+
+function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
 }
 
 function patchRealtimeSubscribe(realtime: Realtime): Realtime {
@@ -112,30 +124,51 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                 ? generation
                 : sharedRealtimeGeneration,
             async () => {
-                try {
-                    const subscription = await Promise.resolve(
-                        baseSubscribe(...args),
-                    );
-                    return toUnsubscribeFn(subscription);
-                } catch (error) {
-                    if (!isTransientRealtimeSubscribeError(error)) {
-                        throw error;
+                const maxAttempts = 3;
+                let attempt = 0;
+
+                while (attempt < maxAttempts) {
+                    try {
+                        if (
+                            typeof generation === "number" &&
+                            generation !== sharedRealtimeGeneration
+                        ) {
+                            throw new Error(
+                                "Skipped stale realtime subscribe after generation change",
+                            );
+                        }
+
+                        const subscription = await Promise.resolve(
+                            baseSubscribe(...args),
+                        );
+                        return toUnsubscribeFn(subscription);
+                    } catch (error) {
+                        attempt += 1;
+
+                        if (!isTransientRealtimeSubscribeError(error)) {
+                            throw error;
+                        }
+
+                        if (attempt >= maxAttempts) {
+                            throw error;
+                        }
+
+                        const delayMs = attempt === 1 ? 150 : 500;
+                        logger.info(
+                            "Retrying realtime subscribe after transient connection failure",
+                            {
+                                attempt,
+                                delayMs,
+                                maxAttempts,
+                                error: toErrorMessage(error),
+                            },
+                        );
+
+                        await wait(delayMs);
                     }
-
-                    logger.info(
-                        "Retrying realtime subscribe after transient connection failure",
-                        {
-                            error: toErrorMessage(error),
-                        },
-                    );
-
-                    await Promise.resolve();
-
-                    const retrySubscription = await Promise.resolve(
-                        baseSubscribe(...args),
-                    );
-                    return toUnsubscribeFn(retrySubscription);
                 }
+
+                throw new Error("Realtime subscribe retries exhausted");
             },
         );
 
@@ -145,6 +178,10 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                     unsubscribe();
                 })
                 .catch((error) => {
+                    if (isStaleRealtimeSubscribeError(error)) {
+                        return;
+                    }
+
                     logger.warn("Deferred realtime unsubscribe failed", {
                         error:
                             error instanceof Error

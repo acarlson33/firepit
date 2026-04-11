@@ -548,4 +548,27 @@ describe("useDirectMessages", () => {
             );
         });
     });
+
+    it("removes a deleted DM from local state immediately", async () => {
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.messages).toHaveLength(1);
+            expect(result.current.messages[0]?.$id).toBe("dm-1");
+        });
+
+        await act(async () => {
+            await result.current.deleteMsg("dm-1");
+        });
+
+        expect(mockDeleteDirectMessage).toHaveBeenCalledWith("dm-1", "user-1");
+        expect(result.current.messages).toEqual([]);
+        expect(mockListDirectMessages).toHaveBeenCalledTimes(1);
+    });
 });

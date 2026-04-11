@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -14,7 +14,11 @@ import {
 } from "@/lib/inbox-client";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
     InboxItem,
@@ -193,6 +197,7 @@ export function useInbox(userId: string | null) {
                                 });
                             });
                     },
+                    [Query.equal("userId", userId)],
                 );
 
                 if (cancelled) {
@@ -204,6 +209,25 @@ export function useInbox(userId: string | null) {
 
                 untrack = trackSubscription(inboxChannelKey);
             } catch (error) {
+                if (cancelled) {
+                    return;
+                }
+
+                if (isTransientRealtimeSubscribeError(error)) {
+                    logger.warn(
+                        "Inbox realtime subscription interrupted during connection setup",
+                        {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                            inboxChannelKey,
+                            userId,
+                        },
+                    );
+                    return;
+                }
+
                 logger.error(
                     "Inbox realtime subscription failed",
                     error instanceof Error ? error : new Error(String(error)),

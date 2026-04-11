@@ -750,7 +750,9 @@ export function useDirectMessages({
 
             try {
                 await deleteDirectMessage(messageId, userId);
-                await loadMessages();
+                setMessages((prev) =>
+                    prev.filter((message) => message.$id !== messageId),
+                );
             } catch (err) {
                 throw new Error(
                     err instanceof Error
@@ -759,7 +761,7 @@ export function useDirectMessages({
                 );
             }
         },
-        [userId, loadMessages],
+        [userId],
     );
 
     // Typing indicator management
