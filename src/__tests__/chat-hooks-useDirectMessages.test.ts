@@ -13,6 +13,7 @@ const {
     mockEditDirectMessage,
     mockListDirectMessages,
     mockListPins,
+    mockRealtimeSubscribe,
     mockListThreadMessages,
     mockPinMessage,
     mockSendDirectMessage,
@@ -25,6 +26,7 @@ const {
     mockEditDirectMessage: vi.fn(),
     mockListDirectMessages: vi.fn(),
     mockListPins: vi.fn(),
+    mockRealtimeSubscribe: vi.fn(async () => ({ close: vi.fn() })),
     mockListThreadMessages: vi.fn(),
     mockPinMessage: vi.fn(),
     mockSendDirectMessage: vi.fn(),
@@ -87,7 +89,7 @@ vi.mock("@/lib/thread-pin-client", () => ({
 
 vi.mock("@/lib/realtime-pool", () => ({
     getSharedRealtime: vi.fn(() => ({
-        subscribe: vi.fn(async () => ({ close: vi.fn() })),
+        subscribe: mockRealtimeSubscribe,
     })),
     trackSubscription: vi.fn(() => vi.fn()),
 }));
@@ -140,6 +142,9 @@ describe("useDirectMessages", () => {
         vi.clearAllMocks();
         vi.useRealTimers();
         mockListDirectMessages.mockResolvedValue(createListResult());
+        mockRealtimeSubscribe.mockImplementation(
+            async () => ({ close: vi.fn() }) as { close: () => void },
+        );
         mockSendDirectMessage.mockResolvedValue({
             $createdAt: "2026-03-10T12:05:00.000Z",
             $id: "dm-2",
@@ -485,6 +490,80 @@ describe("useDirectMessages", () => {
                 }),
             );
         });
+    });
+
+    it("keeps realtime-created messages when initial history load resolves", async () => {
+        let resolveInitialLoad:
+            | ((value: DirectMessagesResult) => void)
+            | undefined;
+        let realtimeCallback:
+            | ((response: { events: string[]; payload: Record<string, unknown> }) => void)
+            | undefined;
+
+        mockListDirectMessages.mockImplementationOnce(
+            () =>
+                new Promise<DirectMessagesResult>((resolve) => {
+                    resolveInitialLoad = resolve;
+                }),
+        );
+        mockRealtimeSubscribe.mockImplementationOnce(async (_channel, callback) => {
+            realtimeCallback = callback as (
+                response: { events: string[]; payload: Record<string, unknown> },
+            ) => void;
+            return { close: vi.fn() };
+        });
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(realtimeCallback).toBeDefined();
+        });
+
+        act(() => {
+            realtimeCallback?.({
+                events: [
+                    "databases.main.collections.direct-messages.documents.dm-realtime.create",
+                ],
+                payload: {
+                    $createdAt: "2026-03-10T12:05:00.000Z",
+                    $id: "dm-realtime",
+                    conversationId: "conversation-1",
+                    senderId: "user-2",
+                    text: "Delivered via realtime",
+                },
+            });
+        });
+
+        await act(async () => {
+            resolveInitialLoad?.(
+                createListResult({
+                    items: [
+                        {
+                            $createdAt: "2026-03-10T12:00:00.000Z",
+                            $id: "dm-1",
+                            conversationId: "conversation-1",
+                            senderId: "user-2",
+                            text: "Hello",
+                        },
+                    ],
+                }),
+            );
+        });
+
+        await waitFor(() => {
+            expect(result.current.loading).toBe(false);
+        });
+
+        expect(result.current.messages.map((message) => message.$id)).toEqual([
+            "dm-1",
+            "dm-realtime",
+        ]);
     });
 
     it("preserves reply preview context when sending a DM reply", async () => {

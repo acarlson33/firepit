@@ -521,7 +521,66 @@ export function useDirectMessages({
 
             // Reverse to show oldest first
             const orderedItems = result.items.reverse();
-            setMessages(orderedItems.filter(isTopLevelMessage));
+            const topLevelItems = orderedItems.filter(isTopLevelMessage);
+            setMessages((prev) => {
+                if (prev.length === 0) {
+                    return topLevelItems;
+                }
+
+                const mergedById = new Map<string, DirectMessage>();
+                for (const message of topLevelItems) {
+                    mergedById.set(message.$id, message);
+                }
+
+                for (const existingMessage of prev) {
+                    const fetchedMessage = mergedById.get(existingMessage.$id);
+                    if (fetchedMessage) {
+                        mergedById.set(
+                            existingMessage.$id,
+                            withReplyContext(
+                                {
+                                    ...existingMessage,
+                                    ...fetchedMessage,
+                                    attachments:
+                                        fetchedMessage.attachments ??
+                                        existingMessage.attachments,
+                                    replyTo:
+                                        fetchedMessage.replyTo ??
+                                        existingMessage.replyTo,
+                                    replyToId:
+                                        fetchedMessage.replyToId ??
+                                        existingMessage.replyToId,
+                                    senderAvatarFramePreset:
+                                        fetchedMessage.senderAvatarFramePreset ??
+                                        existingMessage.senderAvatarFramePreset,
+                                    senderAvatarFrameUrl:
+                                        fetchedMessage.senderAvatarFrameUrl ??
+                                        existingMessage.senderAvatarFrameUrl,
+                                    senderAvatarUrl:
+                                        fetchedMessage.senderAvatarUrl ??
+                                        existingMessage.senderAvatarUrl,
+                                    senderDisplayName:
+                                        fetchedMessage.senderDisplayName ??
+                                        existingMessage.senderDisplayName,
+                                    senderPronouns:
+                                        fetchedMessage.senderPronouns ??
+                                        existingMessage.senderPronouns,
+                                },
+                                topLevelItems,
+                                existingMessage,
+                            ),
+                        );
+                        continue;
+                    }
+
+                    // Keep realtime arrivals that landed while history was loading.
+                    mergedById.set(existingMessage.$id, existingMessage);
+                }
+
+                return Array.from(mergedById.values()).sort((a, b) =>
+                    a.$createdAt.localeCompare(b.$createdAt),
+                );
+            });
             setOldestCursor(result.nextCursor ?? null);
             setHasMore(Boolean(result.nextCursor));
             setReadOnly(result.readOnly);
@@ -677,7 +736,9 @@ export function useDirectMessages({
                                 return [
                                     ...prev,
                                     withReplyContext(messageData, prev),
-                                ];
+                                ].sort((a, b) =>
+                                    a.$createdAt.localeCompare(b.$createdAt),
+                                );
                             });
                         } else if (events.some((e) => e.endsWith(".update"))) {
                             setMessages((prev) =>
