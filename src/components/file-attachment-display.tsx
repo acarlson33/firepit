@@ -2,6 +2,7 @@
 import { Download } from "lucide-react";
 import { FileIcon, formatFileSize, getFileCategory } from "./file-icon";
 import type { FileAttachment } from "@/lib/types";
+import { normalizeAppwriteStorageUrl } from "@/lib/message-image-url";
 
 type FileAttachmentDisplayProps = {
     attachment: FileAttachment;
@@ -12,6 +13,8 @@ export function FileAttachmentDisplay({
     attachment,
     onMediaLoad,
 }: FileAttachmentDisplayProps) {
+    const resolvedFileUrl =
+        normalizeAppwriteStorageUrl(attachment.fileUrl) ?? attachment.fileUrl;
     const category = getFileCategory(attachment.fileType);
     const isImage = category === "image";
     const isVideo = category === "video";
@@ -23,7 +26,7 @@ export function FileAttachmentDisplay({
             <div className="mt-2 max-w-md">
                 <a
                     className="block max-w-full"
-                    href={attachment.fileUrl}
+                    href={resolvedFileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                 >
@@ -32,7 +35,7 @@ export function FileAttachmentDisplay({
                         className="h-auto max-w-full rounded-lg border"
                         loading="lazy"
                         onLoad={onMediaLoad}
-                        src={attachment.fileUrl}
+                        src={resolvedFileUrl}
                     />
                 </a>
                 <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
@@ -51,7 +54,7 @@ export function FileAttachmentDisplay({
                     className="block h-auto max-w-full rounded-lg border"
                     controls
                     preload="metadata"
-                    src={attachment.fileUrl}
+                    src={resolvedFileUrl}
                 >
                     <track kind="captions" />
                     Your browser does not support the video tag.
@@ -81,7 +84,7 @@ export function FileAttachmentDisplay({
                             className="mt-1 w-full"
                             controls
                             preload="metadata"
-                            src={attachment.fileUrl}
+                            src={resolvedFileUrl}
                         >
                             <track kind="captions" />
                             Your browser does not support the audio tag.
@@ -101,7 +104,7 @@ export function FileAttachmentDisplay({
             <a
                 className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-accent"
                 download={attachment.fileName}
-                href={attachment.fileUrl}
+                href={resolvedFileUrl}
                 rel="noopener noreferrer"
                 target="_blank"
             >

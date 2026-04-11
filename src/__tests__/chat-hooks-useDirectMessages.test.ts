@@ -487,6 +487,52 @@ describe("useDirectMessages", () => {
         });
     });
 
+    it("preserves reply preview context when sending a DM reply", async () => {
+        mockSendDirectMessage.mockResolvedValueOnce({
+            $createdAt: "2026-03-10T12:06:00.000Z",
+            $id: "dm-3",
+            conversationId: "conversation-1",
+            replyToId: "dm-1",
+            senderId: "user-1",
+            text: "Replying now",
+        });
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                receiverId: "user-2",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.loading).toBe(false);
+        });
+
+        await act(async () => {
+            await result.current.send(
+                "Replying now",
+                undefined,
+                undefined,
+                "dm-1",
+            );
+        });
+
+        await waitFor(() => {
+            expect(result.current.messages.at(-1)).toEqual(
+                expect.objectContaining({
+                    $id: "dm-3",
+                    replyTo: {
+                        senderDisplayName: "User Two",
+                        text: "Hello",
+                    },
+                    replyToId: "dm-1",
+                }),
+            );
+        });
+    });
+
     it("prevents sending when the conversation is read-only", async () => {
         const { toast } = await import("sonner");
         mockListDirectMessages.mockResolvedValue(

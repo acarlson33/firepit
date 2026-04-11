@@ -20,6 +20,7 @@ import {
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { getChannelAccessForUser } from "@/lib/server-channel-access";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
@@ -255,7 +256,10 @@ export async function POST(request: NextRequest) {
             removedBy: doc.removedBy as string | undefined,
             serverId: doc.serverId as string | undefined,
             imageFileId: doc.imageFileId as string | undefined,
-            imageUrl: doc.imageUrl as string | undefined,
+            imageUrl: resolveMessageImageUrl({
+                imageFileId: doc.imageFileId,
+                imageUrl: doc.imageUrl,
+            }),
             replyToId: doc.replyToId as string | undefined,
             mentions: Array.isArray(doc.mentions)
                 ? (doc.mentions as string[])

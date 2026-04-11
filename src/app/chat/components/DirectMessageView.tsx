@@ -745,7 +745,7 @@ export function DirectMessageView({
                                                                 <div className="mt-1">
                                                                     <ImageWithSkeleton
                                                                         alt="Uploaded image"
-                                                                        className="max-h-96 cursor-pointer rounded-lg object-cover transition-opacity hover:opacity-90"
+                                                                        className="block h-auto max-h-96 w-auto max-w-full cursor-pointer rounded-lg transition-opacity hover:opacity-90"
                                                                         onClick={() => {
                                                                             if (
                                                                                 message.imageUrl

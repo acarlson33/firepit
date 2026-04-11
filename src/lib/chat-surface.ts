@@ -1,4 +1,5 @@
 import type { DirectMessage, Message } from "@/lib/types";
+import { resolveMessageImageUrl } from "@/lib/message-image-url";
 
 type MessageReaction = NonNullable<Message["reactions"]>[number];
 
@@ -172,7 +173,10 @@ export function fromChannelMessage(
         removedAt: message.removedAt,
         removedBy: message.removedBy,
         imageFileId: message.imageFileId,
-        imageUrl: message.imageUrl,
+        imageUrl: resolveMessageImageUrl({
+            imageFileId: message.imageFileId,
+            imageUrl: message.imageUrl,
+        }),
         attachments: message.attachments,
         replyToId: message.replyToId,
         replyTo: message.replyTo
@@ -227,7 +231,10 @@ export function fromDirectMessage(
         removedAt: message.removedAt,
         removedBy: message.removedBy,
         imageFileId: message.imageFileId,
-        imageUrl: message.imageUrl,
+        imageUrl: resolveMessageImageUrl({
+            imageFileId: message.imageFileId,
+            imageUrl: message.imageUrl,
+        }),
         attachments: message.attachments,
         replyToId: message.replyToId,
         replyTo: message.replyTo

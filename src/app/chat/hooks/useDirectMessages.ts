@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
+import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {
     MAX_MESSAGE_LENGTH,
@@ -240,6 +241,22 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
                   typeof permission === "string",
           )
         : undefined;
+    const imageFileId =
+        typeof payload.imageFileId === "string"
+            ? payload.imageFileId
+            : undefined;
+    const replyTo = isRecord(payload.replyTo)
+        ? {
+              text:
+                  typeof payload.replyTo.text === "string"
+                      ? payload.replyTo.text
+                      : "",
+              senderDisplayName:
+                  typeof payload.replyTo.senderDisplayName === "string"
+                      ? payload.replyTo.senderDisplayName
+                      : undefined,
+          }
+        : undefined;
 
     return {
         $id: payload.$id,
@@ -252,12 +269,11 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
             typeof payload.receiverId === "string"
                 ? payload.receiverId
                 : undefined,
-        imageFileId:
-            typeof payload.imageFileId === "string"
-                ? payload.imageFileId
-                : undefined,
-        imageUrl:
-            typeof payload.imageUrl === "string" ? payload.imageUrl : undefined,
+        imageFileId,
+        imageUrl: resolveMessageImageUrl({
+            imageFileId,
+            imageUrl: payload.imageUrl,
+        }),
         editedAt:
             typeof payload.editedAt === "string" ? payload.editedAt : undefined,
         removedAt:
@@ -272,6 +288,7 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
             typeof payload.replyToId === "string"
                 ? payload.replyToId
                 : undefined,
+        replyTo,
         threadId:
             typeof payload.threadId === "string" ? payload.threadId : undefined,
         threadMessageCount:
@@ -306,6 +323,53 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
                 : undefined,
         attachments,
         reactions: parseReactions(serializedReactions),
+    };
+}
+
+function withReplyContext(
+    message: DirectMessage,
+    messages: DirectMessage[],
+    existingMessage?: DirectMessage,
+): DirectMessage {
+    const replyToId = message.replyToId ?? existingMessage?.replyToId;
+    const existingReply = existingMessage?.replyTo;
+
+    if (!replyToId) {
+        return message.replyTo || existingReply
+            ? {
+                  ...message,
+                  replyTo: message.replyTo ?? existingReply,
+              }
+            : message;
+    }
+
+    if (message.replyTo) {
+        return message;
+    }
+
+    const parentMessage = messages.find((candidate) => candidate.$id === replyToId);
+    if (parentMessage) {
+        return {
+            ...message,
+            replyTo: {
+                text: parentMessage.text,
+                senderDisplayName: parentMessage.senderDisplayName,
+            },
+            replyToId,
+        };
+    }
+
+    if (existingReply) {
+        return {
+            ...message,
+            replyTo: existingReply,
+            replyToId,
+        };
+    }
+
+    return {
+        ...message,
+        replyToId,
     };
 }
 
@@ -610,12 +674,48 @@ export function useDirectMessages({
                                 ) {
                                     return prev;
                                 }
-                                return [...prev, messageData];
+                                return [
+                                    ...prev,
+                                    withReplyContext(messageData, prev),
+                                ];
                             });
                         } else if (events.some((e) => e.endsWith(".update"))) {
                             setMessages((prev) =>
                                 prev.map((m) =>
-                                    m.$id === messageData.$id ? messageData : m,
+                                    m.$id === messageData.$id
+                                        ? withReplyContext(
+                                              {
+                                                  ...m,
+                                                  ...messageData,
+                                                  attachments:
+                                                      messageData.attachments ??
+                                                      m.attachments,
+                                                  replyTo:
+                                                      messageData.replyTo ??
+                                                      m.replyTo,
+                                                  replyToId:
+                                                      messageData.replyToId ??
+                                                      m.replyToId,
+                                                  senderAvatarFramePreset:
+                                                      messageData.senderAvatarFramePreset ??
+                                                      m.senderAvatarFramePreset,
+                                                  senderAvatarFrameUrl:
+                                                      messageData.senderAvatarFrameUrl ??
+                                                      m.senderAvatarFrameUrl,
+                                                  senderAvatarUrl:
+                                                      messageData.senderAvatarUrl ??
+                                                      m.senderAvatarUrl,
+                                                  senderDisplayName:
+                                                      messageData.senderDisplayName ??
+                                                      m.senderDisplayName,
+                                                  senderPronouns:
+                                                      messageData.senderPronouns ??
+                                                      m.senderPronouns,
+                                              },
+                                              prev,
+                                              m,
+                                          )
+                                        : m,
                                 ),
                             );
                         } else if (events.some((e) => e.endsWith(".delete"))) {
@@ -754,12 +854,20 @@ export function useDirectMessages({
 
                 // Optimistically add the message to local state with sorting
                 setMessages((prev) => {
+                    const enrichedWithReplyContext = withReplyContext(
+                        enrichedMessage,
+                        prev,
+                    );
                     // Check if message already exists to prevent duplicates
-                    if (prev.some((m) => m.$id === enrichedMessage.$id)) {
+                    if (
+                        prev.some(
+                            (m) => m.$id === enrichedWithReplyContext.$id,
+                        )
+                    ) {
                         return prev;
                     }
                     // Add and sort by creation time to maintain chronological order
-                    return [...prev, enrichedMessage].sort((a, b) =>
+                    return [...prev, enrichedWithReplyContext].sort((a, b) =>
                         a.$createdAt.localeCompare(b.$createdAt),
                     );
                 });

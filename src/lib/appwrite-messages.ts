@@ -3,6 +3,7 @@ import { ID, Permission, Query, Role } from "appwrite";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
 import { parseReactionsWithMetadata } from "./reactions-utils";
+import { resolveMessageImageUrl } from "./message-image-url";
 
 // Environment derived identifiers (centralized)
 const env = getEnvConfig();
@@ -239,7 +240,10 @@ function coerceMessage(raw: unknown): Message | null {
                 : undefined,
         imageFileId:
             typeof d.imageFileId === "string" ? d.imageFileId : undefined,
-        imageUrl: typeof d.imageUrl === "string" ? d.imageUrl : undefined,
+        imageUrl: resolveMessageImageUrl({
+            imageFileId: d.imageFileId,
+            imageUrl: d.imageUrl,
+        }),
         mentions: Array.isArray(d.mentions)
             ? (d.mentions as string[])
             : undefined,

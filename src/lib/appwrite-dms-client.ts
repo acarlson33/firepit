@@ -12,6 +12,7 @@ import type {
 import { parseReactions } from "./reactions-utils";
 import { extractMentionedUsernames } from "./mention-utils";
 import { logger } from "./client-logger";
+import { resolveMessageImageUrl } from "./message-image-url";
 
 type FetchedUserProfile = Partial<UserProfileData>;
 
@@ -381,7 +382,15 @@ export async function sendDirectMessage(
     }
 
     const data = await response.json();
-    return data.message;
+    const message = data.message as DirectMessage;
+
+    return {
+        ...message,
+        imageUrl: resolveMessageImageUrl({
+            imageFileId: message.imageFileId,
+            imageUrl: message.imageUrl,
+        }),
+    };
 }
 
 /**
@@ -505,6 +514,10 @@ export async function listDirectMessages(
         const profile = profileMap.get(msg.senderId);
         const enrichedMsg: DirectMessage = {
             ...msg,
+            imageUrl: resolveMessageImageUrl({
+                imageFileId: msg.imageFileId,
+                imageUrl: msg.imageUrl,
+            }),
             senderDisplayName: profile?.displayName,
             senderAvatarUrl: profile?.avatarUrl,
             senderAvatarFramePreset: profile?.avatarFramePreset,

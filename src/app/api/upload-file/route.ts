@@ -648,25 +648,26 @@ export async function POST(request: NextRequest) {
         })();
 
         const uploadDuration = Date.now() - uploadStartTime;
-        const fileUrl = new URL(
-            `/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/view`,
-            env.endpoint,
-        );
-        fileUrl.searchParams.set("project", env.project);
+        const endpoint = env.endpoint.replace(/\/$/, "");
+        const projectId = encodeURIComponent(env.project);
+        const fileId = encodeURIComponent(uploadedFile.$id);
+        const filesBucketId = encodeURIComponent(env.buckets.files);
 
-        const downloadUrl = new URL(
-            `/storage/buckets/${env.buckets.files}/files/${uploadedFile.$id}/download`,
-            env.endpoint,
-        );
-        downloadUrl.searchParams.set("project", env.project);
+        const fileUrl =
+            `${endpoint}/storage/buckets/${filesBucketId}/files/${fileId}/view` +
+            `?project=${projectId}`;
+
+        const downloadUrl =
+            `${endpoint}/storage/buckets/${filesBucketId}/files/${fileId}/download` +
+            `?project=${projectId}`;
 
         const responsePayload = {
             fileId: uploadedFile.$id,
             fileName: file.name,
             fileSize: file.size,
             fileType: file.type,
-            fileUrl: fileUrl.toString(),
-            downloadUrl: downloadUrl.toString(),
+            fileUrl,
+            downloadUrl,
             category: validation.category,
         };
 
@@ -695,7 +696,7 @@ export async function POST(request: NextRequest) {
                 duration: uploadDuration,
             });
 
-            logger.info("File URL generated", { url: fileUrl.toString() });
+            logger.info("File URL generated", { url: fileUrl });
         } catch (obsError) {
             logger.warn("Post-upload observability failed", {
                 error:

@@ -11,6 +11,7 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Message } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
+import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import {
     extractMentionedUsernames,
     extractMentionsWithKnownNames,
@@ -297,6 +298,7 @@ export function useMessages({
                     event: RealtimeResponseEvent<Record<string, unknown>>,
                 ) {
                     const p = event.payload;
+                    const imageFileId = p.imageFileId as string | undefined;
                     return {
                         $id: String(p.$id),
                         userId: String(p.userId),
@@ -307,8 +309,11 @@ export function useMessages({
                         channelId: p.channelId as string | undefined,
                         removedAt: p.removedAt as string | undefined,
                         removedBy: p.removedBy as string | undefined,
-                        imageFileId: p.imageFileId as string | undefined,
-                        imageUrl: p.imageUrl as string | undefined,
+                        imageFileId,
+                        imageUrl: resolveMessageImageUrl({
+                            imageFileId,
+                            imageUrl: p.imageUrl,
+                        }),
                         replyToId: p.replyToId as string | undefined,
                         threadId: p.threadId as string | undefined,
                         threadMessageCount:

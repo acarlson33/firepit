@@ -25,6 +25,7 @@ import {
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { shouldCompress } from "@/lib/compression-utils";
 
 const env = getEnvConfig();
@@ -726,7 +727,10 @@ export async function GET(request: NextRequest) {
                 receiverId: doc.receiverId as string | undefined,
                 text: doc.text as string,
                 imageFileId: doc.imageFileId as string | undefined,
-                imageUrl: doc.imageUrl as string | undefined,
+                imageUrl: resolveMessageImageUrl({
+                    imageFileId: doc.imageFileId,
+                    imageUrl: doc.imageUrl,
+                }),
                 $createdAt: doc.$createdAt,
                 editedAt: doc.editedAt as string | undefined,
                 removedAt: doc.removedAt as string | undefined,
@@ -1218,7 +1222,10 @@ export async function POST(request: NextRequest) {
             receiverId: message.receiverId,
             text: message.text,
             imageFileId: message.imageFileId,
-            imageUrl: message.imageUrl,
+            imageUrl: resolveMessageImageUrl({
+                imageFileId: message.imageFileId,
+                imageUrl: message.imageUrl,
+            }),
             $createdAt: message.$createdAt,
             replyToId: message.replyToId,
         };

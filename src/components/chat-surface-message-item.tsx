@@ -1,6 +1,4 @@
 "use client";
-
-import Image from "next/image";
 import {
     MessageSquare,
     MessageSquareMore,
@@ -227,14 +225,13 @@ export function ChatSurfaceMessageItem({
                             }
                             type="button"
                         >
-                            <Image
+                            <img
                                 alt={message.text ? message.text : "attachment"}
-                                className="max-h-64 max-w-full h-auto"
-                                height={768}
+                                className="block h-auto max-h-64 w-auto max-w-full"
+                                decoding="async"
                                 loading="lazy"
-                                src={message.imageUrl}
-                                width={1024}
                                 onLoad={() => onMediaLoad?.(message)}
+                                src={message.imageUrl}
                             />
                         </button>
                     </div>
