@@ -87,7 +87,7 @@ export type ChannelCategory = {
     name: string;
     position: number;
     createdBy?: string;
-    requiredRoleId?: string;
+    allowedRoleIds?: string[];
     $createdAt: string;
     $updatedAt?: string;
 };
