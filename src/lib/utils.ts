@@ -58,9 +58,14 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
  * @returns {string} Human-readable relative time label.
  */
 export function formatRelativeTime(date: string | Date): string {
-    const now = new Date();
-    const then = typeof date === "string" ? new Date(date) : date;
-    const diffMs = now.getTime() - then.getTime();
+    const nowMs = Date.now();
+    const thenMs = typeof date === "string" ? Date.parse(date) : date.getTime();
+
+    if (Number.isNaN(thenMs) || thenMs >= nowMs) {
+        return "just now";
+    }
+
+    const diffMs = nowMs - thenMs;
     const diffSec = Math.floor(diffMs / 1000);
     const diffMin = Math.floor(diffSec / 60);
     const diffHour = Math.floor(diffMin / 60);
@@ -78,7 +83,7 @@ export function formatRelativeTime(date: string | Date): string {
     if (diffDay < 7) {
         return `${diffDay} day${diffDay !== 1 ? "s" : ""} ago`;
     }
-    return then.toLocaleDateString();
+    return new Date(thenMs).toLocaleDateString();
 }
 
 /**

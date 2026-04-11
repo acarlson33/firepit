@@ -39,6 +39,7 @@
         "**/*.spec.tsx",
         "./vitest.config.ts",
         "./coverage",
-        "./scripts/**"
+        "./scripts/**",
+        "./assets/**"
     ]
 }
