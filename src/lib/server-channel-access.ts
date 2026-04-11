@@ -253,6 +253,39 @@ export async function getServerPermissionsForUser(
 }
 
 /**
+ * Returns whether user has access to a category based on required role.
+ *
+ * @param {Databases} databases - The databases value.
+ * @param {EnvConfig} env - The env value.
+ * @param {string} categoryId - The category id value.
+ * @param {ServerAccess} serverAccess - The server access value.
+ * @returns {Promise<boolean>} The return value.
+ */
+async function hasAccessToCategory(
+    databases: Databases,
+    env: EnvConfig,
+    categoryId: string,
+    serverAccess: ServerAccess,
+): Promise<boolean> {
+    if (serverAccess.isServerOwner) {
+        return true;
+    }
+
+    const category = await databases.getDocument(
+        env.databaseId,
+        env.collections.categories,
+        categoryId,
+    );
+
+    const requiredRoleId = category.requiredRoleId;
+    if (!requiredRoleId) {
+        return true;
+    }
+
+    return serverAccess.roleIds.includes(requiredRoleId);
+}
+
+/**
  * Returns channel access for user.
  *
  * @param {Databases} databases - The databases value.
@@ -299,6 +332,24 @@ export async function getChannelAccessForUser(
             canRead: true,
             canSend: true,
         };
+    }
+
+    if (channel.categoryId) {
+        const categoryAccess = await hasAccessToCategory(
+            databases,
+            env,
+            channel.categoryId,
+            serverAccess,
+        );
+        if (!categoryAccess) {
+            return {
+                serverId,
+                isServerOwner: false,
+                isMember: true,
+                canRead: false,
+                canSend: false,
+            };
+        }
     }
 
     const overrides = await databases.listDocuments(
