@@ -7,6 +7,7 @@ import {
     deleteAvatarFile,
     deleteProfileBackgroundFile,
     getOrCreateUserProfile,
+    updateProfileBackgroundImageState,
     updateUserProfile,
 } from "@/lib/appwrite-profiles";
 import { getAdminClient } from "@/lib/appwrite-admin";
@@ -153,16 +154,12 @@ export async function uploadAvatarAction(formData: FormData) {
         avatarFileId: uploadedFile.$id,
     });
 
-    if (
-        previousAvatarFileId &&
-        previousAvatarFileId !== uploadedFile.$id
-    ) {
+    if (previousAvatarFileId && previousAvatarFileId !== uploadedFile.$id) {
         try {
             await deleteAvatarFile(previousAvatarFileId);
         } catch (error) {
             logger.warn("Failed to delete previous avatar file after upload", {
-                error:
-                    error instanceof Error ? error.message : String(error),
+                error: error instanceof Error ? error.message : String(error),
                 fileId: previousAvatarFileId,
                 userId: user.$id,
             });
@@ -195,9 +192,7 @@ export async function removeAvatarAction() {
                 "Failed to delete avatar file during removeAvatarAction",
                 {
                     error:
-                        error instanceof Error
-                            ? error.message
-                            : String(error),
+                        error instanceof Error ? error.message : String(error),
                     fileId: previousAvatarFileId,
                     userId: user.$id,
                 },
@@ -258,9 +253,7 @@ export async function updateProfileBackgroundAction(formData: FormData) {
                 "Failed to delete previous profile background file after background update",
                 {
                     error:
-                        error instanceof Error
-                            ? error.message
-                            : String(error),
+                        error instanceof Error ? error.message : String(error),
                     fileId: existingBackgroundFileId,
                     userId: user.$id,
                 },
@@ -317,7 +310,7 @@ export async function uploadProfileBackgroundAction(formData: FormData) {
         file,
     );
 
-    await updateUserProfile(profile.$id, {
+    await updateProfileBackgroundImageState(profile.$id, {
         profileBackgroundImageFileId: uploadedFile.$id,
         profileBackgroundImageChangedAt: new Date().toISOString(),
         profileBackgroundColor: null,
@@ -335,9 +328,7 @@ export async function uploadProfileBackgroundAction(formData: FormData) {
                 "Failed to delete previous profile background file after upload",
                 {
                     error:
-                        error instanceof Error
-                            ? error.message
-                            : String(error),
+                        error instanceof Error ? error.message : String(error),
                     fileId: previousBackgroundFileId,
                     userId: user.$id,
                 },
@@ -373,9 +364,7 @@ export async function removeProfileBackgroundAction() {
                 "Failed to delete profile background file during removeProfileBackgroundAction",
                 {
                     error:
-                        error instanceof Error
-                            ? error.message
-                            : String(error),
+                        error instanceof Error ? error.message : String(error),
                     fileId: previousBackgroundFileId,
                     userId: user.$id,
                 },

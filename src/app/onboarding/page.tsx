@@ -55,6 +55,22 @@ function parseDirectMessagePrivacy(value: string): DirectMessagePrivacy {
     return "everyone";
 }
 
+function getStepAriaLabel(
+    step: Step,
+    index: number,
+    currentStepIndex: number,
+): string {
+    const status =
+        index < currentStepIndex
+            ? "Completed"
+            : index === currentStepIndex
+              ? "Current step"
+              : "Not started";
+    const formattedStep = `${step.at(0)?.toUpperCase() ?? ""}${step.slice(1)}`;
+
+    return `Step ${index + 1}: ${formattedStep} - ${status}`;
+}
+
 export default function OnboardingPage() {
     const router = useRouter();
     const { userData, refreshUser } = useAuth();
@@ -165,7 +181,11 @@ export default function OnboardingPage() {
                                         ? "step"
                                         : undefined
                                 }
-                                aria-label={`Step ${index + 1}: ${step} - ${index < currentStepIndex ? "Completed" : index === currentStepIndex ? "Current step (current step)" : "Not started"}`}
+                                aria-label={getStepAriaLabel(
+                                    step,
+                                    index,
+                                    currentStepIndex,
+                                )}
                                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
                                     index <= currentStepIndex
                                         ? "bg-primary text-primary-foreground"

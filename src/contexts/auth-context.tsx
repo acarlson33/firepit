@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -279,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     const channel = Channel.database(env.databaseId)
                         .collection(statusesCollection)
-                        .document(activeUserId);
+                        .document();
                     const channelKey = channel.toString();
 
                     const subscription = await realtime.subscribe(
@@ -313,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 );
                             }
                         },
+                        [Query.equal("userId", activeUserId)],
                     );
 
                     const untrack = trackSubscription(channelKey);

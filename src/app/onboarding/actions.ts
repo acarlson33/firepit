@@ -38,6 +38,13 @@ function isDirectMessagePrivacy(
 const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_PRONOUNS_LENGTH = 50;
 const MAX_BIO_LENGTH = 1000;
+const AUTH_FAILURE_MESSAGES = new Set([
+    "unauthorized",
+    "forbidden",
+    "authentication required",
+    "forbidden: admin access required",
+    "forbidden: moderator access required",
+]);
 
 function hashIdentifier(identifier: string) {
     return createHash("sha256").update(identifier).digest("hex").slice(0, 16);
@@ -52,12 +59,8 @@ function isAuthFailure(error: unknown) {
         return false;
     }
 
-    const message = error.message.toLowerCase();
-    return (
-        message.includes("unauthorized") ||
-        message.includes("forbidden") ||
-        message.includes("authentication required")
-    );
+    const message = error.message.trim().toLowerCase();
+    return AUTH_FAILURE_MESSAGES.has(message);
 }
 
 /**

@@ -245,6 +245,12 @@ async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
     }
 }
 
+async function waitForSubscribeQueueToDrain(): Promise<void> {
+    await subscribeQueueTail.catch(() => {
+        // Ignore stale subscribe failures while draining queue during teardown.
+    });
+}
+
 /**
  * Get or create shared Appwrite client
  * @returns {Client} The return value.
@@ -328,6 +334,8 @@ export async function disposeSharedRealtime(): Promise<void> {
     const disposePromise = (async () => {
         sharedRealtimeGeneration += 1;
         const disposeGeneration = sharedRealtimeGeneration;
+
+        await waitForSubscribeQueueToDrain();
 
         if (!sharedRealtime) {
             subscriptionRefs.clear();

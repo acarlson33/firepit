@@ -1930,6 +1930,12 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden - request origin is not allowed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "413":
                     description: File too large
                     content:
@@ -1966,7 +1972,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Success"
                 "403":
-                    description: Forbidden — caller does not own the file
+                    description: Forbidden - request origin is not allowed or caller does not own the file
                     content:
                         application/json:
                             schema:
@@ -1985,6 +1991,11 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "429":
                     description: Too many delete requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another delete attempt is allowed.
                     content:
                         application/json:
                             schema:

@@ -10,7 +10,6 @@ type CachedProfileEntry = {
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const profileCache = new Map<string, CachedProfileEntry>();
 const inFlightProfileFetches = new Map<string, Promise<void>>();
-const prefetchInProgress = new Set<string>();
 
 function getCachedProfileValue(userId: string): unknown | undefined {
     const entry = profileCache.get(userId);
@@ -39,8 +38,6 @@ function fetchProfileIntoCache(userId: string): Promise<void> {
         return existing;
     }
 
-    prefetchInProgress.add(userId);
-
     const requestPromise = (async () => {
         try {
             const response = await fetch(
@@ -54,7 +51,6 @@ function fetchProfileIntoCache(userId: string): Promise<void> {
             // Silently fail - profile will be fetched when needed.
         } finally {
             inFlightProfileFetches.delete(userId);
-            prefetchInProgress.delete(userId);
         }
     })();
 
@@ -68,11 +64,9 @@ export function useProfilePrefetch() {
             return;
         }
 
-        if (prefetchInProgress.has(userId)) {
-            const existing = inFlightProfileFetches.get(userId);
-            if (existing) {
-                await existing;
-            }
+        const existing = inFlightProfileFetches.get(userId);
+        if (existing) {
+            await existing;
             return;
         }
 
@@ -117,13 +111,11 @@ export const profilePrefetchPool = {
         if (
             getCachedProfileValue(userId) !== undefined ||
             profilePrefetchPool.queue.has(userId) ||
-            inFlightProfileFetches.has(userId) ||
-            prefetchInProgress.has(userId)
+            inFlightProfileFetches.has(userId)
         ) {
             return;
         }
 
-        prefetchInProgress.add(userId);
         profilePrefetchPool.queue.add(userId);
         profilePrefetchPool.process().catch(() => {});
     },
@@ -147,7 +139,6 @@ export const profilePrefetchPool = {
                 }
 
                 if (getCachedProfileValue(userId) !== undefined) {
-                    prefetchInProgress.delete(userId);
                     return runWorker();
                 }
 

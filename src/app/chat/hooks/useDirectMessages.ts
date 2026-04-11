@@ -11,7 +11,11 @@ import {
     editDirectMessage,
     deleteDirectMessage,
 } from "@/lib/appwrite-dms-client";
-import type { DirectMessage, RelationshipStatus } from "@/lib/types";
+import type {
+    DirectMessage,
+    FileAttachment,
+    RelationshipStatus,
+} from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {
@@ -83,6 +87,34 @@ function parseTypingPayload(payload: unknown): TypingPayload | null {
     };
 }
 
+function parseFileAttachment(value: unknown): FileAttachment | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    if (
+        typeof value.fileId !== "string" ||
+        typeof value.fileName !== "string" ||
+        typeof value.fileType !== "string" ||
+        typeof value.fileUrl !== "string" ||
+        typeof value.fileSize !== "number"
+    ) {
+        return null;
+    }
+
+    return {
+        fileId: value.fileId,
+        fileName: value.fileName,
+        fileType: value.fileType,
+        fileUrl: value.fileUrl,
+        fileSize: value.fileSize,
+        thumbnailUrl:
+            typeof value.thumbnailUrl === "string"
+                ? value.thumbnailUrl
+                : undefined,
+    };
+}
+
 function parseMessagePayload(payload: unknown): DirectMessage | null {
     if (!isRecord(payload)) {
         return null;
@@ -134,9 +166,23 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
                   typeof participant === "string",
           )
         : undefined;
+    const attachments = Array.isArray(payload.attachments)
+        ? payload.attachments
+              .map(parseFileAttachment)
+              .filter((attachment): attachment is FileAttachment =>
+                  Boolean(attachment),
+              )
+        : undefined;
+    const permissions = Array.isArray(payload.$permissions)
+        ? payload.$permissions.filter(
+              (permission): permission is string =>
+                  typeof permission === "string",
+          )
+        : undefined;
 
     return {
         $id: payload.$id,
+        $permissions: permissions,
         conversationId: payload.conversationId,
         senderId: payload.senderId,
         $createdAt: payload.$createdAt,
@@ -197,8 +243,17 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
             typeof payload.senderPronouns === "string"
                 ? payload.senderPronouns
                 : undefined,
+        attachments,
         reactions: parseReactions(serializedReactions),
     };
+}
+
+function normalizeRealtimeEvents(events: unknown): string[] {
+    if (!Array.isArray(events)) {
+        return [];
+    }
+
+    return events.filter((event): event is string => typeof event === "string");
 }
 
 export function useDirectMessages({
@@ -465,9 +520,7 @@ export function useDirectMessages({
                 subscription = await realtime.subscribe(
                     messageChannel,
                     (response) => {
-                        const events = Array.isArray(response.events)
-                            ? response.events
-                            : [];
+                        const events = normalizeRealtimeEvents(response.events);
                         const messageData = parseMessagePayload(
                             response.payload,
                         );
@@ -871,9 +924,7 @@ export function useDirectMessages({
                 subscription = await realtime.subscribe(
                     typingChannel,
                     (response) => {
-                        const events = Array.isArray(response.events)
-                            ? response.events
-                            : [];
+                        const events = normalizeRealtimeEvents(response.events);
                         const typing = parseTypingPayload(response.payload);
 
                         if (!typing) {

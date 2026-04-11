@@ -85,7 +85,9 @@ export function getProfileBackgroundStyle(opts: {
     }
     if (opts.gradient) {
         const safeGradient = sanitizeGradient(opts.gradient);
-        return safeGradient ? { background: safeGradient } : undefined;
+        if (safeGradient) {
+            return { background: safeGradient };
+        }
     }
     if (opts.color) {
         const safeColor = sanitizeColor(opts.color);

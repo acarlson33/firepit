@@ -57,7 +57,6 @@ const editableProfileKeys = [
     "profileBackgroundColor",
     "profileBackgroundGradient",
     "profileBackgroundImageFileId",
-    "profileBackgroundImageChangedAt",
     "avatarFramePreset",
 ] as const;
 
@@ -285,6 +284,42 @@ export async function updateUserProfile(
         env.collections.profiles,
         profileId,
         cleanData,
+    );
+
+    return profile as unknown as UserProfile;
+}
+
+/**
+ * Update profile background image state.
+ * This path is intentionally separate from generic profile updates.
+ *
+ * @param {string} profileId - The profile id value.
+ * @param {{ profileBackgroundImageFileId: string | null; profileBackgroundImageChangedAt: string; profileBackgroundColor?: string | null; profileBackgroundGradient?: string | null; }} data - The data value.
+ * @returns {Promise<UserProfile>} The return value.
+ */
+export async function updateProfileBackgroundImageState(
+    profileId: string,
+    data: {
+        profileBackgroundImageFileId: string | null;
+        profileBackgroundImageChangedAt: string;
+        profileBackgroundColor?: string | null;
+        profileBackgroundGradient?: string | null;
+    },
+): Promise<UserProfile> {
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const profile = await databases.updateDocument(
+        env.databaseId,
+        env.collections.profiles,
+        profileId,
+        {
+            profileBackgroundImageFileId: data.profileBackgroundImageFileId,
+            profileBackgroundImageChangedAt:
+                data.profileBackgroundImageChangedAt,
+            profileBackgroundColor: data.profileBackgroundColor ?? null,
+            profileBackgroundGradient: data.profileBackgroundGradient ?? null,
+        },
     );
 
     return profile as unknown as UserProfile;

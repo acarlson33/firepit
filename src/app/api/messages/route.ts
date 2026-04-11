@@ -371,7 +371,10 @@ export async function PATCH(request: NextRequest) {
             text: String(doc.text),
             $createdAt: String(doc.$createdAt ?? ""),
             channelId:
-                typeof doc.channelId === "string" ? doc.channelId : undefined,
+                typeof doc.channelId === "string" &&
+                doc.channelId.trim().length > 0
+                    ? doc.channelId.trim()
+                    : undefined,
             editedAt:
                 typeof doc.editedAt === "string" ? doc.editedAt : undefined,
             removedAt:
@@ -379,7 +382,10 @@ export async function PATCH(request: NextRequest) {
             removedBy:
                 typeof doc.removedBy === "string" ? doc.removedBy : undefined,
             serverId:
-                typeof doc.serverId === "string" ? doc.serverId : undefined,
+                typeof doc.serverId === "string" &&
+                doc.serverId.trim().length > 0
+                    ? doc.serverId.trim()
+                    : undefined,
             imageFileId:
                 typeof doc.imageFileId === "string"
                     ? doc.imageFileId

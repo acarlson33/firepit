@@ -65,6 +65,22 @@ function ensureAllowedRequestOrigin(request: Request): string | null {
     return ALLOWED_ORIGINS.includes(origin) ? null : origin;
 }
 
+function canUserDeleteImage(
+    permissions: unknown,
+    userId: string,
+): permissions is string[] {
+    if (!Array.isArray(permissions)) {
+        return false;
+    }
+
+    const expectedDeletePermission = Permission.delete(Role.user(userId));
+    return permissions.some(
+        (permission) =>
+            typeof permission === "string" &&
+            permission === expectedDeletePermission,
+    );
+}
+
 function hasPrefix(bytes: Uint8Array, signature: number[]) {
     return signature.every((value, index) => bytes[index] === value);
 }
@@ -377,6 +393,22 @@ export async function DELETE(request: NextRequest) {
         addTransactionAttributes({ fileId });
 
         const { storage } = getServerClient();
+
+        let filePermissions: unknown;
+        try {
+            const file = await storage.getFile(env.buckets.images, fileId);
+            filePermissions = (file as { $permissions?: unknown }).$permissions;
+        } catch (error) {
+            if (error instanceof AppwriteException && error.code === 404) {
+                return respond({ error: "Image not found" }, { status: 404 });
+            }
+            throw error;
+        }
+
+        if (!canUserDeleteImage(filePermissions, session.$id)) {
+            return respond({ error: "Forbidden" }, { status: 403 });
+        }
+
         const deleteStartTime = Date.now();
 
         try {
