@@ -15,6 +15,10 @@ const rolesCollectionId = env.collections.roles;
 const QUERY_ARRAY_LIMIT = 100;
 
 function chunkValues<T>(values: T[], size: number) {
+    if (!Number.isInteger(size) || size <= 0) {
+        throw new Error("size must be a positive integer");
+    }
+
     const chunks: T[][] = [];
     for (let index = 0; index < values.length; index += size) {
         chunks.push(values.slice(index, index + size));
@@ -290,21 +294,24 @@ export async function PUT(request: NextRequest) {
                         dedupedRoleIds,
                         QUERY_ARRAY_LIMIT,
                     );
+                    const existingRolePages = await Promise.all(
+                        roleIdChunks.map((roleIdChunk) =>
+                            databases.listDocuments(
+                                databaseId,
+                                rolesCollectionId,
+                                [
+                                    Query.equal(
+                                        "serverId",
+                                        String(existingCategory.serverId),
+                                    ),
+                                    Query.equal("$id", roleIdChunk),
+                                    Query.limit(roleIdChunk.length),
+                                ],
+                            ),
+                        ),
+                    );
 
-                    for (const roleIdChunk of roleIdChunks) {
-                        const existingRoles = await databases.listDocuments(
-                            databaseId,
-                            rolesCollectionId,
-                            [
-                                Query.equal(
-                                    "serverId",
-                                    String(existingCategory.serverId),
-                                ),
-                                Query.equal("$id", roleIdChunk),
-                                Query.limit(roleIdChunk.length),
-                            ],
-                        );
-
+                    for (const existingRoles of existingRolePages) {
                         for (const role of existingRoles.documents) {
                             validRoleIds.add(String(role.$id));
                         }

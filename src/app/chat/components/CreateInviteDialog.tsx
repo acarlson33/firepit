@@ -183,10 +183,7 @@ export function CreateInviteDialog({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
-                                        const copyTask = copyInviteLink();
-                                        copyTask.catch(() => {
-                                            // copyInviteLink already reports errors.
-                                        });
+                                        void copyInviteLink();
                                     }}
                                     aria-label="Copy invite link"
                                     type="button"

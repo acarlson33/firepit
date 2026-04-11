@@ -278,7 +278,9 @@ async function hasAccessToCategory(
             categoryId,
         );
 
-        const allowedRoleIds = category.allowedRoleIds as string[] | undefined;
+        const allowedRoleIds = Array.isArray(category.allowedRoleIds)
+            ? (category.allowedRoleIds as string[])
+            : undefined;
         if (!allowedRoleIds || allowedRoleIds.length === 0) {
             return true;
         }

@@ -1971,6 +1971,12 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing or invalid fileId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "403":
                     description: Forbidden - request origin is not allowed or caller does not own the file
                     content:
@@ -1979,12 +1985,6 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "404":
                     description: Image not found
-                    content:
-                        application/json:
-                            schema:
-                                $ref: "#/components/schemas/Error"
-                "400":
-                    description: Missing or invalid fileId
                     content:
                         application/json:
                             schema:
@@ -2063,8 +2063,25 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden - request origin not allowed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "413":
                     description: File too large
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "429":
+                    description: Too Many Requests
+                    headers:
+                        Retry-After:
+                            schema:
+                                type: integer
+                            description: Seconds until another upload attempt is allowed.
                     content:
                         application/json:
                             schema:
@@ -2087,6 +2104,12 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Success"
+                "400":
+                    description: Missing or invalid fileId
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
                 "403":
                     description: Forbidden — caller does not own the file
                     content:

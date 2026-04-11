@@ -109,5 +109,5 @@ export function getPresetGradientById(id: string): PresetGradient | undefined {
 }
 
 export function isValidPresetGradientId(id: string): boolean {
-    return PRESET_GRADIENTS.some((g) => g.id === id);
+    return Boolean(getPresetGradientById(id));
 }

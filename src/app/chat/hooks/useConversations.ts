@@ -28,11 +28,7 @@ function formatConversationsError(error: unknown) {
         return null;
     }
 
-    if (error instanceof Error) {
-        return toErrorMessage(error);
-    }
-
-    return "Failed to load conversations";
+    return toErrorMessage(error);
 }
 
 function getConversationsQueryKey(userId: string | null) {

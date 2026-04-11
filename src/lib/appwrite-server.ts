@@ -4,17 +4,22 @@
 import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 
+export interface TablesDBWithTransactions extends Pick<
+    TablesDB,
+    "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
+> {}
+
 // Tracked dependency alignment: https://github.com/acarlson33/firepit/issues?q=is%3Aissue+is%3Aopen+node-appwrite
 
 /**
  * Get server-side Appwrite client with API key authentication.
  * This function should ONLY be called from server-side code (server components, API routes, server actions).
- * @returns {{ client: Client; databases: Databases; tablesDB: TablesDB; teams: Teams; storage: Storage; }} The return value.
+ * @returns {{ client: Client; databases: Databases; tablesDB: TablesDBWithTransactions; teams: Teams; storage: Storage; }} The return value.
  */
 export function getServerClient(): {
     client: Client;
     databases: Databases;
-    tablesDB: TablesDB;
+    tablesDB: TablesDBWithTransactions;
     teams: Teams;
     storage: Storage;
 } {

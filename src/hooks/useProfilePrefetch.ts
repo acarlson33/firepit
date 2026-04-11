@@ -7,9 +7,14 @@ type CachedProfileEntry = {
     cachedAt: number;
 };
 
+type InFlightProfileFetch = {
+    controller: AbortController;
+    promise: Promise<void>;
+};
+
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const profileCache = new Map<string, CachedProfileEntry>();
-const inFlightProfileFetches = new Map<string, Promise<void>>();
+const inFlightProfileFetches = new Map<string, InFlightProfileFetch>();
 
 function getCachedProfileValue(userId: string): unknown | undefined {
     const entry = profileCache.get(userId);
@@ -35,13 +40,16 @@ function setCachedProfileValue(userId: string, data: unknown): void {
 function fetchProfileIntoCache(userId: string): Promise<void> {
     const existing = inFlightProfileFetches.get(userId);
     if (existing) {
-        return existing;
+        return existing.promise;
     }
+
+    const controller = new AbortController();
 
     const requestPromise = (async () => {
         try {
             const response = await fetch(
                 `/api/users/${encodeURIComponent(userId)}/profile`,
+                { signal: controller.signal },
             );
             if (response.ok) {
                 const data = await response.json();
@@ -54,7 +62,10 @@ function fetchProfileIntoCache(userId: string): Promise<void> {
         }
     })();
 
-    inFlightProfileFetches.set(userId, requestPromise);
+    inFlightProfileFetches.set(userId, {
+        controller,
+        promise: requestPromise,
+    });
     return requestPromise;
 }
 
@@ -66,7 +77,7 @@ export function useProfilePrefetch() {
 
         const existing = inFlightProfileFetches.get(userId);
         if (existing) {
-            await existing;
+            await existing.promise;
             return;
         }
 
@@ -78,6 +89,10 @@ export function useProfilePrefetch() {
     }, []);
 
     const clearCache = useCallback(() => {
+        for (const inFlight of inFlightProfileFetches.values()) {
+            inFlight.controller.abort();
+        }
+        inFlightProfileFetches.clear();
         profileCache.clear();
     }, []);
 
@@ -133,17 +148,18 @@ export const profilePrefetchPool = {
 
         try {
             const runWorker = async (): Promise<void> => {
-                const userId = profilePrefetchPool.dequeueNext();
-                if (!userId) {
-                    return;
-                }
+                while (true) {
+                    const userId = profilePrefetchPool.dequeueNext();
+                    if (!userId) {
+                        return;
+                    }
 
-                if (getCachedProfileValue(userId) !== undefined) {
-                    return runWorker();
-                }
+                    if (getCachedProfileValue(userId) !== undefined) {
+                        continue;
+                    }
 
-                await fetchProfileIntoCache(userId);
-                return runWorker();
+                    await fetchProfileIntoCache(userId);
+                }
             };
 
             const workers = Array.from({ length: concurrency }, runWorker);

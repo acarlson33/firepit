@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
+import { z } from "zod";
 import {
     Dialog,
     DialogContent,
@@ -22,27 +23,31 @@ import { profilePrefetchPool } from "@/hooks/useProfilePrefetch";
 import { getProfileBackgroundStyle } from "@/lib/profile-utils";
 import { logger } from "@/lib/client-logger";
 
-type UserProfile = {
-    userId: string;
-    displayName?: string;
-    bio?: string;
-    pronouns?: string;
-    location?: string;
-    website?: string;
-    avatarFileId?: string;
-    avatarUrl?: string;
-    profileBackgroundColor?: string;
-    profileBackgroundGradient?: string;
-    profileBackgroundImageFileId?: string;
-    profileBackgroundUrl?: string;
-    avatarFramePreset?: string;
-    avatarFrameUrl?: string;
-    status?: {
-        status: "online" | "away" | "busy" | "offline";
-        customMessage?: string;
-        lastSeenAt: string;
-    };
-};
+const UserStatusSchema = z.object({
+    status: z.enum(["online", "away", "busy", "offline"]),
+    customMessage: z.string().optional().nullable(),
+    lastSeenAt: z.string(),
+});
+
+const UserProfileSchema = z.object({
+    userId: z.string(),
+    displayName: z.string().optional().nullable(),
+    bio: z.string().optional().nullable(),
+    pronouns: z.string().optional().nullable(),
+    location: z.string().optional().nullable(),
+    website: z.string().optional().nullable(),
+    avatarFileId: z.string().optional().nullable(),
+    avatarUrl: z.string().optional().nullable(),
+    profileBackgroundColor: z.string().optional().nullable(),
+    profileBackgroundGradient: z.string().optional().nullable(),
+    profileBackgroundImageFileId: z.string().optional().nullable(),
+    profileBackgroundUrl: z.string().optional().nullable(),
+    avatarFramePreset: z.string().optional().nullable(),
+    avatarFrameUrl: z.string().optional().nullable(),
+    status: UserStatusSchema.optional(),
+});
+
+type UserProfile = z.infer<typeof UserProfileSchema>;
 
 type UserProfileModalProps = {
     userId: string;
@@ -55,62 +60,7 @@ type UserProfileModalProps = {
 };
 
 function isUserProfile(value: unknown): value is UserProfile {
-    if (!value || typeof value !== "object") {
-        return false;
-    }
-
-    const candidate = value as Record<string, unknown>;
-
-    const hasValidStatus = (() => {
-        if (candidate.status === undefined) {
-            return true;
-        }
-
-        if (!candidate.status || typeof candidate.status !== "object") {
-            return false;
-        }
-
-        const status = candidate.status as Record<string, unknown>;
-        const validStatusValues = ["online", "away", "busy", "offline"];
-
-        return (
-            typeof status.status === "string" &&
-            validStatusValues.includes(status.status) &&
-            (status.customMessage === undefined ||
-                typeof status.customMessage === "string") &&
-            typeof status.lastSeenAt === "string"
-        );
-    })();
-
-    return (
-        typeof candidate.userId === "string" &&
-        (candidate.bio === undefined || typeof candidate.bio === "string") &&
-        (candidate.displayName === undefined ||
-            typeof candidate.displayName === "string") &&
-        (candidate.pronouns === undefined ||
-            typeof candidate.pronouns === "string") &&
-        (candidate.location === undefined ||
-            typeof candidate.location === "string") &&
-        (candidate.website === undefined ||
-            typeof candidate.website === "string") &&
-        (candidate.avatarFileId === undefined ||
-            typeof candidate.avatarFileId === "string") &&
-        (candidate.avatarUrl === undefined ||
-            typeof candidate.avatarUrl === "string") &&
-        (candidate.profileBackgroundColor === undefined ||
-            typeof candidate.profileBackgroundColor === "string") &&
-        (candidate.profileBackgroundGradient === undefined ||
-            typeof candidate.profileBackgroundGradient === "string") &&
-        (candidate.profileBackgroundImageFileId === undefined ||
-            typeof candidate.profileBackgroundImageFileId === "string") &&
-        (candidate.profileBackgroundUrl === undefined ||
-            typeof candidate.profileBackgroundUrl === "string") &&
-        (candidate.avatarFramePreset === undefined ||
-            typeof candidate.avatarFramePreset === "string") &&
-        (candidate.avatarFrameUrl === undefined ||
-            typeof candidate.avatarFrameUrl === "string") &&
-        hasValidStatus
-    );
+    return UserProfileSchema.safeParse(value).success;
 }
 
 function getStatusColor(
@@ -173,7 +123,7 @@ export function UserProfileModal({
             setError(null);
 
             const cached = profilePrefetchPool.getCachedProfile(userId);
-            if (cached && isUserProfile(cached) && cached.userId === userId) {
+            if (isUserProfile(cached) && cached.userId === userId) {
                 if (cancelled) {
                     return;
                 }

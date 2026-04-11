@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚠️ Breaking Changes
 
-- **Node.js 20.9.0 minimum** - Enforced via engines field.
+- **Node.js 20.9.0 minimum** - Enforced via the engines field in package.json.
 - **Next.js 16.2.x** - Updated Next.js ecosystem packages; align your app/runtime and CI accordingly.
 - **Appwrite TablesDB** - Added TablesDB client for transaction support (notably report resolution flow), which may affect Appwrite API behavior assumptions in custom integrations.
 
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Profile background clearing** - Fixed clearing not working for color/gradient backgrounds
 - **Background type switching** - Fixed image file ID not being cleared when switching to color/gradient
 - **Moderation toast grammar** - Fixed "Successfully kickned" → "Successfully kicked"
-- **Upload error message leak** - Generic error messages returned to clients instead of raw exceptions
+- **Fixed upload endpoints leaking raw exceptions to clients** - Generic error messages returned to clients instead of raw exceptions
 - **File ownership on delete** - Upload delete endpoints now verify file ownership before deletion
 - **Inbox query fix** - Fixed `Query.equal` on array attribute `participants` → `Query.contains`
 - **PostHog deduplication** - Removed duplicate initialization in `instrumentation-client.ts` and the PostHog provider component to prevent "already initialized" warnings

@@ -183,7 +183,7 @@ describe("useConversations", () => {
                 expect(result.current.loading).toBe(false);
             });
 
-            expect(result.current.error).toBe("Failed to load conversations");
+            expect(result.current.error).toBe("String error");
         });
 
         it("should reload conversations when userId changes", async () => {

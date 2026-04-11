@@ -1,4 +1,4 @@
-import { ID, Query } from "node-appwrite";
+import { AppwriteException, ID, Query } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -17,6 +17,7 @@ type ThreadReadDocument = {
 };
 
 const THREAD_READ_QUERY_LIMIT = 500;
+const MAX_THREAD_READ_MERGE_ATTEMPTS = 4;
 
 function isAlreadyExistsConflict(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -93,28 +94,10 @@ function mergeReadsAcrossDocuments(
     );
 }
 
-function areReadMapsEqual(
-    leftReads: Record<string, string>,
-    rightReads: Record<string, string>,
-) {
-    const leftKeys = Object.keys(leftReads);
-    const rightKeys = Object.keys(rightReads);
-    if (leftKeys.length !== rightKeys.length) {
-        return false;
-    }
-
-    for (const key of leftKeys) {
-        if (leftReads[key] !== rightReads[key]) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 async function mergeIntoExistingThreadReadDocument(params: {
     contextId: string;
     contextType: ThreadReadContextType;
+    concurrentDocuments?: ThreadReadDocument[];
     incomingReads: Record<string, string>;
     userId: string;
 }) {
@@ -122,38 +105,103 @@ async function mergeIntoExistingThreadReadDocument(params: {
     const env = getEnvConfig();
 
     let expectedReads = params.incomingReads;
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-        const documents = await listThreadReadDocumentsForContext(params);
+    let providedConcurrentDocuments = params.concurrentDocuments;
+
+    for (
+        let attempt = 0;
+        attempt < MAX_THREAD_READ_MERGE_ATTEMPTS;
+        attempt += 1
+    ) {
+        const documents =
+            providedConcurrentDocuments ??
+            (await listThreadReadDocumentsForContext(params));
+        providedConcurrentDocuments = undefined;
         const primaryDocument = documents[0];
         if (!primaryDocument) {
             return null;
         }
 
         const mergedReads = mergeReadsAcrossDocuments(documents, expectedReads);
-        const updatedDocument = await databases.updateDocument(
-            env.databaseId,
-            env.collections.threadReads,
-            primaryDocument.$id,
-            {
-                reads: JSON.stringify(mergedReads),
-            },
-        );
+
+        if (
+            primaryDocument.$updatedAt &&
+            typeof databases.getDocument === "function"
+        ) {
+            try {
+                const latestPrimaryDocument = await databases.getDocument(
+                    env.databaseId,
+                    env.collections.threadReads,
+                    primaryDocument.$id,
+                );
+                const latestPrimary = mapThreadReadDocument(
+                    latestPrimaryDocument as unknown as Record<string, unknown>,
+                );
+
+                if (
+                    latestPrimary.$updatedAt &&
+                    latestPrimary.$updatedAt !== primaryDocument.$updatedAt
+                ) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+            } catch (error) {
+                if (error instanceof AppwriteException && error.code === 404) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+
+                if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+                    expectedReads = mergeReadsAcrossDocuments(
+                        documents,
+                        expectedReads,
+                    );
+                    continue;
+                }
+
+                throw error;
+            }
+        }
+
+        let updatedDocument: unknown;
+        try {
+            updatedDocument = await databases.updateDocument(
+                env.databaseId,
+                env.collections.threadReads,
+                primaryDocument.$id,
+                {
+                    reads: JSON.stringify(mergedReads),
+                },
+            );
+        } catch (error) {
+            if (error instanceof AppwriteException && error.code === 404) {
+                expectedReads = mergeReadsAcrossDocuments(
+                    documents,
+                    expectedReads,
+                );
+                continue;
+            }
+
+            if (attempt < MAX_THREAD_READ_MERGE_ATTEMPTS - 1) {
+                expectedReads = mergeReadsAcrossDocuments(
+                    documents,
+                    expectedReads,
+                );
+                continue;
+            }
+
+            throw error;
+        }
+
         const mappedUpdated = mapThreadReadDocument(
             updatedDocument as unknown as Record<string, unknown>,
         );
-
-        const verifiedDocuments =
-            await listThreadReadDocumentsForContext(params);
-        const verifiedReads = mergeReadsAcrossDocuments(
-            verifiedDocuments,
-            expectedReads,
-        );
-
-        if (areReadMapsEqual(mappedUpdated.reads, verifiedReads)) {
-            return mappedUpdated;
-        }
-
-        expectedReads = verifiedReads;
+        return mappedUpdated;
     }
 
     throw new Error("Unable to apply merged thread reads without conflicts");
@@ -316,6 +364,7 @@ export async function upsertThreadReads(params: {
 
         const merged = await mergeIntoExistingThreadReadDocument({
             ...params,
+            concurrentDocuments,
             incomingReads,
         });
         if (!merged) {

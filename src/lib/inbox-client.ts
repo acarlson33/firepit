@@ -171,16 +171,18 @@ export async function markInboxScopeRead(scope: InboxScope): Promise<void> {
     const failures: string[] = [];
 
     for (const result of results) {
-        if (result.status !== "rejected") {
-            continue;
+        if (result.status === "rejected") {
+            const reason = result.reason;
+            failures.push(
+                reason instanceof Error ? reason.message : String(reason),
+            );
         }
-
-        const reason = result.reason;
-        failures.push(reason instanceof Error ? reason.message : String(reason));
     }
 
     if (failures.length > 0) {
-        throw new Error(`Failed to mark some inbox scopes as read: ${failures.join("; ")}`);
+        throw new Error(
+            `Failed to mark some inbox context kinds as read: ${failures.join("; ")}`,
+        );
     }
 }
 

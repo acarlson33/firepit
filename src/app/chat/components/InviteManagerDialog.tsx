@@ -87,6 +87,18 @@ export function InviteManagerDialog({
         new Map<string, AbortController>(),
     );
 
+    const handleDialogOpenChange = useCallback(
+        (nextOpen: boolean) => {
+            if (!nextOpen && deleteInviteAbortControllersRef.current.size > 0) {
+                toast.info("Please wait for invite deletions to finish.");
+                return;
+            }
+
+            onOpenChange(nextOpen);
+        },
+        [onOpenChange],
+    );
+
     const getResponseErrorMessage = useCallback(
         async (response: Response, fallbackMessage: string) => {
             const statusPrefix = `${fallbackMessage} (status ${response.status})`;
@@ -176,10 +188,6 @@ export function InviteManagerDialog({
             isMountedRef.current = false;
             loadInvitesAbortRef.current?.abort();
             loadInvitesAbortRef.current = null;
-            for (const controller of deleteInviteAbortControllersRef.current.values()) {
-                controller.abort();
-            }
-            deleteInviteAbortControllersRef.current.clear();
         };
     }, []);
 
@@ -191,10 +199,6 @@ export function InviteManagerDialog({
 
         return () => {
             loadInvitesAbortRef.current?.abort();
-            for (const controller of deleteInviteAbortControllersRef.current.values()) {
-                controller.abort();
-            }
-            deleteInviteAbortControllersRef.current.clear();
         };
     }, [open, loadInvites]);
 
@@ -279,7 +283,7 @@ export function InviteManagerDialog({
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleDialogOpenChange}>
             <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>Server Invites</DialogTitle>
@@ -288,6 +292,18 @@ export function InviteManagerDialog({
                         revoke invites you no longer need.
                     </DialogDescription>
                 </DialogHeader>
+
+                {deletingCodes.size > 0 && (
+                    <p
+                        aria-atomic="true"
+                        aria-live="polite"
+                        className="text-sm text-muted-foreground"
+                        role="status"
+                    >
+                        Deletions in progress. Please wait before closing this
+                        dialog.
+                    </p>
+                )}
 
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
@@ -310,113 +326,130 @@ export function InviteManagerDialog({
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {invites.map((invite) => (
-                                <div
-                                    key={invite.$id}
-                                    className={`border rounded-lg p-4 ${
-                                        isInactive(invite)
-                                            ? "opacity-50 bg-muted/30"
-                                            : ""
-                                    }`}
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            {/* Invite Code */}
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                                                    {invite.code}
-                                                </code>
-                                                {isExpired(invite) && (
-                                                    <span className="text-xs text-destructive font-medium">
-                                                        Expired
-                                                    </span>
-                                                )}
-                                                {isMaxedOut(invite) && (
-                                                    <span className="text-xs text-destructive font-medium">
-                                                        Max uses reached
-                                                    </span>
-                                                )}
-                                                {invite.temporary && (
-                                                    <span className="text-xs text-blue-600 font-medium">
-                                                        Temporary
-                                                    </span>
-                                                )}
+                            {invites.map((invite) => {
+                                const isDeleting = deletingCodes.has(
+                                    invite.code,
+                                );
+
+                                return (
+                                    <div
+                                        key={invite.$id}
+                                        className={`border rounded-lg p-4 ${
+                                            isInactive(invite)
+                                                ? "opacity-50 bg-muted/30"
+                                                : ""
+                                        }`}
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1 min-w-0">
+                                                {/* Invite Code */}
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                                                        {invite.code}
+                                                    </code>
+                                                    {isExpired(invite) && (
+                                                        <span className="text-xs text-destructive font-medium">
+                                                            Expired
+                                                        </span>
+                                                    )}
+                                                    {isMaxedOut(invite) && (
+                                                        <span className="text-xs text-destructive font-medium">
+                                                            Max uses reached
+                                                        </span>
+                                                    )}
+                                                    {invite.temporary && (
+                                                        <span className="text-xs text-blue-600 font-medium">
+                                                            Temporary
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Stats */}
+                                                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Users
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            {formatUses(invite)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Clock
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            {formatExpiration(
+                                                                invite.expiresAt,
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Calendar
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            Created{" "}
+                                                            {new Date(
+                                                                invite.$createdAt,
+                                                            ).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
 
-                                            {/* Stats */}
-                                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Users className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        {formatUses(invite)}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Clock className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        {formatExpiration(
-                                                            invite.expiresAt,
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Calendar className="h-3.5 w-3.5" />
-                                                    <span>
-                                                        Created{" "}
-                                                        {new Date(
-                                                            invite.$createdAt,
-                                                        ).toLocaleDateString()}
-                                                    </span>
-                                                </div>
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        copyInviteLink(
+                                                            invite.code,
+                                                        ).catch(() => {
+                                                            // copyInviteLink already reports failures.
+                                                        });
+                                                    }}
+                                                    aria-label={`Copy invite ${invite.code}`}
+                                                    disabled={isInactive(
+                                                        invite,
+                                                    )}
+                                                >
+                                                    <Copy className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        deleteInvite(
+                                                            invite.code,
+                                                        ).catch(() => {
+                                                            // deleteInvite already reports failures.
+                                                        });
+                                                    }}
+                                                    aria-label={`${
+                                                        isDeleting
+                                                            ? "Deleting"
+                                                            : "Delete"
+                                                    } invite ${invite.code}`}
+                                                    disabled={isDeleting}
+                                                >
+                                                    {isDeleting ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="h-4 w-4" />
+                                                    )}
+                                                </Button>
                                             </div>
-                                        </div>
-
-                                        {/* Actions */}
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    copyInviteLink(
-                                                        invite.code,
-                                                    ).catch(() => {
-                                                        // copyInviteLink already reports failures.
-                                                    });
-                                                }}
-                                                aria-label={`Copy invite ${invite.code}`}
-                                                disabled={isInactive(invite)}
-                                            >
-                                                <Copy className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    deleteInvite(
-                                                        invite.code,
-                                                    ).catch(() => {
-                                                        // deleteInvite already reports failures.
-                                                    });
-                                                }}
-                                                aria-label={`Delete invite ${invite.code}`}
-                                                disabled={deletingCodes.has(
-                                                    invite.code,
-                                                )}
-                                            >
-                                                {deletingCodes.has(
-                                                    invite.code,
-                                                ) ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <Trash2 className="h-4 w-4" />
-                                                )}
-                                            </Button>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

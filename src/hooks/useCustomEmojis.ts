@@ -55,6 +55,28 @@ function parseDeleteEmojiErrorResponse(errorText: string): string {
     }
 }
 
+function getReadableErrorText(value: unknown): string | null {
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (!value) {
+        return null;
+    }
+
+    if (typeof value === "object") {
+        try {
+            const serialized = JSON.stringify(value);
+            return serialized.length > 0 ? serialized : null;
+        } catch {
+            return null;
+        }
+    }
+
+    return String(value);
+}
+
 function isEmojiStorageMutationEvent(
     events: string[],
     bucketId: string,
@@ -277,9 +299,20 @@ export function useCustomEmojis() {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
+                    const errorData = (await response
+                        .json()
+                        .catch(() => ({}))) as {
+                        error?: unknown;
+                        message?: unknown;
+                    };
+                    const responseError = getReadableErrorText(errorData.error);
+                    const responseMessage = getReadableErrorText(
+                        errorData.message,
+                    );
                     throw new Error(
-                        errorData.error || "Failed to upload emoji",
+                        responseError ||
+                            responseMessage ||
+                            "Failed to upload emoji",
                     );
                 }
 
@@ -365,13 +398,8 @@ export function useCustomEmojis() {
                 );
 
                 if (!response.ok) {
-                    const errorText = await response
-                        .text()
-                        .then((text) => text)
-                        .catch(() => "");
-                    throw new Error(
-                        parseDeleteEmojiErrorResponse(errorText),
-                    );
+                    const errorText = await response.text().catch(() => "");
+                    throw new Error(parseDeleteEmojiErrorResponse(errorText));
                 }
 
                 // Trigger full refetch to sync with server (in background)

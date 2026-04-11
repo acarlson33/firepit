@@ -18,6 +18,8 @@ vi.mock("node-appwrite", () => ({
         equal: (field: string, value: string | string[]) =>
             `equal(${field},${Array.isArray(value) ? value.join("|") : value})`,
         limit: (n: number) => `limit(${n})`,
+        orderAsc: (field: string) => `orderAsc(${field})`,
+        cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
     },
 }));
 

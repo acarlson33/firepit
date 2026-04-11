@@ -15,6 +15,7 @@ const bannedUsersCollectionId = env.collections.bannedUsers || "banned_users";
 const mutedUsersCollectionId = env.collections.mutedUsers || "muted_users";
 const QUERY_ARRAY_LIMIT = 100;
 const PAGE_SIZE = 100;
+const MAX_DOCS = 10_000;
 
 function chunkValues<T>(values: T[], size: number) {
     const chunks: T[][] = [];
@@ -29,17 +30,22 @@ async function listAllServerDocuments(serverId: string, collectionId: string) {
     const documents: Array<Record<string, unknown>> = [];
     let cursorAfter: string | null = null;
 
+    if (typeof Query.orderAsc !== "function") {
+        throw new Error("Query.orderAsc is not available");
+    }
+
+    if (typeof Query.cursorAfter !== "function") {
+        throw new Error("Query.cursorAfter is not available");
+    }
+
     while (true) {
         const queries = [
             Query.equal("serverId", serverId),
+            Query.orderAsc("$id"),
             Query.limit(PAGE_SIZE),
         ];
 
-        if (typeof Query.orderAsc === "function") {
-            queries.push(Query.orderAsc("$id"));
-        }
-
-        if (cursorAfter && typeof Query.cursorAfter === "function") {
+        if (cursorAfter) {
             queries.push(Query.cursorAfter(cursorAfter));
         }
 
@@ -49,6 +55,13 @@ async function listAllServerDocuments(serverId: string, collectionId: string) {
             queries,
         );
         const pageDocuments = page.documents as Array<Record<string, unknown>>;
+
+        if (documents.length + pageDocuments.length > MAX_DOCS) {
+            throw new Error(
+                `Member pagination exceeded MAX_DOCS (${MAX_DOCS}) for collection ${collectionId}`,
+            );
+        }
+
         documents.push(...pageDocuments);
 
         if (pageDocuments.length < PAGE_SIZE) {
@@ -121,20 +134,32 @@ export async function GET(request: Request, context: RouteContext) {
 
         const bannedDocuments: Array<Record<string, unknown>> = [];
         const mutedDocuments: Array<Record<string, unknown>> = [];
-        for (const userIdChunk of memberIdChunks) {
-            const [bannedPage, mutedPage] = await Promise.all([
-                databases.listDocuments(databaseId, bannedUsersCollectionId, [
-                    Query.equal("serverId", serverId),
-                    Query.equal("userId", userIdChunk),
-                    Query.limit(userIdChunk.length),
+        const moderationChunkPages = await Promise.all(
+            memberIdChunks.map((userIdChunk) =>
+                Promise.all([
+                    databases.listDocuments(
+                        databaseId,
+                        bannedUsersCollectionId,
+                        [
+                            Query.equal("serverId", serverId),
+                            Query.equal("userId", userIdChunk),
+                            Query.limit(userIdChunk.length),
+                        ],
+                    ),
+                    databases.listDocuments(
+                        databaseId,
+                        mutedUsersCollectionId,
+                        [
+                            Query.equal("serverId", serverId),
+                            Query.equal("userId", userIdChunk),
+                            Query.limit(userIdChunk.length),
+                        ],
+                    ),
                 ]),
-                databases.listDocuments(databaseId, mutedUsersCollectionId, [
-                    Query.equal("serverId", serverId),
-                    Query.equal("userId", userIdChunk),
-                    Query.limit(userIdChunk.length),
-                ]),
-            ]);
+            ),
+        );
 
+        for (const [bannedPage, mutedPage] of moderationChunkPages) {
             bannedDocuments.push(
                 ...(bannedPage.documents as Array<Record<string, unknown>>),
             );
@@ -161,16 +186,16 @@ export async function GET(request: Request, context: RouteContext) {
         }
 
         const profileDocuments: Array<Record<string, unknown>> = [];
-        for (const userIdChunk of memberIdChunks) {
-            const profilePage = await databases.listDocuments(
-                databaseId,
-                profilesCollectionId,
-                [
+        const profilePages = await Promise.all(
+            memberIdChunks.map((userIdChunk) =>
+                databases.listDocuments(databaseId, profilesCollectionId, [
                     Query.equal("userId", userIdChunk),
                     Query.limit(userIdChunk.length),
-                ],
-            );
+                ]),
+            ),
+        );
 
+        for (const profilePage of profilePages) {
             profileDocuments.push(
                 ...(profilePage.documents as Array<Record<string, unknown>>),
             );

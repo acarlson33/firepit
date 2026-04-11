@@ -216,5 +216,8 @@ describe("Onboarding Page", () => {
 
         // Should still be on first step.
         expect(screen.getByText("Welcome to Firepit!")).toBeInTheDocument();
+        expect(
+            screen.queryByText("Notification preferences"),
+        ).not.toBeInTheDocument();
     });
 });

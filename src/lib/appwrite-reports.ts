@@ -1,5 +1,6 @@
 import { ID, Query } from "node-appwrite";
 
+import { logger } from "@/lib/newrelic-utils";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 
@@ -43,7 +44,10 @@ const REPORT_STATUS_VALUES = ["pending", "resolved", "dismissed"] as const;
 const REPORT_STATUS_SET = new Set<ReportStatus>(REPORT_STATUS_VALUES);
 
 function isReportStatus(value: unknown): value is ReportStatus {
-    return typeof value === "string" && REPORT_STATUS_SET.has(value as ReportStatus);
+    return (
+        typeof value === "string" &&
+        REPORT_STATUS_SET.has(value as ReportStatus)
+    );
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -83,7 +87,14 @@ export function clampLimit(value: unknown): number {
 
 function parseReport(doc: unknown): Report {
     const parsed = toRecord(doc);
-    const status = isReportStatus(parsed.status) ? parsed.status : "pending";
+    const hasValidStatus = isReportStatus(parsed.status);
+    if (!hasValidStatus) {
+        logger.warn("Invalid report status, defaulting to pending", {
+            reportId: typeof parsed.$id === "string" ? parsed.$id : undefined,
+            status: parsed.status,
+        });
+    }
+    const status = hasValidStatus ? parsed.status : "pending";
 
     return {
         $id: getRequiredStringField(parsed, "$id"),
@@ -171,7 +182,13 @@ export async function listReports(
     for (const document of rawDocuments) {
         try {
             items.push(parseReport(document));
-        } catch {
+        } catch (err) {
+            const record = toRecord(document);
+            logger.warn("Skipping malformed report row", {
+                reportId:
+                    typeof record.$id === "string" ? record.$id : undefined,
+                error: err instanceof Error ? err.message : String(err),
+            });
             // Skip malformed rows so one bad document does not break listing.
         }
     }
@@ -210,21 +227,6 @@ export async function resolveReport(
     resolutionNotes?: string,
 ): Promise<void> {
     const { tablesDB } = getServerClient();
-    const transactionApi = tablesDB as unknown as {
-        createTransaction?: typeof tablesDB.createTransaction;
-        getRow?: typeof tablesDB.getRow;
-        updateRow?: typeof tablesDB.updateRow;
-        updateTransaction?: typeof tablesDB.updateTransaction;
-    };
-
-    if (
-        typeof transactionApi.createTransaction !== "function" ||
-        typeof transactionApi.getRow !== "function" ||
-        typeof transactionApi.updateRow !== "function" ||
-        typeof transactionApi.updateTransaction !== "function"
-    ) {
-        throw new Error("TablesDB transaction APIs are unavailable");
-    }
 
     // Use a transaction for atomic read-check-and-write.
     // On commit, Appwrite verifies the row hasn't changed externally.
@@ -256,7 +258,7 @@ export async function resolveReport(
             {
                 status,
                 resolvedBy: adminId,
-                resolutionNotes: resolutionNotes || null,
+                resolutionNotes: resolutionNotes ?? null,
             },
             undefined,
             tx.$id,

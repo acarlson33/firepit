@@ -159,8 +159,7 @@ export function PostHogDebugPanel() {
         }
     }
 
-    const statusClassName =
-        STATUS_CLASS_MAP[lastResult.status] ?? "text-muted-foreground";
+    const statusClassName = STATUS_CLASS_MAP[lastResult.status];
 
     return (
         <div className="rounded-lg border p-6">

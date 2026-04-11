@@ -121,6 +121,21 @@ async function getFrameAssetStatuses() {
     }));
 }
 
+function getStatusLabel(params: {
+    exists: boolean | undefined;
+    hasError: boolean;
+}) {
+    if (params.hasError) {
+        return "Unavailable";
+    }
+
+    if (params.exists) {
+        return "Uploaded";
+    }
+
+    return "Missing";
+}
+
 export default async function AdminPresetFramesPage() {
     try {
         await requireAdmin();
@@ -158,11 +173,10 @@ export default async function AdminPresetFramesPage() {
                     const storageFileId =
                         getPresetFrameStorageFileId(frame.id) ?? frame.id;
                     const exists = frame.status?.exists;
-                    const statusLabel = frame.status?.errorMessage
-                        ? "Unavailable"
-                        : exists
-                          ? "Uploaded"
-                          : "Missing";
+                    const statusLabel = getStatusLabel({
+                        exists,
+                        hasError: Boolean(frame.status?.errorMessage),
+                    });
 
                     return (
                         <article

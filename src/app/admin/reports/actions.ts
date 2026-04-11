@@ -30,16 +30,18 @@ function parseReportForm(formData: FormData) {
     const reportIdRaw = formData.get("reportId");
     const notesRaw = formData.get("resolutionNotes");
 
-    if (typeof reportIdRaw !== "string" || !reportIdRaw.trim()) {
+    if (typeof reportIdRaw !== "string") {
         throw new Error("Missing report ID");
     }
+
+    const reportId = normalizeReportId(reportIdRaw);
 
     const notes =
         typeof notesRaw === "string"
             ? normalizeResolutionNotes(notesRaw)
             : undefined;
 
-    return { notes, reportId: reportIdRaw.trim() };
+    return { notes, reportId };
 }
 
 async function handleReportAction(

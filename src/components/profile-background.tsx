@@ -151,6 +151,9 @@ export function AvatarWithFrame({
                     title={`Frame: ${presetFrame?.name || "Custom"}`}
                 >
                     <span aria-hidden="true">{frameEmoji}</span>
+                    <span className="sr-only">
+                        {`Frame: ${presetFrame?.name || "Custom"}`}
+                    </span>
                 </div>
             )}
         </div>

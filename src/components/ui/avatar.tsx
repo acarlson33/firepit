@@ -24,6 +24,8 @@ const sizePx = {
     lg: 48,
 } as const;
 
+const WHITESPACE_REGEX = /\s+/;
+
 export function Avatar({
     src,
     alt,
@@ -65,7 +67,7 @@ export function Avatar({
     const normalizedFallback = fallback?.trim() || alt.trim();
     const initials = normalizedFallback
         ? normalizedFallback
-              .split(/\s+/)
+              .split(WHITESPACE_REGEX)
               .slice(0, 2)
               .map((segment) => segment.charAt(0))
               .join("")
@@ -115,8 +117,8 @@ export function Avatar({
                     style={{
                         left: avatarInsetPx,
                         top: avatarInsetPx,
-                        width: sizePx[size] - avatarInsetPx * 2,
-                        height: sizePx[size] - avatarInsetPx * 2,
+                        width: actualAvatarSize,
+                        height: actualAvatarSize,
                     }}
                 >
                     {avatarContent}

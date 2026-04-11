@@ -38,13 +38,19 @@ function isDirectMessagePrivacy(
 const MAX_DISPLAY_NAME_LENGTH = 100;
 const MAX_PRONOUNS_LENGTH = 50;
 const MAX_BIO_LENGTH = 1000;
-const AUTH_FAILURE_MESSAGES = new Set([
+const AUTH_FAILURE_MESSAGES = [
     "unauthorized",
     "forbidden",
     "authentication required",
     "forbidden: admin access required",
     "forbidden: moderator access required",
+] as const;
+const AUTH_FAILURE_CODES = new Set([
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "AUTH_REQUIRED",
 ]);
+const AUTH_FAILURE_NAMES = new Set(["AuthError", "AuthenticationError"]);
 
 function hashIdentifier(identifier: string) {
     return createHash("sha256").update(identifier).digest("hex").slice(0, 16);
@@ -55,12 +61,45 @@ function isAuthFailure(error: unknown) {
         return true;
     }
 
-    if (!(error instanceof Error)) {
+    if (!error || typeof error !== "object") {
         return false;
     }
 
-    const message = error.message.trim().toLowerCase();
-    return AUTH_FAILURE_MESSAGES.has(message);
+    const authLikeError = error as {
+        code?: unknown;
+        message?: unknown;
+        name?: unknown;
+    };
+
+    if (typeof authLikeError.code === "string") {
+        const normalizedCode = authLikeError.code.trim().toUpperCase();
+        if (AUTH_FAILURE_CODES.has(normalizedCode)) {
+            return true;
+        }
+    }
+
+    if (typeof authLikeError.name === "string") {
+        const normalizedName = authLikeError.name.trim();
+        if (AUTH_FAILURE_NAMES.has(normalizedName)) {
+            return true;
+        }
+    }
+
+    if (typeof authLikeError.message !== "string") {
+        return false;
+    }
+
+    const normalizedMessage = authLikeError.message.trim().toLowerCase();
+    if (!normalizedMessage) {
+        return false;
+    }
+
+    return AUTH_FAILURE_MESSAGES.some(
+        (candidate) =>
+            normalizedMessage === candidate ||
+            normalizedMessage.startsWith(candidate) ||
+            normalizedMessage.includes(candidate),
+    );
 }
 
 /**
@@ -69,12 +108,14 @@ function isAuthFailure(error: unknown) {
 export async function completeOnboardingAction(
     formData: FormData,
 ): Promise<{ success: true } | { success: false; error: string }> {
+    let userHash: string | undefined;
+
     try {
         const user = await requireAuth();
+        userHash = hashIdentifier(user.$id);
 
         // Get or create profile
         const profile = await getOrCreateUserProfile(user.$id, user.name);
-        const userHash = hashIdentifier(user.$id);
         const profileHash = hashIdentifier(profile.$id);
 
         // Extract profile form data
@@ -202,6 +243,7 @@ export async function completeOnboardingAction(
     } catch (error) {
         logger.error("Failed to complete onboarding", {
             error: error instanceof Error ? error.message : String(error),
+            ...(userHash ? { userId: userHash } : {}),
         });
 
         if (isAuthFailure(error)) {

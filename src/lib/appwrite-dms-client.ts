@@ -50,12 +50,7 @@ export async function uploadImage(
         fileUrl?: string;
         url?: string;
     };
-    const resolvedUrl =
-        typeof data.fileUrl === "string"
-            ? data.fileUrl
-            : typeof data.url === "string"
-              ? data.url
-              : undefined;
+    const resolvedUrl = data.fileUrl ?? data.url;
 
     if (
         typeof data.fileId !== "string" ||

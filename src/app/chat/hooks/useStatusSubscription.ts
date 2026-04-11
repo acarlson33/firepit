@@ -80,9 +80,7 @@ export function useStatusSubscription(userIds: string[]) {
                 setStatuses(statusMap);
             }
         } catch (error) {
-            logger.error("Failed to fetch statuses", toError(error), {
-                error: toErrorMessage(error),
-            });
+            logger.error("Failed to fetch statuses", toError(error));
         } finally {
             setLoading(false);
         }
@@ -160,10 +158,7 @@ export function useStatusSubscription(userIds: string[]) {
                     untrack();
                     closeSubscriptionSafely(subscription).catch((error) => {
                         logger.warn("Status subscription cleanup failed", {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
+                            error: toErrorMessage(error),
                         });
                     });
                 };

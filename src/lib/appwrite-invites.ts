@@ -137,6 +137,7 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
         }
 
         const existingMembershipKeys = new Set<string>();
+        const failedMembershipKeys = new Set<string>();
         const membershipFetchTasks: Promise<void>[] = [];
 
         for (const [serverId, userIdsSet] of userIdsByServerId) {
@@ -145,21 +146,18 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
             for (let index = 0; index < userIds.length; index += 100) {
                 const userIdChunk = userIds.slice(index, index + 100);
                 const task = databases
-                    .listDocuments(
-                        DATABASE_ID,
-                        MEMBERSHIPS_COLLECTION_ID,
-                        [
-                            Query.equal("serverId", serverId),
-                            Query.equal("userId", userIdChunk),
-                            Query.limit(100),
-                        ],
-                    )
+                    .listDocuments(DATABASE_ID, MEMBERSHIPS_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.equal("userId", userIdChunk),
+                        Query.limit(100),
+                    ])
                     .then((membershipPage) => {
                         for (const membershipDocument of membershipPage.documents) {
                             const membershipRecord =
                                 membershipDocument as Record<string, unknown>;
                             const membershipUserId = membershipRecord.userId;
-                            const membershipServerId = membershipRecord.serverId;
+                            const membershipServerId =
+                                membershipRecord.serverId;
 
                             if (
                                 typeof membershipUserId === "string" &&
@@ -172,6 +170,12 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
                         }
                     })
                     .catch((error) => {
+                        for (const failedUserId of userIdChunk) {
+                            failedMembershipKeys.add(
+                                `${serverId}:${failedUserId}`,
+                            );
+                        }
+
                         logger.error(
                             "Failed to query memberships during invite usage reconciliation",
                             {
@@ -191,10 +195,13 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
         await Promise.all(membershipFetchTasks);
 
         const orphanUsageIds = validUsageEntries
-            .filter(
-                (entry) =>
-                    !existingMembershipKeys.has(`${entry.serverId}:${entry.userId}`),
-            )
+            .filter((entry) => {
+                const membershipKey = `${entry.serverId}:${entry.userId}`;
+                return (
+                    !existingMembershipKeys.has(membershipKey) &&
+                    !failedMembershipKeys.has(membershipKey)
+                );
+            })
             .map((entry) => entry.usageId);
 
         const deleteResults = await Promise.allSettled(

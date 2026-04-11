@@ -10,7 +10,7 @@ function parseEqualQueryValue(query: string): string | undefined {
         return undefined;
     }
 
-    return value.replace(/^"/, "").replace(/"$/, "");
+    return value.replace(/^"|"$/g, "");
 }
 
 // Mock appwrite

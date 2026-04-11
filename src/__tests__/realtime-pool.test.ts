@@ -135,6 +135,8 @@ describe("Realtime Pool", () => {
             const firstCall = wrappedSubscribe("channel-1", vi.fn());
             const secondCall = wrappedSubscribe("channel-2", vi.fn());
 
+            // Flush microtasks twice so the first queued subscribe starts and blocks
+            // before asserting the second subscribe has not executed yet.
             await Promise.resolve();
             await Promise.resolve();
             expect(mockRealtimeSubscribe).toHaveBeenCalledTimes(1);

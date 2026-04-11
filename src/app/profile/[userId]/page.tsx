@@ -66,19 +66,19 @@ export default async function ProfilePage({ params }: Props) {
         color: profile.profileBackgroundColor,
     });
 
-    const hasBackground = Boolean(cardStyle);
-
     return (
         <div className="container mx-auto max-w-4xl px-4 py-8">
             <div className="grid gap-8">
                 <Card className="relative" style={cardStyle}>
-                    {hasBackground && (
+                    {cardStyle && (
                         <div
                             aria-hidden="true"
                             className="absolute inset-0 rounded-lg bg-black/40"
                         />
                     )}
-                    <CardContent className={cn("relative pt-6", hasBackground && "z-10")}>
+                    <CardContent
+                        className={cn("relative pt-6", cardStyle && "z-10")}
+                    >
                         <div className="rounded-lg bg-black/20 backdrop-blur-sm p-4">
                             <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
                                 <AvatarWithFrame

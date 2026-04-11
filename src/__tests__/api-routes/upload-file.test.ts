@@ -48,6 +48,14 @@ const {
     })),
 }));
 
+function resetGetFileMock() {
+    mockGetFile.mockReset();
+    mockGetFile.mockResolvedValue({
+        $id: "file123",
+        $permissions: ['delete("user:user123")', 'read("user:user123")'],
+    });
+}
+
 // Mock dependencies
 vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
@@ -122,6 +130,7 @@ describe("POST /api/upload-file", () => {
     beforeEach(() => {
         mockGetServerSession.mockClear();
         mockCreateFile.mockClear();
+        resetGetFileMock();
         mockDeleteFile.mockClear();
         mockCheckRateLimit.mockClear();
         mockCheckRateLimit.mockReturnValue({
@@ -371,6 +380,7 @@ describe("POST /api/upload-file", () => {
 describe("DELETE /api/upload-file", () => {
     beforeEach(() => {
         mockGetServerSession.mockClear();
+        resetGetFileMock();
         mockDeleteFile.mockClear();
         mockCheckRateLimit.mockClear();
         mockCheckRateLimit.mockReturnValue({

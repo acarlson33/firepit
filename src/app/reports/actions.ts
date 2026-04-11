@@ -70,15 +70,13 @@ export async function submitReportAction(
     reportedUserId: string,
     justification: string,
 ): Promise<SubmitReportResult> {
-    const normalizedReportedUserId = reportedUserId.trim();
-
     try {
         const user = await requireAuth();
         const reporterId = user.$id;
 
         const targetValidation = validateReportTarget(
             reporterId,
-            normalizedReportedUserId,
+            reportedUserId,
             "Cannot report yourself.",
         );
         if (!targetValidation.success) {
@@ -88,14 +86,15 @@ export async function submitReportAction(
             };
         }
 
-        const trimmedJustification = justification.trim();
-        const justificationError = validateJustification(trimmedJustification);
+        const justificationError = validateJustification(justification);
         if (justificationError) {
             return {
                 success: false,
                 error: justificationError,
             };
         }
+
+        const normalizedJustification = justification.trim();
 
         const recentCount = await countRecentReportsByUser(
             reporterId,
@@ -111,7 +110,7 @@ export async function submitReportAction(
         const report = await createReport({
             reporterId,
             reportedUserId: targetValidation.normalizedReportedUserId,
-            justification: trimmedJustification,
+            justification: normalizedJustification,
         });
 
         revalidatePath("/admin/reports");
@@ -127,7 +126,7 @@ export async function submitReportAction(
         logger.error("Failed to submit report", {
             error: error instanceof Error ? error.message : String(error),
             reportedUserHash: createHash("sha256")
-                .update(normalizedReportedUserId)
+                .update(reportedUserId)
                 .digest("hex")
                 .slice(0, 16),
         });
@@ -143,15 +142,13 @@ export type CanReportResult =
 export async function getCanReportAction(
     reportedUserId: string,
 ): Promise<CanReportResult> {
-    const normalizedReportedUserId = reportedUserId.trim();
-
     try {
         const user = await requireAuth();
         const reporterId = user.$id;
 
         const targetValidation = validateReportTarget(
             reporterId,
-            normalizedReportedUserId,
+            reportedUserId,
         );
         if (!targetValidation.success) {
             return { canReport: false, reason: targetValidation.error };

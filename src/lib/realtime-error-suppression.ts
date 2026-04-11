@@ -1,8 +1,10 @@
 import { logger } from "@/lib/client-logger";
 
-export type RealtimeSubscription = {
-    close: () => Promise<void>;
-};
+export type RealtimeSubscription =
+    | {
+          close: () => Promise<void> | void;
+      }
+    | (() => void);
 
 type ScopedConsoleErrorPredicate = (args: unknown[], marker: string) => boolean;
 type ConsoleErrorHandler = typeof console.error;
@@ -35,9 +37,7 @@ function resetInternalState() {
 }
 
 export const resetForTesting = shouldExposeTestingReset
-    ? () => {
-          resetInternalState();
-      }
+    ? resetInternalState
     : undefined;
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
@@ -56,6 +56,20 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     // Firefox/Appwrite can log this on intentional subscription churn during route switches.
     if (
         firstArg.includes("was interrupted while the page was loading") &&
+        firstArg.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    if (
+        firstArg.toLowerCase().includes("can’t establish a connection") &&
+        firstArg.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    if (
+        firstArg.toLowerCase().includes("can't establish a connection") &&
         firstArg.includes("/v1/realtime")
     ) {
         return true;
@@ -171,10 +185,16 @@ export async function closeSubscriptionSafely(
     }
 
     const marker = getSubscriptionMarker(subscription);
+    const close =
+        typeof subscription === "function"
+            ? subscription
+            : subscription.close.bind(subscription);
 
     try {
         await withSuppressedRealtimeCloseErrors(
-            async () => subscription.close(),
+            async () => {
+                await Promise.resolve(close());
+            },
             {
                 marker,
                 shouldSuppress: defaultSuppressionPredicate,
@@ -183,6 +203,11 @@ export async function closeSubscriptionSafely(
     } catch (error) {
         if (process.env.NODE_ENV !== "production") {
             logger.warn("Realtime subscription close failed", {
+                marker,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        } else {
+            logger.info("Realtime subscription close failed (prod)", {
                 marker,
                 error: error instanceof Error ? error.message : String(error),
             });

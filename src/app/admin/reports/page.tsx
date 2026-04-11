@@ -242,9 +242,9 @@ export default async function ReportsPage(props: {
                         const reportedLabel = getUserLabel(
                             report.reportedUserId,
                         );
-                        const resolverLabel = report.resolvedBy
-                            ? getUserLabel(report.resolvedBy)
-                            : null;
+                        const resolverLabel =
+                            getUserLabel(report.resolvedBy) ||
+                            getUserLabel(undefined);
 
                         return (
                             <article

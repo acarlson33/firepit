@@ -135,7 +135,11 @@ export async function POST(request: NextRequest) {
             ),
         );
         const existingPredefinedAvatarFrameIds =
-            await getExistingPredefinedAvatarFrameIds(avatarFramePresetIds);
+            avatarFramePresetIds.length > 0
+                ? await getExistingPredefinedAvatarFrameIds(
+                      avatarFramePresetIds,
+                  )
+                : new Set<string>();
         const statusesByUserId = new Map(
             statusesResult.documents.map((document) => {
                 const status = document as Record<string, unknown>;

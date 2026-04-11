@@ -26,11 +26,17 @@ function isConflictError(error: unknown): boolean {
         : false;
 }
 
+/**
+ * Create a deterministic direct-message conversation document ID for two users.
+ * Inputs are canonicalized by sorting and encoded as a JSON array before hashing
+ * so ordering is stable and delimiter collisions are impossible.
+ */
 async function createDirectConversationDocumentId(
     user1: string,
     user2: string,
 ): Promise<string> {
-    const input = `${user1}:${user2}`;
+    const canonicalUserIds = [user1, user2].sort((a, b) => a.localeCompare(b));
+    const input = JSON.stringify(canonicalUserIds);
     const inputBytes = new TextEncoder().encode(input);
     const digestBuffer = await crypto.subtle.digest("SHA-256", inputBytes);
     const digestHex = Array.from(new Uint8Array(digestBuffer))
@@ -48,6 +54,26 @@ type ProfileData = {
     avatarFrameUrl?: string;
     pronouns?: string;
 };
+
+function isProfileData(value: unknown): value is ProfileData {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        (candidate.displayName === undefined ||
+            typeof candidate.displayName === "string") &&
+        (candidate.avatarUrl === undefined ||
+            typeof candidate.avatarUrl === "string") &&
+        (candidate.avatarFramePreset === undefined ||
+            typeof candidate.avatarFramePreset === "string") &&
+        (candidate.avatarFrameUrl === undefined ||
+            typeof candidate.avatarFrameUrl === "string") &&
+        (candidate.pronouns === undefined ||
+            typeof candidate.pronouns === "string")
+    );
+}
 
 type ReactionsInput =
     | string
@@ -87,7 +113,9 @@ async function fetchProfilesBatch(
         }
 
         for (const [uid, profile] of Object.entries(profiles)) {
-            profileMap.set(uid, profile);
+            if (isProfileData(profile)) {
+                profileMap.set(uid, profile);
+            }
         }
     } catch {
         // Fail silently — callers handle missing profiles gracefully
@@ -370,12 +398,15 @@ export async function getOrCreateConversation(
             documentId: deterministicConversationId,
         });
         const existingRecord = existing as Record<string, unknown>;
+        const participants = Array.isArray(existingRecord.participants)
+            ? (existingRecord.participants as string[])
+            : [];
         return {
             $id: String(existingRecord.$id),
             $permissions: Array.isArray(existingRecord.$permissions)
                 ? (existingRecord.$permissions as string[])
                 : undefined,
-            participants: existingRecord.participants as string[],
+            participants,
             lastMessageAt: existingRecord.lastMessageAt
                 ? String(existingRecord.lastMessageAt)
                 : undefined,
@@ -697,9 +728,7 @@ export async function listDirectMessages(
                 conversationId: String(d.conversationId),
                 senderId: String(d.senderId),
                 receiverId:
-                    typeof d.receiverId === "string"
-                        ? d.receiverId
-                        : undefined,
+                    typeof d.receiverId === "string" ? d.receiverId : undefined,
                 text: String(d.text),
                 $createdAt: String(d.$createdAt),
                 editedAt: d.editedAt ? String(d.editedAt) : undefined,

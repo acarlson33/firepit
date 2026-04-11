@@ -15,23 +15,12 @@ let inFlightDispose: Promise<void> | null = null;
 let subscribeQueueTail: Promise<void> = Promise.resolve();
 let sharedRealtimeGeneration = 0;
 
-function queueRealtimeSubscribe<T>(
-    generationAtEnqueue: number,
-    operation: () => Promise<T>,
-): Promise<T> {
+function queueRealtimeOperation<T>(operation: () => Promise<T>): Promise<T> {
     const nextOperation = subscribeQueueTail
         .catch(() => {
-            // Keep subscribe queue progressing even if an earlier subscribe failed.
+            // Keep realtime operation queue progressing even if an earlier operation failed.
         })
-        .then(() => {
-            if (generationAtEnqueue !== sharedRealtimeGeneration) {
-                throw new Error(
-                    "Skipped stale realtime subscribe after generation change",
-                );
-            }
-
-            return operation();
-        });
+        .then(() => operation());
 
     subscribeQueueTail = nextOperation.then(
         () => undefined,
@@ -39,6 +28,55 @@ function queueRealtimeSubscribe<T>(
     );
 
     return nextOperation;
+}
+
+function queueRealtimeSubscribe<T>(
+    generationAtEnqueue: number,
+    operation: () => Promise<T>,
+): Promise<T> {
+    return queueRealtimeOperation(() => {
+        if (generationAtEnqueue !== sharedRealtimeGeneration) {
+            throw new Error(
+                "Skipped stale realtime subscribe after generation change",
+            );
+        }
+
+        return operation();
+    });
+}
+
+function toUnsubscribeFn(subscription: unknown): () => void {
+    if (typeof subscription === "function") {
+        return subscription;
+    }
+
+    if (
+        subscription &&
+        typeof subscription === "object" &&
+        typeof (subscription as { close?: unknown }).close === "function"
+    ) {
+        const close = (subscription as { close: () => unknown }).close.bind(
+            subscription,
+        );
+        return () => {
+            const closeResult = close();
+            if (isPromiseLike(closeResult)) {
+                void Promise.resolve(closeResult).catch((error) => {
+                    logger.warn(
+                        "Realtime subscription close failed in unsubscribe wrapper",
+                        {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                        },
+                    );
+                });
+            }
+        };
+    }
+
+    throw new Error("Realtime subscribe returned an invalid handle");
 }
 
 function patchRealtimeSubscribe(realtime: Realtime): Realtime {
@@ -52,14 +90,40 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     }
 
     const baseSubscribe = realtime.subscribe.bind(realtime);
-    const generation = realtimeWithMetadata.__firepitGeneration;
-    realtime.subscribe = ((...args: Parameters<Realtime["subscribe"]>) =>
-        queueRealtimeSubscribe(
+    const wrappedSubscribe: Realtime["subscribe"] = (...args) => {
+        const generation = realtimeWithMetadata.__firepitGeneration;
+        const queuedUnsubscribe = queueRealtimeSubscribe(
             typeof generation === "number"
                 ? generation
                 : sharedRealtimeGeneration,
-            () => baseSubscribe(...args),
-        )) as Realtime["subscribe"];
+            async () => {
+                const subscription = await Promise.resolve(
+                    baseSubscribe(...args),
+                );
+                return toUnsubscribeFn(subscription);
+            },
+        );
+
+        const deferredUnsubscribe = (() => {
+            void queuedUnsubscribe
+                .then((unsubscribe) => {
+                    unsubscribe();
+                })
+                .catch((error) => {
+                    logger.warn("Deferred realtime unsubscribe failed", {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    });
+                });
+        }) as (() => void) & PromiseLike<() => void>;
+        deferredUnsubscribe.then =
+            queuedUnsubscribe.then.bind(queuedUnsubscribe);
+
+        return deferredUnsubscribe;
+    };
+    realtime.subscribe = wrappedSubscribe;
 
     realtimeWithMetadata.__firepitSubscribePatched = true;
     return realtime;

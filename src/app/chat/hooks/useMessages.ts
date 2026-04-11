@@ -272,10 +272,7 @@ export function useMessages({
                     base: { channelId?: string },
                     activeChannelId: string | null,
                 ) {
-                    if (base.channelId !== activeChannelId) {
-                        return false;
-                    }
-                    return true;
+                    return base.channelId === activeChannelId;
                 }
                 async function applyCreate(base: Message) {
                     const activeChannelId = currentChannelIdRef.current;

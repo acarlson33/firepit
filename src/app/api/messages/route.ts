@@ -26,6 +26,15 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
 
+function normalizeStringField(value: unknown): string | undefined {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
 // Helper function to create attachment records
 async function createAttachments(
     messageId: string,
@@ -145,8 +154,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        const normalizedChannelId = String(channelId);
-        const normalizedServerId = access.serverId;
+        const normalizedChannelId = normalizeStringField(channelId);
+        if (!normalizedChannelId) {
+            return NextResponse.json(
+                { error: "Invalid channelId" },
+                { status: 400 },
+            );
+        }
+        const normalizedServerId = normalizeStringField(access.serverId);
 
         addTransactionAttributes({
             channelId: normalizedChannelId,
@@ -158,8 +173,11 @@ export async function POST(request: NextRequest) {
             text: text || "",
             userName,
             channelId: normalizedChannelId,
-            serverId: normalizedServerId,
         };
+
+        if (normalizedServerId) {
+            messageData.serverId = normalizedServerId;
+        }
 
         // Add image fields if provided
         if (imageFileId) {
@@ -370,30 +388,14 @@ export async function PATCH(request: NextRequest) {
             userName: doc.userName as string | undefined,
             text: String(doc.text),
             $createdAt: String(doc.$createdAt ?? ""),
-            channelId:
-                typeof doc.channelId === "string" &&
-                doc.channelId.trim().length > 0
-                    ? doc.channelId.trim()
-                    : undefined,
-            editedAt:
-                typeof doc.editedAt === "string" ? doc.editedAt : undefined,
-            removedAt:
-                typeof doc.removedAt === "string" ? doc.removedAt : undefined,
-            removedBy:
-                typeof doc.removedBy === "string" ? doc.removedBy : undefined,
-            serverId:
-                typeof doc.serverId === "string" &&
-                doc.serverId.trim().length > 0
-                    ? doc.serverId.trim()
-                    : undefined,
-            imageFileId:
-                typeof doc.imageFileId === "string"
-                    ? doc.imageFileId
-                    : undefined,
-            imageUrl:
-                typeof doc.imageUrl === "string" ? doc.imageUrl : undefined,
-            replyToId:
-                typeof doc.replyToId === "string" ? doc.replyToId : undefined,
+            channelId: normalizeStringField(doc.channelId),
+            editedAt: normalizeStringField(doc.editedAt),
+            removedAt: normalizeStringField(doc.removedAt),
+            removedBy: normalizeStringField(doc.removedBy),
+            serverId: normalizeStringField(doc.serverId),
+            imageFileId: normalizeStringField(doc.imageFileId),
+            imageUrl: normalizeStringField(doc.imageUrl),
+            replyToId: normalizeStringField(doc.replyToId),
         };
 
         recordEvent("message_edited", {
@@ -468,16 +470,12 @@ export async function DELETE(request: NextRequest) {
             messageId,
         );
 
-        const normalizedDeletedChannelId =
-            typeof existing.channelId === "string" &&
-            existing.channelId.trim().length > 0
-                ? existing.channelId.trim()
-                : undefined;
-        const normalizedDeletedServerId =
-            typeof existing.serverId === "string" &&
-            existing.serverId.trim().length > 0
-                ? existing.serverId.trim()
-                : undefined;
+        const normalizedDeletedChannelId = normalizeStringField(
+            existing.channelId,
+        );
+        const normalizedDeletedServerId = normalizeStringField(
+            existing.serverId,
+        );
 
         recordEvent("message_deleted", {
             actorUserId: user.$id,

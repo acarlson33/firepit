@@ -59,8 +59,16 @@ export async function GET(
         const profileBackgroundUrl = profile.profileBackgroundImageFileId
             ? getProfileBackgroundUrl(profile.profileBackgroundImageFileId)
             : undefined;
-
-        const avatarFrameUrl = await getAvatarFrameUrlForProfile(profile);
+        let avatarFrameUrl: string | undefined;
+        try {
+            avatarFrameUrl = await getAvatarFrameUrlForProfile(profile);
+        } catch (error) {
+            logger.warn("Failed to resolve avatar frame URL for profile", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+            });
+            avatarFrameUrl = undefined;
+        }
 
         return NextResponse.json({
             userId: profile.userId,

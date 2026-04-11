@@ -59,7 +59,7 @@ export async function POST(request: Request) {
             properties: { serverId: server.$id },
         });
 
-        void Promise.resolve(telemetryTask).catch((telemetryError) => {
+        telemetryTask.catch((telemetryError) => {
             logger.warn("Telemetry capture failed", {
                 event: "server_created",
                 userId: session.$id,

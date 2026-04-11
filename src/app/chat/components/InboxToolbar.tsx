@@ -61,7 +61,11 @@ export function InboxToolbar({
 
     return (
         <div className="flex items-center justify-between border-b border-border/60 p-2">
-            <span className="text-xs text-muted-foreground">
+            <span
+                aria-atomic="true"
+                aria-live="polite"
+                className="text-xs text-muted-foreground"
+            >
                 {unreadCount > 0
                     ? `${unreadCount} unread item${unreadCount === 1 ? "" : "s"}`
                     : "All caught up"}

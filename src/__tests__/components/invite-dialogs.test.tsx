@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { InviteManagerDialog } from "@/app/chat/components/InviteManagerDialog";
 import { CreateInviteDialog } from "@/app/chat/components/CreateInviteDialog";
@@ -237,7 +237,7 @@ describe("InviteManagerDialog Component", () => {
             expect(screen.getByText("Create Invite")).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText("Create Invite"));
+        await userEvent.click(screen.getByText("Create Invite"));
         expect(mockOnCreate).toHaveBeenCalled();
     });
 
@@ -273,7 +273,7 @@ describe("InviteManagerDialog Component", () => {
         const copyButton = screen.getByRole("button", {
             name: /copy invite copytest123/i,
         });
-        fireEvent.click(copyButton);
+        await userEvent.click(copyButton);
 
         await waitFor(() => {
             expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -317,7 +317,7 @@ describe("InviteManagerDialog Component", () => {
         const deleteButton = screen.getByRole("button", {
             name: /delete invite delete123/i,
         });
-        fireEvent.click(deleteButton);
+        await userEvent.click(deleteButton);
 
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalledWith(

@@ -128,6 +128,17 @@ export function ProfileAppearanceSettings({
             ? Math.max(1, Math.ceil(cooldown.remainingMs / (60 * 60 * 1000)))
             : 0);
     const uploadCooldownLabel = `Available in ${cooldownRemainingHours}h`;
+    const uploadButtonLabel = (() => {
+        if (uploadingBackground) {
+            return "Uploading...";
+        }
+
+        if (cooldown && !cooldown.canChange) {
+            return uploadCooldownLabel;
+        }
+
+        return "Upload Image";
+    })();
 
     function assertActionSucceeded(
         result: { success: boolean },
@@ -509,11 +520,7 @@ export function ProfileAppearanceSettings({
                             variant="outline"
                         >
                             <Upload className="mr-2 h-4 w-4" />
-                            {uploadingBackground
-                                ? "Uploading..."
-                                : cooldown && !cooldown.canChange
-                                                                    ? uploadCooldownLabel
-                                  : "Upload Image"}
+                            {uploadButtonLabel}
                         </Button>
                         <p className="text-muted-foreground text-xs">
                             JPG, PNG, or WebP. Max 5MB. You can change once

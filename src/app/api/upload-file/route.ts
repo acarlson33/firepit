@@ -164,19 +164,9 @@ const FILE_TYPE_CONFIG = {
 };
 
 const TEXT_BASED_MIME_TYPES = new Set([
+    ...FILE_TYPE_CONFIG.code.mimeTypes,
     "text/plain",
     "text/csv",
-    "application/javascript",
-    "text/javascript",
-    "application/typescript",
-    "text/typescript",
-    "text/x-python",
-    "application/json",
-    "text/html",
-    "text/css",
-    "text/xml",
-    "text/markdown",
-    "application/x-yaml",
 ]);
 
 const ZIP_COMPATIBLE_MIME_TYPES = new Set([
@@ -573,7 +563,19 @@ export async function POST(request: NextRequest) {
         const env = getEnvConfig();
         logger.info("Using bucket", { bucketId: env.buckets.files });
 
-        const formData = await request.formData();
+        let formData: FormData;
+        try {
+            formData = await request.formData();
+        } catch (error) {
+            logger.warn("Malformed multipart request", {
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return respond(
+                { error: "Malformed multipart request" },
+                { status: 400 },
+            );
+        }
+
         const file = formData.get("file");
 
         if (!(file instanceof File)) {

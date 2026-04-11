@@ -190,6 +190,10 @@ function StatCard({
     label: string;
     value: number;
 }) {
+    const formattedValue = Number.isFinite(value)
+        ? value.toLocaleString()
+        : String(value);
+
     return (
         <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -197,7 +201,7 @@ function StatCard({
                 {icon}
             </div>
             <p className="mt-4 text-3xl font-semibold text-foreground">
-                {value}
+                {formattedValue}
             </p>
         </div>
     );

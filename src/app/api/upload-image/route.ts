@@ -81,6 +81,20 @@ function canUserDeleteImage(
     );
 }
 
+function extractPermissionsFromStorageFile(file: unknown): unknown {
+    // TODO: remove this runtime guard when node-appwrite exposes a stable typed
+    // $permissions field on storage.getFile() responses.
+    if (!file || typeof file !== "object" || !("$permissions" in file)) {
+        return undefined;
+    }
+
+    const permissionsCandidate = (file as { $permissions?: unknown })
+        .$permissions;
+    return Array.isArray(permissionsCandidate)
+        ? permissionsCandidate
+        : undefined;
+}
+
 function hasPrefix(bytes: Uint8Array, signature: number[]) {
     return signature.every((value, index) => bytes[index] === value);
 }
@@ -246,7 +260,8 @@ export async function POST(request: NextRequest) {
 
         // Convert File to InputFile for node-appwrite
         const arrayBuffer = await file.arrayBuffer();
-        const signatureBytes = new Uint8Array(arrayBuffer.slice(0, 16));
+        const fileBytes = new Uint8Array(arrayBuffer);
+        const signatureBytes = fileBytes.subarray(0, 16);
         if (!matchesImageSignature(file.type, signatureBytes)) {
             logger.warn("Image signature mismatch", {
                 name: file.name,
@@ -261,10 +276,12 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const uploadFile = InputFile.fromBuffer(
-            Buffer.from(arrayBuffer),
-            file.name,
+        const fileBuffer = Buffer.from(
+            fileBytes.buffer,
+            fileBytes.byteOffset,
+            fileBytes.byteLength,
         );
+        const uploadFile = InputFile.fromBuffer(fileBuffer, file.name);
 
         logger.info("Uploading to Appwrite storage");
         const uploadStartTime = Date.now();
@@ -397,7 +414,7 @@ export async function DELETE(request: NextRequest) {
         let filePermissions: unknown;
         try {
             const file = await storage.getFile(env.buckets.images, fileId);
-            filePermissions = (file as { $permissions?: unknown }).$permissions;
+            filePermissions = extractPermissionsFromStorageFile(file);
         } catch (error) {
             if (error instanceof AppwriteException && error.code === 404) {
                 return respond({ error: "Image not found" }, { status: 404 });

@@ -33,6 +33,7 @@ const ORDER_DESC_PATTERN_UNQUOTED = /^orderDesc\(([A-Za-z0-9_.$-]+)\)$/;
 const CURSOR_AFTER_PATTERN_QUOTED = /^cursorAfter\("([A-Za-z0-9_.$-]+)"\)$/;
 const CURSOR_AFTER_PATTERN_UNQUOTED = /^cursorAfter\(([A-Za-z0-9_.$-]+)\)$/;
 const LIMIT_PATTERN = /^limit\((\d+)\)$/;
+const REGEX_SPECIAL_CHAR_PATTERN = /[.*+?^${}()|[\]\\]/g;
 
 function parseQueryValues(rawValue: string): string[] {
     if (rawValue.includes(QUERY_VALUE_SEPARATOR)) {
@@ -54,6 +55,10 @@ function parseQueryValues(rawValue: string): string[] {
     } catch {
         return [rawValue];
     }
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(REGEX_SPECIAL_CHAR_PATTERN, "\\$&");
 }
 
 // Mock environment variables
@@ -155,16 +160,23 @@ vi.mock("appwrite", () => {
                     }
 
                     const values = parseQueryValues(rawValue);
+                    const patterns = values.map(
+                        (value) => new RegExp(escapeRegExp(value), "i"),
+                    );
 
                     return currentDocs.filter((doc) => {
                         const value = (doc as Record<string, unknown>)[field];
                         if (Array.isArray(value)) {
                             return value.some((item) =>
-                                values.includes(String(item)),
+                                patterns.some((pattern) =>
+                                    pattern.test(String(item)),
+                                ),
                             );
                         }
 
-                        return values.includes(String(value ?? ""));
+                        return patterns.some((pattern) =>
+                            pattern.test(String(value ?? "")),
+                        );
                     });
                 },
                 filtered,
@@ -460,6 +472,73 @@ describe("Direct Messages - Core Functions", () => {
                     item.text === "Message 2" && item.senderId === "user2",
             ),
         ).toBe(true);
+    });
+});
+
+describe("Direct Messages - Query.contains Mock", () => {
+    beforeEach(() => {
+        mockDocuments.contains_fixture = [
+            {
+                $id: "contains-1",
+                $createdAt: "2026-03-10T10:00:00.000Z",
+                displayName: "Alice Wonder",
+                tags: ["Core-Team", "Frontend"],
+            } as Models.Document,
+            {
+                $id: "contains-2",
+                $createdAt: "2026-03-10T10:01:00.000Z",
+                displayName: "Bob Builder",
+                tags: ["Backend", "Support"],
+            } as Models.Document,
+            {
+                $id: "contains-3",
+                $createdAt: "2026-03-10T10:02:00.000Z",
+                displayName: "Charlie Ops",
+                tags: ["QA", "Operations"],
+            } as Models.Document,
+        ];
+    });
+
+    it("matches contains with single string value using case-insensitive substring", async () => {
+        const { Databases, Query } = await import("appwrite");
+        const databases = new Databases();
+
+        const result = await databases.listDocuments({
+            databaseId: "main",
+            collectionId: "contains_fixture",
+            queries: [Query.contains("displayName", "ali")],
+        });
+
+        expect(result.documents.map((doc) => doc.$id)).toEqual(["contains-1"]);
+    });
+
+    it("matches contains with multiple values for array fields", async () => {
+        const { Databases, Query } = await import("appwrite");
+        const databases = new Databases();
+
+        const result = await databases.listDocuments({
+            databaseId: "main",
+            collectionId: "contains_fixture",
+            queries: [Query.contains("tags", ["front", "support"])],
+        });
+
+        expect(result.documents.map((doc) => doc.$id)).toEqual([
+            "contains-1",
+            "contains-2",
+        ]);
+    });
+
+    it("returns no documents when contains values do not match", async () => {
+        const { Databases, Query } = await import("appwrite");
+        const databases = new Databases();
+
+        const result = await databases.listDocuments({
+            databaseId: "main",
+            collectionId: "contains_fixture",
+            queries: [Query.contains("displayName", ["zzz"])],
+        });
+
+        expect(result.documents).toHaveLength(0);
     });
 });
 

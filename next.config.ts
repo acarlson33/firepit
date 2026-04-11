@@ -15,6 +15,25 @@ function stripTrailingSlash(url: string) {
     return url.replace(/\/$/, "");
 }
 
+function getHostnameFromEndpoint(endpoint: string | undefined) {
+    if (!endpoint) {
+        return "nyc.cloud.appwrite.io";
+    }
+
+    try {
+        const normalizedEndpoint = /^https?:\/\//.test(endpoint)
+            ? endpoint
+            : `https://${endpoint}`;
+        return new URL(normalizedEndpoint).hostname;
+    } catch {
+        return "nyc.cloud.appwrite.io";
+    }
+}
+
+const appwriteImageHostname = getHostnameFromEndpoint(
+    process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT ?? process.env.APPWRITE_ENDPOINT,
+);
+
 const nextConfig: NextConfig = {
     typedRoutes: true,
     async rewrites() {
@@ -171,27 +190,27 @@ const nextConfig: NextConfig = {
         remotePatterns: [
             {
                 protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
+                hostname: appwriteImageHostname,
                 pathname: "/v1/storage/buckets/avatars/files/**",
             },
             {
                 protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
+                hostname: appwriteImageHostname,
                 pathname: "/v1/storage/buckets/emojis/files/**",
             },
             {
                 protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
+                hostname: appwriteImageHostname,
                 pathname: "/v1/storage/buckets/images/files/**",
             },
             {
                 protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
+                hostname: appwriteImageHostname,
                 pathname: "/v1/storage/buckets/profile-backgrounds/files/**",
             },
             {
                 protocol: "https",
-                hostname: "nyc.cloud.appwrite.io",
+                hostname: appwriteImageHostname,
                 pathname:
                     "/v1/storage/buckets/avatar-frames-predefined/files/**",
             },
