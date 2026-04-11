@@ -79,6 +79,21 @@ function toUnsubscribeFn(subscription: unknown): () => void {
     throw new Error("Realtime subscribe returned an invalid handle");
 }
 
+function toErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function isTransientRealtimeSubscribeError(error: unknown): boolean {
+    const message = toErrorMessage(error).toLowerCase();
+
+    return (
+        message.includes("was interrupted while the page was loading") ||
+        message.includes("can't establish a connection") ||
+        message.includes("can’t establish a connection") ||
+        message.includes("websocket error")
+    );
+}
+
 function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     const realtimeWithMetadata = realtime as Realtime & {
         __firepitSubscribePatched?: boolean;
@@ -97,10 +112,30 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                 ? generation
                 : sharedRealtimeGeneration,
             async () => {
-                const subscription = await Promise.resolve(
-                    baseSubscribe(...args),
-                );
-                return toUnsubscribeFn(subscription);
+                try {
+                    const subscription = await Promise.resolve(
+                        baseSubscribe(...args),
+                    );
+                    return toUnsubscribeFn(subscription);
+                } catch (error) {
+                    if (!isTransientRealtimeSubscribeError(error)) {
+                        throw error;
+                    }
+
+                    logger.info(
+                        "Retrying realtime subscribe after transient connection failure",
+                        {
+                            error: toErrorMessage(error),
+                        },
+                    );
+
+                    await Promise.resolve();
+
+                    const retrySubscription = await Promise.resolve(
+                        baseSubscribe(...args),
+                    );
+                    return toUnsubscribeFn(retrySubscription);
+                }
             },
         );
 

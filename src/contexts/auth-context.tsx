@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel, Query } from "appwrite";
+import { Channel } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -313,7 +313,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 );
                             }
                         },
-                        [Query.equal("userId", activeUserId)],
                     );
 
                     const untrack = trackSubscription(channelKey);

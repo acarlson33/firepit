@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel, Query } from "appwrite";
+import { Channel } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -164,21 +164,36 @@ export function useInbox(userId: string | null) {
 
             try {
                 const realtime = getSharedRealtime();
-                subscription = await realtime.subscribe(inboxChannel, () => {
-                    queryClient
-                        .invalidateQueries({
-                            queryKey: getInboxQueryKey(userId),
-                            refetchType: "active",
-                        })
-                        .catch((error) => {
-                            logger.warn("Failed to refresh inbox query", {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
+                subscription = await realtime.subscribe(
+                    inboxChannel,
+                    (response) => {
+                        const payload = response.payload as
+                            | Record<string, unknown>
+                            | null
+                            | undefined;
+                        if (
+                            payload &&
+                            payload.userId !== undefined &&
+                            payload.userId !== userId
+                        ) {
+                            return;
+                        }
+
+                        queryClient
+                            .invalidateQueries({
+                                queryKey: getInboxQueryKey(userId),
+                                refetchType: "active",
+                            })
+                            .catch((error) => {
+                                logger.warn("Failed to refresh inbox query", {
+                                    error:
+                                        error instanceof Error
+                                            ? error.message
+                                            : String(error),
+                                });
                             });
-                        });
-                }, [Query.equal("userId", userId)]);
+                    },
+                );
 
                 if (cancelled) {
                     if (subscription) {
