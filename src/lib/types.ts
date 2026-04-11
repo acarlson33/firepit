@@ -48,6 +48,8 @@ export type Message = {
     displayName?: string;
     avatarFileId?: string;
     avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
     pronouns?: string;
     // Reply context (enriched from parent message)
     replyTo?: {
@@ -136,6 +138,8 @@ export type Conversation = {
         userId: string;
         displayName?: string;
         avatarUrl?: string;
+        avatarFramePreset?: string;
+        avatarFrameUrl?: string;
         status?: string;
     };
     lastMessage?: {
@@ -231,6 +235,8 @@ export type DirectMessage = {
     // Enriched profile data
     senderDisplayName?: string;
     senderAvatarUrl?: string;
+    senderAvatarFramePreset?: string;
+    senderAvatarFrameUrl?: string;
     senderPronouns?: string;
     // Reply context (enriched from parent message)
     replyTo?: {
@@ -274,6 +280,7 @@ export type UserProfileData = {
     location?: string;
     website?: string;
     avatarFileId?: string;
+    avatarFrameUrl?: string;
     showDocsInNavigation?: boolean;
     showFriendsInNavigation?: boolean;
     showSettingsInNavigation?: boolean;
@@ -331,7 +338,7 @@ export type ServerInvite = {
     creatorId: string;
     channelId?: string; // Default channel to show after joining
     expiresAt?: string; // ISO timestamp or null for never
-    maxUses?: number; // null for unlimited
+    maxUses: number | null; // null for unlimited
     currentUses: number;
     temporary: boolean; // Kick user if they go offline without role
     $createdAt: string;

@@ -20,21 +20,23 @@ vi.mock("appwrite", () => ({
         orderDesc: (field: string) => `orderDesc(${field})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+        // appwrite client tests expect plain query value interpolation;
+        // node-appwrite.Query.equal below intentionally uses JSON.stringify.
         equal: (field: string, value: string) => `equal(${field},${value})`,
         and: (...queries: string[]) => `and(${queries.join(",")})`,
         or: (...queries: string[]) => `or(${queries.join(",")})`,
         isNull: (field: string) => `isNull(${field})`,
         isNotNull: (field: string) => `isNotNull(${field})`,
         search: (field: string, value: string) => `search(${field},${value})`,
-        contains: (field: string, value: string) =>
-            `contains(${field},${value})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
     },
     Permission: {
-        read: (role: string) => `read(${role})`,
-        write: (role: string) => `write(${role})`,
-        update: (role: string) => `update(${role})`,
-        delete: (role: string) => `delete(${role})`,
-        create: (role: string) => `create(${role})`,
+        read: (role: string) => `read("${role}")`,
+        write: (role: string) => `write("${role}")`,
+        update: (role: string) => `update("${role}")`,
+        delete: (role: string) => `delete("${role}")`,
+        create: (role: string) => `create("${role}")`,
     },
     Role: {
         any: () => "any",
@@ -52,6 +54,37 @@ vi.mock("appwrite", () => ({
     Databases: vi.fn(),
     Storage: vi.fn(),
     Teams: vi.fn(),
+    Channel: {
+        database: (databaseId: string) => ({
+            collection: (collectionId: string) => ({
+                document: () => ({
+                    toString: () =>
+                        `databases.${databaseId}.collections.${collectionId}.documents`,
+                }),
+            }),
+        }),
+        bucket: (bucketId: string) => ({
+            file: () => ({
+                create: () => ({
+                    toString: () => `buckets.${bucketId}.files.*.create`,
+                }),
+                toString: () => `buckets.${bucketId}.files`,
+            }),
+        }),
+        files: () => ({
+            toString: () => "files",
+        }),
+    },
+    Realtime: vi.fn().mockImplementation(() => ({
+        activeSubscriptions: new Map(),
+        closeSocket: vi.fn().mockResolvedValue(undefined),
+        reconnect: false,
+        subscribe: vi.fn().mockImplementation(async () => ({
+            close: vi.fn().mockResolvedValue(undefined),
+        })),
+        close: vi.fn().mockResolvedValue(undefined),
+        unsubscribe: vi.fn().mockResolvedValue(undefined),
+    })),
 }));
 
 // Mock node-appwrite to prevent import errors
@@ -82,7 +115,10 @@ vi.mock("node-appwrite", () => ({
         }
     },
     Query: {
-        equal: (field: string, value: string) => `equal(${field},${value})`,
+        // node-appwrite query strings include quoted JSON payloads in tests,
+        // so keep JSON.stringify here to mirror server SDK behavior.
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${JSON.stringify(value)})`,
         limit: (n: number) => `limit(${n})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
@@ -92,17 +128,17 @@ vi.mock("node-appwrite", () => ({
         isNull: (field: string) => `isNull(${field})`,
         isNotNull: (field: string) => `isNotNull(${field})`,
         search: (field: string, value: string) => `search(${field},${value})`,
-        contains: (field: string, value: string) =>
-            `contains(${field},${value})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
         greaterThanEqual: (field: string, value: string) =>
             `greaterThanEqual(${field},${value})`,
     },
     Permission: {
-        read: (role: string) => `read(${role})`,
-        write: (role: string) => `write(${role})`,
-        update: (role: string) => `update(${role})`,
-        delete: (role: string) => `delete(${role})`,
-        create: (role: string) => `create(${role})`,
+        read: (role: string) => `read("${role}")`,
+        write: (role: string) => `write("${role}")`,
+        update: (role: string) => `update("${role}")`,
+        delete: (role: string) => `delete("${role}")`,
+        create: (role: string) => `create("${role}")`,
     },
     Role: {
         any: () => "any",

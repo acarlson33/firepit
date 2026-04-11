@@ -1,11 +1,13 @@
 "use client";
 
+import { Channel } from "appwrite";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { getBrowserClient } from "@/lib/appwrite-core";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { useCustomEmojis } from "@/hooks/useCustomEmojis";
+import { logger } from "@/lib/client-logger";
+import { getSharedRealtime } from "@/lib/realtime-pool";
 import type { FileAttachment } from "@/lib/types";
 import {
     actionHardDeleteBound,
@@ -110,7 +112,7 @@ export function ModerationMessageList({
 
     useEffect(() => {
         // Subscribe to real-time updates for the messages collection
-        const client = getBrowserClient();
+        const realtime = getSharedRealtime();
         const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID;
         const messagesCollectionId =
             process.env.NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID;
@@ -119,34 +121,103 @@ export function ModerationMessageList({
             return;
         }
 
-        const unsubscribe = client.subscribe(
-            `databases.${databaseId}.collections.${messagesCollectionId}.documents`,
-            (response: { events: string[]; payload: unknown }) => {
-                const event = response.events[0];
-                const payload =
-                    response.payload as unknown as ModerationMessage;
+        let cleanup: (() => void) | undefined = () => {};
+        let cancelled = false;
 
-                if (event?.includes(".update")) {
-                    // Update existing message
-                    setMessages((prev) =>
-                        prev.map((m) =>
-                            m.$id === payload.$id ? { ...m, ...payload } : m,
-                        ),
-                    );
-                } else if (event?.includes(".delete")) {
-                    // Remove deleted message
-                    setMessages((prev) =>
-                        prev.filter((m) => m.$id !== payload.$id),
-                    );
-                } else if (event?.includes(".create")) {
-                    // Add new message at the top
-                    setMessages((prev) => [payload, ...prev]);
+        (async () => {
+            let subscription: { close: () => Promise<void> } | undefined;
+            try {
+                subscription = await realtime.subscribe(
+                    Channel.database(databaseId)
+                        .collection(messagesCollectionId)
+                        .document(),
+                    (response: { events: string[]; payload: unknown }) => {
+                        const event = response.events.at(0);
+                        const payload = response.payload as ModerationMessage;
+
+                        if (event?.includes(".update")) {
+                            // Update existing message
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.$id === payload.$id
+                                        ? { ...m, ...payload }
+                                        : m,
+                                ),
+                            );
+                        } else if (event?.includes(".delete")) {
+                            // Remove deleted message
+                            setMessages((prev) =>
+                                prev.filter((m) => m.$id !== payload.$id),
+                            );
+                        } else if (event?.includes(".create")) {
+                            // Add new message at the top if it does not already exist
+                            setMessages((prev) =>
+                                prev.some((m) => m.$id === payload.$id)
+                                    ? prev
+                                    : [payload, ...prev],
+                            );
+                        }
+                    },
+                );
+
+                if (cancelled) {
+                    await subscription.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription during cancellation",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
+                    return;
                 }
-            },
-        );
+
+                cleanup = () => {
+                    subscription?.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription during cleanup",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
+                };
+            } catch (error) {
+                if (subscription) {
+                    await subscription.close().catch((closeError) => {
+                        logger.warn(
+                            "Failed to close moderation realtime subscription after subscribe error",
+                            {
+                                error:
+                                    closeError instanceof Error
+                                        ? closeError.message
+                                        : String(closeError),
+                            },
+                        );
+                    });
+                }
+                logger.error(
+                    "Moderation realtime subscription failed:",
+                    error instanceof Error ? error : String(error),
+                );
+                cleanup = () => {};
+            }
+        })().catch((setupError) => {
+            logger.error(
+                "Moderation realtime subscription setup failed:",
+                setupError instanceof Error ? setupError : String(setupError),
+            );
+        });
 
         return () => {
-            unsubscribe();
+            cancelled = true;
+            cleanup?.();
         };
     }, []);
 

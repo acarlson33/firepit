@@ -75,17 +75,23 @@ vi.mock("../lib/appwrite-core", () => ({
                     }
                 }
                 if (q.startsWith("equal(action,")) {
-                    const action = q.match(/equal\(action,(.+)\)/)?.[1];
+                    const action = q
+                        .match(/equal\(action,(.+)\)/)?.[1]
+                        ?.replace(/^"|"$/g, "");
                     filtered = filtered.filter((d: any) => d.action === action);
                 }
                 if (q.startsWith("equal(actorId,")) {
-                    const actorId = q.match(/equal\(actorId,(.+)\)/)?.[1];
+                    const actorId = q
+                        .match(/equal\(actorId,(.+)\)/)?.[1]
+                        ?.replace(/^"|"$/g, "");
                     filtered = filtered.filter(
                         (d: any) => d.actorId === actorId,
                     );
                 }
                 if (q.startsWith("equal(targetId,")) {
-                    const targetId = q.match(/equal\(targetId,(.+)\)/)?.[1];
+                    const targetId = q
+                        .match(/equal\(targetId,(.+)\)/)?.[1]
+                        ?.replace(/^"|"$/g, "");
                     filtered = filtered.filter(
                         (d: any) => d.targetId === targetId,
                     );
@@ -136,7 +142,9 @@ vi.mock("../lib/appwrite-admin", () => ({
                             }
                         }
                         if (q.startsWith("equal(action,")) {
-                            const action = q.match(/equal\(action,(.+)\)/)?.[1];
+                            const action = q
+                                .match(/equal\(action,(.+)\)/)?.[1]
+                                ?.replace(/^"|"$/g, "");
                             filtered = filtered.filter(
                                 (d: any) => d.action === action,
                             );

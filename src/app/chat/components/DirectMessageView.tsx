@@ -377,6 +377,8 @@ export function DirectMessageView({
                     <Avatar
                         alt={displayName}
                         fallback={displayName}
+                        framePreset={otherUser?.avatarFramePreset}
+                        frameUrl={otherUser?.avatarFrameUrl}
                         size="sm"
                         src={
                             isGroup
@@ -637,6 +639,12 @@ export function DirectMessageView({
                                                 <Avatar
                                                     alt={msgDisplayName}
                                                     fallback={msgDisplayName}
+                                                    framePreset={
+                                                        message.senderAvatarFramePreset
+                                                    }
+                                                    frameUrl={
+                                                        message.senderAvatarFrameUrl
+                                                    }
                                                     size="sm"
                                                     src={
                                                         message.senderAvatarUrl

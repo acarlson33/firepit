@@ -1,4 +1,4 @@
-import { ID, Query } from "appwrite";
+import { ID, Permission, Query, Role } from "appwrite";
 
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
@@ -263,8 +263,6 @@ type SendMessageInput = {
  */
 export async function sendMessage(input: SendMessageInput): Promise<Message> {
     const { userId, text, userName, channelId, serverId, replyToId } = input;
-    // Import Permission and Role from appwrite for client SDK
-    const { Permission, Role } = await import("appwrite");
     const permissions = [
         Permission.read(Role.any()),
         Permission.update(Role.user(userId)),

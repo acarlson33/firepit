@@ -1,4 +1,16 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+
+const testFilePath = fileURLToPath(import.meta.url);
+const testDir = dirname(testFilePath);
+const packageJsonPath = join(testDir, "..", "..", "package.json");
+
+const { mockCloseSocket, mockPublicClose } = vi.hoisted(() => ({
+    mockCloseSocket: vi.fn().mockResolvedValue(undefined),
+    mockPublicClose: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Mock Appwrite Client
 vi.mock("appwrite", () => ({
@@ -6,6 +18,18 @@ vi.mock("appwrite", () => ({
         setEndpoint: vi.fn().mockReturnThis(),
         setProject: vi.fn().mockReturnThis(),
     })),
+    Realtime: vi.fn().mockImplementation(() => {
+        const instance = {
+            activeSubscriptions: new Map<number, unknown>(),
+            closeSocket: mockCloseSocket,
+            reconnect: true,
+            subscribe: vi.fn(async () => ({
+                close: vi.fn(async () => {}),
+            })),
+        };
+
+        return instance;
+    }),
 }));
 
 // Mock appwrite-core to dynamically read env vars (avoiding cache issues)
@@ -22,6 +46,10 @@ vi.mock("@/lib/appwrite-core", () => ({
 
 describe("Realtime Pool", () => {
     let getSharedClient: () => unknown;
+    let getSharedRealtime: () => unknown;
+    let disposeSharedRealtime: () => Promise<void>;
+    let resetSharedRealtime: () => Promise<void>;
+    let resetSharedClient: () => Promise<void>;
     let trackSubscription: (channel: string) => () => void;
     let hasActiveSubscriptions: (channel: string) => boolean;
 
@@ -32,10 +60,16 @@ describe("Realtime Pool", () => {
 
         vi.clearAllMocks();
         vi.resetModules();
+        mockCloseSocket.mockClear();
+        mockPublicClose.mockClear();
 
         // Re-import the module to get fresh state
         const module = await import("@/lib/realtime-pool");
         getSharedClient = module.getSharedClient;
+        getSharedRealtime = module.getSharedRealtime;
+        disposeSharedRealtime = module.disposeSharedRealtime;
+        resetSharedRealtime = module.resetSharedRealtime;
+        resetSharedClient = module.resetSharedClient;
         trackSubscription = module.trackSubscription;
         hasActiveSubscriptions = module.hasActiveSubscriptions;
     });
@@ -171,6 +205,84 @@ describe("Realtime Pool", () => {
 
             cleanup();
             expect(hasActiveSubscriptions("")).toBe(false);
+        });
+    });
+
+    describe("disposeSharedRealtime", () => {
+        it("should close socket and clear realtime internals", async () => {
+            const realtime = getSharedRealtime() as {
+                activeSubscriptions?: Map<number, unknown>;
+                reconnect?: boolean;
+            };
+
+            realtime.activeSubscriptions?.set(1, { channel: "channel-1" });
+            realtime.reconnect = true;
+
+            await disposeSharedRealtime();
+
+            expect(mockCloseSocket).toHaveBeenCalledTimes(1);
+            expect(realtime.activeSubscriptions?.size).toBe(0);
+            expect(realtime.reconnect).toBe(false);
+        });
+
+        it("should safely no-op when realtime was never created", async () => {
+            vi.resetModules();
+            mockCloseSocket.mockClear();
+
+            const module = await import("@/lib/realtime-pool");
+            const freshDisposeSharedRealtime = module.disposeSharedRealtime;
+
+            await freshDisposeSharedRealtime();
+
+            expect(mockCloseSocket).not.toHaveBeenCalled();
+        });
+
+        it("should prefer public lifecycle close when available", async () => {
+            const realtime = getSharedRealtime() as {
+                close?: () => Promise<void>;
+            };
+            realtime.close = mockPublicClose;
+
+            await disposeSharedRealtime();
+
+            expect(mockPublicClose).toHaveBeenCalledTimes(1);
+            expect(mockCloseSocket).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("reset helpers", () => {
+        it("should dispose realtime when resetSharedRealtime is called", async () => {
+            getSharedRealtime();
+
+            await resetSharedRealtime();
+
+            expect(mockCloseSocket).toHaveBeenCalledTimes(1);
+        });
+
+        it("should dispose realtime and recreate client after resetSharedClient", async () => {
+            const client1 = getSharedClient();
+            getSharedRealtime();
+
+            await resetSharedClient();
+
+            const client2 = getSharedClient();
+            expect(mockCloseSocket).toHaveBeenCalledTimes(1);
+            expect(client2).not.toBe(client1);
+        });
+    });
+
+    describe("sdk compatibility", () => {
+        // realtime-pool teardown still relies on SDK-specific internals
+        // (reflection and fallback cleanup assumptions). Guarding major 24.x
+        // prevents silent breakage from upstream major changes.
+        it("should keep appwrite on the expected major for realtime cleanup assumptions", () => {
+            const packageJson = JSON.parse(
+                readFileSync(packageJsonPath, "utf8"),
+            ) as {
+                dependencies?: Record<string, string>;
+            };
+
+            expect(packageJson.dependencies?.appwrite).toMatch(/^\^?24\./);
         });
     });
 });

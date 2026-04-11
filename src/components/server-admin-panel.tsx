@@ -522,7 +522,7 @@ export function ServerAdminPanel({
                                     onChange={(e) =>
                                         setSearchQuery(e.target.value)
                                     }
-                                    className="flex-1 min-w-[200px]"
+                                    className="flex-1 min-w-50"
                                 />
                                 <div className="flex items-center gap-2">
                                     <Select
@@ -556,6 +556,27 @@ export function ServerAdminPanel({
                                     </Badge>
                                 </div>
                             </div>
+
+                            {rolesLoading && (
+                                <div
+                                    className="text-sm text-muted-foreground"
+                                    role="status"
+                                    aria-live="polite"
+                                    aria-busy="true"
+                                >
+                                    Loading roles...
+                                </div>
+                            )}
+
+                            {rolesError && (
+                                <div
+                                    className="text-sm text-destructive"
+                                    role="alert"
+                                    aria-live="assertive"
+                                >
+                                    {rolesError}
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 {loading ? (

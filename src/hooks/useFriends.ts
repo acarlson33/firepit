@@ -10,6 +10,8 @@ type FriendUserSummary = {
     displayName?: string;
     pronouns?: string;
     avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
 };
 
 type FriendshipRecord = {

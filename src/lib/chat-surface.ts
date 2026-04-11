@@ -32,6 +32,8 @@ export type ChatSurfaceMessage = {
     authorUserName?: string;
     authorLabel: string;
     authorAvatarUrl?: string;
+    authorAvatarFramePreset?: string;
+    authorAvatarFrameUrl?: string;
     authorPronouns?: string;
     text: string;
     createdAt: string;
@@ -161,6 +163,8 @@ export function fromChannelMessage(
         authorUserName: message.userName,
         authorLabel: message.displayName || message.userName || message.userId,
         authorAvatarUrl: message.avatarUrl,
+        authorAvatarFramePreset: message.avatarFramePreset,
+        authorAvatarFrameUrl: message.avatarFrameUrl,
         authorPronouns: message.pronouns,
         text: message.text,
         createdAt: message.$createdAt,
@@ -214,6 +218,8 @@ export function fromDirectMessage(
         authorId: message.senderId,
         authorLabel: message.senderDisplayName || message.senderId,
         authorAvatarUrl: message.senderAvatarUrl,
+        authorAvatarFramePreset: message.senderAvatarFramePreset,
+        authorAvatarFrameUrl: message.senderAvatarFrameUrl,
         authorPronouns: message.senderPronouns,
         text: message.text,
         createdAt: message.$createdAt,

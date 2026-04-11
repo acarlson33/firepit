@@ -80,12 +80,13 @@ export function AvatarWithFrame({
     const presetFrame = avatarFramePreset
         ? getPresetFrameById(avatarFramePreset)
         : null;
+    const resolvedFrameUrl = avatarFrameUrl ?? presetFrame?.imageUrl;
     const frameEmoji = getFrameEmoji(avatarFramePreset);
 
     const frameBorderStyle = presetFrame?.borderStyle || "solid";
     const frameColor = presetFrame?.color || "#6366f1";
     const frameThickness = 3;
-    const hasFrameAsset = Boolean(avatarFrameUrl);
+    const hasFrameAsset = Boolean(resolvedFrameUrl);
     const configuredInset = presetFrame?.avatarInsetPercent ?? 12;
     const avatarInsetPercent = hasFrameAsset
         ? Math.min(35, Math.max(0, configuredInset))
@@ -103,7 +104,7 @@ export function AvatarWithFrame({
                     className="absolute inset-0 z-10 pointer-events-none"
                     fill
                     sizes={`${sizes.container + 20}px`}
-                    src={avatarFrameUrl as string}
+                    src={resolvedFrameUrl as string}
                     style={{ objectFit: "contain" }}
                     unoptimized
                 />

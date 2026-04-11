@@ -18,6 +18,7 @@ if (posthogToken && posthogHost) {
         request_batching: requestBatchingEnabled,
         autocapture: autoCaptureEnabled,
         capture_pageview: capturePageviewEnabled,
+        cookieless_mode: "on_reject",
         disable_session_recording: !sessionRecordingEnabled,
         // 2026-01-30 is the PostHog configuration snapshot version that
         // controls default settings; explicit options above override it.

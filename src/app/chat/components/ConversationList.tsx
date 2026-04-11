@@ -412,6 +412,8 @@ export function ConversationList({
                         <Avatar
                             alt={displayName}
                             fallback={displayName}
+                            framePreset={otherUser?.avatarFramePreset}
+                            frameUrl={otherUser?.avatarFrameUrl}
                             size="md"
                             src={
                                 isGroup
@@ -722,6 +724,14 @@ export function ConversationList({
                                                     <Avatar
                                                         alt={displayName}
                                                         fallback={displayName}
+                                                        framePreset={
+                                                            entry.user
+                                                                .avatarFramePreset
+                                                        }
+                                                        frameUrl={
+                                                            entry.user
+                                                                .avatarFrameUrl
+                                                        }
                                                         size="sm"
                                                         src={
                                                             entry.user.avatarUrl
@@ -843,6 +853,14 @@ export function ConversationList({
                                                     <Avatar
                                                         alt={displayName}
                                                         fallback={displayName}
+                                                        framePreset={
+                                                            entry.user
+                                                                .avatarFramePreset
+                                                        }
+                                                        frameUrl={
+                                                            entry.user
+                                                                .avatarFrameUrl
+                                                        }
                                                         size="sm"
                                                         src={
                                                             entry.user.avatarUrl

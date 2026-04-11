@@ -3,11 +3,192 @@
  * Shares a single Appwrite Client instance across components
  */
 
-import { Client } from "appwrite";
+import { Client, Realtime } from "appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
 
 let sharedClient: Client | null = null;
+let sharedRealtime: Realtime | null = null;
 const subscriptionRefs = new Map<string, number>();
+let warnedAboutFallbackTeardown = false;
+let inFlightDispose: Promise<void> | null = null;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as { then?: unknown }).then === "function"
+    );
+}
+
+async function callLifecycleMethodIfPresent(
+    target: object,
+    methodName: string,
+): Promise<boolean> {
+    const method = Reflect.get(target, methodName);
+    if (typeof method !== "function") {
+        return false;
+    }
+
+    const result = (method as (...args: unknown[]) => unknown).call(target);
+    if (isPromiseLike(result)) {
+        await result;
+    }
+
+    return true;
+}
+
+function collectSubscriptionLikeValues(candidate: unknown): unknown[] {
+    if (!candidate) {
+        return [];
+    }
+
+    if (candidate instanceof Map) {
+        return Array.from(candidate.values());
+    }
+
+    if (candidate instanceof Set) {
+        return Array.from(candidate.values());
+    }
+
+    if (Array.isArray(candidate)) {
+        return candidate;
+    }
+
+    if (typeof candidate === "object") {
+        return Object.values(candidate as Record<string, unknown>);
+    }
+
+    return [];
+}
+
+async function callPublicRealtimeTeardown(
+    realtime: Realtime,
+): Promise<boolean> {
+    const lifecycleMethods = ["close", "disconnect", "dispose"] as const;
+    let didTeardown = false;
+
+    for (const methodName of lifecycleMethods) {
+        try {
+            const called = await callLifecycleMethodIfPresent(
+                realtime as object,
+                methodName,
+            );
+            if (called) {
+                didTeardown = true;
+                break;
+            }
+        } catch {
+            // Try the next lifecycle method if this one throws.
+        }
+    }
+
+    if (didTeardown) {
+        return true;
+    }
+
+    const subscriptionContainers = [
+        Reflect.get(realtime as object, "subscriptions"),
+        Reflect.get(realtime as object, "activeSubscriptions"),
+    ];
+
+    for (const container of subscriptionContainers) {
+        const maybeSubscriptions = collectSubscriptionLikeValues(container);
+        for (const maybeSubscription of maybeSubscriptions) {
+            if (!maybeSubscription || typeof maybeSubscription !== "object") {
+                continue;
+            }
+
+            try {
+                const didClose =
+                    (await callLifecycleMethodIfPresent(
+                        maybeSubscription,
+                        "close",
+                    )) ||
+                    (await callLifecycleMethodIfPresent(
+                        maybeSubscription,
+                        "unsubscribe",
+                    ));
+
+                if (didClose) {
+                    didTeardown = true;
+                }
+            } catch {
+                // Continue trying additional subscription-like values.
+            }
+        }
+    }
+
+    const internalClient = Reflect.get(realtime as object, "client");
+    if (internalClient && typeof internalClient === "object") {
+        try {
+            const closedClient = await callLifecycleMethodIfPresent(
+                internalClient,
+                "close",
+            );
+            if (closedClient) {
+                didTeardown = true;
+            }
+        } catch {
+            // Let the caller continue to fallback internals.
+        }
+    }
+
+    return didTeardown;
+}
+
+async function safeCleanupRealtime(realtime: Realtime): Promise<void> {
+    const disposedViaPublicApi = await callPublicRealtimeTeardown(realtime);
+    if (disposedViaPublicApi) {
+        return;
+    }
+
+    if (!warnedAboutFallbackTeardown) {
+        warnedAboutFallbackTeardown = true;
+        logger.warn(
+            "safeCleanupRealtime fallback path used; realtime public teardown API failed or unavailable",
+            {
+                hasClose:
+                    typeof Reflect.get(realtime as object, "close") ===
+                    "function",
+                hasDisconnect:
+                    typeof Reflect.get(realtime as object, "disconnect") ===
+                    "function",
+                hasDispose:
+                    typeof Reflect.get(realtime as object, "dispose") ===
+                    "function",
+            },
+        );
+    }
+
+    // Track an upstream request for a stable public teardown API:
+    // https://github.com/acarlson33/firepit/issues/175
+    const activeSubscriptions = Reflect.get(
+        realtime as object,
+        "activeSubscriptions",
+    );
+    if (activeSubscriptions instanceof Map) {
+        activeSubscriptions.clear();
+    }
+
+    const reconnect = Reflect.get(realtime as object, "reconnect");
+    if (typeof reconnect === "boolean") {
+        Reflect.set(realtime as object, "reconnect", false);
+    }
+
+    const closeSocket = Reflect.get(realtime as object, "closeSocket");
+    if (typeof closeSocket === "function") {
+        const result = (closeSocket as (this: Realtime) => unknown).call(
+            realtime,
+        );
+        if (
+            result &&
+            typeof (result as { then?: unknown }).then === "function"
+        ) {
+            await result;
+        }
+    }
+}
 
 /**
  * Get or create shared Appwrite client
@@ -31,6 +212,18 @@ export function getSharedClient(): Client {
     }
 
     return sharedClient;
+}
+
+/**
+ * Get or create shared Appwrite realtime helper
+ * @returns {Realtime} The return value.
+ */
+export function getSharedRealtime(): Realtime {
+    if (!sharedRealtime) {
+        sharedRealtime = new Realtime(getSharedClient());
+    }
+
+    return sharedRealtime;
 }
 
 /**
@@ -61,4 +254,58 @@ export function trackSubscription(channel: string): () => void {
  */
 export function hasActiveSubscriptions(channel: string): boolean {
     return (subscriptionRefs.get(channel) ?? 0) > 0;
+}
+
+/**
+ * Close active realtime websocket resources before resetting singleton state.
+ */
+export async function disposeSharedRealtime(): Promise<void> {
+    if (inFlightDispose) {
+        await inFlightDispose;
+        return;
+    }
+
+    const disposePromise = (async () => {
+        if (!sharedRealtime) {
+            subscriptionRefs.clear();
+            return;
+        }
+
+        const realtime = sharedRealtime;
+
+        try {
+            await safeCleanupRealtime(realtime);
+        } finally {
+            if (sharedRealtime === realtime) {
+                sharedRealtime = null;
+                subscriptionRefs.clear();
+            }
+        }
+    })();
+
+    inFlightDispose = disposePromise;
+
+    try {
+        await disposePromise;
+    } finally {
+        if (inFlightDispose === disposePromise) {
+            inFlightDispose = null;
+        }
+    }
+}
+
+/**
+ * Reset the shared realtime helper and tracked subscription references.
+ * Use this on auth/session transitions so a fresh realtime context is created.
+ */
+export async function resetSharedRealtime(): Promise<void> {
+    await disposeSharedRealtime();
+}
+
+/**
+ * Reset the shared Appwrite client singleton.
+ */
+export async function resetSharedClient(): Promise<void> {
+    await disposeSharedRealtime();
+    sharedClient = null;
 }

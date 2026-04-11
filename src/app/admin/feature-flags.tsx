@@ -6,12 +6,13 @@ import { Settings } from "lucide-react";
 
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { FeatureFlag } from "@/lib/types";
+import { logger } from "@/lib/client-logger";
 import {
     FEATURE_FLAGS,
     getFeatureFlagDescription,
     type FeatureFlagKey,
-} from "@/lib/feature-flags";
+} from "@/lib/feature-flags-definitions";
+import type { FeatureFlag } from "@/lib/types";
 
 import { getFeatureFlagsAction, updateFeatureFlagAction } from "./actions";
 
@@ -29,7 +30,10 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
             const result = await getFeatureFlagsAction(userId);
             setFlags(result);
         } catch (error) {
-            console.error("Failed to load feature flags:", error);
+            logger.error(
+                "Failed to load feature flags:",
+                error instanceof Error ? error : String(error),
+            );
             toast.error("Failed to load feature flags");
         } finally {
             setLoading(false);
@@ -58,7 +62,10 @@ export function FeatureFlags({ userId }: FeatureFlagsProps) {
                 toast.error(result.error || "Failed to update feature flag");
             }
         } catch (error) {
-            console.error("Failed to update feature flag:", error);
+            logger.error(
+                "Failed to update feature flag:",
+                error instanceof Error ? error : String(error),
+            );
             toast.error("Failed to update feature flag");
         } finally {
             setUpdating(null);

@@ -34,11 +34,11 @@ vi.mock("@/app/chat/hooks/useStatusSubscription", () => ({
     })),
 }));
 
-const mockSubscribe = vi.hoisted(() => vi.fn(() => vi.fn()));
+const mockSubscribe = vi.hoisted(() => vi.fn(async () => ({ close: vi.fn() })));
 const mockTrackSubscription = vi.hoisted(() => vi.fn(() => vi.fn()));
 
 vi.mock("@/lib/realtime-pool", () => ({
-    getSharedClient: vi.fn(() => ({
+    getSharedRealtime: vi.fn(() => ({
         subscribe: mockSubscribe,
     })),
     trackSubscription: mockTrackSubscription,
@@ -93,7 +93,7 @@ describe("useConversations", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockSubscribe.mockReturnValue(vi.fn());
+        mockSubscribe.mockResolvedValue({ close: vi.fn() });
         mockTrackSubscription.mockReturnValue(vi.fn());
     });
 

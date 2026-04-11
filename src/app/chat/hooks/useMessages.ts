@@ -1,4 +1,5 @@
 "use client";
+import { Channel, Query } from "appwrite";
 import type { RealtimeResponseEvent } from "appwrite";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -30,6 +31,8 @@ import {
     unpinChannelMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -63,6 +66,9 @@ export function useMessages({
     const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(
         null,
     );
+    const [messageRealtimeDegraded, setMessageRealtimeDegraded] =
+        useState(false);
+    const [typingRealtimeDegraded, setTypingRealtimeDegraded] = useState(false);
     const mentionedNamesRef = useRef<string[]>([]);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -92,11 +98,18 @@ export function useMessages({
         userId: string;
         userName?: string;
         updatedAt: string;
+        channelId: string;
         action: "add" | "remove";
     }>((updates) => {
+        const activeChannelId = currentChannelIdRef.current;
+
         setTypingUsers((prev) => {
             const updated = { ...prev };
             for (const update of updates) {
+                if (!activeChannelId || update.channelId !== activeChannelId) {
+                    continue;
+                }
+
                 if (update.action === "remove") {
                     delete updated[update.userId];
                 } else {
@@ -207,14 +220,18 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        setMessageRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
                 if (cancelled) {
                     return;
                 }
-                const c = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 function parseBase(
                     event: RealtimeResponseEvent<Record<string, unknown>>,
@@ -252,19 +269,26 @@ export function useMessages({
                             : undefined,
                     } as Message;
                 }
-                function includeMessage(base: { channelId?: string }) {
-                    if (channelId && base.channelId !== channelId) {
+                function includeMessage(
+                    base: { channelId?: string },
+                    activeChannelId: string | null,
+                ) {
+                    if (activeChannelId && base.channelId !== activeChannelId) {
                         return false;
                     }
-                    if (!channelId && base.channelId) {
+                    if (!activeChannelId && base.channelId) {
                         return false;
                     }
                     return true;
                 }
                 async function applyCreate(base: Message) {
+                    const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before adding to state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (currentChannelIdRef.current !== activeChannelId) {
+                        return;
+                    }
                     if (!profileEnriched) {
                         return;
                     }
@@ -284,9 +308,13 @@ export function useMessages({
                     });
                 }
                 async function applyUpdate(base: Message) {
+                    const activeChannelId = currentChannelIdRef.current;
                     // Enrich message with profile data before updating state
                     const profileEnriched =
                         await enrichMessageWithProfile(base);
+                    if (currentChannelIdRef.current !== activeChannelId) {
+                        return;
+                    }
                     if (!profileEnriched) {
                         setMessages((prev) =>
                             prev.filter((message) => message.$id !== base.$id),
@@ -322,29 +350,75 @@ export function useMessages({
                         applyDelete(base);
                     }
                 }
-                const unsub = c.subscribe(
-                    messageChannel,
-                    (event: RealtimeResponseEvent<Record<string, unknown>>) => {
-                        const base = parseBase(event);
-                        if (!isTopLevelMessage(base)) {
-                            return;
-                        }
-                        if (!includeMessage(base)) {
-                            return;
-                        }
-                        dispatchByEvents(event.events, base);
+                try {
+                    const subscription = await realtime.subscribe(
+                        messageChannel,
+                        (
+                            event: RealtimeResponseEvent<
+                                Record<string, unknown>
+                            >,
+                        ) => {
+                            const base = parseBase(event);
+                            if (!isTopLevelMessage(base)) {
+                                return;
+                            }
+                            const activeChannelId = currentChannelIdRef.current;
+                            if (!includeMessage(base, activeChannelId)) {
+                                return;
+                            }
+                            dispatchByEvents(event.events, base);
+                        },
+                        [Query.equal("channelId", channelId)],
+                    );
+
+                    if (cancelled) {
+                        await closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
+                    const untrack = trackSubscription(messageChannelKey);
+                    setMessageRealtimeDegraded(false);
+
+                    cleanupFn = () => {
+                        untrack();
+                        void closeSubscriptionSafely(subscription);
+                    };
+                } catch (error) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    setMessageRealtimeDegraded(true);
+                    logger.error(
+                        "Message realtime subscription failed",
+                        error instanceof Error ? error : String(error),
+                        {
+                            collectionId,
+                            databaseId,
+                            messageChannelKey,
+                        },
+                    );
+                    return;
+                }
+            })
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                setMessageRealtimeDegraded(true);
+                logger.error(
+                    "Failed to initialize message realtime dependencies",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId,
+                        databaseId,
+                        messageChannelKey: Channel.database(databaseId)
+                            .collection(collectionId)
+                            .document()
+                            .toString(),
                     },
                 );
-
-                const untrack = trackSubscription(messageChannel);
-
-                cleanupFn = () => {
-                    untrack();
-                    unsub();
-                };
-            })
-            .catch(() => {
-                /* failed to set up realtime; ignore silently */
             });
 
         return () => {
@@ -370,14 +444,18 @@ export function useMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        setTypingRealtimeDegraded(false);
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
                 if (cancelled) {
                     return;
                 }
-                const c = getSharedClient();
-                const typingChannel = `databases.${databaseId}.collections.${typingCollectionId}.documents`;
+                const realtime = getSharedRealtime();
+                const typingChannel = Channel.database(databaseId)
+                    .collection(typingCollectionId)
+                    .document();
+                const typingChannelKey = typingChannel.toString();
 
                 function parseTyping(
                     event: RealtimeResponseEvent<Record<string, unknown>>,
@@ -414,6 +492,7 @@ export function useMessages({
                             userId: typing.userId,
                             userName: typing.userName,
                             updatedAt: typing.updatedAt,
+                            channelId: typing.channelId,
                             action: "remove",
                         });
                     } else if (
@@ -427,20 +506,66 @@ export function useMessages({
                             userId: typing.userId,
                             userName: typing.userName,
                             updatedAt: typing.updatedAt,
+                            channelId: typing.channelId,
                             action: "add",
                         });
                     }
                 }
 
-                const unsub = c.subscribe(typingChannel, handleTypingEvent);
-                const untrack = trackSubscription(typingChannel);
-                cleanupFn = () => {
-                    untrack();
-                    unsub();
-                };
+                try {
+                    const subscription = await realtime.subscribe(
+                        typingChannel,
+                        handleTypingEvent,
+                        [Query.equal("channelId", channelId)],
+                    );
+
+                    if (cancelled) {
+                        await closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
+                    const untrack = trackSubscription(typingChannelKey);
+                    setTypingRealtimeDegraded(false);
+                    cleanupFn = () => {
+                        untrack();
+                        void closeSubscriptionSafely(subscription);
+                    };
+                } catch (error) {
+                    if (cancelled) {
+                        return;
+                    }
+
+                    setTypingRealtimeDegraded(true);
+                    logger.error(
+                        "Typing realtime subscription failed",
+                        error instanceof Error ? error : String(error),
+                        {
+                            collectionId: typingCollectionId,
+                            databaseId,
+                            typingChannelKey,
+                        },
+                    );
+                    return;
+                }
             })
-            .catch(() => {
-                /* failed to set up typing realtime; ignore silently */
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                setTypingRealtimeDegraded(true);
+                logger.error(
+                    "Failed to initialize typing realtime dependencies",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId: typingCollectionId,
+                        databaseId,
+                        typingChannelKey: Channel.database(databaseId)
+                            .collection(typingCollectionId)
+                            .document()
+                            .toString(),
+                    },
+                );
             });
 
         return () => {
@@ -868,6 +993,8 @@ export function useMessages({
         });
     }, [channelId, isThreadUnread, messages, serverId, threadReadByMessageId]);
 
+    const realtimeDegraded = messageRealtimeDegraded || typingRealtimeDegraded;
+
     return {
         messages,
         surfaceMessages,
@@ -879,6 +1006,9 @@ export function useMessages({
         editingMessageId,
         replyingToMessage,
         typingUsers,
+        realtimeDegraded,
+        messageRealtimeDegraded,
+        typingRealtimeDegraded,
         setTypingUsers,
         listRef,
         loadOlder,

@@ -609,14 +609,14 @@ export default function ChatPage() {
     ]);
 
     const messagesApi = useMessages({
-        channelId: selectedChannel,
+        channelId: viewMode === "channels" ? selectedChannel : null,
         serverId: serversApi.selectedServer,
         userId,
         userName,
     });
 
     const dmApi = useDirectMessages({
-        conversationId: selectedConversationId || "",
+        conversationId: viewMode === "dms" ? selectedConversationId : null,
         userId,
         userName,
     });

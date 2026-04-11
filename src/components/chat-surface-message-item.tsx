@@ -126,6 +126,8 @@ export function ChatSurfaceMessageItem({
                     <Avatar
                         alt={displayName}
                         fallback={displayName}
+                        framePreset={message.authorAvatarFramePreset}
+                        frameUrl={message.authorAvatarFrameUrl}
                         size="md"
                         src={message.authorAvatarUrl}
                     />
@@ -134,6 +136,8 @@ export function ChatSurfaceMessageItem({
                 <Avatar
                     alt={displayName}
                     fallback={displayName}
+                    framePreset={message.authorAvatarFramePreset}
+                    frameUrl={message.authorAvatarFrameUrl}
                     size="md"
                     src={message.authorAvatarUrl}
                 />

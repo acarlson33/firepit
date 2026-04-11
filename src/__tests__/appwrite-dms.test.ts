@@ -49,21 +49,35 @@ vi.mock("appwrite", () => {
             const docs = [...(mockDocuments[params.collectionId] || [])];
 
             const queries = params.queries || [];
-            const equalQueries = queries.filter((query) =>
-                /^equal\("[^"]+",".*"\)$/.test(query),
+            const equalQueries = queries.filter(
+                (query) =>
+                    /^equal\("[^"]+",".*"\)$/.test(query) ||
+                    /^equal\([^"]+,".*"\)$/.test(query),
             );
-            const orderDescQuery = queries.find((query) =>
-                /^orderDesc\("[^"]+"\)$/.test(query),
+            const containsQueries = queries.filter(
+                (query) =>
+                    /^contains\("[^"]+",".*"\)$/.test(query) ||
+                    /^contains\([^"]+,".*"\)$/.test(query) ||
+                    /^contains\([A-Za-z0-9_.$-]+,\[.*\]\)$/.test(query),
             );
-            const cursorQuery = queries.find((query) =>
-                /^cursorAfter\("[^"]+"\)$/.test(query),
+            const orderDescQuery = queries.find(
+                (query) =>
+                    /^orderDesc\("[^"]+"\)$/.test(query) ||
+                    /^orderDesc\([^"]+\)$/.test(query),
+            );
+            const cursorQuery = queries.find(
+                (query) =>
+                    /^cursorAfter\("[^"]+"\)$/.test(query) ||
+                    /^cursorAfter\([^"]+\)$/.test(query),
             );
             const limitQuery = queries.find((query) =>
                 /^limit\(\d+\)$/.test(query),
             );
 
             const filtered = equalQueries.reduce((currentDocs, query) => {
-                const equalMatch = /^equal\("([^"]+)","(.*)"\)$/.exec(query);
+                const equalMatch =
+                    /^equal\("([^"]+)","(.*)"\)$/.exec(query) ||
+                    /^equal\(([^,]+),"(.*)"\)$/.exec(query);
                 if (!equalMatch) {
                     return currentDocs;
                 }
@@ -85,20 +99,73 @@ vi.mock("appwrite", () => {
                 });
             }, docs);
 
+            const containsFiltered = containsQueries.reduce(
+                (currentDocs, query) => {
+                    const quotedContainsMatch =
+                        /^contains\("([^"]+)","(.*)"\)$/.exec(query) ||
+                        /^contains\(([^,]+),"(.*)"\)$/.exec(query);
+                    const arrayContainsMatch =
+                        /^contains\(([A-Za-z0-9_.$-]+),(\[.*\])\)$/.exec(query);
+
+                    const field =
+                        quotedContainsMatch?.[1] ?? arrayContainsMatch?.[1];
+                    const rawValue =
+                        quotedContainsMatch?.[2] ?? arrayContainsMatch?.[2];
+
+                    if (!field || !rawValue) {
+                        return currentDocs;
+                    }
+
+                    const values = rawValue.includes(QUERY_VALUE_SEPARATOR)
+                        ? rawValue.split(QUERY_VALUE_SEPARATOR).filter(Boolean)
+                        : (() => {
+                              try {
+                                  const parsed = JSON.parse(rawValue);
+                                  if (typeof parsed === "string") {
+                                      return [parsed];
+                                  }
+                                  if (
+                                      Array.isArray(parsed) &&
+                                      parsed.every(
+                                          (item) => typeof item === "string",
+                                      )
+                                  ) {
+                                      return parsed;
+                                  }
+                                  return [rawValue];
+                              } catch {
+                                  return [rawValue];
+                              }
+                          })();
+
+                    return currentDocs.filter((doc) => {
+                        const value = (doc as Record<string, unknown>)[field];
+                        if (Array.isArray(value)) {
+                            return value.some((item) =>
+                                values.includes(String(item)),
+                            );
+                        }
+
+                        return values.includes(String(value ?? ""));
+                    });
+                },
+                filtered,
+            );
+
             const sorted = (() => {
                 if (!orderDescQuery) {
-                    return filtered;
+                    return containsFiltered;
                 }
 
-                const orderDescMatch = /^orderDesc\("([^"]+)"\)$/.exec(
-                    orderDescQuery,
-                );
+                const orderDescMatch =
+                    /^orderDesc\("([^"]+)"\)$/.exec(orderDescQuery) ||
+                    /^orderDesc\(([^)]+)\)$/.exec(orderDescQuery);
                 if (!orderDescMatch) {
-                    return filtered;
+                    return containsFiltered;
                 }
 
                 const [, field] = orderDescMatch;
-                return [...filtered].sort((left, right) => {
+                return [...containsFiltered].sort((left, right) => {
                     const leftValue = String(
                         (left as Record<string, unknown>)[field] ??
                             left.$createdAt ??
@@ -118,9 +185,9 @@ vi.mock("appwrite", () => {
                     return sorted;
                 }
 
-                const cursorMatch = /^cursorAfter\("([^"]+)"\)$/.exec(
-                    cursorQuery,
-                );
+                const cursorMatch =
+                    /^cursorAfter\("([^"]+)"\)$/.exec(cursorQuery) ||
+                    /^cursorAfter\(([^)]+)\)$/.exec(cursorQuery);
                 if (!cursorMatch) {
                     return sorted;
                 }
@@ -231,8 +298,8 @@ vi.mock("appwrite", () => {
         Query: {
             equal: (attr: string, val: string | string[]) =>
                 `equal("${attr}","${Array.isArray(val) ? val.join(QUERY_VALUE_SEPARATOR) : val}")`,
-            contains: (attr: string, val: string) =>
-                `contains("${attr}","${val}")`,
+            contains: (attr: string, val: string | string[]) =>
+                `contains(${attr},${JSON.stringify(Array.isArray(val) ? val : [val])})`,
             orderDesc: (attr: string) => `orderDesc("${attr}")`,
             limit: (num: number) => `limit(${num})`,
             cursorAfter: (id: string) => `cursorAfter("${id}")`,

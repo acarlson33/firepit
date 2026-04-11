@@ -1,11 +1,14 @@
 "use client";
 
+import { Channel } from "appwrite";
 import { useEffect, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
@@ -95,38 +98,98 @@ export function useConversations(userId: string | null, enabled = true) {
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        const conversationChannel = `databases.${env.databaseId}.collections.${CONVERSATIONS_COLLECTION}.documents`;
+        const conversationChannel = Channel.database(env.databaseId)
+            .collection(CONVERSATIONS_COLLECTION)
+            .document();
+        const conversationChannelKey = conversationChannel.toString();
 
-        void Promise.resolve().then(() => {
+        (async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const unsubscribe = client.subscribe(
-                conversationChannel,
-                (response) => {
-                    const payload = response.payload as Record<string, unknown>;
-                    const participants = payload.participants as
-                        | string[]
-                        | undefined;
+            try {
+                const realtime = getSharedRealtime();
+                const subscription = await realtime.subscribe(
+                    conversationChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const participants = payload.participants as
+                            | string[]
+                            | undefined;
 
-                    if (!participants?.includes(userId)) {
-                        return;
-                    }
+                        if (!participants?.includes(userId)) {
+                            return;
+                        }
 
-                    void queryClient.invalidateQueries({
-                        queryKey: getConversationsQueryKey(userId),
-                        refetchType: "active",
+                        queryClient
+                            .invalidateQueries({
+                                queryKey: getConversationsQueryKey(userId),
+                                refetchType: "active",
+                            })
+                            .catch((invalidateError) => {
+                                logger.warn(
+                                    "Failed to refresh conversations after realtime event",
+                                    {
+                                        conversationChannelKey,
+                                        error:
+                                            invalidateError instanceof Error
+                                                ? invalidateError.message
+                                                : String(invalidateError),
+                                    },
+                                );
+                            });
+                    },
+                );
+
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                const untrack = trackSubscription(conversationChannelKey);
+                cleanupFn = () => {
+                    untrack();
+                    closeSubscriptionSafely(subscription).catch(() => {
+                        // closeSubscriptionSafely already suppresses expected teardown errors.
                     });
+                };
+            } catch (realtimeError) {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "Conversation realtime subscription failed",
+                    realtimeError instanceof Error
+                        ? realtimeError
+                        : String(realtimeError),
+                    {
+                        collectionId: CONVERSATIONS_COLLECTION,
+                        conversationChannelKey,
+                        databaseId: env.databaseId,
+                    },
+                );
+            }
+        })().catch((subscriptionError) => {
+            if (cancelled) {
+                return;
+            }
+
+            logger.error(
+                "Conversation realtime subscription bootstrap failed",
+                subscriptionError instanceof Error
+                    ? subscriptionError
+                    : String(subscriptionError),
+                {
+                    collectionId: CONVERSATIONS_COLLECTION,
+                    conversationChannelKey,
+                    databaseId: env.databaseId,
                 },
             );
-            const untrack = trackSubscription(conversationChannel);
-
-            cleanupFn = () => {
-                untrack();
-                unsubscribe();
-            };
         });
 
         return () => {

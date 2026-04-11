@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { Channel, Query } from "appwrite";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -30,12 +33,35 @@ export function useNotifications({
     conversationId,
 }: NotificationOptions) {
     const notificationPermissionRef = useRef<NotificationPermission>("default");
+    const [isPageVisible, setIsPageVisible] = useState(() => {
+        if (typeof document === "undefined") {
+            return true;
+        }
+
+        return document.visibilityState !== "hidden";
+    });
 
     // Check notification permission on mount
     useEffect(() => {
         if (typeof window !== "undefined" && "Notification" in window) {
             notificationPermissionRef.current = Notification.permission;
         }
+    }, []);
+
+    useEffect(() => {
+        if (typeof document === "undefined") {
+            return;
+        }
+
+        const updateVisibility = () => {
+            setIsPageVisible(document.visibilityState !== "hidden");
+        };
+
+        document.addEventListener("visibilitychange", updateVisibility);
+
+        return () => {
+            document.removeEventListener("visibilitychange", updateVisibility);
+        };
     }, []);
 
     // Request notification permission
@@ -119,7 +145,7 @@ export function useNotifications({
 
     // Subscribe to channel messages for notifications
     useEffect(() => {
-        if (!userId || !channelId || isWindowFocused) {
+        if (!userId || !channelId || (isWindowFocused && isPageVisible)) {
             return;
         }
 
@@ -132,11 +158,19 @@ export function useNotifications({
 
         let unsubscribe: (() => void) | undefined;
         let untrack: (() => void) | undefined;
+        let cancelled = false;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
-                const client = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
+
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 const handleMessage = (event: {
                     events: string[];
@@ -224,20 +258,48 @@ export function useNotifications({
                     })();
                 };
 
-                unsubscribe = client.subscribe(messageChannel, handleMessage);
-                untrack = trackSubscription(messageChannel);
+                const subscription = await realtime.subscribe(
+                    messageChannel,
+                    handleMessage,
+                    [Query.equal("channelId", channelId)],
+                );
+
+                if (cancelled) {
+                    void closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                unsubscribe = () => {
+                    void closeSubscriptionSafely(subscription);
+                };
+                untrack = trackSubscription(messageChannelKey);
             })
-            .catch(() => {
-                // Failed to set up realtime
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "Channel notification realtime setup failed",
+                    error instanceof Error ? error : String(error),
+                    {
+                        channelId,
+                        collectionId,
+                        databaseId,
+                        serverId,
+                    },
+                );
             });
 
         return () => {
+            cancelled = true;
             unsubscribe?.();
             untrack?.();
         };
     }, [
         userId,
         channelId,
+        isPageVisible,
         isWindowFocused,
         serverId,
         showDesktopNotification,
@@ -246,7 +308,7 @@ export function useNotifications({
 
     // Subscribe to DM messages for notifications
     useEffect(() => {
-        if (!userId || !conversationId || isWindowFocused) {
+        if (!userId || !conversationId || (isWindowFocused && isPageVisible)) {
             return;
         }
 
@@ -258,11 +320,19 @@ export function useNotifications({
         }
 
         let cleanup: (() => void) | undefined;
+        let cancelled = false;
 
         import("@/lib/realtime-pool")
-            .then(({ getSharedClient, trackSubscription }) => {
-                const client = getSharedClient();
-                const messageChannel = `databases.${databaseId}.collections.${collectionId}.documents`;
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
+                if (cancelled) {
+                    return;
+                }
+
+                const realtime = getSharedRealtime();
+                const messageChannel = Channel.database(databaseId)
+                    .collection(collectionId)
+                    .document();
+                const messageChannelKey = messageChannel.toString();
 
                 const handleMessage = (response: {
                     events: string[];
@@ -336,28 +406,49 @@ export function useNotifications({
                     })();
                 };
 
-                const unsubscribe = client.subscribe(
+                const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
+                    [Query.equal("conversationId", conversationId)],
                 );
-                const trackCleanup = trackSubscription(messageChannel);
+
+                if (cancelled) {
+                    void closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                const trackCleanup = trackSubscription(messageChannelKey);
 
                 // Store combined cleanup function
                 cleanup = () => {
-                    unsubscribe?.();
+                    void closeSubscriptionSafely(subscription);
                     trackCleanup?.();
                 };
             })
-            .catch(() => {
-                // Failed to set up realtime
+            .catch((error) => {
+                if (cancelled) {
+                    return;
+                }
+
+                logger.error(
+                    "DM notification realtime setup failed",
+                    error instanceof Error ? error : String(error),
+                    {
+                        collectionId,
+                        conversationId,
+                        databaseId,
+                    },
+                );
             });
 
         return () => {
+            cancelled = true;
             cleanup?.();
         };
     }, [
         userId,
         conversationId,
+        isPageVisible,
         isWindowFocused,
         showDesktopNotification,
         playNotificationSound,

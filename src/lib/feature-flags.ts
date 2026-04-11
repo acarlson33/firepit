@@ -1,16 +1,23 @@
+import { createHash } from "node:crypto";
 import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "./appwrite-core";
+import {
+    FEATURE_FLAGS,
+    getFeatureFlagDescription,
+    type FeatureFlagKey,
+} from "./feature-flags-definitions";
+import { logger } from "./newrelic-utils";
 import { getServerClient } from "./appwrite-server";
 import type { FeatureFlag } from "./types";
 
-// Known feature flag keys
-export const FEATURE_FLAGS = {
-    ALLOW_USER_SERVERS: "allow_user_servers",
-    ENABLE_AUDIT_LOGGING: "enable_audit_logging",
-} as const;
+// TODO: Align SDK majors by upgrading node-appwrite to ^24.x once available.
 
-export type FeatureFlagKey = (typeof FEATURE_FLAGS)[keyof typeof FEATURE_FLAGS];
+export {
+    FEATURE_FLAGS,
+    getFeatureFlagDescription,
+} from "./feature-flags-definitions";
+export type { FeatureFlagKey } from "./feature-flags-definitions";
 
 // Default values for feature flags
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
@@ -21,6 +28,61 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 // Cache for feature flags to reduce database calls
 const flagCache = new Map<string, { value: boolean; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute
+
+function createFeatureFlagDocumentId(flagKey: string): string {
+    const maxPrefixLength = 18;
+    const readablePrefix = flagKey
+        .replace(/[^a-z0-9_-]/gi, "_")
+        .toLowerCase()
+        .replace(/^_+|_+$/g, "")
+        .slice(0, maxPrefixLength)
+        .replace(/^_+|_+$/g, "");
+    const hashSuffix = createHash("sha256")
+        .update(flagKey)
+        .digest("hex")
+        .slice(0, 12);
+
+    return `flag_${readablePrefix || "key"}_${hashSuffix}`;
+}
+
+function isDuplicateConflictError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: unknown;
+        message?: unknown;
+        response?: { code?: unknown; message?: unknown };
+        type?: unknown;
+    };
+
+    let code: number | null = null;
+    if (typeof candidate.code === "number") {
+        code = candidate.code;
+    } else if (typeof candidate.response?.code === "number") {
+        code = candidate.response.code;
+    }
+
+    if (code === 409) {
+        return true;
+    }
+
+    const messageParts = [
+        candidate.message,
+        candidate.response?.message,
+        candidate.type,
+    ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+
+    return (
+        messageParts.includes("duplicate") ||
+        messageParts.includes("already exists") ||
+        messageParts.includes("conflict")
+    );
+}
 
 /**
  * Returns the effective enabled state for a feature flag.
@@ -54,7 +116,9 @@ export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
             return value;
         }
     } catch (error) {
-        console.error(`Failed to get feature flag ${key}:`, error);
+        logger.error(`Failed to get feature flag ${key}:`, {
+            error,
+        });
     }
 
     // Return default value if not found or error
@@ -82,20 +146,22 @@ export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
 
         return response.documents as unknown as FeatureFlag[];
     } catch (error) {
-        console.error("Failed to get all feature flags:", error);
+        logger.error("Failed to get all feature flags:", {
+            error,
+        });
         return [];
     }
 }
 
 /**
- * Creates or updates a feature flag (server/admin path) and invalidates its cache entry.
- * Returns true when the flag write succeeds, or false when persistence fails.
+ * Updates an existing feature flag (server/admin path) and invalidates its cache entry.
+ * Returns true when the flag update succeeds, or false when persistence fails.
  * The userId is required to record who performed the change in audit fields.
  *
- * @param key - Feature flag key to create or update.
+ * @param key - Existing feature flag key to update.
  * @param enabled - Desired enabled state for the flag.
  * @param userId - Identifier of the actor used for updatedBy audit tracking.
- * @returns Resolves to true on successful create/update, otherwise false.
+ * @returns Resolves to true on successful update, otherwise false.
  */
 export async function setFeatureFlag(
     key: FeatureFlagKey,
@@ -115,64 +181,39 @@ export async function setFeatureFlag(
 
         const now = new Date().toISOString();
 
-        if (response.documents.length > 0) {
-            // Update existing flag
-            const flagId = response.documents[0].$id;
-            await databases.updateDocument(
-                databaseId,
-                collections.featureFlags,
-                flagId,
-                {
-                    enabled,
-                    updatedAt: now,
-                    updatedBy: userId,
-                },
-            );
-        } else {
-            // Create new flag
-            await databases.createDocument(
-                databaseId,
-                collections.featureFlags,
-                "unique()",
-                {
-                    key,
-                    enabled,
-                    description: getFeatureFlagDescription(key),
-                    updatedAt: now,
-                    updatedBy: userId,
-                },
-            );
+        if (response.documents.length === 0) {
+            logger.warn("Feature flag update skipped: flag not initialized", {
+                key,
+                userId,
+            });
+            return false;
         }
+
+        // Runtime admin updates are update-only. Flags are created in setup.
+        const flagId = response.documents[0].$id;
+        await databases.updateDocument(
+            databaseId,
+            collections.featureFlags,
+            flagId,
+            {
+                enabled,
+                updatedAt: now,
+                updatedBy: userId,
+            },
+        );
 
         // Clear cache for this flag
         flagCache.delete(key);
 
         return true;
     } catch (error) {
-        console.error(`Failed to set feature flag ${key}:`, error);
+        logger.error("Failed to update feature flag", {
+            key,
+            userId,
+            error,
+        });
         return false;
     }
-}
-
-/**
- * Returns a human-readable description for getFeatureFlagDescription keys.
- * Key descriptions:
- * - allow_user_servers: Allow members to create their own servers.
- * - enable_audit_logging: Enable audit logging for moderation actions.
- * Unknown keys return an empty string.
- *
- * @param {FeatureFlagKey} key - Feature key to describe.
- * @returns {string} Human-readable description, or an empty string for unknown keys.
- */
-export function getFeatureFlagDescription(key: FeatureFlagKey): string {
-    const descriptions: Record<FeatureFlagKey, string> = {
-        [FEATURE_FLAGS.ALLOW_USER_SERVERS]:
-            "Allow members to create their own servers",
-        [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]:
-            "Enable audit logging for moderation actions",
-    };
-
-    return descriptions[key] || "";
 }
 
 /**
@@ -182,14 +223,48 @@ export function getFeatureFlagDescription(key: FeatureFlagKey): string {
  * @returns {Promise<void>} Resolves when initialization and any required upserts complete.
  */
 export async function initializeFeatureFlags(userId: string): Promise<void> {
+    const { databases } = getServerClient();
+    const { databaseId, collections } = getEnvConfig();
     const existingFlags = await getAllFeatureFlags();
     const existingKeys = new Set(existingFlags.map((f) => f.key));
+    const failedKeys: string[] = [];
 
     // Create any missing flags with default values
     for (const [key, defaultValue] of Object.entries(DEFAULT_FLAGS)) {
         if (!existingKeys.has(key)) {
-            await setFeatureFlag(key as FeatureFlagKey, defaultValue, userId);
+            const featureKey = key as FeatureFlagKey;
+            try {
+                await databases.createDocument(
+                    databaseId,
+                    collections.featureFlags,
+                    createFeatureFlagDocumentId(featureKey),
+                    {
+                        key: featureKey,
+                        enabled: defaultValue,
+                        description: getFeatureFlagDescription(featureKey),
+                        updatedAt: new Date().toISOString(),
+                        updatedBy: userId,
+                    },
+                );
+            } catch (error) {
+                if (isDuplicateConflictError(error)) {
+                    continue;
+                }
+
+                failedKeys.push(featureKey);
+                logger.error("Failed to initialize feature flag", {
+                    key: featureKey,
+                    userId,
+                    error,
+                });
+            }
         }
+    }
+
+    if (failedKeys.length > 0) {
+        throw new Error(
+            `Failed to initialize feature flags: ${failedKeys.join(", ")}`,
+        );
     }
 }
 

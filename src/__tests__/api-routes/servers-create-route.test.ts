@@ -6,14 +6,25 @@ const { mockSession, mockCreateServer } = vi.hoisted(() => ({
     mockSession: vi.fn(),
     mockCreateServer: vi.fn(),
 }));
+const { mockGetFeatureFlag } = vi.hoisted(() => ({
+    mockGetFeatureFlag: vi.fn(),
+}));
 
 vi.mock("@/lib/auth-server", () => ({ getServerSession: mockSession }));
 vi.mock("@/lib/appwrite-servers", () => ({ createServer: mockCreateServer }));
+vi.mock("@/lib/feature-flags", () => ({
+    FEATURE_FLAGS: {
+        ALLOW_USER_SERVERS: "allow_user_servers",
+    },
+    getFeatureFlag: mockGetFeatureFlag,
+}));
 
 describe("Servers create route", () => {
     beforeEach(() => {
         mockSession.mockReset();
         mockCreateServer.mockReset();
+        mockGetFeatureFlag.mockReset();
+        mockGetFeatureFlag.mockResolvedValue(true);
     });
 
     it("returns 401 when not authenticated", async () => {
@@ -66,7 +77,28 @@ describe("Servers create route", () => {
         expect(response.status).toBe(200);
         expect(data.success).toBe(true);
         expect(data.server.name).toBe("My Server");
-        expect(mockCreateServer).toHaveBeenCalledWith("My Server");
+        expect(mockCreateServer).toHaveBeenCalledWith("My Server", {
+            bypassFeatureCheck: true,
+        });
+    });
+
+    it("returns 403 when server creation feature flag is disabled", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetFeatureFlag.mockResolvedValue(false);
+
+        const request = new NextRequest("http://localhost/api/servers/create", {
+            method: "POST",
+            body: JSON.stringify({ name: "My Server" }),
+        });
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(data.error).toBe(
+            "Server creation is currently disabled. Contact an administrator.",
+        );
+        expect(mockCreateServer).not.toHaveBeenCalled();
     });
 
     it("returns 500 when createServer throws", async () => {

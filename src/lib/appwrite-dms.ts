@@ -1,4 +1,4 @@
-import { ID, Query, Permission, Role } from "appwrite";
+import { ID, Query, Permission, Role } from "node-appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
@@ -14,6 +14,8 @@ const migratedReactionDocuments = new Set<string>();
 type ProfileData = {
     displayName?: string;
     avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
     pronouns?: string;
 };
 
@@ -390,6 +392,8 @@ export async function listConversations(
                     userId: otherUserId,
                     displayName: profile?.displayName,
                     avatarUrl: profile?.avatarUrl,
+                    avatarFramePreset: profile?.avatarFramePreset,
+                    avatarFrameUrl: profile?.avatarFrameUrl,
                 },
             };
         });
@@ -585,6 +589,8 @@ export async function listDirectMessages(
                 ...msg,
                 senderDisplayName: profile?.displayName,
                 senderAvatarUrl: profile?.avatarUrl,
+                senderAvatarFramePreset: profile?.avatarFramePreset,
+                senderAvatarFrameUrl: profile?.avatarFrameUrl,
                 senderPronouns: profile?.pronouns,
             };
         });

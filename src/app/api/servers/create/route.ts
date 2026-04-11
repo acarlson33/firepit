@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createServer } from "@/lib/appwrite-servers";
 import { getServerSession } from "@/lib/auth-server";
+import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
 
@@ -35,9 +36,22 @@ export async function POST(request: Request) {
             );
         }
 
-        // createServer will check the feature flag internally
-        // and throw an error if server creation is disabled
-        const server = await createServer(name.trim());
+        const allowUserServers = await getFeatureFlag(
+            FEATURE_FLAGS.ALLOW_USER_SERVERS,
+        );
+        if (!allowUserServers) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "Server creation is currently disabled. Contact an administrator.",
+                },
+                { status: 403 },
+            );
+        }
+
+        const server = await createServer(name.trim(), {
+            bypassFeatureCheck: true,
+        });
 
         try {
             getPostHogClient().capture({

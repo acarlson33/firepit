@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel } from "appwrite";
 import {
     createContext,
     useCallback,
@@ -12,13 +13,19 @@ import {
 } from "react";
 import posthog from "posthog-js";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/client-logger";
 import type { UserStatus } from "@/lib/types";
 import {
     getUserStatus,
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    resetSharedClient,
+    trackSubscription,
+} from "@/lib/realtime-pool";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -56,6 +63,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
     const [loading, setLoading] = useState(true);
     const lastIdentifiedUserId = useRef<string | null>(null);
+    const realtimeUserIdRef = useRef<string | null>(null);
+    const realtimeResetPromiseRef = useRef<Promise<void> | null>(null);
+
+    const queueRealtimeReset = useCallback(() => {
+        const previousReset =
+            realtimeResetPromiseRef.current ?? Promise.resolve();
+        const nextReset = previousReset
+            .catch(() => {
+                // Continue with the latest reset attempt even if an earlier one failed.
+            })
+            .then(async () => {
+                await resetSharedClient();
+            });
+
+        const trackedReset = nextReset.finally(() => {
+            if (realtimeResetPromiseRef.current === trackedReset) {
+                realtimeResetPromiseRef.current = null;
+            }
+        });
+
+        realtimeResetPromiseRef.current = trackedReset;
+        return trackedReset;
+    }, []);
+
+    const waitForRealtimeReset = useCallback(async () => {
+        const pendingReset = realtimeResetPromiseRef.current;
+        if (!pendingReset) {
+            return;
+        }
+
+        try {
+            await pendingReset;
+        } catch (error) {
+            logger.error(
+                "Realtime reset failed",
+                error instanceof Error ? error : String(error),
+            );
+        }
+    }, []);
 
     const fetchUserData = useCallback(async () => {
         try {
@@ -68,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // or by the calling UI to avoid interfering with auth flows (e.g. the
                 // user trying to navigate from home -> /login). This avoids races
                 // caused by concurrent client-side navigation.
+                await queueRealtimeReset();
                 setUserData(null);
                 setUserStatusState(null);
                 setTelemetryEnabled(null);
@@ -91,11 +138,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [queueRealtimeReset]);
 
     useEffect(() => {
         void fetchUserData();
     }, [fetchUserData]);
+
+    // Realtime state should not be shared between different authenticated users.
+    useEffect(() => {
+        const currentUserId = userData?.userId ?? null;
+        const previousUserId = realtimeUserIdRef.current;
+
+        if (previousUserId && previousUserId !== currentUserId) {
+            void queueRealtimeReset();
+        }
+
+        realtimeUserIdRef.current = currentUserId;
+    }, [queueRealtimeReset, userData?.userId]);
 
     useEffect(() => {
         if (!userData?.userId) {
@@ -200,47 +259,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         return;
                     }
 
-                    const client = getSharedClient();
-                    const channel = `databases.${env.databaseId}.collections.${statusesCollection}.documents`;
+                    await waitForRealtimeReset();
+                    if (cancelled) {
+                        return;
+                    }
 
-                    cleanup = client.subscribe(channel, (response) => {
-                        try {
-                            const payload = response.payload as
-                                | Record<string, unknown>
-                                | null
-                                | undefined;
-                            if (!payload) {
-                                return;
-                            }
-                            const statusUserId = payload.userId as
-                                | string
-                                | undefined;
+                    const realtime = getSharedRealtime();
+                    const activeUserId = realtimeUserIdRef.current;
+                    if (!activeUserId) {
+                        return;
+                    }
 
-                            // Only update if this is our user's status
-                            if (statusUserId === userData.userId) {
-                                const { normalized } = normalizeStatus(payload);
-                                setUserStatusState(normalized);
-                            }
-                        } catch (err) {
-                            if (process.env.NODE_ENV !== "production") {
-                                // biome-ignore lint: development-only diagnostics
-                                console.error(
+                    const channel = Channel.database(env.databaseId)
+                        .collection(statusesCollection)
+                        .document(activeUserId);
+                    const channelKey = channel.toString();
+
+                    const subscription = await realtime.subscribe(
+                        channel,
+                        (response) => {
+                            try {
+                                const payload = response.payload as
+                                    | Record<string, unknown>
+                                    | null
+                                    | undefined;
+                                if (!payload) {
+                                    return;
+                                }
+                                const statusUserId = payload.userId as
+                                    | string
+                                    | undefined;
+
+                                // Only update if this is our user's status
+                                if (
+                                    statusUserId &&
+                                    statusUserId === realtimeUserIdRef.current
+                                ) {
+                                    const { normalized } =
+                                        normalizeStatus(payload);
+                                    setUserStatusState(normalized);
+                                }
+                            } catch (err) {
+                                logger.error(
                                     "Status subscription handler failed:",
-                                    err,
+                                    err instanceof Error ? err : String(err),
                                 );
                             }
-                        }
-                    });
-                    const untrack = trackSubscription(channel);
-                    const unsubscribe = cleanup;
+                        },
+                    );
+
+                    const untrack = trackSubscription(channelKey);
+
+                    if (cancelled) {
+                        untrack();
+                        void closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
                     cleanup = () => {
                         untrack();
-                        unsubscribe();
+                        void closeSubscriptionSafely(subscription);
                     };
                 } catch (err) {
-                    if (process.env.NODE_ENV !== "production") {
-                        console.error("Status subscription failed:", err);
-                    }
+                    logger.error(
+                        "Status subscription failed:",
+                        err instanceof Error ? err : String(err),
+                    );
                 }
             })();
         }, 5000); // Defer for 5 seconds to prioritize initial page load
@@ -250,7 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             clearTimeout(timeoutId);
             cleanup?.();
         };
-    }, [userData?.userId]);
+    }, [userData?.userId, waitForRealtimeReset]);
 
     const updateUserStatus = useCallback(
         async (
@@ -277,8 +361,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
             } catch (err) {
                 if (process.env.NODE_ENV === "development") {
-                    // biome-ignore lint: development debugging
-                    console.error("Failed to change status:", err);
+                    logger.error(
+                        "Failed to change status:",
+                        err instanceof Error ? err : String(err),
+                    );
                 }
             }
         },

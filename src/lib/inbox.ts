@@ -239,21 +239,38 @@ async function countUnreadRepliesByParent(params: {
                 return;
             }
 
-            const result = await databases.listDocuments(
-                env.databaseId,
-                collectionId,
-                [
-                    Query.equal(contextField, parent.contextId),
-                    Query.equal("threadId", parent.parentMessageId),
-                    Query.greaterThan("$createdAt", lastReadAt),
-                    Query.limit(1),
-                ],
-            );
+            try {
+                const result = await databases.listDocuments(
+                    env.databaseId,
+                    collectionId,
+                    [
+                        Query.equal(contextField, parent.contextId),
+                        Query.equal("threadId", parent.parentMessageId),
+                        Query.greaterThan("$createdAt", lastReadAt),
+                        Query.limit(1),
+                    ],
+                );
 
-            countsByParentId.set(
-                parent.parentMessageId,
-                Math.max(1, result.total || 0),
-            );
+                countsByParentId.set(
+                    parent.parentMessageId,
+                    Math.max(1, result.total || 0),
+                );
+            } catch (error) {
+                recordMetric("inbox.unread_thread_count_query_fallback", 1);
+                recordEvent("inbox.unread_thread_count_query_failed", {
+                    contextId: parent.contextId,
+                    parentMessageId: parent.parentMessageId,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
+                // Fallback to cached count if the per-parent query fails.
+                const fallbackCount =
+                    typeof parent.threadMessageCount === "number" &&
+                    parent.threadMessageCount > 0
+                        ? parent.threadMessageCount
+                        : 1;
+                countsByParentId.set(parent.parentMessageId, fallbackCount);
+            }
         },
     });
 

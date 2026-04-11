@@ -108,6 +108,10 @@ vi.mock("node-appwrite", () => {
         async deleteFile() {
             return true;
         }
+
+        async getFile() {
+            return true;
+        }
     }
 
     class MockTeams {
@@ -365,6 +369,41 @@ describe("User Profiles", () => {
             await expect(
                 deleteAvatarFile("nonexistent"),
             ).resolves.not.toThrow();
+        });
+
+        it("should resolve storage URL for winter preset", async () => {
+            const { getPredefinedAvatarFrameUrlIfExists } =
+                await import("../lib/appwrite-profiles");
+
+            const url = await getPredefinedAvatarFrameUrlIfExists(
+                "seasonal-winter-2025",
+            );
+
+            expect(url).toContain("storage/buckets/avatar-frames-predefined");
+            expect(url).toContain("/files/seasonal-winter-2025/view");
+        });
+
+        it("should include winter preset in existing frame IDs", async () => {
+            const { getExistingPredefinedAvatarFrameIds } =
+                await import("../lib/appwrite-profiles");
+
+            const existing = await getExistingPredefinedAvatarFrameIds([
+                "seasonal-winter-2025",
+            ]);
+
+            expect(existing.has("seasonal-winter-2025")).toBe(true);
+        });
+
+        it("should resolve storage URL for winter 2026 preset", async () => {
+            const { getPredefinedAvatarFrameUrlIfExists } =
+                await import("../lib/appwrite-profiles");
+
+            const url = await getPredefinedAvatarFrameUrlIfExists(
+                "seasonal-winter-2026",
+            );
+
+            expect(url).toContain("storage/buckets/avatar-frames-predefined");
+            expect(url).toContain("/files/seasonal-winter-2026/view");
         });
     });
 

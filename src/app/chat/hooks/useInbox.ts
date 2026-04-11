@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel, Query } from "appwrite";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -11,7 +12,9 @@ import {
     markInboxScopeRead,
     type InboxScope,
 } from "@/lib/inbox-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import type {
     InboxContextKind,
     InboxItem,
@@ -139,56 +142,69 @@ export function useInbox(userId: string | null) {
     });
 
     useEffect(() => {
-        if (!isEnabled) {
+        if (!isEnabled || !userId) {
             return;
         }
 
-        const channels = [
-            env.collections.directMessages,
-            env.collections.inboxItems,
-            env.collections.messages,
-            env.collections.threadReads,
-        ].map(
-            (collectionId) =>
-                `databases.${env.databaseId}.collections.${collectionId}.documents`,
-        );
+        const inboxChannel = Channel.database(env.databaseId)
+            .collection(env.collections.inboxItems)
+            .document();
+        const inboxChannelKey = inboxChannel.toString();
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
-        void Promise.resolve().then(() => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const unsubscribe = client.subscribe(channels, () => {
-                void queryClient.invalidateQueries({
-                    queryKey: getInboxQueryKey(userId),
-                    refetchType: "active",
-                });
-            });
-            const untrack = channels.map((channel) =>
-                trackSubscription(channel),
-            );
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: (() => void) | undefined;
 
-            cleanupFn = () => {
-                for (const stopTracking of untrack) {
-                    stopTracking();
+            try {
+                const realtime = getSharedRealtime();
+                subscription = await realtime.subscribe(inboxChannel, () => {
+                    queryClient
+                        .invalidateQueries({
+                            queryKey: getInboxQueryKey(userId),
+                            refetchType: "active",
+                        })
+                        .catch((error) => {
+                            logger.warn("Failed to refresh inbox query", {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                            });
+                        });
+                }, [Query.equal("userId", userId)]);
+
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
                 }
-                unsubscribe();
-            };
-        });
+
+                untrack = trackSubscription(inboxChannelKey);
+            } catch (error) {
+                logger.error(
+                    "Inbox realtime subscription failed:",
+                    error instanceof Error ? error : String(error),
+                );
+            } finally {
+                cleanupFn = () => {
+                    untrack?.();
+                    void closeSubscriptionSafely(subscription);
+                };
+            }
+        })();
 
         return () => {
             cancelled = true;
             cleanupFn?.();
         };
     }, [
-        env.collections.directMessages,
         env.collections.inboxItems,
-        env.collections.messages,
-        env.collections.threadReads,
         env.databaseId,
         isEnabled,
         queryClient,

@@ -15,7 +15,6 @@ type ProfileAppearanceSettingsProps = {
     profileBackgroundImageUrl?: string;
     avatarFramePreset?: string;
     currentAvatarUrl?: string;
-    accountCreatedAt?: string;
     updateBackgroundAction: (
         formData: FormData,
     ) => Promise<{ success: boolean }>;
@@ -42,7 +41,6 @@ export function ProfileAppearanceSettings({
     profileBackgroundImageUrl,
     avatarFramePreset,
     currentAvatarUrl,
-    accountCreatedAt = "2020-01-01T00:00:00.000Z",
     updateBackgroundAction,
     uploadBackgroundAction,
     removeBackgroundAction,

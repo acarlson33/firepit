@@ -1,5 +1,6 @@
 "use client";
 
+import { Channel, Query } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -25,7 +26,9 @@ import {
     unpinDMMessage,
 } from "@/lib/thread-pin-client";
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
-import { getSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { logger } from "@/lib/client-logger";
+import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -72,7 +75,13 @@ export function useDirectMessages({
     const userProfileCache = useRef<
         Record<
             string,
-            { displayName?: string; avatarUrl?: string; pronouns?: string }
+            {
+                displayName?: string;
+                avatarUrl?: string;
+                avatarFramePreset?: string;
+                avatarFrameUrl?: string;
+                pronouns?: string;
+            }
         >
     >({});
 
@@ -106,11 +115,21 @@ export function useDirectMessages({
         userId: string;
         userName?: string;
         updatedAt: string;
+        conversationId: string;
         action: "add" | "remove";
     }>((updates) => {
+        const activeConversationId = currentConversationIdRef.current;
+
         setTypingUsers((prev) => {
             const updated = { ...prev };
             for (const update of updates) {
+                if (
+                    !activeConversationId ||
+                    update.conversationId !== activeConversationId
+                ) {
+                    continue;
+                }
+
                 if (update.action === "remove") {
                     delete updated[update.userId];
                 } else {
@@ -263,74 +282,111 @@ export function useDirectMessages({
 
     // Real-time subscription
     useEffect(() => {
-        if (!conversationId || !DIRECT_MESSAGES_COLLECTION) {
+        if (!conversationId || !userId || !DIRECT_MESSAGES_COLLECTION) {
             return;
         }
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const messageChannel = `databases.${env.databaseId}.collections.${DIRECT_MESSAGES_COLLECTION}.documents`;
+        const messageChannel = Channel.database(env.databaseId)
+            .collection(DIRECT_MESSAGES_COLLECTION)
+            .document();
+        const messageChannelKey = messageChannel.toString();
 
-        void Promise.resolve().then(() => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
 
-            const client = getSharedClient();
-            const untrack = trackSubscription(messageChannel);
-            const unsubscribe = client.subscribe(messageChannel, (response) => {
-                const payload = response.payload as Record<string, unknown>;
-                const msgConversationId = payload.conversationId;
-                const events = response.events as string[];
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: (() => void) | undefined;
 
-                // Only update if message belongs to this conversation
-                if (msgConversationId === conversationId) {
-                    const messageData = {
-                        ...(payload as unknown as DirectMessage),
-                        reactions: parseReactions(
-                            (payload as Record<string, unknown>).reactions as
-                                | string
-                                | undefined,
-                        ),
-                    };
+            try {
+                const realtime = getSharedRealtime();
+                subscription = await realtime.subscribe(
+                    messageChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const events = response.events as string[];
 
-                    if (!isTopLevelMessage(messageData)) {
-                        return;
-                    }
-
-                    // Handle different event types to avoid full reload
-                    if (events.some((e) => e.endsWith(".create"))) {
-                        setMessages((prev) => {
-                            if (prev.some((m) => m.$id === messageData.$id)) {
-                                return prev;
-                            }
-                            return [...prev, messageData];
-                        });
-                    } else if (events.some((e) => e.endsWith(".update"))) {
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.$id === messageData.$id ? messageData : m,
+                        const messageData = {
+                            ...(payload as unknown as DirectMessage),
+                            reactions: parseReactions(
+                                (payload as Record<string, unknown>)
+                                    .reactions as string | undefined,
                             ),
-                        );
-                    } else if (events.some((e) => e.endsWith(".delete"))) {
-                        setMessages((prev) =>
-                            prev.filter((m) => m.$id !== messageData.$id),
-                        );
-                    }
-                }
-            });
+                        };
 
-            cleanupFn = () => {
-                untrack();
-                unsubscribe();
-            };
-        });
+                        if (
+                            !messageData.conversationId ||
+                            messageData.conversationId !==
+                                currentConversationIdRef.current
+                        ) {
+                            return;
+                        }
+
+                        if (!isTopLevelMessage(messageData)) {
+                            return;
+                        }
+
+                        // Handle different event types to avoid full reload
+                        if (events.some((e) => e.endsWith(".create"))) {
+                            setMessages((prev) => {
+                                if (
+                                    prev.some((m) => m.$id === messageData.$id)
+                                ) {
+                                    return prev;
+                                }
+                                return [...prev, messageData];
+                            });
+                        } else if (events.some((e) => e.endsWith(".update"))) {
+                            setMessages((prev) =>
+                                prev.map((m) =>
+                                    m.$id === messageData.$id ? messageData : m,
+                                ),
+                            );
+                        } else if (events.some((e) => e.endsWith(".delete"))) {
+                            setMessages((prev) =>
+                                prev.filter((m) => m.$id !== messageData.$id),
+                            );
+                        }
+                    },
+                    [Query.equal("conversationId", conversationId)],
+                );
+
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                untrack = trackSubscription(messageChannelKey);
+                cleanupFn = () => {
+                    untrack?.();
+                    void closeSubscriptionSafely(subscription);
+                };
+            } catch (error) {
+                untrack?.();
+                await closeSubscriptionSafely(subscription);
+                if (!cancelled) {
+                    logger.error(
+                        "Direct message realtime subscription failed:",
+                        error instanceof Error ? error : String(error),
+                        {
+                            conversationId: currentConversationIdRef.current,
+                        },
+                    );
+                }
+            }
+        })();
 
         return () => {
             cancelled = true;
             cleanupFn?.();
         };
-    }, [conversationId]);
+    }, [conversationId, userId]);
 
     const send = useCallback(
         async (
@@ -390,6 +446,8 @@ export function useDirectMessages({
                             userProfileCache.current[userId] = {
                                 displayName: profile.displayName,
                                 avatarUrl: profile.avatarUrl,
+                                avatarFramePreset: profile.avatarFramePreset,
+                                avatarFrameUrl: profile.avatarFrameUrl,
                                 pronouns: profile.pronouns,
                             };
                         } else if (process.env.NODE_ENV === "development") {
@@ -415,6 +473,8 @@ export function useDirectMessages({
                     ...message,
                     senderDisplayName: profile?.displayName,
                     senderAvatarUrl: profile?.avatarUrl,
+                    senderAvatarFramePreset: profile?.avatarFramePreset,
+                    senderAvatarFrameUrl: profile?.avatarFrameUrl,
                     senderPronouns: profile?.pronouns,
                     // Parse reactions if present, otherwise use empty array
                     reactions: message.reactions
@@ -624,10 +684,11 @@ export function useDirectMessages({
 
     // Realtime subscription for typing indicators
     useEffect(() => {
-        // Clear typing users whenever conversation changes (including to null)
         setTypingUsers({});
+    }, [conversationId]);
 
-        if (!conversationId || !TYPING_COLLECTION_ID) {
+    useEffect(() => {
+        if (!conversationId || !userId || !TYPING_COLLECTION_ID) {
             return;
         }
 
@@ -635,66 +696,104 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const typingChannel = `databases.${databaseId}.collections.${TYPING_COLLECTION_ID}.documents`;
+        const typingChannel = Channel.database(databaseId)
+            .collection(TYPING_COLLECTION_ID)
+            .document();
+        const typingChannelKey = typingChannel.toString();
 
-        void Promise.resolve().then(() => {
+        void (async () => {
             if (cancelled) {
                 return;
             }
-            const client = getSharedClient();
-            const untrack = trackSubscription(typingChannel);
 
-            const unsubscribe = client.subscribe(typingChannel, (response) => {
-                const payload = response.payload as Record<string, unknown>;
-                const events = response.events as string[];
+            let subscription: { close: () => Promise<void> } | undefined;
+            let untrack: (() => void) | undefined;
 
-                const typing = {
-                    $id: String(payload.$id),
-                    userId: String(payload.userId),
-                    userName: payload.userName as string | undefined,
-                    channelId: String(payload.channelId),
-                    updatedAt: String(payload.$updatedAt || payload.updatedAt),
+            try {
+                const realtime = getSharedRealtime();
+
+                subscription = await realtime.subscribe(
+                    typingChannel,
+                    (response) => {
+                        const payload = response.payload as Record<
+                            string,
+                            unknown
+                        >;
+                        const events = response.events as string[];
+
+                        const typing = {
+                            $id: String(payload.$id),
+                            userId: String(payload.userId),
+                            userName: payload.userName as string | undefined,
+                            channelId: String(payload.channelId),
+                            updatedAt: String(
+                                payload.$updatedAt || payload.updatedAt,
+                            ),
+                        };
+
+                        if (
+                            typing.channelId !==
+                            currentConversationIdRef.current
+                        ) {
+                            // Shared typing subscription receives all DM typing events; guard against stale conversation switches.
+                            return;
+                        }
+
+                        if (typing.userId === userId) {
+                            return;
+                        }
+
+                        if (events.some((e) => e.endsWith(".delete"))) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                conversationId: typing.channelId,
+                                action: "remove",
+                            });
+                        } else if (
+                            events.some(
+                                (e) =>
+                                    e.endsWith(".create") ||
+                                    e.endsWith(".update"),
+                            )
+                        ) {
+                            batchUpdateTypingUsers({
+                                userId: typing.userId,
+                                userName: typing.userName,
+                                updatedAt: typing.updatedAt,
+                                conversationId: typing.channelId,
+                                action: "add",
+                            });
+                        }
+                    },
+                    [Query.equal("channelId", conversationId)],
+                );
+
+                if (cancelled) {
+                    await closeSubscriptionSafely(subscription);
+                    return;
+                }
+
+                untrack = trackSubscription(typingChannelKey);
+                cleanupFn = () => {
+                    untrack?.();
+                    void closeSubscriptionSafely(subscription);
                 };
-
-                if (typing.channelId !== currentConversationIdRef.current) {
-                    return;
+            } catch (error) {
+                untrack?.();
+                await closeSubscriptionSafely(subscription);
+                if (!cancelled) {
+                    logger.error(
+                        "Direct message typing realtime subscription failed:",
+                        error instanceof Error ? error : String(error),
+                        {
+                            conversationId: currentConversationIdRef.current,
+                        },
+                    );
                 }
-
-                if (typing.userId === userId) {
-                    return;
-                }
-
-                if (process.env.NODE_ENV === "development") {
-                    // biome-ignore lint: development debugging
-                    console.log("[typing] Received event:", events, typing);
-                }
-
-                if (events.some((e) => e.endsWith(".delete"))) {
-                    batchUpdateTypingUsers({
-                        userId: typing.userId,
-                        userName: typing.userName,
-                        updatedAt: typing.updatedAt,
-                        action: "remove",
-                    });
-                } else if (
-                    events.some(
-                        (e) => e.endsWith(".create") || e.endsWith(".update"),
-                    )
-                ) {
-                    batchUpdateTypingUsers({
-                        userId: typing.userId,
-                        userName: typing.userName,
-                        updatedAt: typing.updatedAt,
-                        action: "add",
-                    });
-                }
-            });
-
-            cleanupFn = () => {
-                untrack();
-                unsubscribe();
-            };
-        });
+            }
+        })();
 
         return () => {
             cancelled = true;
