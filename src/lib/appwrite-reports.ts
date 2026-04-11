@@ -87,14 +87,15 @@ export function clampLimit(value: unknown): number {
 
 function parseReport(doc: unknown): Report {
     const parsed = toRecord(doc);
-    const hasValidStatus = isReportStatus(parsed.status);
+    const parsedStatus = parsed.status;
+    const hasValidStatus = isReportStatus(parsedStatus);
     if (!hasValidStatus) {
         logger.warn("Invalid report status, defaulting to pending", {
             reportId: typeof parsed.$id === "string" ? parsed.$id : undefined,
-            status: parsed.status,
+            status: parsedStatus,
         });
     }
-    const status = hasValidStatus ? parsed.status : "pending";
+    const status: ReportStatus = hasValidStatus ? parsedStatus : "pending";
 
     return {
         $id: getRequiredStringField(parsed, "$id"),

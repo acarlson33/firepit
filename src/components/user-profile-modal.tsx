@@ -78,7 +78,7 @@ function getStatusColor(
     }
 }
 
-function getSafeUrl(candidateUrl: string | undefined): string | null {
+function getSafeUrl(candidateUrl: string | null | undefined): string | null {
     if (!candidateUrl) {
         return null;
     }
@@ -274,9 +274,12 @@ export function UserProfileModal({
                                 <div className="flex items-center gap-4">
                                     <AvatarWithFrame
                                         avatarFramePreset={
-                                            profile?.avatarFramePreset
+                                            profile?.avatarFramePreset ??
+                                            undefined
                                         }
-                                        avatarFrameUrl={profile?.avatarFrameUrl}
+                                        avatarFrameUrl={
+                                            profile?.avatarFrameUrl ?? undefined
+                                        }
                                         avatarUrl={avatarUrl}
                                         displayName={displayName}
                                         size="lg"

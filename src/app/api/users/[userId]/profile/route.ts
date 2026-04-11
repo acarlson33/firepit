@@ -84,9 +84,9 @@ export async function GET(
             profileBackgroundColor: profile.profileBackgroundColor,
             profileBackgroundGradient: profile.profileBackgroundGradient,
             profileBackgroundImageFileId: profile.profileBackgroundImageFileId,
-            profileBackgroundUrl: profileBackgroundUrl,
+            profileBackgroundUrl,
             avatarFramePreset: profile.avatarFramePreset,
-            avatarFrameUrl: avatarFrameUrl,
+            avatarFrameUrl,
             status: status
                 ? {
                       status: status.status,

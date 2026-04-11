@@ -163,10 +163,15 @@ export async function POST(request: NextRequest) {
         }
         const normalizedServerId = normalizeStringField(access.serverId);
 
-        addTransactionAttributes({
-            channelId: normalizedChannelId,
-            serverId: normalizedServerId,
-        });
+        const transactionAttributes: Record<string, string | number | boolean> =
+            {
+                channelId: normalizedChannelId,
+            };
+        if (normalizedServerId) {
+            transactionAttributes.serverId = normalizedServerId;
+        }
+
+        addTransactionAttributes(transactionAttributes);
 
         const messageData: Record<string, unknown> = {
             userId,

@@ -47,7 +47,7 @@ function queueRealtimeSubscribe<T>(
 
 function toUnsubscribeFn(subscription: unknown): () => void {
     if (typeof subscription === "function") {
-        return subscription;
+        return subscription as () => void;
     }
 
     if (
@@ -105,7 +105,7 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     }
 
     const baseSubscribe = realtime.subscribe.bind(realtime);
-    const wrappedSubscribe: Realtime["subscribe"] = (...args) => {
+    const wrappedSubscribe = (...args: Parameters<Realtime["subscribe"]>) => {
         const generation = realtimeWithMetadata.__firepitGeneration;
         const queuedUnsubscribe = queueRealtimeSubscribe(
             typeof generation === "number"
@@ -158,7 +158,7 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
 
         return deferredUnsubscribe;
     };
-    realtime.subscribe = wrappedSubscribe;
+    realtime.subscribe = wrappedSubscribe as unknown as Realtime["subscribe"];
 
     realtimeWithMetadata.__firepitSubscribePatched = true;
     return realtime;

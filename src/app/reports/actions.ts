@@ -181,7 +181,7 @@ export async function getCanReportAction(
         logger.error("Failed to evaluate report eligibility", {
             error: error instanceof Error ? error.message : String(error),
             reportedUserHash: createHash("sha256")
-                .update(normalizedReportedUserId)
+                .update(reportedUserId)
                 .digest("hex")
                 .slice(0, 16),
         });
