@@ -26,6 +26,12 @@ describe("Feature Flags", () => {
             );
         });
 
+        it("should have ENABLE_INBOX_DIGEST_V1_5 flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5).toBe(
+                "enable_inbox_digest_v1_5",
+            );
+        });
+
         it("should have all required feature flags defined", () => {
             // Ensure the FEATURE_FLAGS object has the expected structure
             expect(FEATURE_FLAGS).toBeDefined();
@@ -35,6 +41,9 @@ describe("Feature Flags", () => {
                 "string",
             );
             expect(typeof FEATURE_FLAGS.ENABLE_INBOX_DIGEST).toBe("string");
+            expect(typeof FEATURE_FLAGS.ENABLE_INBOX_DIGEST_V1_5).toBe(
+                "string",
+            );
         });
     });
 

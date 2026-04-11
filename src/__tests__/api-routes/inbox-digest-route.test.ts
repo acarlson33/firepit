@@ -22,6 +22,7 @@ vi.mock("@/lib/inbox", () => ({
 vi.mock("@/lib/feature-flags", () => ({
     FEATURE_FLAGS: {
         ENABLE_INBOX_DIGEST: "enable_inbox_digest",
+        ENABLE_INBOX_DIGEST_V1_5: "enable_inbox_digest_v1_5",
     },
     getFeatureFlag: mockGetFeatureFlag,
 }));
@@ -46,7 +47,7 @@ describe("inbox digest route", () => {
 
     it("returns 404 when digest flag is disabled", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
-        mockGetFeatureFlag.mockResolvedValue(false);
+        mockGetFeatureFlag.mockResolvedValueOnce(false);
 
         const response = await GET(
             new NextRequest("http://localhost/api/inbox/digest"),
@@ -56,6 +57,33 @@ describe("inbox digest route", () => {
         expect(response.status).toBe(404);
         expect(data.error).toContain("not enabled");
         expect(mockListInboxDigest).not.toHaveBeenCalled();
+    });
+
+    it("passes digest v1.5 mode when enabled", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetFeatureFlag
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(true);
+        mockListInboxDigest.mockResolvedValue({
+            contractVersion: "thread_v1",
+            contextId: undefined,
+            contextKind: undefined,
+            items: [],
+            totalUnreadCount: 0,
+        });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/inbox/digest"),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxDigest).toHaveBeenCalledWith({
+            contextId: undefined,
+            contextKind: undefined,
+            limit: 50,
+            useDigestV15: true,
+            userId: "user-1",
+        });
     });
 
     it("rejects invalid limit", async () => {
@@ -135,6 +163,7 @@ describe("inbox digest route", () => {
             contextId: "conversation-1",
             contextKind: "conversation",
             limit: 25,
+            useDigestV15: true,
             userId: "user-1",
         });
         expect(data.totalUnreadCount).toBe(2);
