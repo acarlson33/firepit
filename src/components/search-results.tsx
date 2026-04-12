@@ -158,13 +158,13 @@ export function SearchResults({
                                 )}
                             </div>
 
-                            <p className="mt-1 text-muted-foreground text-sm">
+                            <div className="mt-1 text-muted-foreground text-sm">
                                 <MessageWithMentions
                                     text={truncateText(message.text)}
                                     currentUserId=""
                                     customEmojis={customEmojis}
                                 />
-                            </p>
+                            </div>
 
                             {message.editedAt && (
                                 <span className="mt-1 text-muted-foreground text-xs italic">

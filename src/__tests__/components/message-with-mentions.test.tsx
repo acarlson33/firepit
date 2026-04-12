@@ -185,4 +185,96 @@ describe("MessageWithMentions", () => {
 		// Standard emoji should still work
 		expect(container.textContent).toContain("😄");
 	});
+
+	it("should render basic markdown formatting", () => {
+		render(
+			<MessageWithMentions
+				text="**Bold** _Italic_ ~~Struck~~"
+				currentUserId="user-1"
+			/>
+		);
+
+		expect(screen.getByText("Bold").closest("strong")).not.toBeNull();
+		expect(screen.getByText("Italic").closest("em")).not.toBeNull();
+		expect(screen.getByText("Struck").closest("del")).not.toBeNull();
+	});
+
+	it("should render safe markdown links with secure attributes", () => {
+		render(
+			<MessageWithMentions
+				text="Visit [Firepit](https://example.com/docs)"
+				currentUserId="user-1"
+			/>
+		);
+
+		const link = screen.getByRole("link", { name: "Firepit" });
+		expect(link.getAttribute("href")).toBe("https://example.com/docs");
+		expect(link.getAttribute("target")).toBe("_blank");
+		expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+	});
+
+	it("should not render unsafe javascript links", () => {
+		render(
+			<MessageWithMentions
+				text="Unsafe [click](javascript:alert('xss'))"
+				currentUserId="user-1"
+			/>
+		);
+
+		expect(screen.queryByRole("link", { name: "click" })).toBeNull();
+		expect(screen.getByText("click")).toBeInTheDocument();
+	});
+
+	it("should preserve mention highlighting inside markdown", () => {
+		const users = new Map([
+			[
+				"user-2",
+				{
+					userId: "user-2",
+					displayName: "TestUser",
+					avatarUrl: "",
+					status: "online",
+					pronouns: "they/them",
+				},
+			],
+		]);
+
+		render(
+			<MessageWithMentions
+				text="**Hello @TestUser**"
+				mentions={["TestUser"]}
+				users={users}
+				currentUserId="user-1"
+			/>
+		);
+
+		const mention = screen.getByTitle("TestUser (they/them)");
+		expect(mention.className).toContain("font-semibold");
+		expect(mention.closest("strong")).not.toBeNull();
+	});
+
+	it("should not convert shortcode emojis inside inline code", () => {
+		const customEmojis = [
+			{
+				fileId: "emoji-1",
+				url: "/api/emoji/emoji-1",
+				name: "party-parrot",
+			},
+		];
+
+		const { container } = render(
+			<MessageWithMentions
+				text="`:party-parrot:` outside :party-parrot:"
+				currentUserId="user-1"
+				customEmojis={customEmojis}
+			/>
+		);
+
+		const code = container.querySelector("code");
+		expect(code).not.toBeNull();
+		expect(code?.textContent).toBe(":party-parrot:");
+		expect(screen.getByRole("img").getAttribute("alt")).toBe(
+			":party-parrot:",
+		);
+	});
 });
