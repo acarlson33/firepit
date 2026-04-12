@@ -32,6 +32,8 @@ import {
 import type { Channel, ChannelCategory, Role } from "@/lib/types";
 import { apiCache } from "@/lib/cache-utils";
 
+type EditableChannelType = "text" | "announcement";
+
 type CategorySettingsPanelProperties = {
     serverId: string;
     canManage: boolean;
@@ -49,6 +51,24 @@ type ChannelsResponse = {
 type RolesResponse = {
     roles: Role[];
 };
+
+type ChannelCreateResponse = {
+    channel: Channel;
+};
+
+function normalizeChannelType(
+    value: Channel["type"],
+): "text" | "voice" | "announcement" {
+    if (value === "voice") {
+        return "voice";
+    }
+
+    if (value === "announcement") {
+        return "announcement";
+    }
+
+    return "text";
+}
 
 function sortCategories(categories: ChannelCategory[]) {
     return [...categories].sort(
@@ -79,6 +99,10 @@ export function CategorySettingsPanel({
     const [refreshing, setRefreshing] = useState(false);
     const [creatingName, setCreatingName] = useState("");
     const [creatingCategory, setCreatingCategory] = useState(false);
+    const [creatingChannelName, setCreatingChannelName] = useState("");
+    const [creatingChannelType, setCreatingChannelType] =
+        useState<EditableChannelType>("text");
+    const [creatingChannel, setCreatingChannel] = useState(false);
     const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
         null,
     );
@@ -308,6 +332,88 @@ export function CategorySettingsPanel({
             );
         } finally {
             setCreatingCategory(false);
+        }
+    }
+
+    async function createChannel() {
+        const name = creatingChannelName.trim();
+        if (!name || creatingChannel) {
+            return;
+        }
+
+        setCreatingChannel(true);
+        try {
+            const response = await fetch("/api/channels", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    serverId,
+                    name,
+                    type: creatingChannelType,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = (await response.json()) as { error?: string };
+                throw new Error(data.error || "Failed to create channel");
+            }
+
+            const data = (await response.json()) as ChannelCreateResponse;
+            setCreatingChannelName("");
+            setCreatingChannelType("text");
+            setChannels((currentValue) =>
+                sortChannels([...currentValue, data.channel]),
+            );
+            refreshAfterMutation();
+            toast.success("Channel created");
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to create channel",
+            );
+        } finally {
+            setCreatingChannel(false);
+        }
+    }
+
+    async function updateChannelType(
+        channel: Channel,
+        nextType: EditableChannelType,
+    ) {
+        const currentType = normalizeChannelType(channel.type);
+        if (currentType === nextType) {
+            return;
+        }
+
+        const previousChannels = channels;
+        setChannelPending([channel.$id], true);
+        setChannels((currentValue) =>
+            sortChannels(
+                currentValue.map((item) =>
+                    item.$id === channel.$id
+                        ? {
+                              ...item,
+                              type: nextType,
+                          }
+                        : item,
+                ),
+            ),
+        );
+
+        try {
+            await updateChannel(channel.$id, { type: nextType });
+            refreshAfterMutation();
+            toast.success("Channel type updated");
+        } catch (error) {
+            setChannels(previousChannels);
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to update channel type",
+            );
+        } finally {
+            setChannelPending([channel.$id], false);
         }
     }
 
@@ -671,6 +777,66 @@ export function CategorySettingsPanel({
             )}
             <Card>
                 <CardHeader>
+                    <CardTitle>Channel Setup</CardTitle>
+                    <CardDescription>
+                        Create channels and choose whether they are regular chat
+                        channels or announcement-only channels.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="grid gap-3 md:grid-cols-[1fr_200px_auto]">
+                        <div className="space-y-2">
+                            <Label htmlFor="channel-name">New channel</Label>
+                            <Input
+                                disabled={creatingChannel}
+                                id="channel-name"
+                                onChange={(event) =>
+                                    setCreatingChannelName(event.target.value)
+                                }
+                                placeholder="announcements"
+                                value={creatingChannelName}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="channel-type">Channel type</Label>
+                            <Select
+                                disabled={creatingChannel}
+                                onValueChange={(value: EditableChannelType) =>
+                                    setCreatingChannelType(value)
+                                }
+                                value={creatingChannelType}
+                            >
+                                <SelectTrigger id="channel-type">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="text">Text</SelectItem>
+                                    <SelectItem value="announcement">
+                                        Announcement
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button
+                            className="self-end"
+                            disabled={
+                                creatingChannel || !creatingChannelName.trim()
+                            }
+                            onClick={() => void createChannel()}
+                            type="button"
+                        >
+                            {creatingChannel ? "Creating..." : "Create"}
+                        </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Voice channels are hidden here until voice chat behavior
+                        is implemented.
+                    </p>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
                     <CardTitle>Channel Categories</CardTitle>
                     <CardDescription>
                         Group channels into collapsible sections and control
@@ -973,51 +1139,98 @@ export function CategorySettingsPanel({
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                    {sortChannels(channels).map((channel) => (
-                        <div
-                            key={channel.$id}
-                            className="flex items-center gap-3 rounded-lg border border-border/60 p-3"
-                        >
-                            <div className="min-w-0 flex-1">
-                                <div className="truncate font-medium">
-                                    {channel.name}
+                    {sortChannels(channels).map((channel) => {
+                        const channelType = normalizeChannelType(channel.type);
+
+                        return (
+                            <div
+                                key={channel.$id}
+                                className="flex items-center gap-3 rounded-lg border border-border/60 p-3"
+                            >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate font-medium">
+                                            {channel.name}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {channel.categoryId
+                                                ? categories.find(
+                                                      (category) =>
+                                                          category.$id ===
+                                                          channel.categoryId,
+                                                  )?.name || "Unknown category"
+                                                : "Uncategorized"}
+                                        </div>
+                                    </div>
+                                    <span className="rounded border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                        {channelType}
+                                    </span>
                                 </div>
-                                <div className="text-xs text-muted-foreground">
-                                    {channel.categoryId
-                                        ? categories.find(
-                                              (category) =>
-                                                  category.$id ===
-                                                  channel.categoryId,
-                                          )?.name || "Unknown category"
-                                        : "Uncategorized"}
+                                <Select
+                                    disabled={isChannelPending(channel.$id)}
+                                    onValueChange={(value) => {
+                                        void assignChannel(channel.$id, value);
+                                    }}
+                                    value={
+                                        channel.categoryId || "uncategorized"
+                                    }
+                                >
+                                    <SelectTrigger className="w-56">
+                                        <SelectValue placeholder="Assign category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="uncategorized">
+                                            Uncategorized
+                                        </SelectItem>
+                                        {categories.map((category) => (
+                                            <SelectItem
+                                                key={category.$id}
+                                                value={category.$id}
+                                            >
+                                                {category.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        disabled={
+                                            isChannelPending(channel.$id) ||
+                                            channelType === "text"
+                                        }
+                                        onClick={() =>
+                                            void updateChannelType(
+                                                channel,
+                                                "text",
+                                            )
+                                        }
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        Text
+                                    </Button>
+                                    <Button
+                                        disabled={
+                                            isChannelPending(channel.$id) ||
+                                            channelType === "announcement"
+                                        }
+                                        onClick={() =>
+                                            void updateChannelType(
+                                                channel,
+                                                "announcement",
+                                            )
+                                        }
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        Announcement
+                                    </Button>
                                 </div>
                             </div>
-                            <Select
-                                disabled={isChannelPending(channel.$id)}
-                                onValueChange={(value) => {
-                                    void assignChannel(channel.$id, value);
-                                }}
-                                value={channel.categoryId || "uncategorized"}
-                            >
-                                <SelectTrigger className="w-56">
-                                    <SelectValue placeholder="Assign category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="uncategorized">
-                                        Uncategorized
-                                    </SelectItem>
-                                    {categories.map((category) => (
-                                        <SelectItem
-                                            key={category.$id}
-                                            value={category.$id}
-                                        >
-                                            {category.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {uncategorizedChannels.length > 0 && (
                         <p className="text-xs text-muted-foreground">
                             Uncategorized channels remain visible beneath all

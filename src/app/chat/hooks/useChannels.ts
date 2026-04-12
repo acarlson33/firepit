@@ -140,14 +140,17 @@ export function useChannels({
         }
     }
 
-    async function create(name: string) {
+    async function create(
+        name: string,
+        type: "text" | "voice" | "announcement" = "text",
+    ) {
         if (!userId) {
             return null;
         }
         if (!selectedServer) {
             return null;
         }
-        const channel = await createChannel(selectedServer, name, userId);
+        const channel = await createChannel(selectedServer, name, userId, type);
         setChannels((prev) => [...prev, channel]);
         // Invalidate cache
         apiCache.clear(`channels:${selectedServer}:initial`);

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
     MessageSquare,
     Hash,
+    Megaphone,
     Settings,
     Shield,
     BellOff,
@@ -229,6 +230,7 @@ export default function ChatPage() {
         name: string;
     }>({ open: false, type: "channel", id: "", name: "" });
     const [canManageMessages, setCanManageMessages] = useState(false);
+    const [canSendMessages, setCanSendMessages] = useState(false);
     const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<string[]>(
         [],
     );
@@ -858,6 +860,13 @@ export default function ChatPage() {
                 : null,
         [channelsApi.channels, selectedChannel],
     );
+    const selectedChannelData = useMemo(
+        () =>
+            channelsApi.channels.find(
+                (channel) => channel.$id === selectedChannel,
+            ) ?? null,
+        [channelsApi.channels, selectedChannel],
+    );
 
     useEffect(() => {
         if (
@@ -1002,6 +1011,7 @@ export default function ChatPage() {
         async function checkPermissions() {
             if (!selectedChannel || !userId || !serversApi.selectedServer) {
                 setCanManageMessages(false);
+                setCanSendMessages(false);
                 return;
             }
 
@@ -1010,6 +1020,7 @@ export default function ChatPage() {
             );
             if (selectedServerData?.ownerId === userId) {
                 setCanManageMessages(true);
+                setCanSendMessages(true);
                 return;
             }
 
@@ -1020,11 +1031,16 @@ export default function ChatPage() {
                 if (res.ok) {
                     const data = await res.json();
                     setCanManageMessages(data.manageMessages ?? false);
+                    setCanSendMessages(
+                        data.canSend ?? data.sendMessages ?? false,
+                    );
                 } else {
                     setCanManageMessages(false);
+                    setCanSendMessages(false);
                 }
             } catch {
                 setCanManageMessages(false);
+                setCanSendMessages(false);
             }
         }
 
@@ -1487,6 +1503,7 @@ export default function ChatPage() {
         const renderChannelItem = (channel: Channel) => {
             const active = channel.$id === selectedChannel;
             const unreadState = channelUnreadStateById[channel.$id];
+            const isAnnouncementChannel = channel.type === "announcement";
 
             return (
                 <li key={channel.$id} className="group relative">
@@ -1502,10 +1519,21 @@ export default function ChatPage() {
                             type="button"
                             variant={active ? "default" : "outline"}
                         >
-                            <span className="min-w-0 truncate text-left font-medium">
-                                {channel.name}
+                            <span className="min-w-0 truncate text-left font-medium inline-flex items-center gap-2">
+                                {isAnnouncementChannel ? (
+                                    <Megaphone
+                                        aria-hidden="true"
+                                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                    />
+                                ) : null}
+                                <span className="truncate">{channel.name}</span>
                             </span>
                             <span className="flex shrink-0 items-center gap-2">
+                                {isAnnouncementChannel ? (
+                                    <span className="rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                        Announce
+                                    </span>
+                                ) : null}
                                 {unreadState?.count ? (
                                     <span
                                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -1631,13 +1659,20 @@ export default function ChatPage() {
     }
 
     function renderMessages() {
+        const isAnnouncementChannel =
+            selectedChannelData?.type === "announcement";
+        const announcementReadOnly = isAnnouncementChannel && !canSendMessages;
+
         return (
             <ChatSurfacePanel
                 canManageMessages={canManageMessages}
                 composer={
                     selectedChannel
                         ? {
-                              disabled: !showChat || uploadingImage,
+                              disabled:
+                                  !showChat ||
+                                  uploadingImage ||
+                                  !canSendMessages,
                               fileAttachments,
                               fileInputRef,
                               onCancelEdit: cancelEdit,
@@ -1657,8 +1692,14 @@ export default function ChatPage() {
                                   } as React.ChangeEvent<HTMLInputElement>);
                               },
                               placeholder: showChat
-                                  ? "Type a message"
+                                  ? announcementReadOnly
+                                      ? "Only channel managers can post here"
+                                      : "Type a message"
                                   : "Select a channel",
+                              readOnly: announcementReadOnly,
+                              readOnlyMessage: announcementReadOnly
+                                  ? "This is an announcement channel. Only channel managers can send messages."
+                                  : undefined,
                               replyingTo: replyingToMessage
                                   ? {
                                         authorLabel:
@@ -1907,14 +1948,22 @@ export default function ChatPage() {
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3">
                                             <div className="flex min-w-0 items-center gap-2">
-                                                <Hash className="h-5 w-5 text-muted-foreground" />
+                                                {selectedChannelData?.type ===
+                                                "announcement" ? (
+                                                    <Megaphone className="h-5 w-5 text-muted-foreground" />
+                                                ) : (
+                                                    <Hash className="h-5 w-5 text-muted-foreground" />
+                                                )}
                                                 <h2 className="truncate font-semibold">
-                                                    {channelsApi.channels.find(
-                                                        (c) =>
-                                                            c.$id ===
-                                                            selectedChannel,
-                                                    )?.name || "Channel"}
+                                                    {selectedChannelData?.name ||
+                                                        "Channel"}
                                                 </h2>
+                                                {selectedChannelData?.type ===
+                                                "announcement" ? (
+                                                    <span className="rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                                        Announcement
+                                                    </span>
+                                                ) : null}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {serversApi.selectedServer &&

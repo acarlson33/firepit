@@ -574,6 +574,17 @@ export function ChatSurfacePanel({
                         </div>
                     )}
 
+                    {composer.readOnly && composer.readOnlyMessage ? (
+                        <div
+                            aria-atomic="true"
+                            aria-live="polite"
+                            className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                            role="status"
+                        >
+                            {composer.readOnlyMessage}
+                        </div>
+                    ) : null}
+
                     <form
                         className="flex flex-col gap-3 sm:flex-row sm:items-center"
                         onSubmit={(event) => {
@@ -613,6 +624,7 @@ export function ChatSurfacePanel({
                             />
                             <EmojiPicker
                                 customEmojis={customEmojis}
+                                disabled={composer.disabled}
                                 onEmojiSelect={composer.onEmojiSelect}
                                 onUploadCustomEmoji={onUploadCustomEmoji}
                             />
