@@ -34,7 +34,11 @@ import {
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -373,6 +377,72 @@ function withReplyContext(
     };
 }
 
+function isTopLevelMessage(message: { threadId?: string }) {
+    return !message.threadId;
+}
+
+function mergeTopLevelMessages(
+    existingMessages: DirectMessage[],
+    incomingMessages: DirectMessage[],
+): DirectMessage[] {
+    if (existingMessages.length === 0) {
+        return incomingMessages;
+    }
+
+    const mergedById = new Map<string, DirectMessage>();
+    for (const message of incomingMessages) {
+        mergedById.set(message.$id, message);
+    }
+
+    for (const existingMessage of existingMessages) {
+        const incomingMessage = mergedById.get(existingMessage.$id);
+        if (incomingMessage) {
+            mergedById.set(
+                existingMessage.$id,
+                withReplyContext(
+                    {
+                        ...existingMessage,
+                        ...incomingMessage,
+                        attachments:
+                            incomingMessage.attachments ??
+                            existingMessage.attachments,
+                        replyTo:
+                            incomingMessage.replyTo ?? existingMessage.replyTo,
+                        replyToId:
+                            incomingMessage.replyToId ??
+                            existingMessage.replyToId,
+                        senderAvatarFramePreset:
+                            incomingMessage.senderAvatarFramePreset ??
+                            existingMessage.senderAvatarFramePreset,
+                        senderAvatarFrameUrl:
+                            incomingMessage.senderAvatarFrameUrl ??
+                            existingMessage.senderAvatarFrameUrl,
+                        senderAvatarUrl:
+                            incomingMessage.senderAvatarUrl ??
+                            existingMessage.senderAvatarUrl,
+                        senderDisplayName:
+                            incomingMessage.senderDisplayName ??
+                            existingMessage.senderDisplayName,
+                        senderPronouns:
+                            incomingMessage.senderPronouns ??
+                            existingMessage.senderPronouns,
+                    },
+                    incomingMessages,
+                    existingMessage,
+                ),
+            );
+            continue;
+        }
+
+        // Keep local or realtime arrivals that are missing from fetched history.
+        mergedById.set(existingMessage.$id, existingMessage);
+    }
+
+    return Array.from(mergedById.values()).sort((a, b) =>
+        a.$createdAt.localeCompare(b.$createdAt),
+    );
+}
+
 function normalizeRealtimeEvents(events: unknown): string[] {
     if (!Array.isArray(events)) {
         return [];
@@ -387,10 +457,6 @@ export function useDirectMessages({
     receiverId,
     userName,
 }: UseDirectMessagesProps) {
-    function isTopLevelMessage(message: { threadId?: string }) {
-        return !message.threadId;
-    }
-
     const [messages, setMessages] = useState<DirectMessage[]>([]);
     const [loading, setLoading] = useState(true);
     const [oldestCursor, setOldestCursor] = useState<string | null>(null);
@@ -401,6 +467,8 @@ export function useDirectMessages({
     const [relationship, setRelationship] = useState<RelationshipStatus | null>(
         null,
     );
+    const [messageRealtimeRetryNonce, setMessageRealtimeRetryNonce] =
+        useState(0);
     const [sending, setSending] = useState(false);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -411,6 +479,8 @@ export function useDirectMessages({
     const lastTypingSentAt = useRef<number>(0);
     const currentConversationIdRef = useRef<string | null>(conversationId);
     const loadRequestIdRef = useRef(0);
+    const lastMessageRealtimeEventAtRef = useRef(Date.now());
+    const backgroundMessageSyncInFlightRef = useRef(false);
     const userProfileCache = useRef<
         Record<
             string,
@@ -426,6 +496,8 @@ export function useDirectMessages({
 
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
+    const backgroundMessageSyncIntervalMs = 15_000;
+    const backgroundMessageSyncGraceMs = 25_000;
     const initialPageSize = 50;
     const loadMoreSize = 50;
     const listConversationThreadReads = useCallback(
@@ -522,65 +594,7 @@ export function useDirectMessages({
             // Reverse to show oldest first
             const orderedItems = result.items.reverse();
             const topLevelItems = orderedItems.filter(isTopLevelMessage);
-            setMessages((prev) => {
-                if (prev.length === 0) {
-                    return topLevelItems;
-                }
-
-                const mergedById = new Map<string, DirectMessage>();
-                for (const message of topLevelItems) {
-                    mergedById.set(message.$id, message);
-                }
-
-                for (const existingMessage of prev) {
-                    const fetchedMessage = mergedById.get(existingMessage.$id);
-                    if (fetchedMessage) {
-                        mergedById.set(
-                            existingMessage.$id,
-                            withReplyContext(
-                                {
-                                    ...existingMessage,
-                                    ...fetchedMessage,
-                                    attachments:
-                                        fetchedMessage.attachments ??
-                                        existingMessage.attachments,
-                                    replyTo:
-                                        fetchedMessage.replyTo ??
-                                        existingMessage.replyTo,
-                                    replyToId:
-                                        fetchedMessage.replyToId ??
-                                        existingMessage.replyToId,
-                                    senderAvatarFramePreset:
-                                        fetchedMessage.senderAvatarFramePreset ??
-                                        existingMessage.senderAvatarFramePreset,
-                                    senderAvatarFrameUrl:
-                                        fetchedMessage.senderAvatarFrameUrl ??
-                                        existingMessage.senderAvatarFrameUrl,
-                                    senderAvatarUrl:
-                                        fetchedMessage.senderAvatarUrl ??
-                                        existingMessage.senderAvatarUrl,
-                                    senderDisplayName:
-                                        fetchedMessage.senderDisplayName ??
-                                        existingMessage.senderDisplayName,
-                                    senderPronouns:
-                                        fetchedMessage.senderPronouns ??
-                                        existingMessage.senderPronouns,
-                                },
-                                topLevelItems,
-                                existingMessage,
-                            ),
-                        );
-                        continue;
-                    }
-
-                    // Keep realtime arrivals that landed while history was loading.
-                    mergedById.set(existingMessage.$id, existingMessage);
-                }
-
-                return Array.from(mergedById.values()).sort((a, b) =>
-                    a.$createdAt.localeCompare(b.$createdAt),
-                );
-            });
+            setMessages((prev) => mergeTopLevelMessages(prev, topLevelItems));
             setOldestCursor(result.nextCursor ?? null);
             setHasMore(Boolean(result.nextCursor));
             setReadOnly(result.readOnly);
@@ -634,6 +648,84 @@ export function useDirectMessages({
         void loadMessages();
     }, [loadMessages]);
 
+    // Safety net: pull latest DM history occasionally when realtime appears stale.
+    useEffect(() => {
+        if (!conversationId || !userId || !DIRECT_MESSAGES_COLLECTION) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const syncMissedMessages = async () => {
+            const activeConversationId = currentConversationIdRef.current;
+            if (!activeConversationId || activeConversationId !== conversationId) {
+                return;
+            }
+
+            if (backgroundMessageSyncInFlightRef.current) {
+                return;
+            }
+
+            const realtimeAgeMs =
+                Date.now() - lastMessageRealtimeEventAtRef.current;
+            if (realtimeAgeMs < backgroundMessageSyncGraceMs) {
+                return;
+            }
+
+            backgroundMessageSyncInFlightRef.current = true;
+
+            try {
+                const result = await listDirectMessages(
+                    activeConversationId,
+                    initialPageSize,
+                );
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (currentConversationIdRef.current !== activeConversationId) {
+                    return;
+                }
+
+                const topLevelItems = result.items
+                    .reverse()
+                    .filter(isTopLevelMessage);
+
+                if (topLevelItems.length > 0) {
+                    setMessages((prev) =>
+                        mergeTopLevelMessages(prev, topLevelItems),
+                    );
+                }
+
+                setOldestCursor(result.nextCursor ?? null);
+                setHasMore(Boolean(result.nextCursor));
+                setReadOnly(result.readOnly);
+                setReadOnlyReason(result.readOnlyReason ?? null);
+                setRelationship(result.relationship ?? null);
+            } catch (syncError) {
+                logger.warn("Background DM sync failed", {
+                    conversationId: activeConversationId,
+                    error:
+                        syncError instanceof Error
+                            ? syncError.message
+                            : String(syncError),
+                });
+            } finally {
+                backgroundMessageSyncInFlightRef.current = false;
+            }
+        };
+
+        const interval = setInterval(() => {
+            void syncMissedMessages();
+        }, backgroundMessageSyncIntervalMs);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [conversationId, userId, initialPageSize]);
+
     const {
         activeThreadParent,
         closeThread,
@@ -686,6 +778,7 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        let retryTimeout: NodeJS.Timeout | null = null;
         const messageChannel = Channel.database(env.databaseId)
             .collection(DIRECT_MESSAGES_COLLECTION)
             .document();
@@ -727,6 +820,7 @@ export function useDirectMessages({
 
                         // Handle different event types to avoid full reload
                         if (events.some((e) => e.endsWith(".create"))) {
+                            lastMessageRealtimeEventAtRef.current = Date.now();
                             setMessages((prev) => {
                                 if (
                                     prev.some((m) => m.$id === messageData.$id)
@@ -741,6 +835,7 @@ export function useDirectMessages({
                                 );
                             });
                         } else if (events.some((e) => e.endsWith(".update"))) {
+                            lastMessageRealtimeEventAtRef.current = Date.now();
                             setMessages((prev) =>
                                 prev.map((m) =>
                                     m.$id === messageData.$id
@@ -780,6 +875,7 @@ export function useDirectMessages({
                                 ),
                             );
                         } else if (events.some((e) => e.endsWith(".delete"))) {
+                            lastMessageRealtimeEventAtRef.current = Date.now();
                             setMessages((prev) =>
                                 prev.filter((m) => m.$id !== messageData.$id),
                             );
@@ -802,22 +898,54 @@ export function useDirectMessages({
                 untrack?.();
                 await closeSubscriptionSafely(subscription);
                 if (!cancelled) {
-                    logger.error(
-                        "Direct message realtime subscription failed:",
-                        error instanceof Error ? error : String(error),
-                        {
-                            conversationId: currentConversationIdRef.current,
-                        },
-                    );
+                    const isTransient =
+                        isTransientRealtimeSubscribeError(error);
+                    const retryDelayMs = isTransient ? 1200 : 4000;
+
+                    if (isTransient) {
+                        logger.warn(
+                            "Direct message realtime subscription interrupted during connection setup",
+                            {
+                                conversationId:
+                                    currentConversationIdRef.current,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                retryDelayMs,
+                            },
+                        );
+                    } else {
+                        logger.error(
+                            "Direct message realtime subscription failed:",
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error)),
+                            {
+                                conversationId:
+                                    currentConversationIdRef.current,
+                                retryDelayMs,
+                            },
+                        );
+                    }
+
+                    retryTimeout = setTimeout(() => {
+                        setMessageRealtimeRetryNonce((currentValue) =>
+                            currentValue + 1,
+                        );
+                    }, retryDelayMs);
                 }
             }
         })();
 
         return () => {
             cancelled = true;
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+            }
             cleanupFn?.();
         };
-    }, [conversationId, userId]);
+    }, [conversationId, userId, messageRealtimeRetryNonce]);
 
     const send = useCallback(
         async (

@@ -91,6 +91,11 @@ vi.mock("@/lib/realtime-pool", () => ({
     getSharedRealtime: vi.fn(() => ({
         subscribe: mockRealtimeSubscribe,
     })),
+    isTransientRealtimeSubscribeError: vi.fn((error: unknown) => {
+        const message =
+            error instanceof Error ? error.message : String(error);
+        return message.toLowerCase().includes("can't establish a connection");
+    }),
     trackSubscription: vi.fn(() => vi.fn()),
 }));
 
@@ -564,6 +569,39 @@ describe("useDirectMessages", () => {
             "dm-1",
             "dm-realtime",
         ]);
+    });
+
+    it("retries DM realtime subscribe after transient setup interruption", async () => {
+        mockRealtimeSubscribe
+            .mockRejectedValueOnce(
+                new Error("Can't establish a connection to the server"),
+            )
+            .mockResolvedValueOnce({ close: vi.fn() });
+
+        renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThanOrEqual(
+                2,
+            );
+        });
+
+        const callsBeforeRetryWindow = mockRealtimeSubscribe.mock.calls.length;
+
+        await waitFor(
+            () => {
+                expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThan(
+                    callsBeforeRetryWindow,
+                );
+            },
+            { timeout: 4_500 },
+        );
     });
 
     it("preserves reply preview context when sending a DM reply", async () => {
