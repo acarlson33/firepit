@@ -64,6 +64,12 @@ type StoredEncryptedKeyPair = {
     version: string;
 };
 
+type StoredKeyMetadata = {
+    publicKeyBase64: string;
+    securePersistenceUnavailable: true;
+    version: string;
+};
+
 export type DmEncryptionKeyPair = {
     privateKeyBase64: string;
     publicKeyBase64: string;
@@ -241,6 +247,19 @@ function isStoredEncryptedKeyPair(value: unknown): value is StoredEncryptedKeyPa
         candidate.alg === "AES-GCM" &&
         typeof candidate.encryptedPrivateKeyBase64 === "string" &&
         typeof candidate.ivBase64 === "string" &&
+        typeof candidate.publicKeyBase64 === "string" &&
+        typeof candidate.version === "string"
+    );
+}
+
+function isStoredKeyMetadata(value: unknown): value is StoredKeyMetadata {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return false;
+    }
+
+    const candidate = value as Partial<StoredKeyMetadata>;
+    return (
+        candidate.securePersistenceUnavailable === true &&
         typeof candidate.publicKeyBase64 === "string" &&
         typeof candidate.version === "string"
     );
@@ -438,6 +457,16 @@ async function loadKeyPairFromStorage(
             return legacy;
         }
 
+        if (isStoredKeyMetadata(parsed)) {
+            logger.warn(
+                "Secure DM key persistence unavailable; private key is session-only",
+                {
+                    userId,
+                },
+            );
+            return null;
+        }
+
         if (!isStoredEncryptedKeyPair(parsed)) {
             return null;
         }
@@ -496,15 +525,26 @@ async function saveKeyPairToStorage(
         return;
     }
 
-    const persistLegacyFallback = () => {
+    const persistNonSensitiveMetadata = () => {
         try {
-            window.localStorage.setItem(getStorageKey(userId), JSON.stringify(keyPair));
-            logger.warn("Persisted DM key pair using legacy localStorage fallback", {
-                userId,
-            });
+            const metadata: StoredKeyMetadata = {
+                publicKeyBase64: keyPair.publicKeyBase64,
+                securePersistenceUnavailable: true,
+                version: keyPair.version,
+            };
+            window.localStorage.setItem(
+                getStorageKey(userId),
+                JSON.stringify(metadata),
+            );
+            logger.warn(
+                "Secure DM key persistence unavailable; storing public metadata only",
+                {
+                    userId,
+                },
+            );
         } catch (legacyError) {
             logger.error(
-                "Failed to persist DM key pair fallback",
+                "Failed to persist DM key metadata fallback",
                 legacyError instanceof Error
                     ? legacyError
                     : new Error(String(legacyError)),
@@ -516,7 +556,7 @@ async function saveKeyPairToStorage(
     try {
         const wrappingKey = await getOrCreateWrappingKey(userId);
         if (!wrappingKey) {
-            persistLegacyFallback();
+            persistNonSensitiveMetadata();
             return;
         }
 
@@ -551,7 +591,7 @@ async function saveKeyPairToStorage(
             error instanceof Error ? error : new Error(String(error)),
             { userId },
         );
-        persistLegacyFallback();
+        persistNonSensitiveMetadata();
     }
 }
 

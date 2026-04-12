@@ -578,30 +578,50 @@ describe("useDirectMessages", () => {
             )
             .mockResolvedValueOnce({ close: vi.fn() });
 
-        renderHook(() =>
-            useDirectMessages({
-                conversationId: "conversation-1",
-                userId: "user-1",
-                userName: "User One",
-            }),
-        );
+        vi.useFakeTimers();
 
-        await waitFor(() => {
-            expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThanOrEqual(
-                2,
+        try {
+            renderHook(() =>
+                useDirectMessages({
+                    conversationId: "conversation-1",
+                    userId: "user-1",
+                    userName: "User One",
+                }),
             );
-        });
 
-        const callsBeforeRetryWindow = mockRealtimeSubscribe.mock.calls.length;
+            for (
+                let attempt = 0;
+                attempt < 20 && mockRealtimeSubscribe.mock.calls.length === 0;
+                attempt += 1
+            ) {
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(50);
+                });
+            }
 
-        await waitFor(
-            () => {
-                expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThan(
-                    callsBeforeRetryWindow,
-                );
-            },
-            { timeout: 4_500 },
-        );
+            expect(mockRealtimeSubscribe).toHaveBeenCalled();
+
+            const callsBeforeRetryWindow =
+                mockRealtimeSubscribe.mock.calls.length;
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1199);
+            });
+
+            expect(mockRealtimeSubscribe.mock.calls.length).toBe(
+                callsBeforeRetryWindow,
+            );
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1);
+            });
+
+            expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThan(
+                callsBeforeRetryWindow,
+            );
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("preserves reply preview context when sending a DM reply", async () => {

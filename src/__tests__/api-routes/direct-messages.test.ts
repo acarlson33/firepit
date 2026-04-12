@@ -21,6 +21,7 @@ const {
     mockGetDocument,
     mockGetRelationshipMap,
     mockGetRelationshipStatus,
+    mockGetNotificationSettings,
     mockGetOrCreateNotificationSettings,
     mockGetUserProfile,
     mockUpsertMentionInboxItems,
@@ -35,6 +36,7 @@ const {
     mockGetDocument: vi.fn(),
     mockGetRelationshipMap: vi.fn(),
     mockGetRelationshipStatus: vi.fn(),
+    mockGetNotificationSettings: vi.fn(),
     mockGetOrCreateNotificationSettings: vi.fn(),
     mockGetUserProfile: vi.fn(),
     mockUpsertMentionInboxItems: vi.fn(),
@@ -103,6 +105,7 @@ vi.mock("@/lib/appwrite-friendships", () => ({
 }));
 
 vi.mock("@/lib/notification-settings", () => ({
+    getNotificationSettings: mockGetNotificationSettings,
     getOrCreateNotificationSettings: mockGetOrCreateNotificationSettings,
 }));
 
@@ -187,6 +190,9 @@ describe("Direct Messages API", () => {
                 ),
         );
             mockGetOrCreateNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: false,
+            });
+            mockGetNotificationSettings.mockResolvedValue({
                 dmEncryptionEnabled: false,
             });
             mockGetUserProfile.mockResolvedValue(null);

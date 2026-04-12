@@ -9,7 +9,10 @@ import {
     getRelationshipMap,
     getRelationshipStatus,
 } from "@/lib/appwrite-friendships";
-import { getOrCreateNotificationSettings } from "@/lib/notification-settings";
+import {
+    getNotificationSettings,
+    getOrCreateNotificationSettings,
+} from "@/lib/notification-settings";
 import { getUserProfile } from "@/lib/appwrite-profiles";
 import { listThreadReadsByContext } from "@/lib/thread-read-store";
 import { isThreadUnread } from "@/lib/thread-read-states";
@@ -78,14 +81,22 @@ async function getDmEncryptionStateForPair(
             });
             return { dmEncryptionEnabled: false };
         }),
-        getOrCreateNotificationSettings(peerUserId).catch((error) => {
-            logger.warn("Failed to load peer notification settings for DM encryption", {
-                error: error instanceof Error ? error.message : String(error),
-                userId,
-                peerUserId,
-            });
-            return { dmEncryptionEnabled: false };
-        }),
+        getNotificationSettings(peerUserId)
+            .then((settings) => settings ?? { dmEncryptionEnabled: false })
+            .catch((error) => {
+                logger.warn(
+                    "Failed to load peer notification settings for DM encryption",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        userId,
+                        peerUserId,
+                    },
+                );
+                return { dmEncryptionEnabled: false };
+            }),
         getUserProfile(peerUserId).catch((error) => {
             logger.warn("Failed to load peer profile for DM encryption", {
                 error: error instanceof Error ? error.message : String(error),
@@ -1204,6 +1215,98 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        if (hasEncryptedText) {
+            if (isGroupConversation || !targetReceiverId) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Encrypted messages are only supported for one-to-one DMs",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const [senderSettings, receiverSettings, senderProfile] =
+                await Promise.all([
+                    getNotificationSettings(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getNotificationSettings(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getUserProfile(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                ]);
+
+            if (
+                !senderSettings?.dmEncryptionEnabled ||
+                !receiverSettings?.dmEncryptionEnabled
+            ) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Both participants must enable DM encryption before sending encrypted messages",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const senderProfilePublicKey =
+                typeof senderProfile?.dmEncryptionPublicKey === "string"
+                    ? senderProfile.dmEncryptionPublicKey.trim()
+                    : "";
+
+            if (
+                !senderProfilePublicKey ||
+                senderProfilePublicKey !== encryptionSenderPublicKey
+            ) {
+                return jsonResponse(
+                    {
+                        error:
+                            "encryptionSenderPublicKey must match the sender profile public key",
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
         const permissions = [
             ...participants.map((id) => Permission.read(Role.user(id))),
             Permission.update(Role.user(senderId)),
@@ -1479,6 +1582,16 @@ export async function PATCH(request: NextRequest) {
             return jsonResponse(
                 { error: "You can only edit your own messages" },
                 { status: 403 },
+            );
+        }
+
+        if (Boolean((message as Record<string, unknown>).isEncrypted)) {
+            return jsonResponse(
+                {
+                    error:
+                        "Encrypted direct messages cannot be edited after send",
+                },
+                { status: 409 },
             );
         }
 

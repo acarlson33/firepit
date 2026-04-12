@@ -98,6 +98,7 @@ type DirectMessageViewProps = {
     dmEncryptionSelfEnabled?: boolean;
     dmEncryptionPeerEnabled?: boolean;
     dmEncryptionMutualEnabled?: boolean;
+    dmEncryptionPeerPublicKey?: string | null;
 };
 
 type EncryptionStatus = {
@@ -110,22 +111,34 @@ export function getEncryptionStatus(params: {
     dmEncryptionMutualEnabled: boolean;
     dmEncryptionSelfEnabled: boolean;
     dmEncryptionPeerEnabled: boolean;
+    dmEncryptionPeerPublicKey: string | null;
 }): EncryptionStatus | null {
     const {
         isGroup,
         dmEncryptionMutualEnabled,
         dmEncryptionSelfEnabled,
         dmEncryptionPeerEnabled,
+        dmEncryptionPeerPublicKey,
     } = params;
+    const hasPeerPublicKey =
+        typeof dmEncryptionPeerPublicKey === "string" &&
+        dmEncryptionPeerPublicKey.length > 0;
 
     if (isGroup) {
         return null;
     }
 
-    if (dmEncryptionMutualEnabled) {
+    if (dmEncryptionMutualEnabled && hasPeerPublicKey) {
         return {
             label: "End-to-end encryption active",
             className: "text-emerald-700 dark:text-emerald-300",
+        };
+    }
+
+    if (dmEncryptionMutualEnabled && !hasPeerPublicKey) {
+        return {
+            label: "Encryption enabled but peer key unavailable; currently plaintext",
+            className: "text-amber-700 dark:text-amber-300",
         };
     }
 
@@ -137,6 +150,13 @@ export function getEncryptionStatus(params: {
     }
 
     if (!dmEncryptionSelfEnabled && dmEncryptionPeerEnabled) {
+        if (!hasPeerPublicKey) {
+            return {
+                label: "Peer enabled encryption but no key is published yet",
+                className: "text-amber-700 dark:text-amber-300",
+            };
+        }
+
         return {
             label: "Peer enabled encryption; currently plaintext",
             className: "text-amber-700 dark:text-amber-300",
@@ -185,6 +205,7 @@ export function DirectMessageView({
     dmEncryptionSelfEnabled = false,
     dmEncryptionPeerEnabled = false,
     dmEncryptionMutualEnabled = false,
+    dmEncryptionPeerPublicKey = null,
 }: DirectMessageViewProps) {
     const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
@@ -218,12 +239,13 @@ export function DirectMessageView({
     const subtitle = isGroup
         ? `${participantCount} participant${participantCount === 1 ? "" : "s"}`
         : otherUser?.status;
-        const encryptionStatus = getEncryptionStatus({
-                isGroup,
-                dmEncryptionMutualEnabled,
-                dmEncryptionSelfEnabled,
-                dmEncryptionPeerEnabled,
-        });
+    const encryptionStatus = getEncryptionStatus({
+        isGroup,
+        dmEncryptionMutualEnabled,
+        dmEncryptionSelfEnabled,
+        dmEncryptionPeerEnabled,
+        dmEncryptionPeerPublicKey,
+    });
     const composerDisabled = readOnly || sending || uploadingImage;
     const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
     const useVirtualScrolling = messages.length >= VIRTUALIZATION_THRESHOLD;

@@ -1155,12 +1155,26 @@ export function useDirectMessages({
             try {
                 const plainText = text.trim() || "";
                 let encryptionPayload: DirectMessageEncryptionPayload | undefined;
+                const encryptionRequired =
+                    plainText.length > 0 &&
+                    (dmEncryptionMutualEnabled ||
+                        Boolean(dmEncryptionPeerPublicKey));
 
-                if (
-                    plainText &&
-                    dmEncryptionMutualEnabled &&
-                    dmEncryptionPeerPublicKey
-                ) {
+                if (encryptionRequired) {
+                    if (!dmEncryptionPeerPublicKey) {
+                        toast.error(
+                            "Encryption required but peer public key is unavailable",
+                        );
+                        logger.warn(
+                            "DM encryption required but peer key is missing",
+                            {
+                                conversationId,
+                                userId,
+                            },
+                        );
+                        return;
+                    }
+
                     try {
                         const senderKeyPair =
                             await ensurePublishedDmEncryptionKey(userId);
@@ -1171,10 +1185,8 @@ export function useDirectMessages({
                             text: plainText,
                         });
                     } catch (encryptionError) {
-                        toast.error(
-                            "Encryption failed; message sent as plaintext",
-                        );
-                        logger.warn("DM encryption failed; sending plaintext", {
+                        toast.error("Encryption failed; message was not sent");
+                        logger.warn("DM encryption failed; message not sent", {
                             conversationId,
                             error:
                                 encryptionError instanceof Error
@@ -1182,6 +1194,7 @@ export function useDirectMessages({
                                     : String(encryptionError),
                             userId,
                         });
+                        return;
                     }
                 }
 

@@ -1896,6 +1896,9 @@ export default function ChatPage() {
                             dmEncryptionMutualEnabled={
                                 dmApi.dmEncryptionMutualEnabled
                             }
+                            dmEncryptionPeerPublicKey={
+                                dmApi.dmEncryptionPeerPublicKey
+                            }
                         />
                     ) : (
                         <>

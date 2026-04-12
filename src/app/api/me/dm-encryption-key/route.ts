@@ -8,9 +8,34 @@ type PatchBody = {
 };
 
 const PUBLIC_KEY_MAX_LENGTH = 256;
+const PUBLIC_KEY_BYTE_LENGTH = 32;
 
 const isLikelyBase64 = (value: string): boolean =>
     /^[A-Za-z0-9+/=_-]+$/.test(value);
+
+function decodeBase64ToBytes(value: string): Uint8Array | null {
+    try {
+        const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+        const padded = normalized.padEnd(
+            Math.ceil(normalized.length / 4) * 4,
+            "=",
+        );
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let index = 0; index < binary.length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+
+        return bytes;
+    } catch {
+        return null;
+    }
+}
+
+function isPatchBody(value: unknown): value is PatchBody {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 export async function GET() {
     try {
@@ -43,9 +68,9 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Authentication required" }, { status: 401 });
         }
 
-        let body: PatchBody;
+        let body: unknown;
         try {
-            body = (await request.json()) as PatchBody;
+            body = await request.json();
         } catch {
             return NextResponse.json(
                 { error: "Invalid JSON body" },
@@ -53,16 +78,32 @@ export async function PATCH(request: Request) {
             );
         }
 
+        if (!isPatchBody(body)) {
+            return NextResponse.json(
+                { error: "Invalid JSON body" },
+                { status: 400 },
+            );
+        }
+
         const dmEncryptionPublicKey = body.dmEncryptionPublicKey;
+        const decodedPublicKey =
+            typeof dmEncryptionPublicKey === "string"
+                ? decodeBase64ToBytes(dmEncryptionPublicKey)
+                : null;
 
         if (
             typeof dmEncryptionPublicKey !== "string" ||
             dmEncryptionPublicKey.length === 0 ||
             dmEncryptionPublicKey.length > PUBLIC_KEY_MAX_LENGTH ||
-            !isLikelyBase64(dmEncryptionPublicKey)
+            !isLikelyBase64(dmEncryptionPublicKey) ||
+            !decodedPublicKey ||
+            decodedPublicKey.length !== PUBLIC_KEY_BYTE_LENGTH
         ) {
             return NextResponse.json(
-                { error: "Invalid dmEncryptionPublicKey" },
+                {
+                    error:
+                        "Invalid dmEncryptionPublicKey: key must be base64 and decode to 32 bytes",
+                },
                 { status: 400 },
             );
         }

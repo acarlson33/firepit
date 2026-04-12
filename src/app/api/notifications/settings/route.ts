@@ -6,6 +6,7 @@ import {
     getOrCreateNotificationSettings,
     updateNotificationSettings,
 } from "@/lib/notification-settings";
+import { getUserProfile } from "@/lib/appwrite-profiles";
 import type {
     DirectMessagePrivacy,
     NotificationLevel,
@@ -167,6 +168,23 @@ export async function PATCH(request: Request) {
                 },
                 { status: 400 },
             );
+        }
+
+        if (body.dmEncryptionEnabled === true) {
+            const currentProfile = await getUserProfile(user.$id).catch(() => null);
+            const hasPublishedPublicKey =
+                typeof currentProfile?.dmEncryptionPublicKey === "string" &&
+                currentProfile.dmEncryptionPublicKey.trim().length > 0;
+
+            if (!hasPublishedPublicKey) {
+                return NextResponse.json(
+                    {
+                        error:
+                            "dmEncryptionEnabled requires a published dmEncryptionPublicKey",
+                    },
+                    { status: 400 },
+                );
+            }
         }
 
         // Validate quiet hours format if provided (HH:MM)
