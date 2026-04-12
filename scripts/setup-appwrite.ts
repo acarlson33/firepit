@@ -956,6 +956,7 @@ async function setupProfiles() {
         ["profileBackgroundImageFileId", LEN_ID, false],
         ["profileBackgroundImageChangedAt", LEN_TS, false],
         ["avatarFramePreset", 64, false],
+        ["dmEncryptionPublicKey", 256, false],
     ];
     for (const [k, size, req] of fields) {
         await ensureStringAttribute("profiles", k, size, req);
@@ -1251,10 +1252,15 @@ async function setupDirectMessages() {
         ["imageFileId", LEN_ID, false],
         ["imageUrl", 2000, false],
         ["reactions", 2000, false], // JSON string of reactions array (reduced size to fit limit)
+        ["encryptedText", LEN_TEXT_LARGE, false],
+        ["encryptionNonce", 128, false],
+        ["encryptionVersion", 64, false],
+        ["encryptionSenderPublicKey", 256, false],
     ];
     for (const [k, size, req] of fields) {
         await ensureStringAttribute("direct_messages", k, size, req);
     }
+    await ensureBooleanAttribute("direct_messages", "isEncrypted", false);
     await ensureStringArrayAttribute(
         "direct_messages",
         "mentions",
@@ -1339,6 +1345,11 @@ async function setupNotificationSettings() {
         "notification_settings",
         "desktopNotifications",
         true,
+    );
+    await ensureBooleanAttribute(
+        "notification_settings",
+        "dmEncryptionEnabled",
+        false,
     );
     await ensureBooleanAttribute(
         "notification_settings",

@@ -21,6 +21,8 @@ const {
     mockGetDocument,
     mockGetRelationshipMap,
     mockGetRelationshipStatus,
+    mockGetOrCreateNotificationSettings,
+    mockGetUserProfile,
     mockUpsertMentionInboxItems,
     mockListThreadReadsByContext,
     mockIsThreadUnread,
@@ -33,6 +35,8 @@ const {
     mockGetDocument: vi.fn(),
     mockGetRelationshipMap: vi.fn(),
     mockGetRelationshipStatus: vi.fn(),
+    mockGetOrCreateNotificationSettings: vi.fn(),
+    mockGetUserProfile: vi.fn(),
     mockUpsertMentionInboxItems: vi.fn(),
     mockListThreadReadsByContext: vi.fn(),
     mockIsThreadUnread: vi.fn(),
@@ -96,6 +100,14 @@ vi.mock("@/lib/compression-utils", () => ({
 vi.mock("@/lib/appwrite-friendships", () => ({
     getRelationshipMap: mockGetRelationshipMap,
     getRelationshipStatus: mockGetRelationshipStatus,
+}));
+
+vi.mock("@/lib/notification-settings", () => ({
+    getOrCreateNotificationSettings: mockGetOrCreateNotificationSettings,
+}));
+
+vi.mock("@/lib/appwrite-profiles", () => ({
+    getUserProfile: mockGetUserProfile,
 }));
 
 vi.mock("@/lib/inbox-items", () => ({
@@ -174,6 +186,10 @@ describe("Direct Messages API", () => {
                     ]),
                 ),
         );
+            mockGetOrCreateNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: false,
+            });
+            mockGetUserProfile.mockResolvedValue(null);
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/direct-messages/route");

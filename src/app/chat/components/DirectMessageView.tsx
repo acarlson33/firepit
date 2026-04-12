@@ -95,7 +95,59 @@ type DirectMessageViewProps = {
     shouldShowLoadOlder?: boolean;
     unreadAnchorMessageId?: string | null;
     unreadSummaryLabel?: string | null;
+    dmEncryptionSelfEnabled?: boolean;
+    dmEncryptionPeerEnabled?: boolean;
+    dmEncryptionMutualEnabled?: boolean;
 };
+
+type EncryptionStatus = {
+    className: string;
+    label: string;
+};
+
+export function getEncryptionStatus(params: {
+    isGroup: boolean;
+    dmEncryptionMutualEnabled: boolean;
+    dmEncryptionSelfEnabled: boolean;
+    dmEncryptionPeerEnabled: boolean;
+}): EncryptionStatus | null {
+    const {
+        isGroup,
+        dmEncryptionMutualEnabled,
+        dmEncryptionSelfEnabled,
+        dmEncryptionPeerEnabled,
+    } = params;
+
+    if (isGroup) {
+        return null;
+    }
+
+    if (dmEncryptionMutualEnabled) {
+        return {
+            label: "End-to-end encryption active",
+            className: "text-emerald-700 dark:text-emerald-300",
+        };
+    }
+
+    if (dmEncryptionSelfEnabled && !dmEncryptionPeerEnabled) {
+        return {
+            label: "Encryption enabled for you; waiting for peer",
+            className: "text-amber-700 dark:text-amber-300",
+        };
+    }
+
+    if (!dmEncryptionSelfEnabled && dmEncryptionPeerEnabled) {
+        return {
+            label: "Peer enabled encryption; currently plaintext",
+            className: "text-amber-700 dark:text-amber-300",
+        };
+    }
+
+    return {
+        label: "Direct messages currently plaintext",
+        className: "text-muted-foreground",
+    };
+}
 
 export function DirectMessageView({
     conversation,
@@ -130,6 +182,9 @@ export function DirectMessageView({
     shouldShowLoadOlder = false,
     unreadAnchorMessageId,
     unreadSummaryLabel,
+    dmEncryptionSelfEnabled = false,
+    dmEncryptionPeerEnabled = false,
+    dmEncryptionMutualEnabled = false,
 }: DirectMessageViewProps) {
     const compactMessages = messageDensity === "compact";
     const [text, setText] = useState("");
@@ -163,6 +218,12 @@ export function DirectMessageView({
     const subtitle = isGroup
         ? `${participantCount} participant${participantCount === 1 ? "" : "s"}`
         : otherUser?.status;
+        const encryptionStatus = getEncryptionStatus({
+                isGroup,
+                dmEncryptionMutualEnabled,
+                dmEncryptionSelfEnabled,
+                dmEncryptionPeerEnabled,
+        });
     const composerDisabled = readOnly || sending || uploadingImage;
     const readOnlyMessage = readOnlyReason || "This conversation is read-only.";
     const useVirtualScrolling = messages.length >= VIRTUALIZATION_THRESHOLD;
@@ -431,6 +492,14 @@ export function DirectMessageView({
                         <p className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                             <Lock className="size-3" />
                             Read only
+                        </p>
+                    ) : null}
+                    {encryptionStatus ? (
+                        <p
+                            className={`mt-1 flex items-center gap-1 text-xs font-medium ${encryptionStatus.className}`}
+                        >
+                            <Lock className="size-3" />
+                            {encryptionStatus.label}
                         </p>
                     ) : null}
                 </div>

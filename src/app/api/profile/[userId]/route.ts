@@ -38,6 +38,7 @@ export async function GET(_request: Request, { params }: Props) {
 			pronouns: profile.pronouns,
 			location: profile.location,
 			website: profile.website,
+			dmEncryptionPublicKey: profile.dmEncryptionPublicKey,
 			avatarFileId: profile.avatarFileId,
 			avatarUrl,
 			status: status

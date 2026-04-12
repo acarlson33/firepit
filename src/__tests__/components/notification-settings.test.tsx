@@ -3,6 +3,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { NotificationSettings } from "@/components/notification-settings";
 
+const { mockEnsurePublishedDmEncryptionKey, mockLoggerError } = vi.hoisted(
+    () => ({
+        mockEnsurePublishedDmEncryptionKey: vi.fn(),
+        mockLoggerError: vi.fn(),
+    }),
+);
+
+vi.mock("@/lib/dm-encryption", () => ({
+    ensurePublishedDmEncryptionKeyForCurrentUser:
+        mockEnsurePublishedDmEncryptionKey,
+}));
+
+vi.mock("@/lib/client-logger", () => ({
+    logger: {
+        error: mockLoggerError,
+    },
+}));
+
 vi.mock("sonner", () => ({
     toast: {
         success: vi.fn(),
@@ -57,6 +75,8 @@ const baseSettingsResponse = {
 describe("NotificationSettings", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        window.localStorage.clear();
+        mockEnsurePublishedDmEncryptionKey.mockResolvedValue(undefined);
 
         vi.stubGlobal(
             "fetch",
@@ -188,6 +208,109 @@ describe("NotificationSettings", () => {
                     method: "PATCH",
                     body: JSON.stringify({ channelOverrides: {} }),
                 }),
+            );
+        });
+    });
+
+    it("hydrates DM encryption toggle from local fallback when server field is missing", async () => {
+        window.localStorage.setItem("firepit.dmEncryptionEnabled", "true");
+
+        render(<NotificationSettings />);
+
+        const dmEncryptionToggle = await screen.findByRole("switch", {
+            name: "Optional DM text encryption",
+        });
+
+        expect(dmEncryptionToggle).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("sends dmEncryptionEnabled=true to the server when toggle is enabled and saved", async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    ...baseSettingsResponse,
+                    dmEncryptionEnabled: false,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    ...baseSettingsResponse,
+                    dmEncryptionEnabled: true,
+                }),
+            });
+
+        vi.stubGlobal("fetch", fetchMock);
+
+        render(<NotificationSettings />);
+
+        const dmEncryptionToggle = await screen.findByRole("switch", {
+            name: "Optional DM text encryption",
+        });
+
+        fireEvent.click(dmEncryptionToggle);
+        fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+        await waitFor(() => {
+            const patchCall = fetchMock.mock.calls.find(
+                ([url, options]) =>
+                    url === "/api/notifications/settings" &&
+                    options &&
+                    typeof options === "object" &&
+                    "method" in options &&
+                    (options as { method?: string }).method === "PATCH",
+            );
+
+            expect(patchCall).toBeDefined();
+
+            const payload = JSON.parse(
+                ((patchCall?.[1] as { body?: string }).body as string) ||
+                    "{}",
+            ) as { dmEncryptionEnabled?: boolean };
+
+            expect(payload.dmEncryptionEnabled).toBe(true);
+        });
+    });
+
+    it("logs when DM encryption key publish fails after enabling encryption", async () => {
+        mockEnsurePublishedDmEncryptionKey.mockRejectedValueOnce(
+            new Error("sodium.from_base64 is undefined"),
+        );
+
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    ...baseSettingsResponse,
+                    dmEncryptionEnabled: false,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    ...baseSettingsResponse,
+                    dmEncryptionEnabled: true,
+                }),
+            });
+
+        vi.stubGlobal("fetch", fetchMock);
+
+        render(<NotificationSettings />);
+
+        const dmEncryptionToggle = await screen.findByRole("switch", {
+            name: "Optional DM text encryption",
+        });
+
+        fireEvent.click(dmEncryptionToggle);
+        fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+        await waitFor(() => {
+            expect(mockLoggerError).toHaveBeenCalledWith(
+                "Failed to publish DM encryption key from notification settings",
+                expect.any(Error),
             );
         });
     });

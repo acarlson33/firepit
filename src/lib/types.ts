@@ -131,6 +131,9 @@ export type Conversation = {
     readOnly?: boolean;
     readOnlyReason?: string;
     relationship?: RelationshipStatus;
+    dmEncryptionSelfEnabled?: boolean;
+    dmEncryptionPeerEnabled?: boolean;
+    dmEncryptionPeerPublicKey?: string;
     unreadThreadCount?: number;
     hasUnread?: boolean;
     // Enriched data
@@ -213,7 +216,21 @@ export type DirectMessage = {
     conversationId: string;
     senderId: string;
     receiverId?: string; // Optional for group DMs where there is no single receiver
+    // Plaintext message body used for non-encrypted messages.
+    // When isEncrypted is true this MUST be empty or a fixed placeholder value,
+    // not decrypted message content.
     text: string;
+    // Indicates whether encrypted payload fields are present and expected.
+    isEncrypted?: boolean;
+    // Base64 ciphertext for encrypted message text. Populated only when isEncrypted is true.
+    // This value remains on the message and is not cleared after decryption.
+    encryptedText?: string;
+    // Base64 nonce used with encryptedText.
+    encryptionNonce?: string;
+    // Encryption payload version identifier for compatibility handling.
+    encryptionVersion?: string;
+    // Base64 public key of the sender used to derive the shared decryption key.
+    encryptionSenderPublicKey?: string;
     imageFileId?: string;
     imageUrl?: string;
     attachments?: FileAttachment[]; // File attachments beyond images
@@ -292,6 +309,7 @@ export type UserProfileData = {
     profileBackgroundGradient?: string;
     profileBackgroundImageFileId?: string;
     profileBackgroundImageChangedAt?: string;
+    dmEncryptionPublicKey?: string;
     status?: {
         status: "online" | "away" | "busy" | "offline";
         customMessage?: string;
@@ -491,6 +509,7 @@ export type NotificationSettings = {
     // Global settings
     globalNotifications: NotificationLevel;
     directMessagePrivacy: DirectMessagePrivacy;
+    dmEncryptionEnabled?: boolean;
     desktopNotifications: boolean;
     pushNotifications: boolean;
     notificationSound: boolean;

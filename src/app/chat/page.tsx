@@ -1887,6 +1887,15 @@ export default function ChatPage() {
                                       }`
                                     : null
                             }
+                            dmEncryptionSelfEnabled={
+                                dmApi.dmEncryptionSelfEnabled
+                            }
+                            dmEncryptionPeerEnabled={
+                                dmApi.dmEncryptionPeerEnabled
+                            }
+                            dmEncryptionMutualEnabled={
+                                dmApi.dmEncryptionMutualEnabled
+                            }
                         />
                     ) : (
                         <>

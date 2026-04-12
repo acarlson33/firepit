@@ -64,7 +64,11 @@ export function DeveloperModeSettings() {
         setIsMounted(true);
     }, []);
 
-    const controlsDisabled = !isMounted || !isLoaded || !userId || isSaving;
+    if (!isMounted) {
+        return null;
+    }
+
+    const controlsDisabled = !isLoaded || !userId || isSaving;
 
     const orderedItems = navigationPreferences.navigationItemOrder;
 

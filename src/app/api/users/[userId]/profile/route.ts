@@ -85,6 +85,7 @@ export async function GET(
             profileBackgroundGradient: profile.profileBackgroundGradient,
             profileBackgroundImageFileId: profile.profileBackgroundImageFileId,
             profileBackgroundUrl,
+            dmEncryptionPublicKey: profile.dmEncryptionPublicKey,
             avatarFramePreset: profile.avatarFramePreset,
             avatarFrameUrl,
             status: status

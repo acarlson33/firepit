@@ -19,6 +19,7 @@ import type {
 } from "./types";
 
 const LABEL_LOOKUP_LIMIT = 500;
+const DM_ENCRYPTION_ATTRIBUTE_KEY = "dmEncryptionEnabled";
 
 const DEFAULT_SETTINGS: Omit<
     NotificationSettings,
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: Omit<
 > = {
     globalNotifications: "all",
     directMessagePrivacy: "everyone",
+    dmEncryptionEnabled: false,
     desktopNotifications: true,
     pushNotifications: true,
     notificationSound: true,
@@ -36,6 +38,109 @@ const DEFAULT_SETTINGS: Omit<
     channelOverrides: {},
     conversationOverrides: {},
 };
+
+export class NotificationSettingsSchemaError extends Error {
+    status: number;
+
+    constructor(message: string, status = 503) {
+        super(message);
+        this.name = "NotificationSettingsSchemaError";
+        this.status = status;
+    }
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return String(error);
+}
+
+function isSchemaErrorMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+
+    return (
+        normalized.includes("attribute not found in schema") ||
+        normalized.includes("attribute not available") ||
+        normalized.includes("requested attribute") ||
+        normalized.includes("unknown attribute")
+    );
+}
+
+function isMissingDmEncryptionAttributeError(error: unknown): boolean {
+    const message = getErrorMessage(error).toLowerCase();
+    return (
+        isSchemaErrorMessage(message) &&
+        message.includes(DM_ENCRYPTION_ATTRIBUTE_KEY.toLowerCase())
+    );
+}
+
+function createSchemaUnavailableError() {
+    return new NotificationSettingsSchemaError(
+        "Notification settings schema is missing dmEncryptionEnabled. Run `bun run setup` to provision the latest Appwrite attributes.",
+    );
+}
+
+async function ensureDmEncryptionSettingsAttribute(): Promise<boolean> {
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const dbAny = databases as unknown as {
+        createBooleanAttribute?: (...args: unknown[]) => Promise<unknown>;
+    };
+
+    if (typeof dbAny.createBooleanAttribute !== "function") {
+        return false;
+    }
+
+    try {
+        await dbAny.createBooleanAttribute(
+            env.databaseId,
+            env.collections.notificationSettings,
+            DM_ENCRYPTION_ATTRIBUTE_KEY,
+            false,
+        );
+        return true;
+    } catch (error) {
+        const message = getErrorMessage(error).toLowerCase();
+        if (
+            message.includes("already exists") ||
+            message.includes("attribute_already_exists")
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+async function runWithDmEncryptionAttributeRecovery<T>(
+    operation: () => Promise<T>,
+): Promise<T> {
+    try {
+        return await operation();
+    } catch (error) {
+        if (!isMissingDmEncryptionAttributeError(error)) {
+            throw error;
+        }
+
+        const repaired = await ensureDmEncryptionSettingsAttribute();
+        if (!repaired) {
+            throw createSchemaUnavailableError();
+        }
+
+        try {
+            return await operation();
+        } catch (retryError) {
+            if (isMissingDmEncryptionAttributeError(retryError)) {
+                throw createSchemaUnavailableError();
+            }
+
+            throw retryError;
+        }
+    }
+}
 
 /**
  * Creates empty override labels.
@@ -125,6 +230,11 @@ function parseOverrides(value: unknown): NotificationOverrideMap {
 function documentToSettings(
     doc: Record<string, unknown>,
 ): NotificationSettings {
+    const dmEncryptionEnabled =
+        typeof doc.dmEncryptionEnabled === "boolean"
+            ? doc.dmEncryptionEnabled
+            : undefined;
+
     return {
         $id: String(doc.$id),
         userId: String(doc.userId),
@@ -132,6 +242,7 @@ function documentToSettings(
             (doc.globalNotifications as NotificationLevel) || "all",
         directMessagePrivacy:
             (doc.directMessagePrivacy as DirectMessagePrivacy) || "everyone",
+        dmEncryptionEnabled,
         desktopNotifications: Boolean(doc.desktopNotifications ?? true),
         pushNotifications: Boolean(doc.pushNotifications ?? true),
         notificationSound: Boolean(doc.notificationSound ?? true),
@@ -597,6 +708,8 @@ export async function createNotificationSettings(
             data.globalNotifications ?? DEFAULT_SETTINGS.globalNotifications,
         directMessagePrivacy:
             data.directMessagePrivacy ?? DEFAULT_SETTINGS.directMessagePrivacy,
+        dmEncryptionEnabled:
+            data.dmEncryptionEnabled ?? DEFAULT_SETTINGS.dmEncryptionEnabled,
         desktopNotifications:
             data.desktopNotifications ?? DEFAULT_SETTINGS.desktopNotifications,
         pushNotifications:
@@ -616,12 +729,14 @@ export async function createNotificationSettings(
         conversationOverrides: JSON.stringify(data.conversationOverrides ?? {}),
     };
 
-    const doc = await databases.createDocument(
-        env.databaseId,
-        env.collections.notificationSettings,
-        ID.unique(),
-        docData,
-        perms.serverOwner(userId),
+    const doc = await runWithDmEncryptionAttributeRecovery(() =>
+        databases.createDocument(
+            env.databaseId,
+            env.collections.notificationSettings,
+            ID.unique(),
+            docData,
+            perms.serverOwner(userId),
+        ),
     );
 
     return documentToSettings(doc as unknown as Record<string, unknown>);
@@ -655,6 +770,9 @@ export async function updateNotificationSettings(
     if (data.directMessagePrivacy !== undefined) {
         updateData.directMessagePrivacy = data.directMessagePrivacy;
     }
+    if (data.dmEncryptionEnabled !== undefined) {
+        updateData.dmEncryptionEnabled = data.dmEncryptionEnabled;
+    }
     if (data.desktopNotifications !== undefined) {
         updateData.desktopNotifications = data.desktopNotifications;
     }
@@ -685,11 +803,13 @@ export async function updateNotificationSettings(
         );
     }
 
-    const doc = await databases.updateDocument(
-        env.databaseId,
-        env.collections.notificationSettings,
-        settingsId,
-        updateData,
+    const doc = await runWithDmEncryptionAttributeRecovery(() =>
+        databases.updateDocument(
+            env.databaseId,
+            env.collections.notificationSettings,
+            settingsId,
+            updateData,
+        ),
     );
 
     return documentToSettings(doc as unknown as Record<string, unknown>);

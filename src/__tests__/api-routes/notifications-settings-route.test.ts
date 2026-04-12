@@ -132,6 +132,7 @@ describe("Notification settings route", () => {
             userId: "user-1",
             globalNotifications: "mentions",
             directMessagePrivacy: "everyone",
+            dmEncryptionEnabled: true,
             desktopNotifications: false,
             pushNotifications: true,
             notificationSound: false,
@@ -165,6 +166,7 @@ describe("Notification settings route", () => {
                 method: "PATCH",
                 body: JSON.stringify({
                     globalNotifications: "mentions",
+                    dmEncryptionEnabled: true,
                     desktopNotifications: false,
                     serverOverrides: overrides,
                 }),
@@ -179,10 +181,12 @@ describe("Notification settings route", () => {
             "settings-1",
             expect.objectContaining({
                 globalNotifications: "mentions",
+                dmEncryptionEnabled: true,
                 serverOverrides: overrides,
             }),
         );
         expect(data.globalNotifications).toBe("mentions");
+        expect(data.dmEncryptionEnabled).toBe(true);
         expect(data.serverOverrides).toEqual(overrides);
         expect(mockBuildResponse).toHaveBeenCalledWith("user-1", updated);
     });
@@ -225,5 +229,33 @@ describe("Notification settings route", () => {
 
         expect(response.status).toBe(400);
         expect(data.error).toContain("Invalid quietHoursTimezone");
+    });
+
+    it("returns 503 when notification settings schema is missing dmEncryptionEnabled", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockGetOrCreate.mockResolvedValue({
+            $id: "settings-1",
+            userId: "user-1",
+        });
+
+        const schemaError = new Error(
+            "Notification settings schema is missing dmEncryptionEnabled.",
+        ) as Error & { status: number };
+        schemaError.status = 503;
+        mockUpdate.mockRejectedValue(schemaError);
+
+        const request = new NextRequest(
+            "http://localhost/api/notifications/settings",
+            {
+                method: "PATCH",
+                body: JSON.stringify({ dmEncryptionEnabled: true }),
+            },
+        );
+
+        const response = await PATCH(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(503);
+        expect(data.error).toContain("dmEncryptionEnabled");
     });
 });
