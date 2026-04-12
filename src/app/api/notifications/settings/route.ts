@@ -6,6 +6,7 @@ import {
     getOrCreateNotificationSettings,
     updateNotificationSettings,
 } from "@/lib/notification-settings";
+import { getUserProfile } from "@/lib/appwrite-profiles";
 import type {
     DirectMessagePrivacy,
     NotificationLevel,
@@ -84,6 +85,11 @@ export async function GET() {
             await buildNotificationSettingsResponse(user.$id, settings),
         );
     } catch (error) {
+        const status =
+            typeof (error as { status?: unknown }).status === "number"
+                ? (error as { status: number }).status
+                : 500;
+
         return NextResponse.json(
             {
                 error:
@@ -91,7 +97,7 @@ export async function GET() {
                         ? error.message
                         : "Failed to fetch notification settings",
             },
-            { status: 500 },
+            { status },
         );
     }
 }
@@ -99,6 +105,7 @@ export async function GET() {
 interface PatchRequestBody {
     globalNotifications?: NotificationLevel;
     directMessagePrivacy?: DirectMessagePrivacy;
+    dmEncryptionEnabled?: boolean;
     desktopNotifications?: boolean;
     pushNotifications?: boolean;
     notificationSound?: boolean;
@@ -149,6 +156,35 @@ export async function PATCH(request: Request) {
                 },
                 { status: 400 },
             );
+        }
+
+        if (
+            body.dmEncryptionEnabled !== undefined &&
+            typeof body.dmEncryptionEnabled !== "boolean"
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Invalid dmEncryptionEnabled value. Must be a boolean",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (body.dmEncryptionEnabled === true) {
+            const currentProfile = await getUserProfile(user.$id);
+            const hasPublishedPublicKey =
+                typeof currentProfile?.dmEncryptionPublicKey === "string" &&
+                currentProfile.dmEncryptionPublicKey.trim().length > 0;
+
+            if (!hasPublishedPublicKey) {
+                return NextResponse.json(
+                    {
+                        error:
+                            "dmEncryptionEnabled requires a published dmEncryptionPublicKey",
+                    },
+                    { status: 400 },
+                );
+            }
         }
 
         // Validate quiet hours format if provided (HH:MM)
@@ -255,6 +291,9 @@ export async function PATCH(request: Request) {
         if (body.directMessagePrivacy !== undefined) {
             updateData.directMessagePrivacy = body.directMessagePrivacy;
         }
+        if (body.dmEncryptionEnabled !== undefined) {
+            updateData.dmEncryptionEnabled = body.dmEncryptionEnabled;
+        }
         if (body.desktopNotifications !== undefined) {
             updateData.desktopNotifications = body.desktopNotifications;
         }
@@ -310,6 +349,11 @@ export async function PATCH(request: Request) {
             await buildNotificationSettingsResponse(user.$id, updatedSettings),
         );
     } catch (error) {
+        const status =
+            typeof (error as { status?: unknown }).status === "number"
+                ? (error as { status: number }).status
+                : 500;
+
         return NextResponse.json(
             {
                 error:
@@ -317,7 +361,7 @@ export async function PATCH(request: Request) {
                         ? error.message
                         : "Failed to update notification settings",
             },
-            { status: 500 },
+            { status },
         );
     }
 }

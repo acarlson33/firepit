@@ -91,6 +91,17 @@ vi.mock("@/lib/realtime-pool", () => ({
     getSharedRealtime: vi.fn(() => ({
         subscribe: mockRealtimeSubscribe,
     })),
+    isTransientRealtimeSubscribeError: vi.fn((error: unknown) => {
+        const message =
+            error instanceof Error ? error.message : String(error);
+        const normalized = message.toLowerCase();
+        return (
+            normalized.includes("was interrupted while the page was loading") ||
+            normalized.includes("can't establish a connection") ||
+            normalized.includes("can’t establish a connection") ||
+            normalized.includes("websocket error")
+        );
+    }),
     trackSubscription: vi.fn(() => vi.fn()),
 }));
 
@@ -478,6 +489,7 @@ describe("useDirectMessages", () => {
             undefined,
             undefined,
             undefined,
+            undefined,
         );
 
         await waitFor(() => {
@@ -564,6 +576,59 @@ describe("useDirectMessages", () => {
             "dm-1",
             "dm-realtime",
         ]);
+    });
+
+    it("retries DM realtime subscribe after transient setup interruption", async () => {
+        mockRealtimeSubscribe
+            .mockRejectedValueOnce(
+                new Error("Can't establish a connection to the server"),
+            )
+            .mockResolvedValueOnce({ close: vi.fn() });
+
+        vi.useFakeTimers();
+
+        try {
+            renderHook(() =>
+                useDirectMessages({
+                    conversationId: "conversation-1",
+                    userId: "user-1",
+                    userName: "User One",
+                }),
+            );
+
+            for (
+                let attempt = 0;
+                attempt < 20 && mockRealtimeSubscribe.mock.calls.length === 0;
+                attempt += 1
+            ) {
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(50);
+                });
+            }
+
+            expect(mockRealtimeSubscribe).toHaveBeenCalled();
+
+            const callsBeforeRetryWindow =
+                mockRealtimeSubscribe.mock.calls.length;
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1199);
+            });
+
+            expect(mockRealtimeSubscribe.mock.calls.length).toBe(
+                callsBeforeRetryWindow,
+            );
+
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1);
+            });
+
+            expect(mockRealtimeSubscribe.mock.calls.length).toBeGreaterThan(
+                callsBeforeRetryWindow,
+            );
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("preserves reply preview context when sending a DM reply", async () => {

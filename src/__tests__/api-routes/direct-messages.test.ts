@@ -21,6 +21,9 @@ const {
     mockGetDocument,
     mockGetRelationshipMap,
     mockGetRelationshipStatus,
+    mockGetNotificationSettings,
+    mockGetOrCreateNotificationSettings,
+    mockGetUserProfile,
     mockUpsertMentionInboxItems,
     mockListThreadReadsByContext,
     mockIsThreadUnread,
@@ -33,6 +36,9 @@ const {
     mockGetDocument: vi.fn(),
     mockGetRelationshipMap: vi.fn(),
     mockGetRelationshipStatus: vi.fn(),
+    mockGetNotificationSettings: vi.fn(),
+    mockGetOrCreateNotificationSettings: vi.fn(),
+    mockGetUserProfile: vi.fn(),
     mockUpsertMentionInboxItems: vi.fn(),
     mockListThreadReadsByContext: vi.fn(),
     mockIsThreadUnread: vi.fn(),
@@ -96,6 +102,15 @@ vi.mock("@/lib/compression-utils", () => ({
 vi.mock("@/lib/appwrite-friendships", () => ({
     getRelationshipMap: mockGetRelationshipMap,
     getRelationshipStatus: mockGetRelationshipStatus,
+}));
+
+vi.mock("@/lib/notification-settings", () => ({
+    getNotificationSettings: mockGetNotificationSettings,
+    getOrCreateNotificationSettings: mockGetOrCreateNotificationSettings,
+}));
+
+vi.mock("@/lib/appwrite-profiles", () => ({
+    getUserProfile: mockGetUserProfile,
 }));
 
 vi.mock("@/lib/inbox-items", () => ({
@@ -174,6 +189,13 @@ describe("Direct Messages API", () => {
                     ]),
                 ),
         );
+            mockGetOrCreateNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: false,
+            });
+            mockGetNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: false,
+            });
+            mockGetUserProfile.mockResolvedValue(null);
 
         // Dynamically import the route handlers
         const module = await import("../../app/api/direct-messages/route");
@@ -300,6 +322,49 @@ describe("Direct Messages API", () => {
 
             expect(response.status).toBe(200);
             expect(data.conversation.$id).toBe("conv-1");
+        });
+
+        it("returns dm encryption metadata on conversation responses", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockListDocuments.mockResolvedValue({
+                documents: [
+                    {
+                        $id: "conv-1",
+                        participants: ["user-1", "user-2"],
+                        lastMessageAt: new Date().toISOString(),
+                        $createdAt: new Date().toISOString(),
+                    },
+                ],
+            });
+
+            mockGetOrCreateNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: true,
+            });
+            mockGetNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: true,
+            });
+            mockGetUserProfile.mockResolvedValue({
+                dmEncryptionPublicKey: "peer-public-key",
+            });
+
+            const url = new URL(
+                "http://localhost/api/direct-messages?type=conversation&userId1=user-1&userId2=user-2",
+            );
+            const request = new NextRequest(url);
+            const response = await GET(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(data.conversation.dmEncryptionSelfEnabled).toBe(true);
+            expect(data.conversation.dmEncryptionPeerEnabled).toBe(true);
+            expect(data.conversation.dmEncryptionMutualEnabled).toBe(true);
+            expect(data.conversation.dmEncryptionPeerPublicKey).toBe(
+                "peer-public-key",
+            );
         });
 
         it("should create new conversation if not found", async () => {
@@ -536,6 +601,55 @@ describe("Direct Messages API", () => {
             expect(String(data.error)).toContain("too long");
             expect(mockCreateDocument).not.toHaveBeenCalled();
         });
+
+        it("returns 400 for invalid encrypted payloads", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockGetDocument.mockResolvedValue({
+                $id: "conv-1",
+                participants: ["user-1", "user-2"],
+                isGroup: false,
+            });
+
+            mockGetNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: true,
+            });
+            mockGetUserProfile.mockImplementation(async (userId: string) => {
+                if (userId === "user-1") {
+                    return { dmEncryptionPublicKey: "sender-profile-key" };
+                }
+
+                return { dmEncryptionPublicKey: "receiver-profile-key" };
+            });
+
+            const response = await POST(
+                new NextRequest("http://localhost/api/direct-messages", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        conversationId: "conv-1",
+                        senderId: "user-1",
+                        receiverId: "user-2",
+                        text: "",
+                        isEncrypted: true,
+                        encryptedText: "ciphertext",
+                        encryptionNonce: "nonce",
+                        encryptionVersion: "xchacha20poly1305-v1",
+                        encryptionSenderPublicKey: "different-key",
+                    }),
+                }),
+            );
+
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(String(data.error)).toContain(
+                "encryptionSenderPublicKey",
+            );
+            expect(mockCreateDocument).not.toHaveBeenCalled();
+        });
     });
 
     describe("PATCH /api/direct-messages", () => {
@@ -637,6 +751,37 @@ describe("Direct Messages API", () => {
             expect(response.status).toBe(400);
             expect(data.maxLength).toBe(MAX_MESSAGE_LENGTH);
             expect(String(data.error)).toContain("too long");
+            expect(mockUpdateDocument).not.toHaveBeenCalled();
+        });
+
+        it("blocks edits for encrypted direct messages", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockGetDocument.mockResolvedValue({
+                $id: "msg-enc-1",
+                senderId: "user-1",
+                receiverId: "user-2",
+                conversationId: "conv-1",
+                text: "",
+                isEncrypted: true,
+            });
+
+            const url = new URL(
+                "http://localhost/api/direct-messages?id=msg-enc-1",
+            );
+            const request = new NextRequest(url, {
+                method: "PATCH",
+                body: JSON.stringify({ text: "Updated text" }),
+            });
+
+            const response = await PATCH(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(409);
+            expect(String(data.error)).toContain("cannot be edited");
             expect(mockUpdateDocument).not.toHaveBeenCalled();
         });
     });

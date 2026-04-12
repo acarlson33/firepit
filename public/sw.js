@@ -222,6 +222,8 @@ function isStaticAsset(pathname) {
 function isSessionSensitiveApiPath(pathname) {
     return (
         pathname === "/api/me" ||
+        pathname === "/api/me/dm-encryption-key" ||
+        pathname === "/api/notifications/settings" ||
         pathname === "/api/session" ||
         pathname === "/api/login" ||
         pathname === "/api/logout" ||

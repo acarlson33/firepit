@@ -14,6 +14,13 @@ import { extractMentionedUsernames } from "./mention-utils";
 import { logger } from "./client-logger";
 import { resolveMessageImageUrl } from "./message-image-url";
 
+export type DirectMessageEncryptionPayload = {
+    encryptedText: string;
+    encryptionNonce: string;
+    encryptionSenderPublicKey: string;
+    encryptionVersion: string;
+};
+
 type FetchedUserProfile = Partial<UserProfileData>;
 
 /**
@@ -353,9 +360,10 @@ export async function sendDirectMessage(
     imageUrl?: string,
     replyToId?: string,
     attachments?: unknown[],
+    encryption?: DirectMessageEncryptionPayload,
 ): Promise<DirectMessage> {
     // Parse mentions from text
-    const mentions = extractMentionedUsernames(text);
+    const mentions = encryption ? [] : extractMentionedUsernames(text);
 
     const response = await fetch("/api/direct-messages", {
         method: "POST",
@@ -372,6 +380,11 @@ export async function sendDirectMessage(
             attachments:
                 attachments && attachments.length > 0 ? attachments : undefined,
             replyToId,
+            isEncrypted: Boolean(encryption),
+            encryptedText: encryption?.encryptedText,
+            encryptionNonce: encryption?.encryptionNonce,
+            encryptionVersion: encryption?.encryptionVersion,
+            encryptionSenderPublicKey: encryption?.encryptionSenderPublicKey,
             mentions: mentions.length > 0 ? mentions : undefined,
         }),
     });
@@ -478,6 +491,9 @@ export async function listDirectMessages(
 ): Promise<{
     items: DirectMessage[];
     nextCursor?: string;
+    dmEncryptionPeerEnabled: boolean;
+    dmEncryptionPeerPublicKey?: string;
+    dmEncryptionSelfEnabled: boolean;
     readOnly: boolean;
     readOnlyReason?: string;
     relationship?: RelationshipStatus;
@@ -518,6 +534,11 @@ export async function listDirectMessages(
                 imageFileId: msg.imageFileId,
                 imageUrl: msg.imageUrl,
             }),
+            isEncrypted: Boolean(msg.isEncrypted),
+            encryptedText: msg.encryptedText,
+            encryptionNonce: msg.encryptionNonce,
+            encryptionVersion: msg.encryptionVersion,
+            encryptionSenderPublicKey: msg.encryptionSenderPublicKey,
             senderDisplayName: profile?.displayName,
             senderAvatarUrl: profile?.avatarUrl,
             senderAvatarFramePreset: profile?.avatarFramePreset,
@@ -544,6 +565,12 @@ export async function listDirectMessages(
     return {
         items: enriched,
         nextCursor: data.nextCursor || undefined,
+        dmEncryptionPeerEnabled: Boolean(data.dmEncryptionPeerEnabled),
+        dmEncryptionPeerPublicKey:
+            typeof data.dmEncryptionPeerPublicKey === "string"
+                ? data.dmEncryptionPeerPublicKey
+                : undefined,
+        dmEncryptionSelfEnabled: Boolean(data.dmEncryptionSelfEnabled),
         readOnly: Boolean(data.readOnly),
         readOnlyReason: data.readOnlyReason
             ? String(data.readOnlyReason)

@@ -10,6 +10,7 @@ import {
     sendDirectMessage,
     editDirectMessage,
     deleteDirectMessage,
+    type DirectMessageEncryptionPayload,
 } from "@/lib/appwrite-dms-client";
 import type {
     DirectMessage,
@@ -34,7 +35,16 @@ import {
 import { listThreadReads, persistThreadReads } from "@/lib/thread-read-client";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
+import {
+    decryptMessageTextIfNeeded,
+    encryptDmText,
+    ensurePublishedDmEncryptionKey,
+} from "../../../lib/dm-encryption";
 import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
@@ -257,6 +267,25 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
                       : undefined,
           }
         : undefined;
+    const encryptedText =
+        typeof payload.encryptedText === "string"
+            ? payload.encryptedText
+            : undefined;
+    const encryptionNonce =
+        typeof payload.encryptionNonce === "string"
+            ? payload.encryptionNonce
+            : undefined;
+    const encryptionVersion =
+        typeof payload.encryptionVersion === "string"
+            ? payload.encryptionVersion
+            : undefined;
+    const encryptionSenderPublicKey =
+        typeof payload.encryptionSenderPublicKey === "string"
+            ? payload.encryptionSenderPublicKey
+            : undefined;
+    const isEncrypted =
+        payload.isEncrypted === true ||
+        (typeof encryptedText === "string" && encryptedText.length > 0);
 
     return {
         $id: payload.$id,
@@ -265,6 +294,11 @@ function parseMessagePayload(payload: unknown): DirectMessage | null {
         senderId: payload.senderId,
         $createdAt: payload.$createdAt,
         text: typeof payload.text === "string" ? payload.text : "",
+        isEncrypted,
+        encryptedText,
+        encryptionNonce,
+        encryptionVersion,
+        encryptionSenderPublicKey,
         receiverId:
             typeof payload.receiverId === "string"
                 ? payload.receiverId
@@ -373,6 +407,72 @@ function withReplyContext(
     };
 }
 
+function isTopLevelMessage(message: { threadId?: string }) {
+    return !message.threadId;
+}
+
+function mergeTopLevelMessages(
+    existingMessages: DirectMessage[],
+    incomingMessages: DirectMessage[],
+): DirectMessage[] {
+    if (existingMessages.length === 0) {
+        return incomingMessages;
+    }
+
+    const mergedById = new Map<string, DirectMessage>();
+    for (const message of incomingMessages) {
+        mergedById.set(message.$id, message);
+    }
+
+    for (const existingMessage of existingMessages) {
+        const incomingMessage = mergedById.get(existingMessage.$id);
+        if (incomingMessage) {
+            mergedById.set(
+                existingMessage.$id,
+                withReplyContext(
+                    {
+                        ...existingMessage,
+                        ...incomingMessage,
+                        attachments:
+                            incomingMessage.attachments ??
+                            existingMessage.attachments,
+                        replyTo:
+                            incomingMessage.replyTo ?? existingMessage.replyTo,
+                        replyToId:
+                            incomingMessage.replyToId ??
+                            existingMessage.replyToId,
+                        senderAvatarFramePreset:
+                            incomingMessage.senderAvatarFramePreset ??
+                            existingMessage.senderAvatarFramePreset,
+                        senderAvatarFrameUrl:
+                            incomingMessage.senderAvatarFrameUrl ??
+                            existingMessage.senderAvatarFrameUrl,
+                        senderAvatarUrl:
+                            incomingMessage.senderAvatarUrl ??
+                            existingMessage.senderAvatarUrl,
+                        senderDisplayName:
+                            incomingMessage.senderDisplayName ??
+                            existingMessage.senderDisplayName,
+                        senderPronouns:
+                            incomingMessage.senderPronouns ??
+                            existingMessage.senderPronouns,
+                    },
+                    incomingMessages,
+                    existingMessage,
+                ),
+            );
+            continue;
+        }
+
+        // Keep local or realtime arrivals that are missing from fetched history.
+        mergedById.set(existingMessage.$id, existingMessage);
+    }
+
+    return Array.from(mergedById.values()).sort((a, b) =>
+        a.$createdAt.localeCompare(b.$createdAt),
+    );
+}
+
 function normalizeRealtimeEvents(events: unknown): string[] {
     if (!Array.isArray(events)) {
         return [];
@@ -387,10 +487,6 @@ export function useDirectMessages({
     receiverId,
     userName,
 }: UseDirectMessagesProps) {
-    function isTopLevelMessage(message: { threadId?: string }) {
-        return !message.threadId;
-    }
-
     const [messages, setMessages] = useState<DirectMessage[]>([]);
     const [loading, setLoading] = useState(true);
     const [oldestCursor, setOldestCursor] = useState<string | null>(null);
@@ -401,6 +497,17 @@ export function useDirectMessages({
     const [relationship, setRelationship] = useState<RelationshipStatus | null>(
         null,
     );
+    const [dmEncryptionSelfEnabled, setDmEncryptionSelfEnabled] =
+        useState(false);
+    const [dmEncryptionPeerEnabled, setDmEncryptionPeerEnabled] =
+        useState(false);
+    const [dmEncryptionPeerPublicKey, setDmEncryptionPeerPublicKey] =
+        useState<string | null>(null);
+    const dmEncryptionPeerPublicKeyRef = useRef<string | null>(null);
+    const dmEncryptionMutualEnabled =
+        dmEncryptionSelfEnabled && dmEncryptionPeerEnabled;
+    const [messageRealtimeRetryNonce, setMessageRealtimeRetryNonce] =
+        useState(0);
     const [sending, setSending] = useState(false);
     const [typingUsers, setTypingUsers] = useState<
         Record<string, { userId: string; userName?: string; updatedAt: string }>
@@ -411,6 +518,8 @@ export function useDirectMessages({
     const lastTypingSentAt = useRef<number>(0);
     const currentConversationIdRef = useRef<string | null>(conversationId);
     const loadRequestIdRef = useRef(0);
+    const lastMessageRealtimeEventAtRef = useRef(Date.now());
+    const backgroundMessageSyncInFlightRef = useRef(false);
     const userProfileCache = useRef<
         Record<
             string,
@@ -426,8 +535,33 @@ export function useDirectMessages({
 
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
+    const backgroundMessageSyncIntervalMs = 15_000;
+    const backgroundMessageSyncGraceMs = 25_000;
     const initialPageSize = 50;
     const loadMoreSize = 50;
+
+    const decryptMessage = useCallback(
+        async (
+            message: DirectMessage,
+            peerPublicKeyBase64?: string | null,
+        ): Promise<DirectMessage> => {
+            if (!userId) {
+                return message;
+            }
+
+            return decryptMessageTextIfNeeded({
+                message,
+                peerPublicKeyBase64:
+                    peerPublicKeyBase64 ?? dmEncryptionPeerPublicKeyRef.current,
+                userId,
+            });
+        },
+        [userId],
+    );
+
+    useEffect(() => {
+        dmEncryptionPeerPublicKeyRef.current = dmEncryptionPeerPublicKey;
+    }, [dmEncryptionPeerPublicKey]);
     const listConversationThreadReads = useCallback(
         (currentContextId: string) =>
             listThreadReads("conversation", currentContextId),
@@ -493,6 +627,9 @@ export function useDirectMessages({
             setReadOnly(false);
             setReadOnlyReason(null);
             setRelationship(null);
+            setDmEncryptionSelfEnabled(false);
+            setDmEncryptionPeerEnabled(false);
+            setDmEncryptionPeerPublicKey(null);
             setLoading(false);
             return;
         }
@@ -506,6 +643,9 @@ export function useDirectMessages({
             setReadOnly(false);
             setReadOnlyReason(null);
             setRelationship(null);
+            setDmEncryptionSelfEnabled(false);
+            setDmEncryptionPeerEnabled(false);
+            setDmEncryptionPeerPublicKey(null);
 
             // Optimized: Batch query all messages at once
             // User profiles are fetched in batches (5 at a time) to reduce API calls
@@ -515,77 +655,31 @@ export function useDirectMessages({
                 initialPageSize,
             );
 
+            const peerPublicKeyBase64 =
+                result.dmEncryptionPeerPublicKey ?? null;
+
+            const decryptedItems = await Promise.all(
+                result.items.map((message) =>
+                    decryptMessage(message, peerPublicKeyBase64),
+                ),
+            );
+
             if (requestId !== loadRequestIdRef.current) {
                 return;
             }
 
             // Reverse to show oldest first
-            const orderedItems = result.items.reverse();
+            const orderedItems = decryptedItems.reverse();
             const topLevelItems = orderedItems.filter(isTopLevelMessage);
-            setMessages((prev) => {
-                if (prev.length === 0) {
-                    return topLevelItems;
-                }
-
-                const mergedById = new Map<string, DirectMessage>();
-                for (const message of topLevelItems) {
-                    mergedById.set(message.$id, message);
-                }
-
-                for (const existingMessage of prev) {
-                    const fetchedMessage = mergedById.get(existingMessage.$id);
-                    if (fetchedMessage) {
-                        mergedById.set(
-                            existingMessage.$id,
-                            withReplyContext(
-                                {
-                                    ...existingMessage,
-                                    ...fetchedMessage,
-                                    attachments:
-                                        fetchedMessage.attachments ??
-                                        existingMessage.attachments,
-                                    replyTo:
-                                        fetchedMessage.replyTo ??
-                                        existingMessage.replyTo,
-                                    replyToId:
-                                        fetchedMessage.replyToId ??
-                                        existingMessage.replyToId,
-                                    senderAvatarFramePreset:
-                                        fetchedMessage.senderAvatarFramePreset ??
-                                        existingMessage.senderAvatarFramePreset,
-                                    senderAvatarFrameUrl:
-                                        fetchedMessage.senderAvatarFrameUrl ??
-                                        existingMessage.senderAvatarFrameUrl,
-                                    senderAvatarUrl:
-                                        fetchedMessage.senderAvatarUrl ??
-                                        existingMessage.senderAvatarUrl,
-                                    senderDisplayName:
-                                        fetchedMessage.senderDisplayName ??
-                                        existingMessage.senderDisplayName,
-                                    senderPronouns:
-                                        fetchedMessage.senderPronouns ??
-                                        existingMessage.senderPronouns,
-                                },
-                                topLevelItems,
-                                existingMessage,
-                            ),
-                        );
-                        continue;
-                    }
-
-                    // Keep realtime arrivals that landed while history was loading.
-                    mergedById.set(existingMessage.$id, existingMessage);
-                }
-
-                return Array.from(mergedById.values()).sort((a, b) =>
-                    a.$createdAt.localeCompare(b.$createdAt),
-                );
-            });
+            setMessages((prev) => mergeTopLevelMessages(prev, topLevelItems));
             setOldestCursor(result.nextCursor ?? null);
             setHasMore(Boolean(result.nextCursor));
             setReadOnly(result.readOnly);
             setReadOnlyReason(result.readOnlyReason ?? null);
             setRelationship(result.relationship ?? null);
+            setDmEncryptionSelfEnabled(Boolean(result.dmEncryptionSelfEnabled));
+            setDmEncryptionPeerEnabled(Boolean(result.dmEncryptionPeerEnabled));
+            setDmEncryptionPeerPublicKey(result.dmEncryptionPeerPublicKey ?? null);
         } catch (err) {
             setError(
                 err instanceof Error ? err.message : "Failed to load messages",
@@ -595,7 +689,7 @@ export function useDirectMessages({
                 setLoading(false);
             }
         }
-    }, [conversationId, initialPageSize]);
+    }, [conversationId, decryptMessage, initialPageSize]);
 
     const loadOlder = useCallback(async () => {
         if (!conversationId || !oldestCursor) {
@@ -612,11 +706,23 @@ export function useDirectMessages({
             if (currentConversationIdRef.current !== activeConversationId) {
                 return;
             }
-            const olderItems = result.items.reverse().filter(isTopLevelMessage);
+            const peerPublicKeyBase64 =
+                result.dmEncryptionPeerPublicKey ?? null;
+            const decryptedItems = await Promise.all(
+                result.items.map((message) =>
+                    decryptMessage(message, peerPublicKeyBase64),
+                ),
+            );
+            const olderItems = decryptedItems
+                .reverse()
+                .filter(isTopLevelMessage);
 
             setMessages((currentValue) => [...olderItems, ...currentValue]);
             setOldestCursor(result.nextCursor ?? null);
             setHasMore(Boolean(result.nextCursor));
+            setDmEncryptionSelfEnabled(Boolean(result.dmEncryptionSelfEnabled));
+            setDmEncryptionPeerEnabled(Boolean(result.dmEncryptionPeerEnabled));
+            setDmEncryptionPeerPublicKey(result.dmEncryptionPeerPublicKey ?? null);
         } catch (err) {
             setError(
                 err instanceof Error
@@ -624,7 +730,7 @@ export function useDirectMessages({
                     : "Failed to load older messages",
             );
         }
-    }, [conversationId, oldestCursor]);
+    }, [conversationId, decryptMessage, oldestCursor]);
 
     useEffect(() => {
         currentConversationIdRef.current = conversationId;
@@ -633,6 +739,117 @@ export function useDirectMessages({
     useEffect(() => {
         void loadMessages();
     }, [loadMessages]);
+
+    useEffect(() => {
+        if (!userId || !dmEncryptionSelfEnabled) {
+            return;
+        }
+
+        const publishKey = async () => {
+            try {
+                await ensurePublishedDmEncryptionKey(userId);
+            } catch (error) {
+                logger.warn("Failed to publish DM encryption key", {
+                    error: error instanceof Error ? error.message : String(error),
+                    userId,
+                });
+            }
+        };
+
+        publishKey();
+    }, [dmEncryptionSelfEnabled, userId]);
+
+    // Safety net: pull latest DM history occasionally when realtime appears stale.
+    useEffect(() => {
+        if (!conversationId || !userId || !DIRECT_MESSAGES_COLLECTION) {
+            return;
+        }
+
+        let cancelled = false;
+
+        const syncMissedMessages = async () => {
+            const activeConversationId = currentConversationIdRef.current;
+            if (!activeConversationId || activeConversationId !== conversationId) {
+                return;
+            }
+
+            if (backgroundMessageSyncInFlightRef.current) {
+                return;
+            }
+
+            const realtimeAgeMs =
+                Date.now() - lastMessageRealtimeEventAtRef.current;
+            if (realtimeAgeMs < backgroundMessageSyncGraceMs) {
+                return;
+            }
+
+            backgroundMessageSyncInFlightRef.current = true;
+
+            try {
+                const result = await listDirectMessages(
+                    activeConversationId,
+                    initialPageSize,
+                );
+
+                const peerPublicKeyBase64 =
+                    result.dmEncryptionPeerPublicKey ?? null;
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (currentConversationIdRef.current !== activeConversationId) {
+                    return;
+                }
+
+                const decryptedItems = await Promise.all(
+                    result.items.map((message) =>
+                        decryptMessage(message, peerPublicKeyBase64),
+                    ),
+                );
+
+                const topLevelItems = decryptedItems
+                    .reverse()
+                    .filter(isTopLevelMessage);
+
+                if (topLevelItems.length > 0) {
+                    setMessages((prev) =>
+                        mergeTopLevelMessages(prev, topLevelItems),
+                    );
+                }
+
+                setOldestCursor(result.nextCursor ?? null);
+                setHasMore(Boolean(result.nextCursor));
+                setReadOnly(result.readOnly);
+                setReadOnlyReason(result.readOnlyReason ?? null);
+                setRelationship(result.relationship ?? null);
+                setDmEncryptionSelfEnabled(Boolean(result.dmEncryptionSelfEnabled));
+                setDmEncryptionPeerEnabled(Boolean(result.dmEncryptionPeerEnabled));
+                setDmEncryptionPeerPublicKey(
+                    result.dmEncryptionPeerPublicKey ?? null,
+                );
+            } catch (syncError) {
+                logger.warn("Background DM sync failed", {
+                    conversationId: activeConversationId,
+                    error:
+                        syncError instanceof Error
+                            ? syncError.message
+                            : String(syncError),
+                });
+            } finally {
+                backgroundMessageSyncInFlightRef.current = false;
+            }
+        };
+
+        const interval = setInterval(() => {
+            void syncMissedMessages();
+        }, backgroundMessageSyncIntervalMs);
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [conversationId, decryptMessage, userId, initialPageSize]);
 
     const {
         activeThreadParent,
@@ -686,6 +903,7 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        let retryTimeout: NodeJS.Timeout | null = null;
         const messageChannel = Channel.database(env.databaseId)
             .collection(DIRECT_MESSAGES_COLLECTION)
             .document();
@@ -704,86 +922,134 @@ export function useDirectMessages({
                 subscription = await realtime.subscribe(
                     messageChannel,
                     (response) => {
-                        const events = normalizeRealtimeEvents(response.events);
-                        const messageData = parseMessagePayload(
-                            response.payload,
-                        );
+                        (async () => {
+                            let resolvedMessageId: string | undefined;
 
-                        if (!messageData) {
-                            return;
-                        }
-
-                        if (
-                            !messageData.conversationId ||
-                            messageData.conversationId !==
-                                currentConversationIdRef.current
-                        ) {
-                            return;
-                        }
-
-                        if (!isTopLevelMessage(messageData)) {
-                            return;
-                        }
-
-                        // Handle different event types to avoid full reload
-                        if (events.some((e) => e.endsWith(".create"))) {
-                            setMessages((prev) => {
-                                if (
-                                    prev.some((m) => m.$id === messageData.$id)
-                                ) {
-                                    return prev;
-                                }
-                                return [
-                                    ...prev,
-                                    withReplyContext(messageData, prev),
-                                ].sort((a, b) =>
-                                    a.$createdAt.localeCompare(b.$createdAt),
+                            try {
+                                const events = normalizeRealtimeEvents(
+                                    response.events,
                                 );
-                            });
-                        } else if (events.some((e) => e.endsWith(".update"))) {
-                            setMessages((prev) =>
-                                prev.map((m) =>
-                                    m.$id === messageData.$id
-                                        ? withReplyContext(
-                                              {
-                                                  ...m,
-                                                  ...messageData,
-                                                  attachments:
-                                                      messageData.attachments ??
-                                                      m.attachments,
-                                                  replyTo:
-                                                      messageData.replyTo ??
-                                                      m.replyTo,
-                                                  replyToId:
-                                                      messageData.replyToId ??
-                                                      m.replyToId,
-                                                  senderAvatarFramePreset:
-                                                      messageData.senderAvatarFramePreset ??
-                                                      m.senderAvatarFramePreset,
-                                                  senderAvatarFrameUrl:
-                                                      messageData.senderAvatarFrameUrl ??
-                                                      m.senderAvatarFrameUrl,
-                                                  senderAvatarUrl:
-                                                      messageData.senderAvatarUrl ??
-                                                      m.senderAvatarUrl,
-                                                  senderDisplayName:
-                                                      messageData.senderDisplayName ??
-                                                      m.senderDisplayName,
-                                                  senderPronouns:
-                                                      messageData.senderPronouns ??
-                                                      m.senderPronouns,
-                                              },
-                                              prev,
-                                              m,
-                                          )
-                                        : m,
-                                ),
-                            );
-                        } else if (events.some((e) => e.endsWith(".delete"))) {
-                            setMessages((prev) =>
-                                prev.filter((m) => m.$id !== messageData.$id),
-                            );
-                        }
+                                const messageData = parseMessagePayload(
+                                    response.payload,
+                                );
+
+                                if (!messageData) {
+                                    return;
+                                }
+
+                                resolvedMessageId = messageData.$id;
+
+                                if (
+                                    !messageData.conversationId ||
+                                    messageData.conversationId !==
+                                        currentConversationIdRef.current
+                                ) {
+                                    return;
+                                }
+
+                                if (!isTopLevelMessage(messageData)) {
+                                    return;
+                                }
+
+                                const resolvedMessage = await decryptMessage(
+                                    messageData,
+                                );
+                                resolvedMessageId = resolvedMessage.$id;
+
+                                // Handle different event types to avoid full reload
+                                if (events.some((e) => e.endsWith(".create"))) {
+                                    lastMessageRealtimeEventAtRef.current =
+                                        Date.now();
+                                    setMessages((prev) => {
+                                        if (
+                                            prev.some(
+                                                (m) =>
+                                                    m.$id ===
+                                                    resolvedMessage.$id,
+                                            )
+                                        ) {
+                                            return prev;
+                                        }
+                                        return [
+                                            ...prev,
+                                            withReplyContext(
+                                                resolvedMessage,
+                                                prev,
+                                            ),
+                                        ].sort((a, b) =>
+                                            a.$createdAt.localeCompare(
+                                                b.$createdAt,
+                                            ),
+                                        );
+                                    });
+                                } else if (
+                                    events.some((e) => e.endsWith(".update"))
+                                ) {
+                                    lastMessageRealtimeEventAtRef.current =
+                                        Date.now();
+                                    setMessages((prev) =>
+                                        prev.map((m) =>
+                                            m.$id === resolvedMessage.$id
+                                                ? withReplyContext(
+                                                      {
+                                                          ...m,
+                                                          ...resolvedMessage,
+                                                          attachments:
+                                                              resolvedMessage.attachments ??
+                                                              m.attachments,
+                                                          replyTo:
+                                                              resolvedMessage.replyTo ??
+                                                              m.replyTo,
+                                                          replyToId:
+                                                              resolvedMessage.replyToId ??
+                                                              m.replyToId,
+                                                          senderAvatarFramePreset:
+                                                              resolvedMessage.senderAvatarFramePreset ??
+                                                              m.senderAvatarFramePreset,
+                                                          senderAvatarFrameUrl:
+                                                              resolvedMessage.senderAvatarFrameUrl ??
+                                                              m.senderAvatarFrameUrl,
+                                                          senderAvatarUrl:
+                                                              resolvedMessage.senderAvatarUrl ??
+                                                              m.senderAvatarUrl,
+                                                          senderDisplayName:
+                                                              resolvedMessage.senderDisplayName ??
+                                                              m.senderDisplayName,
+                                                          senderPronouns:
+                                                              resolvedMessage.senderPronouns ??
+                                                              m.senderPronouns,
+                                                      },
+                                                      prev,
+                                                      m,
+                                                  )
+                                                : m,
+                                        ),
+                                    );
+                                } else if (
+                                    events.some((e) => e.endsWith(".delete"))
+                                ) {
+                                    lastMessageRealtimeEventAtRef.current =
+                                        Date.now();
+                                    setMessages((prev) =>
+                                        prev.filter(
+                                            (m) => m.$id !== resolvedMessage.$id,
+                                        ),
+                                    );
+                                }
+                            } catch (error) {
+                                logger.error(
+                                    "Direct message realtime event handling failed",
+                                    error instanceof Error
+                                        ? error
+                                        : new Error(String(error)),
+                                    {
+                                        conversationId:
+                                            currentConversationIdRef.current,
+                                        messageId: resolvedMessageId,
+                                    },
+                                );
+                            }
+                        })();
                     },
                     [Query.equal("conversationId", conversationId)],
                 );
@@ -802,22 +1068,54 @@ export function useDirectMessages({
                 untrack?.();
                 await closeSubscriptionSafely(subscription);
                 if (!cancelled) {
-                    logger.error(
-                        "Direct message realtime subscription failed:",
-                        error instanceof Error ? error : String(error),
-                        {
-                            conversationId: currentConversationIdRef.current,
-                        },
-                    );
+                    const isTransient =
+                        isTransientRealtimeSubscribeError(error);
+                    const retryDelayMs = isTransient ? 1200 : 4000;
+
+                    if (isTransient) {
+                        logger.warn(
+                            "Direct message realtime subscription interrupted during connection setup",
+                            {
+                                conversationId:
+                                    currentConversationIdRef.current,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                retryDelayMs,
+                            },
+                        );
+                    } else {
+                        logger.error(
+                            "Direct message realtime subscription failed:",
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error)),
+                            {
+                                conversationId:
+                                    currentConversationIdRef.current,
+                                retryDelayMs,
+                            },
+                        );
+                    }
+
+                    retryTimeout = setTimeout(() => {
+                        setMessageRealtimeRetryNonce((currentValue) =>
+                            currentValue + 1,
+                        );
+                    }, retryDelayMs);
                 }
             }
         })();
 
         return () => {
             cancelled = true;
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+            }
             cleanupFn?.();
         };
-    }, [conversationId, userId]);
+    }, [conversationId, decryptMessage, userId, messageRealtimeRetryNonce]);
 
     const send = useCallback(
         async (
@@ -855,15 +1153,63 @@ export function useDirectMessages({
 
             setSending(true);
             try {
+                const plainText = text.trim() || "";
+                let encryptionPayload: DirectMessageEncryptionPayload | undefined;
+                const encryptionRequired =
+                    plainText.length > 0 &&
+                    (dmEncryptionMutualEnabled ||
+                        Boolean(dmEncryptionPeerPublicKey));
+
+                if (encryptionRequired) {
+                    if (!dmEncryptionPeerPublicKey) {
+                        toast.error(
+                            "Encryption required but peer public key is unavailable",
+                        );
+                        logger.warn(
+                            "DM encryption required but peer key is missing",
+                            {
+                                conversationId,
+                                userId,
+                            },
+                        );
+                        return;
+                    }
+
+                    try {
+                        const senderKeyPair =
+                            await ensurePublishedDmEncryptionKey(userId);
+                        encryptionPayload = await encryptDmText({
+                            recipientPublicKeyBase64:
+                                dmEncryptionPeerPublicKey,
+                            senderKeyPair,
+                            text: plainText,
+                        });
+                    } catch (encryptionError) {
+                        toast.error("Encryption failed; message was not sent");
+                        logger.warn("DM encryption failed; message not sent", {
+                            conversationId,
+                            error:
+                                encryptionError instanceof Error
+                                    ? encryptionError.message
+                                    : String(encryptionError),
+                            userId,
+                        });
+                        return;
+                    }
+                }
+
+                const outboundText = encryptionPayload ? "" : plainText;
+
                 const message = await sendDirectMessage(
                     conversationId,
                     userId,
                     receiverId,
-                    text.trim() || "",
+                    outboundText,
                     imageFileId,
                     imageUrl,
                     replyToId,
                     attachments,
+                    encryptionPayload,
                 );
 
                 // Enrich with sender profile data (cached to avoid repeated fetches)
@@ -902,6 +1248,8 @@ export function useDirectMessages({
                 const profile = userProfileCache.current[userId];
                 const enrichedMessage: DirectMessage = {
                     ...message,
+                    text:
+                        encryptionPayload && plainText ? plainText : message.text,
                     senderDisplayName: profile?.displayName,
                     senderAvatarUrl: profile?.avatarUrl,
                     senderAvatarFramePreset: profile?.avatarFramePreset,
@@ -943,7 +1291,15 @@ export function useDirectMessages({
                 setSending(false);
             }
         },
-        [conversationId, readOnly, readOnlyReason, receiverId, userId],
+        [
+            conversationId,
+            dmEncryptionMutualEnabled,
+            dmEncryptionPeerPublicKey,
+            readOnly,
+            readOnlyReason,
+            receiverId,
+            userId,
+        ],
     );
 
     const edit = useCallback(
@@ -1398,6 +1754,10 @@ export function useDirectMessages({
         readOnly,
         readOnlyReason,
         relationship,
+        dmEncryptionSelfEnabled,
+        dmEncryptionPeerEnabled,
+        dmEncryptionMutualEnabled,
+        dmEncryptionPeerPublicKey,
         activeThreadParent,
         threadMessages,
         threadLoading,

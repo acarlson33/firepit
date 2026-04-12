@@ -358,6 +358,7 @@ describe("Notification Settings", () => {
                         userId: "user-1",
                         globalNotifications: "all",
                         directMessagePrivacy: "everyone",
+                        dmEncryptionEnabled: false,
                         desktopNotifications: true,
                         pushNotifications: true,
                         notificationSound: true,
@@ -408,6 +409,7 @@ describe("Notification Settings", () => {
                         userId: "user-1",
                         globalNotifications: "all",
                         directMessagePrivacy: "everyone",
+                        dmEncryptionEnabled: false,
                         desktopNotifications: true,
                         pushNotifications: true,
                         notificationSound: true,
@@ -436,6 +438,7 @@ describe("Notification Settings", () => {
                         userId: "user-1",
                         globalNotifications: "all",
                         directMessagePrivacy: "everyone",
+                        dmEncryptionEnabled: false,
                         desktopNotifications: true,
                         pushNotifications: true,
                         notificationSound: true,
@@ -469,6 +472,7 @@ describe("Notification Settings", () => {
                         userId: "user-1",
                         globalNotifications: "all",
                         directMessagePrivacy: "everyone",
+                        dmEncryptionEnabled: false,
                         desktopNotifications: true,
                         pushNotifications: true,
                         notificationSound: true,
@@ -486,6 +490,35 @@ describe("Notification Settings", () => {
             expect(result?.serverOverrides).toEqual({});
         });
 
+        it("preserves undefined dmEncryptionEnabled when the field is absent", async () => {
+            const mockClient = getAdminClient();
+
+            vi.mocked(mockClient.databases.listDocuments).mockResolvedValue({
+                total: 1,
+                documents: [
+                    {
+                        $id: "settings-1",
+                        userId: "user-1",
+                        globalNotifications: "all",
+                        directMessagePrivacy: "everyone",
+                        desktopNotifications: true,
+                        pushNotifications: true,
+                        notificationSound: true,
+                        quietHoursStart: null,
+                        quietHoursEnd: null,
+                        serverOverrides: "{}",
+                        channelOverrides: "{}",
+                        conversationOverrides: "{}",
+                    },
+                ],
+            } as never);
+
+            const result = await getNotificationSettings("user-1");
+
+            expect(result?.dmEncryptionEnabled).toBeUndefined();
+            expect(mockClient.databases.updateDocument).not.toHaveBeenCalled();
+        });
+
         it("should create defaults when settings are missing", async () => {
             const mockClient = getAdminClient();
 
@@ -498,6 +531,7 @@ describe("Notification Settings", () => {
                 $id: "settings-created",
                 userId: "user-1",
                 globalNotifications: "all",
+                dmEncryptionEnabled: false,
                 desktopNotifications: true,
                 pushNotifications: true,
                 notificationSound: true,

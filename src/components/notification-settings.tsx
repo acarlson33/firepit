@@ -46,6 +46,8 @@ import type {
     NotificationOverrideMap,
     NotificationSettingsResponse,
 } from "@/lib/types";
+import { ensurePublishedDmEncryptionKeyForCurrentUser } from "@/lib/dm-encryption";
+import { logger } from "@/lib/client-logger";
 
 interface NotificationSettingsProps {
     onSettingsChange?: (settings: NotificationSettingsResponse) => void;
@@ -72,6 +74,7 @@ interface ManageOverrideDialogState {
 }
 
 const DEFAULT_TIMEZONE = "UTC";
+const DM_ENCRYPTION_LOCAL_STORAGE_KEY = "firepit.dmEncryptionEnabled";
 
 const OVERRIDE_SECTIONS: OverrideSectionConfig[] = [
     {
@@ -148,6 +151,33 @@ function getDefaultTimezone(): string {
     }
 
     return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+}
+
+function readLocalDmEncryptionPreference(): boolean | null {
+    if (typeof window === "undefined") {
+        return null;
+    }
+
+    const raw = window.localStorage.getItem(DM_ENCRYPTION_LOCAL_STORAGE_KEY);
+    if (raw === "true") {
+        return true;
+    }
+    if (raw === "false") {
+        return false;
+    }
+
+    return null;
+}
+
+function writeLocalDmEncryptionPreference(value: boolean): void {
+    if (typeof window === "undefined") {
+        return;
+    }
+
+    window.localStorage.setItem(
+        DM_ENCRYPTION_LOCAL_STORAGE_KEY,
+        String(value),
+    );
 }
 
 function formatNotificationLevel(level: NotificationLevel): string {
@@ -305,6 +335,7 @@ export function NotificationSettings({
     const [globalLevel, setGlobalLevel] = useState<NotificationLevel>("all");
     const [directMessagePrivacy, setDirectMessagePrivacy] =
         useState<DirectMessagePrivacy>("everyone");
+    const [dmEncryptionEnabled, setDmEncryptionEnabled] = useState(false);
     const [desktopEnabled, setDesktopEnabled] = useState(true);
     const [pushEnabled, setPushEnabled] = useState(true);
     const [soundEnabled, setSoundEnabled] = useState(true);
@@ -312,7 +343,7 @@ export function NotificationSettings({
     const [quietHoursStart, setQuietHoursStart] = useState("22:00");
     const [quietHoursEnd, setQuietHoursEnd] = useState("08:00");
     const [quietHoursTimezone, setQuietHoursTimezone] =
-        useState(getDefaultTimezone);
+        useState(DEFAULT_TIMEZONE);
     const [overrideMutationKey, setOverrideMutationKey] = useState<
         string | null
     >(null);
@@ -337,6 +368,13 @@ export function NotificationSettings({
         if (typeof window !== "undefined" && "Notification" in window) {
             setBrowserPermission(Notification.permission);
         }
+
+        // Resolve timezone after hydration to avoid server/client timezone mismatches.
+        setQuietHoursTimezone((currentValue) =>
+            currentValue === DEFAULT_TIMEZONE
+                ? getDefaultTimezone()
+                : currentValue,
+        );
     }, []);
 
     const deferredOverrideFilter = useDeferredValue(overrideFilter);
@@ -351,6 +389,14 @@ export function NotificationSettings({
             });
             setGlobalLevel(data.globalNotifications);
             setDirectMessagePrivacy(data.directMessagePrivacy ?? "everyone");
+            const serverDmEncryptionEnabled = data.dmEncryptionEnabled;
+            const dmEncryptionEnabledNext =
+                typeof serverDmEncryptionEnabled === "boolean"
+                    ? serverDmEncryptionEnabled
+                    : readLocalDmEncryptionPreference() ?? false;
+
+            setDmEncryptionEnabled(dmEncryptionEnabledNext);
+            writeLocalDmEncryptionPreference(dmEncryptionEnabledNext);
             setDesktopEnabled(data.desktopNotifications);
             setPushEnabled(data.pushNotifications);
             setSoundEnabled(data.notificationSound);
@@ -388,7 +434,9 @@ export function NotificationSettings({
     const fetchSettings = useCallback(
         async (options?: { silent?: boolean }) => {
             try {
-                const response = await fetch("/api/notifications/settings");
+                const response = await fetch("/api/notifications/settings", {
+                    cache: "no-store",
+                });
                 if (!response.ok) {
                     throw new Error("Failed to fetch settings");
                 }
@@ -450,12 +498,18 @@ export function NotificationSettings({
         }
     }, [browserPermission]);
 
+    const handleDmEncryptionEnabledChange = useCallback((checked: boolean) => {
+        setDmEncryptionEnabled(checked);
+        writeLocalDmEncryptionPreference(checked);
+    }, []);
+
     const saveSettings = useCallback(async () => {
         setIsSaving(true);
         try {
             const payload = {
                 globalNotifications: globalLevel,
                 directMessagePrivacy,
+                dmEncryptionEnabled,
                 desktopNotifications: desktopEnabled,
                 pushNotifications: pushEnabled,
                 notificationSound: soundEnabled,
@@ -485,7 +539,27 @@ export function NotificationSettings({
                           settings: NotificationSettingsResponse;
                       },
             );
+
+            writeLocalDmEncryptionPreference(dmEncryptionEnabled);
             toast.success("Settings saved");
+
+            if (dmEncryptionEnabled) {
+                try {
+                    await ensurePublishedDmEncryptionKeyForCurrentUser();
+                } catch (error) {
+                    logger.error(
+                        "Failed to publish DM encryption key from notification settings",
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                    );
+                    toast.error(
+                        error instanceof Error
+                            ? error.message
+                            : "Failed to publish encryption key",
+                    );
+                }
+            }
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -498,6 +572,7 @@ export function NotificationSettings({
     }, [
         globalLevel,
         directMessagePrivacy,
+        dmEncryptionEnabled,
         desktopEnabled,
         pushEnabled,
         soundEnabled,
@@ -1041,6 +1116,22 @@ export function NotificationSettings({
                         non-friend messages are blocked when friends-only mode
                         is enabled.
                     </p>
+                </div>
+                <div className="mt-4 flex items-center justify-between rounded-md border p-4">
+                    <div>
+                        <Label htmlFor="dm-encryption" className="font-medium">
+                            Optional DM text encryption
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                            Enable client-side ChaCha20-Poly1305 encryption for
+                            one-to-one DMs when both users opt in.
+                        </p>
+                    </div>
+                    <Switch
+                        id="dm-encryption"
+                        checked={dmEncryptionEnabled}
+                        onCheckedChange={handleDmEncryptionEnabledChange}
+                    />
                 </div>
             </Card>
 

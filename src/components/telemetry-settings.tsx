@@ -24,7 +24,11 @@ export function TelemetrySettings() {
         setIsMounted(true);
     }, []);
 
-    const isDisabled = !isMounted || !isLoaded || !userId || isSaving;
+    if (!isMounted) {
+        return null;
+    }
+
+    const isDisabled = !isLoaded || !userId || isSaving;
 
     return (
         <div className="rounded-2xl border border-border/60 bg-background/70 p-5">

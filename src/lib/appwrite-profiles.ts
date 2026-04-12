@@ -36,6 +36,7 @@ export type UserProfile = {
     profileBackgroundImageFileId?: string;
     profileBackgroundImageChangedAt?: string;
     avatarFramePreset?: string;
+    dmEncryptionPublicKey?: string;
     $createdAt: string;
     $updatedAt: string;
 };
@@ -58,6 +59,7 @@ const editableProfileKeys = [
     "profileBackgroundGradient",
     "profileBackgroundImageFileId",
     "avatarFramePreset",
+    "dmEncryptionPublicKey",
 ] as const;
 
 type EditableProfileKey = (typeof editableProfileKeys)[number];

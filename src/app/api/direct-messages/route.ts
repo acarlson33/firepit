@@ -9,6 +9,11 @@ import {
     getRelationshipMap,
     getRelationshipStatus,
 } from "@/lib/appwrite-friendships";
+import {
+    getNotificationSettings,
+    getOrCreateNotificationSettings,
+} from "@/lib/notification-settings";
+import { getUserProfile } from "@/lib/appwrite-profiles";
 import { listThreadReadsByContext } from "@/lib/thread-read-store";
 import { isThreadUnread } from "@/lib/thread-read-states";
 import {
@@ -56,6 +61,66 @@ function getReadOnlyReason(relationship: {
     }
 
     return undefined;
+}
+
+async function getDmEncryptionStateForPair(
+    userId: string,
+    peerUserId: string,
+): Promise<{
+    dmEncryptionMutualEnabled: boolean;
+    dmEncryptionPeerEnabled: boolean;
+    dmEncryptionPeerPublicKey?: string;
+    dmEncryptionSelfEnabled: boolean;
+}> {
+    const [selfSettings, peerSettings, peerProfile] = await Promise.all([
+        getOrCreateNotificationSettings(userId).catch((error) => {
+            logger.warn("Failed to load self notification settings for DM encryption", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+                peerUserId,
+            });
+            return { dmEncryptionEnabled: false };
+        }),
+        getNotificationSettings(peerUserId)
+            .then((settings) => settings ?? { dmEncryptionEnabled: false })
+            .catch((error) => {
+                logger.warn(
+                    "Failed to load peer notification settings for DM encryption",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        userId,
+                        peerUserId,
+                    },
+                );
+                return { dmEncryptionEnabled: false };
+            }),
+        getUserProfile(peerUserId).catch((error) => {
+            logger.warn("Failed to load peer profile for DM encryption", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+                peerUserId,
+            });
+            return null;
+        }),
+    ]);
+
+    const dmEncryptionSelfEnabled = Boolean(selfSettings.dmEncryptionEnabled);
+    const dmEncryptionPeerEnabled = Boolean(peerSettings.dmEncryptionEnabled);
+    const dmEncryptionPeerPublicKey =
+        typeof peerProfile?.dmEncryptionPublicKey === "string"
+            ? peerProfile.dmEncryptionPublicKey
+            : undefined;
+
+    return {
+        dmEncryptionMutualEnabled:
+            dmEncryptionSelfEnabled && dmEncryptionPeerEnabled,
+        dmEncryptionPeerEnabled,
+        dmEncryptionPeerPublicKey,
+        dmEncryptionSelfEnabled,
+    };
 }
 
 /**
@@ -536,6 +601,10 @@ export async function GET(request: NextRequest) {
                         session.$id,
                         targetUserId,
                     );
+                    const encryptionState = await getDmEncryptionStateForPair(
+                        session.$id,
+                        targetUserId,
+                    );
                     return jsonResponse({
                         conversation: {
                             $id: oneToOne.$id,
@@ -560,6 +629,14 @@ export async function GET(request: NextRequest) {
                             readOnly: !relationship.canSendDirectMessage,
                             readOnlyReason: getReadOnlyReason(relationship),
                             relationship,
+                            dmEncryptionSelfEnabled:
+                                encryptionState.dmEncryptionSelfEnabled,
+                            dmEncryptionPeerEnabled:
+                                encryptionState.dmEncryptionPeerEnabled,
+                            dmEncryptionMutualEnabled:
+                                encryptionState.dmEncryptionMutualEnabled,
+                            dmEncryptionPeerPublicKey:
+                                encryptionState.dmEncryptionPeerPublicKey,
                         },
                     });
                 }
@@ -593,6 +670,10 @@ export async function GET(request: NextRequest) {
             }
 
             const relationship = await getRelationshipStatus(
+                session.$id,
+                targetUserId,
+            );
+            const encryptionState = await getDmEncryptionStateForPair(
                 session.$id,
                 targetUserId,
             );
@@ -639,6 +720,14 @@ export async function GET(request: NextRequest) {
                     participantCount: participants.length,
                     readOnly: false,
                     relationship,
+                    dmEncryptionSelfEnabled:
+                        encryptionState.dmEncryptionSelfEnabled,
+                    dmEncryptionPeerEnabled:
+                        encryptionState.dmEncryptionPeerEnabled,
+                    dmEncryptionMutualEnabled:
+                        encryptionState.dmEncryptionMutualEnabled,
+                    dmEncryptionPeerPublicKey:
+                        encryptionState.dmEncryptionPeerPublicKey,
                 },
             });
         }
@@ -672,6 +761,10 @@ export async function GET(request: NextRequest) {
             let readOnly = false;
             let readOnlyReason: string | undefined;
             let relationship;
+            let dmEncryptionSelfEnabled = false;
+            let dmEncryptionPeerEnabled = false;
+            let dmEncryptionMutualEnabled = false;
+            let dmEncryptionPeerPublicKey: string | undefined;
 
             if (conversation) {
                 const participants = Array.isArray(conversation.participants)
@@ -700,6 +793,19 @@ export async function GET(request: NextRequest) {
                         );
                         readOnly = !relationship.canSendDirectMessage;
                         readOnlyReason = getReadOnlyReason(relationship);
+                        const encryptionState =
+                            await getDmEncryptionStateForPair(
+                                session.$id,
+                                otherUserId,
+                            );
+                        dmEncryptionSelfEnabled =
+                            encryptionState.dmEncryptionSelfEnabled;
+                        dmEncryptionPeerEnabled =
+                            encryptionState.dmEncryptionPeerEnabled;
+                        dmEncryptionMutualEnabled =
+                            encryptionState.dmEncryptionMutualEnabled;
+                        dmEncryptionPeerPublicKey =
+                            encryptionState.dmEncryptionPeerPublicKey;
                     }
                 }
             }
@@ -726,6 +832,12 @@ export async function GET(request: NextRequest) {
                 senderId: doc.senderId as string,
                 receiverId: doc.receiverId as string | undefined,
                 text: doc.text as string,
+                isEncrypted: Boolean(doc.isEncrypted),
+                encryptedText: doc.encryptedText as string | undefined,
+                encryptionNonce: doc.encryptionNonce as string | undefined,
+                encryptionVersion: doc.encryptionVersion as string | undefined,
+                encryptionSenderPublicKey: doc
+                    .encryptionSenderPublicKey as string | undefined,
                 imageFileId: doc.imageFileId as string | undefined,
                 imageUrl: resolveMessageImageUrl({
                     imageFileId: doc.imageFileId,
@@ -774,6 +886,10 @@ export async function GET(request: NextRequest) {
                 readOnly,
                 readOnlyReason,
                 relationship,
+                dmEncryptionMutualEnabled,
+                dmEncryptionPeerEnabled,
+                dmEncryptionPeerPublicKey,
+                dmEncryptionSelfEnabled,
             });
         }
 
@@ -827,6 +943,11 @@ export async function POST(request: NextRequest) {
             senderId?: string;
             receiverId?: string;
             text?: string;
+            isEncrypted?: boolean;
+            encryptedText?: string;
+            encryptionNonce?: string;
+            encryptionVersion?: string;
+            encryptionSenderPublicKey?: string;
             imageFileId?: string;
             imageUrl?: string;
             attachments?: unknown[];
@@ -947,12 +1068,21 @@ export async function POST(request: NextRequest) {
             attachments,
             replyToId,
             mentions,
+            isEncrypted,
+            encryptedText,
+            encryptionNonce,
+            encryptionVersion,
+            encryptionSenderPublicKey,
         } = body;
+
+        const hasEncryptedText =
+            typeof encryptedText === "string" && encryptedText.length > 0;
 
         addTransactionAttributes({
             userId: session.$id,
             conversationId: conversationId ?? "unknown",
             hasImage: !!imageFileId,
+            hasEncryptedText,
             hasAttachments: !!(attachments && attachments.length > 0),
             attachmentCount: attachments?.length || 0,
             isReply: !!replyToId,
@@ -963,6 +1093,7 @@ export async function POST(request: NextRequest) {
             !conversationId ||
             !senderId ||
             (!text?.trim() &&
+                !hasEncryptedText &&
                 !imageFileId &&
                 (!attachments || attachments.length === 0))
         ) {
@@ -977,6 +1108,27 @@ export async function POST(request: NextRequest) {
                 {
                     error: MESSAGE_TOO_LONG_ERROR,
                     maxLength: MAX_MESSAGE_LENGTH,
+                },
+                { status: 400 },
+            );
+        }
+
+        if (
+            hasEncryptedText &&
+            (typeof encryptionNonce !== "string" ||
+                typeof encryptionVersion !== "string" ||
+                typeof encryptionSenderPublicKey !== "string")
+        ) {
+            return jsonResponse(
+                { error: "Encrypted message metadata is incomplete" },
+                { status: 400 },
+            );
+        }
+
+        if (isEncrypted === true && !hasEncryptedText) {
+            return jsonResponse(
+                {
+                    error: "Encrypted messages must include encryptedText and encryption metadata",
                 },
                 { status: 400 },
             );
@@ -1063,6 +1215,133 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        if (hasEncryptedText) {
+            if (isGroupConversation || !targetReceiverId) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Encrypted messages are only supported for one-to-one DMs",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const [
+                senderSettings,
+                receiverSettings,
+                senderProfile,
+                receiverProfile,
+            ] =
+                await Promise.all([
+                    getNotificationSettings(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getNotificationSettings(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getUserProfile(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getUserProfile(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                ]);
+
+            if (
+                !senderSettings?.dmEncryptionEnabled ||
+                !receiverSettings?.dmEncryptionEnabled
+            ) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Both participants must enable DM encryption before sending encrypted messages",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const senderProfilePublicKey =
+                typeof senderProfile?.dmEncryptionPublicKey === "string"
+                    ? senderProfile.dmEncryptionPublicKey.trim()
+                    : "";
+
+            if (
+                !senderProfilePublicKey ||
+                senderProfilePublicKey !== encryptionSenderPublicKey
+            ) {
+                return jsonResponse(
+                    {
+                        error:
+                            "encryptionSenderPublicKey must match the sender profile public key",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const receiverProfilePublicKey =
+                typeof receiverProfile?.dmEncryptionPublicKey === "string"
+                    ? receiverProfile.dmEncryptionPublicKey.trim()
+                    : "";
+
+            if (!receiverProfilePublicKey) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Recipient must have a published dmEncryptionPublicKey before accepting encrypted messages",
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
         const permissions = [
             ...participants.map((id) => Permission.read(Role.user(id))),
             Permission.update(Role.user(senderId)),
@@ -1072,8 +1351,16 @@ export async function POST(request: NextRequest) {
         const messageData: Record<string, unknown> = {
             conversationId,
             senderId,
-            text: text || "",
+            text: hasEncryptedText ? "" : (text || ""),
         };
+
+        if (hasEncryptedText) {
+            messageData.isEncrypted = true;
+            messageData.encryptedText = encryptedText;
+            messageData.encryptionNonce = encryptionNonce;
+            messageData.encryptionVersion = encryptionVersion;
+            messageData.encryptionSenderPublicKey = encryptionSenderPublicKey;
+        }
 
         // receiverId remains required on some deployments; always persist a value for compatibility
         const safeReceiverId =
@@ -1221,6 +1508,14 @@ export async function POST(request: NextRequest) {
             senderId: message.senderId,
             receiverId: message.receiverId,
             text: message.text,
+            isEncrypted: Boolean(message.isEncrypted),
+            encryptedText: (message as Record<string, unknown>).encryptedText,
+            encryptionNonce: (message as Record<string, unknown>)
+                .encryptionNonce,
+            encryptionVersion: (message as Record<string, unknown>)
+                .encryptionVersion,
+            encryptionSenderPublicKey: (message as Record<string, unknown>)
+                .encryptionSenderPublicKey,
             imageFileId: message.imageFileId,
             imageUrl: resolveMessageImageUrl({
                 imageFileId: message.imageFileId,
@@ -1322,6 +1617,16 @@ export async function PATCH(request: NextRequest) {
             return jsonResponse(
                 { error: "You can only edit your own messages" },
                 { status: 403 },
+            );
+        }
+
+        if (Boolean((message as Record<string, unknown>).isEncrypted)) {
+            return jsonResponse(
+                {
+                    error:
+                        "Encrypted direct messages cannot be edited after send",
+                },
+                { status: 409 },
             );
         }
 
