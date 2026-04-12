@@ -148,7 +148,9 @@ function isSodiumApi(value: unknown): value is SodiumApi {
     );
 }
 
-async function resolveSodiumApi(moduleNamespace: SodiumModule): Promise<SodiumApi> {
+async function resolveSodiumApi(
+    moduleNamespace: SodiumModule,
+): Promise<SodiumApi> {
     const candidates: unknown[] = [moduleNamespace];
 
     if (isRecord(moduleNamespace) && "default" in moduleNamespace) {
@@ -237,7 +239,9 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
     ) as ArrayBuffer;
 }
 
-function isStoredEncryptedKeyPair(value: unknown): value is StoredEncryptedKeyPair {
+function isStoredEncryptedKeyPair(
+    value: unknown,
+): value is StoredEncryptedKeyPair {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return false;
     }
@@ -273,9 +277,7 @@ async function getSodium(): Promise<SodiumApi> {
                 sodiumPromise = null;
                 logger.error(
                     "Failed to initialize libsodium for DM encryption",
-                    error instanceof Error
-                        ? error
-                        : new Error(String(error)),
+                    error instanceof Error ? error : new Error(String(error)),
                 );
                 throw error;
             });
@@ -285,7 +287,10 @@ async function getSodium(): Promise<SodiumApi> {
 }
 
 function openWrappingKeyDb(): Promise<IDBDatabase | null> {
-    if (typeof window === "undefined" || typeof window.indexedDB === "undefined") {
+    if (
+        typeof window === "undefined" ||
+        typeof window.indexedDB === "undefined"
+    ) {
         return Promise.resolve(null);
     }
 
@@ -318,7 +323,10 @@ function readWrappingKey(
     storageKey: string,
 ): Promise<CryptoKey | null> {
     return new Promise((resolve) => {
-        const transaction = database.transaction(WRAPPING_KEY_STORE, "readonly");
+        const transaction = database.transaction(
+            WRAPPING_KEY_STORE,
+            "readonly",
+        );
         const store = transaction.objectStore(WRAPPING_KEY_STORE);
         const request = store.get(storageKey);
 
@@ -344,7 +352,10 @@ function writeWrappingKey(
     wrappingKey: CryptoKey,
 ): Promise<boolean> {
     return new Promise((resolve) => {
-        const transaction = database.transaction(WRAPPING_KEY_STORE, "readwrite");
+        const transaction = database.transaction(
+            WRAPPING_KEY_STORE,
+            "readwrite",
+        );
         const store = transaction.objectStore(WRAPPING_KEY_STORE);
         const request = store.put(wrappingKey, storageKey);
 
@@ -367,7 +378,9 @@ async function getStoredWrappingKey(userId: string): Promise<CryptoKey | null> {
     return readWrappingKey(database, getStorageKey(userId));
 }
 
-async function getOrCreateWrappingKey(userId: string): Promise<CryptoKey | null> {
+async function getOrCreateWrappingKey(
+    userId: string,
+): Promise<CryptoKey | null> {
     if (typeof window === "undefined" || !window.crypto?.subtle) {
         return null;
     }
@@ -444,8 +457,10 @@ async function loadKeyPairFromStorage(
                 "string"
         ) {
             const legacy = {
-                privateKeyBase64: (parsed as DmEncryptionKeyPair).privateKeyBase64,
-                publicKeyBase64: (parsed as DmEncryptionKeyPair).publicKeyBase64,
+                privateKeyBase64: (parsed as DmEncryptionKeyPair)
+                    .privateKeyBase64,
+                publicKeyBase64: (parsed as DmEncryptionKeyPair)
+                    .publicKeyBase64,
                 version:
                     typeof (parsed as Partial<DmEncryptionKeyPair>).version ===
                     "string"
@@ -584,7 +599,10 @@ async function saveKeyPairToStorage(
             version: keyPair.version,
         };
 
-        window.localStorage.setItem(getStorageKey(userId), JSON.stringify(payload));
+        window.localStorage.setItem(
+            getStorageKey(userId),
+            JSON.stringify(payload),
+        );
     } catch (error) {
         logger.error(
             "Failed to persist encrypted DM key pair",
@@ -711,7 +729,8 @@ export async function ensurePublishedDmEncryptionKeyForCurrentUser(): Promise<vo
         const errorMessage =
             typeof responseError === "string"
                 ? responseError
-                : body.text || "Failed to resolve current user encryption key metadata";
+                : body.text ||
+                  "Failed to resolve current user encryption key metadata";
         throw new Error(errorMessage);
     }
 
@@ -789,7 +808,10 @@ export async function encryptDmText(params: {
     );
 
     return {
-        encryptedText: sodium.to_base64(cipher, sodium.base64_variants.ORIGINAL),
+        encryptedText: sodium.to_base64(
+            cipher,
+            sodium.base64_variants.ORIGINAL,
+        ),
         encryptionNonce: sodium.to_base64(
             nonce,
             sodium.base64_variants.ORIGINAL,
@@ -845,7 +867,13 @@ export async function decryptDmText(params: {
         );
 
         return sodium.to_string(plain);
-    } catch {
+    } catch (error) {
+        logger.debug("decryptDmText failed", {
+            error:
+                error instanceof Error
+                    ? `${error.message}${error.stack ? ` | ${error.stack}` : ""}`
+                    : String(error),
+        });
         return null;
     }
 }
@@ -896,7 +924,13 @@ export async function decryptDmTextForSender(params: {
         );
 
         return sodium.to_string(plain);
-    } catch {
+    } catch (error) {
+        logger.debug("decryptDmTextForSender failed", {
+            error:
+                error instanceof Error
+                    ? `${error.message}${error.stack ? ` | ${error.stack}` : ""}`
+                    : String(error),
+        });
         return null;
     }
 }

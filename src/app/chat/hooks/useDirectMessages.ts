@@ -1209,7 +1209,7 @@ export function useDirectMessages({
                     imageUrl,
                     replyToId,
                     attachments,
-                    ...(encryptionPayload ? [encryptionPayload] : []),
+                    encryptionPayload,
                 );
 
                 // Enrich with sender profile data (cached to avoid repeated fetches)

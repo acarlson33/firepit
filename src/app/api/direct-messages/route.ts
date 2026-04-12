@@ -1226,7 +1226,12 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const [senderSettings, receiverSettings, senderProfile] =
+            const [
+                senderSettings,
+                receiverSettings,
+                senderProfile,
+                receiverProfile,
+            ] =
                 await Promise.all([
                     getNotificationSettings(senderId).catch((error) => {
                         logger.warn(
@@ -1273,6 +1278,21 @@ export async function POST(request: NextRequest) {
                         );
                         return null;
                     }),
+                    getUserProfile(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
                 ]);
 
             if (
@@ -1301,6 +1321,21 @@ export async function POST(request: NextRequest) {
                     {
                         error:
                             "encryptionSenderPublicKey must match the sender profile public key",
+                    },
+                    { status: 400 },
+                );
+            }
+
+            const receiverProfilePublicKey =
+                typeof receiverProfile?.dmEncryptionPublicKey === "string"
+                    ? receiverProfile.dmEncryptionPublicKey.trim()
+                    : "";
+
+            if (!receiverProfilePublicKey) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Recipient must have a published dmEncryptionPublicKey before accepting encrypted messages",
                     },
                     { status: 400 },
                 );

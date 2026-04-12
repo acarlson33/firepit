@@ -4,7 +4,7 @@ import { getOrCreateUserProfile, updateUserProfile } from "@/lib/appwrite-profil
 import { logger } from "@/lib/newrelic-utils";
 
 type PatchBody = {
-    dmEncryptionPublicKey?: string;
+    dmEncryptionPublicKey: string;
 };
 
 const PUBLIC_KEY_MAX_LENGTH = 256;
@@ -34,7 +34,12 @@ function decodeBase64ToBytes(value: string): Uint8Array | null {
 }
 
 function isPatchBody(value: unknown): value is PatchBody {
-    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return false;
+    }
+
+    const candidate = value as Partial<PatchBody>;
+    return typeof candidate.dmEncryptionPublicKey === "string";
 }
 
 export async function GET() {
@@ -86,10 +91,7 @@ export async function PATCH(request: Request) {
         }
 
         const dmEncryptionPublicKey = body.dmEncryptionPublicKey;
-        const decodedPublicKey =
-            typeof dmEncryptionPublicKey === "string"
-                ? decodeBase64ToBytes(dmEncryptionPublicKey)
-                : null;
+        const decodedPublicKey = decodeBase64ToBytes(dmEncryptionPublicKey);
 
         if (
             typeof dmEncryptionPublicKey !== "string" ||

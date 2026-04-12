@@ -94,7 +94,13 @@ vi.mock("@/lib/realtime-pool", () => ({
     isTransientRealtimeSubscribeError: vi.fn((error: unknown) => {
         const message =
             error instanceof Error ? error.message : String(error);
-        return message.toLowerCase().includes("can't establish a connection");
+        const normalized = message.toLowerCase();
+        return (
+            normalized.includes("was interrupted while the page was loading") ||
+            normalized.includes("can't establish a connection") ||
+            normalized.includes("can’t establish a connection") ||
+            normalized.includes("websocket error")
+        );
     }),
     trackSubscription: vi.fn(() => vi.fn()),
 }));
@@ -479,6 +485,7 @@ describe("useDirectMessages", () => {
             "user-1",
             "user-2",
             "Sent message",
+            undefined,
             undefined,
             undefined,
             undefined,

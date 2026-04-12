@@ -251,7 +251,7 @@ describe("NotificationSettings", () => {
         });
 
         fireEvent.click(dmEncryptionToggle);
-        fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+        fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
         await waitFor(() => {
             const patchCall = fetchMock.mock.calls.find(
@@ -305,7 +305,7 @@ describe("NotificationSettings", () => {
         });
 
         fireEvent.click(dmEncryptionToggle);
-        fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+        fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
         await waitFor(() => {
             expect(mockLoggerError).toHaveBeenCalledWith(

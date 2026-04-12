@@ -171,7 +171,7 @@ export async function PATCH(request: Request) {
         }
 
         if (body.dmEncryptionEnabled === true) {
-            const currentProfile = await getUserProfile(user.$id).catch(() => null);
+            const currentProfile = await getUserProfile(user.$id);
             const hasPublishedPublicKey =
                 typeof currentProfile?.dmEncryptionPublicKey === "string" &&
                 currentProfile.dmEncryptionPublicKey.trim().length > 0;
