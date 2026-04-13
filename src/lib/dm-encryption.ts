@@ -619,12 +619,36 @@ export async function getDmEncryptionKeyPair(
     return loadKeyPairFromStorage(userId);
 }
 
+function hasStoredDmEncryptionKeyRecord(userId: string): boolean {
+    if (typeof window === "undefined") {
+        return false;
+    }
+
+    try {
+        const raw = window.localStorage.getItem(getStorageKey(userId));
+        if (!raw) {
+            return false;
+        }
+
+        const parsed = JSON.parse(raw) as unknown;
+        return isStoredKeyMetadata(parsed) || isStoredEncryptedKeyPair(parsed);
+    } catch {
+        return false;
+    }
+}
+
 export async function ensureDmEncryptionKeyPair(
     userId: string,
 ): Promise<DmEncryptionKeyPair> {
     const existing = await loadKeyPairFromStorage(userId);
     if (existing) {
         return existing;
+    }
+
+    if (hasStoredDmEncryptionKeyRecord(userId)) {
+        throw new Error(
+            "DM encryption key recovery failed on this device. To prevent key rotation and DM history loss, encryption key regeneration is blocked.",
+        );
     }
 
     const pending = pendingKeyPromises.get(userId);
