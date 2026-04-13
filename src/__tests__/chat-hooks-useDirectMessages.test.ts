@@ -120,6 +120,9 @@ vi.mock("sonner", () => ({
 }));
 
 type DirectMessagesResult = {
+    dmEncryptionPeerEnabled?: boolean;
+    dmEncryptionPeerPublicKey?: string | null;
+    dmEncryptionSelfEnabled?: boolean;
     items: DirectMessage[];
     nextCursor?: string | null;
     readOnly: boolean;
@@ -502,6 +505,45 @@ describe("useDirectMessages", () => {
                 }),
             );
         });
+    });
+
+    it("allows plaintext sends when only the peer has DM encryption enabled", async () => {
+        mockListDirectMessages.mockResolvedValue(
+            createListResult({
+                dmEncryptionPeerEnabled: true,
+                dmEncryptionPeerPublicKey: "peer-public-key",
+                dmEncryptionSelfEnabled: false,
+            }),
+        );
+
+        const { result } = renderHook(() =>
+            useDirectMessages({
+                conversationId: "conversation-1",
+                receiverId: "user-2",
+                userId: "user-1",
+                userName: "User One",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(result.current.loading).toBe(false);
+        });
+
+        await act(async () => {
+            await result.current.send("Plaintext allowed");
+        });
+
+        expect(mockSendDirectMessage).toHaveBeenCalledWith(
+            "conversation-1",
+            "user-1",
+            "user-2",
+            "Plaintext allowed",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+        );
     });
 
     it("keeps realtime-created messages when initial history load resolves", async () => {
