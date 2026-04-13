@@ -1157,8 +1157,8 @@ export function useDirectMessages({
                 let encryptionPayload: DirectMessageEncryptionPayload | undefined;
                 const encryptionRequired =
                     plainText.length > 0 &&
-                    (dmEncryptionMutualEnabled ||
-                        Boolean(dmEncryptionPeerPublicKey));
+                    dmEncryptionMutualEnabled &&
+                    Boolean(dmEncryptionPeerPublicKey);
 
                 if (encryptionRequired) {
                     if (!dmEncryptionPeerPublicKey) {
