@@ -650,6 +650,48 @@ describe("Direct Messages API", () => {
             );
             expect(mockCreateDocument).not.toHaveBeenCalled();
         });
+
+        it("returns 400 when plaintext text is sent while DM encryption is enabled for both participants", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockGetDocument.mockResolvedValue({
+                $id: "conv-1",
+                participants: ["user-1", "user-2"],
+                isGroup: false,
+            });
+
+            mockGetNotificationSettings.mockResolvedValue({
+                dmEncryptionEnabled: true,
+            });
+            mockGetUserProfile.mockImplementation(async (userId: string) => {
+                if (userId === "user-1") {
+                    return { dmEncryptionPublicKey: "sender-profile-key" };
+                }
+
+                return { dmEncryptionPublicKey: "receiver-profile-key" };
+            });
+
+            const response = await POST(
+                new NextRequest("http://localhost/api/direct-messages", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        conversationId: "conv-1",
+                        senderId: "user-1",
+                        receiverId: "user-2",
+                        text: "hello plaintext",
+                    }),
+                }),
+            );
+
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(String(data.error)).toContain("Encrypted text is required");
+            expect(mockCreateDocument).not.toHaveBeenCalled();
+        });
     });
 
     describe("PATCH /api/direct-messages", () => {

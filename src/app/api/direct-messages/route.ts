@@ -1215,6 +1215,102 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        const hasPlaintextText =
+            typeof text === "string" &&
+            text.trim().length > 0 &&
+            !hasEncryptedText;
+
+        if (!isGroupConversation && targetReceiverId && hasPlaintextText) {
+            const [senderSettings, receiverSettings, senderProfile, receiverProfile] =
+                await Promise.all([
+                    getNotificationSettings(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getNotificationSettings(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver notification settings for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getUserProfile(senderId).catch((error) => {
+                        logger.warn(
+                            "Failed to load sender profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                    getUserProfile(targetReceiverId).catch((error) => {
+                        logger.warn(
+                            "Failed to load receiver profile for DM encryption",
+                            {
+                                conversationId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                                senderId,
+                                targetReceiverId,
+                            },
+                        );
+                        return null;
+                    }),
+                ]);
+
+            const senderProfilePublicKey =
+                typeof senderProfile?.dmEncryptionPublicKey === "string"
+                    ? senderProfile.dmEncryptionPublicKey.trim()
+                    : "";
+            const receiverProfilePublicKey =
+                typeof receiverProfile?.dmEncryptionPublicKey === "string"
+                    ? receiverProfile.dmEncryptionPublicKey.trim()
+                    : "";
+
+            const requiresEncryptedText =
+                Boolean(senderSettings?.dmEncryptionEnabled) &&
+                Boolean(receiverSettings?.dmEncryptionEnabled) &&
+                senderProfilePublicKey.length > 0 &&
+                receiverProfilePublicKey.length > 0;
+
+            if (requiresEncryptedText) {
+                return jsonResponse(
+                    {
+                        error:
+                            "Encrypted text is required for this conversation because DM encryption is enabled for both participants",
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
         if (hasEncryptedText) {
             if (isGroupConversation || !targetReceiverId) {
                 return jsonResponse(
