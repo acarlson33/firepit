@@ -26,6 +26,8 @@ type VirtualizedMessageListProps = {
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (message: ChatSurfaceMessage, optionId: string) => Promise<void>;
+    onClosePoll?: (message: ChatSurfaceMessage) => Promise<void>;
     onOpenProfileModal: (
         userId: string,
         userName?: string,
@@ -73,6 +75,8 @@ export function VirtualizedMessageList({
     onStartReply,
     onRemove,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
     onOpenProfileModal,
     onOpenImageViewer,
     customEmojis,
@@ -143,6 +147,8 @@ export function VirtualizedMessageList({
                         onMediaLoad={onMediaLoad}
                         onTogglePin={onTogglePin ? onTogglePin : undefined}
                         onToggleReaction={onToggleReaction}
+                        onVotePoll={onVotePoll}
+                        onClosePoll={onClosePoll}
                         onUploadCustomEmoji={onUploadCustomEmoji}
                         pinnedMessageIds={pinnedMessageIds}
                         setDeleteConfirmId={setDeleteConfirmId}

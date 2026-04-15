@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cookies } from "next/headers";
 
+const { mockDatabases } = vi.hoisted(() => ({
+    mockDatabases: {
+        listDocuments: vi.fn(),
+        createDocument: vi.fn(),
+    },
+}));
+
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
     Account: vi.fn().mockImplementation(() => ({
@@ -23,7 +30,12 @@ vi.mock("node-appwrite", () => ({
     ID: {
         unique: vi.fn().mockReturnValue("unique-id"),
     },
-    Query: {},
+    Query: {
+        equal: (field: string, value: string | boolean) =>
+            `equal(${field},${String(value)})`,
+        limit: (value: number) => `limit(${String(value)})`,
+        orderAsc: (field: string) => `orderAsc(${field})`,
+    },
 }));
 
 // Mock next/headers
@@ -50,12 +62,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 // Mock appwrite-server
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn().mockReturnValue({
-        databases: {
-            listDocuments: vi.fn().mockResolvedValue({
-                documents: [],
-            }),
-            createDocument: vi.fn().mockResolvedValue({}),
-        },
+        databases: mockDatabases,
     }),
 }));
 
@@ -69,6 +76,8 @@ describe("Login Security", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(cookies).mockResolvedValue(mockCookieStore as never);
+        mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
+        mockDatabases.createDocument.mockResolvedValue({});
         process.env.APPWRITE_ENDPOINT = "https://test.appwrite.io";
         process.env.APPWRITE_PROJECT_ID = "test-project";
         process.env.APPWRITE_API_KEY = "test-api-key";
@@ -220,5 +229,54 @@ describe("Login Security", () => {
         if (!result.success) {
             expect(result.error).toContain("exists");
         }
+    });
+
+    it("registerAction auto-joins configured default signup server", async () => {
+        const { registerAction } = await import("@/app/(auth)/login/actions");
+
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({
+                documents: [{ $id: "server-default", defaultOnSignup: true }],
+            })
+            .mockResolvedValueOnce({ documents: [] });
+
+        const formData = new FormData();
+        formData.set("email", "newuser@example.com");
+        formData.set("password", "securePassword123");
+        formData.set("name", "New User");
+
+        const result = await registerAction(formData);
+
+        expect(result.success).toBe(true);
+        expect(mockDatabases.createDocument).toHaveBeenCalledWith(
+            "test-db",
+            "memberships-id",
+            "unique-id",
+            expect.objectContaining({
+                serverId: "server-default",
+                role: "member",
+            }),
+            expect.any(Array),
+        );
+    });
+
+    it("registerAction does not auto-join when multiple servers and no default exists", async () => {
+        const { registerAction } = await import("@/app/(auth)/login/actions");
+
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({ documents: [] })
+            .mockResolvedValueOnce({
+                documents: [{ $id: "server-a" }, { $id: "server-b" }],
+            });
+
+        const formData = new FormData();
+        formData.set("email", "newuser@example.com");
+        formData.set("password", "securePassword123");
+        formData.set("name", "New User");
+
+        const result = await registerAction(formData);
+
+        expect(result.success).toBe(true);
+        expect(mockDatabases.createDocument).not.toHaveBeenCalled();
     });
 });

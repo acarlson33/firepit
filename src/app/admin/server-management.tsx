@@ -21,6 +21,7 @@ import {
     listChannelsAction,
     deleteServerAction,
     deleteChannelAction,
+    setDefaultSignupServerAction,
 } from "./server-actions";
 
 type Server = {
@@ -28,6 +29,7 @@ type Server = {
     name: string;
     ownerId: string;
     createdAt: string;
+    defaultOnSignup?: boolean;
 };
 
 type Channel = {
@@ -59,6 +61,10 @@ export function ServerManagement({
     const [isCreatingChannel, setIsCreatingChannel] = useState(false);
     const [isLoadingServers, setIsLoadingServers] = useState(false);
     const [isLoadingChannels, setIsLoadingChannels] = useState(false);
+    const [selectedDefaultSignupServerId, setSelectedDefaultSignupServerId] =
+        useState<string>("");
+    const [isSavingDefaultSignupServer, setIsSavingDefaultSignupServer] =
+        useState(false);
 
     // Load servers on mount
     useEffect(() => {
@@ -81,6 +87,10 @@ export function ServerManagement({
         try {
             const result = await listServersAction();
             setServers(result.servers);
+            const defaultSignupServer = result.servers.find(
+                (server) => server.defaultOnSignup === true,
+            );
+            setSelectedDefaultSignupServerId(defaultSignupServer?.$id ?? "");
             if (result.servers.length > 0 && !selectedServerId) {
                 setSelectedServerId(result.servers[0].$id);
             }
@@ -247,147 +257,242 @@ export function ServerManagement({
         }
     };
 
+    const currentDefaultSignupServerId =
+        servers.find((server) => server.defaultOnSignup === true)?.$id ?? "";
+
+    const handleSaveDefaultSignupServer = async () => {
+        setIsSavingDefaultSignupServer(true);
+        try {
+            const result = await setDefaultSignupServerAction(
+                selectedDefaultSignupServerId || null,
+            );
+            if (!result.success) {
+                toast.error(result.error);
+                return;
+            }
+
+            toast.success("Updated default signup server");
+            await loadServers();
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to update default signup server",
+            );
+        } finally {
+            setIsSavingDefaultSignupServer(false);
+        }
+    };
+
     return (
-        <section className="grid gap-6 md:grid-cols-2">
-            {/* Create Server (Admin Only) */}
+        <section className="space-y-6">
             {isAdmin && (
                 <Card>
                     <CardHeader>
-                        <CardTitle>Create Server</CardTitle>
+                        <CardTitle>Default Signup Server</CardTitle>
                         <CardDescription>
-                            Create a new server for organizing channels
+                            Choose which server new accounts should join by
+                            default.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="server-name">Server Name</Label>
-                            <Input
-                                disabled={isCreatingServer}
-                                id="server-name"
-                                placeholder="My Awesome Server"
-                                value={serverName}
-                                onChange={(e) => setServerName(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        void handleCreateServer();
-                                    }
-                                }}
-                            />
+                            <Label htmlFor="default-signup-server">
+                                Server
+                            </Label>
+                            <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:font-medium file:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isLoadingServers || isSavingDefaultSignupServer}
+                                id="default-signup-server"
+                                value={selectedDefaultSignupServerId}
+                                onChange={(event) =>
+                                    setSelectedDefaultSignupServerId(
+                                        event.target.value,
+                                    )
+                                }
+                            >
+                                <option value="">No default server</option>
+                                {servers.map((server) => (
+                                    <option key={server.$id} value={server.$id}>
+                                        {server.name}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
+
                         <Button
                             className="w-full"
-                            disabled={isCreatingServer || !serverName.trim()}
-                            onClick={handleCreateServer}
+                            disabled={
+                                isLoadingServers ||
+                                isSavingDefaultSignupServer ||
+                                currentDefaultSignupServerId ===
+                                    selectedDefaultSignupServerId
+                            }
+                            onClick={handleSaveDefaultSignupServer}
+                            type="button"
                         >
-                            {isCreatingServer ? "Creating..." : "Create Server"}
+                            {isSavingDefaultSignupServer
+                                ? "Saving..."
+                                : "Save Default Signup Server"}
                         </Button>
 
-                        {/* Server List */}
-                        <div className="space-y-2 border-t pt-4">
-                            <Label>Existing Servers ({servers.length})</Label>
-                            {isLoadingServers ? (
-                                <p className="text-muted-foreground text-sm">
-                                    Loading...
-                                </p>
-                            ) : servers.length > 0 ? (
-                                <div className="max-h-48 space-y-1 overflow-y-auto rounded border bg-muted/50 p-2">
-                                    {servers.map((server) => (
-                                        <div
-                                            key={server.$id}
-                                            className="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-muted"
-                                        >
-                                            <button
-                                                className="flex-1 cursor-pointer text-left"
-                                                type="button"
-                                                onClick={() =>
-                                                    setSelectedServerId(
-                                                        server.$id,
-                                                    )
-                                                }
-                                            >
-                                                <span
-                                                    className={
-                                                        selectedServerId ===
-                                                        server.$id
-                                                            ? "font-semibold"
-                                                            : ""
-                                                    }
-                                                >
-                                                    {server.name}
-                                                </span>
-                                            </button>
-                                            <Button
-                                                aria-label={`Delete ${server.name}`}
-                                                size="sm"
-                                                type="button"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    void handleDeleteServer(
-                                                        server.$id,
-                                                        server.name,
-                                                    );
-                                                }}
-                                            >
-                                                ✕
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-muted-foreground text-sm">
-                                    No servers yet. Create one!
-                                </p>
-                            )}
-                        </div>
+                        <p className="text-muted-foreground text-xs">
+                            This is an instance-wide setting. Selecting a server
+                            here clears the default flag on all other servers.
+                        </p>
                     </CardContent>
                 </Card>
             )}
 
-            {/* Create Channel (Admin or Moderator) */}
-            {(isAdmin || isModerator) && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Create Channel</CardTitle>
-                        <CardDescription>
-                            Add a new channel to the selected server
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {!isAdmin && servers.length === 0 && (
+            <section className="grid gap-6 md:grid-cols-2">
+                {/* Create Server (Admin Only) */}
+                {isAdmin && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Create Server</CardTitle>
+                            <CardDescription>
+                                Create a new server for organizing channels
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="server-name">Server Name</Label>
+                                <Input
+                                    disabled={isCreatingServer}
+                                    id="server-name"
+                                    placeholder="My Awesome Server"
+                                    value={serverName}
+                                    onChange={(e) =>
+                                        setServerName(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            void handleCreateServer();
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <Button
+                                className="w-full"
+                                disabled={
+                                    isCreatingServer || !serverName.trim()
+                                }
+                                onClick={handleCreateServer}
+                            >
+                                {isCreatingServer
+                                    ? "Creating..."
+                                    : "Create Server"}
+                            </Button>
+
+                            {/* Server List */}
+                            <div className="space-y-2 border-t pt-4">
+                                <Label>Existing Servers ({servers.length})</Label>
+                                {isLoadingServers ? (
+                                    <p className="text-muted-foreground text-sm">
+                                        Loading...
+                                    </p>
+                                ) : servers.length > 0 ? (
+                                    <div className="max-h-48 space-y-1 overflow-y-auto rounded border bg-muted/50 p-2">
+                                        {servers.map((server) => (
+                                            <div
+                                                key={server.$id}
+                                                className="flex items-center justify-between gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-muted"
+                                            >
+                                                <button
+                                                    className="flex-1 cursor-pointer text-left"
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedServerId(
+                                                            server.$id,
+                                                        )
+                                                    }
+                                                >
+                                                    <span
+                                                        className={
+                                                            selectedServerId ===
+                                                            server.$id
+                                                                ? "font-semibold"
+                                                                : ""
+                                                        }
+                                                    >
+                                                        {server.name}
+                                                    </span>
+                                                </button>
+                                                <Button
+                                                    aria-label={`Delete ${server.name}`}
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        void handleDeleteServer(
+                                                            server.$id,
+                                                            server.name,
+                                                        );
+                                                    }}
+                                                >
+                                                    ✕
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-muted-foreground text-sm">
+                                        No servers yet. Create one!
+                                    </p>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Create Channel (Server Owner Only) */}
+                {(isAdmin || isModerator) && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Create Channel</CardTitle>
+                            <CardDescription>
+                                Add a new channel to the selected server. Only
+                                that server's owner can create channels.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {!isAdmin && servers.length === 0 && (
                             <p className="text-muted-foreground text-sm">
                                 Loading servers...
                             </p>
-                        )}
+                            )}
 
-                        {servers.length > 0 ? (
-                            <>
-                                <div className="space-y-2">
-                                    <Label htmlFor="server-select">
-                                        Select Server
-                                    </Label>
-                                    <select
-                                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:font-medium file:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                        disabled={isCreatingChannel}
-                                        id="server-select"
-                                        value={selectedServerId}
-                                        onChange={(e) =>
-                                            setSelectedServerId(e.target.value)
-                                        }
-                                    >
-                                        <option value="">
-                                            Select a server...
-                                        </option>
-                                        {servers.map((server) => (
-                                            <option
-                                                key={server.$id}
-                                                value={server.$id}
-                                            >
-                                                {server.name}
+                            {servers.length > 0 ? (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="server-select">
+                                            Select Server
+                                        </Label>
+                                        <select
+                                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:font-medium file:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            disabled={isCreatingChannel}
+                                            id="server-select"
+                                            value={selectedServerId}
+                                            onChange={(e) =>
+                                                setSelectedServerId(
+                                                    e.target.value,
+                                                )
+                                            }
+                                        >
+                                            <option value="">
+                                                Select a server...
                                             </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                            {servers.map((server) => (
+                                                <option
+                                                    key={server.$id}
+                                                    value={server.$id}
+                                                >
+                                                    {server.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="channel-name">
@@ -503,17 +608,18 @@ export function ServerManagement({
                                         </p>
                                     )}
                                 </div>
-                            </>
-                        ) : (
-                            <p className="text-muted-foreground text-sm">
-                                {isAdmin
-                                    ? "Create a server first to add channels."
-                                    : "No servers available. Contact an admin."}
-                            </p>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
+                                </>
+                            ) : (
+                                <p className="text-muted-foreground text-sm">
+                                    {isAdmin
+                                        ? "Create a server first to add channels."
+                                        : "No servers available. Contact an admin."}
+                                </p>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+            </section>
         </section>
     );
 }

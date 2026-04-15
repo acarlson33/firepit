@@ -5,6 +5,10 @@ import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { normalizeServerFileId } from "@/lib/server-metadata";
+
+const MAX_SERVER_NAME_LENGTH = 100;
+const MAX_SERVER_DESCRIPTION_LENGTH = 500;
 
 export async function POST(request: Request) {
     try {
@@ -17,7 +21,13 @@ export async function POST(request: Request) {
             );
         }
 
-        let payload: { name?: string };
+        let payload: {
+            name?: string;
+            description?: string;
+            iconFileId?: string;
+            bannerFileId?: string;
+            isPublic?: boolean;
+        };
         try {
             payload = (await request.json()) as { name?: string };
         } catch {
@@ -27,11 +37,75 @@ export async function POST(request: Request) {
             );
         }
 
-        const { name } = payload;
+        const { name, description, iconFileId, bannerFileId, isPublic } =
+            payload;
 
         if (!name?.trim()) {
             return NextResponse.json(
                 { success: false, error: "Server name is required" },
+                { status: 400 },
+            );
+        }
+
+        if (name.trim().length > MAX_SERVER_NAME_LENGTH) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: `Server name must be ${MAX_SERVER_NAME_LENGTH} characters or fewer`,
+                },
+                { status: 400 },
+            );
+        }
+
+        const normalizedDescription =
+            typeof description === "string" ? description.trim() : undefined;
+        if (
+            normalizedDescription &&
+            normalizedDescription.length > MAX_SERVER_DESCRIPTION_LENGTH
+        ) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: `Description must be ${MAX_SERVER_DESCRIPTION_LENGTH} characters or fewer`,
+                },
+                { status: 400 },
+            );
+        }
+
+        if (isPublic !== undefined && typeof isPublic !== "boolean") {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "isPublic must be a boolean value",
+                },
+                { status: 400 },
+            );
+        }
+
+        const normalizedIconFileId =
+            iconFileId === undefined
+                ? undefined
+                : normalizeServerFileId(iconFileId);
+        if (iconFileId !== undefined && !normalizedIconFileId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "iconFileId must be a valid Appwrite file ID",
+                },
+                { status: 400 },
+            );
+        }
+
+        const normalizedBannerFileId =
+            bannerFileId === undefined
+                ? undefined
+                : normalizeServerFileId(bannerFileId);
+        if (bannerFileId !== undefined && !normalizedBannerFileId) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "bannerFileId must be a valid Appwrite file ID",
+                },
                 { status: 400 },
             );
         }
@@ -50,6 +124,10 @@ export async function POST(request: Request) {
         }
 
         const server = await createServer(name.trim(), {
+            description: normalizedDescription,
+            iconFileId: normalizedIconFileId,
+            bannerFileId: normalizedBannerFileId,
+            isPublic,
             bypassFeatureCheck: true,
         });
 
@@ -78,6 +156,13 @@ export async function POST(request: Request) {
                 name: server.name,
                 ownerId: server.ownerId,
                 memberCount: server.memberCount,
+                description: server.description,
+                iconFileId: server.iconFileId,
+                iconUrl: server.iconUrl,
+                bannerFileId: server.bannerFileId,
+                bannerUrl: server.bannerUrl,
+                isPublic: server.isPublic,
+                defaultOnSignup: server.defaultOnSignup,
             },
         });
     } catch (error) {

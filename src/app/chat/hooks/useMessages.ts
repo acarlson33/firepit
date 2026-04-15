@@ -8,7 +8,7 @@ import { adaptChannelMessages } from "@/lib/chat-surface";
 import { canSend, setTyping } from "@/lib/appwrite-messages";
 import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import type { Message } from "@/lib/types";
+import type { Message, MessagePoll } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
@@ -47,6 +47,65 @@ type UseMessagesOptions = {
 };
 
 type MessageReaction = NonNullable<Message["reactions"]>[number];
+
+function applyOptimisticPollVote(params: {
+    optionId: string;
+    poll: MessagePoll;
+    userId: string;
+}): MessagePoll {
+    const { optionId, poll, userId } = params;
+
+    return {
+        ...poll,
+        options: poll.options.map((option) => {
+            const hasCurrentUserVote = option.voterIds.includes(userId);
+
+            if (option.id === optionId) {
+                if (hasCurrentUserVote) {
+                    return option;
+                }
+
+                const voterIds = [...option.voterIds, userId];
+                return {
+                    ...option,
+                    count: voterIds.length,
+                    voterIds,
+                };
+            }
+
+            if (!hasCurrentUserVote) {
+                return option;
+            }
+
+            const voterIds = option.voterIds.filter(
+                (voterId) => voterId !== userId,
+            );
+            return {
+                ...option,
+                count: voterIds.length,
+                voterIds,
+            };
+        }),
+    };
+}
+
+function applyOptimisticPollClose(params: {
+    poll: MessagePoll;
+    userId: string;
+}): MessagePoll {
+    const { poll, userId } = params;
+
+    if (poll.status === "closed") {
+        return poll;
+    }
+
+    return {
+        ...poll,
+        status: "closed",
+        closedAt: new Date().toISOString(),
+        closedBy: userId,
+    };
+}
 
 function applyOptimisticReactionUpdate(params: {
     emoji: string;
@@ -892,6 +951,117 @@ export function useMessages({
         }
     }
 
+    const replaceMessagePoll = useCallback(
+        (messageId: string, poll: MessagePoll) => {
+            setMessages((prev) =>
+                prev.map((message) =>
+                    message.$id === messageId ? { ...message, poll } : message,
+                ),
+            );
+        },
+        [],
+    );
+
+    const votePoll = useCallback(
+        async (messageId: string, optionId: string) => {
+            if (!userId) {
+                return;
+            }
+
+            const targetMessage = messages.find(
+                (message) => message.$id === messageId,
+            );
+            const previousPoll = targetMessage?.poll;
+
+            if (!previousPoll || previousPoll.status === "closed") {
+                return;
+            }
+
+            const optimisticPoll = applyOptimisticPollVote({
+                optionId,
+                poll: previousPoll,
+                userId,
+            });
+
+            replaceMessagePoll(messageId, optimisticPoll);
+
+            try {
+                const response = await fetch(
+                    `/api/messages/${messageId}/poll-votes`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ optionId }),
+                    },
+                );
+                const payload = (await response.json()) as {
+                    error?: string;
+                    poll?: MessagePoll;
+                };
+
+                if (!response.ok || !payload.poll) {
+                    throw new Error(payload.error || "Failed to cast vote.");
+                }
+
+                replaceMessagePoll(messageId, payload.poll);
+            } catch (err) {
+                replaceMessagePoll(messageId, previousPoll);
+                toast.error(
+                    err instanceof Error ? err.message : "Failed to cast vote.",
+                );
+            }
+        },
+        [messages, replaceMessagePoll, userId],
+    );
+
+    const closePoll = useCallback(
+        async (messageId: string) => {
+            if (!userId) {
+                return;
+            }
+
+            const targetMessage = messages.find(
+                (message) => message.$id === messageId,
+            );
+            const previousPoll = targetMessage?.poll;
+
+            if (!previousPoll || previousPoll.status === "closed") {
+                return;
+            }
+
+            const optimisticPoll = applyOptimisticPollClose({
+                poll: previousPoll,
+                userId,
+            });
+            replaceMessagePoll(messageId, optimisticPoll);
+
+            try {
+                const response = await fetch(
+                    `/api/messages/${messageId}/poll/close`,
+                    {
+                        method: "POST",
+                    },
+                );
+                const payload = (await response.json()) as {
+                    error?: string;
+                    poll?: MessagePoll;
+                };
+
+                if (!response.ok || !payload.poll) {
+                    throw new Error(payload.error || "Failed to close poll.");
+                }
+
+                replaceMessagePoll(messageId, payload.poll);
+            } catch (err) {
+                replaceMessagePoll(messageId, previousPoll);
+                toast.error(
+                    err instanceof Error ? err.message : "Failed to close poll.",
+                );
+            }
+        },
+        [messages, replaceMessagePoll, userId],
+    );
+
     function sendTypingState(state: boolean) {
         if (!userId) {
             return;
@@ -962,6 +1132,7 @@ export function useMessages({
         imageFileId?: string,
         imageUrl?: string,
         attachments?: unknown[],
+        textOverride?: string,
     ) {
         e.preventDefault();
         if (!userId) {
@@ -970,7 +1141,8 @@ export function useMessages({
         if (!channelId) {
             return;
         }
-        const value = text.trim();
+        const value =
+            typeof textOverride === "string" ? textOverride.trim() : text.trim();
         if (value.length > MAX_MESSAGE_LENGTH) {
             toast.error(MESSAGE_TOO_LONG_ERROR);
             return;
@@ -1152,6 +1324,8 @@ export function useMessages({
         applyEdit,
         remove,
         toggleReaction,
+        votePoll,
+        closePoll,
         onChangeText,
         send,
         userIdSlice,

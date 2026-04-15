@@ -12,6 +12,11 @@ import {
     getActualMemberCount,
     getActualMemberCounts,
 } from "./membership-count";
+import {
+    mapServerDocument,
+    normalizeServerDescription,
+    normalizeServerFileId,
+} from "./server-metadata";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -119,13 +124,7 @@ export async function listServers(limit = 25): Promise<Server[]> {
 
     const servers = res.documents.map((doc) => {
         const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            name: String(d.name),
-            $createdAt: String(d.$createdAt ?? ""),
-            ownerId: String(d.ownerId),
-            memberCount: memberCounts.get(String(d.$id)) ?? 0,
-        } satisfies Server;
+        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
     });
 
     return servers;
@@ -163,13 +162,7 @@ export async function listServersPage(
 
     const items = res.documents.map((doc) => {
         const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            name: String(d.name),
-            $createdAt: String(d.$createdAt ?? ""),
-            ownerId: String(d.ownerId),
-            memberCount: memberCounts.get(String(d.$id)) ?? 0,
-        } satisfies Server;
+        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
     });
 
     const last = items.at(-1);
@@ -186,7 +179,13 @@ export async function listServersPage(
  */
 export function createServer(
     name: string,
-    options?: { bypassFeatureCheck?: boolean },
+    options?: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+    },
 ): Promise<Server> {
     return withSession(async ({ userId }) => {
         const ownerId = userId;
@@ -197,6 +196,27 @@ export function createServer(
         }
 
         try {
+            const description = normalizeServerDescription(options?.description);
+            const iconFileId = normalizeServerFileId(options?.iconFileId);
+            const bannerFileId = normalizeServerFileId(options?.bannerFileId);
+            const serverData: Record<string, unknown> = {
+                name,
+                ownerId,
+                isPublic: options?.isPublic ?? true,
+            };
+
+            if (description) {
+                serverData.description = description;
+            }
+
+            if (iconFileId) {
+                serverData.iconFileId = iconFileId;
+            }
+
+            if (bannerFileId) {
+                serverData.bannerFileId = bannerFileId;
+            }
+
             const permissions = [
                 Permission.read(Role.any()),
                 Permission.update(Role.user(ownerId)),
@@ -206,7 +226,7 @@ export function createServer(
                 databaseId: DATABASE_ID,
                 collectionId: SERVERS_COLLECTION_ID,
                 documentId: ID.unique(),
-                data: { name, ownerId },
+                data: serverData,
                 permissions,
             });
             const s = serverDoc as unknown as Record<string, unknown>;
@@ -245,13 +265,7 @@ export function createServer(
                 String(s.$id),
             );
 
-            return {
-                $id: String(s.$id),
-                name: String(s.name),
-                $createdAt: String(s.$createdAt ?? ""),
-                ownerId: String(s.ownerId),
-                memberCount: actualMemberCount,
-            } satisfies Server;
+            return mapServerDocument(s, actualMemberCount);
         } catch (e) {
             throw normalizeError(e);
         }

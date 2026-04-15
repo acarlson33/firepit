@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+	ArrowUpDown,
+	RefreshCcw,
+	Search,
+	Sparkles,
+	Users,
+} from "lucide-react";
 import { toast } from "sonner";
 
+import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -11,48 +20,107 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 
 type Server = {
 	$id: string;
+	$createdAt?: string;
 	name: string;
 	ownerId: string;
 	memberCount?: number;
+	description?: string;
+	iconUrl?: string;
+	bannerUrl?: string;
+	defaultOnSignup?: boolean;
 };
+
+type SortMode = "featured" | "members" | "newest" | "name";
 
 type ServerBrowserProperties = {
 	userId: string | null;
-	membershipEnabled: boolean;
 	onServerJoined?: () => void;
 	joinedServerIds?: string[];
 };
 
+function compareByNewest(left: Server, right: Server) {
+	const leftTimestamp = Date.parse(left.$createdAt ?? "");
+	const rightTimestamp = Date.parse(right.$createdAt ?? "");
+	const leftValue = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
+	const rightValue = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
+	return rightValue - leftValue;
+}
+
+function compareByMembers(left: Server, right: Server) {
+	const leftMembers = left.memberCount ?? 0;
+	const rightMembers = right.memberCount ?? 0;
+	if (leftMembers !== rightMembers) {
+		return rightMembers - leftMembers;
+	}
+
+	return left.name.localeCompare(right.name);
+}
+
+function compareByFeatured(left: Server, right: Server) {
+	const leftScore = left.defaultOnSignup ? 1 : 0;
+	const rightScore = right.defaultOnSignup ? 1 : 0;
+
+	if (leftScore !== rightScore) {
+		return rightScore - leftScore;
+	}
+
+	return compareByMembers(left, right);
+}
+
+function formatMemberCount(memberCount: number | undefined) {
+	const value = memberCount ?? 0;
+	return `${value.toLocaleString()} ${value === 1 ? "member" : "members"}`;
+}
+
 export function ServerBrowser({
 	userId,
-	membershipEnabled,
 	onServerJoined,
 	joinedServerIds = [],
 }: ServerBrowserProperties) {
 	const [servers, setServers] = useState<Server[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [joining, setJoining] = useState<string | null>(null);
+	const [query, setQuery] = useState("");
+	const [sortMode, setSortMode] = useState<SortMode>("featured");
+	const joinedServerIdsKey = joinedServerIds.join(",");
+	const canLoadServers = Boolean(userId);
 
 	const loadServers = async () => {
 		setLoading(true);
 		try {
-			const response = await fetch("/api/servers/public");
-			if (response.ok) {
-				const data = await response.json();
-				// Filter out servers the user has already joined
-				const allServers = data.servers || [];
-				const unjoinedServers = allServers.filter(
-					(server: Server) => !joinedServerIds.includes(server.$id)
-				);
-				setServers(unjoinedServers);
+			const response = await fetch("/api/servers/public", {
+				cache: "no-store",
+			});
+
+			if (!response.ok) {
+				const data = (await response.json()) as { error?: string };
+				throw new Error(data.error || "Failed to load servers");
 			}
+
+			const data = (await response.json()) as {
+				servers?: Server[];
+			};
+
+			const allServers = data.servers || [];
+			const unjoinedServers = allServers.filter(
+				(server) => !joinedServerIds.includes(server.$id),
+			);
+			setServers(unjoinedServers);
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Failed to load servers"
+				error instanceof Error ? error.message : "Failed to load servers",
 			);
 		} finally {
 			setLoading(false);
@@ -60,11 +128,45 @@ export function ServerBrowser({
 	};
 
 	useEffect(() => {
-		// Only load servers if we have a userId (auth is ready) and membership is enabled
-		if (membershipEnabled && userId) {
+		if (canLoadServers) {
 			void loadServers();
 		}
-	}, [membershipEnabled, userId, joinedServerIds.join(",")]);
+	}, [canLoadServers, userId, joinedServerIdsKey]);
+
+	const visibleServers = useMemo(() => {
+		const normalizedQuery = query.trim().toLowerCase();
+
+		const filtered = normalizedQuery
+			? servers.filter((server) => {
+				  const haystack = `${server.name} ${server.description ?? ""}`
+					  .toLowerCase()
+					  .trim();
+				  return haystack.includes(normalizedQuery);
+			  })
+			: servers;
+
+		const sorted = [...filtered];
+		switch (sortMode) {
+			case "members": {
+				sorted.sort(compareByMembers);
+				break;
+			}
+			case "newest": {
+				sorted.sort(compareByNewest);
+				break;
+			}
+			case "name": {
+				sorted.sort((left, right) => left.name.localeCompare(right.name));
+				break;
+			}
+			default: {
+				sorted.sort(compareByFeatured);
+				break;
+			}
+		}
+
+		return sorted;
+	}, [query, servers, sortMode]);
 
 	const handleJoinServer = async (serverId: string) => {
 		if (!userId) {
@@ -72,113 +174,227 @@ export function ServerBrowser({
 			return;
 		}
 
-		toast.info(`Attempting to join server ${serverId}...`);
 		setJoining(serverId);
 		try {
 			const response = await fetch("/api/servers/join", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ serverId }), // Server gets userId from session
+				body: JSON.stringify({ serverId }),
 			});
 
 			if (response.ok) {
-				toast.success("Successfully joined server!");
+				toast.success("Successfully joined server");
 				onServerJoined?.();
-			} else {
-				const data = await response.json();
-				toast.error(data.error || "Failed to join server");
+				return;
 			}
+
+			const data = (await response.json()) as { error?: string };
+			toast.error(data.error || "Failed to join server");
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Failed to join server"
+				error instanceof Error ? error.message : "Failed to join server",
 			);
 		} finally {
 			setJoining(null);
 		}
 	};
 
-	// Don't show anything if membership is disabled
-	if (!membershipEnabled) {
-		return null;
-	}
-
-	// Show loading state while waiting for userId
 	if (!userId) {
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle>Available Servers</CardTitle>
-					<CardDescription>
-						<span className="text-muted-foreground text-sm">
-							Loading authentication...
-						</span>
-					</CardDescription>
+					<CardTitle>Discover Servers</CardTitle>
+					<CardDescription>Loading authentication...</CardDescription>
 				</CardHeader>
 			</Card>
 		);
 	}
 
-	// Hide the browser if there are no servers to join
-	if (!loading && servers.length === 0) {
-		return null;
-	}
-
 	return (
 		<Card>
-			<CardHeader>
-				<CardTitle>Available Servers</CardTitle>
-				<CardDescription>
-					Browse and join servers on this instance
-				</CardDescription>
+			<CardHeader className="space-y-3">
+				<div>
+					<CardTitle>Discover Servers</CardTitle>
+					<CardDescription>
+						Explore public communities with rich previews and join in
+						one click.
+					</CardDescription>
+				</div>
+
+				<div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+					<div className="relative">
+						<Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+						<Input
+							className="pl-8"
+							value={query}
+							onChange={(event) => setQuery(event.target.value)}
+							placeholder="Search by name or description"
+						/>
+					</div>
+
+					<Select
+						value={sortMode}
+						onValueChange={(value) => setSortMode(value as SortMode)}
+					>
+						<SelectTrigger>
+							<div className="flex items-center gap-2">
+								<ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+								<SelectValue />
+							</div>
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="featured">Featured</SelectItem>
+							<SelectItem value="members">Most members</SelectItem>
+							<SelectItem value="newest">Newest</SelectItem>
+							<SelectItem value="name">Name</SelectItem>
+						</SelectContent>
+					</Select>
+
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => {
+							void loadServers();
+						}}
+						disabled={loading}
+					>
+						<RefreshCcw
+							className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+						/>
+						Refresh
+					</Button>
+				</div>
+
+				<div className="flex items-center justify-between text-xs text-muted-foreground">
+					<span>
+						{loading
+							? "Loading public servers..."
+							: `${visibleServers.length} server${visibleServers.length === 1 ? "" : "s"} available`}
+					</span>
+					<span>Hidden: already joined servers</span>
+				</div>
 			</CardHeader>
+
 			<CardContent>
 				{loading ? (
-					<div className="space-y-3">
-						{Array.from({ length: 3 }).map((_, i) => (
+					<div className="grid gap-3 sm:grid-cols-2">
+						{Array.from({ length: 4 }).map((_, index) => (
 							<div
-								className="flex items-center justify-between rounded border p-3"
-								key={i}
+								className="overflow-hidden rounded-xl border border-border/60"
+								key={index}
 							>
-								<div className="flex-1 space-y-2">
-									<Skeleton className="h-5 w-32" />
-									<Skeleton className="h-3 w-48" />
+								<Skeleton className="h-20 w-full" />
+								<div className="space-y-3 p-3">
+									<div className="flex items-center gap-3">
+										<Skeleton className="h-10 w-10 rounded-full" />
+										<div className="space-y-2">
+											<Skeleton className="h-4 w-32" />
+											<Skeleton className="h-3 w-24" />
+										</div>
+									</div>
+									<Skeleton className="h-3 w-full" />
+									<Skeleton className="h-3 w-3/4" />
+									<Skeleton className="h-8 w-20" />
 								</div>
-								<Skeleton className="h-9 w-16" />
 							</div>
 						))}
 					</div>
+				) : visibleServers.length === 0 ? (
+					<div className="rounded-xl border border-dashed border-border p-6 text-center">
+						<p className="text-sm font-medium">
+							{servers.length === 0
+								? "No additional public servers are available right now."
+								: "No servers match your current search."}
+						</p>
+						<p className="mt-1 text-xs text-muted-foreground">
+							{servers.length === 0
+								? "Try refreshing later or ask an admin to mark more servers as public."
+								: "Adjust your query or switch sorting to discover more options."}
+						</p>
+					</div>
 				) : (
-					<div className="space-y-2">
-						{servers.map((server) => (
-							<div
+					<div className="grid gap-3 sm:grid-cols-2">
+						{visibleServers.map((server) => (
+							<article
 								key={server.$id}
-								className="flex items-center justify-between rounded border p-3 gap-3"
+								className="overflow-hidden rounded-xl border border-border/60 bg-background"
 							>
-								<div className="flex-1 min-w-0 overflow-hidden">
-									<p className="font-medium truncate">{server.name}</p>
-									<div className="mt-1 flex items-center gap-2">
-										{server.memberCount !== undefined && (
-											<span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-												<svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-												</svg>
-												{server.memberCount} {server.memberCount === 1 ? 'member' : 'members'}
-											</span>
-										)}
-										<span className="text-xs text-muted-foreground">
-											ID: {server.$id}
+								<div
+									className="h-20 w-full bg-linear-to-r from-sky-500/20 via-cyan-500/15 to-emerald-500/20"
+									style={
+										server.bannerUrl
+											? {
+												  backgroundImage: `linear-gradient(to top, rgba(2,6,23,0.55), rgba(2,6,23,0.1)), url(${server.bannerUrl})`,
+												  backgroundSize: "cover",
+												  backgroundPosition: "center",
+											  }
+											: undefined
+									}
+								/>
+
+								<div className="space-y-3 p-3">
+									<div className="flex items-start gap-3">
+										<Avatar
+											src={server.iconUrl ?? null}
+											alt={server.name}
+											fallback={server.name}
+											size="lg"
+										/>
+
+										<div className="min-w-0 flex-1">
+											<p className="truncate text-sm font-semibold">
+												{server.name}
+											</p>
+											<div className="mt-1 flex flex-wrap items-center gap-1.5">
+												<Badge
+													variant="secondary"
+													className="inline-flex items-center gap-1"
+												>
+													<Users className="h-3 w-3" />
+													{formatMemberCount(server.memberCount)}
+												</Badge>
+												{server.defaultOnSignup ? (
+													<Badge
+														variant="outline"
+														className="inline-flex items-center gap-1"
+													>
+														<Sparkles className="h-3 w-3" />
+														Recommended
+													</Badge>
+												) : null}
+											</div>
+										</div>
+									</div>
+
+									<p className="min-h-10 text-xs text-muted-foreground">
+										{server.description &&
+										server.description.length > 0
+											? server.description
+											: "No server description yet."}
+									</p>
+
+									<div className="flex items-center justify-between gap-2">
+										<span className="text-[11px] text-muted-foreground">
+											{server.$createdAt
+												? `Created ${new Date(server.$createdAt).toLocaleDateString()}`
+												: "Public server"}
 										</span>
+
+										<Button
+											type="button"
+											size="sm"
+											disabled={joining === server.$id}
+											onClick={() => {
+												void handleJoinServer(server.$id);
+											}}
+										>
+											{joining === server.$id
+												? "Joining..."
+												: "Join Server"}
+										</Button>
 									</div>
 								</div>
-								<Button
-									type="button"
-									disabled={joining === server.$id || !userId}
-									size="sm"
-									onClick={() => handleJoinServer(server.$id)}
-								>
-									{joining === server.$id ? "Joining..." : "Join"}
-								</Button>
-							</div>
+							</article>
 						))}
 					</div>
 				)}

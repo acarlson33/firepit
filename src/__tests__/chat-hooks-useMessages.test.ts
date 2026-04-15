@@ -716,6 +716,177 @@ describe("useMessages", () => {
                 false,
             );
         });
+
+        it("casts poll votes and reconciles poll state", async () => {
+            const initialPoll = {
+                channelId: mockChannelId,
+                createdBy: "user456",
+                id: "poll-1",
+                messageId: "msg1",
+                options: [
+                    {
+                        count: 0,
+                        id: "option-1",
+                        text: "Option 1",
+                        voterIds: [],
+                    },
+                    {
+                        count: 0,
+                        id: "option-2",
+                        text: "Option 2",
+                        voterIds: [],
+                    },
+                ],
+                question: "Pick one",
+                status: "open" as const,
+            };
+
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([
+                {
+                    ...mockMessage1,
+                    poll: initialPoll,
+                },
+            ]);
+
+            const fetchMock = vi.fn().mockResolvedValue({
+                json: async () => ({
+                    poll: {
+                        ...initialPoll,
+                        options: [
+                            {
+                                count: 0,
+                                id: "option-1",
+                                text: "Option 1",
+                                voterIds: [],
+                            },
+                            {
+                                count: 1,
+                                id: "option-2",
+                                text: "Option 2",
+                                voterIds: [mockUserId],
+                            },
+                        ],
+                    },
+                }),
+                ok: true,
+            } as Response);
+            vi.stubGlobal("fetch", fetchMock);
+
+            try {
+                const { result } = renderHook(() =>
+                    useMessages({
+                        channelId: mockChannelId,
+                        userId: mockUserId,
+                        userName: mockUserName,
+                    }),
+                );
+
+                await waitFor(() => {
+                    expect(result.current.messages[0]?.poll).toEqual(
+                        initialPoll,
+                    );
+                });
+
+                await act(async () => {
+                    await result.current.votePoll("msg1", "option-2");
+                });
+
+                expect(fetchMock).toHaveBeenCalledWith(
+                    "/api/messages/msg1/poll-votes",
+                    {
+                        body: JSON.stringify({ optionId: "option-2" }),
+                        headers: { "Content-Type": "application/json" },
+                        method: "POST",
+                    },
+                );
+                expect(
+                    result.current.messages[0]?.poll?.options.find(
+                        (option) => option.id === "option-2",
+                    )?.voterIds,
+                ).toEqual([mockUserId]);
+            } finally {
+                vi.unstubAllGlobals();
+            }
+        });
+
+        it("closes polls and updates message state", async () => {
+            const initialPoll = {
+                channelId: mockChannelId,
+                createdBy: mockUserId,
+                id: "poll-1",
+                messageId: "msg1",
+                options: [
+                    {
+                        count: 1,
+                        id: "option-1",
+                        text: "Option 1",
+                        voterIds: [mockUserId],
+                    },
+                ],
+                question: "Close me",
+                status: "open" as const,
+            };
+
+            (
+                appwriteMessagesEnriched.getEnrichedMessages as ReturnType<
+                    typeof vi.fn
+                >
+            ).mockResolvedValue([
+                {
+                    ...mockMessage1,
+                    poll: initialPoll,
+                },
+            ]);
+
+            const fetchMock = vi.fn().mockResolvedValue({
+                json: async () => ({
+                    poll: {
+                        ...initialPoll,
+                        closedAt: "2026-04-12T15:00:00.000Z",
+                        closedBy: mockUserId,
+                        status: "closed",
+                    },
+                }),
+                ok: true,
+            } as Response);
+            vi.stubGlobal("fetch", fetchMock);
+
+            try {
+                const { result } = renderHook(() =>
+                    useMessages({
+                        channelId: mockChannelId,
+                        userId: mockUserId,
+                        userName: mockUserName,
+                    }),
+                );
+
+                await waitFor(() => {
+                    expect(result.current.messages[0]?.poll).toEqual(
+                        initialPoll,
+                    );
+                });
+
+                await act(async () => {
+                    await result.current.closePoll("msg1");
+                });
+
+                expect(fetchMock).toHaveBeenCalledWith(
+                    "/api/messages/msg1/poll/close",
+                    {
+                        method: "POST",
+                    },
+                );
+                expect(result.current.messages[0]?.poll?.status).toBe(
+                    "closed",
+                );
+            } finally {
+                vi.unstubAllGlobals();
+            }
+        });
     });
 
     describe("Load Older Messages", () => {

@@ -1,5 +1,6 @@
 import { listRecentMessages } from "./appwrite-messages";
 import { enrichMessagesWithProfiles } from "./enrich-messages";
+import { enrichMessagesWithPolls } from "./appwrite-polls";
 
 /**
  * Returns enriched messages.
@@ -22,7 +23,8 @@ export async function getEnrichedMessages(
     );
 
     // Enrich with profile data
-    const enriched = await enrichMessagesWithProfiles(messages);
+    const profileEnriched = await enrichMessagesWithProfiles(messages);
+    const enriched = await enrichMessagesWithPolls(profileEnriched);
 
     return enriched;
 }

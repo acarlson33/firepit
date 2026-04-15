@@ -12,6 +12,7 @@ import type { ChatSurfaceMessage } from "@/lib/chat-surface";
 import type { CustomEmoji } from "@/lib/types";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MessagePollBlock } from "@/components/message-poll";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { ThreadIndicator } from "@/components/thread-indicator";
@@ -35,6 +36,8 @@ type ChatSurfaceMessageItemProps = {
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (message: ChatSurfaceMessage, optionId: string) => Promise<void>;
+    onClosePoll?: (message: ChatSurfaceMessage) => Promise<void>;
     onOpenProfileModal?: (
         userId: string,
         userName?: string,
@@ -64,6 +67,8 @@ export function ChatSurfaceMessageItem({
     onStartReply,
     onRemove,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
     onOpenProfileModal,
     onOpenImageViewer,
     customEmojis,
@@ -204,6 +209,32 @@ export function ChatSurfaceMessageItem({
                         />
                     </div>
                 )}
+                {!removed && message.poll ? (
+                    <MessagePollBlock
+                        canClose={
+                            canManageMessages ||
+                            message.poll.createdBy === currentUserId
+                        }
+                        currentUserId={currentUserId}
+                        messageId={message.id}
+                        onClose={
+                            onClosePoll
+                                ? async () => {
+                                      await onClosePoll(message);
+                                  }
+                                : undefined
+                        }
+                        onVote={
+                            onVotePoll
+                                ? async (optionId) => {
+                                      await onVotePoll(message, optionId);
+                                  }
+                                : undefined
+                        }
+                        poll={message.poll}
+                        readOnly={message.context.kind === "dm"}
+                    />
+                ) : null}
                 {removed && (
                     <div
                         className={`${
