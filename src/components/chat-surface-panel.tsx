@@ -51,6 +51,8 @@ type ChatSurfacePanelProps = {
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (message: ChatSurfaceMessage, optionId: string) => Promise<void>;
+    onClosePoll?: (message: ChatSurfaceMessage) => Promise<void>;
     onOpenImageViewer: (imageUrl: string) => void;
     onOpenProfileModal?: (
         userId: string,
@@ -131,6 +133,8 @@ export function ChatSurfacePanel({
     onStartReply,
     onRemove,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
     onOpenImageViewer,
     onOpenProfileModal,
     onOpenThread,
@@ -413,6 +417,8 @@ export function ChatSurfacePanel({
                         onStartReply={onStartReply}
                         onTogglePin={onTogglePin}
                         onToggleReaction={onToggleReaction}
+                        onVotePoll={onVotePoll}
+                        onClosePoll={onClosePoll}
                         onUploadCustomEmoji={onUploadCustomEmoji}
                         pinnedMessageIds={pinnedMessageIds}
                         setDeleteConfirmId={setDeleteConfirmId}
@@ -459,6 +465,8 @@ export function ChatSurfacePanel({
                                     onStartReply={onStartReply}
                                     onTogglePin={onTogglePin}
                                     onToggleReaction={onToggleReaction}
+                                    onVotePoll={onVotePoll}
+                                    onClosePoll={onClosePoll}
                                     onUploadCustomEmoji={onUploadCustomEmoji}
                                     pinnedMessageIds={pinnedMessageIds}
                                     setDeleteConfirmId={setDeleteConfirmId}

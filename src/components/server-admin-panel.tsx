@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
     Shield,
     Users,
@@ -13,6 +13,9 @@ import {
     Download,
     Filter,
     Link,
+    ImagePlus,
+    Loader2,
+    Save,
 } from "lucide-react";
 import { InviteManagerDialog } from "@/app/chat/components/InviteManagerDialog";
 import { CreateInviteDialog } from "@/app/chat/components/CreateInviteDialog";
@@ -21,6 +24,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
     Dialog,
     DialogContent,
@@ -39,15 +44,24 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
+import { uploadImage } from "@/lib/appwrite-dms-client";
+import type { Server, Role } from "@/lib/types";
 import { toast } from "sonner";
-import type { Role } from "@/lib/types";
 
 interface ServerAdminPanelProps {
     serverId: string;
     serverName: string;
     isOwner: boolean;
+    canManageServer: boolean;
+    serverDescription?: string;
+    serverIconFileId?: string;
+    serverIconUrl?: string;
+    serverBannerFileId?: string;
+    serverBannerUrl?: string;
+    serverIsPublic?: boolean;
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    onServerUpdated?: (server: Server) => void;
 }
 
 interface MemberData {
@@ -86,8 +100,16 @@ export function ServerAdminPanel({
     serverId,
     serverName,
     isOwner,
+    canManageServer,
+    serverDescription,
+    serverIconFileId,
+    serverIconUrl,
+    serverBannerFileId,
+    serverBannerUrl,
+    serverIsPublic,
     open,
     onOpenChange,
+    onServerUpdated,
 }: ServerAdminPanelProps) {
     const [activeTab, setActiveTab] = useState("overview");
     const [members, setMembers] = useState<MemberData[]>([]);
@@ -124,6 +146,167 @@ export function ServerAdminPanel({
         useState(false);
     const [inviteManagerOpen, setInviteManagerOpen] = useState(false);
     const [createInviteOpen, setCreateInviteOpen] = useState(false);
+    const [settingsName, setSettingsName] = useState(serverName);
+    const [settingsDescription, setSettingsDescription] = useState(
+        serverDescription ?? "",
+    );
+    const [settingsIsPublic, setSettingsIsPublic] = useState(
+        serverIsPublic !== false,
+    );
+    const [settingsIconFileId, setSettingsIconFileId] = useState(
+        serverIconFileId ?? "",
+    );
+    const [settingsIconUrl, setSettingsIconUrl] = useState<string | null>(
+        serverIconUrl ?? null,
+    );
+    const [settingsBannerFileId, setSettingsBannerFileId] = useState(
+        serverBannerFileId ?? "",
+    );
+    const [settingsBannerUrl, setSettingsBannerUrl] = useState<string | null>(
+        serverBannerUrl ?? null,
+    );
+    const [savingSettings, setSavingSettings] = useState(false);
+    const [uploadingIcon, setUploadingIcon] = useState(false);
+    const [uploadingBanner, setUploadingBanner] = useState(false);
+    const iconInputRef = useRef<HTMLInputElement>(null);
+    const bannerInputRef = useRef<HTMLInputElement>(null);
+    const canEditServerSettings = isOwner || canManageServer;
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        setSettingsName(serverName);
+        setSettingsDescription(serverDescription ?? "");
+        setSettingsIsPublic(serverIsPublic !== false);
+        setSettingsIconFileId(serverIconFileId ?? "");
+        setSettingsIconUrl(serverIconUrl ?? null);
+        setSettingsBannerFileId(serverBannerFileId ?? "");
+        setSettingsBannerUrl(serverBannerUrl ?? null);
+    }, [
+        open,
+        serverName,
+        serverDescription,
+        serverIsPublic,
+        serverIconFileId,
+        serverIconUrl,
+        serverBannerFileId,
+        serverBannerUrl,
+    ]);
+
+    const handleServerImageUpload = useCallback(
+        async (kind: "icon" | "banner", file: File) => {
+            if (kind === "icon") {
+                setUploadingIcon(true);
+            } else {
+                setUploadingBanner(true);
+            }
+
+            try {
+                const uploaded = await uploadImage(file);
+
+                if (kind === "icon") {
+                    setSettingsIconFileId(uploaded.fileId);
+                    setSettingsIconUrl(uploaded.url);
+                } else {
+                    setSettingsBannerFileId(uploaded.fileId);
+                    setSettingsBannerUrl(uploaded.url);
+                }
+
+                toast.success(
+                    kind === "icon"
+                        ? "Server icon uploaded"
+                        : "Server banner uploaded",
+                );
+            } catch (error) {
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to upload image",
+                );
+            } finally {
+                if (kind === "icon") {
+                    setUploadingIcon(false);
+                } else {
+                    setUploadingBanner(false);
+                }
+            }
+        },
+        [],
+    );
+
+    const saveServerSettings = useCallback(async () => {
+        if (!canEditServerSettings) {
+            return;
+        }
+
+        const trimmedName = settingsName.trim();
+        if (!trimmedName) {
+            toast.error("Server name is required");
+            return;
+        }
+
+        const requestPayload: {
+            name: string;
+            description: string;
+            isPublic: boolean;
+            iconFileId: string | null;
+            bannerFileId: string | null;
+        } = {
+            name: trimmedName,
+            description: settingsDescription,
+            isPublic: settingsIsPublic,
+            iconFileId: settingsIconFileId || null,
+            bannerFileId: settingsBannerFileId || null,
+        };
+
+        setSavingSettings(true);
+        try {
+            const response = await fetch(`/api/servers/${serverId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestPayload),
+            });
+
+            const data = (await response.json()) as {
+                error?: string;
+                server?: Server;
+            };
+
+            if (!response.ok) {
+                toast.error(data.error || "Failed to update server settings");
+                return;
+            }
+
+            const updatedServer = data.server;
+            if (updatedServer) {
+                setSettingsName(updatedServer.name);
+                setSettingsDescription(updatedServer.description ?? "");
+                setSettingsIsPublic(updatedServer.isPublic !== false);
+                setSettingsIconFileId(updatedServer.iconFileId ?? "");
+                setSettingsIconUrl(updatedServer.iconUrl ?? null);
+                setSettingsBannerFileId(updatedServer.bannerFileId ?? "");
+                setSettingsBannerUrl(updatedServer.bannerUrl ?? null);
+                onServerUpdated?.(updatedServer);
+            }
+
+            toast.success("Server settings updated");
+        } catch {
+            toast.error("Failed to update server settings");
+        } finally {
+            setSavingSettings(false);
+        }
+    }, [
+        canEditServerSettings,
+        onServerUpdated,
+        serverId,
+        settingsBannerFileId,
+        settingsDescription,
+        settingsIconFileId,
+        settingsIsPublic,
+        settingsName,
+    ]);
 
     const loadServerStats = useCallback(async () => {
         try {
@@ -238,7 +421,13 @@ export function ServerAdminPanel({
             void loadRoles();
             void loadAuditLogs();
         }
-    }, [open, loadServerStats, loadMembers, loadRoles, loadAuditLogs]);
+    }, [
+        open,
+        loadServerStats,
+        loadMembers,
+        loadRoles,
+        loadAuditLogs,
+    ]);
 
     const handleModerationAction = async () => {
         setAttemptedModerationSubmit(true);
@@ -386,11 +575,23 @@ export function ServerAdminPanel({
                     onValueChange={setActiveTab}
                     className="flex-1 flex flex-col overflow-hidden"
                 >
-                    <TabsList className="grid grid-cols-5 w-full">
+                    <TabsList
+                        className={`grid w-full ${
+                            canEditServerSettings
+                                ? "grid-cols-6"
+                                : "grid-cols-5"
+                        }`}
+                    >
                         <TabsTrigger value="overview">
                             <Settings className="h-4 w-4 mr-2" />
                             Overview
                         </TabsTrigger>
+                        {canEditServerSettings && (
+                            <TabsTrigger value="settings">
+                                <Settings className="h-4 w-4 mr-2" />
+                                Settings
+                            </TabsTrigger>
+                        )}
                         <TabsTrigger value="members">
                             <Users className="h-4 w-4 mr-2" />
                             Members
@@ -523,12 +724,207 @@ export function ServerAdminPanel({
                                         >
                                             {isOwner
                                                 ? "Owner"
-                                                : "Administrator"}
+                                                : canManageServer
+                                                  ? "Server Manager"
+                                                  : "Administrator"}
                                         </Badge>
                                     </div>
                                 </div>
                             </Card>
+
                         </TabsContent>
+
+                        {canEditServerSettings && (
+                            <TabsContent
+                                value="settings"
+                                className="space-y-4 m-0"
+                            >
+                                <Card className="p-4 space-y-4">
+                                    <div>
+                                        <h3 className="font-semibold">
+                                            Server Customization
+                                        </h3>
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                            Update how your server appears and
+                                            who can discover it.
+                                        </p>
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="server-settings-name">
+                                            Server name
+                                        </Label>
+                                        <Input
+                                            id="server-settings-name"
+                                            value={settingsName}
+                                            onChange={(event) =>
+                                                setSettingsName(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            maxLength={100}
+                                        />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="server-settings-description">
+                                            Description
+                                        </Label>
+                                        <Textarea
+                                            id="server-settings-description"
+                                            value={settingsDescription}
+                                            onChange={(event) =>
+                                                setSettingsDescription(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            rows={4}
+                                            maxLength={500}
+                                            placeholder="Tell members what this server is about"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between rounded-lg border p-3">
+                                        <div>
+                                            <p className="text-sm font-medium">
+                                                Public discovery
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Private servers are hidden from
+                                                discovery and direct join.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={settingsIsPublic}
+                                            onCheckedChange={setSettingsIsPublic}
+                                        />
+                                    </div>
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label>Server icon</Label>
+                                            <div className="rounded-lg border p-3 space-y-3">
+                                                <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden">
+                                                    {settingsIconUrl ? (
+                                                        <div
+                                                            className="h-full w-full bg-cover bg-center"
+                                                            style={{
+                                                                backgroundImage: `url(${settingsIconUrl})`,
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            iconInputRef.current?.click()
+                                                        }
+                                                        disabled={uploadingIcon}
+                                                    >
+                                                        {uploadingIcon ? (
+                                                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                                        ) : (
+                                                            <ImagePlus className="h-4 w-4 mr-1" />
+                                                        )}
+                                                        Upload icon
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            setSettingsIconFileId(
+                                                                "",
+                                                            );
+                                                            setSettingsIconUrl(
+                                                                null,
+                                                            );
+                                                        }}
+                                                        disabled={
+                                                            !settingsIconFileId
+                                                        }
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Server banner</Label>
+                                            <div className="rounded-lg border p-3 space-y-3">
+                                                <div className="h-16 w-full rounded-lg bg-muted overflow-hidden">
+                                                    {settingsBannerUrl ? (
+                                                        <div
+                                                            className="h-full w-full bg-cover bg-center"
+                                                            style={{
+                                                                backgroundImage: `url(${settingsBannerUrl})`,
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            bannerInputRef.current?.click()
+                                                        }
+                                                        disabled={uploadingBanner}
+                                                    >
+                                                        {uploadingBanner ? (
+                                                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                                        ) : (
+                                                            <ImagePlus className="h-4 w-4 mr-1" />
+                                                        )}
+                                                        Upload banner
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            setSettingsBannerFileId(
+                                                                "",
+                                                            );
+                                                            setSettingsBannerUrl(
+                                                                null,
+                                                            );
+                                                        }}
+                                                        disabled={
+                                                            !settingsBannerFileId
+                                                        }
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end">
+                                        <Button
+                                            type="button"
+                                            onClick={() => {
+                                                void saveServerSettings();
+                                            }}
+                                            disabled={savingSettings}
+                                        >
+                                            {savingSettings ? (
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Save className="h-4 w-4 mr-2" />
+                                            )}
+                                            Save changes
+                                        </Button>
+                                    </div>
+                                </Card>
+                            </TabsContent>
+                        )}
 
                         <TabsContent value="members" className="space-y-4 m-0">
                             <div className="flex items-center gap-4 flex-wrap">
@@ -1057,6 +1453,38 @@ export function ServerAdminPanel({
                         </TabsContent>
                     </div>
                 </Tabs>
+
+                <input
+                    ref={iconInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) {
+                            return;
+                        }
+
+                        void handleServerImageUpload("icon", file);
+                        event.target.value = "";
+                    }}
+                />
+
+                <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) {
+                            return;
+                        }
+
+                        void handleServerImageUpload("banner", file);
+                        event.target.value = "";
+                    }}
+                />
 
                 <DialogFooter>
                     <Button

@@ -52,6 +52,7 @@ export type ChatSurfaceMessage = {
     lastThreadReplyAt?: string;
     mentions?: string[];
     reactions?: MessageReaction[];
+    poll?: Message["poll"];
     isPinned?: boolean;
     pinnedAt?: string;
     pinnedBy?: string;
@@ -195,6 +196,7 @@ export function fromChannelMessage(
         lastThreadReplyAt: message.lastThreadReplyAt,
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
+        poll: message.poll,
         isPinned: message.isPinned,
         pinnedAt: message.pinnedAt,
         pinnedBy: message.pinnedBy,
@@ -251,6 +253,7 @@ export function fromDirectMessage(
         lastThreadReplyAt: message.lastThreadReplyAt,
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
+        poll: message.poll,
         isPinned: message.isPinned ?? false,
         pinnedAt: message.pinnedAt,
         pinnedBy: message.pinnedBy,

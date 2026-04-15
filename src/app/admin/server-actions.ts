@@ -2,7 +2,7 @@
 
 import { ID, Query } from "node-appwrite";
 
-import { requireAdmin, requireModerator } from "@/lib/auth-server";
+import { requireAdmin, requireAuth, requireModerator } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 
@@ -31,6 +31,7 @@ export type ServerListResult = {
         name: string;
         ownerId: string;
         createdAt: string;
+        defaultOnSignup?: boolean;
     }>;
 };
 
@@ -125,7 +126,7 @@ export async function createServerAction(
 }
 
 /**
- * Create a new channel (Admin or Moderator)
+ * Create a new channel for a server (server owner only)
  */
 export async function createChannelAction(
     serverId: string,
@@ -133,8 +134,7 @@ export async function createChannelAction(
     type: "text" | "voice" | "announcement" = "text",
 ): Promise<ChannelCreationResult> {
     try {
-        // Require moderator role (admins are also moderators)
-        await requireModerator();
+        const user = await requireAuth();
 
         if (!name.trim()) {
             return { success: false, error: "Channel name is required" };
@@ -145,6 +145,19 @@ export async function createChannelAction(
         }
 
         const { databases } = getServerClient();
+
+        const serverDocument = await databases.getDocument(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            serverId,
+        );
+
+        if (String(serverDocument.ownerId) !== user.$id) {
+            return {
+                success: false,
+                error: "Only the server owner can create channels",
+            };
+        }
 
         // Create channel with public read permissions
         const permissions = ['read("any")'];
@@ -193,11 +206,60 @@ export async function listServersAction(): Promise<ServerListResult> {
             name: String(doc.name),
             ownerId: String(doc.ownerId),
             createdAt: String(doc.createdAt || doc.$createdAt),
+            defaultOnSignup: doc.defaultOnSignup === true,
         }));
 
         return { servers };
     } catch {
         return { servers: [] };
+    }
+}
+
+/**
+ * Set the default server for new user signups (Admin only)
+ */
+export async function setDefaultSignupServerAction(
+    serverId: string | null,
+): Promise<DeleteResult> {
+    try {
+        await requireAdmin();
+
+        const { databases } = getServerClient();
+        const defaultsResponse = await databases.listDocuments(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            [Query.equal("defaultOnSignup", true), Query.limit(200)],
+        );
+
+        for (const server of defaultsResponse.documents) {
+            if (server.defaultOnSignup === true) {
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    SERVERS_COLLECTION_ID,
+                    server.$id,
+                    { defaultOnSignup: false },
+                );
+            }
+        }
+
+        if (serverId) {
+            await databases.updateDocument(
+                DATABASE_ID,
+                SERVERS_COLLECTION_ID,
+                serverId,
+                { defaultOnSignup: true },
+            );
+        }
+
+        return { success: true };
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to update default signup server",
+        };
     }
 }
 

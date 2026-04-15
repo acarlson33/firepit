@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MessagePollBlock } from "@/components/message-poll";
 
 type ChatPinnedMessagesContentProps = {
     messages: ChatSurfaceMessage[];
@@ -126,6 +127,14 @@ export function ChatPinnedMessagesContent({
                                                     text={message.text}
                                                 />
                                             </div>
+                                            {message.poll ? (
+                                                <MessagePollBlock
+                                                    currentUserId={null}
+                                                    messageId={message.id}
+                                                    poll={message.poll}
+                                                    readOnly={true}
+                                                />
+                                            ) : null}
                                             {message.imageUrl ? (
                                                 <div className="mt-2">
                                                     <ImageWithSkeleton

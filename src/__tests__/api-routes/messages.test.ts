@@ -60,6 +60,8 @@ vi.mock("@/lib/appwrite-core", () => ({
         databaseId: "test-db",
         collections: {
             messages: "messages-collection",
+            polls: "polls-collection",
+            pollVotes: "poll-votes-collection",
             channels: "channels-collection",
             servers: "servers-collection",
             memberships: "memberships-collection",
@@ -282,6 +284,58 @@ describe("Messages API Routes", () => {
                 previewText: "Hello @alice",
                 serverId: "server-1",
             });
+        });
+
+        it("creates a poll when message text uses poll slash command", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            mockCreateDocument
+                .mockResolvedValueOnce({
+                    $id: "msg-poll",
+                    userId: "user-1",
+                    userName: "Test User",
+                    text: "Lunch plans?",
+                    channelId: "channel-1",
+                    serverId: "server-1",
+                    $createdAt: "2026-04-12T12:00:00.000Z",
+                })
+                .mockResolvedValueOnce({
+                    $id: "poll-1",
+                });
+
+            const request = new NextRequest("http://localhost/api/messages", {
+                method: "POST",
+                body: JSON.stringify({
+                    text: '/poll "Lunch plans?" | "Pizza" | "Tacos"',
+                    channelId: "channel-1",
+                }),
+            });
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(mockCreateDocument).toHaveBeenCalledTimes(2);
+            expect(mockCreateDocument).toHaveBeenNthCalledWith(
+                2,
+                "test-db",
+                "polls-collection",
+                "mock-id",
+                expect.objectContaining({
+                    messageId: "msg-poll",
+                    channelId: "channel-1",
+                    question: "Lunch plans?",
+                    status: "open",
+                    createdBy: "user-1",
+                }),
+                expect.any(Array),
+            );
+            expect(data.message.poll).toBeDefined();
+            expect(data.message.poll.question).toBe("Lunch plans?");
+            expect(data.message.poll.options).toHaveLength(2);
         });
     });
 

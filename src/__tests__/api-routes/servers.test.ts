@@ -1,137 +1,215 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GET } from "../../app/api/servers/route";
 
-// Mock node-appwrite for server-side
-vi.mock("node-appwrite", () => ({
-	Query: {
-		equal: (field: string, value: string) => `equal(${field},${value})`,
-		limit: (n: number) => `limit(${n})`,
-		orderAsc: (field: string) => `orderAsc(${field})`,
-		cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
-	},
-}));
+import { GET } from "@/app/api/servers/route";
 
-// Create mock databases object at module level
 const mockDatabases = {
-	listDocuments: vi.fn(),
+    listDocuments: vi.fn(),
 };
 
-// Mock dependencies
+const mockGetServerSession = vi.fn();
+const mockGetActualMemberCounts = vi.fn();
+
+vi.mock("node-appwrite", () => ({
+    Query: {
+        equal: (field: string, value: string | string[]) =>
+            `equal(${field},${Array.isArray(value) ? value.join(",") : value})`,
+        limit: (limit: number) => `limit(${String(limit)})`,
+        orderAsc: (field: string) => `orderAsc(${field})`,
+        cursorAfter: (cursor: string) => `cursorAfter(${cursor})`,
+    },
+}));
+
 vi.mock("@/lib/auth-server", () => ({
-	getServerSession: vi.fn(),
+    getServerSession: (...args: unknown[]) => mockGetServerSession(...args),
 }));
 
 vi.mock("@/lib/appwrite-server", () => ({
-	getServerClient: vi.fn(() => ({
-		databases: mockDatabases,
-	})),
+    getServerClient: vi.fn(() => ({ databases: mockDatabases })),
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
-	getEnvConfig: vi.fn(() => ({
-		databaseId: "test-db",
-		collections: {
-			servers: "servers-collection",
-		},
-	})),
+    getEnvConfig: vi.fn(() => ({
+        endpoint: "https://example.appwrite.io/v1",
+        project: "test-project",
+        databaseId: "test-db",
+        collections: {
+            servers: "servers-collection",
+            memberships: "memberships-collection",
+        },
+        buckets: {
+            images: "images-bucket",
+        },
+    })),
 }));
 
-vi.mock("@/lib/appwrite-servers", () => ({
-	listMembershipsForUser: vi.fn(),
+vi.mock("@/lib/membership-count", () => ({
+    getActualMemberCounts: (...args: unknown[]) =>
+        mockGetActualMemberCounts(...args),
 }));
 
-describe("Servers API Route", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-	});
+describe("GET /api/servers", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
 
-	describe("GET /api/servers", () => {
-		it("should return list of servers", async () => {
-			mockDatabases.listDocuments.mockResolvedValue({
-				total: 2,
-				documents: [
-					{
-						$id: "server-1",
-						name: "Test Server",
-						ownerId: "user-1",
-						description: "A test server",
-						$createdAt: "2024-01-01T00:00:00.000Z",
-						$updatedAt: "2024-01-01T00:00:00.000Z",
-					},
-					{
-						$id: "server-2",
-						name: "Another Server",
-						ownerId: "user-2",
-						description: "Another server",
-						$createdAt: "2024-01-02T00:00:00.000Z",
-						$updatedAt: "2024-01-02T00:00:00.000Z",
-					},
-				],
-			});
+    it("returns 401 for unauthenticated requests", async () => {
+        mockGetServerSession.mockResolvedValue(null);
 
-		const request = new NextRequest("http://localhost/api/servers");
+        const request = new NextRequest("http://localhost/api/servers");
+        const response = await GET(request);
+        const body = await response.json();
 
-		const response = await GET(request);
-		const data = await response.json();
+        expect(response.status).toBe(401);
+        expect(body.error).toBe("Authentication required");
+        expect(mockDatabases.listDocuments).not.toHaveBeenCalled();
+    });
 
-		if (response.status !== 200) {
-			console.error("Servers test error:", data);
-		}
+    it("returns only servers the user is a member of", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1" });
 
-		expect(response.status).toBe(200);
-		expect(data.servers).toHaveLength(2);
-		expect(data.servers[0].name).toBe("Test Server");
-		});
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    { $id: "membership-1", serverId: "server-1" },
+                    { $id: "membership-2", serverId: "server-2" },
+                ],
+            })
+            .mockResolvedValueOnce({
+                total: 2,
+                documents: [
+                    {
+                        $id: "server-1",
+                        name: "Alpha",
+                        ownerId: "owner-1",
+                        description: "Alpha description",
+                        iconFileId: "icon_1",
+                        bannerFileId: "banner_1",
+                        isPublic: false,
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                    {
+                        $id: "server-2",
+                        name: "Beta",
+                        ownerId: "owner-2",
+                        isPublic: true,
+                        $createdAt: "2024-01-02T00:00:00.000Z",
+                    },
+                ],
+            });
 
-		it("should support pagination with limit", async () => {
-			mockDatabases.listDocuments.mockResolvedValue({
-				total: 1,
-				documents: [
-					{
-						$id: "server-1",
-						name: "Test Server",
-						ownerId: "user-1",
-						description: "A test server",
-						$createdAt: "2024-01-01T00:00:00.000Z",
-						$updatedAt: "2024-01-01T00:00:00.000Z",
-					},
-				],
-			});
+        mockGetActualMemberCounts.mockResolvedValue(
+            new Map<string, number>([
+                ["server-1", 4],
+                ["server-2", 9],
+            ]),
+        );
 
-			const request = new NextRequest("http://localhost/api/servers?limit=10");
+        const request = new NextRequest("http://localhost/api/servers?limit=25");
+        const response = await GET(request);
+        const body = await response.json();
 
-			const response = await GET(request);
-			const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(body.servers).toHaveLength(2);
+        expect(body.servers[0]).toMatchObject({
+            $id: "server-1",
+            name: "Alpha",
+            ownerId: "owner-1",
+            memberCount: 4,
+            isPublic: false,
+            description: "Alpha description",
+            iconFileId: "icon_1",
+            bannerFileId: "banner_1",
+        });
+        expect(body.servers[0].iconUrl).toContain("/storage/buckets/");
+        expect(body.nextCursor).toBeNull();
 
-			expect(response.status).toBe(200);
-			expect(data.servers).toHaveLength(1);
-		});
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            1,
+            "test-db",
+            "memberships-collection",
+            expect.arrayContaining([
+                expect.stringContaining("equal(userId,user-1)"),
+                expect.stringContaining("limit(1000)"),
+            ]),
+        );
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            2,
+            "test-db",
+            "servers-collection",
+            expect.arrayContaining([
+                expect.stringContaining("equal($id,server-1,server-2)"),
+                expect.stringContaining("limit(25)"),
+                expect.stringContaining("orderAsc($createdAt)"),
+            ]),
+        );
+    });
 
-		it("should support pagination with cursor", async () => {
-			mockDatabases.listDocuments.mockResolvedValue({
-				total: 1,
-				documents: [
-					{
-						$id: "server-3",
-						name: "Server 3",
-						ownerId: "user-1",
-						description: "Third server",
-						$createdAt: "2024-01-03T00:00:00.000Z",
-						$updatedAt: "2024-01-03T00:00:00.000Z",
-					},
-				],
-			});
+    it("returns empty payload when user has no memberships", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+        mockDatabases.listDocuments.mockResolvedValueOnce({ documents: [] });
 
-			const request = new NextRequest(
-				"http://localhost/api/servers?cursor=cursor-123",
-			);
+        const request = new NextRequest("http://localhost/api/servers");
+        const response = await GET(request);
+        const body = await response.json();
 
-			const response = await GET(request);
-			const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(body.servers).toEqual([]);
+        expect(body.nextCursor).toBeNull();
+        expect(mockGetActualMemberCounts).not.toHaveBeenCalled();
+    });
 
-			expect(response.status).toBe(200);
-			expect(data.servers).toHaveLength(1);
-		});
-	});
+    it("supports cursor pagination", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({
+                documents: [{ $id: "membership-1", serverId: "server-3" }],
+            })
+            .mockResolvedValueOnce({
+                total: 1,
+                documents: [
+                    {
+                        $id: "server-3",
+                        name: "Gamma",
+                        ownerId: "owner-3",
+                        $createdAt: "2024-01-03T00:00:00.000Z",
+                    },
+                ],
+            });
+
+        mockGetActualMemberCounts.mockResolvedValue(
+            new Map<string, number>([["server-3", 3]]),
+        );
+
+        const request = new NextRequest(
+            "http://localhost/api/servers?limit=1&cursor=server-2",
+        );
+        const response = await GET(request);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.servers).toHaveLength(1);
+        expect(body.nextCursor).toBe("server-3");
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            2,
+            "test-db",
+            "servers-collection",
+            expect.arrayContaining([
+                expect.stringContaining("cursorAfter(server-2)"),
+            ]),
+        );
+    });
+
+    it("returns 500 on unexpected errors", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+        mockDatabases.listDocuments.mockRejectedValue(new Error("Database down"));
+
+        const request = new NextRequest("http://localhost/api/servers");
+        const response = await GET(request);
+        const body = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(body.error).toBe("Database down");
+    });
 });

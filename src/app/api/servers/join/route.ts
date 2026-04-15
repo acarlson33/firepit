@@ -14,6 +14,7 @@ import {
 	recordEvent,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
+import { normalizeServerVisibility } from "@/lib/server-metadata";
 
 /**
  * POST /api/servers/join
@@ -67,17 +68,27 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
+		let serverDocument: Record<string, unknown>;
 		try {
-			await databases.getDocument(
+			const response = await databases.getDocument(
 				env.databaseId,
 				env.collections.servers,
 				serverId
 			);
+			serverDocument = response as unknown as Record<string, unknown>;
 		} catch {
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
 				{ error: "Server not found" },
 				{ status: 404 }
+			);
+		}
+
+		const isPublicServer = normalizeServerVisibility(serverDocument.isPublic);
+		if (!isPublicServer) {
+			return NextResponse.json(
+				{ error: "This server is private. Join with an invite link." },
+				{ status: 403 },
 			);
 		}
 
