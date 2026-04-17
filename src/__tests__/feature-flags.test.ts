@@ -14,11 +14,29 @@ describe("Feature Flags", () => {
             );
         });
 
+        it("should have ENABLE_INSTANCE_ANNOUNCEMENTS flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS).toBe(
+                "enable_instance_announcements",
+            );
+        });
+
+        it("should have ENABLE_EMAIL_VERIFICATION flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
+                "enable_email_verification",
+            );
+        });
+
         it("should have all required feature flags defined", () => {
             // Ensure the FEATURE_FLAGS object has the expected structure
             expect(FEATURE_FLAGS).toBeDefined();
             expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
             expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
+            expect(
+                typeof FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS,
+            ).toBe("string");
+            expect(typeof FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
+                "string",
+            );
         });
     });
 

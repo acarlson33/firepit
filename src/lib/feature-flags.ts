@@ -25,6 +25,8 @@ export type { FeatureFlagKey } from "./feature-flags-definitions";
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: false,
     [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: true,
+    [FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS]: false,
+    [FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION]: false,
 };
 
 // Cache for feature flags to reduce database calls

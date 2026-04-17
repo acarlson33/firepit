@@ -13,6 +13,18 @@ import {
     type FeatureFlagKey,
 } from "@/lib/feature-flags";
 import type { FeatureFlag } from "@/lib/types";
+import {
+    createAnnouncement,
+    dispatchScheduledAnnouncements,
+    isInstanceAnnouncementsEnabled,
+    listAnnouncements,
+    type AnnouncementCreateMode,
+} from "@/lib/appwrite-announcements";
+import type {
+    Announcement,
+    AnnouncementPriority,
+    AnnouncementStatus,
+} from "@/lib/types";
 
 // Server actions run on the server; use server-side env variables first.
 const ids = getAppwriteIds();
@@ -315,4 +327,98 @@ export async function updateFeatureFlagAction(
         });
         throw new Error("Failed to update feature flag");
     }
+}
+
+type ListAnnouncementsActionInput = {
+    cursorAfter?: string;
+    limit?: number;
+    statuses?: AnnouncementStatus[];
+};
+
+export async function getAnnouncementsAction(
+    userId: string,
+    input: ListAnnouncementsActionInput = {},
+): Promise<{ items: Announcement[]; nextCursor?: string }> {
+    const roles = await getUserRoles(userId);
+    if (!roles.isAdmin) {
+        throw new Error("Forbidden");
+    }
+
+    const enabled = await isInstanceAnnouncementsEnabled();
+    if (!enabled) {
+        throw new Error(
+            "Instance announcements are disabled. Enable the feature flag first.",
+        );
+    }
+
+    return listAnnouncements({
+        cursorAfter: input.cursorAfter,
+        limit: input.limit,
+        statuses: input.statuses,
+    });
+}
+
+type CreateAnnouncementActionInput = {
+    body: string;
+    idempotencyKey?: string;
+    mode?: AnnouncementCreateMode;
+    priority?: AnnouncementPriority;
+    scheduledFor?: string;
+    title?: string;
+};
+
+export async function createAnnouncementAction(
+    userId: string,
+    input: CreateAnnouncementActionInput,
+): Promise<{
+    announcement: Announcement;
+    dispatched?: { announcementIds: string[]; dueCount: number };
+}> {
+    const roles = await getUserRoles(userId);
+    if (!roles.isAdmin) {
+        throw new Error("Forbidden");
+    }
+
+    const enabled = await isInstanceAnnouncementsEnabled();
+    if (!enabled) {
+        throw new Error(
+            "Instance announcements are disabled. Enable the feature flag first.",
+        );
+    }
+
+    const announcement = await createAnnouncement({
+        actorId: userId,
+        body: input.body,
+        idempotencyKey: input.idempotencyKey,
+        mode: input.mode,
+        priority: input.priority,
+        scheduledFor: input.scheduledFor,
+        title: input.title,
+    });
+
+    if (input.mode !== "send_now") {
+        return { announcement };
+    }
+
+    const dispatched = await dispatchScheduledAnnouncements(100);
+    return { announcement, dispatched };
+}
+
+export async function dispatchAnnouncementsAction(
+    userId: string,
+    limit = 25,
+): Promise<{ announcementIds: string[]; dueCount: number }> {
+    const roles = await getUserRoles(userId);
+    if (!roles.isAdmin) {
+        throw new Error("Forbidden");
+    }
+
+    const enabled = await isInstanceAnnouncementsEnabled();
+    if (!enabled) {
+        throw new Error(
+            "Instance announcements are disabled. Enable the feature flag first.",
+        );
+    }
+
+    return dispatchScheduledAnnouncements(limit);
 }
