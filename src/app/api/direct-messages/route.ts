@@ -38,6 +38,9 @@ const DATABASE_ID = env.databaseId;
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
+const SYSTEM_SENDER_USER_ID = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
+const SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON =
+    "Replies are disabled for system announcements";
 
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
@@ -281,6 +284,11 @@ export async function GET(request: NextRequest) {
                 createdBy: (doc as Record<string, unknown>).createdBy as
                     | string
                     | undefined,
+                isSystemAnnouncementThread: Boolean(
+                    (doc as Record<string, unknown>).isSystemAnnouncementThread,
+                ),
+                announcementThreadKey: (doc as Record<string, unknown>)
+                    .announcementThreadKey as string | undefined,
                 participantCount: Array.isArray(doc.participants)
                     ? (doc.participants as unknown[]).length
                     : undefined,
@@ -425,6 +433,24 @@ export async function GET(request: NextRequest) {
             const enrichedConversations = conversations.map((conversation) => {
                 const unreadThreadCount =
                     unreadThreadsByConversationId.get(conversation.$id) ?? 0;
+
+                if (conversation.isSystemAnnouncementThread) {
+                    const isSystemSender =
+                        SYSTEM_SENDER_USER_ID !== null &&
+                        session.$id === SYSTEM_SENDER_USER_ID;
+                    const readOnly = !isSystemSender;
+
+                    return {
+                        ...conversation,
+                        hasUnread: unreadThreadCount > 0,
+                        readOnly,
+                        readOnlyReason: readOnly
+                            ? SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON
+                            : undefined,
+                        unreadThreadCount,
+                        unreadThreadCountTruncated: unreadThreadCountsTruncated,
+                    };
+                }
 
                 if (conversation.isGroup) {
                     return {
@@ -767,6 +793,19 @@ export async function GET(request: NextRequest) {
             let dmEncryptionPeerPublicKey: string | undefined;
 
             if (conversation) {
+                const isSystemAnnouncementThread = Boolean(
+                    (conversation as Record<string, unknown>)
+                        .isSystemAnnouncementThread,
+                );
+                if (
+                    isSystemAnnouncementThread &&
+                    (SYSTEM_SENDER_USER_ID === null ||
+                        session.$id !== SYSTEM_SENDER_USER_ID)
+                ) {
+                    readOnly = true;
+                    readOnlyReason = SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON;
+                }
+
                 const participants = Array.isArray(conversation.participants)
                     ? (conversation.participants as string[])
                     : [];
@@ -786,7 +825,7 @@ export async function GET(request: NextRequest) {
                     const otherUserId = participants.find(
                         (id) => id !== session.$id,
                     );
-                    if (otherUserId) {
+                    if (otherUserId && !isSystemAnnouncementThread) {
                         relationship = await getRelationshipStatus(
                             session.$id,
                             otherUserId,
@@ -1153,12 +1192,18 @@ export async function POST(request: NextRequest) {
 
         let participants: string[] = [];
         let isGroupConversation = false;
+        let isSystemAnnouncementThread = false;
 
         try {
             const conversation = await databases.getDocument(
                 DATABASE_ID,
                 CONVERSATIONS_COLLECTION,
                 conversationId,
+            );
+
+            isSystemAnnouncementThread = Boolean(
+                (conversation as Record<string, unknown>)
+                    .isSystemAnnouncementThread,
             );
 
             participants = Array.isArray(conversation.participants)
@@ -1178,6 +1223,16 @@ export async function POST(request: NextRequest) {
 
         if (!participants.includes(senderId)) {
             participants = Array.from(new Set([...participants, senderId]));
+        }
+
+        if (
+            isSystemAnnouncementThread &&
+            (SYSTEM_SENDER_USER_ID === null || senderId !== SYSTEM_SENDER_USER_ID)
+        ) {
+            return jsonResponse(
+                { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
+                { status: 403 },
+            );
         }
 
         const targetReceiverId = isGroupConversation
@@ -1716,7 +1771,7 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
-        if (Boolean((message as Record<string, unknown>).isEncrypted)) {
+        if ((message as Record<string, unknown>).isEncrypted) {
             return jsonResponse(
                 {
                     error:

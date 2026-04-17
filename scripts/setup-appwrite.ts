@@ -57,6 +57,12 @@ const skipTeams = /^(1|true|yes)$/i.test(process.env.SKIP_TEAMS ?? "");
 
 // ---- Constants ----
 const DB_ID = "main";
+const ANNOUNCEMENTS_COLLECTION_ID =
+    process.env.APPWRITE_ANNOUNCEMENTS_COLLECTION_ID?.trim() ||
+    "announcements";
+const ANNOUNCEMENT_DELIVERIES_COLLECTION_ID =
+    process.env.APPWRITE_ANNOUNCEMENT_DELIVERIES_COLLECTION_ID?.trim() ||
+    "announcement_deliveries";
 const LEN_ID = 128;
 const LEN_TS = 64; // ISO / epoch string length allowance
 const LEN_TEXT = 4000; // generous message / meta text length
@@ -1013,6 +1019,16 @@ async function setupFeatureFlags() {
         enabled: true,
         key: "enable_audit_logging",
     });
+    await ensureFeatureFlagDocument({
+        description: "Enable instance-wide system DM announcements",
+        enabled: false,
+        key: "enable_instance_announcements",
+    });
+    await ensureFeatureFlagDocument({
+        description: "Require email verification before allowing sign in",
+        enabled: false,
+        key: "enable_email_verification",
+    });
 }
 
 async function ensureFeatureFlagDocument(params: {
@@ -1240,12 +1256,33 @@ async function setupConversations() {
         false,
     );
     await ensureBooleanAttribute("conversations", "isGroup", false);
+    await ensureBooleanAttribute(
+        "conversations",
+        "isSystemAnnouncementThread",
+        false,
+    );
     await ensureStringAttribute("conversations", "name", LEN_ID, false);
     await ensureStringAttribute("conversations", "avatarUrl", 2000, false);
     await ensureStringAttribute("conversations", "createdBy", LEN_ID, false);
+    await ensureStringAttribute(
+        "conversations",
+        "readOnlyReason",
+        LEN_TEXT,
+        false,
+    );
+    await ensureStringAttribute(
+        "conversations",
+        "announcementThreadKey",
+        LEN_ID,
+        false,
+    );
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
     await ensureIndex("conversations", "idx_participants", "key", [
         "participants",
+    ]);
+    await ensureIndex("conversations", "idx_announcement_thread", "key", [
+        "isSystemAnnouncementThread",
+        "announcementThreadKey",
     ]);
 }
 
@@ -1268,11 +1305,18 @@ async function setupDirectMessages() {
         ["encryptionNonce", 128, false],
         ["encryptionVersion", 64, false],
         ["encryptionSenderPublicKey", 256, false],
+        ["announcementId", LEN_ID, false],
+        ["priorityTag", 32, false],
     ];
     for (const [k, size, req] of fields) {
         await ensureStringAttribute("direct_messages", k, size, req);
     }
     await ensureBooleanAttribute("direct_messages", "isEncrypted", false);
+    await ensureBooleanAttribute(
+        "direct_messages",
+        "isSystemAnnouncement",
+        false,
+    );
     await ensureStringArrayAttribute(
         "direct_messages",
         "mentions",
@@ -1298,9 +1342,105 @@ async function setupDirectMessages() {
     await ensureIndex("direct_messages", "idx_sender", "key", ["senderId"]);
     await ensureIndex("direct_messages", "idx_receiver", "key", ["receiverId"]);
     await ensureIndex("direct_messages", "idx_threadId", "key", ["threadId"]);
+    await ensureIndex("direct_messages", "idx_announcement", "key", [
+        "announcementId",
+    ]);
     await ensureIndex("direct_messages", "idx_text_search", "fulltext", [
         "text",
     ]);
+}
+
+async function setupAnnouncements() {
+    await ensureCollection(ANNOUNCEMENTS_COLLECTION_ID, "Announcements");
+    const fields: [string, number, boolean][] = [
+        ["title", 255, false],
+        ["body", LEN_TEXT_LARGE, true],
+        ["bodyFormat", 32, true],
+        ["status", 32, true],
+        ["priority", 32, true],
+        ["createdBy", LEN_ID, true],
+        ["publishedAt", LEN_TS, false],
+        ["scheduledFor", LEN_TS, false],
+        ["lastDispatchAt", LEN_TS, false],
+        ["recipientScope", 64, true],
+        ["idempotencyKey", LEN_ID, false],
+        ["urgentBypass", LEN_TEXT, false],
+        ["deliverySummary", LEN_TEXT, false],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute(
+            ANNOUNCEMENTS_COLLECTION_ID,
+            key,
+            size,
+            required,
+        );
+    }
+    await ensureIntegerAttribute(
+        ANNOUNCEMENTS_COLLECTION_ID,
+        "dispatchAttempts",
+        false,
+        0,
+    );
+
+    await ensureIndex(
+        ANNOUNCEMENTS_COLLECTION_ID,
+        "idx_status_scheduled",
+        "key",
+        ["status", "scheduledFor"],
+    );
+    await ensureIndex(ANNOUNCEMENTS_COLLECTION_ID, "idx_createdBy", "key", [
+        "createdBy",
+    ]);
+    await ensureIndex(
+        ANNOUNCEMENTS_COLLECTION_ID,
+        "idx_idempotency",
+        "key",
+        ["idempotencyKey"],
+    );
+}
+
+async function setupAnnouncementDeliveries() {
+    await ensureCollection(
+        ANNOUNCEMENT_DELIVERIES_COLLECTION_ID,
+        "Announcement Deliveries",
+    );
+    const fields: [string, number, boolean][] = [
+        ["announcementId", LEN_ID, true],
+        ["recipientUserId", LEN_ID, true],
+        ["status", 32, true],
+        ["conversationId", LEN_ID, false],
+        ["messageId", LEN_ID, false],
+        ["nextAttemptAt", LEN_TS, false],
+        ["deliveredAt", LEN_TS, false],
+        ["failedAt", LEN_TS, false],
+        ["failureReason", LEN_TEXT, false],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute(
+            ANNOUNCEMENT_DELIVERIES_COLLECTION_ID,
+            key,
+            size,
+            required,
+        );
+    }
+    await ensureIntegerAttribute(
+        ANNOUNCEMENT_DELIVERIES_COLLECTION_ID,
+        "attemptCount",
+        false,
+        0,
+    );
+    await ensureIndex(
+        ANNOUNCEMENT_DELIVERIES_COLLECTION_ID,
+        "idx_announcement_user",
+        "unique",
+        ["announcementId", "recipientUserId"],
+    );
+    await ensureIndex(
+        ANNOUNCEMENT_DELIVERIES_COLLECTION_ID,
+        "idx_status_nextAttempt",
+        "key",
+        ["status", "nextAttemptAt"],
+    );
 }
 
 async function setupPinnedMessages() {
@@ -1758,6 +1898,10 @@ async function run() {
     await setupProfiles();
     info("[setup] Setting up feature flags...");
     await setupFeatureFlags();
+    info("[setup] Setting up announcements...");
+    await setupAnnouncements();
+    info("[setup] Setting up announcement deliveries...");
+    await setupAnnouncementDeliveries();
     info("[setup] Setting up invites...");
     await setupInvites();
     info("[setup] Setting up invite usage...");

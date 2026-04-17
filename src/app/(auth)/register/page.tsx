@@ -65,7 +65,12 @@ function RegisterFormContent() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 router.push(destination as any);
             } else {
-                toast.error(result.error);
+                if (result.verificationRequired) {
+                    toast.success(result.error);
+                    router.push("/login");
+                } else {
+                    toast.error(result.error);
+                }
             }
         } catch (err) {
             const message =

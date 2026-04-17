@@ -1,10 +1,70 @@
 "use server";
 
-import { Account, Client, ID, Query } from "node-appwrite";
+import { Account, Client, ID, Query, Users } from "node-appwrite";
 import { cookies } from "next/headers";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { assignDefaultRoleServer } from "@/lib/default-role";
+import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
+
+type AuthActionResult =
+    | { success: true; userId: string }
+    | {
+          success: false;
+          error: string;
+          verificationRequired?: boolean;
+      };
+
+type ResendVerificationResult =
+    | {
+          success: true;
+          alreadyVerified?: boolean;
+          message: string;
+      }
+    | {
+          success: false;
+          error: string;
+      };
+
+function getVerificationRedirectUrl(): string {
+    const configuredBaseUrl =
+        process.env.SERVER_URL?.trim() ||
+        process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+        "http://localhost:3000";
+
+    const normalizedBaseUrl = configuredBaseUrl.replace(/\/$/, "");
+    return `${normalizedBaseUrl}/api/auth/verify-email`;
+}
+
+async function isEmailVerificationEnabled(): Promise<boolean> {
+    try {
+        return await getFeatureFlag(FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION);
+    } catch {
+        return false;
+    }
+}
+
+async function sendVerificationEmailForSession(params: {
+    endpoint: string;
+    project: string;
+    sessionSecret?: string;
+}): Promise<void> {
+    const { endpoint, project, sessionSecret } = params;
+
+    if (!sessionSecret) {
+        return;
+    }
+
+    const verificationClient = new Client()
+        .setEndpoint(endpoint)
+        .setProject(project)
+        .setSession(sessionSecret);
+    const verificationAccount = new Account(verificationClient);
+
+    await verificationAccount.createVerification({
+        url: getVerificationRedirectUrl(),
+    });
+}
 
 /**
  * Automatically joins a user to a server at signup time.
@@ -113,9 +173,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
  */
 export async function loginAction(
     formData: FormData,
-): Promise<
-    { success: true; userId: string } | { success: false; error: string }
-> {
+): Promise<AuthActionResult> {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
 
@@ -151,6 +209,49 @@ export async function loginAction(
             email,
             password,
         });
+
+        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
+        if (systemSenderUserId && session.userId === systemSenderUserId) {
+            // Defense in depth: invalidate this session immediately and never issue app cookie.
+            await account
+                .deleteSession({ sessionId: session.$id })
+                .catch(() => {
+                    // Best effort cleanup; login is still denied either way.
+                });
+
+            return {
+                success: false,
+                error: "This account is reserved for system announcements and cannot sign in.",
+            };
+        }
+
+        if (await isEmailVerificationEnabled()) {
+            const users = new Users(client);
+            const accountUser = await users.get(session.userId);
+            const emailVerified = Boolean(accountUser.emailVerification);
+
+            if (!emailVerified) {
+                await sendVerificationEmailForSession({
+                    endpoint,
+                    project,
+                    sessionSecret: session.secret,
+                }).catch(() => {
+                    // Best effort only. Sign-in is still denied until verified.
+                });
+
+                await account
+                    .deleteSession({ sessionId: session.$id })
+                    .catch(() => {
+                        // Best effort cleanup.
+                    });
+
+                return {
+                    success: false,
+                    error: "Please verify your email before signing in. We sent a verification link.",
+                    verificationRequired: true,
+                };
+            }
+        }
 
         // CRITICAL: Use session.secret as cookie value (only available with admin client)
         // This is documented in Appwrite SSR docs
@@ -240,6 +341,131 @@ export async function loginAction(
     }
 }
 
+export async function resendVerificationAction(
+    formData: FormData,
+): Promise<ResendVerificationResult> {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    if (!email || !password) {
+        return { success: false, error: "Email and password are required" };
+    }
+
+    const { endpoint, project } = getEnvConfig();
+    const apiKey = process.env.APPWRITE_API_KEY;
+
+    if (!endpoint || !project) {
+        return { success: false, error: "Appwrite configuration missing" };
+    }
+
+    if (!apiKey) {
+        return {
+            success: false,
+            error: "Server API key missing - required for verification resend",
+        };
+    }
+
+    if (!(await isEmailVerificationEnabled())) {
+        return {
+            success: false,
+            error: "Email verification is not enabled on this instance.",
+        };
+    }
+
+    try {
+        const client = new Client()
+            .setEndpoint(endpoint)
+            .setProject(project)
+            .setKey(apiKey);
+        const account = new Account(client);
+
+        const session = await account.createEmailPasswordSession({
+            email,
+            password,
+        });
+
+        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
+        if (systemSenderUserId && session.userId === systemSenderUserId) {
+            await account
+                .deleteSession({ sessionId: session.$id })
+                .catch(() => {
+                    // Best effort cleanup.
+                });
+
+            return {
+                success: false,
+                error: "This account is reserved for system announcements and cannot sign in.",
+            };
+        }
+
+        const users = new Users(client);
+        const accountUser = await users.get(session.userId);
+        const emailVerified = Boolean(accountUser.emailVerification);
+
+        if (emailVerified) {
+            await account
+                .deleteSession({ sessionId: session.$id })
+                .catch(() => {
+                    // Best effort cleanup.
+                });
+
+            return {
+                success: true,
+                alreadyVerified: true,
+                message: "This email is already verified. You can sign in now.",
+            };
+        }
+
+        await sendVerificationEmailForSession({
+            endpoint,
+            project,
+            sessionSecret: session.secret,
+        });
+
+        await account
+            .deleteSession({ sessionId: session.$id })
+            .catch(() => {
+                // Best effort cleanup.
+            });
+
+        return {
+            success: true,
+            message: "Verification email sent. Check your inbox.",
+        };
+    } catch (error) {
+        if (error instanceof Error) {
+            const message = error.message.toLowerCase();
+
+            if (
+                message.includes("invalid credentials") ||
+                message.includes("wrong password")
+            ) {
+                return {
+                    success: false,
+                    error: "Invalid email or password",
+                };
+            }
+
+            if (message.includes("rate limit") || message.includes("too many")) {
+                return {
+                    success: false,
+                    error: "Too many attempts. Please try again later.",
+                };
+            }
+
+            return {
+                success: false,
+                error: error.message,
+            };
+        }
+
+        return {
+            success: false,
+            error: "Failed to resend verification email.",
+        };
+    }
+}
+
 /**
  * Server-side registration + login action.
  * Automatically joins the user to a default server when configured.
@@ -249,9 +475,7 @@ export async function loginAction(
  */
 export async function registerAction(
     formData: FormData,
-): Promise<
-    { success: true; userId: string } | { success: false; error: string }
-> {
+): Promise<AuthActionResult> {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
     const name = formData.get("name") as string;

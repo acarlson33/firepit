@@ -1,20 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cookies } from "next/headers";
 
-const { mockDatabases } = vi.hoisted(() => ({
+const { mockDatabases, mockGetFeatureFlag } = vi.hoisted(() => ({
     mockDatabases: {
         listDocuments: vi.fn(),
         createDocument: vi.fn(),
     },
+    mockGetFeatureFlag: vi.fn().mockResolvedValue(false),
 }));
 
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
     Account: vi.fn().mockImplementation(() => ({
         createEmailPasswordSession: vi.fn().mockResolvedValue({
+            $id: "test-session-id",
             userId: "test-user-id",
             secret: "test-session-secret",
         }),
+        createVerification: vi.fn().mockResolvedValue({}),
+        deleteSession: vi.fn().mockResolvedValue({}),
         create: vi.fn().mockResolvedValue({
             $id: "test-user-id",
             email: "test@example.com",
@@ -27,6 +31,12 @@ vi.mock("node-appwrite", () => ({
         setKey: vi.fn().mockReturnThis(),
         setSession: vi.fn().mockReturnThis(),
     })),
+    Users: vi.fn().mockImplementation(() => ({
+        get: vi.fn().mockResolvedValue({
+            $id: "test-user-id",
+            emailVerification: true,
+        }),
+    })),
     ID: {
         unique: vi.fn().mockReturnValue("unique-id"),
     },
@@ -36,6 +46,13 @@ vi.mock("node-appwrite", () => ({
         limit: (value: number) => `limit(${String(value)})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
     },
+}));
+
+vi.mock("@/lib/feature-flags", () => ({
+    FEATURE_FLAGS: {
+        ENABLE_EMAIL_VERIFICATION: "enable_email_verification",
+    },
+    getFeatureFlag: mockGetFeatureFlag,
 }));
 
 // Mock next/headers
@@ -78,9 +95,11 @@ describe("Login Security", () => {
         vi.mocked(cookies).mockResolvedValue(mockCookieStore as never);
         mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
         mockDatabases.createDocument.mockResolvedValue({});
+        mockGetFeatureFlag.mockResolvedValue(false);
         process.env.APPWRITE_ENDPOINT = "https://test.appwrite.io";
         process.env.APPWRITE_PROJECT_ID = "test-project";
         process.env.APPWRITE_API_KEY = "test-api-key";
+        process.env.SERVER_URL = "http://localhost:3000";
     });
 
     it("loginAction should accept FormData instead of plain parameters", async () => {
@@ -199,6 +218,211 @@ describe("Login Security", () => {
         if (!result.success) {
             expect(result.error).toContain("Invalid");
         }
+    });
+
+    it("loginAction should block the configured system sender account", async () => {
+        vi.clearAllMocks();
+        mockGetFeatureFlag.mockResolvedValue(false);
+
+        process.env.SYSTEM_SENDER_USER_ID = "system-account-id";
+
+        const { Account } = await import("node-appwrite");
+        vi.mocked(Account).mockImplementationOnce(
+            () =>
+                ({
+                    createEmailPasswordSession: vi.fn().mockResolvedValue({
+                        $id: "system-session-id",
+                        secret: "system-session-secret",
+                        userId: "system-account-id",
+                    }),
+                    deleteSession: vi.fn().mockResolvedValue({}),
+                }) as never,
+        );
+
+        const { loginAction } = await import("@/app/(auth)/login/actions");
+
+        const formData = new FormData();
+        formData.set("email", "system@example.com");
+        formData.set("password", "password123");
+
+        const result = await loginAction(formData);
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error).toContain("reserved for system announcements");
+        }
+        expect(mockCookieStore.set).not.toHaveBeenCalled();
+    });
+
+    it("loginAction should require verification when feature flag is enabled and email is unverified", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+
+        const { Account, Users } = await import("node-appwrite");
+        vi.mocked(Account).mockImplementationOnce(
+            () =>
+                ({
+                    createEmailPasswordSession: vi.fn().mockResolvedValue({
+                        $id: "unverified-session-id",
+                        userId: "unverified-user-id",
+                        secret: "unverified-session-secret",
+                    }),
+                    createVerification: vi.fn().mockResolvedValue({}),
+                    deleteSession: vi.fn().mockResolvedValue({}),
+                }) as never,
+        );
+        vi.mocked(Users).mockImplementationOnce(
+            () =>
+                ({
+                    get: vi.fn().mockResolvedValue({
+                        $id: "unverified-user-id",
+                        emailVerification: false,
+                    }),
+                }) as never,
+        );
+
+        const { loginAction } = await import("@/app/(auth)/login/actions");
+
+        const formData = new FormData();
+        formData.set("email", "unverified@example.com");
+        formData.set("password", "password123");
+
+        const result = await loginAction(formData);
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.verificationRequired).toBe(true);
+            expect(result.error).toContain("verify your email");
+        }
+        expect(mockCookieStore.set).not.toHaveBeenCalled();
+    });
+
+    it("resendVerificationAction should reject when feature flag is disabled", async () => {
+        mockGetFeatureFlag.mockResolvedValue(false);
+
+        const { resendVerificationAction } = await import(
+            "@/app/(auth)/login/actions"
+        );
+
+        const formData = new FormData();
+        formData.set("email", "test@example.com");
+        formData.set("password", "password123");
+
+        const result = await resendVerificationAction(formData);
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+            expect(result.error).toContain("not enabled");
+        }
+    });
+
+    it("resendVerificationAction should send email for unverified users", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+
+        const createVerification = vi.fn().mockResolvedValue({});
+        const deleteSession = vi.fn().mockResolvedValue({});
+        const createEmailPasswordSession = vi.fn().mockResolvedValue({
+            $id: "unverified-session-id",
+            userId: "unverified-user-id",
+            secret: "unverified-session-secret",
+        });
+
+        const { Account, Users } = await import("node-appwrite");
+        vi.mocked(Account)
+            .mockImplementationOnce(
+                () =>
+                    ({
+                        createEmailPasswordSession,
+                        deleteSession,
+                    }) as never,
+            )
+            .mockImplementationOnce(
+                () =>
+                    ({
+                        createVerification,
+                    }) as never,
+            );
+        vi.mocked(Users).mockImplementationOnce(
+            () =>
+                ({
+                    get: vi.fn().mockResolvedValue({
+                        $id: "unverified-user-id",
+                        emailVerification: false,
+                    }),
+                }) as never,
+        );
+
+        const { resendVerificationAction } = await import(
+            "@/app/(auth)/login/actions"
+        );
+
+        const formData = new FormData();
+        formData.set("email", "test@example.com");
+        formData.set("password", "password123");
+
+        const result = await resendVerificationAction(formData);
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.message).toContain("Verification email sent");
+        }
+        expect(createEmailPasswordSession).toHaveBeenCalledTimes(1);
+        expect(createVerification).toHaveBeenCalledTimes(1);
+        expect(createVerification).toHaveBeenCalledWith(
+            expect.objectContaining({
+                url: expect.stringContaining("/api/auth/verify-email"),
+            }),
+        );
+        expect(deleteSession).toHaveBeenCalledWith({
+            sessionId: "unverified-session-id",
+        });
+    });
+
+    it("resendVerificationAction should report already verified users", async () => {
+        mockGetFeatureFlag.mockResolvedValue(true);
+
+        const deleteSession = vi.fn().mockResolvedValue({});
+
+        const { Account, Users } = await import("node-appwrite");
+        vi.mocked(Account).mockImplementationOnce(
+            () =>
+                ({
+                    createEmailPasswordSession: vi.fn().mockResolvedValue({
+                        $id: "verified-session-id",
+                        userId: "verified-user-id",
+                        secret: "verified-session-secret",
+                    }),
+                    createVerification: vi.fn().mockResolvedValue({}),
+                    deleteSession,
+                }) as never,
+        );
+        vi.mocked(Users).mockImplementationOnce(
+            () =>
+                ({
+                    get: vi.fn().mockResolvedValue({
+                        $id: "verified-user-id",
+                        emailVerification: true,
+                    }),
+                }) as never,
+        );
+
+        const { resendVerificationAction } = await import(
+            "@/app/(auth)/login/actions"
+        );
+
+        const formData = new FormData();
+        formData.set("email", "verified@example.com");
+        formData.set("password", "password123");
+
+        const result = await resendVerificationAction(formData);
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.alreadyVerified).toBe(true);
+            expect(result.message).toContain("already verified");
+        }
+        expect(deleteSession).toHaveBeenCalledWith({
+            sessionId: "verified-session-id",
+        });
     });
 
     it("registerAction should handle errors gracefully without throwing", async () => {

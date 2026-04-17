@@ -12,6 +12,7 @@ import { type BackfillResult, backfillServerIds } from "./actions";
 import { ServerManagement } from "./server-management";
 import { VersionCheck } from "./version-check";
 import { FeatureFlags } from "./feature-flags";
+import { AnnouncementPanel } from "./announcement-panel";
 
 const quickLinkClassName =
     "inline-flex items-center justify-between rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm font-medium text-foreground transition hover:border-foreground/40";
@@ -129,6 +130,8 @@ export default async function AdminPage(props: {
             </section>
 
             <FeatureFlags userId={user.$id} />
+
+            <AnnouncementPanel userId={user.$id} />
 
             <ServerManagement
                 isAdmin={roles.isAdmin}
