@@ -12,6 +12,12 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
+import {
+    buildAttachmentDocumentData,
+    buildLegacyAttachmentDocumentData,
+    isUnknownAttachmentAttributeError,
+    normalizeFileAttachmentsInput,
+} from "@/lib/file-attachments";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -175,23 +181,37 @@ async function createAttachments(
     const { databases } = getServerClient();
 
     await Promise.all(
-        attachments.map((attachment) =>
-            databases.createDocument(
-                env.databaseId,
-                MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                ID.unique(),
-                {
-                    messageId,
-                    messageType: "dm",
-                    fileId: attachment.fileId,
-                    fileName: attachment.fileName,
-                    fileSize: attachment.fileSize,
-                    fileType: attachment.fileType,
-                    fileUrl: attachment.fileUrl,
-                    thumbnailUrl: attachment.thumbnailUrl || null,
-                },
-            ),
-        ),
+        attachments.map(async (attachment) => {
+            const payload = buildAttachmentDocumentData({
+                attachment,
+                messageId,
+                messageType: "dm",
+            });
+
+            try {
+                await databases.createDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    payload,
+                );
+            } catch (error) {
+                if (!isUnknownAttachmentAttributeError(error)) {
+                    throw error;
+                }
+
+                await databases.createDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    buildLegacyAttachmentDocumentData({
+                        attachment,
+                        messageId,
+                        messageType: "dm",
+                    }),
+                );
+            }
+        }),
     );
 }
 
@@ -334,13 +354,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
             imageFileId?: string;
             imageUrl?: string;
             mentions?: string[];
-            attachments?: FileAttachment[];
+            attachments?: unknown;
         };
+
+        const normalizedAttachmentsResult = normalizeFileAttachmentsInput(
+            attachments,
+        );
+        if (!normalizedAttachmentsResult.ok) {
+            return NextResponse.json(
+                { error: normalizedAttachmentsResult.error },
+                { status: 400 },
+            );
+        }
+        const normalizedAttachments = normalizedAttachmentsResult.attachments;
 
         if (
             (!text || text.trim().length === 0) &&
             !imageFileId &&
-            (!attachments || attachments.length === 0)
+            normalizedAttachments.length === 0
         ) {
             return NextResponse.json(
                 {
@@ -423,8 +454,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             permissions,
         );
 
-        if (attachments && attachments.length > 0) {
-            await createAttachments(String(created.$id), attachments);
+        if (normalizedAttachments.length > 0) {
+            await createAttachments(String(created.$id), normalizedAttachments);
         }
 
         const maxUpdateAttempts = 3;
@@ -507,7 +538,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             mentions: Array.isArray(d.mentions)
                 ? (d.mentions as string[])
                 : undefined,
-            attachments,
+            attachments: normalizedAttachments,
         };
 
         return NextResponse.json(
