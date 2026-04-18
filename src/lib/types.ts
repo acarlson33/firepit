@@ -10,6 +10,26 @@ export type CustomEmoji = {
     name: string;
 };
 
+export const ATTACHMENT_MEDIA_KIND_VALUES = [
+    "generic",
+    "image",
+    "gif",
+    "sticker",
+] as const;
+
+export type AttachmentMediaKind =
+    (typeof ATTACHMENT_MEDIA_KIND_VALUES)[number];
+
+export const ATTACHMENT_SOURCE_VALUES = [
+    "upload",
+    "giphy",
+    "tenor",
+    "builtin_sticker",
+    "admin_sticker",
+] as const;
+
+export type AttachmentSource = (typeof ATTACHMENT_SOURCE_VALUES)[number];
+
 export type FileAttachment = {
     fileId: string;
     fileName: string;
@@ -17,6 +37,43 @@ export type FileAttachment = {
     fileType: string; // MIME type
     fileUrl: string;
     thumbnailUrl?: string; // For videos
+    mediaKind?: AttachmentMediaKind;
+    source?: AttachmentSource;
+    provider?: "giphy" | "tenor";
+    providerAssetId?: string;
+    packId?: string;
+    itemId?: string;
+    previewUrl?: string;
+};
+
+export type StickerItem = {
+    id: string;
+    name: string;
+    mediaUrl: string;
+    previewUrl?: string;
+    width?: number;
+    height?: number;
+    source: "builtin_sticker" | "admin_sticker";
+    packId: string;
+};
+
+export type StickerPack = {
+    id: string;
+    name: string;
+    description?: string;
+    source: "builtin" | "admin";
+    items: StickerItem[];
+};
+
+export type GifSearchItem = {
+    id: string;
+    title: string;
+    gifUrl: string;
+    previewUrl?: string;
+    width?: number;
+    height?: number;
+    durationMs?: number;
+    source: "giphy" | "tenor";
 };
 
 export type MessagePollOption = {

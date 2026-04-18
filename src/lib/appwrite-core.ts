@@ -86,6 +86,8 @@ export type EnvConfig = {
         emojis: string;
         images: string;
         files: string;
+        gifs?: string;
+        stickers?: string;
         profileBackgrounds: string;
         avatarFramesPredefined: string;
     };
@@ -326,6 +328,18 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_FILES_BUCKET_ID,
                 "files",
             ) || "files",
+        gifs:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_GIFS_BUCKET_ID,
+                process.env.APPWRITE_GIFS_BUCKET_ID,
+                "gifs",
+            ) || "gifs",
+        stickers:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_STICKERS_BUCKET_ID,
+                process.env.APPWRITE_STICKERS_BUCKET_ID,
+                "stickers",
+            ) || "stickers",
         profileBackgrounds:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_PROFILE_BACKGROUNDS_BUCKET_ID,

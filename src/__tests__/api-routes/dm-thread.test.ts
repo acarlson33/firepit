@@ -226,6 +226,30 @@ describe("DM Thread API", () => {
             expect(data.error).toBeDefined();
         });
 
+        it("returns 400 for invalid attachments payload", async () => {
+            mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+
+            const { POST } =
+                await import("../../app/api/direct-messages/[messageId]/thread/route");
+            const request = new NextRequest(
+                "http://localhost/api/direct-messages/msg-1/thread",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        attachments: [{ fileId: "invalid" }],
+                    }),
+                },
+            );
+
+            const response = await POST(request, {
+                params: Promise.resolve({ messageId: "msg-1" }),
+            });
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(String(data.error)).toContain("attachments[0]");
+        });
+
         it("creates thread reply successfully", async () => {
             mockGetServerSession.mockResolvedValue({ $id: "user-1" });
             const now = new Date().toISOString();

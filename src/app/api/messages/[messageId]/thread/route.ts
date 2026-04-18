@@ -14,6 +14,7 @@ import {
     addTransactionAttributes,
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
 
 type RouteContext = {
     params: Promise<{
@@ -158,10 +159,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const body = await request.json();
         const { text, imageFileId, imageUrl, attachments, mentions } = body;
 
+        const normalizedAttachmentsResult = normalizeFileAttachmentsInput(
+            attachments,
+        );
+        if (!normalizedAttachmentsResult.ok) {
+            return NextResponse.json(
+                { error: normalizedAttachmentsResult.error },
+                { status: 400 },
+            );
+        }
+        const normalizedAttachments = normalizedAttachmentsResult.attachments;
+
         if (
             !text &&
             !imageFileId &&
-            (!attachments || attachments.length === 0)
+            normalizedAttachments.length === 0
         ) {
             return NextResponse.json(
                 { error: "text, imageFileId, or attachments required" },
@@ -213,8 +225,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (imageUrl) {
             messageData.imageUrl = imageUrl;
         }
-        if (attachments && attachments.length > 0) {
-            messageData.attachments = JSON.stringify(attachments);
+        if (normalizedAttachments.length > 0) {
+            messageData.attachments = JSON.stringify(normalizedAttachments);
         }
         if (mentions && mentions.length > 0) {
             messageData.mentions = JSON.stringify(mentions);
@@ -347,8 +359,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return NextResponse.json(
             {
                 success: true,
-                message: newReply,
-                reply: newReply,
+                message: {
+                    ...newReply,
+                    attachments:
+                        normalizedAttachments.length > 0
+                            ? normalizedAttachments
+                            : undefined,
+                },
+                reply: {
+                    ...newReply,
+                    attachments:
+                        normalizedAttachments.length > 0
+                            ? normalizedAttachments
+                            : undefined,
+                },
                 threadId: actualThreadId,
             },
             { status: 201 },
