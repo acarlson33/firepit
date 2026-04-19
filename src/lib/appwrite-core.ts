@@ -78,6 +78,8 @@ export type EnvConfig = {
         threadReads: string;
         reports: string;
         roles: string;
+        polls: string;
+        pollVotes: string;
     };
     buckets: {
         avatars: string;
@@ -286,6 +288,18 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_ROLES_COLLECTION_ID,
                 "roles",
             ) || "roles",
+        polls:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_POLLS_COLLECTION_ID,
+                process.env.APPWRITE_POLLS_COLLECTION_ID,
+                "polls",
+            ) || "polls",
+        pollVotes:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_POLL_VOTES_COLLECTION_ID,
+                process.env.APPWRITE_POLL_VOTES_COLLECTION_ID,
+                "poll_votes",
+            ) || "poll_votes",
     };
     const buckets = {
         avatars:

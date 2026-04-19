@@ -661,6 +661,15 @@ async function setupServers() {
     await ensureCollection("servers", "Servers");
     await ensureStringAttribute("servers", "name", LEN_ID, true);
     await ensureStringAttribute("servers", "ownerId", LEN_ID, true);
+    await ensureStringAttribute("servers", "description", 500, false);
+    await ensureStringAttribute("servers", "iconFileId", LEN_ID, false);
+    await ensureStringAttribute("servers", "bannerFileId", LEN_ID, false);
+    await ensureBooleanAttribute("servers", "isPublic", false);
+    await ensureBooleanAttribute("servers", "defaultOnSignup", false);
+    await ensureIndex("servers", "idx_isPublic", "key", ["isPublic"]);
+    await ensureIndex("servers", "idx_defaultOnSignup", "key", [
+        "defaultOnSignup",
+    ]);
     // Note: memberCount removed - use getActualMemberCount() to query memberships instead
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
 }
@@ -1328,6 +1337,45 @@ async function setupPinnedMessages() {
     ]);
 }
 
+async function setupPolls() {
+    await ensureCollection("polls", "Polls");
+    const fields: [string, number, boolean][] = [
+        ["messageId", LEN_ID, true],
+        ["channelId", LEN_ID, true],
+        ["question", LEN_TEXT, true],
+        ["options", LEN_TEXT, true],
+        ["status", 32, true],
+        ["createdBy", LEN_ID, true],
+        ["closedAt", LEN_TS, false],
+        ["closedBy", LEN_ID, false],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute("polls", key, size, required);
+    }
+    await ensureIndex("polls", "idx_message", "unique", ["messageId"]);
+    await ensureIndex("polls", "idx_channel", "key", ["channelId"]);
+    await ensureIndex("polls", "idx_status", "key", ["status"]);
+}
+
+async function setupPollVotes() {
+    await ensureCollection("poll_votes", "Poll Votes");
+    const fields: [string, number, boolean][] = [
+        ["pollId", LEN_ID, true],
+        ["userId", LEN_ID, true],
+        ["optionId", LEN_ID, true],
+        ["votedAt", LEN_TS, true],
+    ];
+    for (const [key, size, required] of fields) {
+        await ensureStringAttribute("poll_votes", key, size, required);
+    }
+    await ensureIndex("poll_votes", "idx_poll", "key", ["pollId"]);
+    await ensureIndex("poll_votes", "idx_user", "key", ["userId"]);
+    await ensureIndex("poll_votes", "idx_poll_user", "unique", [
+        "pollId",
+        "userId",
+    ]);
+}
+
 async function setupNotificationSettings() {
     await ensureCollection("notification_settings", "Notification Settings");
     const fields: [string, number, boolean][] = [
@@ -1722,6 +1770,10 @@ async function run() {
     await setupDirectMessages();
     info("[setup] Setting up pinned messages...");
     await setupPinnedMessages();
+    info("[setup] Setting up polls...");
+    await setupPolls();
+    info("[setup] Setting up poll votes...");
+    await setupPollVotes();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
     info("[setup] Setting up inbox items...");

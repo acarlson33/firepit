@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 interface CreateServerDialogProps {
 	onServerCreated?: () => void;
@@ -28,6 +30,8 @@ export function CreateServerDialog({
 }: CreateServerDialogProps) {
 	const [open, setOpen] = useState(false);
 	const [serverName, setServerName] = useState("");
+	const [description, setDescription] = useState("");
+	const [isPublic, setIsPublic] = useState(true);
 	const [isCreating, setIsCreating] = useState(false);
 
 	const handleCreate = async () => {
@@ -41,7 +45,11 @@ export function CreateServerDialog({
 			const response = await fetch("/api/servers/create", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: serverName.trim() }),
+				body: JSON.stringify({
+					name: serverName.trim(),
+					description: description.trim() || undefined,
+					isPublic,
+				}),
 			});
 
 			const result = await response.json() as { 
@@ -53,6 +61,8 @@ export function CreateServerDialog({
 			if (response.ok && result.success && result.server) {
 				toast.success(`Server "${result.server.name}" created successfully!`);
 				setServerName("");
+				setDescription("");
+				setIsPublic(true);
 				setOpen(false);
 				onServerCreated?.();
 			} else {
@@ -76,7 +86,17 @@ export function CreateServerDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
+		<Dialog
+			open={open}
+			onOpenChange={(nextOpen) => {
+				setOpen(nextOpen);
+				if (!nextOpen) {
+					setServerName("");
+					setDescription("");
+					setIsPublic(true);
+				}
+			}}
+		>
 			<DialogTrigger asChild>
 				{trigger || (
 					<Button size="sm" variant="ghost" title="Create Server">
@@ -107,6 +127,36 @@ export function CreateServerDialog({
 						<p className="text-xs text-muted-foreground">
 							Choose a name that represents your community
 						</p>
+					</div>
+
+					<div className="space-y-2">
+						<Label htmlFor="server-description">Description</Label>
+						<Textarea
+							id="server-description"
+							placeholder="Tell people what this server is about"
+							value={description}
+							onChange={(e) => setDescription(e.target.value)}
+							disabled={isCreating}
+							maxLength={500}
+						/>
+						<p className="text-xs text-muted-foreground">
+							Optional. Up to 500 characters.
+						</p>
+					</div>
+
+					<div className="flex items-start justify-between rounded-md border border-border/60 p-3">
+						<div className="space-y-1 pr-4">
+							<p className="text-sm font-medium">Public discovery</p>
+							<p className="text-xs text-muted-foreground">
+								Public servers appear in discovery and allow direct joins.
+								 Private servers require an invite link.
+							</p>
+						</div>
+						<Switch
+							checked={isPublic}
+							disabled={isCreating}
+							onCheckedChange={setIsPublic}
+						/>
 					</div>
 				</div>
 

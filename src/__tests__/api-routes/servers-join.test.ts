@@ -131,6 +131,30 @@ describe("Server Join API", () => {
 			expect(data.error).toContain("Server not found");
 		});
 
+		it("should return 403 for private servers", async () => {
+			mockGetServerSession.mockResolvedValue({
+				$id: "user-1",
+				name: "Test User",
+			});
+
+			mockGetDocument.mockResolvedValue({
+				$id: "server-1",
+				name: "Private Server",
+				isPublic: false,
+			});
+
+			const request = new NextRequest("http://localhost/api/servers/join", {
+				method: "POST",
+				body: JSON.stringify({ serverId: "server-1" }),
+			});
+
+			const response = await POST(request);
+			const data = await response.json();
+
+			expect(response.status).toBe(403);
+			expect(data.error).toContain("private");
+		});
+
 		it("should return 400 if user is already a member", async () => {
 			mockGetServerSession.mockResolvedValue({
 				$id: "user-1",

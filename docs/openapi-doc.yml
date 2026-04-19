@@ -159,11 +159,22 @@ components:
                     type: string
                 ownerId:
                     type: string
+                iconFileId:
+                    type: string
                 iconUrl:
+                    type: string
+                    format: uri
+                bannerFileId:
+                    type: string
+                bannerUrl:
                     type: string
                     format: uri
                 description:
                     type: string
+                isPublic:
+                    type: boolean
+                defaultOnSignup:
+                    type: boolean
                 memberCount:
                     type: integer
                 $createdAt:
@@ -177,13 +188,22 @@ components:
                     type: string
                 name:
                     type: string
+                ownerId:
+                    type: string
                 iconUrl:
                     type: string
                     format: uri
                 description:
                     type: string
+                isPublic:
+                    type: boolean
+                defaultOnSignup:
+                    type: boolean
                 memberCount:
                     type: integer
+                $createdAt:
+                    type: string
+                    format: date-time
 
         Channel:
             type: object
@@ -702,6 +722,9 @@ paths:
                                         type: array
                                         items:
                                             $ref: "#/components/schemas/Server"
+                                    nextCursor:
+                                        type: string
+                                        nullable: true
 
     /api/servers/create:
         post:
@@ -719,18 +742,26 @@ paths:
                             properties:
                                 name:
                                     type: string
-                                iconUrl:
-                                    type: string
-                                    format: uri
                                 description:
                                     type: string
+                                iconFileId:
+                                    type: string
+                                bannerFileId:
+                                    type: string
+                                isPublic:
+                                    type: boolean
             responses:
                 "200":
                     description: Created server
                     content:
                         application/json:
                             schema:
-                                $ref: "#/components/schemas/Server"
+                                type: object
+                                properties:
+                                    success:
+                                        type: boolean
+                                    server:
+                                        $ref: "#/components/schemas/Server"
                 "400":
                     description: Invalid request
                     content:
@@ -779,6 +810,116 @@ paths:
                         application/json:
                             schema:
                                 $ref: "#/components/schemas/Success"
+                "403":
+                    description: Server is private and requires an invite
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/default-signup:
+        get:
+            tags: [Servers]
+            summary: Resolve the server configured as default for new user signup
+            security:
+                - sessionCookie: []
+            responses:
+                "200":
+                    description: Current signup default server (admin only)
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    server:
+                                        nullable: true
+                                        type: object
+                                        properties:
+                                            $id:
+                                                type: string
+                                            name:
+                                                type: string
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Forbidden (requires instance admin)
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+
+    /api/servers/{serverId}:
+        patch:
+            tags: [Servers]
+            summary: Update server customization and visibility settings
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: serverId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                name:
+                                    type: string
+                                description:
+                                    type: string
+                                    nullable: true
+                                isPublic:
+                                    type: boolean
+                                defaultOnSignup:
+                                    type: boolean
+                                iconFileId:
+                                    type: string
+                                    nullable: true
+                                bannerFileId:
+                                    type: string
+                                    nullable: true
+            responses:
+                "200":
+                    description: Updated server settings
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    server:
+                                        $ref: "#/components/schemas/Server"
+                "400":
+                    description: Invalid settings payload
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "401":
+                    description: Unauthorized
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "403":
+                    description: Missing permissions
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Server not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
 
     /api/servers/{serverId}/stats:
         get:

@@ -11,6 +11,7 @@ const {
     mockDeleteServerAction,
     mockListChannelsAction,
     mockListServersAction,
+    mockSetDefaultSignupServerAction,
 } = vi.hoisted(() => ({
     mockCreateChannelAction: vi.fn(),
     mockCreateServerAction: vi.fn(),
@@ -18,6 +19,7 @@ const {
     mockDeleteServerAction: vi.fn(),
     mockListChannelsAction: vi.fn(),
     mockListServersAction: vi.fn(),
+    mockSetDefaultSignupServerAction: vi.fn(),
 }));
 
 vi.mock("@/app/admin/server-actions", () => ({
@@ -29,6 +31,8 @@ vi.mock("@/app/admin/server-actions", () => ({
     deleteServerAction: (...args: unknown[]) => mockDeleteServerAction(...args),
     listChannelsAction: (...args: unknown[]) => mockListChannelsAction(...args),
     listServersAction: (...args: unknown[]) => mockListServersAction(...args),
+    setDefaultSignupServerAction: (...args: unknown[]) =>
+        mockSetDefaultSignupServerAction(...args),
 }));
 
 vi.mock("sonner", () => ({
@@ -46,8 +50,16 @@ describe("ServerManagement", () => {
                 {
                     $id: "server-1",
                     createdAt: "2026-03-10T12:00:00.000Z",
+                    defaultOnSignup: false,
                     name: "Firepit HQ",
                     ownerId: "user-1",
+                },
+                {
+                    $id: "server-2",
+                    createdAt: "2026-03-11T12:00:00.000Z",
+                    defaultOnSignup: true,
+                    name: "Town Hall",
+                    ownerId: "user-2",
                 },
             ],
         });
@@ -75,6 +87,7 @@ describe("ServerManagement", () => {
         });
         mockDeleteChannelAction.mockResolvedValue({ success: true });
         mockDeleteServerAction.mockResolvedValue({ success: true });
+        mockSetDefaultSignupServerAction.mockResolvedValue({ success: true });
     });
 
     it("hides voice in channel type selection", async () => {
@@ -110,6 +123,26 @@ describe("ServerManagement", () => {
                 "server-1",
                 "announcements",
                 "announcement",
+            );
+        });
+    });
+
+    it("updates default signup server from instance admin controls", async () => {
+        const user = userEvent.setup();
+
+        render(<ServerManagement isAdmin={true} isModerator={true} />);
+
+        const defaultServerSelect = await screen.findByLabelText("Server");
+        await user.selectOptions(defaultServerSelect, "server-1");
+        await user.click(
+            screen.getByRole("button", {
+                name: "Save Default Signup Server",
+            }),
+        );
+
+        await waitFor(() => {
+            expect(mockSetDefaultSignupServerAction).toHaveBeenCalledWith(
+                "server-1",
             );
         });
     });

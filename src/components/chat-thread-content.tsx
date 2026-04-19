@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";
 import { MessageWithMentions } from "@/components/message-with-mentions";
+import { MessagePollBlock } from "@/components/message-poll";
 import { ReactionButton } from "@/components/reaction-button";
 
 type ChatThreadContentProps = {
@@ -25,6 +26,8 @@ type ChatThreadContentProps = {
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (message: ChatSurfaceMessage, optionId: string) => Promise<void>;
+    onClosePoll?: (message: ChatSurfaceMessage) => Promise<void>;
     replyText?: string;
     onReplyTextChange?: (value: string) => void;
     onSendReply?: () => Promise<void> | void;
@@ -38,6 +41,8 @@ function MessageCard({
     currentUserId,
     customEmojis,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
 }: {
     message: ChatSurfaceMessage;
     currentUserId: string | null;
@@ -47,6 +52,8 @@ function MessageCard({
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (message: ChatSurfaceMessage, optionId: string) => Promise<void>;
+    onClosePoll?: (message: ChatSurfaceMessage) => Promise<void>;
 }) {
     return (
         <div className="flex gap-3 rounded-lg border border-transparent p-2 transition hover:border-border/50">
@@ -66,6 +73,29 @@ function MessageCard({
                 <div className="mt-1 text-sm">
                     <MessageWithMentions text={message.text} />
                 </div>
+                {message.poll ? (
+                    <MessagePollBlock
+                        canClose={message.poll.createdBy === currentUserId}
+                        currentUserId={currentUserId}
+                        messageId={message.id}
+                        onClose={
+                            onClosePoll
+                                ? async () => {
+                                      await onClosePoll(message);
+                                  }
+                                : undefined
+                        }
+                        onVote={
+                            onVotePoll
+                                ? async (optionId) => {
+                                      await onVotePoll(message, optionId);
+                                  }
+                                : undefined
+                        }
+                        poll={message.poll}
+                        readOnly={message.context.kind === "dm"}
+                    />
+                ) : null}
                 {message.imageUrl ? (
                     <div className="mt-2">
                         <ImageWithSkeleton
@@ -119,6 +149,8 @@ export function ChatThreadContent({
     currentUserId,
     customEmojis,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
     replyText = "",
     onReplyTextChange,
     onSendReply,
@@ -138,6 +170,8 @@ export function ChatThreadContent({
                     customEmojis={customEmojis}
                     message={parentMessage}
                     onToggleReaction={onToggleReaction}
+                    onVotePoll={onVotePoll}
+                    onClosePoll={onClosePoll}
                 />
                 <div className="mt-2 text-xs text-muted-foreground">
                     {replies.length}{" "}
@@ -167,6 +201,8 @@ export function ChatThreadContent({
                                 key={reply.id}
                                 message={reply}
                                 onToggleReaction={onToggleReaction}
+                                onVotePoll={onVotePoll}
+                                onClosePoll={onClosePoll}
                             />
                         ))}
                     </div>
