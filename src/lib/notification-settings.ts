@@ -552,7 +552,7 @@ async function resolveNotificationOverrideLabels(
         channelOverrideIds.length === 0 &&
         conversationOverrideIds.length === 0
     ) {
-        return cloneOverrideLabels(labels);
+        return labels;
     }
 
     const fetchLabels = async () => {
@@ -637,7 +637,7 @@ async function resolveNotificationOverrideLabels(
                 userId,
                 error: getErrorMessage(error),
             });
-            return cloneOverrideLabels(createEmptyOverrideLabels());
+            return createEmptyOverrideLabels();
         }
 
         return cloneOverrideLabels(labels);

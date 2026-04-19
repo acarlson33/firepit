@@ -98,14 +98,13 @@ async function listVotesForPoll(
 ): Promise<PollVoteDocShape[]> {
     const votes: PollVoteDocShape[] = [];
     const queryWithPagination = Query as QueryWithPagination;
+    const cursorAfterFn = queryWithPagination.cursorAfter;
     const orderQuery =
         typeof queryWithPagination.orderAsc === "function"
             ? queryWithPagination.orderAsc("$id")
             : null;
-    const supportsCursorAfter =
-        typeof queryWithPagination.cursorAfter === "function";
     const supportsStableCursorPagination =
-        supportsCursorAfter && Boolean(orderQuery);
+        cursorAfterFn && orderQuery;
     let cursor: string | undefined;
 
     while (true) {
@@ -114,7 +113,7 @@ async function listVotesForPoll(
             ...(orderQuery ? [orderQuery] : []),
             Query.limit(POLL_VOTES_PAGE_LIMIT),
             ...(cursor && supportsStableCursorPagination
-                ? [queryWithPagination.cursorAfter(cursor)]
+                ? [cursorAfterFn(cursor)]
                 : []),
         ];
 
@@ -139,7 +138,7 @@ async function listVotesForPoll(
                 "Poll votes pagination helpers unavailable; stopping after first full page",
                 {
                     hasOrderAsc: Boolean(orderQuery),
-                    hasCursorAfter: supportsCursorAfter,
+                    hasCursorAfter: Boolean(cursorAfterFn),
                     pageLimit: POLL_VOTES_PAGE_LIMIT,
                     pollId,
                 },

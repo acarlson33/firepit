@@ -159,7 +159,7 @@ async function listVoteDocumentsForPolls(params: {
     const voteDocuments: PollVoteDocShape[] = [];
     let cursor: string | undefined;
     let totalPagesFetched = 0;
-    let encounteredFullPage = false;
+    let fullPageCount = 0;
     let reachedMaxPages = false;
 
     while (true) {
@@ -187,7 +187,7 @@ async function listVoteDocumentsForPolls(params: {
         );
 
         if (response.documents.length === POLL_VOTES_PAGE_LIMIT) {
-            encounteredFullPage = true;
+            fullPageCount += 1;
         }
 
         if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
@@ -202,10 +202,10 @@ async function listVoteDocumentsForPolls(params: {
         cursor = lastDocument.$id;
     }
 
-    if (reachedMaxPages || encounteredFullPage) {
+    if (reachedMaxPages || fullPageCount > 1) {
         logger.warn("Poll votes query required pagination safeguards", {
             hitMaxPages: reachedMaxPages,
-            hitPageLimit: encounteredFullPage,
+            fullPageCount,
             pageLimit: POLL_VOTES_PAGE_LIMIT,
             totalPagesFetched,
             pollCount: pollIds.length,
