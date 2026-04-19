@@ -83,7 +83,7 @@ function toSafeFileBaseName(value: string | undefined): string {
     const sanitized = trimmed
         .replace(/[^a-zA-Z0-9._-]+/g, "-")
         .replace(/-+/g, "-")
-        .replace(/^[.-]+|[.-]+$/g, "");
+        .replace(/^[-.]+|[-.]+$/g, "");
 
     return sanitized || "gif";
 }

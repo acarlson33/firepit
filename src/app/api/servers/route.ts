@@ -30,12 +30,12 @@ type QueryWithSelect = typeof Query & {
     select?: (attributes: string[]) => string;
 };
 
-function selectMembershipFieldQuery() {
+const selectMembershipFieldQuery = () => {
     const queryWithSelect = Query as QueryWithSelect;
     return typeof queryWithSelect.select === "function"
         ? [queryWithSelect.select(["$id", "serverId"])]
         : [];
-}
+};
 
 function isMembershipDocument(document: unknown): document is MembershipDocument {
     if (!document || typeof document !== "object") {
@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
         const loadServerIds = async () => {
             const pageSize = 100;
             const maxPages = 50;
+            const membershipFields = selectMembershipFieldQuery();
             const serverIds = new Set<string>();
             let cursorAfter: string | null = null;
             let pageCount = 0;
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
                     env.collections.memberships,
                     [
                         Query.equal("userId", session.$id),
-                        ...selectMembershipFieldQuery(),
+                        ...membershipFields,
                         Query.limit(pageSize),
                         ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
                     ],

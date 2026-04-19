@@ -197,7 +197,7 @@ The application requires several environment variables. Copy `.env.local.example
 - `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
 - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
 - `APPWRITE_API_KEY` - Server-side API key with full permissions
-- `SYSTEM_SENDER_USER_ID` - Appwrite user ID of the dedicated system announcement sender.
+- `SYSTEM_SENDER_USER_ID` - Optional Appwrite user ID of the dedicated system announcement sender.
     Used for system announcement threads in DMs.
     Set this in production to the user's `$id` from Appwrite Console -> Auth -> Users.
     When unset, announcement threads are read-only.
