@@ -3,6 +3,7 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
+import { normalizeFileAttachment } from "./file-attachments";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -212,16 +213,10 @@ async function enrichDirectMessagesWithAttachments(
         for (const doc of response.documents) {
             const d = doc as Record<string, unknown>;
             const messageId = String(d.messageId);
-            const attachment: FileAttachment = {
-                fileId: String(d.fileId),
-                fileName: String(d.fileName),
-                fileSize: Number(d.fileSize),
-                fileType: String(d.fileType),
-                fileUrl: String(d.fileUrl),
-                thumbnailUrl: d.thumbnailUrl
-                    ? String(d.thumbnailUrl)
-                    : undefined,
-            };
+            const attachment = normalizeFileAttachment(d);
+            if (!attachment) {
+                continue;
+            }
 
             if (!attachmentsByMessageId.has(messageId)) {
                 attachmentsByMessageId.set(messageId, []);

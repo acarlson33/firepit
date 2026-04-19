@@ -602,6 +602,30 @@ describe("Direct Messages API", () => {
             expect(mockCreateDocument).not.toHaveBeenCalled();
         });
 
+        it("returns 400 for invalid attachments payload", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            const response = await POST(
+                new NextRequest("http://localhost/api/direct-messages", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        conversationId: "conv-1",
+                        senderId: "user-1",
+                        receiverId: "user-2",
+                        attachments: [{ fileId: "broken" }],
+                    }),
+                }),
+            );
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(String(data.error)).toContain("attachments[0]");
+            expect(mockCreateDocument).not.toHaveBeenCalled();
+        });
+
         it("returns 400 for invalid encrypted payloads", async () => {
             mockGetServerSession.mockResolvedValue({
                 $id: "user-1",

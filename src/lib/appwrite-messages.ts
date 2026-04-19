@@ -4,6 +4,7 @@ import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import type { Message, FileAttachment } from "./types";
 import { parseReactionsWithMetadata } from "./reactions-utils";
 import { resolveMessageImageUrl } from "./message-image-url";
+import { normalizeFileAttachment } from "./file-attachments";
 
 // Environment derived identifiers (centralized)
 const env = getEnvConfig();
@@ -52,16 +53,10 @@ async function enrichMessagesWithAttachments(
         for (const doc of response.documents) {
             const d = doc as Record<string, unknown>;
             const messageId = String(d.messageId);
-            const attachment: FileAttachment = {
-                fileId: String(d.fileId),
-                fileName: String(d.fileName),
-                fileSize: Number(d.fileSize),
-                fileType: String(d.fileType),
-                fileUrl: String(d.fileUrl),
-                thumbnailUrl: d.thumbnailUrl
-                    ? String(d.thumbnailUrl)
-                    : undefined,
-            };
+            const attachment = normalizeFileAttachment(d);
+            if (!attachment) {
+                continue;
+            }
 
             if (!attachmentsByMessageId.has(messageId)) {
                 attachmentsByMessageId.set(messageId, []);

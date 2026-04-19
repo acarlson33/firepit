@@ -28,6 +28,12 @@ import {
     parsePollCommand,
     serializePollOptions,
 } from "@/lib/polls";
+import {
+    buildAttachmentDocumentData,
+    buildLegacyAttachmentDocumentData,
+    isUnknownAttachmentAttributeError,
+    normalizeFileAttachmentsInput,
+} from "@/lib/file-attachments";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -56,23 +62,37 @@ async function createAttachments(
     const { databases } = getServerClient();
 
     await Promise.all(
-        attachments.map((attachment) =>
-            databases.createDocument(
-                env.databaseId,
-                MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                ID.unique(),
-                {
-                    messageId,
-                    messageType,
-                    fileId: attachment.fileId,
-                    fileName: attachment.fileName,
-                    fileSize: attachment.fileSize,
-                    fileType: attachment.fileType,
-                    fileUrl: attachment.fileUrl,
-                    thumbnailUrl: attachment.thumbnailUrl || null,
-                },
-            ),
-        ),
+        attachments.map(async (attachment) => {
+            const payload = buildAttachmentDocumentData({
+                attachment,
+                messageId,
+                messageType,
+            });
+
+            try {
+                await databases.createDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    payload,
+                );
+            } catch (error) {
+                if (!isUnknownAttachmentAttributeError(error)) {
+                    throw error;
+                }
+
+                await databases.createDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    buildLegacyAttachmentDocumentData({
+                        attachment,
+                        messageId,
+                        messageType,
+                    }),
+                );
+            }
+        }),
     );
 }
 
@@ -108,6 +128,17 @@ export async function POST(request: NextRequest) {
             attachments,
         } = body;
 
+        const normalizedAttachmentsResult = normalizeFileAttachmentsInput(
+            attachments,
+        );
+        if (!normalizedAttachmentsResult.ok) {
+            return NextResponse.json(
+                { error: normalizedAttachmentsResult.error },
+                { status: 400 },
+            );
+        }
+        const normalizedAttachments = normalizedAttachmentsResult.attachments;
+
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
@@ -128,7 +159,7 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (creatingPoll && (imageFileId || (attachments?.length ?? 0) > 0)) {
+        if (creatingPoll && (imageFileId || normalizedAttachments.length > 0)) {
             return NextResponse.json(
                 {
                     error: "Poll messages do not support image or file attachments.",
@@ -150,7 +181,7 @@ export async function POST(request: NextRequest) {
         if (
             (!text &&
                 !imageFileId &&
-                (!attachments || attachments.length === 0)) ||
+                normalizedAttachments.length === 0) ||
             !channelId
         ) {
             return NextResponse.json(
@@ -169,7 +200,7 @@ export async function POST(request: NextRequest) {
             channelId,
             serverId: "unresolved",
             hasImage: !!imageFileId,
-            hasAttachments: attachments && attachments.length > 0,
+            hasAttachments: normalizedAttachments.length > 0,
             isReply: !!replyToId,
             hasMentions: mentions && mentions.length > 0,
         }); // Create message permissions
@@ -291,13 +322,12 @@ export async function POST(request: NextRequest) {
         // Create attachment records if provided
         if (
             attachments &&
-            Array.isArray(attachments) &&
-            attachments.length > 0
+            normalizedAttachments.length > 0
         ) {
             await createAttachments(
                 String(res.$id),
                 "channel",
-                attachments as FileAttachment[],
+                normalizedAttachments,
             );
         }
 
@@ -351,8 +381,8 @@ export async function POST(request: NextRequest) {
             channelId: normalizedChannelId,
             serverId: normalizedServerId,
             hasImage: !!imageFileId,
-            hasAttachments: attachments && attachments.length > 0,
-            attachmentCount: attachments?.length || 0,
+            hasAttachments: normalizedAttachments.length > 0,
+            attachmentCount: normalizedAttachments.length,
             isReply: !!replyToId,
             textLength: normalizedText.length,
         });
@@ -360,7 +390,7 @@ export async function POST(request: NextRequest) {
         recordEvent("message_sent", {
             actorUserId: userId,
             channelId: normalizedChannelId,
-            hasAttachments: Boolean(attachments && attachments.length > 0),
+            hasAttachments: normalizedAttachments.length > 0,
             hasImage: Boolean(imageFileId),
             isReply: Boolean(replyToId),
             isPoll: Boolean(parsedPoll),
@@ -374,14 +404,14 @@ export async function POST(request: NextRequest) {
             messageId: message.$id,
             userId,
             channelId,
-            hasAttachments: attachments && attachments.length > 0,
+            hasAttachments: normalizedAttachments.length > 0,
             isPoll: Boolean(parsedPoll),
             duration: Date.now() - startTime,
         });
 
         // Add attachments to message object for response (they'll be fetched when listing messages)
-        if (attachments && attachments.length > 0) {
-            message.attachments = attachments as FileAttachment[];
+        if (normalizedAttachments.length > 0) {
+            message.attachments = normalizedAttachments;
         }
 
         return NextResponse.json({ message });

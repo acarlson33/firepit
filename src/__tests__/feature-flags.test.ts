@@ -26,6 +26,18 @@ describe("Feature Flags", () => {
             );
         });
 
+        it("should have ENABLE_GIF_STICKER_SUPPORT flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
+                "enable_gif_sticker_support",
+            );
+        });
+
+        it("should have ENABLE_TENOR_GIF_SEARCH flag with correct key", () => {
+            expect(FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
+                "enable_tenor_gif_search",
+            );
+        });
+
         it("should have all required feature flags defined", () => {
             // Ensure the FEATURE_FLAGS object has the expected structure
             expect(FEATURE_FLAGS).toBeDefined();
@@ -35,6 +47,12 @@ describe("Feature Flags", () => {
                 typeof FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS,
             ).toBe("string");
             expect(typeof FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
+                "string",
+            );
+            expect(typeof FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
+                "string",
+            );
+            expect(typeof FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
                 "string",
             );
         });

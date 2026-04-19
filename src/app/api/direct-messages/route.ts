@@ -32,6 +32,12 @@ import {
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { shouldCompress } from "@/lib/compression-utils";
+import {
+    buildAttachmentDocumentData,
+    buildLegacyAttachmentDocumentData,
+    isUnknownAttachmentAttributeError,
+    normalizeFileAttachmentsInput,
+} from "@/lib/file-attachments";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -144,23 +150,37 @@ async function createAttachments(
     const { databases } = getServerClient();
 
     await Promise.all(
-        attachments.map((attachment) =>
-            databases.createDocument(
-                DATABASE_ID,
-                MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                ID.unique(),
-                {
-                    messageId,
-                    messageType: "dm",
-                    fileId: attachment.fileId,
-                    fileName: attachment.fileName,
-                    fileSize: attachment.fileSize,
-                    fileType: attachment.fileType,
-                    fileUrl: attachment.fileUrl,
-                    thumbnailUrl: attachment.thumbnailUrl || null,
-                },
-            ),
-        ),
+        attachments.map(async (attachment) => {
+            const payload = buildAttachmentDocumentData({
+                attachment,
+                messageId,
+                messageType: "dm",
+            });
+
+            try {
+                await databases.createDocument(
+                    DATABASE_ID,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    payload,
+                );
+            } catch (error) {
+                if (!isUnknownAttachmentAttributeError(error)) {
+                    throw error;
+                }
+
+                await databases.createDocument(
+                    DATABASE_ID,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    ID.unique(),
+                    buildLegacyAttachmentDocumentData({
+                        attachment,
+                        messageId,
+                        messageType: "dm",
+                    }),
+                );
+            }
+        }),
     );
 }
 
@@ -1114,6 +1134,17 @@ export async function POST(request: NextRequest) {
             encryptionSenderPublicKey,
         } = body;
 
+        const normalizedAttachmentsResult = normalizeFileAttachmentsInput(
+            attachments,
+        );
+        if (!normalizedAttachmentsResult.ok) {
+            return jsonResponse(
+                { error: normalizedAttachmentsResult.error },
+                { status: 400 },
+            );
+        }
+        const normalizedAttachments = normalizedAttachmentsResult.attachments;
+
         const hasEncryptedText =
             typeof encryptedText === "string" && encryptedText.length > 0;
 
@@ -1122,8 +1153,8 @@ export async function POST(request: NextRequest) {
             conversationId: conversationId ?? "unknown",
             hasImage: !!imageFileId,
             hasEncryptedText,
-            hasAttachments: !!(attachments && attachments.length > 0),
-            attachmentCount: attachments?.length || 0,
+            hasAttachments: normalizedAttachments.length > 0,
+            attachmentCount: normalizedAttachments.length,
             isReply: !!replyToId,
             operation: "send-message",
         });
@@ -1134,7 +1165,7 @@ export async function POST(request: NextRequest) {
             (!text?.trim() &&
                 !hasEncryptedText &&
                 !imageFileId &&
-                (!attachments || attachments.length === 0))
+                normalizedAttachments.length === 0)
         ) {
             return jsonResponse(
                 { error: "Missing required fields" },
@@ -1560,11 +1591,11 @@ export async function POST(request: NextRequest) {
         );
 
         // Create attachment records if any
-        if (attachments && attachments.length > 0) {
+        if (normalizedAttachments.length > 0) {
             try {
                 await createAttachments(
                     String(message.$id),
-                    attachments as FileAttachment[],
+                    normalizedAttachments,
                 );
             } catch (attachmentError) {
                 logger.error("Failed to create attachments", {
@@ -1629,8 +1660,8 @@ export async function POST(request: NextRequest) {
             receiverId,
             conversationId,
             hasImage: !!imageFileId,
-            hasAttachments: !!(attachments && attachments.length > 0),
-            attachmentCount: attachments?.length || 0,
+            hasAttachments: normalizedAttachments.length > 0,
+            attachmentCount: normalizedAttachments.length,
             isReply: !!replyToId,
             textLength: text?.length || 0,
         });
@@ -1638,7 +1669,7 @@ export async function POST(request: NextRequest) {
         recordEvent("message_sent", {
             actorUserId: senderId,
             conversationId,
-            hasAttachments: Boolean(attachments && attachments.length > 0),
+            hasAttachments: normalizedAttachments.length > 0,
             hasImage: Boolean(imageFileId),
             isReply: Boolean(replyToId),
             messageId: String(message.$id),
@@ -1677,8 +1708,8 @@ export async function POST(request: NextRequest) {
         };
 
         // Include attachments in response if any
-        if (attachments && attachments.length > 0) {
-            responseMessage.attachments = attachments as FileAttachment[];
+        if (normalizedAttachments.length > 0) {
+            responseMessage.attachments = normalizedAttachments;
         }
 
         return jsonResponse({ message: responseMessage });

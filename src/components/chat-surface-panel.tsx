@@ -16,6 +16,7 @@ import { ChatInput } from "@/components/chat-input";
 import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
+import { GifStickerPicker } from "@/components/gif-sticker-picker";
 import { VirtualizedMessageList } from "@/components/virtualized-message-list";
 import {
     MESSAGE_LIST_VIEWPORT_HEIGHT,
@@ -629,6 +630,15 @@ export function ChatSurfacePanel({
                                     Boolean(editingMessageId)
                                 }
                                 onFileSelect={composer.onFileAttachmentSelect}
+                            />
+                            <GifStickerPicker
+                                disabled={
+                                    composer.disabled ||
+                                    Boolean(editingMessageId)
+                                }
+                                onSelectAttachment={
+                                    composer.onFileAttachmentSelect
+                                }
                             />
                             <EmojiPicker
                                 customEmojis={customEmojis}

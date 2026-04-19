@@ -413,7 +413,17 @@ export function useMessages({
                     setMessages((prev) => {
                         // Check if message already exists to prevent duplicates
                         if (prev.some((m) => m.$id === profileEnriched.$id)) {
-                            return prev;
+                            return prev.map((message) =>
+                                message.$id === profileEnriched.$id
+                                    ? {
+                                          ...message,
+                                          ...profileEnriched,
+                                          attachments:
+                                              profileEnriched.attachments ??
+                                              message.attachments,
+                                      }
+                                    : message,
+                            );
                         }
                         // Enrich with reply context using existing messages
                         const enriched = enrichMessageWithReplyContext(
@@ -1236,7 +1246,17 @@ export function useMessages({
                 // Add to messages array, ensuring no duplicates
                 setMessages((prev) => {
                     if (prev.some((m) => m.$id === enriched.$id)) {
-                        return prev;
+                        return prev.map((message) =>
+                            message.$id === enriched.$id
+                                ? {
+                                      ...message,
+                                      ...enriched,
+                                      attachments:
+                                          enriched.attachments ??
+                                          message.attachments,
+                                  }
+                                : message,
+                        );
                     }
                     return [...prev, enriched].sort((a, b) =>
                         a.$createdAt.localeCompare(b.$createdAt),

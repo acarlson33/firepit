@@ -162,4 +162,25 @@ describe("Thread route", () => {
         expect(call[1]).toBe("messages");
         expect(call[3]).toMatchObject({ threadId: "parent-1" });
     });
+
+    it("POST validates attachment payloads", async () => {
+        const request = new NextRequest(
+            "http://localhost/api/messages/parent-1/thread",
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    attachments: [{ fileId: "bad" }],
+                }),
+            },
+        );
+
+        const response = await POST(request, {
+            params: Promise.resolve({ messageId: "parent-1" }),
+        });
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(String(data.error)).toContain("attachments[0]");
+        expect(mockCreateDocument).not.toHaveBeenCalled();
+    });
 });

@@ -968,7 +968,28 @@ export function useDirectMessages({
                                                     resolvedMessage.$id,
                                             )
                                         ) {
-                                            return prev;
+                                            return prev.map((message) =>
+                                                message.$id ===
+                                                resolvedMessage.$id
+                                                    ? withReplyContext(
+                                                          {
+                                                              ...message,
+                                                              ...resolvedMessage,
+                                                              attachments:
+                                                                  resolvedMessage.attachments ??
+                                                                  message.attachments,
+                                                              replyTo:
+                                                                  resolvedMessage.replyTo ??
+                                                                  message.replyTo,
+                                                              replyToId:
+                                                                  resolvedMessage.replyToId ??
+                                                                  message.replyToId,
+                                                          },
+                                                          prev,
+                                                          message,
+                                                      )
+                                                    : message,
+                                            );
                                         }
                                         return [
                                             ...prev,
@@ -1273,7 +1294,27 @@ export function useDirectMessages({
                             (m) => m.$id === enrichedWithReplyContext.$id,
                         )
                     ) {
-                        return prev;
+                        return prev.map((message) =>
+                            message.$id === enrichedWithReplyContext.$id
+                                ? withReplyContext(
+                                      {
+                                          ...message,
+                                          ...enrichedWithReplyContext,
+                                          attachments:
+                                              enrichedWithReplyContext.attachments ??
+                                              message.attachments,
+                                          replyTo:
+                                              enrichedWithReplyContext.replyTo ??
+                                              message.replyTo,
+                                          replyToId:
+                                              enrichedWithReplyContext.replyToId ??
+                                              message.replyToId,
+                                      },
+                                      prev,
+                                      message,
+                                  )
+                                : message,
+                        );
                     }
                     // Add and sort by creation time to maintain chronological order
                     return [...prev, enrichedWithReplyContext].sort((a, b) =>

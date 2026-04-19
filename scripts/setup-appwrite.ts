@@ -63,6 +63,9 @@ const ANNOUNCEMENTS_COLLECTION_ID =
 const ANNOUNCEMENT_DELIVERIES_COLLECTION_ID =
     process.env.APPWRITE_ANNOUNCEMENT_DELIVERIES_COLLECTION_ID?.trim() ||
     "announcement_deliveries";
+const GIFS_BUCKET_ID = process.env.APPWRITE_GIFS_BUCKET_ID?.trim() || "gifs";
+const STICKERS_BUCKET_ID =
+    process.env.APPWRITE_STICKERS_BUCKET_ID?.trim() || "stickers";
 const LEN_ID = 128;
 const LEN_TS = 64; // ISO / epoch string length allowance
 const LEN_TEXT = 4000; // generous message / meta text length
@@ -754,6 +757,45 @@ async function setupMessages() {
     }
 }
 
+async function setupMessageAttachments() {
+    await ensureCollection("message_attachments", "Message Attachments");
+
+    const requiredStringFields: [string, number][] = [
+        ["messageId", LEN_ID],
+        ["messageType", 16],
+        ["fileId", LEN_ID],
+        ["fileName", 512],
+        ["fileType", 255],
+        ["fileUrl", 2000],
+    ];
+    for (const [key, size] of requiredStringFields) {
+        await ensureStringAttribute("message_attachments", key, size, true);
+    }
+
+    const optionalStringFields: [string, number][] = [
+        ["thumbnailUrl", 2000],
+        ["mediaKind", 32],
+        ["source", 32],
+        ["provider", 32],
+        ["providerAssetId", LEN_ID],
+        ["packId", LEN_ID],
+        ["itemId", LEN_ID],
+        ["previewUrl", 2000],
+    ];
+    for (const [key, size] of optionalStringFields) {
+        await ensureStringAttribute("message_attachments", key, size, false);
+    }
+
+    await ensureIntegerAttribute("message_attachments", "fileSize", true, 0, 0);
+
+    await ensureIndex("message_attachments", "idx_message", "key", [
+        "messageId",
+    ]);
+    await ensureIndex("message_attachments", "idx_message_type", "key", [
+        "messageType",
+    ]);
+}
+
 async function setupAudit() {
     await ensureCollection("audit", "Audit");
     const fields: [string, number, boolean][] = [
@@ -1028,6 +1070,16 @@ async function setupFeatureFlags() {
         description: "Require email verification before allowing sign in",
         enabled: false,
         key: "enable_email_verification",
+    });
+    await ensureFeatureFlagDocument({
+        description: "Enable built-in GIF and sticker messaging support",
+        enabled: false,
+        key: "enable_gif_sticker_support",
+    });
+    await ensureFeatureFlagDocument({
+        description: "Enable external GIF search provider",
+        enabled: false,
+        key: "enable_tenor_gif_search",
     });
 }
 
@@ -1720,6 +1772,18 @@ async function setupStorage() {
         1048576,
         ["png"],
     ); // 1MB for predefined avatar frame PNGs
+    await ensureBucket(
+        GIFS_BUCKET_ID,
+        "GIF Assets",
+        5242880,
+        ["gif", "webp", "mp4"],
+    ); // 5MB for curated/imported GIF assets
+    await ensureBucket(
+        STICKERS_BUCKET_ID,
+        "Sticker Assets",
+        2097152,
+        ["png", "webp", "gif"],
+    ); // 2MB for sticker assets
     // Files bucket for various file types (documents, videos, audio, archives, code)
     await ensureBucket(
         "files",
@@ -1869,6 +1933,8 @@ async function run() {
     await setupCategories();
     info("[setup] Setting up messages...");
     await setupMessages();
+    info("[setup] Setting up message attachments...");
+    await setupMessageAttachments();
     info("[setup] Setting up audit...");
     await setupAudit();
     info("[setup] Setting up reports...");
