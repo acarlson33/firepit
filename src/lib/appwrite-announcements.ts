@@ -1,7 +1,6 @@
 import { ID, Permission, Query, Role } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerClient } from "@/lib/appwrite-server";
 import type {
@@ -482,7 +481,7 @@ export function getAnnouncementRuntimeSettings() {
 }
 
 export async function isInstanceAnnouncementsEnabled(): Promise<boolean> {
-    return getFeatureFlag(FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS);
+    return true;
 }
 
 export async function createAnnouncement(

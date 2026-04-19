@@ -15,7 +15,6 @@ import {
 import {
     createAnnouncement,
     dispatchScheduledAnnouncements,
-    isInstanceAnnouncementsEnabled,
     listAnnouncements,
 } from "@/lib/appwrite-announcements";
 import type {
@@ -365,13 +364,6 @@ export async function getAnnouncementsAction(
         throw new Error("Forbidden");
     }
 
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
-    }
-
     const validatedLimit =
         input.limit === undefined
             ? undefined
@@ -404,13 +396,6 @@ export async function createAnnouncementAction(
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
         throw new Error("Forbidden");
-    }
-
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
     }
 
     const announcement = await createAnnouncement({
@@ -455,13 +440,6 @@ export async function dispatchAnnouncementsAction(
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
         throw new Error("Forbidden");
-    }
-
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
     }
 
     const validatedLimit = validateDispatchLimit(Math.floor(limit));

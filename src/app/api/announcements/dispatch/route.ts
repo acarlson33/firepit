@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import {
     dispatchScheduledAnnouncements,
     getAnnouncementRuntimeSettings,
-    isInstanceAnnouncementsEnabled,
 } from "@/lib/appwrite-announcements";
 import { logger } from "@/lib/newrelic-utils";
 
@@ -22,16 +21,6 @@ function parseLimit(rawLimit: string | null): number {
 }
 
 export async function POST(request: Request) {
-    if (!(await isInstanceAnnouncementsEnabled())) {
-        return NextResponse.json(
-            {
-                success: false,
-                error: "Instance announcements are disabled",
-            },
-            { status: 404 },
-        );
-    }
-
     const { dispatcherSecret, systemSenderUserId } =
         getAnnouncementRuntimeSettings();
 

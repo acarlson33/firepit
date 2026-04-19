@@ -5,10 +5,7 @@ import { clearFeatureFlagsCache, FEATURE_FLAGS } from "../lib/feature-flags";
 const requiredFlagKeys = [
     "ALLOW_USER_SERVERS",
     "ENABLE_AUDIT_LOGGING",
-    "ENABLE_INSTANCE_ANNOUNCEMENTS",
     "ENABLE_EMAIL_VERIFICATION",
-    "ENABLE_GIF_STICKER_SUPPORT",
-    "ENABLE_TENOR_GIF_SEARCH",
 ] as const;
 
 describe("Feature Flags", () => {
@@ -23,27 +20,9 @@ describe("Feature Flags", () => {
             );
         });
 
-        it("should have ENABLE_INSTANCE_ANNOUNCEMENTS flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS).toBe(
-                "enable_instance_announcements",
-            );
-        });
-
         it("should have ENABLE_EMAIL_VERIFICATION flag with correct key", () => {
             expect(FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
                 "enable_email_verification",
-            );
-        });
-
-        it("should have ENABLE_GIF_STICKER_SUPPORT flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
-                "enable_gif_sticker_support",
-            );
-        });
-
-        it("should have ENABLE_TENOR_GIF_SEARCH flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
-                "enable_tenor_gif_search",
             );
         });
 
