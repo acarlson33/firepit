@@ -13,261 +13,296 @@ const CHANNELS_COLLECTION_ID = env.collections.channels;
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || undefined;
 
 export type ServerCreationResult =
-	| { success: true; serverId: string; serverName: string }
-	| { success: false; error: string };
+    | { success: true; serverId: string; serverName: string }
+    | { success: false; error: string };
 
 export type ChannelCreationResult =
-	| { success: true; channelId: string; channelName: string }
-	| { success: false; error: string };
+    | {
+          success: true;
+          channelId: string;
+          channelName: string;
+          channelType: "text" | "voice" | "announcement";
+      }
+    | { success: false; error: string };
 
 export type ServerListResult = {
-	servers: Array<{
-		$id: string;
-		name: string;
-		ownerId: string;
-		createdAt: string;
-	}>;
+    servers: Array<{
+        $id: string;
+        name: string;
+        ownerId: string;
+        createdAt: string;
+    }>;
 };
 
 export type ChannelListResult = {
-	channels: Array<{
-		$id: string;
-		name: string;
-		serverId: string;
-		createdAt: string;
-	}>;
+    channels: Array<{
+        $id: string;
+        name: string;
+        type: "text" | "voice" | "announcement";
+        serverId: string;
+        createdAt: string;
+    }>;
 };
+
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+
+function normalizeChannelType(
+    value: unknown,
+): "text" | "voice" | "announcement" {
+    if (
+        typeof value === "string" &&
+        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
+    ) {
+        return value as "text" | "voice" | "announcement";
+    }
+
+    return "text";
+}
 
 /**
  * Create a new server (Admin only)
  * Admins can always create servers regardless of feature flags
  */
 export async function createServerAction(
-	name: string
+    name: string,
 ): Promise<ServerCreationResult> {
-	try {
-		// Require admin role to create servers
-		const { user } = await requireAdmin();
-		const ownerId = user.$id;
+    try {
+        // Require admin role to create servers
+        const { user } = await requireAdmin();
+        const ownerId = user.$id;
 
-		if (!name.trim()) {
-			return { success: false, error: "Server name is required" };
-		}
+        if (!name.trim()) {
+            return { success: false, error: "Server name is required" };
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Create server with owner permissions
-		const permissions = perms.serverOwner(ownerId);
+        // Create server with owner permissions
+        const permissions = perms.serverOwner(ownerId);
 
-		const serverDoc = await databases.createDocument(
-			DATABASE_ID,
-			SERVERS_COLLECTION_ID,
-			ID.unique(),
-			{ name: name.trim(), ownerId },
-			permissions
-		);
+        const serverDoc = await databases.createDocument(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            ID.unique(),
+            { name: name.trim(), ownerId },
+            permissions,
+        );
 
-		// Create membership record if enabled
-		if (MEMBERSHIPS_COLLECTION_ID) {
-			try {
-				const membershipPerms = perms.serverOwner(ownerId);
-				await databases.createDocument(
-					DATABASE_ID,
-					MEMBERSHIPS_COLLECTION_ID,
-					ID.unique(),
-					{
-						serverId: serverDoc.$id,
-						userId: ownerId,
-						role: "owner",
-					},
-					membershipPerms
-				);
-			} catch {
-				// Non-critical: membership creation failed but server exists
-			}
-		}
+        // Create membership record if enabled
+        if (MEMBERSHIPS_COLLECTION_ID) {
+            try {
+                const membershipPerms = perms.serverOwner(ownerId);
+                await databases.createDocument(
+                    DATABASE_ID,
+                    MEMBERSHIPS_COLLECTION_ID,
+                    ID.unique(),
+                    {
+                        serverId: serverDoc.$id,
+                        userId: ownerId,
+                        role: "owner",
+                    },
+                    membershipPerms,
+                );
+            } catch {
+                // Non-critical: membership creation failed but server exists
+            }
+        }
 
-		return {
-			success: true,
-			serverId: serverDoc.$id,
-			serverName: name.trim(),
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : "Failed to create server",
-		};
-	}
+        return {
+            success: true,
+            serverId: serverDoc.$id,
+            serverName: name.trim(),
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to create server",
+        };
+    }
 }
 
 /**
  * Create a new channel (Admin or Moderator)
  */
 export async function createChannelAction(
-	serverId: string,
-	name: string
+    serverId: string,
+    name: string,
+    type: "text" | "voice" | "announcement" = "text",
 ): Promise<ChannelCreationResult> {
-	try {
-		// Require moderator role (admins are also moderators)
-		await requireModerator();
+    try {
+        // Require moderator role (admins are also moderators)
+        await requireModerator();
 
-		if (!name.trim()) {
-			return { success: false, error: "Channel name is required" };
-		}
+        if (!name.trim()) {
+            return { success: false, error: "Channel name is required" };
+        }
 
-		if (!serverId) {
-			return { success: false, error: "Server ID is required" };
-		}
+        if (!serverId) {
+            return { success: false, error: "Server ID is required" };
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Create channel with public read permissions
-		const permissions = ['read("any")'];
+        // Create channel with public read permissions
+        const permissions = ['read("any")'];
 
-		const channelDoc = await databases.createDocument(
-			DATABASE_ID,
-			CHANNELS_COLLECTION_ID,
-			ID.unique(),
-			{ name: name.trim(), serverId },
-			permissions
-		);
+        const channelDoc = await databases.createDocument(
+            DATABASE_ID,
+            CHANNELS_COLLECTION_ID,
+            ID.unique(),
+            { name: name.trim(), serverId, type: normalizeChannelType(type) },
+            permissions,
+        );
 
-		return {
-			success: true,
-			channelId: channelDoc.$id,
-			channelName: name.trim(),
-		};
-	} catch (error) {
-		return {
-			success: false,
-			error:
-				error instanceof Error ? error.message : "Failed to create channel",
-		};
-	}
+        return {
+            success: true,
+            channelId: channelDoc.$id,
+            channelName: name.trim(),
+            channelType: normalizeChannelType(channelDoc.type),
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to create channel",
+        };
+    }
 }
 
 /**
  * List all servers (Admin only)
  */
 export async function listServersAction(): Promise<ServerListResult> {
-	try {
-		await requireAdmin();
+    try {
+        await requireAdmin();
 
-		const { databases } = getServerClient();
-		const response = await databases.listDocuments(
-			DATABASE_ID,
-			SERVERS_COLLECTION_ID,
-			[Query.limit(100), Query.orderDesc("$createdAt")]
-		);
+        const { databases } = getServerClient();
+        const response = await databases.listDocuments(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            [Query.limit(100), Query.orderDesc("$createdAt")],
+        );
 
-		const servers = response.documents.map((doc) => ({
-			$id: doc.$id,
-			name: String(doc.name),
-			ownerId: String(doc.ownerId),
-			createdAt: String(doc.createdAt || doc.$createdAt),
-		}));
+        const servers = response.documents.map((doc) => ({
+            $id: doc.$id,
+            name: String(doc.name),
+            ownerId: String(doc.ownerId),
+            createdAt: String(doc.createdAt || doc.$createdAt),
+        }));
 
-		return { servers };
-	} catch {
-		return { servers: [] };
-	}
+        return { servers };
+    } catch {
+        return { servers: [] };
+    }
 }
 
 /**
  * List channels for a server (Admin or Moderator)
  */
 export async function listChannelsAction(
-	serverId: string
+    serverId: string,
 ): Promise<ChannelListResult> {
-	try {
-		await requireModerator();
+    try {
+        await requireModerator();
 
-		if (!serverId) {
-			return { channels: [] };
-		}
+        if (!serverId) {
+            return { channels: [] };
+        }
 
-		const { databases } = getServerClient();
-		const response = await databases.listDocuments(
-			DATABASE_ID,
-			CHANNELS_COLLECTION_ID,
-			[Query.equal("serverId", serverId), Query.limit(100)]
-		);
+        const { databases } = getServerClient();
+        const response = await databases.listDocuments(
+            DATABASE_ID,
+            CHANNELS_COLLECTION_ID,
+            [Query.equal("serverId", serverId), Query.limit(100)],
+        );
 
-		const channels = response.documents.map((doc) => ({
-			$id: doc.$id,
-			name: String(doc.name),
-			serverId: String(doc.serverId),
-			createdAt: String(doc.createdAt || doc.$createdAt),
-		}));
+        const channels = response.documents.map((doc) => ({
+            $id: doc.$id,
+            name: String(doc.name),
+            type: normalizeChannelType(doc.type),
+            serverId: String(doc.serverId),
+            createdAt: String(doc.createdAt || doc.$createdAt),
+        }));
 
-		return { channels };
-	} catch {
-		return { channels: [] };
-	}
+        return { channels };
+    } catch {
+        return { channels: [] };
+    }
 }
 
 export type DeleteResult =
-	| { success: true }
-	| { success: false; error: string };
+    | { success: true }
+    | { success: false; error: string };
 
 /**
  * Delete a server (Admin only)
  */
 export async function deleteServerAction(
-	serverId: string
+    serverId: string,
 ): Promise<DeleteResult> {
-	try {
-		await requireAdmin();
+    try {
+        await requireAdmin();
 
-		if (!serverId) {
-			return { success: false, error: "Server ID is required" };
-		}
+        if (!serverId) {
+            return { success: false, error: "Server ID is required" };
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Delete the server
-		await databases.deleteDocument(
-			DATABASE_ID,
-			SERVERS_COLLECTION_ID,
-			serverId
-		);
+        // Delete the server
+        await databases.deleteDocument(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            serverId,
+        );
 
-		return { success: true };
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : "Failed to delete server",
-		};
-	}
+        return { success: true };
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to delete server",
+        };
+    }
 }
 
 /**
  * Delete a channel (Admin only)
  */
 export async function deleteChannelAction(
-	channelId: string
+    channelId: string,
 ): Promise<DeleteResult> {
-	try {
-		await requireAdmin();
+    try {
+        await requireAdmin();
 
-		if (!channelId) {
-			return { success: false, error: "Channel ID is required" };
-		}
+        if (!channelId) {
+            return { success: false, error: "Channel ID is required" };
+        }
 
-		const { databases } = getServerClient();
+        const { databases } = getServerClient();
 
-		// Delete the channel
-		await databases.deleteDocument(
-			DATABASE_ID,
-			CHANNELS_COLLECTION_ID,
-			channelId
-		);
+        // Delete the channel
+        await databases.deleteDocument(
+            DATABASE_ID,
+            CHANNELS_COLLECTION_ID,
+            channelId,
+        );
 
-		return { success: true };
-	} catch (error) {
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : "Failed to delete channel",
-		};
-	}
+        return { success: true };
+    } catch (error) {
+        return {
+            success: false,
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to delete channel",
+        };
+    }
 }

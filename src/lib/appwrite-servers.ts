@@ -29,6 +29,18 @@ function getMembershipsCollectionId(): string | undefined {
 const MAX_LIST_LIMIT = 500; // upper bound used for bulk listing
 const DEFAULT_SERVER_PAGE_SIZE = 25;
 const DEFAULT_CHANNEL_PAGE_SIZE = 50;
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+
+function normalizeChannelType(value: unknown): Channel["type"] {
+    if (
+        typeof value === "string" &&
+        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
+    ) {
+        return value as Channel["type"];
+    }
+
+    return "text";
+}
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
 
@@ -272,6 +284,8 @@ export async function listChannels(
             $id: String(d.$id),
             serverId: String(d.serverId),
             name: String(d.name),
+            type: normalizeChannelType(d.type),
+            topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
             categoryId:
                 typeof d.categoryId === "string" ? d.categoryId : undefined,
             position: typeof d.position === "number" ? d.position : undefined,
@@ -313,6 +327,8 @@ export async function listChannelsPage(
             $id: String(d.$id),
             serverId: String(d.serverId),
             name: String(d.name),
+            type: normalizeChannelType(d.type),
+            topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
             categoryId:
                 typeof d.categoryId === "string" ? d.categoryId : undefined,
             position: typeof d.position === "number" ? d.position : undefined,
@@ -337,13 +353,21 @@ export async function createChannel(
     serverId: string,
     name: string,
     _ownerId: string,
+    type: Channel["type"] = "text",
+    topic?: string,
 ): Promise<Channel> {
     const permissions = [Permission.read(Role.any())];
     const res = await getDatabases().createDocument({
         databaseId: DATABASE_ID,
         collectionId: CHANNELS_COLLECTION_ID,
         documentId: ID.unique(),
-        data: { serverId, name, position: 0 },
+        data: {
+            serverId,
+            name,
+            type: normalizeChannelType(type),
+            topic: topic?.trim() || "",
+            position: 0,
+        },
         permissions,
     });
     const d = res as unknown as Record<string, unknown>;
@@ -351,6 +375,8 @@ export async function createChannel(
         $id: String(d.$id),
         serverId: String(d.serverId),
         name: String(d.name),
+        type: normalizeChannelType(d.type),
+        topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
         categoryId: typeof d.categoryId === "string" ? d.categoryId : undefined,
         position: typeof d.position === "number" ? d.position : undefined,
         $createdAt: String(d.$createdAt ?? ""),

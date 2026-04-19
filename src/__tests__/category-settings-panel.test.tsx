@@ -1,7 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CategorySettingsPanel } from "@/components/category-settings-panel";
@@ -144,7 +150,18 @@ describe("CategorySettingsPanel", () => {
         fireEvent.change(screen.getByLabelText("New category"), {
             target: { value: "Announcements" },
         });
-        fireEvent.click(screen.getByRole("button", { name: /create/i }));
+        const categoryCard = screen
+            .getByText("Channel Categories")
+            .closest("[data-slot='card']");
+        const createCategoryButton = categoryCard
+            ? within(categoryCard).getByRole("button", { name: /create/i })
+            : screen.getAllByRole("button", { name: /create/i }).at(-1);
+
+        if (!createCategoryButton) {
+            throw new Error("Expected category create button to be available");
+        }
+
+        fireEvent.click(createCategoryButton);
 
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalledWith(
@@ -174,6 +191,165 @@ describe("CategorySettingsPanel", () => {
             categoriesChanged,
         );
         window.removeEventListener("firepit:channels-changed", channelsChanged);
+    });
+
+    it("creates channels from channel setup", async () => {
+        (global.fetch as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ categories: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ channels: [], nextCursor: null }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    channel: {
+                        $id: "channel-2",
+                        serverId: "server-1",
+                        name: "town-hall",
+                        type: "text",
+                        position: 0,
+                        $createdAt: "2026-03-09T00:00:00.000Z",
+                    },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ categories: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    channels: [
+                        {
+                            $id: "channel-2",
+                            serverId: "server-1",
+                            name: "town-hall",
+                            type: "text",
+                            position: 0,
+                            $createdAt: "2026-03-09T00:00:00.000Z",
+                        },
+                    ],
+                    nextCursor: null,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
+            });
+
+        render(<CategorySettingsPanel canManage={true} serverId="server-1" />);
+
+        await screen.findByText("Channel Setup");
+
+        fireEvent.change(screen.getByLabelText("New channel"), {
+            target: { value: "town-hall" },
+        });
+
+        const channelSetupCard = screen
+            .getByText("Channel Setup")
+            .closest("[data-slot='card']");
+        const createButtons = screen.getAllByRole("button", {
+            name: /create/i,
+        });
+        const createButton = channelSetupCard
+            ? within(channelSetupCard).getByRole("button", { name: /create/i })
+            : createButtons[0];
+
+        fireEvent.click(createButton);
+
+        await waitFor(() => {
+            expect(global.fetch).toHaveBeenCalledWith(
+                "/api/channels",
+                expect.objectContaining({
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                }),
+            );
+        });
+
+        expect(toast.success).toHaveBeenCalledWith("Channel created");
+    });
+
+    it("updates channel type to announcement from assign channels", async () => {
+        (global.fetch as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ categories: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    channels: [
+                        {
+                            $id: "channel-voice",
+                            serverId: "server-1",
+                            name: "voice-lounge",
+                            type: "voice",
+                            position: 0,
+                            $createdAt: "2026-03-09T00:00:00.000Z",
+                        },
+                    ],
+                    nextCursor: null,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ channel: { $id: "channel-voice" } }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ categories: [] }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    channels: [
+                        {
+                            $id: "channel-voice",
+                            serverId: "server-1",
+                            name: "voice-lounge",
+                            type: "announcement",
+                            position: 0,
+                            $createdAt: "2026-03-09T00:00:00.000Z",
+                        },
+                    ],
+                    nextCursor: null,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ roles: [] }),
+            });
+
+        render(<CategorySettingsPanel canManage={true} serverId="server-1" />);
+
+        await screen.findByText("voice-lounge");
+
+        fireEvent.click(screen.getByRole("button", { name: "Announcement" }));
+
+        await waitFor(() => {
+            expect(global.fetch).toHaveBeenCalledWith(
+                "/api/channels/channel-voice",
+                expect.objectContaining({
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                }),
+            );
+        });
+
+        expect(toast.success).toHaveBeenCalledWith("Channel type updated");
     });
 
     it("shows a restricted message when management is disabled", async () => {

@@ -669,11 +669,14 @@ async function setupChannels() {
     await ensureCollection("channels", "Channels");
     await ensureStringAttribute("channels", "serverId", LEN_ID, true);
     await ensureStringAttribute("channels", "name", LEN_ID, true);
+    await ensureStringAttribute("channels", "type", 32, false);
+    await ensureStringAttribute("channels", "topic", 500, false);
     await ensureStringAttribute("channels", "categoryId", LEN_ID, false);
     await ensureIntegerAttribute("channels", "position", false, 0, 0);
     // Note: Using system $createdAt attribute for ordering, no custom attribute needed
     await ensureIndex("channels", "idx_serverId", "key", ["serverId"]);
     await ensureIndex("channels", "idx_categoryId", "key", ["categoryId"]);
+    await ensureIndex("channels", "idx_type", "key", ["type"]);
     await ensureIndex("channels", "idx_position", "key", ["position"]);
 }
 
