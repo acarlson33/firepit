@@ -5,9 +5,9 @@ import type { Teams as ServerTeams } from "node-appwrite";
 import { getBrowserTeams, getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 
-export type RoleTag = { id: string; label: string; color?: string };
-export type RoleInfo = { isAdmin: boolean; isModerator: boolean };
-export type ExtendedRoleInfo = RoleInfo & { tags: RoleTag[] };
+type RoleTag = { id: string; label: string; color?: string };
+type RoleInfo = { isAdmin: boolean; isModerator: boolean };
+type ExtendedRoleInfo = RoleInfo & { tags: RoleTag[] };
 
 // Centralized environment config
 const env = getEnvConfig();
@@ -53,7 +53,7 @@ function getMembershipUserId(membership: unknown): string | undefined {
  *
  * @param {string} teamId - The team id value.
  * @param {string} userId - The user id value.
- * @param {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} teams - The teams value.
+ * @param {Teams | ServerTeams} teams - The teams value.
  * @returns {Promise<boolean>} The return value.
  */
 async function isMember(
@@ -99,7 +99,7 @@ async function isMember(
 
 /**
  * Handles select teams client.
- * @returns {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} The return value.
+ * @returns {Teams | ServerTeams} The return value.
  */
 function selectTeamsClient(): Teams | ServerTeams {
     // Prefer server client (API key) if available for reliable membership listing; otherwise fall back to browser teams.
@@ -235,7 +235,7 @@ function cacheStore(
  * Handles fetch custom team tags.
  *
  * @param {string} userId - The user id value.
- * @param {import("/home/august/code/firepit/node_modules/.bun/appwrite@20.1.0/node_modules/appwrite/types/services/teams").Teams | import("/home/august/code/firepit/node_modules/.bun/node-appwrite@20.3.0/node_modules/node-appwrite/dist/services/teams").Teams} teams - The teams value.
+ * @param {Teams | ServerTeams} teams - The teams value.
  * @param {{ [x: string]: { label: string; color?: string | undefined; }; }} teamMap - The team map value.
  * @returns {Promise<RoleTag[]>} The return value.
  */

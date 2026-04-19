@@ -11,13 +11,13 @@ type PollVoteRecord = {
     optionId: string;
 };
 
-export const POLL_COMMAND_PREFIX = "/poll";
+const POLL_COMMAND_PREFIX = "/poll";
 const MAX_POLL_OPTIONS = 10;
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_QUESTION_LENGTH = 300;
 const MAX_POLL_OPTION_LENGTH = 120;
 
-export type ParsedPollCommand = {
+type ParsedPollCommand = {
     question: string;
     options: PollOptionRecord[];
 };
@@ -208,10 +208,7 @@ export function buildMessagePoll(params: {
             continue;
         }
 
-        const voterIds = voteMap.get(vote.optionId);
-        if (!voterIds) {
-            continue;
-        }
+        const voterIds = voteMap.get(vote.optionId) ?? [];
 
         if (!voterIds.includes(vote.userId)) {
             voterIds.push(vote.userId);

@@ -35,9 +35,7 @@ function LoginFormContent() {
 
         if (verifiedStatus === "1") {
             toast.success("Email verified. You can now sign in.");
-        }
-
-        if (verifiedStatus === "0") {
+        } else if (verifiedStatus === "0") {
             toast.error("Email verification link is invalid or expired.");
         }
     }, [searchParams]);
@@ -101,10 +99,9 @@ function LoginFormContent() {
             const result = await resendVerificationAction(formData);
             if (result.success) {
                 toast.success(result.message);
-                return;
+            } else {
+                toast.error(result.error);
             }
-
-            toast.error(result.error);
         } catch (err) {
             const message =
                 err instanceof Error

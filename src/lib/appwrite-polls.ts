@@ -1,8 +1,13 @@
 import { Query } from "appwrite";
 
+import { logger } from "@/lib/client-logger";
 import { getBrowserDatabases, getEnvConfig } from "@/lib/appwrite-core";
 import { buildMessagePoll, type PollDocShape } from "@/lib/polls";
 import type { Message } from "@/lib/types";
+
+const POLLS_PAGE_LIMIT = 100;
+const POLL_VOTES_PAGE_LIMIT = 1000;
+const MAX_POLL_PAGES = 50;
 
 type PollVoteDocShape = {
     $id: string;
@@ -64,6 +69,137 @@ function normalizePollVoteDocument(raw: unknown): PollVoteDocShape | null {
     };
 }
 
+async function listPollDocumentsForMessages(params: {
+    messageIds: string[];
+    databaseId: string;
+    pollsCollectionId: string;
+}): Promise<PollDocShape[]> {
+    const { messageIds, databaseId, pollsCollectionId } = params;
+    if (messageIds.length === 0) {
+        return [];
+    }
+
+    const databases = getBrowserDatabases();
+    const pollDocuments: PollDocShape[] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+    let pagesFetched = 0;
+
+    while (true) {
+        pageCount += 1;
+        if (pageCount > MAX_POLL_PAGES) {
+            logger.error(
+                "Poll query pagination exceeded configured max pages",
+                undefined,
+                {
+                    cursor: cursor ?? null,
+                    maxPages: MAX_POLL_PAGES,
+                    messageCount: messageIds.length,
+                },
+            );
+            break;
+        }
+
+        const response = await databases.listDocuments({
+            databaseId,
+            collectionId: pollsCollectionId,
+            queries: [
+                Query.equal("messageId", messageIds),
+                Query.orderAsc("$id"),
+                Query.limit(POLLS_PAGE_LIMIT),
+                ...(cursor ? [Query.cursorAfter(cursor)] : []),
+            ],
+        });
+
+        pollDocuments.push(
+            ...response.documents
+                .map((raw) => normalizePollDocument(raw))
+                .filter((value): value is PollDocShape => value !== null),
+        );
+
+        if (response.documents.length === POLLS_PAGE_LIMIT) {
+            pagesFetched += 1;
+        }
+
+        if (response.documents.length < POLLS_PAGE_LIMIT) {
+            break;
+        }
+
+        const lastDocument = response.documents.at(-1);
+        if (!lastDocument || typeof lastDocument.$id !== "string") {
+            break;
+        }
+
+        cursor = lastDocument.$id;
+    }
+
+    if (pagesFetched > 1) {
+        logger.warn("Poll query required multiple pages", {
+            cursor: cursor ?? null,
+            messageCount: messageIds.length,
+            pageLimit: POLLS_PAGE_LIMIT,
+            pagesFetched,
+        });
+    }
+
+    return pollDocuments;
+}
+
+async function listVoteDocumentsForPolls(params: {
+    pollIds: string[];
+    databaseId: string;
+    pollVotesCollectionId: string;
+}): Promise<PollVoteDocShape[]> {
+    const { pollIds, databaseId, pollVotesCollectionId } = params;
+    if (pollIds.length === 0) {
+        return [];
+    }
+
+    const databases = getBrowserDatabases();
+    const voteDocuments: PollVoteDocShape[] = [];
+    let cursor: string | undefined;
+
+    while (true) {
+        const response = await databases.listDocuments({
+            databaseId,
+            collectionId: pollVotesCollectionId,
+            queries: [
+                Query.equal("pollId", pollIds),
+                Query.orderAsc("$id"),
+                Query.limit(POLL_VOTES_PAGE_LIMIT),
+                ...(cursor ? [Query.cursorAfter(cursor)] : []),
+            ],
+        });
+
+        voteDocuments.push(
+            ...response.documents
+                .map((raw) => normalizePollVoteDocument(raw))
+                .filter((value): value is PollVoteDocShape => value !== null),
+        );
+
+        if (response.documents.length === POLL_VOTES_PAGE_LIMIT) {
+            logger.warn("Poll votes query page reached configured limit", {
+                pageLimit: POLL_VOTES_PAGE_LIMIT,
+                pollCount: pollIds.length,
+                cursor: cursor ?? null,
+            });
+        }
+
+        if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
+            break;
+        }
+
+        const lastDocument = response.documents.at(-1);
+        if (!lastDocument || typeof lastDocument.$id !== "string") {
+            break;
+        }
+
+        cursor = lastDocument.$id;
+    }
+
+    return voteDocuments;
+}
+
 export async function enrichMessagesWithPolls(messages: Message[]): Promise<Message[]> {
     if (messages.length === 0) {
         return messages;
@@ -71,57 +207,61 @@ export async function enrichMessagesWithPolls(messages: Message[]): Promise<Mess
 
     const messageIds = messages.map((message) => message.$id);
     const env = getEnvConfig();
-    const databases = getBrowserDatabases();
 
     try {
-        const pollDocumentsResponse = await databases.listDocuments({
+        const pollDocuments = await listPollDocumentsForMessages({
+            messageIds,
             databaseId: env.databaseId,
-            collectionId: env.collections.polls,
-            queries: [Query.equal("messageId", messageIds), Query.limit(100)],
+            pollsCollectionId: env.collections.polls,
         });
-
-        const pollDocuments = pollDocumentsResponse.documents
-            .map((raw) => normalizePollDocument(raw))
-            .filter((value): value is PollDocShape => value !== null);
 
         if (pollDocuments.length === 0) {
             return messages;
         }
 
         const pollIds = pollDocuments.map((poll) => poll.$id);
-        const voteDocumentsResponse = await databases.listDocuments({
+        const voteDocuments = await listVoteDocumentsForPolls({
+            pollIds,
             databaseId: env.databaseId,
-            collectionId: env.collections.pollVotes,
-            queries: [Query.equal("pollId", pollIds), Query.limit(3000)],
+            pollVotesCollectionId: env.collections.pollVotes,
         });
 
         const votesByPollId = new Map<string, PollVoteDocShape[]>();
-        for (const rawVote of voteDocumentsResponse.documents) {
-            const vote = normalizePollVoteDocument(rawVote);
-            if (!vote) {
-                continue;
-            }
-
+        for (const vote of voteDocuments) {
             const pollVotes = votesByPollId.get(vote.pollId) ?? [];
             pollVotes.push(vote);
             votesByPollId.set(vote.pollId, pollVotes);
         }
 
-        const pollsByMessageId = new Map(
-            pollDocuments.map((poll) => [
+        // One poll per message is the expected data invariant.
+        const pollsByMessageId = new Map<string, ReturnType<typeof buildMessagePoll>>();
+        for (const poll of pollDocuments) {
+            if (pollsByMessageId.has(poll.messageId)) {
+                logger.warn("Multiple poll documents found for a single message", {
+                    messageId: poll.messageId,
+                    existingPollId: pollsByMessageId.get(poll.messageId)?.id ?? null,
+                    incomingPollId: poll.$id,
+                });
+            }
+
+            pollsByMessageId.set(
                 poll.messageId,
                 buildMessagePoll({
                     poll,
                     votes: votesByPollId.get(poll.$id) ?? [],
                 }),
-            ]),
-        );
+            );
+        }
 
         return messages.map((message) => ({
             ...message,
             poll: pollsByMessageId.get(message.$id),
         }));
-    } catch {
+    } catch (error) {
+        logger.error("Failed to enrich messages with poll data", undefined, {
+            messageCount: messages.length,
+            error: error instanceof Error ? error.message : String(error),
+        });
         return messages;
     }
 }

@@ -217,6 +217,7 @@ export async function GET(request: Request, context: RouteContext) {
             isBanned: boolean;
             isMuted: boolean;
         }>;
+        const orphanUserIds: string[] = [];
 
         for (const membership of memberships) {
             const userId = membership.userId as string;
@@ -224,41 +225,7 @@ export async function GET(request: Request, context: RouteContext) {
                 const profile = profilesByUserId.get(userId);
 
                 if (!profile) {
-                    // User profile is gone (likely account deleted) — remove membership and any role assignments
-                    const membershipDocumentId = String(membership.$id);
-                    await databases.deleteDocument(
-                        databaseId,
-                        membershipsCollectionId,
-                        membershipDocumentId,
-                    );
-
-                    const orphanAssignments = await databases.listDocuments(
-                        databaseId,
-                        roleAssignmentsCollectionId,
-                        [
-                            Query.equal("serverId", serverId),
-                            Query.equal("userId", userId),
-                            Query.limit(100),
-                        ],
-                    );
-
-                    await Promise.all(
-                        orphanAssignments.documents.map((assignment) =>
-                            databases.deleteDocument(
-                                databaseId,
-                                roleAssignmentsCollectionId,
-                                String(assignment.$id),
-                            ),
-                        ),
-                    );
-
-                    logger.info(
-                        "Removed orphaned membership after user deletion",
-                        {
-                            serverId,
-                            userId,
-                        },
-                    );
+                    orphanUserIds.push(userId);
                     continue;
                 }
 
@@ -279,6 +246,14 @@ export async function GET(request: Request, context: RouteContext) {
                         error instanceof Error ? error.message : String(error),
                 });
             }
+        }
+
+        if (orphanUserIds.length > 0) {
+            logger.warn("Detected orphan memberships during member listing", {
+                serverId,
+                orphanCount: orphanUserIds.length,
+                sampleUserIds: orphanUserIds.slice(0, 10),
+            });
         }
 
         return NextResponse.json({ members });

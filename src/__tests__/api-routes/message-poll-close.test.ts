@@ -160,6 +160,16 @@ describe("Message Poll Close API", () => {
         const payload = await response.json();
         expect(response.status).toBe(200);
         expect(mockUpdateDocument).toHaveBeenCalledTimes(1);
+        expect(mockUpdateDocument).toHaveBeenCalledWith(
+            "test-db",
+            "polls-collection",
+            "poll-1",
+            expect.objectContaining({
+                status: "closed",
+                closedBy: "user-1",
+                closedAt: expect.any(String),
+            }),
+        );
         expect(payload.poll.status).toBe("closed");
     });
 });

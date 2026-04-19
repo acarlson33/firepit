@@ -191,6 +191,10 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                 toast.success(
                     `Announcement queued and dispatched to ${result.dispatched.dueCount} scheduled job(s)`,
                 );
+            } else if (result.dispatchError) {
+                toast.error(
+                    `Announcement created, but dispatcher failed: ${result.dispatchError}`,
+                );
             } else {
                 toast.success("Announcement created");
             }
@@ -362,8 +366,12 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                     </h3>
 
                     <div className="flex items-center gap-2">
+                        <Label className="sr-only" htmlFor="announcement-status-filter">
+                            Announcement status filter
+                        </Label>
                         <select
                             className="flex h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            id="announcement-status-filter"
                             value={filter}
                             onChange={(event) =>
                                 setFilter(event.target.value as AnnouncementFilter)

@@ -34,15 +34,23 @@ type GifStickerPickerProps = {
 };
 
 function inferImageMimeType(url: string): string {
-    const normalized = url.toLowerCase();
+    let pathname = url;
 
-    if (normalized.includes(".gif")) {
+    try {
+        pathname = new URL(url).pathname;
+    } catch {
+        pathname = url.split("?")[0] ?? url;
+    }
+
+    const normalizedPathname = pathname.toLowerCase();
+
+    if (/\.gif$/i.test(normalizedPathname)) {
         return "image/gif";
     }
-    if (normalized.includes(".webp")) {
+    if (/\.webp$/i.test(normalizedPathname)) {
         return "image/webp";
     }
-    if (normalized.includes(".jpg") || normalized.includes(".jpeg")) {
+    if (/\.jpe?g$/i.test(normalizedPathname)) {
         return "image/jpeg";
     }
 
@@ -50,11 +58,13 @@ function inferImageMimeType(url: string): string {
 }
 
 function toGifAttachment(item: GifSearchItem): FileAttachment {
+    const fileType = inferImageMimeType(item.gifUrl);
+
     return {
         fileId: `${item.source}-${item.id}`,
         fileName: `${item.title || "gif"}.gif`,
         fileSize: 0,
-        fileType: "image/gif",
+        fileType,
         fileUrl: item.gifUrl,
         thumbnailUrl: item.previewUrl,
         previewUrl: item.previewUrl,
@@ -98,9 +108,7 @@ export function GifStickerPicker({
     const [hasFetchedGifs, setHasFetchedGifs] = useState(false);
 
     const [gifResults, setGifResults] = useState<GifSearchItem[]>([]);
-    const [gifNextCursor, setGifNextCursor] = useState<string | undefined>(
-        undefined,
-    );
+    const [gifNextCursor, setGifNextCursor] = useState<string | undefined>();
     const [gifLoading, setGifLoading] = useState(false);
     const [gifLoadingMore, setGifLoadingMore] = useState(false);
     const [gifError, setGifError] = useState<string | null>(null);
@@ -378,7 +386,7 @@ export function GifStickerPicker({
                                             {gifResults.map((item) => (
                                                 <button
                                                     className="overflow-hidden rounded-lg border border-border/60 bg-muted/20 text-left transition hover:border-primary/60 hover:bg-muted/40"
-                                                    key={item.id}
+                                                    key={`${item.source}-${item.id}`}
                                                     onClick={() => {
                                                         onSelectAttachment(
                                                             toGifAttachment(item),

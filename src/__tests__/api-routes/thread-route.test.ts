@@ -180,7 +180,8 @@ describe("Thread route", () => {
         const data = await response.json();
 
         expect(response.status).toBe(400);
-        expect(String(data.error)).toContain("attachments[0]");
+        expect(data.error).toBeDefined();
+        expect(data.error).toContain("attachments[0]");
         expect(mockCreateDocument).not.toHaveBeenCalled();
     });
 });

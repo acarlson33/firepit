@@ -7,6 +7,7 @@ import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
 import { getActualMemberCount } from "./membership-count";
+import { apiCache } from "./cache-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -14,9 +15,10 @@ const INVITES_COLLECTION_ID = "invites";
 const INVITE_USAGE_COLLECTION_ID = "invite_usage";
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || "memberships";
 const SERVERS_COLLECTION_ID = env.collections.servers;
-export const ROLE_MEMBER = "member";
+const ROLE_MEMBER = "member";
+const INVITE_CACHE_TTL_MS = 10 * 1000;
 
-export type CreateInviteOptions = {
+type CreateInviteOptions = {
     serverId: string;
     creatorId: string;
     channelId?: string;
@@ -25,7 +27,7 @@ export type CreateInviteOptions = {
     temporary?: boolean;
 };
 
-export type ValidationResult = {
+type ValidationResult = {
     valid: boolean;
     error?: string;
     invite?: ServerInvite;
@@ -36,6 +38,38 @@ type ReconcileInviteUsageResult = {
     removed: number;
     flagged: number;
 };
+
+function canUseInviteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeInviteCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = INVITE_CACHE_TTL_MS,
+): Promise<T> {
+    if (!canUseInviteCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, ttl);
+}
+
+function inviteByCodeCacheKey(code: string): string {
+    return `invite:by-code:${code}`;
+}
+
+function serverInvitesCacheKey(serverId: string): string {
+    return `invite:server-list:${serverId}`;
+}
+
+function inviteUsageCacheKey(code: string): string {
+    return `invite:usage:${code}`;
+}
+
+function serverPreviewCacheKey(serverId: string): string {
+    return `invite:server-preview:${serverId}`;
+}
 
 function isConflictError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -68,7 +102,7 @@ function createInviteUsageSlotDocumentId(
  * Reconcile orphaned invite usage documents that do not map to an existing membership.
  * This routine is idempotent and safe to run periodically.
  */
-export async function reconcileOrphanedInviteUsageSlots(options?: {
+async function reconcileOrphanedInviteUsageSlots(options?: {
     limit?: number;
 }): Promise<ReconcileInviteUsageResult> {
     const { databases } = getServerClient();
@@ -307,6 +341,8 @@ export async function createInvite(
         data,
     );
 
+    apiCache.clear(serverInvitesCacheKey(options.serverId));
+
     return result as unknown as ServerInvite;
 }
 
@@ -322,10 +358,13 @@ export async function getInviteByCode(
     const { databases } = getServerClient();
 
     try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITES_COLLECTION_ID,
-            [Query.equal("code", code), Query.limit(1)],
+        const result = await dedupeInviteCache(
+            inviteByCodeCacheKey(code),
+            () =>
+                databases.listDocuments(DATABASE_ID, INVITES_COLLECTION_ID, [
+                    Query.equal("code", code),
+                    Query.limit(1),
+                ]),
         );
 
         if (result.documents.length === 0) {
@@ -625,6 +664,11 @@ export async function useInvite(
         }
     }
 
+    apiCache.clear(inviteByCodeCacheKey(code));
+    apiCache.clear(serverInvitesCacheKey(invite.serverId));
+    apiCache.clear(inviteUsageCacheKey(code));
+    apiCache.clear(serverPreviewCacheKey(invite.serverId));
+
     return { success: true, serverId: invite.serverId };
 }
 
@@ -640,14 +684,14 @@ export async function listServerInvites(
     const { databases } = getServerClient();
 
     try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITES_COLLECTION_ID,
-            [
-                Query.equal("serverId", serverId),
-                Query.orderDesc("$createdAt"),
-                Query.limit(100),
-            ],
+        const result = await dedupeInviteCache(
+            serverInvitesCacheKey(serverId),
+            () =>
+                databases.listDocuments(DATABASE_ID, INVITES_COLLECTION_ID, [
+                    Query.equal("serverId", serverId),
+                    Query.orderDesc("$createdAt"),
+                    Query.limit(100),
+                ]),
         );
 
         return result.documents as unknown as ServerInvite[];
@@ -685,18 +729,18 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
  * @param {string} code - The code value.
  * @returns {Promise<InviteUsage[]>} The return value.
  */
-export async function getInviteUsage(code: string): Promise<InviteUsage[]> {
+async function getInviteUsage(code: string): Promise<InviteUsage[]> {
     const { databases } = getServerClient();
 
     try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITE_USAGE_COLLECTION_ID,
-            [
-                Query.equal("inviteCode", code),
-                Query.orderDesc("joinedAt"),
-                Query.limit(100),
-            ],
+        const result = await dedupeInviteCache(
+            inviteUsageCacheKey(code),
+            () =>
+                databases.listDocuments(DATABASE_ID, INVITE_USAGE_COLLECTION_ID, [
+                    Query.equal("inviteCode", code),
+                    Query.orderDesc("joinedAt"),
+                    Query.limit(100),
+                ]),
         );
 
         return result.documents as unknown as InviteUsage[];
@@ -719,14 +763,24 @@ export async function getServerPreview(serverId: string): Promise<{
     const { databases } = getServerClient();
 
     try {
-        const server = await databases.getDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            serverId,
-        );
+        const { actualCount, server } = await dedupeInviteCache(
+            serverPreviewCacheKey(serverId),
+            async () => {
+                const loadedServer = await databases.getDocument(
+                    DATABASE_ID,
+                    SERVERS_COLLECTION_ID,
+                    serverId,
+                );
 
-        // Get actual member count from memberships (single source of truth)
-        const actualCount = await getActualMemberCount(databases, serverId);
+                return {
+                    actualCount: await getActualMemberCount(
+                        databases,
+                        serverId,
+                    ),
+                    server: loadedServer,
+                };
+            },
+        );
 
         return {
             name: server.name as string,

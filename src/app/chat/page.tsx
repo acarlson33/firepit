@@ -186,6 +186,24 @@ function getFirstUnreadItem(items: InboxItem[]) {
     })[0];
 }
 
+type PollOption = {
+    id: string;
+    value: string;
+};
+
+function createPollOption(value = ""): PollOption {
+    return {
+        id:
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        value,
+    };
+}
+
+const NO_OP_FORM_EVENT = {
+    preventDefault() {},
+} as React.FormEvent;
+
 export default function ChatPage() {
     const { userData, loading: _authLoading } = useAuth();
     const userId = userData?.userId ?? null;
@@ -235,7 +253,10 @@ export default function ChatPage() {
     );
     const [pollDialogOpen, setPollDialogOpen] = useState(false);
     const [pollQuestion, setPollQuestion] = useState("");
-    const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+    const [pollOptions, setPollOptions] = useState<PollOption[]>(() => [
+        createPollOption(),
+        createPollOption(),
+    ]);
     const [creatingPoll, setCreatingPoll] = useState(false);
     const messageDensity = "compact";
     const [muteDialogState, setMuteDialogState] = useState<{
@@ -1026,10 +1047,15 @@ export default function ChatPage() {
 
     // Check manageMessages permission when channel changes
     useEffect(() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+
         async function checkPermissions() {
             if (!selectedChannel || !userId || !serversApi.selectedServer) {
-                setCanManageMessages(false);
-                setCanSendMessages(false);
+                if (!signal.aborted) {
+                    setCanManageMessages(false);
+                    setCanSendMessages(false);
+                }
                 return;
             }
 
@@ -1037,17 +1063,28 @@ export default function ChatPage() {
                 (s) => s.$id === serversApi.selectedServer,
             );
             if (selectedServerData?.ownerId === userId) {
-                setCanManageMessages(true);
-                setCanSendMessages(true);
+                if (!signal.aborted) {
+                    setCanManageMessages(true);
+                    setCanSendMessages(true);
+                }
                 return;
             }
 
             try {
                 const res = await fetch(
                     `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`,
+                    { signal },
                 );
+
+                if (signal.aborted) {
+                    return;
+                }
+
                 if (res.ok) {
                     const data = await res.json();
+                    if (signal.aborted) {
+                        return;
+                    }
                     setCanManageMessages(data.manageMessages ?? false);
                     setCanSendMessages(
                         data.canSend ?? data.sendMessages ?? false,
@@ -1056,13 +1093,24 @@ export default function ChatPage() {
                     setCanManageMessages(false);
                     setCanSendMessages(false);
                 }
-            } catch {
+            } catch (error) {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+
                 setCanManageMessages(false);
                 setCanSendMessages(false);
             }
         }
 
         void checkPermissions();
+
+        return () => {
+            controller.abort();
+        };
     }, [
         selectedChannel,
         userId,
@@ -1071,9 +1119,14 @@ export default function ChatPage() {
     ]);
 
     useEffect(() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+
         async function checkServerManagementPermission() {
             if (!userId || !serversApi.selectedServer) {
-                setCanManageServer(false);
+                if (!signal.aborted) {
+                    setCanManageServer(false);
+                }
                 return;
             }
 
@@ -1082,14 +1135,21 @@ export default function ChatPage() {
             );
 
             if (selectedServerData?.ownerId === userId) {
-                setCanManageServer(true);
+                if (!signal.aborted) {
+                    setCanManageServer(true);
+                }
                 return;
             }
 
             try {
                 const response = await fetch(
                     `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}`,
+                    { signal },
                 );
+
+                if (signal.aborted) {
+                    return;
+                }
 
                 if (!response.ok) {
                     setCanManageServer(false);
@@ -1101,15 +1161,30 @@ export default function ChatPage() {
                     administrator?: boolean;
                 };
 
+                if (signal.aborted) {
+                    return;
+                }
+
                 setCanManageServer(
                     Boolean(data.manageServer || data.administrator),
                 );
-            } catch {
+            } catch (error) {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+
                 setCanManageServer(false);
             }
         }
 
         void checkServerManagementPermission();
+
+        return () => {
+            controller.abort();
+        };
     }, [userId, serversApi.selectedServer, serversApi.servers]);
 
     // Notifications - listens for incoming messages and triggers notifications
@@ -1238,7 +1313,7 @@ export default function ChatPage() {
 
     const resetPollDialog = useCallback(() => {
         setPollQuestion("");
-        setPollOptions(["", ""]);
+        setPollOptions([createPollOption(), createPollOption()]);
         setCreatingPoll(false);
     }, []);
 
@@ -1247,28 +1322,30 @@ export default function ChatPage() {
         resetPollDialog();
     }, [resetPollDialog]);
 
-    const updatePollOption = useCallback((index: number, value: string) => {
+    const updatePollOption = useCallback((optionId: string, value: string) => {
         setPollOptions((currentValue) =>
-            currentValue.map((option, optionIndex) =>
-                optionIndex === index ? value : option,
+            currentValue.map((option) =>
+                option.id === optionId ? { ...option, value } : option,
             ),
         );
     }, []);
 
     const addPollOption = useCallback(() => {
         setPollOptions((currentValue) =>
-            currentValue.length < 10 ? [...currentValue, ""] : currentValue,
+            currentValue.length < 10
+                ? [...currentValue, createPollOption()]
+                : currentValue,
         );
     }, []);
 
-    const removePollOption = useCallback((index: number) => {
+    const removePollOption = useCallback((optionId: string) => {
         setPollOptions((currentValue) => {
             if (currentValue.length <= 2) {
                 return currentValue;
             }
 
             return currentValue.filter(
-                (_option, optionIndex) => optionIndex !== index,
+                (option) => option.id !== optionId,
             );
         });
     }, []);
@@ -1276,7 +1353,7 @@ export default function ChatPage() {
     const buildPollCommand = useCallback(() => {
         const sanitizedQuestion = pollQuestion.replaceAll('"', "'").trim();
         const sanitizedOptions = pollOptions
-            .map((option) => option.replaceAll('"', "'").trim())
+            .map((option) => option.value.replaceAll('"', "'").trim())
             .filter((option) => option.length > 0);
 
         if (!sanitizedQuestion) {
@@ -1323,7 +1400,7 @@ export default function ChatPage() {
         setCreatingPoll(true);
         try {
             await send(
-                { preventDefault() {} } as React.FormEvent,
+                NO_OP_FORM_EVENT,
                 undefined,
                 undefined,
                 undefined,
@@ -1338,13 +1415,12 @@ export default function ChatPage() {
     const handleSendWithImage = useCallback(
         async (e?: React.FormEvent) => {
             e?.preventDefault();
-            const submitEvent =
-                e ?? ({ preventDefault() {} } as React.FormEvent);
+            const submitEvent = e ?? NO_OP_FORM_EVENT;
 
             if (
                 !editingMessageId &&
                 selectedChannel &&
-                text.trim() === "/poll"
+                text.trim().toLowerCase() === "/poll"
             ) {
                 if (selectedImage || fileAttachments.length > 0) {
                     toast.error("Polls cannot include image or file attachments.");
@@ -2411,19 +2487,19 @@ export default function ChatPage() {
                                 {pollOptions.map((option, index) => (
                                     <div
                                         className="flex items-center gap-2"
-                                        key={`poll-option-${index}`}
+                                        key={option.id}
                                     >
                                         <Input
                                             disabled={creatingPoll}
                                             maxLength={120}
                                             onChange={(event) => {
                                                 updatePollOption(
-                                                    index,
+                                                    option.id,
                                                     event.target.value,
                                                 );
                                             }}
                                             placeholder={`Option ${index + 1}`}
-                                            value={option}
+                                            value={option.value}
                                         />
                                         <Button
                                             disabled={
@@ -2431,7 +2507,7 @@ export default function ChatPage() {
                                                 pollOptions.length <= 2
                                             }
                                             onClick={() => {
-                                                removePollOption(index);
+                                                removePollOption(option.id);
                                             }}
                                             size="sm"
                                             type="button"

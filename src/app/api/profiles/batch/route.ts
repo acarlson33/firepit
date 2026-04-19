@@ -20,8 +20,26 @@ import { compressedResponse } from "@/lib/api-compression";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { normalizeStatus } from "@/lib/status-normalization";
+import { apiCache } from "@/lib/cache-utils";
 
 const env = getEnvConfig();
+const PROFILES_BATCH_CACHE_TTL_MS = 10 * 1000;
+
+function canUseProfilesBatchCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeProfilesBatchCache<T>(key: string, fetcher: () => Promise<T>) {
+    if (!canUseProfilesBatchCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, PROFILES_BATCH_CACHE_TTL_MS);
+}
+
+function stableIdsKey(userIds: string[]): string {
+    return [...new Set(userIds.filter(Boolean))].sort().join("|");
+}
 
 /**
  * POST /api/profiles/batch
@@ -66,9 +84,9 @@ export async function POST(request: NextRequest) {
         // Deduplicate user IDs
         const uniqueUserIds = [...new Set(userIds)];
 
-        const relationshipMap = await getRelationshipMap(
-            session.$id,
-            uniqueUserIds,
+        const relationshipMap = await dedupeProfilesBatchCache(
+            `api:profiles-batch:relationships:${session.$id}:${stableIdsKey(uniqueUserIds)}`,
+            () => getRelationshipMap(session.$id, uniqueUserIds),
         );
         const visibleUserIds = uniqueUserIds.filter((userId) => {
             if (userId === session.$id) {
@@ -97,24 +115,30 @@ export async function POST(request: NextRequest) {
             visibleUserIds.length === 0
                 ? [{ documents: [] }, { documents: [] }]
                 : await Promise.all([
-                      databases.listDocuments(
-                          env.databaseId,
-                          env.collections.profiles,
-                          [
-                              Query.equal("userId", visibleUserIds),
-                              Query.limit(visibleUserIds.length),
-                          ],
+                      dedupeProfilesBatchCache(
+                          `api:profiles-batch:profiles:${stableIdsKey(visibleUserIds)}`,
+                          () =>
+                              databases.listDocuments(
+                                  env.databaseId,
+                                  env.collections.profiles,
+                                  [
+                                      Query.equal("userId", visibleUserIds),
+                                      Query.limit(visibleUserIds.length),
+                                  ],
+                              ),
                       ),
-                      databases
-                          .listDocuments(
-                              env.databaseId,
-                              env.collections.statuses,
-                              [
-                                  Query.equal("userId", visibleUserIds),
-                                  Query.limit(visibleUserIds.length),
-                              ],
-                          )
-                          .catch(() => ({ documents: [] })),
+                      dedupeProfilesBatchCache(
+                          `api:profiles-batch:statuses:${stableIdsKey(visibleUserIds)}`,
+                          () =>
+                              databases.listDocuments(
+                                  env.databaseId,
+                                  env.collections.statuses,
+                                  [
+                                      Query.equal("userId", visibleUserIds),
+                                      Query.limit(visibleUserIds.length),
+                                  ],
+                              ),
+                      ).catch(() => ({ documents: [] })),
                   ]);
 
         const fetchDuration = Date.now() - fetchStartTime;

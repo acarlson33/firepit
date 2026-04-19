@@ -9,6 +9,7 @@ import { getEffectivePermissions } from "@/lib/permissions";
 import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { apiCache } from "@/lib/cache-utils";
 
 function sortChannels(channels: Channel[]) {
     return [...channels].sort((left, right) => {
@@ -34,6 +35,28 @@ const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+const CHANNELS_ROUTE_CACHE_TTL_MS = 10 * 1000;
+
+function canUseChannelsRouteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeChannelsRouteCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+): Promise<T> {
+    if (!canUseChannelsRouteCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, CHANNELS_ROUTE_CACHE_TTL_MS);
+}
+
+function stableIdsKey(ids: string[]): string {
+    return Array.from(new Set(ids.filter((id) => id.length > 0)))
+        .sort()
+        .join(",");
+}
 
 function normalizeChannelType(value: unknown): Channel["type"] {
     if (
@@ -237,23 +260,27 @@ export async function GET(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const server = await databases.getDocument(
-            env.databaseId,
-            env.collections.servers,
-            serverId,
+        const server = await dedupeChannelsRouteCache(
+            `api:channels:server:${serverId}`,
+            () =>
+                databases.getDocument(
+                    env.databaseId,
+                    env.collections.servers,
+                    serverId,
+                ),
         );
 
         const isServerOwner = String(server.ownerId) === userId;
 
         if (!isServerOwner) {
-            const membership = await databases.listDocuments(
-                env.databaseId,
-                env.collections.memberships,
-                [
-                    Query.equal("serverId", serverId),
-                    Query.equal("userId", userId),
-                    Query.limit(1),
-                ],
+            const membership = await dedupeChannelsRouteCache(
+                `api:channels:membership:${serverId}:${userId}`,
+                () =>
+                    databases.listDocuments(env.databaseId, env.collections.memberships, [
+                        Query.equal("serverId", serverId),
+                        Query.equal("userId", userId),
+                        Query.limit(1),
+                    ]),
             );
 
             if (membership.documents.length === 0) {
@@ -273,10 +300,14 @@ export async function GET(request: NextRequest) {
             queries.push(Query.cursorAfter(cursor));
         }
 
-        const channelsRes = await databases.listDocuments(
-            env.databaseId,
-            env.collections.channels,
-            queries,
+        const channelsRes = await dedupeChannelsRouteCache(
+            `api:channels:list:${serverId}:${limit}:${cursor ?? ""}`,
+            () =>
+                databases.listDocuments(
+                    env.databaseId,
+                    env.collections.channels,
+                    queries,
+                ),
         );
 
         const allChannels: Channel[] = channelsRes.documents.map((doc) => {
@@ -307,19 +338,27 @@ export async function GET(request: NextRequest) {
         if (!isServerOwner && orderedChannels.length > 0) {
             const channelIds = orderedChannels.map((channel) => channel.$id);
             const [roleAssignmentRes, overridesRes] = await Promise.all([
-                databases.listDocuments(
-                    env.databaseId,
-                    ROLE_ASSIGNMENTS_COLLECTION_ID,
-                    [
-                        Query.equal("serverId", serverId),
-                        Query.equal("userId", userId),
-                        Query.limit(1),
-                    ],
+                dedupeChannelsRouteCache(
+                    `api:channels:role-assignment:${serverId}:${userId}`,
+                    () =>
+                        databases.listDocuments(
+                            env.databaseId,
+                            ROLE_ASSIGNMENTS_COLLECTION_ID,
+                            [
+                                Query.equal("serverId", serverId),
+                                Query.equal("userId", userId),
+                                Query.limit(1),
+                            ],
+                        ),
                 ),
-                databases.listDocuments(
-                    env.databaseId,
-                    CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
-                    [Query.equal("channelId", channelIds), Query.limit(1000)],
+                dedupeChannelsRouteCache(
+                    `api:channels:overrides:${serverId}:${stableIdsKey(channelIds)}`,
+                    () =>
+                        databases.listDocuments(
+                            env.databaseId,
+                            CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
+                            [Query.equal("channelId", channelIds), Query.limit(1000)],
+                        ),
                 ),
             ]);
 
@@ -332,14 +371,18 @@ export async function GET(request: NextRequest) {
             const roles: Role[] =
                 roleIds.length > 0
                     ? (
-                          await databases.listDocuments(
-                              env.databaseId,
-                              ROLES_COLLECTION_ID,
-                              [
-                                  Query.equal("serverId", serverId),
-                                  Query.equal("$id", roleIds),
-                                  Query.limit(100),
-                              ],
+                          await dedupeChannelsRouteCache(
+                              `api:channels:roles:${serverId}:${stableIdsKey(roleIds)}`,
+                              () =>
+                                  databases.listDocuments(
+                                      env.databaseId,
+                                      ROLES_COLLECTION_ID,
+                                      [
+                                          Query.equal("serverId", serverId),
+                                          Query.equal("$id", roleIds),
+                                          Query.limit(100),
+                                      ],
+                                  ),
                           )
                       ).documents.map((doc) => {
                           const d = doc as Record<string, unknown>;

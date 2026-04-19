@@ -17,7 +17,7 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const AUDIT_COLLECTION_ID = env.collections.audit || undefined;
 
-export type AuditEvent = {
+type AuditEvent = {
     $id: string;
     action: string;
     targetId: string;
@@ -170,7 +170,7 @@ export async function recordAudit(
     }
 }
 
-export type ListAuditOpts = {
+type ListAuditOpts = {
     limit?: number;
     cursorAfter?: string;
     action?: string;

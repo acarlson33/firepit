@@ -17,7 +17,7 @@ import type { FeatureFlag } from "./types";
 
 export {
     FEATURE_FLAGS,
-    getFeatureFlagDescription,
+
 } from "./feature-flags-definitions";
 export type { FeatureFlagKey } from "./feature-flags-definitions";
 

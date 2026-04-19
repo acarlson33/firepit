@@ -107,7 +107,7 @@ type EncryptionStatus = {
     label: string;
 };
 
-export function getEncryptionStatus(params: {
+function getEncryptionStatus(params: {
     isGroup: boolean;
     dmEncryptionMutualEnabled: boolean;
     dmEncryptionSelfEnabled: boolean;

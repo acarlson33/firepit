@@ -7,8 +7,16 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
+import { apiCache } from "@/lib/cache-utils";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
+import { logger } from "@/lib/newrelic-utils";
+
+const SERVER_MEMBERSHIP_CACHE_TTL_MS = 15 * 1000;
+
+type ListDocumentsResponse = Awaited<
+    ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
+>;
 
 /**
  * GET /api/servers
@@ -34,19 +42,73 @@ export async function GET(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const membershipsResponse = await databases.listDocuments(
-            env.databaseId,
-            env.collections.memberships,
-            [Query.equal("userId", session.$id), Query.limit(1000)],
-        );
+        const loadServerIds = async () => {
+            const pageSize = 100;
+            const maxPages = 50;
+            const serverIds = new Set<string>();
+            let cursorAfter: string | null = null;
+            let pageCount = 0;
 
-        const serverIds = Array.from(
-            new Set(
-                membershipsResponse.documents.map((document) =>
-                    String((document as { serverId?: unknown }).serverId ?? ""),
-                ),
-            ),
-        ).filter((id) => id.length > 0);
+            while (true) {
+                pageCount += 1;
+                if (pageCount > maxPages) {
+                    logger.warn(
+                        "Membership pagination reached configured max pages while resolving user servers",
+                        {
+                            cursorAfter,
+                            maxPages,
+                            pageSize,
+                            userId: session.$id,
+                        },
+                    );
+                    break;
+                }
+
+                const membershipsResponse: ListDocumentsResponse = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.memberships,
+                    [
+                        Query.equal("userId", session.$id),
+                        Query.limit(pageSize),
+                        ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+                    ],
+                );
+
+                for (const document of membershipsResponse.documents) {
+                    const serverId = String(
+                        (document as { serverId?: unknown }).serverId ?? "",
+                    );
+                    if (serverId.length > 0) {
+                        serverIds.add(serverId);
+                    }
+                }
+
+                if (membershipsResponse.documents.length < pageSize) {
+                    break;
+                }
+
+                const lastDocument = membershipsResponse.documents.at(-1);
+                cursorAfter =
+                    lastDocument && typeof lastDocument.$id === "string"
+                        ? lastDocument.$id
+                        : null;
+
+                if (!cursorAfter) {
+                    break;
+                }
+            }
+
+            return Array.from(serverIds);
+        };
+
+        const serverIds =
+            process.env.NODE_ENV === "test"
+                ? await loadServerIds()
+                : await apiCache.dedupe(
+                      `api:servers:membership-server-ids:${session.$id}`,
+                      loadServerIds,
+                      SERVER_MEMBERSHIP_CACHE_TTL_MS,
+                  );
 
         if (serverIds.length === 0) {
             return compressedResponse(
@@ -72,7 +134,7 @@ export async function GET(request: NextRequest) {
             queries.push(Query.cursorAfter(cursor));
         }
 
-        const res = await databases.listDocuments(
+        const res: ListDocumentsResponse = await databases.listDocuments(
             env.databaseId,
             env.collections.servers,
             queries,

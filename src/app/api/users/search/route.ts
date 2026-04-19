@@ -5,6 +5,29 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerSession } from "@/lib/auth-server";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
+import { apiCache } from "@/lib/cache-utils";
+
+const USERS_SEARCH_CACHE_TTL_MS = 10 * 1000;
+
+function canUseUsersSearchCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeUsersSearchCache<T>(key: string, fetcher: () => Promise<T>) {
+    if (!canUseUsersSearchCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, USERS_SEARCH_CACHE_TTL_MS);
+}
+
+function buildRelationshipCacheKey(
+    userId: string,
+    otherUserIds: string[],
+): string {
+    const normalized = [...new Set(otherUserIds.filter(Boolean))].sort();
+    return `api:users-search:relationships:${userId}:${normalized.join("|")}`;
+}
 
 export async function GET(request: Request) {
     try {
@@ -33,18 +56,24 @@ export async function GET(request: Request) {
         const searchTerm = query.trim();
 
         // First try exact userId match
-        let profiles = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            [Query.equal("userId", searchTerm), Query.limit(25)],
+        let profiles = await dedupeUsersSearchCache(
+            `api:users-search:exact:${searchTerm}`,
+            () =>
+                databases.listDocuments(env.databaseId, env.collections.profiles, [
+                    Query.equal("userId", searchTerm),
+                    Query.limit(25),
+                ]),
         );
 
         // If no exact userId match, search by displayName
         if (profiles.documents.length === 0) {
-            profiles = await databases.listDocuments(
-                env.databaseId,
-                env.collections.profiles,
-                [Query.search("displayName", searchTerm), Query.limit(25)],
+            profiles = await dedupeUsersSearchCache(
+                `api:users-search:display-name:${searchTerm.toLowerCase()}`,
+                () =>
+                    databases.listDocuments(env.databaseId, env.collections.profiles, [
+                        Query.search("displayName", searchTerm),
+                        Query.limit(25),
+                    ]),
             );
         }
 
@@ -57,9 +86,10 @@ export async function GET(request: Request) {
                 : undefined,
         }));
 
-        const relationshipMap = await getRelationshipMap(
-            session.$id,
-            rawUsers.map((user) => user.userId),
+        const candidateUserIds = rawUsers.map((user) => user.userId);
+        const relationshipMap = await dedupeUsersSearchCache(
+            buildRelationshipCacheKey(session.$id, candidateUserIds),
+            () => getRelationshipMap(session.$id, candidateUserIds),
         );
         const users = rawUsers.filter((user) => {
             if (user.userId === session.$id) {

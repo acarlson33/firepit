@@ -5,6 +5,7 @@ import { logger } from "@/lib/newrelic-utils";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { apiCache } from "@/lib/cache-utils";
 
 const envConfig = getEnvConfig();
 const DATABASE_ID = envConfig.databaseId;
@@ -14,6 +15,22 @@ const MESSAGES_COLLECTION_ID = envConfig.collections.messages;
 const MEMBERSHIPS_COLLECTION_ID = envConfig.collections.memberships;
 const BANNED_USERS_COLLECTION_ID = envConfig.collections.bannedUsers;
 const MUTED_USERS_COLLECTION_ID = envConfig.collections.mutedUsers;
+const SERVER_STATS_CACHE_TTL_MS = 10 * 1000;
+
+function canUseServerStatsCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeServerStatsCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+): Promise<T> {
+    if (!canUseServerStatsCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, SERVER_STATS_CACHE_TTL_MS);
+}
 
 export async function GET(
     request: Request,
@@ -56,66 +73,61 @@ export async function GET(
             );
         }
 
-        // Count members
-        const membersResult = await databases.listDocuments(
-            DATABASE_ID,
-            MEMBERSHIPS_COLLECTION_ID,
-            [Query.equal("serverId", serverId), Query.limit(1)],
-        );
-        const totalMembers = membersResult.total;
-
-        // Count channels
-        const channelsResult = await databases.listDocuments(
-            DATABASE_ID,
-            CHANNELS_COLLECTION_ID,
-            [Query.equal("serverId", serverId), Query.limit(1)],
-        );
-        const totalChannels = channelsResult.total;
-
-        // Count total messages in this server
-        const messagesResult = await databases.listDocuments(
-            DATABASE_ID,
-            MESSAGES_COLLECTION_ID,
-            [Query.equal("serverId", serverId), Query.limit(1)],
-        );
-        const totalMessages = messagesResult.total;
-
         // Count recent messages (last 24 hours)
         const oneDayAgo = new Date(
             Date.now() - 24 * 60 * 60 * 1000,
         ).toISOString();
-        const recentMessagesResult = await databases.listDocuments(
-            DATABASE_ID,
-            MESSAGES_COLLECTION_ID,
-            [
-                Query.equal("serverId", serverId),
-                Query.greaterThan("$createdAt", oneDayAgo),
-                Query.limit(1),
-            ],
+        const [
+            membersResult,
+            channelsResult,
+            messagesResult,
+            recentMessagesResult,
+            bannedResult,
+            mutedResult,
+        ] = await dedupeServerStatsCache(
+            `api:servers:stats:${serverId}`,
+            () =>
+                Promise.all([
+                    databases.listDocuments(DATABASE_ID, MEMBERSHIPS_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.limit(1),
+                    ]),
+                    databases.listDocuments(DATABASE_ID, CHANNELS_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.limit(1),
+                    ]),
+                    databases.listDocuments(DATABASE_ID, MESSAGES_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.limit(1),
+                    ]),
+                    databases.listDocuments(DATABASE_ID, MESSAGES_COLLECTION_ID, [
+                        Query.equal("serverId", serverId),
+                        Query.greaterThan("$createdAt", oneDayAgo),
+                        Query.limit(1),
+                    ]),
+                    BANNED_USERS_COLLECTION_ID
+                        ? databases.listDocuments(
+                              DATABASE_ID,
+                              BANNED_USERS_COLLECTION_ID,
+                              [Query.equal("serverId", serverId), Query.limit(1)],
+                          )
+                        : Promise.resolve({ total: 0 }),
+                    MUTED_USERS_COLLECTION_ID
+                        ? databases.listDocuments(
+                              DATABASE_ID,
+                              MUTED_USERS_COLLECTION_ID,
+                              [Query.equal("serverId", serverId), Query.limit(1)],
+                          )
+                        : Promise.resolve({ total: 0 }),
+                ]),
         );
+
+        const totalMembers = membersResult.total;
+        const totalChannels = channelsResult.total;
+        const totalMessages = messagesResult.total;
         const recentMessages = recentMessagesResult.total;
-
-        // Count banned users
-        let bannedUsers = 0;
-        if (BANNED_USERS_COLLECTION_ID) {
-            const bannedResult = await databases.listDocuments(
-                DATABASE_ID,
-                BANNED_USERS_COLLECTION_ID,
-                [Query.equal("serverId", serverId), Query.limit(1)],
-            );
-            bannedUsers = bannedResult.total;
-        }
-
-        // Count muted users
-        let mutedUsers = 0;
-        if (MUTED_USERS_COLLECTION_ID) {
-            const mutedResult = await databases.listDocuments(
-                DATABASE_ID,
-                MUTED_USERS_COLLECTION_ID,
-                [Query.equal("serverId", serverId), Query.limit(1)],
-            );
-            mutedUsers = mutedResult.total;
-        }
+        const bannedUsers = bannedResult.total;
+        const mutedUsers = mutedResult.total;
 
         return NextResponse.json(
             {

@@ -31,6 +31,9 @@ const ids = getAppwriteIds();
 const databaseId = ids.databaseId;
 const messagesCollection = ids.messages;
 const channelsCollection = ids.channels;
+const DEFAULT_DISPATCH_LIMIT = 25;
+const SEND_NOW_DISPATCH_LIMIT = 100;
+const MAX_DISPATCH_LIMIT = 100;
 
 export type BackfillResult = {
     updated: number;
@@ -47,6 +50,24 @@ type MessageDoc = AppwriteDoc & {
 type ChannelDoc = AppwriteDoc & {
     serverId?: string;
 };
+
+function validateDispatchLimit(limit: number): number {
+    if (!Number.isFinite(limit)) {
+        throw new Error("Dispatch limit must be a finite number");
+    }
+
+    if (!Number.isInteger(limit)) {
+        throw new Error("Dispatch limit must be an integer");
+    }
+
+    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) {
+        throw new Error(
+            `Dispatch limit must be between 1 and ${String(MAX_DISPATCH_LIMIT)}`,
+        );
+    }
+
+    return limit;
+}
 
 // Smaller helpers to keep complexity below threshold
 async function listMessagesNeedingServerId(limit: number) {
@@ -373,6 +394,7 @@ export async function createAnnouncementAction(
 ): Promise<{
     announcement: Announcement;
     dispatched?: { announcementIds: string[]; dueCount: number };
+    dispatchError?: string;
 }> {
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
@@ -400,13 +422,30 @@ export async function createAnnouncementAction(
         return { announcement };
     }
 
-    const dispatched = await dispatchScheduledAnnouncements(100);
-    return { announcement, dispatched };
+    try {
+        const dispatched = await dispatchScheduledAnnouncements(
+            SEND_NOW_DISPATCH_LIMIT,
+        );
+        return { announcement, dispatched };
+    } catch (error) {
+        logger.error("Dispatch after send_now announcement creation failed", {
+            announcementId: announcement.$id,
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        return {
+            announcement,
+            dispatchError:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to dispatch scheduled announcements",
+        };
+    }
 }
 
 export async function dispatchAnnouncementsAction(
     userId: string,
-    limit = 25,
+    limit = DEFAULT_DISPATCH_LIMIT,
 ): Promise<{ announcementIds: string[]; dueCount: number }> {
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
@@ -420,5 +459,6 @@ export async function dispatchAnnouncementsAction(
         );
     }
 
-    return dispatchScheduledAnnouncements(limit);
+    const validatedLimit = validateDispatchLimit(Math.floor(limit));
+    return dispatchScheduledAnnouncements(validatedLimit);
 }

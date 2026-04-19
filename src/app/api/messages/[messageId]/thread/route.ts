@@ -356,23 +356,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.$id,
         });
 
+        const replyPayload = {
+            ...newReply,
+            ...(normalizedAttachments.length > 0
+                ? { attachments: normalizedAttachments }
+                : {}),
+        };
+
         return NextResponse.json(
             {
                 success: true,
-                message: {
-                    ...newReply,
-                    attachments:
-                        normalizedAttachments.length > 0
-                            ? normalizedAttachments
-                            : undefined,
-                },
-                reply: {
-                    ...newReply,
-                    attachments:
-                        normalizedAttachments.length > 0
-                            ? normalizedAttachments
-                            : undefined,
-                },
+                message: replyPayload,
+                reply: replyPayload,
                 threadId: actualThreadId,
             },
             { status: 201 },

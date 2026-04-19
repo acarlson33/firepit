@@ -226,7 +226,7 @@ export function canManageRole(
  * @param {string} permission - The permission value.
  * @returns {boolean} The return value.
  */
-export function isValidPermission(
+function isValidPermission(
     permission: string,
 ): permission is Permission {
     const validPermissions: Permission[] = [

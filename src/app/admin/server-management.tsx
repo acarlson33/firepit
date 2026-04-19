@@ -91,9 +91,10 @@ export function ServerManagement({
                 (server) => server.defaultOnSignup === true,
             );
             setSelectedDefaultSignupServerId(defaultSignupServer?.$id ?? "");
-            if (result.servers.length > 0 && !selectedServerId) {
-                setSelectedServerId(result.servers[0].$id);
-            }
+            setSelectedServerId(
+                (previousSelectedServerId) =>
+                    previousSelectedServerId || (result.servers[0]?.$id ?? ""),
+            );
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -378,6 +379,7 @@ export function ServerManagement({
                                     isCreatingServer || !serverName.trim()
                                 }
                                 onClick={handleCreateServer}
+                                type="button"
                             >
                                 {isCreatingServer
                                     ? "Creating..."
@@ -552,6 +554,7 @@ export function ServerManagement({
                                         !selectedServerId
                                     }
                                     onClick={handleCreateChannel}
+                                    type="button"
                                 >
                                     {isCreatingChannel
                                         ? "Creating..."

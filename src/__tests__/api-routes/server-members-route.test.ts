@@ -163,4 +163,43 @@ describe("server members route", () => {
         expect(data.members[1].isBanned).toBe(false);
         expect(data.members[1].isMuted).toBe(true);
     });
+
+    it("skips orphan memberships without mutating documents", async () => {
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    { userId: "user-1" },
+                    { userId: "missing-user" },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [{ userId: "user-1", roleIds: ["role-1"] }],
+            })
+            .mockResolvedValueOnce({
+                documents: [{ userId: "user-1" }],
+            })
+            .mockResolvedValueOnce({
+                documents: [],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        userId: "user-1",
+                        displayName: "User One",
+                        avatarUrl: "one.png",
+                    },
+                ],
+            });
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/servers/server-1/members"),
+            { params: Promise.resolve({ serverId: "server-1" }) },
+        );
+
+        const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data.members).toHaveLength(1);
+        expect(data.members[0].userId).toBe("user-1");
+        expect(mockDeleteDocument).not.toHaveBeenCalled();
+    });
 });

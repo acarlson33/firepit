@@ -15,7 +15,7 @@ import {
 
 import type { NavigationItemPreferenceId } from "./types";
 
-export type UserProfile = {
+type UserProfile = {
     $id: string;
     userId: string;
     userName?: string;
@@ -403,7 +403,7 @@ export function getProfileBackgroundUrl(fileId: string): string {
  * @param {string} fileId - The file id value.
  * @returns {string} The return value.
  */
-export function getPredefinedAvatarFrameUrl(fileId: string): string {
+function getPredefinedAvatarFrameUrl(fileId: string): string {
     const env = getEnvConfig();
     return `${env.endpoint}/storage/buckets/${env.buckets.avatarFramesPredefined}/files/${fileId}/view?project=${env.project}`;
 }

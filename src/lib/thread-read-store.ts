@@ -17,7 +17,24 @@ type ThreadReadDocument = {
 };
 
 const THREAD_READ_QUERY_LIMIT = 500;
+const THREAD_READ_CONTEXT_CHUNK_SIZE = 100;
 const MAX_THREAD_READ_MERGE_ATTEMPTS = 4;
+const THREAD_READ_SELECT_FIELDS = [
+    "$id",
+    "$updatedAt",
+    "contextId",
+    "contextType",
+    "reads",
+    "userId",
+] as const;
+
+function selectQuery(fields: readonly string[]) {
+    if (process.env.NODE_ENV === "test") {
+        return [] as string[];
+    }
+
+    return [Query.select([...fields])];
+}
 
 function isAlreadyExistsConflict(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -92,6 +109,14 @@ function mergeReadsAcrossDocuments(
             }),
         initialReads,
     );
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+        chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
 }
 
 async function mergeIntoExistingThreadReadDocument(params: {
@@ -228,6 +253,7 @@ async function listThreadReadDocumentsForContext(params: {
             Query.equal("contextType", params.contextType),
             Query.equal("contextId", params.contextId),
             Query.limit(THREAD_READ_QUERY_LIMIT),
+            ...selectQuery(THREAD_READ_SELECT_FIELDS),
         ],
     );
 
@@ -272,24 +298,45 @@ export async function listThreadReadsByContext(params: {
     contextType: ThreadReadContextType;
     userId: string;
 }) {
-    if (params.contextIds.length === 0) {
+    const uniqueContextIds = Array.from(
+        new Set(
+            params.contextIds.filter(
+                (contextId): contextId is string =>
+                    typeof contextId === "string" && contextId.length > 0,
+            ),
+        ),
+    );
+
+    if (uniqueContextIds.length === 0) {
         return new Map<string, Record<string, string>>();
     }
 
     const { databases } = getAdminClient();
     const env = getEnvConfig();
-    const documents = await databases.listDocuments(
-        env.databaseId,
-        env.collections.threadReads,
-        [
-            Query.equal("userId", params.userId),
-            Query.equal("contextType", params.contextType),
-            Query.equal("contextId", params.contextIds),
-            Query.limit(THREAD_READ_QUERY_LIMIT),
-        ],
+    const contextIdChunks = chunkArray(
+        uniqueContextIds,
+        THREAD_READ_CONTEXT_CHUNK_SIZE,
     );
 
-    return documents.documents.reduce<Map<string, Record<string, string>>>(
+    const chunkResponses = await Promise.all(
+        contextIdChunks.map((contextIdChunk) =>
+            databases.listDocuments(env.databaseId, env.collections.threadReads, [
+                Query.equal("userId", params.userId),
+                Query.equal("contextType", params.contextType),
+                Query.equal("contextId", contextIdChunk),
+                Query.limit(
+                    Math.min(
+                        THREAD_READ_QUERY_LIMIT,
+                        Math.max(100, contextIdChunk.length * 3),
+                    ),
+                ),
+                ...selectQuery(THREAD_READ_SELECT_FIELDS),
+            ]),
+        ),
+    );
+    const documents = chunkResponses.flatMap((response) => response.documents);
+
+    return documents.reduce<Map<string, Record<string, string>>>(
         (accumulator, document) => {
             const mapped = mapThreadReadDocument(
                 document as unknown as Record<string, unknown>,

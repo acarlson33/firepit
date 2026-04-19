@@ -62,7 +62,7 @@ function validateJustification(justification: string): string | null {
     return null;
 }
 
-export type SubmitReportResult =
+type SubmitReportResult =
     | { success: true; report: Report }
     | { success: false; error: string };
 
@@ -135,11 +135,11 @@ export async function submitReportAction(
     }
 }
 
-export type CanReportResult =
+type CanReportResult =
     | { canReport: true }
     | { canReport: false; reason: string };
 
-export async function getCanReportAction(
+async function getCanReportAction(
     reportedUserId: string,
 ): Promise<CanReportResult> {
     try {

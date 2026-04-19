@@ -79,6 +79,8 @@ vi.mock("node-appwrite", () => ({
     Query: {
         equal: (field: string, value: string | string[]) =>
             `equal(${field},${JSON.stringify(value)})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
         limit: (n: number) => `limit(${n})`,
     },
 }));

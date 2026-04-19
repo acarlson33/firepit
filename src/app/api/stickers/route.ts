@@ -5,10 +5,6 @@ import { AuthError, requireAuth } from "@/lib/auth-server";
 import { getBuiltinStickerPacks, isGifStickerSupportEnabled } from "@/lib/gif-sticker";
 import { setTransactionName, trackApiCall } from "@/lib/newrelic-utils";
 
-function jsonResponse(data: unknown, init?: ResponseInit) {
-    return NextResponse.json(data, init);
-}
-
 export async function GET(request: NextRequest) {
     const startTime = Date.now();
 
@@ -16,7 +12,8 @@ export async function GET(request: NextRequest) {
         setTransactionName("GET /api/stickers");
 
         if (!(await isGifStickerSupportEnabled())) {
-            return jsonResponse(
+            trackApiCall("/api/stickers", "GET", 404, Date.now() - startTime);
+            return NextResponse.json(
                 { error: "GIF/sticker support is disabled" },
                 { status: 404 },
             );
@@ -45,14 +42,15 @@ export async function GET(request: NextRequest) {
             },
         );
 
-        return jsonResponse({ packs: filteredPacks });
+        return NextResponse.json({ packs: filteredPacks });
     } catch (error) {
         if (error instanceof AuthError) {
-            return jsonResponse({ error: error.message }, { status: 401 });
+            trackApiCall("/api/stickers", "GET", 401, Date.now() - startTime);
+            return NextResponse.json({ error: error.message }, { status: 401 });
         }
 
         trackApiCall("/api/stickers", "GET", 500, Date.now() - startTime);
-        return jsonResponse(
+        return NextResponse.json(
             { error: "Failed to list stickers" },
             { status: 500 },
         );

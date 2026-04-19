@@ -83,6 +83,10 @@ function clearMocks() {
     (globalThis as any).__mockUserRoles = {};
 }
 
+function clearEnvVar(envName: string) {
+    Reflect.deleteProperty(process.env, envName);
+}
+
 describe("auth-server", () => {
     beforeEach(() => {
         clearMocks();
@@ -90,12 +94,12 @@ describe("auth-server", () => {
         const env = process.env as Record<string, string>;
         env.APPWRITE_ENDPOINT = "http://localhost";
         env.APPWRITE_PROJECT_ID = "test-project";
-        delete env.SYSTEM_SENDER_USER_ID;
+        clearEnvVar("SYSTEM_SENDER_USER_ID");
     });
 
     describe("getServerSession", () => {
         it("should return null when no endpoint configured", async () => {
-            delete (process.env as Record<string, string>).APPWRITE_ENDPOINT;
+            clearEnvVar("APPWRITE_ENDPOINT");
 
             const { getServerSession } = await import("../lib/auth-server");
 
@@ -104,7 +108,7 @@ describe("auth-server", () => {
         });
 
         it("should return null when no project configured", async () => {
-            delete (process.env as Record<string, string>).APPWRITE_PROJECT_ID;
+            clearEnvVar("APPWRITE_PROJECT_ID");
 
             const { getServerSession } = await import("../lib/auth-server");
 

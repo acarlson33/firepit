@@ -132,7 +132,7 @@ export function ChatPinnedMessagesContent({
                                                     currentUserId={null}
                                                     messageId={message.id}
                                                     poll={message.poll}
-                                                    readOnly={true}
+                                                    readOnly
                                                 />
                                             ) : null}
                                             {message.imageUrl ? (

@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
+import type { Models } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { getActualMemberCount } from "@/lib/membership-count";
-import {
-	mapServerDocument,
-	normalizeServerVisibility,
-} from "@/lib/server-metadata";
+import { getActualMemberCounts } from "@/lib/membership-count";
+import { mapServerDocument } from "@/lib/server-metadata";
+
+type ServerDocument = Models.Document & {
+	description?: string | null;
+	isPublic?: boolean;
+	name: string;
+	ownerId: string;
+};
+
+function isPublicServerDocument(document: Models.Document): document is ServerDocument {
+	const candidate = document as Record<string, unknown>;
+	return (
+		document != null &&
+		candidate.isPublic === true &&
+		typeof candidate.name === "string" &&
+		typeof candidate.ownerId === "string"
+	);
+}
 
 /**
  * GET /api/servers/public
@@ -25,21 +40,20 @@ export async function GET() {
 		);
 
 		const publicServerDocuments = response.documents.filter(
-			(document) =>
-				normalizeServerVisibility(
-					(document as Record<string, unknown>).isPublic
-				),
+			isPublicServerDocument,
+		);
+
+		const memberCountsByServerId = await getActualMemberCounts(
+			databases,
+			publicServerDocuments.map((doc) => String(doc.$id)),
 		);
 
 		// Enrich servers with actual member counts from memberships
-		const servers = await Promise.all(
-			publicServerDocuments.map(async (doc) => {
-				const actualCount = await getActualMemberCount(databases, doc.$id);
-				return mapServerDocument(
-					doc as unknown as Record<string, unknown>,
-					actualCount,
-				);
-			})
+		const servers = publicServerDocuments.map((doc) =>
+			mapServerDocument(
+				doc,
+				memberCountsByServerId.get(String(doc.$id)) ?? 0,
+			),
 		);
 
 		return NextResponse.json({ servers });

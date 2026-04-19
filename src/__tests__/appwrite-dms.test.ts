@@ -330,6 +330,7 @@ vi.mock("appwrite", () => {
                 `equal("${attr}","${Array.isArray(val) ? val.join(QUERY_VALUE_SEPARATOR) : val}")`,
             contains: (attr: string, val: string | string[]) =>
                 `contains("${attr}",${JSON.stringify(Array.isArray(val) ? val : [val])})`,
+            select: (attrs: string[]) => `select(${JSON.stringify(attrs)})`,
             orderDesc: (attr: string) => `orderDesc("${attr}")`,
             limit: (num: number) => `limit(${num})`,
             cursorAfter: (id: string) => `cursorAfter("${id}")`,

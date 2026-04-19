@@ -18,6 +18,29 @@ type RouteContext = {
     }>;
 };
 
+function isNotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const code = "code" in error ? Number(error.code) : Number.NaN;
+    if (code === 404) {
+        return true;
+    }
+
+    const type = "type" in error ? String(error.type).toLowerCase() : "";
+    if (type.includes("not_found") || type.includes("document_not_found")) {
+        return true;
+    }
+
+    const message =
+        "message" in error ? String(error.message).toLowerCase() : "";
+    return (
+        message.includes("not found") ||
+        message.includes("document with the requested id could not be found")
+    );
+}
+
 export async function POST(request: NextRequest, context: RouteContext) {
     const user = await getServerSession();
     if (!user) {
@@ -28,9 +51,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { messageId } = await context.params;
-    const body = await request.json();
+    let body: unknown;
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json(
+            { error: "Invalid JSON request body" },
+            { status: 400 },
+        );
+    }
+
+
+    const reqBody = body as { optionId?: unknown };
     const optionId =
-        typeof body.optionId === "string" ? body.optionId.trim() : "";
+        typeof reqBody.optionId === "string"
+            ? reqBody.optionId.trim()
+            : "";
 
     if (!optionId) {
         return NextResponse.json(
@@ -42,14 +78,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    const message = await databases.getDocument(
-        env.databaseId,
-        env.collections.messages,
-        messageId,
-    );
+    let message: Awaited<ReturnType<typeof databases.getDocument>>;
+    try {
+        message = await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        );
+    } catch (error) {
+        if (isNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Message not found" },
+                { status: 404 },
+            );
+        }
 
+        throw error;
+    }
+
+    const messageRecord = message as Record<string, unknown>;
     const channelId =
-        typeof message.channelId === "string" ? message.channelId : null;
+        typeof messageRecord.channelId === "string"
+            ? messageRecord.channelId
+            : null;
     if (!channelId) {
         return NextResponse.json(
             { error: "Poll voting is only supported for channel messages." },
@@ -93,14 +144,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         ],
     );
 
-    const existingVote = existingVoteResponse.documents[0];
+    const existingVote = existingVoteResponse.documents.at(0);
     const voteTimestamp = new Date().toISOString();
 
     if (existingVote) {
         await databases.updateDocument(
             env.databaseId,
             env.collections.pollVotes,
-            String(existingVote.$id),
+            existingVote.$id,
             {
                 optionId,
                 votedAt: voteTimestamp,

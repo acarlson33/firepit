@@ -152,6 +152,14 @@ components:
 
         Server:
             type: object
+            required:
+                - $id
+                - name
+                - ownerId
+                - isPublic
+                - defaultOnSignup
+                - memberCount
+                - $createdAt
             properties:
                 $id:
                     type: string
@@ -161,16 +169,21 @@ components:
                     type: string
                 iconFileId:
                     type: string
+                    nullable: true
                 iconUrl:
                     type: string
                     format: uri
+                    nullable: true
                 bannerFileId:
                     type: string
+                    nullable: true
                 bannerUrl:
                     type: string
                     format: uri
+                    nullable: true
                 description:
                     type: string
+                    nullable: true
                 isPublic:
                     type: boolean
                 defaultOnSignup:
@@ -204,6 +217,17 @@ components:
                 $createdAt:
                     type: string
                     format: date-time
+
+        ServerMinimal:
+            type: object
+            required:
+                - $id
+                - name
+            properties:
+                $id:
+                    type: string
+                name:
+                    type: string
 
         Channel:
             type: object
@@ -757,6 +781,7 @@ paths:
                         application/json:
                             schema:
                                 type: object
+                                required: [success, server]
                                 properties:
                                     success:
                                         type: boolean
@@ -825,20 +850,17 @@ paths:
                 - sessionCookie: []
             responses:
                 "200":
-                    description: Current signup default server (admin only)
+                    description: Current signup default server (admin only). Returns minimal server metadata for admin selectors.
                     content:
                         application/json:
                             schema:
                                 type: object
+                                required: [server]
                                 properties:
                                     server:
                                         nullable: true
-                                        type: object
-                                        properties:
-                                            $id:
-                                                type: string
-                                            name:
-                                                type: string
+                                        allOf:
+                                            - $ref: "#/components/schemas/ServerMinimal"
                 "401":
                     description: Unauthorized
                     content:
@@ -856,6 +878,9 @@ paths:
         patch:
             tags: [Servers]
             summary: Update server customization and visibility settings
+            x-roles:
+                - server owner or member with manageServer
+                - instance admin required when updating defaultOnSignup
             security:
                 - sessionCookie: []
             parameters:
@@ -880,6 +905,7 @@ paths:
                                     type: boolean
                                 defaultOnSignup:
                                     type: boolean
+                                    description: Instance-wide signup default toggle. Requires instance admin privileges and returns 403 for non-admin callers.
                                 iconFileId:
                                     type: string
                                     nullable: true
@@ -893,6 +919,7 @@ paths:
                         application/json:
                             schema:
                                 type: object
+                                required: [server]
                                 properties:
                                     server:
                                         $ref: "#/components/schemas/Server"
@@ -909,7 +936,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Error"
                 "403":
-                    description: Missing permissions
+                    description: Missing permissions. Requires server management permission; defaultOnSignup updates additionally require instance admin.
                     content:
                         application/json:
                             schema:
@@ -975,6 +1002,7 @@ paths:
                                             $ref: "#/components/schemas/ServerMember"
                                     nextCursor:
                                         type: string
+                                        nullable: true
 
     /api/servers/{serverId}/permissions:
         get:
@@ -1132,6 +1160,7 @@ paths:
                                             $ref: "#/components/schemas/Channel"
                                     nextCursor:
                                         type: string
+                                        nullable: true
 
     /api/channels/{channelId}:
         patch:

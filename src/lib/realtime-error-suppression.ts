@@ -1,6 +1,6 @@
 import { logger } from "@/lib/client-logger";
 
-export type RealtimeSubscription =
+type RealtimeSubscription =
     | {
           close: () => Promise<void> | void;
       }
@@ -156,7 +156,7 @@ function defaultSuppressionPredicate(
  * Suppress known noisy Appwrite websocket console errors while performing
  * intentional realtime teardown operations.
  */
-export async function withSuppressedRealtimeCloseErrors<T>(
+async function withSuppressedRealtimeCloseErrors<T>(
     operation: () => Promise<T>,
     options?: {
         marker?: string;

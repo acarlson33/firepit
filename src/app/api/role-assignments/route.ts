@@ -48,16 +48,28 @@ async function updateRoleMemberCount(
 ): Promise<void> {
     try {
         const databases = getDatabases();
-        // Count members with this role
-        const assignments = await databases.listDocuments(
-            databaseId,
-            roleAssignmentsCollectionId,
-            [Query.equal("serverId", serverId), Query.limit(1000)],
-        );
-
-        const memberCount = assignments.documents.filter((doc) =>
-            (doc.roleIds as string[]).includes(roleId),
-        ).length;
+        const canQueryContains = typeof Query.contains === "function";
+        const memberCount = canQueryContains
+            ? (
+                  await databases.listDocuments(
+                      databaseId,
+                      roleAssignmentsCollectionId,
+                      [
+                          Query.equal("serverId", serverId),
+                          Query.contains("roleIds", [roleId]),
+                          Query.limit(1),
+                      ],
+                  )
+              ).total
+            : (
+                  await databases.listDocuments(
+                      databaseId,
+                      roleAssignmentsCollectionId,
+                      [Query.equal("serverId", serverId), Query.limit(1000)],
+                  )
+              ).documents.filter((doc) =>
+                  (doc.roleIds as string[]).includes(roleId),
+              ).length;
 
         // Update role document
         await databases.updateDocument(databaseId, rolesCollectionId, roleId, {
@@ -77,6 +89,7 @@ async function updateRoleMemberCount(
 export async function GET(request: NextRequest) {
     try {
         const databases = getDatabases();
+        const canQueryContains = typeof Query.contains === "function";
         const { searchParams } = new URL(request.url);
         const serverId = searchParams.get("serverId");
         const roleId = searchParams.get("roleId");
@@ -97,16 +110,22 @@ export async function GET(request: NextRequest) {
         const queries = [Query.equal("serverId", serverId), Query.limit(100)];
 
         if (roleId) {
-            // Get members with a specific role
-            const assignments = await databases.listDocuments(
-                databaseId,
-                roleAssignmentsCollectionId,
-                queries,
-            );
-
-            // Filter for assignments that include this role
-            const roleAssignments = assignments.documents.filter((doc) =>
-                (doc.roleIds as string[]).includes(roleId),
+            const roleAssignments = (
+                await databases.listDocuments(
+                    databaseId,
+                    roleAssignmentsCollectionId,
+                    canQueryContains
+                        ? [
+                              Query.equal("serverId", serverId),
+                              Query.contains("roleIds", [roleId]),
+                              Query.limit(100),
+                          ]
+                        : queries,
+                )
+            ).documents.filter((doc) =>
+                canQueryContains
+                    ? true
+                    : (doc.roleIds as string[]).includes(roleId),
             );
 
             const profileUserIds = roleAssignments.map((assignment) =>

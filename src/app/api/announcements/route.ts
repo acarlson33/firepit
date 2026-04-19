@@ -84,7 +84,7 @@ function authErrorResponse(error: AuthError): NextResponse {
     return NextResponse.json({ success: false, error: error.message }, { status });
 }
 
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<NextResponse> {
     try {
         if (!(await isInstanceAnnouncementsEnabled())) {
             return NextResponse.json(
@@ -131,7 +131,7 @@ export async function GET(request: Request) {
     }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
     try {
         if (!(await isInstanceAnnouncementsEnabled())) {
             return NextResponse.json(
@@ -227,9 +227,12 @@ export async function POST(request: Request) {
         }
 
         if (error instanceof Error) {
+            logger.error("Failed to create announcement", {
+                error: error.message,
+            });
             return NextResponse.json(
-                { success: false, error: error.message },
-                { status: 400 },
+                { success: false, error: "An unexpected error occurred" },
+                { status: 500 },
             );
         }
 

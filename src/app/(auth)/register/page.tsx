@@ -66,7 +66,10 @@ function RegisterFormContent() {
                 router.push(destination as any);
             } else {
                 if (result.verificationRequired) {
-                    toast.success(result.error);
+                    const verificationMessage =
+                        result.message ||
+                        "Verification required. Check your inbox for a verification link.";
+                    toast.success(verificationMessage);
                     router.push("/login");
                 } else {
                     toast.error(result.error);

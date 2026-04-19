@@ -10,6 +10,19 @@
 export async function register() {
     // Only initialize New Relic on the Node.js runtime (not Edge runtime)
     if (process.env.NEXT_RUNTIME === "nodejs") {
+        try {
+            const { registerPostHogProcessHandlers } = await import(
+                "./src/lib/posthog-server"
+            );
+            registerPostHogProcessHandlers();
+        } catch (error) {
+            // PostHog runtime hooks are optional and should not block startup.
+            console.error(
+                "[PostHog] Failed to register process handlers:",
+                error instanceof Error ? error.message : String(error),
+            );
+        }
+
         const newrelicLicenseKey = process.env.NEW_RELIC_LICENSE_KEY;
         const newrelicAppName = process.env.NEW_RELIC_APP_NAME;
 
