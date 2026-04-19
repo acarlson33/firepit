@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
-import { loginAction } from "./actions";
+import { loginAction, resendVerificationAction } from "./actions";
 
 function LoginFormContent() {
     const router = useRouter();
@@ -19,6 +19,28 @@ function LoginFormContent() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
+    const [resendingVerification, setResendingVerification] = useState(false);
+    const notifiedVerificationStatusRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        const verifiedStatus = searchParams.get("verified");
+        if (
+            !verifiedStatus ||
+            notifiedVerificationStatusRef.current === verifiedStatus
+        ) {
+            return;
+        }
+
+        notifiedVerificationStatusRef.current = verifiedStatus;
+
+        if (verifiedStatus === "1") {
+            toast.success("Email verified. You can now sign in.");
+        }
+
+        if (verifiedStatus === "0") {
+            toast.error("Email verification link is invalid or expired.");
+        }
+    }, [searchParams]);
 
     const redirectPath = searchParams.get("redirect");
     const destination =
@@ -63,6 +85,37 @@ function LoginFormContent() {
         }
     }
 
+    async function onResendVerification() {
+        if (!email || !password) {
+            toast.error(
+                "Enter your email and password to resend verification.",
+            );
+            return;
+        }
+
+        setResendingVerification(true);
+        try {
+            const formData = new FormData();
+            formData.set("email", email);
+            formData.set("password", password);
+            const result = await resendVerificationAction(formData);
+            if (result.success) {
+                toast.success(result.message);
+                return;
+            }
+
+            toast.error(result.error);
+        } catch (err) {
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : "Failed to resend verification email.";
+            toast.error(message);
+        } finally {
+            setResendingVerification(false);
+        }
+    }
+
     return (
         <div className="container mx-auto max-w-md px-4 py-8">
             <div className="mb-6 space-y-2">
@@ -99,6 +152,18 @@ function LoginFormContent() {
                 </div>
                 <Button disabled={loading} type="submit">
                     {loading ? "Signing in..." : "Sign in"}
+                </Button>
+                <Button
+                    disabled={loading || resendingVerification}
+                    onClick={() => {
+                        void onResendVerification();
+                    }}
+                    type="button"
+                    variant="outline"
+                >
+                    {resendingVerification
+                        ? "Resending..."
+                        : "Resend verification email"}
                 </Button>
             </form>
             <p className="mt-6 text-sm text-muted-foreground">

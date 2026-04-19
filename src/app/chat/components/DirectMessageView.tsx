@@ -907,7 +907,7 @@ export function DirectMessageView({
                                                                     removed
                                                                 </span>
                                                             ) : message.text ? (
-                                                                <p
+                                                                <div
                                                                     className={
                                                                         compactMessages
                                                                             ? "text-xs"
@@ -931,7 +931,7 @@ export function DirectMessageView({
                                                                             message.text
                                                                         }
                                                                     />
-                                                                </p>
+                                                                </div>
                                                             ) : null}
                                                         </div>
                                                     </div>
