@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { AuthError, requireAuth } from "@/lib/auth-server";
-import { getBuiltinStickerPacks, isGifStickerSupportEnabled } from "@/lib/gif-sticker";
+import { getBuiltinStickerPacks } from "@/lib/gif-sticker";
 import { setTransactionName, trackApiCall } from "@/lib/newrelic-utils";
 
 export async function GET(request: NextRequest) {
@@ -10,14 +10,6 @@ export async function GET(request: NextRequest) {
 
     try {
         setTransactionName("GET /api/stickers");
-
-        if (!(await isGifStickerSupportEnabled())) {
-            trackApiCall("/api/stickers", "GET", 404, Date.now() - startTime);
-            return NextResponse.json(
-                { error: "GIF/sticker support is disabled" },
-                { status: 404 },
-            );
-        }
 
         await requireAuth();
 

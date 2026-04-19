@@ -1,4 +1,3 @@
-import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import type { GifSearchItem, StickerPack } from "@/lib/types";
 
 type TenorContentFilter = "off" | "low" | "medium" | "high";
@@ -281,19 +280,11 @@ export function mapGiphyResults(params: {
 }
 
 export async function isGifStickerSupportEnabled(): Promise<boolean> {
-    try {
-        return await getFeatureFlag(FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT);
-    } catch {
-        return false;
-    }
+    return true;
 }
 
 export async function isGifSearchEnabled(): Promise<boolean> {
-    try {
-        return await getFeatureFlag(FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH);
-    } catch {
-        return false;
-    }
+    return true;
 }
 
 export function getTenorConfig() {

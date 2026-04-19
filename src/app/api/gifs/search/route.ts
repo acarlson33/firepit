@@ -7,8 +7,6 @@ import {
     getGifProvider,
     getGiphyConfig,
     getTenorConfig,
-    isGifSearchEnabled,
-    isGifStickerSupportEnabled,
     mapGiphyResults,
     mapTenorResults,
     parseGifSearchParams,
@@ -56,20 +54,6 @@ export async function GET(request: NextRequest) {
 
     try {
         setTransactionName("GET /api/gifs/search");
-
-        if (!(await isGifStickerSupportEnabled())) {
-            return jsonResponse(
-                { error: "GIF/sticker support is disabled" },
-                { status: 404 },
-            );
-        }
-
-        if (!(await isGifSearchEnabled())) {
-            return jsonResponse(
-                { error: "GIF search is disabled" },
-                { status: 404 },
-            );
-        }
 
         const user = await requireAuth();
 

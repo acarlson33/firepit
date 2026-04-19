@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import {
     createAnnouncement,
-    isInstanceAnnouncementsEnabled,
     listAnnouncements,
 } from "@/lib/appwrite-announcements";
 import type {
@@ -98,16 +97,6 @@ function authErrorResponse(error: AuthError): NextResponse {
 
 export async function GET(request: Request): Promise<NextResponse> {
     try {
-        if (!(await isInstanceAnnouncementsEnabled())) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: "Instance announcements are disabled",
-                },
-                { status: 404 },
-            );
-        }
-
         await requireAdmin();
 
         const url = new URL(request.url);
@@ -145,16 +134,6 @@ export async function GET(request: Request): Promise<NextResponse> {
 
 export async function POST(request: Request): Promise<NextResponse> {
     try {
-        if (!(await isInstanceAnnouncementsEnabled())) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: "Instance announcements are disabled",
-                },
-                { status: 404 },
-            );
-        }
-
         const { user } = await requireAdmin();
 
         let payload: AnnouncementPayload;
