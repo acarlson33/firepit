@@ -56,6 +56,7 @@ describe("GET /api/servers/default-signup", () => {
         const response = await GET();
 
         expect(response.status).toBe(403);
+        expect(mockListDocuments).not.toHaveBeenCalled();
     });
 
     it("returns 403 for moderators when not admin", async () => {

@@ -56,10 +56,6 @@ const ATTACHMENT_SELECT_FIELDS = [
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 
 function selectQuery(fields: readonly string[]) {
-    if (process.env.NODE_ENV === "test") {
-        return [] as string[];
-    }
-
     return [Query.select([...fields])];
 }
 

@@ -356,8 +356,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.$id,
         });
 
+        const normalizedMentions = (() => {
+            if (Array.isArray(newReply.mentions)) {
+                return newReply.mentions;
+            }
+
+            if (typeof newReply.mentions !== "string") {
+                return undefined;
+            }
+
+            try {
+                const parsedMentions = JSON.parse(newReply.mentions);
+                return Array.isArray(parsedMentions) ? parsedMentions : undefined;
+            } catch {
+                return undefined;
+            }
+        })();
+
         const replyPayload = {
             ...newReply,
+            ...(normalizedMentions ? { mentions: normalizedMentions } : {}),
             ...(normalizedAttachments.length > 0
                 ? { attachments: normalizedAttachments }
                 : {}),

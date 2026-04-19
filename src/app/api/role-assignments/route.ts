@@ -17,6 +17,91 @@ function getDatabases() {
     return getServerClient().databases;
 }
 
+type QueryWithPagination = typeof Query & {
+    cursorAfter?: (cursor: string) => string;
+    orderAsc?: (field: string) => string;
+};
+
+async function listRoleAssignmentsForServer(params: {
+    canQueryContains: boolean;
+    databases: ReturnType<typeof getDatabases>;
+    pageSize: number;
+    roleId?: string;
+    serverId: string;
+}) {
+    const { canQueryContains, databases, pageSize, roleId, serverId } = params;
+    const documents: Array<Record<string, unknown>> = [];
+    const queryWithPagination = Query as QueryWithPagination;
+    const supportsCursorAfter =
+        typeof queryWithPagination.cursorAfter === "function";
+    let cursorAfter: string | null = null;
+
+    while (true) {
+        const pageQueries = [
+            Query.equal("serverId", serverId),
+            ...(roleId && canQueryContains
+                ? [Query.contains("roleIds", [roleId])]
+                : []),
+            ...(typeof queryWithPagination.orderAsc === "function"
+                ? [queryWithPagination.orderAsc("$id")]
+                : []),
+            Query.limit(pageSize),
+            ...(cursorAfter && supportsCursorAfter
+                ? [queryWithPagination.cursorAfter(cursorAfter)]
+                : []),
+        ];
+
+        const response = await databases.listDocuments(
+            databaseId,
+            roleAssignmentsCollectionId,
+            pageQueries,
+        );
+
+        if (roleId && !canQueryContains) {
+            for (const document of response.documents) {
+                const roleIds = Array.isArray(document.roleIds)
+                    ? (document.roleIds as string[])
+                    : [];
+                if (roleIds.includes(roleId)) {
+                    documents.push(document as Record<string, unknown>);
+                }
+            }
+        } else {
+            for (const document of response.documents) {
+                documents.push(document as Record<string, unknown>);
+            }
+        }
+
+        if (response.documents.length < pageSize) {
+            break;
+        }
+
+        if (!supportsCursorAfter) {
+            logger.warn(
+                "Role assignment pagination cursor helper unavailable; stopping after first full page",
+                {
+                    pageSize,
+                    roleId,
+                    serverId,
+                },
+            );
+            break;
+        }
+
+        const lastDocument = response.documents.at(-1);
+        cursorAfter =
+            lastDocument && typeof lastDocument.$id === "string"
+                ? lastDocument.$id
+                : null;
+
+        if (!cursorAfter) {
+            break;
+        }
+    }
+
+    return documents;
+}
+
 async function requireManageRolesAccess(serverId: string) {
     const databases = getDatabases();
     const session = await getServerSession();
@@ -62,13 +147,13 @@ async function updateRoleMemberCount(
                   )
               ).total
             : (
-                  await databases.listDocuments(
-                      databaseId,
-                      roleAssignmentsCollectionId,
-                      [Query.equal("serverId", serverId), Query.limit(1000)],
-                  )
-              ).documents.filter((doc) =>
-                  (doc.roleIds as string[]).includes(roleId),
+                  await listRoleAssignmentsForServer({
+                      canQueryContains,
+                      databases,
+                      pageSize: 100,
+                      roleId,
+                      serverId,
+                  })
               ).length;
 
         // Update role document
@@ -107,26 +192,19 @@ export async function GET(request: NextRequest) {
             return authError;
         }
 
-        const queries = [Query.equal("serverId", serverId), Query.limit(100)];
+        const queries = [
+            Query.equal("serverId", serverId),
+            Query.limit(100),
+        ];
 
         if (roleId) {
-            const roleAssignments = (
-                await databases.listDocuments(
-                    databaseId,
-                    roleAssignmentsCollectionId,
-                    canQueryContains
-                        ? [
-                              Query.equal("serverId", serverId),
-                              Query.contains("roleIds", [roleId]),
-                              Query.limit(100),
-                          ]
-                        : queries,
-                )
-            ).documents.filter((doc) =>
-                canQueryContains
-                    ? true
-                    : (doc.roleIds as string[]).includes(roleId),
-            );
+            const roleAssignments = await listRoleAssignmentsForServer({
+                canQueryContains,
+                databases,
+                pageSize: 100,
+                roleId,
+                serverId,
+            });
 
             const profileUserIds = roleAssignments.map((assignment) =>
                 String(assignment.userId),

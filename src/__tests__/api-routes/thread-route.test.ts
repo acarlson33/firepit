@@ -164,6 +164,8 @@ describe("Thread route", () => {
     });
 
     it("POST validates attachment payloads", async () => {
+        mockGetDocument.mockResolvedValue(parentMessage);
+
         const request = new NextRequest(
             "http://localhost/api/messages/parent-1/thread",
             {

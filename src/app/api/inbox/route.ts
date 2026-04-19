@@ -25,6 +25,8 @@ const INBOX_ROUTE_CACHE_TTL_MS = 5 * 1000;
 const INBOX_CACHE_EPOCH_TTL_MS = 5 * 60 * 1000;
 const INBOX_CACHE_EPOCH_SWEEP_INTERVAL_MS = 30 * 1000;
 const MAX_INBOX_CACHE_EPOCH_ENTRIES = 2000;
+// Process-local epoch tracking: PATCH bumps only invalidate this instance.
+// Cross-instance cache coherence is bounded by INBOX_ROUTE_CACHE_TTL_MS.
 const inboxCacheEpochByUser = new Map<
     string,
     { epoch: number; expiresAt: number }
@@ -226,6 +228,8 @@ function getInboxCacheEpoch(userId: string): number {
         return 0;
     }
 
+    // Intentionally refresh the inboxCacheEpochByUser entry for userId to the end
+    // of Map iteration order (LRU pattern). This read mutates the Map.
     inboxCacheEpochByUser.delete(userId);
     inboxCacheEpochByUser.set(userId, entry);
     return entry.epoch;
@@ -519,18 +523,18 @@ export async function PATCH(request: NextRequest) {
             limit: Number.POSITIVE_INFINITY,
             userId: session.$id,
         });
-                const scopedItems =
-                        contextKind && contextId
-                                ? inbox.items.filter(
-                                            (item) =>
-                                                    item.contextKind === contextKind &&
-                                                    item.contextId === contextId,
-                                    )
-                                : contextKind
-                                    ? inbox.items.filter(
-                                                (item) => item.contextKind === contextKind,
-                                        )
-                                    : inbox.items;
+        let scopedItems = inbox.items;
+        if (contextKind && contextId) {
+            scopedItems = inbox.items.filter(
+                (item) =>
+                    item.contextKind === contextKind &&
+                    item.contextId === contextId,
+            );
+        } else if (contextKind) {
+            scopedItems = inbox.items.filter(
+                (item) => item.contextKind === contextKind,
+            );
+        }
 
         const mentionItemIds = scopedItems
             .filter((item) => item.kind === "mention")

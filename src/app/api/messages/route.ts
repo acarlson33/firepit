@@ -190,6 +190,10 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
+        const hasValidMentions =
+            !creatingPoll &&
+            Array.isArray(mentions) &&
+            mentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
         if (creatingPoll) {
@@ -251,7 +255,7 @@ export async function POST(request: NextRequest) {
             hasImage: !!imageFileId,
             hasAttachments: normalizedAttachments.length > 0,
             isReply: !!replyToId,
-            hasMentions: mentions && mentions.length > 0,
+            hasMentions: hasValidMentions,
         }); // Create message permissions
         const permissions = perms.message(userId, {
             mod: env.teams.moderatorTeamId,
@@ -312,12 +316,7 @@ export async function POST(request: NextRequest) {
             messageData.replyToId = replyToId;
         }
         // Add mentions array if provided
-        if (
-            !creatingPoll &&
-            mentions &&
-            Array.isArray(mentions) &&
-            mentions.length > 0
-        ) {
+        if (hasValidMentions) {
             messageData.mentions = mentions;
         }
 
@@ -378,12 +377,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (
-            !creatingPoll &&
-            mentions &&
-            Array.isArray(mentions) &&
-            mentions.length > 0
-        ) {
+        if (hasValidMentions) {
             await upsertMentionInboxItems({
                 authorUserId: userId,
                 contextId: normalizedChannelId,

@@ -176,8 +176,6 @@ function resolveWithAccessCache<T>(
         return fetcher();
     }
 
-    sweepExpiredAccessEntries(cache, pending);
-
     const cached = getCachedAccess(cache, pending, key);
     if (cached !== null) {
         return Promise.resolve(cached);

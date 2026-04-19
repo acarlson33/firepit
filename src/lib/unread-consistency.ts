@@ -13,8 +13,8 @@ type UnreadComparison = {
     snapshotAgeMs: number;
 };
 
-const SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1000;
-const SNAPSHOT_SWEEP_INTERVAL_MS = 60 * 1000;
+const SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1_000;
+const SNAPSHOT_SWEEP_INTERVAL_MS = 60_000;
 const dmUnreadSnapshotByUserId = new Map<string, DmUnreadSnapshot>();
 
 function sweepStaleSnapshots(now = Date.now()) {
@@ -80,7 +80,7 @@ export function compareInboxVsDmUnreadThreads(params: {
     return {
         absDelta: Math.abs(delta),
         delta,
-        dmSnapshot,
+        dmSnapshot: { ...dmSnapshot },
         inboxConversationThreadUnreadCount,
         snapshotAgeMs,
     };

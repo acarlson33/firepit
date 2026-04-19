@@ -4,7 +4,7 @@ import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
 import { getServerClient } from "@/lib/appwrite-server";
-import { recordEvent, recordMetric } from "@/lib/newrelic-utils";
+import { logger, recordEvent, recordMetric } from "@/lib/newrelic-utils";
 import {
     getEffectiveNotificationLevel,
     getNotificationSettings,
@@ -391,19 +391,41 @@ async function listDocumentsByIds(params: {
     }
 
     const responses = await Promise.all(
-        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).map((idChunk) => {
-            const queries = [
-                Query.equal("$id", idChunk),
-                Query.limit(idChunk.length),
-            ];
-            if (contextField && contextIds && contextIds.length > 0) {
-                queries.push(Query.equal(contextField, contextIds));
-            }
-            if (selectFields && selectFields.length > 0) {
-                queries.push(...selectQuery(selectFields));
-            }
+        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).map(async (idChunk) => {
+            let shouldSelectFields = Boolean(
+                selectFields && selectFields.length > 0,
+            );
 
-            return databases.listDocuments(env.databaseId, collectionId, queries);
+            while (true) {
+                const queries = [
+                    Query.equal("$id", idChunk),
+                    Query.limit(idChunk.length),
+                ];
+                if (contextField && contextIds && contextIds.length > 0) {
+                    queries.push(Query.equal(contextField, contextIds));
+                }
+                if (shouldSelectFields && selectFields && selectFields.length > 0) {
+                    queries.push(...selectQuery(selectFields));
+                }
+
+                try {
+                    return await databases.listDocuments(
+                        env.databaseId,
+                        collectionId,
+                        queries,
+                    );
+                } catch (error) {
+                    if (
+                        shouldSelectFields &&
+                        isSchemaAttributeMissingQueryError(error)
+                    ) {
+                        shouldSelectFields = false;
+                        continue;
+                    }
+
+                    throw error;
+                }
+            }
         }),
     );
 
@@ -705,11 +727,18 @@ async function loadRelationshipMap(
         (otherUserId) => !cache?.relationshipCache.has(otherUserId),
     );
 
-    for (const userIdChunk of chunkArray(
+    const relationshipChunks = chunkArray(
         unresolvedUserIds,
         RELATIONSHIP_QUERY_CHUNK_SIZE,
-    )) {
-        const relationshipMap = await getRelationshipMap(userId, userIdChunk);
+    );
+    const relationshipEntries = await Promise.all(
+        relationshipChunks.map(async (userIdChunk) => ({
+            relationshipMap: await getRelationshipMap(userId, userIdChunk),
+            userIdChunk,
+        })),
+    );
+
+    for (const { relationshipMap, userIdChunk } of relationshipEntries) {
         for (const [otherUserId, relationshipStatus] of relationshipMap) {
             cache?.relationshipCache.set(otherUserId, relationshipStatus);
         }
@@ -779,9 +808,13 @@ async function filterReadableChannelContexts<T>(
                 if (canRead) {
                     readableChannelIds.add(channelId);
                 }
-            } catch {
+            } catch (error) {
                 channelAccessCache?.set(channelId, false);
-                // Ignore inaccessible or deleted channels.
+                logger.debug("Channel access check failed", {
+                    channelId,
+                    error: error instanceof Error ? error.message : String(error),
+                    userId,
+                });
             }
         },
     });

@@ -79,8 +79,8 @@ async function listOverridePages(params: {
             ],
         );
 
-        if (!warnedExceededPageSize && response.total > pageSize) {
-            logger.warn("Channel permission overrides query exceeded page size", {
+        if (!warnedExceededPageSize && response.total > pageSize * 10) {
+            logger.warn("Channel permission overrides query has unusually high volume", {
                 context: warningContext,
                 fetched: response.documents.length,
                 pageSize,

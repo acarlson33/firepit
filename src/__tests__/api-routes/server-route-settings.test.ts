@@ -220,14 +220,14 @@ describe("PATCH /api/servers/[serverId]", () => {
             ],
         });
         mockUpdateDocument
-            .mockResolvedValueOnce({ $id: "server-old-default" })
             .mockResolvedValueOnce({
                 $id: "server-1",
                 name: "Current Server",
                 ownerId: "owner-1",
                 defaultOnSignup: true,
                 $createdAt: "2026-04-14T00:00:00.000Z",
-            });
+            })
+            .mockResolvedValueOnce({ $id: "server-old-default" });
 
         const response = await PATCH(
             new NextRequest("http://localhost/api/servers/server-1", {
@@ -246,18 +246,18 @@ describe("PATCH /api/servers/[serverId]", () => {
             1,
             "test-db",
             "servers-collection",
-            "server-old-default",
+            "server-1",
             expect.objectContaining({
-                defaultOnSignup: false,
+                defaultOnSignup: true,
             }),
         );
         expect(mockUpdateDocument).toHaveBeenNthCalledWith(
             2,
             "test-db",
             "servers-collection",
-            "server-1",
+            "server-old-default",
             expect.objectContaining({
-                defaultOnSignup: true,
+                defaultOnSignup: false,
             }),
         );
         expect(mockRecordAudit).toHaveBeenCalledWith(

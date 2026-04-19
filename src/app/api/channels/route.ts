@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import { ID, Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
@@ -56,6 +57,10 @@ function stableIdsKey(ids: string[]): string {
     return Array.from(new Set(ids.filter((id) => id.length > 0)))
         .sort()
         .join(",");
+}
+
+function stableIdsHashKey(ids: string[]): string {
+    return createHash("sha256").update(stableIdsKey(ids)).digest("hex");
 }
 
 function normalizeChannelType(value: unknown): Channel["type"] {
@@ -352,7 +357,7 @@ export async function GET(request: NextRequest) {
                         ),
                 ),
                 dedupeChannelsRouteCache(
-                    `api:channels:overrides:${serverId}:${stableIdsKey(channelIds)}`,
+                    `api:channels:overrides:${serverId}:${stableIdsHashKey(channelIds)}`,
                     () =>
                         databases.listDocuments(
                             env.databaseId,
@@ -372,7 +377,7 @@ export async function GET(request: NextRequest) {
                 roleIds.length > 0
                     ? (
                           await dedupeChannelsRouteCache(
-                              `api:channels:roles:${serverId}:${stableIdsKey(roleIds)}`,
+                              `api:channels:roles:${serverId}:${stableIdsHashKey(roleIds)}`,
                               () =>
                                   databases.listDocuments(
                                       env.databaseId,

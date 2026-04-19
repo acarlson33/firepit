@@ -85,6 +85,16 @@ function createSchemaUnavailableError() {
     );
 }
 
+function cloneOverrideLabels(
+    value: NotificationOverrideLabelMap,
+): NotificationOverrideLabelMap {
+    if (typeof globalThis.structuredClone === "function") {
+        return globalThis.structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value)) as NotificationOverrideLabelMap;
+}
+
 async function ensureDmEncryptionSettingsAttribute(): Promise<boolean> {
     const { databases } = getAdminClient();
     const env = getEnvConfig();
@@ -542,7 +552,7 @@ async function resolveNotificationOverrideLabels(
         channelOverrideIds.length === 0 &&
         conversationOverrideIds.length === 0
     ) {
-        return labels;
+        return cloneOverrideLabels(labels);
     }
 
     const fetchLabels = async () => {
@@ -627,10 +637,10 @@ async function resolveNotificationOverrideLabels(
                 userId,
                 error: getErrorMessage(error),
             });
-            return createEmptyOverrideLabels();
+            return cloneOverrideLabels(createEmptyOverrideLabels());
         }
 
-        return labels;
+        return cloneOverrideLabels(labels);
     };
 
     if (process.env.NODE_ENV === "test") {

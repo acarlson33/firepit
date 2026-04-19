@@ -90,7 +90,17 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const poll = await getPollDocumentByMessageId(databases, env, messageId);
+    let poll: Awaited<ReturnType<typeof getPollDocumentByMessageId>>;
+    try {
+        poll = await getPollDocumentByMessageId(databases, env, messageId);
+    } catch (error) {
+        if (isNotFoundError(error)) {
+            return NextResponse.json({ error: "Poll not found" }, { status: 404 });
+        }
+
+        throw error;
+    }
+
     if (!poll) {
         return NextResponse.json({ error: "Poll not found" }, { status: 404 });
     }
@@ -124,6 +134,20 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         );
     }
 
-    const pollState = await getPollStateForMessage(databases, env, messageId);
+    let pollState: Awaited<ReturnType<typeof getPollStateForMessage>>;
+    try {
+        pollState = await getPollStateForMessage(databases, env, messageId);
+    } catch (error) {
+        if (isNotFoundError(error)) {
+            return NextResponse.json({ error: "Poll not found" }, { status: 404 });
+        }
+
+        throw error;
+    }
+
+    if (!pollState) {
+        return NextResponse.json({ error: "Poll not found" }, { status: 404 });
+    }
+
     return NextResponse.json({ poll: pollState });
 }

@@ -14,8 +14,8 @@ type MessagePollProps = {
     currentUserId: string | null;
     canClose?: boolean;
     readOnly?: boolean;
-    onVote?: (optionId: string) => Promise<void>;
-    onClose?: () => Promise<void>;
+    onVote?: (optionId: string) => Promise<MessagePoll | void>;
+    onClose?: () => Promise<MessagePoll | void>;
 };
 
 export function MessagePollBlock({
@@ -32,10 +32,28 @@ export function MessagePollBlock({
     );
     const [submittingVote, setSubmittingVote] = useState<string | null>(null);
     const [closing, setClosing] = useState(false);
+    const pollStateKey = useMemo(
+        () =>
+            `${poll.id}:${poll.status}:${poll.closedAt ?? ""}:${poll.closedBy ?? ""}:${poll.options
+                .map(
+                    (option) =>
+                        `${option.id}:${option.count}:${[...option.voterIds]
+                            .sort()
+                            .join(",")}`,
+                )
+                .join("|")}`,
+        [
+            poll.closedAt,
+            poll.closedBy,
+            poll.id,
+            poll.options,
+            poll.status,
+        ],
+    );
 
     useEffect(() => {
         setLocalPollState(null);
-    }, [poll]);
+    }, [pollStateKey]);
 
     const pollState = localPollState ?? poll;
 
@@ -61,7 +79,10 @@ export function MessagePollBlock({
         setSubmittingVote(optionId);
         try {
             if (onVote) {
-                await onVote(optionId);
+                const updatedPoll = await onVote(optionId);
+                if (updatedPoll) {
+                    setLocalPollState(updatedPoll);
+                }
                 return;
             }
 
@@ -101,7 +122,10 @@ export function MessagePollBlock({
         setClosing(true);
         try {
             if (onClose) {
-                await onClose();
+                const updatedPoll = await onClose();
+                if (updatedPoll) {
+                    setLocalPollState(updatedPoll);
+                }
                 return;
             }
 

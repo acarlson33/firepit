@@ -36,6 +36,10 @@ type ListDocumentsResponse = Awaited<
     ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
 >;
 
+type QueryWithSelect = typeof Query & {
+    select?: (attributes: string[]) => string;
+};
+
 function isNotFoundError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
         return false;
@@ -124,6 +128,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const updates: Record<string, unknown> = {};
     const changedFields: string[] = [];
+    let defaultServersToClear: Array<{ $id: string }> = [];
 
     if (Object.hasOwn(payload, "name")) {
         if (typeof payload.name !== "string") {
@@ -223,12 +228,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             let cursorAfter: string | null = null;
 
             while (true) {
+                const queryWithSelect = Query as QueryWithSelect;
                 const page: ListDocumentsResponse = await databases.listDocuments(
                     env.databaseId,
                     env.collections.servers,
                     [
                         Query.equal("defaultOnSignup", true),
-                        Query.select(["$id"]),
+                        ...(typeof queryWithSelect.select === "function"
+                            ? [queryWithSelect.select(["$id"])]
+                            : []),
                         Query.limit(pageSize),
                         ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
                     ],
@@ -255,44 +263,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 }
             }
 
-            const defaultServersToClear = existingDefaultServers.filter(
+            defaultServersToClear = existingDefaultServers.filter(
                 (defaultServer) => defaultServer.$id !== serverId,
             );
-            const resetResults = await Promise.allSettled(
-                defaultServersToClear.map((defaultServer) =>
-                    databases.updateDocument(
-                        env.databaseId,
-                        env.collections.servers,
-                        defaultServer.$id,
-                        { defaultOnSignup: false },
-                    ),
-                ),
-            );
-
-            let hadResetFailure = false;
-            for (const [index, result] of resetResults.entries()) {
-                if (result.status !== "rejected") {
-                    continue;
-                }
-
-                hadResetFailure = true;
-                logger.error("Failed to unset previous default signup server", {
-                    defaultServerId: defaultServersToClear[index]?.$id,
-                    error:
-                        result.reason instanceof Error
-                            ? result.reason.message
-                            : String(result.reason),
-                    serverId,
-                    userId: session.$id,
-                });
-            }
-
-            if (hadResetFailure) {
-                return NextResponse.json(
-                    { error: "Failed to clear existing default signup server" },
-                    { status: 500 },
-                );
-            }
         }
     }
 
@@ -343,13 +316,87 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const previousBannerFileId = normalizeServerFileId(
         serverDocument.bannerFileId,
     );
+    const previousDefaultOnSignup = serverDocument.defaultOnSignup === true;
 
-    const updatedServerDocument = (await databases.updateDocument(
-        env.databaseId,
-        env.collections.servers,
-        serverId,
-        updates,
-    )) as unknown as Record<string, unknown>;
+    let updatedServerDocument: Record<string, unknown>;
+    try {
+        updatedServerDocument = (await databases.updateDocument(
+            env.databaseId,
+            env.collections.servers,
+            serverId,
+            updates,
+        )) as unknown as Record<string, unknown>;
+    } catch (error) {
+        logger.error("Failed to update server document", {
+            collectionId: env.collections.servers,
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+        return NextResponse.json(
+            { error: "Failed to update server" },
+            { status: 500 },
+        );
+    }
+
+    if (payload.defaultOnSignup === true && defaultServersToClear.length > 0) {
+        const resetResults = await Promise.allSettled(
+            defaultServersToClear.map((defaultServer) =>
+                databases.updateDocument(
+                    env.databaseId,
+                    env.collections.servers,
+                    defaultServer.$id,
+                    { defaultOnSignup: false },
+                ),
+            ),
+        );
+
+        let hadResetFailure = false;
+        for (const [index, result] of resetResults.entries()) {
+            if (result.status !== "rejected") {
+                continue;
+            }
+
+            hadResetFailure = true;
+            logger.error("Failed to unset previous default signup server", {
+                defaultServerId: defaultServersToClear[index]?.$id,
+                error:
+                    result.reason instanceof Error
+                        ? result.reason.message
+                        : String(result.reason),
+                serverId,
+                userId: session.$id,
+            });
+        }
+
+        if (hadResetFailure) {
+            try {
+                await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.servers,
+                    serverId,
+                    { defaultOnSignup: previousDefaultOnSignup },
+                );
+            } catch (rollbackError) {
+                logger.error(
+                    "Failed to rollback default signup flag after reset failure",
+                    {
+                        error:
+                            rollbackError instanceof Error
+                                ? rollbackError.message
+                                : String(rollbackError),
+                        serverId,
+                        userId: session.$id,
+                    },
+                );
+            }
+
+            return NextResponse.json(
+                { error: "Failed to clear existing default signup server" },
+                { status: 500 },
+            );
+        }
+    }
 
     const staleFileIds = new Set<string>();
     const updatedIconFileId = normalizeServerFileId(
@@ -397,12 +444,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         });
     }
 
-    await recordAudit("server_settings_updated", serverId, session.$id, {
-        changedFields,
-        details: "Updated server customization settings",
-        serverId,
-        userId: session.$id,
-    });
+    try {
+        await recordAudit("server_settings_updated", serverId, session.$id, {
+            changedFields,
+            details: "Updated server customization settings",
+            serverId,
+            userId: session.$id,
+        });
+    } catch (error) {
+        logger.error("Failed to record server settings audit entry", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+    }
 
     const memberCount = await getActualMemberCount(databases, serverId);
 

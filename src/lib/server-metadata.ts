@@ -2,6 +2,7 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 
 const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const TRAILING_SLASH_PATTERN = /\/$/;
 
 export function normalizeServerVisibility(value: unknown): boolean {
     return value !== false;
@@ -35,7 +36,7 @@ export function normalizeServerFileId(value: unknown): string | undefined {
 
 function buildServerImageUrl(fileId: string): string {
     const env = getEnvConfig();
-    const endpoint = env.endpoint.replace(/\/$/, "");
+    const endpoint = env.endpoint.replace(TRAILING_SLASH_PATTERN, "");
     const bucketId = encodeURIComponent(env.buckets.images);
     const projectId = encodeURIComponent(env.project);
     const encodedFileId = encodeURIComponent(fileId);

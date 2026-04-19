@@ -46,6 +46,7 @@ interface NotificationResult {
 }
 
 const NOTIFICATION_SETTINGS_CACHE_TTL_MS = 15_000;
+const QUIET_HOURS_TIME_PATTERN = /^\d{1,2}:\d{2}$/;
 
 type NotificationSettingsCacheEntry = {
 	expiresAt: number;
@@ -108,6 +109,13 @@ function isInQuietHours(settings: NotificationSettings): boolean {
 		return false;
 	}
 
+	if (
+		!QUIET_HOURS_TIME_PATTERN.test(settings.quietHoursStart) ||
+		!QUIET_HOURS_TIME_PATTERN.test(settings.quietHoursEnd)
+	) {
+		return false;
+	}
+
 	const now = new Date();
 	let currentMinutes = now.getHours() * 60 + now.getMinutes();
 
@@ -132,8 +140,29 @@ function isInQuietHours(settings: NotificationSettings): boolean {
 		}
 	}
 
-	const [startHour, startMin] = settings.quietHoursStart.split(":").map(Number);
-	const [endHour, endMin] = settings.quietHoursEnd.split(":").map(Number);
+	const [startHourText, startMinText] = settings.quietHoursStart.split(":");
+	const [endHourText, endMinText] = settings.quietHoursEnd.split(":");
+	const startHour = Number.parseInt(startHourText, 10);
+	const startMin = Number.parseInt(startMinText, 10);
+	const endHour = Number.parseInt(endHourText, 10);
+	const endMin = Number.parseInt(endMinText, 10);
+
+	if (
+		Number.isNaN(startHour) ||
+		Number.isNaN(startMin) ||
+		Number.isNaN(endHour) ||
+		Number.isNaN(endMin) ||
+		startHour < 0 ||
+		startHour > 23 ||
+		endHour < 0 ||
+		endHour > 23 ||
+		startMin < 0 ||
+		startMin > 59 ||
+		endMin < 0 ||
+		endMin > 59
+	) {
+		return false;
+	}
 
 	const startMinutes = startHour * 60 + startMin;
 	const endMinutes = endHour * 60 + endMin;

@@ -8,6 +8,12 @@ import type { MessagePoll } from "@/lib/types";
 
 const POLL_VOTES_PAGE_LIMIT = 1000;
 
+// Some test mocks/older SDK surfaces may not expose Query cursor helpers.
+type QueryWithPagination = typeof Query & {
+    cursorAfter?: (cursor: string) => string;
+    orderAsc?: (field: string) => string;
+};
+
 type PollVoteDocShape = {
     $id: string;
     pollId: string;
@@ -91,14 +97,25 @@ async function listVotesForPoll(
     pollId: string,
 ): Promise<PollVoteDocShape[]> {
     const votes: PollVoteDocShape[] = [];
+    const queryWithPagination = Query as QueryWithPagination;
+    const orderQuery =
+        typeof queryWithPagination.orderAsc === "function"
+            ? queryWithPagination.orderAsc("$id")
+            : null;
+    const supportsCursorAfter =
+        typeof queryWithPagination.cursorAfter === "function";
+    const supportsStableCursorPagination =
+        supportsCursorAfter && Boolean(orderQuery);
     let cursor: string | undefined;
 
     while (true) {
         const queries = [
             Query.equal("pollId", pollId),
-            Query.orderAsc("$id"),
+            ...(orderQuery ? [orderQuery] : []),
             Query.limit(POLL_VOTES_PAGE_LIMIT),
-            ...(cursor ? [Query.cursorAfter(cursor)] : []),
+            ...(cursor && supportsStableCursorPagination
+                ? [queryWithPagination.cursorAfter(cursor)]
+                : []),
         ];
 
         const response = await databases.listDocuments(
@@ -114,6 +131,19 @@ async function listVotesForPoll(
         );
 
         if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
+            break;
+        }
+
+        if (!supportsStableCursorPagination) {
+            logger.warn(
+                "Poll votes pagination helpers unavailable; stopping after first full page",
+                {
+                    hasOrderAsc: Boolean(orderQuery),
+                    hasCursorAfter: supportsCursorAfter,
+                    pageLimit: POLL_VOTES_PAGE_LIMIT,
+                    pollId,
+                },
+            );
             break;
         }
 

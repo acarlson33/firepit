@@ -12,18 +12,18 @@ import {
     setFeatureFlag,
     type FeatureFlagKey,
 } from "@/lib/feature-flags";
-import type { FeatureFlag } from "@/lib/types";
 import {
     createAnnouncement,
     dispatchScheduledAnnouncements,
     isInstanceAnnouncementsEnabled,
     listAnnouncements,
-    type AnnouncementCreateMode,
 } from "@/lib/appwrite-announcements";
 import type {
     Announcement,
+    AnnouncementCreateMode,
     AnnouncementPriority,
     AnnouncementStatus,
+    FeatureFlag,
 } from "@/lib/types";
 
 // Server actions run on the server; use server-side env variables first.
@@ -372,9 +372,14 @@ export async function getAnnouncementsAction(
         );
     }
 
+    const validatedLimit =
+        input.limit === undefined
+            ? undefined
+            : validateDispatchLimit(Math.floor(input.limit));
+
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
-        limit: input.limit,
+        limit: validatedLimit,
         statuses: input.statuses,
     });
 }

@@ -459,7 +459,7 @@ export function ServerManagement({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {!isAdmin && servers.length === 0 && (
+                            {isLoadingServers && servers.length === 0 && (
                             <p className="text-muted-foreground text-sm">
                                 Loading servers...
                             </p>

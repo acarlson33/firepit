@@ -44,25 +44,58 @@ function inferImageMimeType(url: string): string {
 
     const normalizedPathname = pathname.toLowerCase();
 
-    if (/\.gif$/i.test(normalizedPathname)) {
+    if (/\.gif$/.test(normalizedPathname)) {
         return "image/gif";
     }
-    if (/\.webp$/i.test(normalizedPathname)) {
+    if (/\.webp$/.test(normalizedPathname)) {
         return "image/webp";
     }
-    if (/\.jpe?g$/i.test(normalizedPathname)) {
+    if (/\.jpe?g$/.test(normalizedPathname)) {
         return "image/jpeg";
     }
 
     return "image/png";
 }
 
+function mimeTypeToExtension(mimeType: string): string {
+    switch (mimeType) {
+        case "image/webp": {
+            return "webp";
+        }
+        case "image/jpeg": {
+            return "jpg";
+        }
+        case "image/png": {
+            return "png";
+        }
+        default: {
+            return "gif";
+        }
+    }
+}
+
+function toSafeFileBaseName(value: string | undefined): string {
+    const trimmed = value?.trim() ?? "";
+    if (!trimmed) {
+        return "gif";
+    }
+
+    const sanitized = trimmed
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[.-]+|[.-]+$/g, "");
+
+    return sanitized || "gif";
+}
+
 function toGifAttachment(item: GifSearchItem): FileAttachment {
     const fileType = inferImageMimeType(item.gifUrl);
+    const fileExtension = mimeTypeToExtension(fileType);
+    const safeTitle = toSafeFileBaseName(item.title);
 
     return {
         fileId: `${item.source}-${item.id}`,
-        fileName: `${item.title || "gif"}.gif`,
+        fileName: `${safeTitle}.${fileExtension}`,
         fileSize: 0,
         fileType,
         fileUrl: item.gifUrl,
@@ -83,7 +116,7 @@ function toStickerAttachment(params: {
 
     return {
         fileId: `sticker-${pack.id}-${item.id}`,
-        fileName: `${item.name || item.id}.sticker`,
+        fileName: `${toSafeFileBaseName(item.name || item.id)}.sticker`,
         fileSize: 0,
         fileType: inferImageMimeType(item.mediaUrl),
         fileUrl: item.mediaUrl,
@@ -267,7 +300,7 @@ export function GifStickerPicker({
             .map((pack) => {
                 const packMatches = pack.name.toLowerCase().includes(search);
                 const items = pack.items.filter((item) =>
-                    item.name.toLowerCase().includes(search),
+                    (item.name ?? "").toLowerCase().includes(search),
                 );
 
                 if (packMatches) {
@@ -482,11 +515,11 @@ export function GifStickerPicker({
                                                                 );
                                                                 setOpen(false);
                                                             }}
-                                                            title={item.name}
+                                                            title={item.name || "Sticker"}
                                                             type="button"
                                                         >
                                                             <img
-                                                                alt={item.name}
+                                                                alt={item.name || "Sticker"}
                                                                 className="aspect-square h-auto w-full object-cover"
                                                                 loading="lazy"
                                                                 src={

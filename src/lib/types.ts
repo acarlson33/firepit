@@ -76,7 +76,7 @@ export type GifSearchItem = {
     width?: number;
     height?: number;
     durationMs?: number;
-    source: "giphy" | "tenor";
+    source: AttachmentProvider;
 };
 
 export type MessagePollOption = {
@@ -89,7 +89,8 @@ export type MessagePollOption = {
 export type MessagePoll = {
     id: string;
     messageId: string;
-    channelId: string;
+    contextType: "channel" | "conversation";
+    contextId: string;
     question: string;
     options: MessagePollOption[];
     status: "open" | "closed";
@@ -202,6 +203,15 @@ export type FeatureFlag = {
 };
 
 export const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
+
+export const ANNOUNCEMENT_CREATE_MODE_VALUES = [
+    "draft",
+    "schedule",
+    "send_now",
+] as const;
+
+export type AnnouncementCreateMode =
+    (typeof ANNOUNCEMENT_CREATE_MODE_VALUES)[number];
 
 export type AnnouncementPriority =
     (typeof ANNOUNCEMENT_PRIORITY_VALUES)[number];

@@ -29,7 +29,13 @@ export async function POST(request: Request) {
             isPublic?: boolean;
         };
         try {
-            payload = (await request.json()) as { name?: string };
+            payload = (await request.json()) as {
+                name?: string;
+                description?: string;
+                iconFileId?: string;
+                bannerFileId?: string;
+                isPublic?: boolean;
+            };
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },

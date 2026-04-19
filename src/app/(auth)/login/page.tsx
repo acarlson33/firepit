@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { loginAction, resendVerificationAction } from "./actions";
 
 function LoginFormContent() {
+    const pathname = usePathname();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { refreshUser } = useAuth();
@@ -38,7 +39,12 @@ function LoginFormContent() {
         } else if (verifiedStatus === "0") {
             toast.error("Email verification link is invalid or expired.");
         }
-    }, [searchParams]);
+
+        const updatedSearchParams = new URLSearchParams(searchParams.toString());
+        updatedSearchParams.delete("verified");
+        const nextQuery = updatedSearchParams.toString();
+        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    }, [pathname, router, searchParams]);
 
     const redirectPath = searchParams.get("redirect");
     const destination =
@@ -152,8 +158,8 @@ function LoginFormContent() {
                 </Button>
                 <Button
                     disabled={loading || resendingVerification}
-                    onClick={() => {
-                        void onResendVerification();
+                    onClick={async () => {
+                        await onResendVerification();
                     }}
                     type="button"
                     variant="outline"

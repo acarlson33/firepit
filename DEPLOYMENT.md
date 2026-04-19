@@ -154,13 +154,15 @@ APPWRITE_MODERATOR_TEAM_ID=
 How to get the value:
 
 1. In Appwrite Console, open **Auth -> Users**.
-2. Create or locate your dedicated system sender user.
-3. Copy the user's `$id` and set it as `SYSTEM_SENDER_USER_ID`.
+2. Click **Create User**, enter a valid email (for example, `system+sender@yourdomain.com`) and a strong password that satisfies Appwrite requirements.
+3. Mark the email as verified in Appwrite (or complete your verification flow) so the account can send system messages.
+4. Do not add this account to special teams unless your deployment explicitly needs team-scoped permissions.
+5. Copy the created user's `$id` and set it as `SYSTEM_SENDER_USER_ID`.
 
 Why this matters:
 
 - System announcement threads can be safely identified and treated as read-only for recipients.
-- The reserved system sender account is blocked from interactive sign-in.
+- Interactive sign-in blocking is enforced by Firepit auth logic when `SYSTEM_SENDER_USER_ID` is set (see `src/app/(auth)/login/actions.ts` and `src/lib/auth-server.ts`); Appwrite does not auto-disable login for that user, so use Appwrite Console (**Auth -> Users**) only if you also want to manually restrict the account there.
 - If this variable is unset, Firepit defaults to read-only behavior for all system announcement threads.
 
 #### D. Validation

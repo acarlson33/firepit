@@ -83,7 +83,7 @@ async function listPollDocumentsForMessages(params: {
     const pollDocuments: PollDocShape[] = [];
     let cursor: string | undefined;
     let pageCount = 0;
-    let pagesFetched = 0;
+    let fullPageCount = 0;
 
     while (true) {
         pageCount += 1;
@@ -118,7 +118,7 @@ async function listPollDocumentsForMessages(params: {
         );
 
         if (response.documents.length === POLLS_PAGE_LIMIT) {
-            pagesFetched += 1;
+            fullPageCount += 1;
         }
 
         if (response.documents.length < POLLS_PAGE_LIMIT) {
@@ -133,12 +133,12 @@ async function listPollDocumentsForMessages(params: {
         cursor = lastDocument.$id;
     }
 
-    if (pagesFetched > 1) {
+    if (fullPageCount > 1) {
         logger.warn("Poll query required multiple pages", {
             cursor: cursor ?? null,
+            fullPageCount,
             messageCount: messageIds.length,
             pageLimit: POLLS_PAGE_LIMIT,
-            pagesFetched,
         });
     }
 
@@ -158,8 +158,17 @@ async function listVoteDocumentsForPolls(params: {
     const databases = getBrowserDatabases();
     const voteDocuments: PollVoteDocShape[] = [];
     let cursor: string | undefined;
+    let totalPagesFetched = 0;
+    let encounteredFullPage = false;
+    let reachedMaxPages = false;
 
     while (true) {
+        totalPagesFetched += 1;
+        if (totalPagesFetched > MAX_POLL_PAGES) {
+            reachedMaxPages = true;
+            break;
+        }
+
         const response = await databases.listDocuments({
             databaseId,
             collectionId: pollVotesCollectionId,
@@ -178,11 +187,7 @@ async function listVoteDocumentsForPolls(params: {
         );
 
         if (response.documents.length === POLL_VOTES_PAGE_LIMIT) {
-            logger.warn("Poll votes query page reached configured limit", {
-                pageLimit: POLL_VOTES_PAGE_LIMIT,
-                pollCount: pollIds.length,
-                cursor: cursor ?? null,
-            });
+            encounteredFullPage = true;
         }
 
         if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
@@ -195,6 +200,16 @@ async function listVoteDocumentsForPolls(params: {
         }
 
         cursor = lastDocument.$id;
+    }
+
+    if (reachedMaxPages || encounteredFullPage) {
+        logger.warn("Poll votes query required pagination safeguards", {
+            hitMaxPages: reachedMaxPages,
+            hitPageLimit: encounteredFullPage,
+            pageLimit: POLL_VOTES_PAGE_LIMIT,
+            totalPagesFetched,
+            pollCount: pollIds.length,
+        });
     }
 
     return voteDocuments;

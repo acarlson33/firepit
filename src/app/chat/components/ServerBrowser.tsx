@@ -154,7 +154,7 @@ export function ServerBrowser({
 		if (canLoadServers) {
 			void loadServers();
 		}
-	}, [canLoadServers, joinedServerIdsKey, loadServers, userId]);
+	}, [canLoadServers, loadServers]);
 
 	const visibleServers = useMemo(() => {
 		const normalizedQuery = query.trim().toLowerCase();
@@ -206,6 +206,7 @@ export function ServerBrowser({
 			});
 
 			if (response.ok) {
+				setServers((prev) => prev.filter((server) => server.$id !== serverId));
 				toast.success("Successfully joined server");
 				onServerJoined?.();
 				return;
@@ -306,7 +307,7 @@ export function ServerBrowser({
 						{Array.from({ length: 4 }).map((_, index) => (
 							<div
 								className="overflow-hidden rounded-xl border border-border/60"
-								key={index}
+								key={`server-browser-skeleton-${index}`}
 							>
 								<Skeleton className="h-20 w-full" />
 								<div className="space-y-3 p-3">

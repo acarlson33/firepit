@@ -13,7 +13,7 @@ import { getEnvConfig } from "./appwrite-core";
  Remove after resolving permission issues.
 */
 
-type AuthDiagnosticReport = {
+export type AuthDiagnosticReport = {
     browserClientConfigured: boolean;
     accountSession?: {
         ok: boolean;
