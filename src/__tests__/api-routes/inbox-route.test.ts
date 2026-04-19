@@ -461,6 +461,18 @@ describe("inbox route", () => {
             },
             userId: "user-1",
         });
+        expect(mockUpdateDocument).not.toHaveBeenCalledWith(
+            "test-db",
+            "inbox-items-collection",
+            "item-mention-channel-1",
+            expect.anything(),
+        );
+        expect(mockUpsertThreadReads).not.toHaveBeenCalledWith(
+            expect.objectContaining({
+                contextId: "channel-1",
+                contextType: "channel",
+            }),
+        );
         expect(data.ok).toBe(true);
         expect(data.updatedMentionCount).toBe(1);
         expect(data.updatedThreadContextCount).toBe(1);

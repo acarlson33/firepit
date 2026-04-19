@@ -64,6 +64,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 import { listInboxWithFilters } from "@/lib/inbox-client";
 import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
+import { logger } from "@/lib/client-logger";
 import { toast } from "sonner";
 
 // Lazy load heavy components
@@ -189,6 +190,14 @@ function getFirstUnreadItem(items: InboxItem[]) {
 type PollOption = {
     id: string;
     value: string;
+};
+
+type ServerPermissionsResponse = {
+    administrator?: boolean;
+    manageMessages?: boolean;
+    manageServer?: boolean;
+    sendMessages?: boolean;
+    canSend?: boolean;
 };
 
 function createPollOption(value = ""): PollOption {
@@ -904,6 +913,13 @@ export default function ChatPage() {
             ) ?? null,
         [channelsApi.channels, selectedChannel],
     );
+    const selectedServerData = useMemo(
+        () =>
+            serversApi.servers.find(
+                (server) => server.$id === serversApi.selectedServer,
+            ) ?? null,
+        [serversApi.selectedServer, serversApi.servers],
+    );
 
     useEffect(() => {
         if (
@@ -1045,6 +1061,33 @@ export default function ChatPage() {
         selectedConversationId,
     ]);
 
+    const fetchServerPermissions = useCallback(
+        async (params: {
+            serverId: string;
+            userId: string;
+            signal: AbortSignal;
+            channelId?: string;
+        }) => {
+            const searchParams = new URLSearchParams({
+                userId: params.userId,
+            });
+            if (params.channelId) {
+                searchParams.set("channelId", params.channelId);
+            }
+
+            const response = await fetch(
+                `/api/servers/${params.serverId}/permissions?${searchParams.toString()}`,
+                { signal: params.signal },
+            );
+            if (!response.ok) {
+                return null;
+            }
+
+            return (await response.json()) as ServerPermissionsResponse;
+        },
+        [],
+    );
+
     // Check manageMessages permission when channel changes
     useEffect(() => {
         const controller = new AbortController();
@@ -1059,9 +1102,6 @@ export default function ChatPage() {
                 return;
             }
 
-            const selectedServerData = serversApi.servers.find(
-                (s) => s.$id === serversApi.selectedServer,
-            );
             if (selectedServerData?.ownerId === userId) {
                 if (!signal.aborted) {
                     setCanManageMessages(true);
@@ -1071,27 +1111,23 @@ export default function ChatPage() {
             }
 
             try {
-                const res = await fetch(
-                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`,
-                    { signal },
-                );
+                const data = await fetchServerPermissions({
+                    serverId: serversApi.selectedServer,
+                    userId,
+                    signal,
+                    channelId: selectedChannel,
+                });
 
-                if (signal.aborted) {
-                    return;
-                }
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (signal.aborted) {
-                        return;
+                if (!signal.aborted) {
+                    if (data) {
+                        setCanManageMessages(data.manageMessages ?? false);
+                        setCanSendMessages(
+                            data.canSend ?? data.sendMessages ?? false,
+                        );
+                    } else {
+                        setCanManageMessages(false);
+                        setCanSendMessages(false);
                     }
-                    setCanManageMessages(data.manageMessages ?? false);
-                    setCanSendMessages(
-                        data.canSend ?? data.sendMessages ?? false,
-                    );
-                } else {
-                    setCanManageMessages(false);
-                    setCanSendMessages(false);
                 }
             } catch (error) {
                 if (
@@ -1112,10 +1148,11 @@ export default function ChatPage() {
             controller.abort();
         };
     }, [
+        fetchServerPermissions,
+        selectedServerData?.ownerId,
         selectedChannel,
         userId,
         serversApi.selectedServer,
-        serversApi.servers,
     ]);
 
     useEffect(() => {
@@ -1130,10 +1167,6 @@ export default function ChatPage() {
                 return;
             }
 
-            const selectedServerData = serversApi.servers.find(
-                (s) => s.$id === serversApi.selectedServer,
-            );
-
             if (selectedServerData?.ownerId === userId) {
                 if (!signal.aborted) {
                     setCanManageServer(true);
@@ -1142,32 +1175,17 @@ export default function ChatPage() {
             }
 
             try {
-                const response = await fetch(
-                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}`,
-                    { signal },
-                );
+                const data = await fetchServerPermissions({
+                    serverId: serversApi.selectedServer,
+                    userId,
+                    signal,
+                });
 
-                if (signal.aborted) {
-                    return;
+                if (!signal.aborted) {
+                    setCanManageServer(
+                        Boolean(data?.manageServer || data?.administrator),
+                    );
                 }
-
-                if (!response.ok) {
-                    setCanManageServer(false);
-                    return;
-                }
-
-                const data = (await response.json()) as {
-                    manageServer?: boolean;
-                    administrator?: boolean;
-                };
-
-                if (signal.aborted) {
-                    return;
-                }
-
-                setCanManageServer(
-                    Boolean(data.manageServer || data.administrator),
-                );
             } catch (error) {
                 if (
                     error instanceof DOMException &&
@@ -1185,7 +1203,12 @@ export default function ChatPage() {
         return () => {
             controller.abort();
         };
-    }, [userId, serversApi.selectedServer, serversApi.servers]);
+    }, [
+        fetchServerPermissions,
+        selectedServerData?.ownerId,
+        userId,
+        serversApi.selectedServer,
+    ]);
 
     // Notifications - listens for incoming messages and triggers notifications
     const { requestPermission: requestNotificationPermission } =
@@ -1407,6 +1430,12 @@ export default function ChatPage() {
                 command,
             );
             closePollDialog();
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to create poll.",
+            );
         } finally {
             setCreatingPoll(false);
         }
@@ -1552,15 +1581,23 @@ export default function ChatPage() {
         onVotePoll: async (messageId, optionId) => {
             try {
                 await votePoll(messageId, optionId);
-            } catch {
-                // Error already surfaced by poll handler.
+            } catch (error) {
+                logger.error(
+                    "Vote poll action failed",
+                    error instanceof Error ? error : String(error),
+                    { messageId, optionId },
+                );
             }
         },
         onClosePoll: async (messageId) => {
             try {
                 await closePoll(messageId);
-            } catch {
-                // Error already surfaced by poll handler.
+            } catch (error) {
+                logger.error(
+                    "Close poll action failed",
+                    error instanceof Error ? error : String(error),
+                    { messageId },
+                );
             }
         },
     });
@@ -1572,9 +1609,6 @@ export default function ChatPage() {
     );
 
     function renderServers() {
-        const selectedServerData = serversApi.servers.find(
-            (s) => s.$id === serversApi.selectedServer,
-        );
         const isOwner = selectedServerData?.ownerId === userId;
         const canOpenServerAdminPanel = isOwner || canManageServer;
 
@@ -2485,12 +2519,16 @@ export default function ChatPage() {
 
                             <div className="space-y-2">
                                 {pollOptions.map((option, index) => (
-                                    <div
-                                        className="flex items-center gap-2"
-                                        key={option.id}
-                                    >
+                                    <div className="flex items-center gap-2" key={option.id}>
+                                        <Label
+                                            className="sr-only"
+                                            htmlFor={`poll-option-${option.id}`}
+                                        >
+                                            {`Option ${index + 1}`}
+                                        </Label>
                                         <Input
                                             disabled={creatingPoll}
+                                            id={`poll-option-${option.id}`}
                                             maxLength={120}
                                             onChange={(event) => {
                                                 updatePollOption(
@@ -2568,16 +2606,8 @@ export default function ChatPage() {
                     open={roleSettingsOpen}
                     onOpenChange={setRoleSettingsOpen}
                     serverId={serversApi.selectedServer}
-                    serverName={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.name || "Server"
-                    }
-                    isOwner={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.ownerId === userId
-                    }
+                    serverName={selectedServerData?.name || "Server"}
+                    isOwner={selectedServerData?.ownerId === userId}
                 />
             )}
             {selectedChannel && serversApi.selectedServer && (
@@ -2598,47 +2628,15 @@ export default function ChatPage() {
                     open={adminPanelOpen}
                     onOpenChange={setAdminPanelOpen}
                     serverId={serversApi.selectedServer}
-                    serverName={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.name || "Server"
-                    }
-                    isOwner={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.ownerId === userId
-                    }
+                    serverName={selectedServerData?.name || "Server"}
+                    isOwner={selectedServerData?.ownerId === userId}
                     canManageServer={canManageServer}
-                    serverDescription={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.description
-                    }
-                    serverIconFileId={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.iconFileId
-                    }
-                    serverIconUrl={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.iconUrl
-                    }
-                    serverBannerFileId={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.bannerFileId
-                    }
-                    serverBannerUrl={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.bannerUrl
-                    }
-                    serverIsPublic={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.isPublic
-                    }
+                    serverDescription={selectedServerData?.description}
+                    serverIconFileId={selectedServerData?.iconFileId}
+                    serverIconUrl={selectedServerData?.iconUrl}
+                    serverBannerFileId={selectedServerData?.bannerFileId}
+                    serverBannerUrl={selectedServerData?.bannerUrl}
+                    serverIsPublic={selectedServerData?.isPublic}
                     onServerUpdated={() => {
                         void serversApi.refresh();
                     }}

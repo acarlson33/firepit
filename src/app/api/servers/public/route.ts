@@ -17,7 +17,6 @@ type ServerDocument = Models.Document & {
 function isPublicServerDocument(document: Models.Document): document is ServerDocument {
 	const candidate = document as Record<string, unknown>;
 	return (
-		document != null &&
 		candidate.isPublic === true &&
 		typeof candidate.name === "string" &&
 		typeof candidate.ownerId === "string"

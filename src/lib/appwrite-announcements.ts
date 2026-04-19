@@ -6,6 +6,7 @@ import { logger } from "@/lib/newrelic-utils";
 import { getServerClient } from "@/lib/appwrite-server";
 import type {
     Announcement,
+    AnnouncementCreateMode,
     AnnouncementDelivery,
     AnnouncementPriority,
     AnnouncementStatus,
@@ -54,8 +55,6 @@ type DeliveryStatusRollup = {
     pending: number;
     total: number;
 };
-
-export type AnnouncementCreateMode = "draft" | "schedule" | "send_now";
 
 type CreateAnnouncementInput = {
     actorId: string;
@@ -107,6 +106,35 @@ function toErrorMessage(error: unknown): string {
     }
 
     return String(error);
+}
+
+function isDuplicateConstraintError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        code?: unknown;
+        message?: unknown;
+        type?: unknown;
+    };
+    const message =
+        typeof candidate.message === "string"
+            ? candidate.message.toLowerCase()
+            : "";
+    const type =
+        typeof candidate.type === "string"
+            ? candidate.type.toLowerCase()
+            : "";
+
+    return (
+        candidate.code === 409 ||
+        message.includes("duplicate") ||
+        message.includes("already exists") ||
+        message.includes("unique") ||
+        type.includes("conflict") ||
+        type.includes("duplicate")
+    );
 }
 
 function getNextDeliveryRetryIso(attemptCount: number): string {
@@ -497,33 +525,55 @@ export async function createAnnouncement(
         }
     }
 
-    const document = await databases.createDocument(
-        databaseId,
-        getAnnouncementsCollectionId(),
-        ID.unique(),
-        {
-            body,
-            bodyFormat: "markdown",
-            createdBy: input.actorId,
-            deliverySummary: JSON.stringify({
-                attempted: 0,
-                delivered: 0,
-                failed: 0,
-            }),
-            dispatchAttempts: 0,
-            idempotencyKey: resolvedIdempotencyKey,
-            lastDispatchAt: undefined,
-            priority,
-            publishedAt: mode === "send_now" ? now : undefined,
-            recipientScope: "all_profiles",
-            scheduledFor,
-            status,
-            title,
-            urgentBypass: JSON.stringify(defaultUrgentBypass(priority)),
-        },
-    );
+    try {
+        const document = await databases.createDocument(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            ID.unique(),
+            {
+                body,
+                bodyFormat: "markdown",
+                createdBy: input.actorId,
+                deliverySummary: JSON.stringify({
+                    attempted: 0,
+                    delivered: 0,
+                    failed: 0,
+                }),
+                dispatchAttempts: 0,
+                idempotencyKey: resolvedIdempotencyKey,
+                lastDispatchAt: undefined,
+                priority,
+                publishedAt: mode === "send_now" ? now : undefined,
+                recipientScope: "all_profiles",
+                scheduledFor,
+                status,
+                title,
+                urgentBypass: JSON.stringify(defaultUrgentBypass(priority)),
+            },
+        );
 
-    return toAnnouncement(document as unknown as Record<string, unknown>);
+        return toAnnouncement(document as unknown as Record<string, unknown>);
+    } catch (error) {
+        if (
+            idempotencyKey.length > 0 &&
+            isDuplicateConstraintError(error)
+        ) {
+            const existing = await databases.listDocuments(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                [Query.equal("idempotencyKey", idempotencyKey), Query.limit(1)],
+            );
+
+            const existingDocument = existing.documents.at(0);
+            if (existingDocument) {
+                return toAnnouncement(
+                    existingDocument as unknown as Record<string, unknown>,
+                );
+            }
+        }
+
+        throw error;
+    }
 }
 
 async function listAllProfileUserIds(excludeUserId?: string): Promise<string[]> {
@@ -921,10 +971,7 @@ async function finalizeAnnouncementDispatch(params: {
     const { databaseId } = getEnvConfig();
 
     let status: AnnouncementStatus = "dispatching";
-    if (
-        rollup.total === 0 ||
-        (rollup.delivered === rollup.total && rollup.failed === 0)
-    ) {
+    if (rollup.total === 0 || rollup.delivered === rollup.total) {
         status = "sent";
     } else if (dispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS) {
         status = "failed";
@@ -1023,39 +1070,79 @@ export async function dispatchScheduledAnnouncements(
                 : 0;
         const nextDispatchAttempts = dispatchAttempts + 1;
 
-        await databases.updateDocument(
-            databaseId,
-            getAnnouncementsCollectionId(),
-            announcement.$id,
-            {
+        try {
+            await databases.updateDocument(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                announcement.$id,
+                {
+                    dispatchAttempts: nextDispatchAttempts,
+                    lastDispatchAt: now,
+                    status: "dispatching",
+                },
+            );
+
+            const recipientIds = await listAllProfileUserIds(systemSenderUserId);
+
+            await runWithConcurrency({
+                items: recipientIds,
+                concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
+                worker: async (recipientUserId) => {
+                    try {
+                        await dispatchToRecipient({
+                            announcement,
+                            recipientUserId,
+                            systemSenderUserId,
+                        });
+                    } catch (error) {
+                        logger.error("Announcement delivery worker crashed", {
+                            announcementId: announcement.$id,
+                            error: toErrorMessage(error),
+                            recipientUserId,
+                        });
+                    }
+                },
+            });
+
+            const rollup = await rollupDeliveryStatus(announcement.$id);
+            await finalizeAnnouncementDispatch({
+                announcement,
                 dispatchAttempts: nextDispatchAttempts,
-                lastDispatchAt: now,
-                status: "dispatching",
-            },
-        );
+                rollup,
+            });
 
-        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
+            updatedIds.push(announcement.$id);
+        } catch (error) {
+            logger.error("Announcement dispatch failed", {
+                announcementId: announcement.$id,
+                error: toErrorMessage(error),
+            });
 
-        await runWithConcurrency({
-            items: recipientIds,
-            concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
-            worker: async (recipientUserId) => {
-                await dispatchToRecipient({
-                    announcement,
-                    recipientUserId,
-                    systemSenderUserId,
+            try {
+                const failedStatus: AnnouncementStatus =
+                    nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
+                        ? "failed"
+                        : "dispatching";
+
+                await databases.updateDocument(
+                    databaseId,
+                    getAnnouncementsCollectionId(),
+                    announcement.$id,
+                    {
+                        dispatchAttempts: nextDispatchAttempts,
+                        lastDispatchAt: now,
+                        status: failedStatus,
+                    },
+                );
+            } catch (updateError) {
+                logger.error("Failed to persist announcement failure state", {
+                    announcementId: announcement.$id,
+                    error: toErrorMessage(updateError),
                 });
-            },
-        });
+            }
 
-        const rollup = await rollupDeliveryStatus(announcement.$id);
-        await finalizeAnnouncementDispatch({
-            announcement,
-            dispatchAttempts: nextDispatchAttempts,
-            rollup,
-        });
-
-        updatedIds.push(announcement.$id);
+            continue;
+        }
     }
 
     return {

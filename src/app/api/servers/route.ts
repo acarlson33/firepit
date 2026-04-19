@@ -18,6 +18,34 @@ type ListDocumentsResponse = Awaited<
     ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
 >;
 
+type MembershipDocument = {
+    serverId: string;
+};
+
+type ServerDocument = Record<string, unknown> & {
+    $id: string;
+};
+
+type QueryWithSelect = typeof Query & {
+    select?: (attributes: string[]) => string;
+};
+
+function selectMembershipFieldQuery() {
+    const queryWithSelect = Query as QueryWithSelect;
+    return typeof queryWithSelect.select === "function"
+        ? [queryWithSelect.select(["$id", "serverId"])]
+        : [];
+}
+
+function isMembershipDocument(document: unknown): document is MembershipDocument {
+    if (!document || typeof document !== "object") {
+        return false;
+    }
+
+    const candidate = document as Record<string, unknown>;
+    return typeof candidate.serverId === "string";
+}
+
 /**
  * GET /api/servers
  * Lists servers with pagination
@@ -69,17 +97,19 @@ export async function GET(request: NextRequest) {
                     env.collections.memberships,
                     [
                         Query.equal("userId", session.$id),
+                        ...selectMembershipFieldQuery(),
                         Query.limit(pageSize),
                         ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
                     ],
                 );
 
                 for (const document of membershipsResponse.documents) {
-                    const serverId = String(
-                        (document as { serverId?: unknown }).serverId ?? "",
-                    );
-                    if (serverId.length > 0) {
-                        serverIds.add(serverId);
+                    if (!isMembershipDocument(document)) {
+                        continue;
+                    }
+
+                    if (document.serverId.length > 0) {
+                        serverIds.add(document.serverId);
                     }
                 }
 
@@ -148,7 +178,7 @@ export async function GET(request: NextRequest) {
 
         const servers: Server[] = res.documents.map((doc) =>
             mapServerDocument(
-                doc as unknown as Record<string, unknown>,
+                doc as ServerDocument,
                 memberCounts.get(String(doc.$id)) ?? 0,
             ),
         );

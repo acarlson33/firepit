@@ -746,17 +746,15 @@ export function useDirectMessages({
         }
 
         const publishKey = async () => {
-            try {
-                await ensurePublishedDmEncryptionKey(userId);
-            } catch (error) {
-                logger.warn("Failed to publish DM encryption key", {
-                    error: error instanceof Error ? error.message : String(error),
-                    userId,
-                });
-            }
+            await ensurePublishedDmEncryptionKey(userId);
         };
 
-        publishKey();
+        publishKey().catch((error) => {
+            logger.warn("Failed to publish DM encryption key", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+            });
+        });
     }, [dmEncryptionSelfEnabled, userId]);
 
     // Safety net: pull latest DM history occasionally when realtime appears stale.
@@ -984,6 +982,21 @@ export function useDirectMessages({
                                                               replyToId:
                                                                   resolvedMessage.replyToId ??
                                                                   message.replyToId,
+                                                              senderAvatarFramePreset:
+                                                                  resolvedMessage.senderAvatarFramePreset ??
+                                                                  message.senderAvatarFramePreset,
+                                                              senderAvatarFrameUrl:
+                                                                  resolvedMessage.senderAvatarFrameUrl ??
+                                                                  message.senderAvatarFrameUrl,
+                                                              senderAvatarUrl:
+                                                                  resolvedMessage.senderAvatarUrl ??
+                                                                  message.senderAvatarUrl,
+                                                              senderDisplayName:
+                                                                  resolvedMessage.senderDisplayName ??
+                                                                  message.senderDisplayName,
+                                                              senderPronouns:
+                                                                  resolvedMessage.senderPronouns ??
+                                                                  message.senderPronouns,
                                                           },
                                                           prev,
                                                           message,
@@ -1070,7 +1083,18 @@ export function useDirectMessages({
                                     },
                                 );
                             }
-                        })();
+                        })().catch((error) => {
+                            logger.error(
+                                "Unhandled direct message realtime event rejection",
+                                error instanceof Error
+                                    ? error
+                                    : new Error(String(error)),
+                                {
+                                    conversationId:
+                                        currentConversationIdRef.current,
+                                },
+                            );
+                        });
                     },
                     [Query.equal("conversationId", conversationId)],
                 );
@@ -1309,6 +1333,21 @@ export function useDirectMessages({
                                           replyToId:
                                               enrichedWithReplyContext.replyToId ??
                                               m.replyToId,
+                                          senderAvatarFramePreset:
+                                              enrichedWithReplyContext.senderAvatarFramePreset ??
+                                              m.senderAvatarFramePreset,
+                                          senderAvatarFrameUrl:
+                                              enrichedWithReplyContext.senderAvatarFrameUrl ??
+                                              m.senderAvatarFrameUrl,
+                                          senderAvatarUrl:
+                                              enrichedWithReplyContext.senderAvatarUrl ??
+                                              m.senderAvatarUrl,
+                                          senderDisplayName:
+                                              enrichedWithReplyContext.senderDisplayName ??
+                                              m.senderDisplayName,
+                                          senderPronouns:
+                                              enrichedWithReplyContext.senderPronouns ??
+                                              m.senderPronouns,
                                       },
                                       prev,
                                       m,

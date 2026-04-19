@@ -145,7 +145,7 @@ export function VirtualizedMessageList({
                         onStartEdit={onStartEdit}
                         onStartReply={onStartReply}
                         onMediaLoad={onMediaLoad}
-                        onTogglePin={onTogglePin ? onTogglePin : undefined}
+                        onTogglePin={onTogglePin}
                         onToggleReaction={onToggleReaction}
                         onVotePoll={onVotePoll}
                         onClosePoll={onClosePoll}

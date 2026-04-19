@@ -775,8 +775,8 @@ paths:
                                 isPublic:
                                     type: boolean
             responses:
-                "200":
-                    description: Created server
+                "201":
+                    description: Created
                     content:
                         application/json:
                             schema:
@@ -1577,7 +1577,7 @@ paths:
                                     items:
                                         $ref: "#/components/schemas/FileAttachment"
             responses:
-                "200":
+                "201":
                     description: Thread reply created
                     content:
                         application/json:
@@ -2835,7 +2835,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/Role"
             responses:
-                "200":
+                "201":
                     description: Role created
                     content:
                         application/json:
@@ -2921,7 +2921,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/RoleAssignment"
             responses:
-                "200":
+                "201":
                     description: Role assigned
                     content:
                         application/json:
@@ -2992,7 +2992,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/ChannelPermissionOverride"
             responses:
-                "200":
+                "201":
                     description: Override created
                     content:
                         application/json:

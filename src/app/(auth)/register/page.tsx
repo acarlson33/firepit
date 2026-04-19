@@ -72,7 +72,9 @@ function RegisterFormContent() {
                     toast.success(verificationMessage);
                     router.push("/login");
                 } else {
-                    toast.error(result.error);
+                    toast.error(
+                        result.error || "An unexpected error occurred",
+                    );
                 }
             }
         } catch (err) {

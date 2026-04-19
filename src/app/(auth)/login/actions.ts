@@ -113,6 +113,21 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
     try {
         const { databases } = getServerClient();
 
+        async function getSingleServerIdFallback(): Promise<string | null> {
+            // Fallback: auto-join if there's exactly one server on the instance.
+            const serversResponse = await databases.listDocuments(
+                env.databaseId,
+                env.collections.servers,
+                [Query.limit(2)],
+            );
+
+            if (serversResponse.documents.length !== 1) {
+                return null;
+            }
+
+            return serversResponse.documents[0].$id;
+        }
+
         // Prefer explicitly configured signup default server.
         const defaultServersResponse = await databases.listDocuments(
             env.databaseId,
@@ -125,21 +140,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
         );
         const defaultServerId = defaultServersResponse.documents[0]?.$id;
         const resolvedServerId =
-            defaultServerId ||
-            (await (async () => {
-                // Fallback: auto-join if there's exactly one server on the instance.
-                const serversResponse = await databases.listDocuments(
-                    env.databaseId,
-                    env.collections.servers,
-                    [Query.limit(2)],
-                );
-
-                if (serversResponse.documents.length !== 1) {
-                    return null;
-                }
-
-                return serversResponse.documents[0].$id;
-            })());
+            defaultServerId || (await getSingleServerIdFallback());
         if (!resolvedServerId) {
             return;
         }
@@ -426,14 +427,16 @@ export async function resendVerificationAction(
         }
 
         // Send a fresh verification link using this temporary session, then revoke it.
-        await sendVerificationEmailForSession({
-            endpoint,
-            project,
-            sessionSecret: session.secret,
-        });
-
-        // Best-effort cleanup: do not keep the temporary session active.
-        await revokeSessionBestEffort(account, session.$id);
+        try {
+            await sendVerificationEmailForSession({
+                endpoint,
+                project,
+                sessionSecret: session.secret,
+            });
+        } finally {
+            // Best-effort cleanup: do not keep the temporary session active.
+            await revokeSessionBestEffort(account, session.$id);
+        }
 
         return {
             success: true,

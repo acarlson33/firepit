@@ -20,15 +20,15 @@ describe("posthog-server", () => {
         vi.resetModules();
         vi.clearAllMocks();
 
-        delete process.env.POSTHOG_PROJECT_API_KEY;
-        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
-        delete process.env.POSTHOG_HOST;
+        process.env.POSTHOG_PROJECT_API_KEY = undefined;
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = undefined;
+        process.env.POSTHOG_HOST = undefined;
     });
 
     afterEach(() => {
-        delete process.env.POSTHOG_PROJECT_API_KEY;
-        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
-        delete process.env.POSTHOG_HOST;
+        process.env.POSTHOG_PROJECT_API_KEY = undefined;
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = undefined;
+        process.env.POSTHOG_HOST = undefined;
         vi.restoreAllMocks();
     });
 

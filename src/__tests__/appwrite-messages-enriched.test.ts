@@ -74,8 +74,22 @@ function clearMocks() {
 	testGlobals.__mockProfiles = {};
 }
 
+function isProfileMessage(
+	message: unknown,
+): message is { profile?: TestProfile | null } {
+	if (!message || typeof message !== "object") {
+		return false;
+	}
+
+	return "profile" in message;
+}
+
 function getProfile(message: unknown): TestProfile | null | undefined {
-	return (message as { profile?: TestProfile | null }).profile;
+	if (!isProfileMessage(message)) {
+		return undefined;
+	}
+
+	return message.profile;
 }
 
 describe("appwrite-messages-enriched", () => {

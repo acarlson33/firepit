@@ -4,9 +4,12 @@ import {
     createAnnouncement,
     isInstanceAnnouncementsEnabled,
     listAnnouncements,
-    type AnnouncementCreateMode,
 } from "@/lib/appwrite-announcements";
-import type { AnnouncementPriority, AnnouncementStatus } from "@/lib/types";
+import type {
+    AnnouncementCreateMode,
+    AnnouncementPriority,
+    AnnouncementStatus,
+} from "@/lib/types";
 import { AuthError, requireAdmin } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 
@@ -29,6 +32,15 @@ const ALLOWED_MODES: ReadonlySet<AnnouncementCreateMode> = new Set([
     "schedule",
     "send_now",
 ]);
+
+interface AnnouncementPayload {
+    body?: unknown;
+    idempotencyKey?: unknown;
+    mode?: unknown;
+    priority?: unknown;
+    scheduledFor?: unknown;
+    title?: unknown;
+}
 
 function parseLimit(rawLimit: string | null): number {
     if (!rawLimit) {
@@ -145,24 +157,10 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         const { user } = await requireAdmin();
 
-        let payload: {
-            body?: unknown;
-            idempotencyKey?: unknown;
-            mode?: unknown;
-            priority?: unknown;
-            scheduledFor?: unknown;
-            title?: unknown;
-        };
+        let payload: AnnouncementPayload;
 
         try {
-            payload = (await request.json()) as {
-                body?: unknown;
-                idempotencyKey?: unknown;
-                mode?: unknown;
-                priority?: unknown;
-                scheduledFor?: unknown;
-                title?: unknown;
-            };
+            payload = (await request.json()) as AnnouncementPayload;
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
@@ -230,20 +228,14 @@ export async function POST(request: Request): Promise<NextResponse> {
             logger.error("Failed to create announcement", {
                 error: error.message,
             });
-            return NextResponse.json(
-                { success: false, error: "An unexpected error occurred" },
-                { status: 500 },
-            );
+        } else {
+            logger.error("Failed to create announcement", {
+                error: String(error),
+            });
         }
 
-        logger.error("Failed to create announcement", {
-            error: String(error),
-        });
         return NextResponse.json(
-            {
-                success: false,
-                error: "Failed to create announcement",
-            },
+            { success: false, error: "Failed to create announcement" },
             { status: 500 },
         );
     }

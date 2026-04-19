@@ -262,7 +262,7 @@ export function isUnknownAttachmentAttributeError(error: unknown): boolean {
         return false;
     }
 
-    const candidate = error as { message?: unknown; type?: unknown };
+    const candidate = error as { message?: unknown };
     const message =
         typeof candidate.message === "string"
             ? candidate.message.toLowerCase()

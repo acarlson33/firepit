@@ -65,6 +65,51 @@ function normalizeChannelType(
     return "text";
 }
 
+async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
+    const { databases } = getServerClient();
+    const pageLimit = 100;
+    let cursorAfter: string | undefined;
+    const defaults: Array<{ $id: string }> = [];
+
+    while (true) {
+        const queries = [
+            Query.equal("defaultOnSignup", true),
+            Query.orderAsc("$id"),
+            Query.limit(pageLimit),
+        ];
+
+        if (cursorAfter) {
+            queries.push(Query.cursorAfter(cursorAfter));
+        }
+
+        const page = await databases.listDocuments(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            queries,
+        );
+
+        defaults.push(...page.documents.map((server) => ({ $id: server.$id })));
+
+        if (page.documents.length < pageLimit) {
+            break;
+        }
+
+        logger.debug("Default signup server query page hit limit", {
+            pageLimit,
+            pageSize: page.documents.length,
+        });
+
+        const lastId = page.documents.at(-1)?.$id;
+        if (!lastId) {
+            break;
+        }
+
+        cursorAfter = lastId;
+    }
+
+    return defaults;
+}
+
 /**
  * Create a new server (Admin only)
  * Admins can always create servers regardless of feature flags
@@ -235,14 +280,23 @@ export async function setDefaultSignupServerAction(
         await requireAdmin();
 
         const { databases } = getServerClient();
-        const defaultsResponse = await databases.listDocuments(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            [Query.equal("defaultOnSignup", true), Query.limit(200)],
+        const defaultServers = await listDefaultSignupServers();
+
+        if (serverId) {
+            await databases.updateDocument(
+                DATABASE_ID,
+                SERVERS_COLLECTION_ID,
+                serverId,
+                { defaultOnSignup: true },
+            );
+        }
+
+        const serversToReset = defaultServers.filter(
+            (server) => server.$id !== serverId,
         );
 
         const resetResults = await Promise.allSettled(
-            defaultsResponse.documents.map((server) =>
+            serversToReset.map((server) =>
                 databases.updateDocument(
                     DATABASE_ID,
                     SERVERS_COLLECTION_ID,
@@ -264,15 +318,6 @@ export async function setDefaultSignupServerAction(
                 success: false,
                 error: "Failed to clear existing default signup servers",
             };
-        }
-
-        if (serverId) {
-            await databases.updateDocument(
-                DATABASE_ID,
-                SERVERS_COLLECTION_ID,
-                serverId,
-                { defaultOnSignup: true },
-            );
         }
 
         return { success: true };

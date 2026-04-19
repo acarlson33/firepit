@@ -74,9 +74,9 @@ export async function GET(
         }
 
         // Count recent messages (last 24 hours)
-        const oneDayAgo = new Date(
-            Date.now() - 24 * 60 * 60 * 1000,
-        ).toISOString();
+        const now = Date.now();
+        const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+        const statsTimeBucket = Math.floor(now / SERVER_STATS_CACHE_TTL_MS);
         const [
             membersResult,
             channelsResult,
@@ -85,7 +85,7 @@ export async function GET(
             bannedResult,
             mutedResult,
         ] = await dedupeServerStatsCache(
-            `api:servers:stats:${serverId}`,
+            `api:servers:stats:${serverId}:${statsTimeBucket}`,
             () =>
                 Promise.all([
                     databases.listDocuments(DATABASE_ID, MEMBERSHIPS_COLLECTION_ID, [

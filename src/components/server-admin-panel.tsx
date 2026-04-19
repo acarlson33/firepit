@@ -97,6 +97,8 @@ interface ServerStats {
     mutedUsers: number;
 }
 
+const MAX_SERVER_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 export function ServerAdminPanel({
     serverId,
     serverName,
@@ -172,6 +174,8 @@ export function ServerAdminPanel({
     const iconInputRef = useRef<HTMLInputElement>(null);
     const bannerInputRef = useRef<HTMLInputElement>(null);
     const canEditServerSettings = isOwner || canManageServer;
+    const iconInputId = "server-settings-icon-upload";
+    const bannerInputId = "server-settings-banner-upload";
 
     useEffect(() => {
         if (!open) {
@@ -198,6 +202,11 @@ export function ServerAdminPanel({
 
     const handleServerImageUpload = useCallback(
         async (kind: "icon" | "banner", file: File) => {
+            if (file.size > MAX_SERVER_IMAGE_UPLOAD_BYTES) {
+                toast.error("Image must be less than 5MB");
+                return;
+            }
+
             if (kind === "icon") {
                 setUploadingIcon(true);
             } else {
@@ -807,7 +816,9 @@ export function ServerAdminPanel({
 
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label>Server icon</Label>
+                                            <Label htmlFor={iconInputId}>
+                                                Server icon
+                                            </Label>
                                             <div className="rounded-lg border p-3 space-y-3">
                                                 <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden">
                                                     {settingsIconUrl ? (
@@ -859,7 +870,9 @@ export function ServerAdminPanel({
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label>Server banner</Label>
+                                            <Label htmlFor={bannerInputId}>
+                                                Server banner
+                                            </Label>
                                             <div className="rounded-lg border p-3 space-y-3">
                                                 <div className="h-16 w-full rounded-lg bg-muted overflow-hidden">
                                                     {settingsBannerUrl ? (
@@ -1462,6 +1475,8 @@ export function ServerAdminPanel({
                 <input
                     ref={iconInputRef}
                     type="file"
+                    id={iconInputId}
+                    aria-label="Upload server icon image"
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {
@@ -1478,6 +1493,8 @@ export function ServerAdminPanel({
                 <input
                     ref={bannerInputRef}
                     type="file"
+                    id={bannerInputId}
+                    aria-label="Upload server banner image"
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {

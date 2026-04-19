@@ -221,7 +221,6 @@ describe("Login Security", () => {
     });
 
     it("loginAction should block the configured system sender account", async () => {
-        vi.clearAllMocks();
         mockGetFeatureFlag.mockResolvedValue(false);
 
         process.env.SYSTEM_SENDER_USER_ID = "system-account-id";

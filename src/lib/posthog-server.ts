@@ -55,12 +55,20 @@ async function waitWithTimeout(promise: Promise<void>, timeoutMs: number) {
         return;
     }
 
-    await Promise.race([
-        promise,
-        new Promise<void>((resolve) => {
-            setTimeout(resolve, timeoutMs);
-        }),
-    ]);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+        await Promise.race([
+            promise,
+            new Promise<void>((resolve) => {
+                timer = setTimeout(resolve, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
 }
 
 export function getPostHogClient() {
@@ -194,6 +202,11 @@ export function registerPostHogProcessHandlers() {
     });
 }
 
+/**
+ * Captures a server error event but does not flush automatically.
+ * In short-lived/serverless paths, call flushPostHog() after this to
+ * improve delivery reliability before execution ends.
+ */
 export function capturePostHogServerError(
     error: unknown,
     properties?: Record<string, unknown>,

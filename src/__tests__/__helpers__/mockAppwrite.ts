@@ -15,7 +15,11 @@ type FailureConfig = {
 };
 
 type MockAppwriteHandles = {
-  created: Array<{ collectionId: string; data: any; permissions?: any }>;
+  created: Array<{
+    collectionId: string;
+    data: unknown;
+    permissions?: unknown;
+  }>;
   reset: () => void;
 };
 
@@ -128,6 +132,7 @@ vi.mock("appwrite", () => {
     orderAsc: (f: string) => `orderAsc(${f})`,
     orderDesc: (f: string) => `orderDesc(${f})`,
     equal: (k: string, v: any) => `equal(${k},${v})`,
+    select: (fields: string[]) => `select(${JSON.stringify(fields)})`,
   };
 
   class Storage {

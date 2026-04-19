@@ -368,8 +368,11 @@ describe("Messages API Routes", () => {
                 (call) => call[1] === "polls-collection",
             );
             expect(createPollCall).toBeDefined();
+
             if (!createPollCall) {
-                throw new Error("Poll createDocument call not found");
+                throw new Error(
+                    "Expected poll create call for polls-collection",
+                );
             }
 
             const pollCreateData = createPollCall[3] as {

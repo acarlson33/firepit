@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { clearFeatureFlagsCache, FEATURE_FLAGS } from "../lib/feature-flags";
 
+const requiredFlagKeys = [
+    "ALLOW_USER_SERVERS",
+    "ENABLE_AUDIT_LOGGING",
+    "ENABLE_INSTANCE_ANNOUNCEMENTS",
+    "ENABLE_EMAIL_VERIFICATION",
+    "ENABLE_GIF_STICKER_SUPPORT",
+    "ENABLE_TENOR_GIF_SEARCH",
+] as const;
+
 describe("Feature Flags", () => {
     describe("FEATURE_FLAGS constants", () => {
         it("should have ALLOW_USER_SERVERS flag with correct key", () => {
@@ -38,23 +47,9 @@ describe("Feature Flags", () => {
             );
         });
 
-        it("should have all required feature flags defined", () => {
-            // Ensure the FEATURE_FLAGS object has the expected structure
-            expect(FEATURE_FLAGS).toBeDefined();
-            expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
-            expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
-            expect(
-                typeof FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS,
-            ).toBe("string");
-            expect(typeof FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
-                "string",
-            );
-            expect(typeof FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
-                "string",
-            );
-            expect(typeof FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
-                "string",
-            );
+        it.each(requiredFlagKeys)("should define %s as a string", (key) => {
+            expect(FEATURE_FLAGS[key]).toBeDefined();
+            expect(typeof FEATURE_FLAGS[key]).toBe("string");
         });
     });
 
