@@ -10,7 +10,7 @@ const mockDatabases = {
 };
 
 // Mock membership counting
-const mockGetActualMemberCount = vi.fn();
+const mockGetActualMemberCounts = vi.fn();
 
 // Mock dependencies
 vi.mock("@/lib/appwrite-server", () => ({
@@ -30,7 +30,10 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("@/lib/membership-count", () => ({
-	getActualMemberCount: (databases: unknown, serverId: string) => mockGetActualMemberCount(serverId),
+	getActualMemberCounts: (
+		databases: unknown,
+		serverIds: string[],
+	) => mockGetActualMemberCounts(serverIds),
 }));
 
 vi.mock("node-appwrite", () => ({
@@ -43,6 +46,7 @@ vi.mock("node-appwrite", () => ({
 describe("GET /api/servers/public", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockGetActualMemberCounts.mockResolvedValue(new Map());
 	});
 
 	it("should fetch public servers successfully", async () => {
@@ -68,12 +72,10 @@ describe("GET /api/servers/public", () => {
 		// Mock server list
 		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers, total: 2 });
 
-		// Mock member counts
-		mockGetActualMemberCount.mockImplementation((serverId: string) => {
-			if (serverId === "server1") return Promise.resolve(50);
-			if (serverId === "server2") return Promise.resolve(25);
-			return Promise.resolve(0);
-		});
+		// Mock batched member counts
+		mockGetActualMemberCounts.mockResolvedValue(
+			new Map([["server1", 50]]),
+		);
 
 		const response = await GET();
 		const data = await response.json();
@@ -97,9 +99,10 @@ describe("GET /api/servers/public", () => {
 				expect.stringContaining("orderDesc"),
 			])
 		);
+		expect(mockGetActualMemberCounts).toHaveBeenCalledWith(["server1"]);
 	});
 
-	it("should include legacy servers with missing visibility", async () => {
+	it("should exclude legacy servers with missing visibility", async () => {
 		const mockServers = [
 			{
 				$id: "server1",
@@ -110,14 +113,15 @@ describe("GET /api/servers/public", () => {
 		];
 
 		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers, total: 1 });
-		mockGetActualMemberCount.mockResolvedValue(0);
+		mockGetActualMemberCounts.mockResolvedValue(
+			new Map([["server1", 0]]),
+		);
 
 		const response = await GET();
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(data.servers[0].isPublic).toBe(true);
-		expect(data.servers[0].memberCount).toBe(0);
+		expect(data.servers).toEqual([]);
 	});
 
 	it("should return empty array when no servers exist", async () => {
@@ -156,6 +160,7 @@ describe("GET /api/servers/public", () => {
 				$id: "123", // Appwrite always returns strings for $id
 				name: "Test Server",
 				ownerId: "owner1",
+				isPublic: true,
 				memberCount: 50, // Valid number
 			},
 		];

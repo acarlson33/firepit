@@ -16,7 +16,7 @@ type CreateThreadReplyResponse<TMessage> = {
     reply?: TMessage;
 };
 
-export type ThreadPinSurface = "channel" | "dm";
+type ThreadPinSurface = "channel" | "dm";
 
 export type ThreadReplyPayload = {
     text?: string;

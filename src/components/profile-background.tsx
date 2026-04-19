@@ -20,7 +20,7 @@ const heightClasses = {
     auto: "min-h-0",
 };
 
-export function ProfileBackground({
+function ProfileBackground({
     backgroundColor,
     backgroundGradient,
     height = "lg",

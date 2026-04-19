@@ -86,8 +86,8 @@ export type EnvConfig = {
         emojis: string;
         images: string;
         files: string;
-        gifs?: string;
-        stickers?: string;
+        gifs: string;
+        stickers: string;
         profileBackgrounds: string;
         avatarFramesPredefined: string;
     };

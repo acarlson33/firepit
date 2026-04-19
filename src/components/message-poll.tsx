@@ -54,7 +54,7 @@ export function MessagePollBlock({
     const pollClosed = pollState.status === "closed";
 
     async function vote(optionId: string) {
-        if (!currentUserId || readOnly || pollClosed) {
+        if (!currentUserId || readOnly || pollClosed || submittingVote) {
             return;
         }
 
@@ -143,11 +143,12 @@ export function MessagePollBlock({
                 {pollState.options.map((option) => {
                     const isSelected = selectedOptionId === option.id;
                     const isLoading = submittingVote === option.id;
+                    const voteLocked = Boolean(submittingVote);
 
                     return (
                         <Button
                             className="h-auto w-full justify-between gap-3 py-2 text-left"
-                            disabled={readOnly || pollClosed || isLoading}
+                            disabled={readOnly || pollClosed || voteLocked}
                             key={option.id}
                             onClick={() => {
                                 void vote(option.id);
@@ -184,6 +185,7 @@ export function MessagePollBlock({
                     ) : null}
                     {canClose && !pollClosed ? (
                         <Button
+                            aria-label="Close poll"
                             disabled={closing}
                             onClick={() => {
                                 void closePoll();
@@ -193,7 +195,10 @@ export function MessagePollBlock({
                             variant="ghost"
                         >
                             {closing ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Closing...
+                                </>
                             ) : (
                                 "Close poll"
                             )}

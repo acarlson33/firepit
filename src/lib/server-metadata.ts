@@ -7,7 +7,7 @@ export function normalizeServerVisibility(value: unknown): boolean {
     return value !== false;
 }
 
-export function normalizeServerDefaultOnSignup(value: unknown): boolean {
+function normalizeServerDefaultOnSignup(value: unknown): boolean {
     return value === true;
 }
 
@@ -33,7 +33,7 @@ export function normalizeServerFileId(value: unknown): string | undefined {
     return trimmedValue;
 }
 
-export function buildServerImageUrl(fileId: string): string {
+function buildServerImageUrl(fileId: string): string {
     const env = getEnvConfig();
     const endpoint = env.endpoint.replace(/\/$/, "");
     const bucketId = encodeURIComponent(env.buckets.images);
@@ -51,10 +51,10 @@ export function mapServerDocument(
     const bannerFileId = normalizeServerFileId(document.bannerFileId);
 
     return {
-        $id: String(document.$id),
-        name: String(document.name),
+        $id: String(document.$id ?? ""),
+        name: String(document.name ?? ""),
         $createdAt: String(document.$createdAt ?? ""),
-        ownerId: String(document.ownerId),
+        ownerId: String(document.ownerId ?? ""),
         memberCount,
         description: normalizeServerDescription(document.description),
         iconFileId,

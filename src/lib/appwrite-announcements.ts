@@ -21,6 +21,7 @@ const MAX_DELIVERY_ATTEMPTS = 6;
 const MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS = 10;
 const DELIVERY_BACKOFF_BASE_MS = 60_000;
 const DELIVERY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
+const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 20;
 
 type DeliveryUpdatePayload = {
     attemptCount?: number;
@@ -56,7 +57,7 @@ type DeliveryStatusRollup = {
 
 export type AnnouncementCreateMode = "draft" | "schedule" | "send_now";
 
-export type CreateAnnouncementInput = {
+type CreateAnnouncementInput = {
     actorId: string;
     body: string;
     title?: string;
@@ -66,18 +67,18 @@ export type CreateAnnouncementInput = {
     idempotencyKey?: string;
 };
 
-export type ListAnnouncementsOptions = {
+type ListAnnouncementsOptions = {
     cursorAfter?: string;
     limit?: number;
     statuses?: AnnouncementStatus[];
 };
 
-export type ListAnnouncementsResult = {
+type ListAnnouncementsResult = {
     items: Announcement[];
     nextCursor?: string;
 };
 
-export type DispatchScheduledAnnouncementsResult = {
+type DispatchScheduledAnnouncementsResult = {
     dueCount: number;
     announcementIds: string[];
 };
@@ -263,17 +264,92 @@ function defaultUrgentBypass(
     };
 }
 
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object";
+}
+
+function isAnnouncementUrgentBypass(
+    value: unknown,
+): value is AnnouncementUrgentBypass {
+    if (!isRecordValue(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.quietHours === "boolean" &&
+        typeof value.globalNotifications === "boolean" &&
+        typeof value.directMessagePrivacy === "boolean"
+    );
+}
+
+function isDeliverySummary(
+    value: unknown,
+): value is Announcement["deliverySummary"] {
+    if (!isRecordValue(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.attempted === "number" &&
+        Number.isFinite(value.attempted) &&
+        value.attempted >= 0 &&
+        typeof value.delivered === "number" &&
+        Number.isFinite(value.delivered) &&
+        value.delivered >= 0 &&
+        typeof value.failed === "number" &&
+        Number.isFinite(value.failed) &&
+        value.failed >= 0
+    );
+}
+
+function describeParsedValue(value: unknown): Record<string, unknown> {
+    if (Array.isArray(value)) {
+        return {
+            kind: "array",
+            length: value.length,
+        };
+    }
+
+    if (isRecordValue(value)) {
+        return {
+            kind: "object",
+            keys: Object.keys(value),
+        };
+    }
+
+    return {
+        kind: typeof value,
+        value,
+    };
+}
+
 function parseSerializedObject<T>(
     source: unknown,
     fallback: T,
-    errorContext: string,
+    params: {
+        errorContext: string;
+        validatorName: string;
+        validate: (value: unknown) => value is T;
+    },
 ): T {
+    const { errorContext, validate, validatorName } = params;
+
     if (typeof source !== "string" || !source.trim()) {
         return fallback;
     }
 
     try {
-        return JSON.parse(source) as T;
+        const parsed = JSON.parse(source) as unknown;
+        if (!validate(parsed)) {
+            logger.warn("Invalid announcement metadata shape", {
+                errorContext,
+                validatorName,
+                parsed: describeParsedValue(parsed),
+            });
+            return fallback;
+        }
+
+        return parsed;
     } catch (error) {
         logger.warn("Failed to parse announcement metadata", {
             error:
@@ -292,7 +368,11 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             globalNotifications: false,
             quietHours: false,
         },
-        "urgentBypass",
+        {
+            errorContext: "urgentBypass",
+            validate: isAnnouncementUrgentBypass,
+            validatorName: "isAnnouncementUrgentBypass",
+        },
     );
 
     const deliverySummary = parseSerializedObject<
@@ -304,7 +384,11 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             delivered: 0,
             failed: 0,
         },
-        "deliverySummary",
+        {
+            errorContext: "deliverySummary",
+            validate: isDeliverySummary,
+            validatorName: "isDeliverySummary",
+        },
     );
 
     return {
@@ -335,10 +419,7 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             typeof document.publishedAt === "string"
                 ? document.publishedAt
                 : undefined,
-        recipientScope:
-            document.recipientScope === "all_profiles"
-                ? "all_profiles"
-                : "all_profiles",
+        recipientScope: "all_profiles",
         scheduledFor:
             typeof document.scheduledFor === "string"
                 ? document.scheduledFor
@@ -390,8 +471,31 @@ export async function createAnnouncement(
         mode,
         scheduledFor: input.scheduledFor,
     });
+    const idempotencyKey =
+        typeof input.idempotencyKey === "string"
+            ? input.idempotencyKey.trim()
+            : "";
+    const resolvedIdempotencyKey =
+        idempotencyKey.length > 0
+            ? idempotencyKey
+            : `auto:${crypto.randomUUID()}`;
     const status = resolveStatusForMode(mode);
     const now = new Date().toISOString();
+
+    if (idempotencyKey.length > 0) {
+        const existing = await databases.listDocuments(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            [Query.equal("idempotencyKey", idempotencyKey), Query.limit(1)],
+        );
+
+        const existingDocument = existing.documents.at(0);
+        if (existingDocument) {
+            return toAnnouncement(
+                existingDocument as unknown as Record<string, unknown>,
+            );
+        }
+    }
 
     const document = await databases.createDocument(
         databaseId,
@@ -407,7 +511,7 @@ export async function createAnnouncement(
                 failed: 0,
             }),
             dispatchAttempts: 0,
-            idempotencyKey: input.idempotencyKey,
+            idempotencyKey: resolvedIdempotencyKey,
             lastDispatchAt: undefined,
             priority,
             publishedAt: mode === "send_now" ? now : undefined,
@@ -712,6 +816,35 @@ async function dispatchToRecipient(params: {
     }
 }
 
+async function runWithConcurrency<T>(params: {
+    items: T[];
+    concurrency: number;
+    worker: (item: T) => Promise<void>;
+}): Promise<void> {
+    const { items, concurrency, worker } = params;
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+    if (workerCount === 0) {
+        return;
+    }
+
+    let nextIndex = 0;
+    const runners = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            const item = items.at(currentIndex);
+            if (item === undefined) {
+                continue;
+            }
+
+            await worker(item);
+        }
+    });
+
+    await Promise.all(runners);
+}
+
 async function rollupDeliveryStatus(
     announcementId: string,
 ): Promise<DeliveryStatusRollup> {
@@ -903,13 +1036,17 @@ export async function dispatchScheduledAnnouncements(
 
         const recipientIds = await listAllProfileUserIds(systemSenderUserId);
 
-        for (const recipientUserId of recipientIds) {
-            await dispatchToRecipient({
-                announcement,
-                recipientUserId,
-                systemSenderUserId,
-            });
-        }
+        await runWithConcurrency({
+            items: recipientIds,
+            concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
+            worker: async (recipientUserId) => {
+                await dispatchToRecipient({
+                    announcement,
+                    recipientUserId,
+                    systemSenderUserId,
+                });
+            },
+        });
 
         const rollup = await rollupDeliveryStatus(announcement.$id);
         await finalizeAnnouncementDispatch({

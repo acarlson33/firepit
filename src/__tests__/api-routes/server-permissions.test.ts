@@ -170,5 +170,12 @@ describe("GET /api/servers/[serverId]/permissions", () => {
             manageMessages: true,
             sendMessages: false,
         });
+        expect(mockGetChannelAccessForUser).toHaveBeenCalledTimes(1);
+        expect(mockGetChannelAccessForUser).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            "channel-1",
+            "user-1",
+        );
     });
 });

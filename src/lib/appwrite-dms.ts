@@ -12,6 +12,49 @@ const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
 
+const DIRECT_MESSAGE_SELECT_FIELDS = [
+    "$id",
+    "$permissions",
+    "$createdAt",
+    "conversationId",
+    "senderId",
+    "receiverId",
+    "text",
+    "editedAt",
+    "removedAt",
+    "removedBy",
+    "reactions",
+] as const;
+
+const ATTACHMENT_SELECT_FIELDS = [
+    "messageId",
+    "fileId",
+    "fileName",
+    "fileSize",
+    "fileType",
+    "fileUrl",
+    "thumbnailUrl",
+    "mediaKind",
+    "source",
+    "provider",
+    "providerAssetId",
+    "packId",
+    "itemId",
+    "previewUrl",
+] as const;
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+function selectQuery(fields: readonly string[]) {
+    const queryWithSelect = Query as typeof Query & {
+        select?: (selectedFields: string[]) => string;
+    };
+
+    return typeof queryWithSelect.select === "function"
+        ? [queryWithSelect.select([...fields])]
+        : [];
+}
+
 function isConflictError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
         return false;
@@ -204,7 +247,16 @@ async function enrichDirectMessagesWithAttachments(
             queries: [
                 Query.equal("messageId", messageIds),
                 Query.equal("messageType", "dm"),
-                Query.limit(1000), // High limit to get all attachments
+                Query.limit(
+                    Math.min(
+                        1000,
+                        Math.max(
+                            50,
+                            messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE,
+                        ),
+                    ),
+                ),
+                ...selectQuery(ATTACHMENT_SELECT_FIELDS),
             ],
         });
 
@@ -705,7 +757,7 @@ export async function listDirectMessages(
         const response = await getDatabases().listDocuments({
             databaseId: DATABASE_ID,
             collectionId: DIRECT_MESSAGES_COLLECTION,
-            queries,
+            queries: [...queries, ...selectQuery(DIRECT_MESSAGE_SELECT_FIELDS)],
         });
 
         const items = response.documents.map((doc) => {

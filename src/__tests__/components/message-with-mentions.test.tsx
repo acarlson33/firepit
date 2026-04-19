@@ -222,7 +222,7 @@ describe("MessageWithMentions", () => {
 		);
 
 		expect(screen.queryByRole("link", { name: "click" })).toBeNull();
-		expect(screen.getByText("click")).toBeInTheDocument();
+		expect(screen.getByText("click")).not.toBeNull();
 	});
 
 	it("should preserve mention highlighting inside markdown", () => {

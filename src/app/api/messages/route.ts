@@ -34,10 +34,44 @@ import {
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
+import { apiCache } from "@/lib/cache-utils";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
+const MESSAGE_ROUTE_CACHE_TTL_MS = 5 * 1000;
+
+function canUseMessageRouteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function getMessageDocumentCacheKey(messageId: string): string {
+    return `api:messages:document:${messageId}`;
+}
+
+async function getMessageDocumentWithCache(
+    messageId: string,
+): Promise<Record<string, unknown>> {
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+
+    const fetcher = async () =>
+        (await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        )) as unknown as Record<string, unknown>;
+
+    if (!canUseMessageRouteCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(
+        getMessageDocumentCacheKey(messageId),
+        fetcher,
+        MESSAGE_ROUTE_CACHE_TTL_MS,
+    );
+}
 
 function normalizeStringField(value: unknown): string | undefined {
     if (typeof value !== "string") {
@@ -80,6 +114,21 @@ async function createAttachments(
                 if (!isUnknownAttachmentAttributeError(error)) {
                     throw error;
                 }
+
+                logger.warn(
+                    "Using legacy attachment payload fallback for message attachment write",
+                    {
+                        attachmentFileId: attachment.fileId,
+                        attachmentMediaKind: attachment.mediaKind,
+                        attachmentSource: attachment.source,
+                        messageId,
+                        messageType,
+                        reason:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
 
                 await databases.createDocument(
                     env.databaseId,
@@ -284,6 +333,7 @@ export async function POST(request: NextRequest) {
         let pollResponse: Message["poll"];
 
         if (parsedPoll) {
+            const serializedOptions = serializePollOptions(parsedPoll.options);
             const pollDocument = await databases.createDocument(
                 env.databaseId,
                 env.collections.polls,
@@ -292,7 +342,7 @@ export async function POST(request: NextRequest) {
                     messageId: String(res.$id),
                     channelId: normalizedChannelId,
                     question: parsedPoll.question,
-                    options: serializePollOptions(parsedPoll.options),
+                    options: serializedOptions,
                     status: "open",
                     createdBy: userId,
                 },
@@ -305,7 +355,7 @@ export async function POST(request: NextRequest) {
                     messageId: String(res.$id),
                     channelId: normalizedChannelId,
                     question: parsedPoll.question,
-                    options: serializePollOptions(parsedPoll.options),
+                    options: serializedOptions,
                     status: "open",
                     createdBy: userId,
                 },
@@ -320,10 +370,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Create attachment records if provided
-        if (
-            attachments &&
-            normalizedAttachments.length > 0
-        ) {
+        if (normalizedAttachments.length > 0) {
             await createAttachments(
                 String(res.$id),
                 "channel",
@@ -454,7 +501,6 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
-        const env = getEnvConfig();
         const { searchParams } = new URL(request.url);
         const messageId = searchParams.get("id");
         const body = await request.json();
@@ -477,13 +523,10 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
+        const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        );
+        const existing = await getMessageDocumentWithCache(messageId);
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only edit your own messages" },
@@ -499,6 +542,7 @@ export async function PATCH(request: NextRequest) {
             messageId,
             { text, editedAt },
         );
+        apiCache.clear(getMessageDocumentCacheKey(messageId));
 
         const doc = res as unknown as Record<string, unknown>;
         const message: Message = {
@@ -557,7 +601,6 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        const env = getEnvConfig();
         const { searchParams } = new URL(request.url);
         const messageId = searchParams.get("id");
 
@@ -568,13 +611,10 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
+        const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        );
+        const existing = await getMessageDocumentWithCache(messageId);
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only delete your own messages" },
@@ -588,6 +628,7 @@ export async function DELETE(request: NextRequest) {
             env.collections.messages,
             messageId,
         );
+        apiCache.clear(getMessageDocumentCacheKey(messageId));
 
         const normalizedDeletedChannelId = normalizeStringField(
             existing.channelId,

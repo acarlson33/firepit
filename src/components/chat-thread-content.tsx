@@ -80,16 +80,12 @@ function MessageCard({
                         messageId={message.id}
                         onClose={
                             onClosePoll
-                                ? async () => {
-                                      await onClosePoll(message);
-                                  }
+                                ? () => onClosePoll(message)
                                 : undefined
                         }
                         onVote={
                             onVotePoll
-                                ? async (optionId) => {
-                                      await onVotePoll(message, optionId);
-                                  }
+                                ? (optionId) => onVotePoll(message, optionId)
                                 : undefined
                         }
                         poll={message.poll}

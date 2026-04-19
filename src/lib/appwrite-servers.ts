@@ -105,7 +105,7 @@ function getDatabases() {
  * @param {number} limit - The limit value, if provided.
  * @returns {Promise<Server[]>} The return value.
  */
-export async function listServers(limit = 25): Promise<Server[]> {
+async function listServers(limit = 25): Promise<Server[]> {
     const databases = getDatabases();
     const res = await databases.listDocuments({
         databaseId: DATABASE_ID,
@@ -279,7 +279,7 @@ export function createServer(
  * @param {number} limit - The limit value, if provided.
  * @returns {Promise<Channel[]>} The return value.
  */
-export async function listChannels(
+async function listChannels(
     serverId: string,
     limit = 100,
 ): Promise<Channel[]> {
@@ -405,7 +405,7 @@ export async function createChannel(
  * @param {number} limit - The limit value, if provided.
  * @returns {Promise<ChannelCategory[]>} The return value.
  */
-export async function listCategories(
+async function listCategories(
     serverId: string,
     limit = 100,
 ): Promise<ChannelCategory[]> {

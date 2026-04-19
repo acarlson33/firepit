@@ -1,5 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "newrelic.cjs",
+    "public/sw.js",
+    "scripts/test-server-auth.ts"
+  ],
   "tags": [
     "-lintignore"
   ]

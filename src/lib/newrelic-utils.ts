@@ -5,7 +5,10 @@
  * with New Relic APM.
  */
 
-import { getPostHogClient } from "@/lib/posthog-server";
+import {
+    capturePostHogServerError,
+    getPostHogClient,
+} from "@/lib/posthog-server";
 
 type NewRelicAgent = {
     recordCustomEvent: (
@@ -187,7 +190,7 @@ function getNewRelicForDispatch() {
  * Initialize New Relic (should be called automatically by instrumentation.ts)
  * @returns {Promise<NewRelicAgent | null>} The return value.
  */
-export async function initNewRelic() {
+async function initNewRelic() {
     if (typeof window !== "undefined") {
         // New Relic doesn't run in the browser (only server-side)
         return null;
@@ -212,7 +215,7 @@ export async function initNewRelic() {
  * Get the New Relic agent instance
  * @returns {Promise<NewRelicAgent | null>} The return value.
  */
-export async function getNewRelic(): Promise<NewRelicAgent | null> {
+async function getNewRelic(): Promise<NewRelicAgent | null> {
     if (!newrelic) {
         newrelic = await initNewRelic();
     }
@@ -223,21 +226,21 @@ export async function getNewRelic(): Promise<NewRelicAgent | null> {
  * Get the New Relic agent instance synchronously (may return null if not initialized)
  * @returns {NewRelicAgent | null} The return value.
  */
-export function getNewRelicSync(): NewRelicAgent | null {
+function getNewRelicSync(): NewRelicAgent | null {
     return newrelic;
 }
 
 /**
  * Log levels for structured logging
  */
-export const LogLevel = {
+const LogLevel = {
     DEBUG: "debug",
     INFO: "info",
     WARN: "warn",
     ERROR: "error",
 } as const;
 
-export type LogLevelType = (typeof LogLevel)[keyof typeof LogLevel];
+type LogLevelType = (typeof LogLevel)[keyof typeof LogLevel];
 
 /**
  * Structured log entry (for internal use)
@@ -258,7 +261,7 @@ type _LogEntry = {
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function log(
+function log(
     level: LogLevelType,
     message: string,
     attributes?: Record<string, unknown>,
@@ -336,6 +339,10 @@ export function recordError(
         nr.noticeError(errorObject, customAttributes);
     }
 
+    if (shouldSendToPostHog()) {
+        capturePostHogServerError(errorObject, customAttributes);
+    }
+
     capturePostHogEvent("error_recorded", {
         errorMessage: errorObject.message,
         errorName: errorObject.name,
@@ -389,7 +396,7 @@ export function recordMetric(name: string, value: number) {
  * @param {number} value - The value value, if provided.
  * @returns {void} The return value.
  */
-export function incrementMetric(name: string, value = 1) {
+function incrementMetric(name: string, value = 1) {
     const nr = getNewRelicForDispatch();
     if (shouldSendToNewRelic() && nr) {
         nr.incrementMetric(name, value);
@@ -494,7 +501,7 @@ export function trackDatabaseQuery(
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function trackAuth(
+function trackAuth(
     action: "login" | "logout" | "signup" | "failed",
     userId?: string,
     attributes?: Record<string, unknown>,
@@ -516,7 +523,7 @@ export function trackAuth(
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function trackUserAction(
+function trackUserAction(
     action: string,
     userId: string,
     attributes?: Record<string, unknown>,
@@ -560,7 +567,7 @@ export function trackMessage(
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {void} The return value.
  */
-export function trackTiming(
+function trackTiming(
     name: string,
     duration: number,
     attributes?: Record<string, unknown>,
@@ -612,7 +619,7 @@ export async function measureAsync<T>(
  * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
  * @returns {T} The return value.
  */
-export function measureSync<T>(
+function measureSync<T>(
     name: string,
     fn: () => T,
     attributes?: Record<string, unknown>,
@@ -642,7 +649,7 @@ export function measureSync<T>(
  * @param {() => Promise<T>} fn - The fn value.
  * @returns {Promise<T>} The return value.
  */
-export async function backgroundTransaction<T>(
+async function backgroundTransaction<T>(
     name: string,
     group: string,
     fn: () => Promise<T>,
@@ -673,7 +680,7 @@ export async function backgroundTransaction<T>(
  * Insert this in your HTML <head> for browser monitoring
  * @returns {string} The return value.
  */
-export function getBrowserTimingHeader(): string {
+function getBrowserTimingHeader(): string {
     const nr = getNewRelicForDispatch();
     if (shouldSendToNewRelic() && nr) {
         return nr.getBrowserTimingHeader();

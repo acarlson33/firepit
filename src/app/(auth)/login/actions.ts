@@ -6,12 +6,14 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
+import { logger } from "@/lib/newrelic-utils";
 
 type AuthActionResult =
     | { success: true; userId: string }
     | {
           success: false;
           error: string;
+          message?: string;
           verificationRequired?: boolean;
       };
 
@@ -52,7 +54,9 @@ async function sendVerificationEmailForSession(params: {
     const { endpoint, project, sessionSecret } = params;
 
     if (!sessionSecret) {
-        return;
+        throw new Error(
+            "Cannot send verification email because session secret is missing.",
+        );
     }
 
     const verificationClient = new Client()
@@ -64,6 +68,31 @@ async function sendVerificationEmailForSession(params: {
     await verificationAccount.createVerification({
         url: getVerificationRedirectUrl(),
     });
+}
+
+function isSystemSenderAccount(userId: string): boolean {
+    const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
+    return Boolean(systemSenderUserId && userId === systemSenderUserId);
+}
+
+async function revokeSessionBestEffort(
+    account: Account,
+    sessionId: string,
+): Promise<void> {
+    await account
+        .deleteSession({ sessionId })
+        .catch(() => {
+            // Best effort cleanup.
+        });
+}
+
+function buildVerificationRequiredResult(): AuthActionResult {
+    return {
+        success: false,
+        error: "Please verify your email before signing in.",
+        message: "Please verify your email before signing in. We sent a verification link.",
+        verificationRequired: true,
+    };
 }
 
 /**
@@ -84,8 +113,6 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
     try {
         const { databases } = getServerClient();
 
-        let targetServerId: string | null = null;
-
         // Prefer explicitly configured signup default server.
         const defaultServersResponse = await databases.listDocuments(
             env.databaseId,
@@ -96,27 +123,24 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
                 Query.limit(1),
             ],
         );
-        if (defaultServersResponse.documents.length > 0) {
-            targetServerId = defaultServersResponse.documents[0].$id;
-        }
+        const defaultServerId = defaultServersResponse.documents[0]?.$id;
+        const resolvedServerId =
+            defaultServerId ||
+            (await (async () => {
+                // Fallback: auto-join if there's exactly one server on the instance.
+                const serversResponse = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.servers,
+                    [Query.limit(2)],
+                );
 
-        // Fallback: auto-join if there's exactly one server on the instance.
-        if (!targetServerId) {
-            const serversResponse = await databases.listDocuments(
-                env.databaseId,
-                env.collections.servers,
-                [Query.limit(2)],
-            );
+                if (serversResponse.documents.length !== 1) {
+                    return null;
+                }
 
-            if (serversResponse.documents.length !== 1) {
-                return;
-            }
-
-            targetServerId = serversResponse.documents[0].$id;
-        }
-
-        const serverId = targetServerId;
-        if (!serverId) {
+                return serversResponse.documents[0].$id;
+            })());
+        if (!resolvedServerId) {
             return;
         }
 
@@ -126,7 +150,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
             membershipCollectionId,
             [
                 Query.equal("userId", userId),
-                Query.equal("serverId", serverId),
+                Query.equal("serverId", resolvedServerId),
                 Query.limit(1),
             ],
         );
@@ -142,7 +166,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
             membershipCollectionId,
             ID.unique(),
             {
-                serverId,
+                serverId: resolvedServerId,
                 userId,
                 role: "member",
             },
@@ -150,7 +174,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
         );
 
         try {
-            await assignDefaultRoleServer(serverId, userId);
+            await assignDefaultRoleServer(resolvedServerId, userId);
         } catch {
             // Non-critical: default role assignment is best-effort
         }
@@ -210,14 +234,9 @@ export async function loginAction(
             password,
         });
 
-        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
-        if (systemSenderUserId && session.userId === systemSenderUserId) {
+        if (isSystemSenderAccount(session.userId)) {
             // Defense in depth: invalidate this session immediately and never issue app cookie.
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup; login is still denied either way.
-                });
+            await revokeSessionBestEffort(account, session.$id);
 
             return {
                 success: false,
@@ -239,17 +258,9 @@ export async function loginAction(
                     // Best effort only. Sign-in is still denied until verified.
                 });
 
-                await account
-                    .deleteSession({ sessionId: session.$id })
-                    .catch(() => {
-                        // Best effort cleanup.
-                    });
+                await revokeSessionBestEffort(account, session.$id);
 
-                return {
-                    success: false,
-                    error: "Please verify your email before signing in. We sent a verification link.",
-                    verificationRequired: true,
-                };
+                return buildVerificationRequiredResult();
             }
         }
 
@@ -327,13 +338,20 @@ export async function loginAction(
                 };
             }
 
+            logger.error("Unexpected login error", {
+                message: error.message,
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
 
         // Handle non-Error objects
+        logger.error("Login action failed with non-Error value", {
+            error,
+        });
         return {
             success: false,
             error: "Login failed. Please try again.",
@@ -384,13 +402,8 @@ export async function resendVerificationAction(
             password,
         });
 
-        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
-        if (systemSenderUserId && session.userId === systemSenderUserId) {
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup.
-                });
+        if (isSystemSenderAccount(session.userId)) {
+            await revokeSessionBestEffort(account, session.$id);
 
             return {
                 success: false,
@@ -403,11 +416,7 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup.
-                });
+            await revokeSessionBestEffort(account, session.$id);
 
             return {
                 success: true,
@@ -416,17 +425,15 @@ export async function resendVerificationAction(
             };
         }
 
+        // Send a fresh verification link using this temporary session, then revoke it.
         await sendVerificationEmailForSession({
             endpoint,
             project,
             sessionSecret: session.secret,
         });
 
-        await account
-            .deleteSession({ sessionId: session.$id })
-            .catch(() => {
-                // Best effort cleanup.
-            });
+        // Best-effort cleanup: do not keep the temporary session active.
+        await revokeSessionBestEffort(account, session.$id);
 
         return {
             success: true,
@@ -453,11 +460,19 @@ export async function resendVerificationAction(
                 };
             }
 
+            logger.error("Unexpected resend verification error", {
+                message: error.message,
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
+
+        logger.error("Resend verification failed with non-Error value", {
+            error,
+        });
 
         return {
             success: false,
@@ -553,11 +568,19 @@ export async function registerAction(
                 };
             }
 
+            logger.error("Unexpected registration error", {
+                message: error.message,
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
+
+        logger.error("Registration action failed with non-Error value", {
+            error,
+        });
 
         return {
             success: false,

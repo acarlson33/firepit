@@ -296,7 +296,7 @@ export function ChatSurfacePanel({
 
     async function handleSubmit(event?: FormEvent | KeyboardEvent) {
         event?.preventDefault?.();
-        if (!composer) {
+        if (!composer || composer.disabled || composer.readOnly) {
             return;
         }
 
@@ -308,6 +308,8 @@ export function ChatSurfacePanel({
             scrollComposerIntoView();
         });
     }
+
+    const composerDisabled = Boolean(composer?.disabled || composer?.readOnly);
 
     if (!showSurface) {
         return (
@@ -611,7 +613,7 @@ export function ChatSurfacePanel({
                             <Button
                                 className="shrink-0"
                                 disabled={
-                                    composer.disabled ||
+                                    composerDisabled ||
                                     Boolean(editingMessageId)
                                 }
                                 onClick={() =>
@@ -626,14 +628,14 @@ export function ChatSurfacePanel({
                             <FileUploadButton
                                 className="shrink-0"
                                 disabled={
-                                    composer.disabled ||
+                                    composerDisabled ||
                                     Boolean(editingMessageId)
                                 }
                                 onFileSelect={composer.onFileAttachmentSelect}
                             />
                             <GifStickerPicker
                                 disabled={
-                                    composer.disabled ||
+                                    composerDisabled ||
                                     Boolean(editingMessageId)
                                 }
                                 onSelectAttachment={
@@ -642,7 +644,7 @@ export function ChatSurfacePanel({
                             />
                             <EmojiPicker
                                 customEmojis={customEmojis}
-                                disabled={composer.disabled}
+                                disabled={composerDisabled}
                                 onEmojiSelect={composer.onEmojiSelect}
                                 onUploadCustomEmoji={onUploadCustomEmoji}
                             />
@@ -652,7 +654,7 @@ export function ChatSurfacePanel({
                                 editingMessageId ? "Edit message" : "Message"
                             }
                             className="flex-1 rounded-2xl border-border/60"
-                            disabled={composer.disabled}
+                            disabled={composerDisabled}
                             onChange={composer.onTextChange}
                             onKeyDown={(event) => {
                                 if (event.key === "Enter" && !event.shiftKey) {
@@ -673,7 +675,7 @@ export function ChatSurfacePanel({
                         <Button
                             className="shrink-0 rounded-2xl"
                             disabled={
-                                composer.disabled ||
+                                composerDisabled ||
                                 (!composer.text.trim() &&
                                     !composer.selectedImagePreview &&
                                     composer.fileAttachments.length === 0)

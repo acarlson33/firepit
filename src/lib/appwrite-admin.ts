@@ -126,7 +126,7 @@ export async function listAllChannelsPage(
     }
 }
 
-export type GlobalMessageFilters = {
+type GlobalMessageFilters = {
     limit: number;
     cursorAfter?: string;
     includeRemoved?: boolean;
@@ -384,7 +384,7 @@ export async function getBasicStats() {
 }
 
 // Query builder utilities referenced by tests.
-export type MessageQueryOpts = {
+type MessageQueryOpts = {
     cursorAfter?: string;
     userId?: string;
     channelId?: string;

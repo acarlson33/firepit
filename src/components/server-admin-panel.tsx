@@ -6,6 +6,7 @@ import {
     Users,
     MessageSquare,
     Hash,
+    LayoutDashboard,
     Settings,
     Ban,
     UserX,
@@ -255,7 +256,7 @@ export function ServerAdminPanel({
             bannerFileId: string | null;
         } = {
             name: trimmedName,
-            description: settingsDescription,
+            description: settingsDescription.trim(),
             isPublic: settingsIsPublic,
             iconFileId: settingsIconFileId || null,
             bannerFileId: settingsBannerFileId || null,
@@ -583,7 +584,7 @@ export function ServerAdminPanel({
                         }`}
                     >
                         <TabsTrigger value="overview">
-                            <Settings className="h-4 w-4 mr-2" />
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
                             Overview
                         </TabsTrigger>
                         {canEditServerSettings && (
@@ -786,15 +787,19 @@ export function ServerAdminPanel({
 
                                     <div className="flex items-center justify-between rounded-lg border p-3">
                                         <div>
-                                            <p className="text-sm font-medium">
+                                            <Label
+                                                className="text-sm font-medium"
+                                                htmlFor="server-settings-public-discovery"
+                                            >
                                                 Public discovery
-                                            </p>
+                                            </Label>
                                             <p className="text-xs text-muted-foreground">
                                                 Private servers are hidden from
                                                 discovery and direct join.
                                             </p>
                                         </div>
                                         <Switch
+                                            id="server-settings-public-discovery"
                                             checked={settingsIsPublic}
                                             onCheckedChange={setSettingsIsPublic}
                                         />

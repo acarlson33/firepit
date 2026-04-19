@@ -30,6 +30,9 @@ export const ATTACHMENT_SOURCE_VALUES = [
 
 export type AttachmentSource = (typeof ATTACHMENT_SOURCE_VALUES)[number];
 
+export const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
+export type AttachmentProvider = (typeof ATTACHMENT_PROVIDER_VALUES)[number];
+
 export type FileAttachment = {
     fileId: string;
     fileName: string;
@@ -39,7 +42,7 @@ export type FileAttachment = {
     thumbnailUrl?: string; // For videos
     mediaKind?: AttachmentMediaKind;
     source?: AttachmentSource;
-    provider?: "giphy" | "tenor";
+    provider?: AttachmentProvider;
     providerAssetId?: string;
     packId?: string;
     itemId?: string;
@@ -157,11 +160,14 @@ export type Server = {
     defaultOnSignup?: boolean;
 };
 
+export const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
+export type ChannelType = (typeof CHANNEL_TYPE_VALUES)[number];
+
 export type Channel = {
     $id: string;
     serverId: string;
     name: string;
-    type?: "text" | "voice" | "announcement";
+    type?: ChannelType;
     topic?: string;
     categoryId?: string;
     position?: number;
@@ -180,7 +186,7 @@ export type ChannelCategory = {
     $updatedAt?: string;
 };
 
-export type InstanceSettings = {
+type InstanceSettings = {
     $id: string;
     allowUserServers: boolean;
     updatedAt: string;
@@ -583,7 +589,7 @@ export type RelationshipStatus = {
     canReceiveFriendRequest: boolean;
 };
 
-export type RoleAssignment = {
+type RoleAssignment = {
     $id: string;
     userId: string;
     serverId: string;
@@ -602,7 +608,7 @@ export type ChannelPermissionOverride = {
 };
 
 // Utility type for checking if user has specific permission
-export type PermissionCheck = {
+type PermissionCheck = {
     userId: string;
     serverId: string;
     channelId?: string;
@@ -716,7 +722,7 @@ export type NotificationPayload = {
 /**
  * Result of checking if a user should be notified
  */
-export type NotificationCheckResult = {
+type NotificationCheckResult = {
     shouldNotify: boolean;
     reason?:
         | "muted"

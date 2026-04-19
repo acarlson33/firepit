@@ -113,6 +113,11 @@ APPWRITE_PROJECT_ID=your-project-id-here
 APPWRITE_API_KEY=your-api-key-here
 # ☝️ From Step 1B - the full API key you just created
 
+# System announcement sender account (production recommended)
+SYSTEM_SENDER_USER_ID=your-system-sender-user-id
+# ☝️ Set to the Appwrite user ID used for system announcement DMs.
+# If omitted, system announcement threads are read-only for all users.
+
 # === OPTIONAL: Collection IDs ===
 # Leave these with default values - setup script will create them
 # Only change if you have existing collections to use
@@ -142,7 +147,23 @@ APPWRITE_ADMIN_TEAM_ID=
 APPWRITE_MODERATOR_TEAM_ID=
 ```
 
-#### C. Validation
+#### C. System Announcement Sender Account (Production Recommended)
+
+`SYSTEM_SENDER_USER_ID` should point to a dedicated non-human Appwrite user account used only for automated announcement delivery.
+
+How to get the value:
+
+1. In Appwrite Console, open **Auth -> Users**.
+2. Create or locate your dedicated system sender user.
+3. Copy the user's `$id` and set it as `SYSTEM_SENDER_USER_ID`.
+
+Why this matters:
+
+- System announcement threads can be safely identified and treated as read-only for recipients.
+- The reserved system sender account is blocked from interactive sign-in.
+- If this variable is unset, Firepit defaults to read-only behavior for all system announcement threads.
+
+#### D. Validation
 
 Validate your configuration:
 

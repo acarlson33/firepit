@@ -23,13 +23,15 @@ Server stats and membership endpoints support server-level dashboards, moderatio
 Current privacy/customization behavior:
 
 - `GET /api/servers` returns only servers where the authenticated user has membership.
-- `GET /api/servers/public` returns only discoverable servers (`isPublic = true`, with legacy `undefined` treated as public).
-- `POST /api/servers/join` blocks direct joins for private servers and instructs users to join via invite.
+- `GET /api/servers/public` returns only discoverable servers where `isPublic === true`.
+- Legacy servers with missing `isPublic` are no longer treated as public; set an explicit boolean (`true` or `false`) during migration. See [MIGRATIONS.md](./MIGRATIONS.md#migrate-legacy-servers-ispublic) for the `migrateLegacyServersIsPublic` helper and rollout steps.
+- `POST /api/servers/join` blocks direct joins for private servers with `403 Forbidden` and an error payload shaped like `{ "error": "..." }`.
+- For private servers, clients should switch to the invite flow (`POST /api/invites/{code}/join`) rather than retrying `POST /api/servers/join`.
+- Example blocked join response from `POST /api/servers/join`: `{ "error": "This server is private. Join with an invite link." }`.
 - `PATCH /api/servers/{serverId}` lets owners and members with `manageServer` update name, description, icon, banner, and visibility.
 - `defaultOnSignup` is admin-only and instance-wide unique; setting one server as default clears it on other servers.
 - `GET /api/servers/default-signup` returns the currently configured signup default server for admin tooling.
 - Signup auto-join behavior prefers a server with `defaultOnSignup = true`; when no default is configured, fallback auto-join happens only when the instance has exactly one server.
-- The `defaultOnSignup` control is exposed in the instance admin page under server management, not in per-server admin dialogs.
 
 ## Roles And Permission Overrides
 
@@ -117,6 +119,14 @@ The admin experience should be able to:
 - configure channel permission overrides
 - mute, kick, ban, and unban members
 - read and export audit history
+
+## Admin UI
+
+UI placement for server-admin controls:
+
+- `defaultOnSignup` is managed in the instance admin server-management view.
+- Per-server admin dialogs handle server-level customization (`name`, `description`, `iconFileId`, `bannerFileId`, `isPublic`) but do not expose the instance-wide `defaultOnSignup` selector.
+- Invite-based joining for private servers should be surfaced through the invite UX, not direct server discovery/join flows.
 
 ## Relationship To Feature Flags
 

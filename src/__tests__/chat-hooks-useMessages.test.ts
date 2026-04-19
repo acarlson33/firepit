@@ -716,7 +716,9 @@ describe("useMessages", () => {
                 false,
             );
         });
+    });
 
+    describe("Poll Operations", () => {
         it("casts poll votes and reconciles poll state", async () => {
             const initialPoll = {
                 channelId: mockChannelId,

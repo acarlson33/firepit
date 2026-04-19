@@ -21,13 +21,13 @@ export type Report = {
     $createdAt: string;
 };
 
-export type CreateReportInput = {
+type CreateReportInput = {
     reporterId: string;
     reportedUserId: string;
     justification: string;
 };
 
-export type ListReportsOpts = {
+type ListReportsOpts = {
     limit?: number;
     cursorAfter?: string;
     status?: ReportStatus;
@@ -36,7 +36,7 @@ export type ListReportsOpts = {
 };
 
 const DEFAULT_LIST_LIMIT = 50;
-export const MAX_LIST_LIMIT = 200;
+const MAX_LIST_LIMIT = 200;
 export const DUPLICATE_REPORT_ERROR_MESSAGE =
     "You already have a pending report for this user.";
 
@@ -201,7 +201,7 @@ export async function listReports(
     };
 }
 
-export async function getReportById(reportId: string): Promise<Report> {
+async function getReportById(reportId: string): Promise<Report> {
     const trimmedReportId = reportId.trim();
     if (!trimmedReportId) {
         throw new Error("Report id is required");

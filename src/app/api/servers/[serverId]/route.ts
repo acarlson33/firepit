@@ -14,6 +14,7 @@ import {
     normalizeServerFileId,
 } from "@/lib/server-metadata";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { logger } from "@/lib/newrelic-utils";
 
 const MAX_SERVER_NAME_LENGTH = 100;
 const MAX_SERVER_DESCRIPTION_LENGTH = 500;
@@ -30,6 +31,33 @@ type PatchPayload = {
     isPublic?: unknown;
     defaultOnSignup?: unknown;
 };
+
+type ListDocumentsResponse = Awaited<
+    ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
+>;
+
+function isNotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const code = "code" in error ? Number(error.code) : Number.NaN;
+    if (code === 404) {
+        return true;
+    }
+
+    const type = "type" in error ? String(error.type).toLowerCase() : "";
+    if (type.includes("not_found") || type.includes("document_not_found")) {
+        return true;
+    }
+
+    const message =
+        "message" in error ? String(error.message).toLowerCase() : "";
+    return (
+        message.includes("not found") ||
+        message.includes("document with the requested id could not be found")
+    );
+}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
     const session = await getServerSession();
@@ -61,8 +89,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             serverId,
         );
         serverDocument = response as unknown as Record<string, unknown>;
-    } catch {
-        return NextResponse.json({ error: "Server not found" }, { status: 404 });
+    } catch (error) {
+        if (isNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Server not found" },
+                { status: 404 },
+            );
+        }
+
+        logger.error("Failed to load server during PATCH", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+        return NextResponse.json(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
     }
 
     const isOwner = String(serverDocument.ownerId) === session.$id;
@@ -175,25 +218,79 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         changedFields.push("defaultOnSignup");
 
         if (payload.defaultOnSignup === true) {
-            const existingDefaultServers = await databases.listDocuments(
-                env.databaseId,
-                env.collections.servers,
-                [
-                    Query.equal("defaultOnSignup", true),
-                    Query.limit(100),
-                ],
+            const pageSize = 100;
+            const existingDefaultServers: Array<{ $id: string }> = [];
+            let cursorAfter: string | null = null;
+
+            while (true) {
+                const page: ListDocumentsResponse = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.servers,
+                    [
+                        Query.equal("defaultOnSignup", true),
+                        Query.select(["$id"]),
+                        Query.limit(pageSize),
+                        ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+                    ],
+                );
+
+                for (const document of page.documents) {
+                    if (typeof document.$id === "string") {
+                        existingDefaultServers.push({ $id: document.$id });
+                    }
+                }
+
+                if (page.documents.length < pageSize) {
+                    break;
+                }
+
+                const lastDocument = page.documents.at(-1);
+                cursorAfter =
+                    lastDocument && typeof lastDocument.$id === "string"
+                        ? lastDocument.$id
+                        : null;
+
+                if (!cursorAfter) {
+                    break;
+                }
+            }
+
+            const defaultServersToClear = existingDefaultServers.filter(
+                (defaultServer) => defaultServer.$id !== serverId,
+            );
+            const resetResults = await Promise.allSettled(
+                defaultServersToClear.map((defaultServer) =>
+                    databases.updateDocument(
+                        env.databaseId,
+                        env.collections.servers,
+                        defaultServer.$id,
+                        { defaultOnSignup: false },
+                    ),
+                ),
             );
 
-            for (const defaultServer of existingDefaultServers.documents) {
-                if (defaultServer.$id === serverId) {
+            let hadResetFailure = false;
+            for (const [index, result] of resetResults.entries()) {
+                if (result.status !== "rejected") {
                     continue;
                 }
 
-                await databases.updateDocument(
-                    env.databaseId,
-                    env.collections.servers,
-                    defaultServer.$id,
-                    { defaultOnSignup: false },
+                hadResetFailure = true;
+                logger.error("Failed to unset previous default signup server", {
+                    defaultServerId: defaultServersToClear[index]?.$id,
+                    error:
+                        result.reason instanceof Error
+                            ? result.reason.message
+                            : String(result.reason),
+                    serverId,
+                    userId: session.$id,
+                });
+            }
+
+            if (hadResetFailure) {
+                return NextResponse.json(
+                    { error: "Failed to clear existing default signup server" },
+                    { status: 500 },
                 );
             }
         }
@@ -277,12 +374,27 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         staleFileIds.add(previousBannerFileId);
     }
 
-    for (const fileId of staleFileIds) {
-        try {
-            await storage.deleteFile(env.buckets.images, fileId);
-        } catch {
-            // Best effort file cleanup.
+    const staleFileIdList = Array.from(staleFileIds);
+    const staleFileDeletionResults = await Promise.allSettled(
+        staleFileIdList.map((fileId) =>
+            storage.deleteFile(env.buckets.images, fileId),
+        ),
+    );
+    for (const [index, result] of staleFileDeletionResults.entries()) {
+        if (result.status !== "rejected") {
+            continue;
         }
+
+        logger.error("failed to delete stale file", {
+            bucketId: env.buckets.images,
+            fileId: staleFileIdList[index],
+            reason:
+                result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason),
+            serverId,
+            userId: session.$id,
+        });
     }
 
     await recordAudit("server_settings_updated", serverId, session.$id, {

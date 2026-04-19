@@ -213,7 +213,7 @@ export function getPresetFrameStorageFileId(id: string): string | undefined {
     return frame.storageFileId ?? frame.id;
 }
 
-export function getPresetFrameMetaById(id: string): PresetFrame | undefined {
+function getPresetFrameMetaById(id: string): PresetFrame | undefined {
     return PRESET_FRAMES.find((candidate) => candidate.id === id);
 }
 
@@ -269,7 +269,7 @@ export function getSeasonalFramesForUser(
         .filter((frame): frame is PresetFrame => frame !== undefined);
 }
 
-export function getSeasonalFrameIdsForUser(accountCreatedAt: string): string[] {
+function getSeasonalFrameIdsForUser(accountCreatedAt: string): string[] {
     const createdDate = new Date(accountCreatedAt);
     if (Number.isNaN(createdDate.getTime())) {
         return [];
@@ -328,7 +328,7 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-export function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
+function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
     if (frame.imageUrl) {
         const encodedImageUrl = encodeURI(frame.imageUrl)
             .replaceAll('"', "%22")

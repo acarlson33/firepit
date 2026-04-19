@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 // ---------------- Types ----------------
-export type FailureConfig = {
+type FailureConfig = {
   failCollections?: Record<string, Error | string>;
   onCreate?: (args: any) => void;
   userId?: string;
@@ -14,7 +14,7 @@ export type FailureConfig = {
   };
 };
 
-export type MockAppwriteHandles = {
+type MockAppwriteHandles = {
   created: Array<{ collectionId: string; data: any; permissions?: any }>;
   reset: () => void;
 };

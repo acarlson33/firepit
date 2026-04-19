@@ -16,6 +16,11 @@ import {
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { normalizeServerVisibility } from "@/lib/server-metadata";
 
+type ServerDocument = {
+	$id: string;
+	isPublic?: boolean;
+};
+
 /**
  * POST /api/servers/join
  * Joins a user to a server by creating a membership record
@@ -68,14 +73,14 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		let serverDocument: Record<string, unknown>;
+		let isPublicServer = false;
 		try {
-			const response = await databases.getDocument(
+			const serverDocument = (await databases.getDocument(
 				env.databaseId,
 				env.collections.servers,
 				serverId
-			);
-			serverDocument = response as unknown as Record<string, unknown>;
+			)) as ServerDocument;
+			isPublicServer = normalizeServerVisibility(serverDocument.isPublic);
 		} catch {
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
@@ -84,7 +89,6 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const isPublicServer = normalizeServerVisibility(serverDocument.isPublic);
 		if (!isPublicServer) {
 			return NextResponse.json(
 				{ error: "This server is private. Join with an invite link." },

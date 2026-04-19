@@ -9,6 +9,7 @@ import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 function getDatabases() {
     return getServerClient().databases;
@@ -66,7 +67,7 @@ export async function PATCH(
             categoryId?: string | null;
             position?: number;
             name?: string;
-            type?: "text" | "voice" | "announcement";
+            type?: ChannelType;
             topic?: string | null;
         };
 

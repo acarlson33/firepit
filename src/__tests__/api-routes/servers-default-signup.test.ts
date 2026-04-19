@@ -45,15 +45,27 @@ describe("GET /api/servers/default-signup", () => {
         const response = await GET();
 
         expect(response.status).toBe(401);
+        expect(mockGetUserRoles).not.toHaveBeenCalled();
+        expect(mockListDocuments).not.toHaveBeenCalled();
     });
 
-    it("returns 403 for non-admin users", async () => {
+    it("returns 403 for users who are neither admin nor moderator", async () => {
         mockGetServerSession.mockResolvedValue({ $id: "user-1" });
         mockGetUserRoles.mockResolvedValue({ isAdmin: false, isModerator: false });
 
         const response = await GET();
 
         expect(response.status).toBe(403);
+    });
+
+    it("returns 403 for moderators when not admin", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-2" });
+        mockGetUserRoles.mockResolvedValue({ isAdmin: false, isModerator: true });
+
+        const response = await GET();
+
+        expect(response.status).toBe(403);
+        expect(mockListDocuments).not.toHaveBeenCalled();
     });
 
     it("returns null when no default server is configured", async () => {

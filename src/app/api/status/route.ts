@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
+import { createHash } from "node:crypto";
 
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -13,10 +14,37 @@ import {
     recordEvent,
 } from "@/lib/newrelic-utils";
 import { normalizeStatus } from "@/lib/status-normalization";
+import { apiCache } from "@/lib/cache-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const STATUSES_COLLECTION = env.collections.statuses;
+const STATUS_ROUTE_CACHE_TTL_MS = 5 * 1000;
+
+function canUseStatusRouteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function statusSingleCacheKey(userId: string): string {
+    return `api:status:single:${userId}`;
+}
+
+function statusBatchCacheKey(userIds: string[]): string {
+    const normalizedUserIds = [...new Set(userIds.filter(Boolean))].sort();
+    const digest = createHash("sha256")
+        .update(normalizedUserIds.join("|"))
+        .digest("hex")
+        .slice(0, 16);
+    return `api:status:batch:${digest}`;
+}
+
+function dedupeStatusRouteCache<T>(key: string, fetcher: () => Promise<T>) {
+    if (!canUseStatusRouteCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, STATUS_ROUTE_CACHE_TTL_MS);
+}
 
 /**
  * Set or update user status (server-side)
@@ -223,10 +251,13 @@ export async function GET(request: Request) {
 
         // Single user query
         if (userId) {
-            const existing = await databases.listDocuments(
-                DATABASE_ID,
-                STATUSES_COLLECTION,
-                [Query.equal("userId", userId), Query.limit(1)],
+            const existing = await dedupeStatusRouteCache(
+                statusSingleCacheKey(userId),
+                () =>
+                    databases.listDocuments(DATABASE_ID, STATUSES_COLLECTION, [
+                        Query.equal("userId", userId),
+                        Query.limit(1),
+                    ]),
             );
 
             if (existing.documents.length === 0) {
@@ -247,10 +278,13 @@ export async function GET(request: Request) {
 
             // Note: Limited to 100 users per request for performance.
             // For larger batches, consider pagination or multiple requests.
-            const existing = await databases.listDocuments(
-                DATABASE_ID,
-                STATUSES_COLLECTION,
-                [Query.equal("userId", userIdList), Query.limit(100)],
+            const existing = await dedupeStatusRouteCache(
+                statusBatchCacheKey(userIdList),
+                () =>
+                    databases.listDocuments(DATABASE_ID, STATUSES_COLLECTION, [
+                        Query.equal("userId", userIdList),
+                        Query.limit(100),
+                    ]),
             );
 
             const normalizedStatuses = existing.documents.map(

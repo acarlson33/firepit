@@ -5,12 +5,11 @@
  * notifications to users based on their settings and the context of the event.
  */
 
-import {
-	getOrCreateNotificationSettings,
-	getEffectiveNotificationLevel,
-	isInQuietHours,
-} from "@/lib/notification-settings";
-import type { NotificationLevel, NotificationPayload } from "@/lib/types";
+import type {
+	NotificationLevel,
+	NotificationPayload,
+	NotificationSettings,
+} from "@/lib/types";
 
 interface NotificationContext {
 	/** The ID of the server where the event occurred (for channel messages) */
@@ -44,6 +43,222 @@ interface NotificationResult {
 	showDesktop: boolean;
 	/** Whether to send push notification */
 	sendPush: boolean;
+}
+
+const NOTIFICATION_SETTINGS_CACHE_TTL_MS = 15_000;
+
+type NotificationSettingsCacheEntry = {
+	expiresAt: number;
+	settings: NotificationSettings;
+};
+
+const notificationSettingsCache = new Map<string, NotificationSettingsCacheEntry>();
+const pendingNotificationSettingsRequests = new Map<
+	string,
+	Promise<NotificationSettings | null>
+>();
+
+function isMuteExpired(mutedUntil: string | undefined): boolean {
+	if (!mutedUntil) {
+		return false;
+	}
+
+	const mutedUntilMs = Date.parse(mutedUntil);
+	if (Number.isNaN(mutedUntilMs)) {
+		return true;
+	}
+
+	return mutedUntilMs <= Date.now();
+}
+
+function getEffectiveNotificationLevel(
+	settings: NotificationSettings,
+	context: {
+		channelId?: string;
+		serverId?: string;
+		conversationId?: string;
+	},
+): NotificationLevel {
+	if (context.conversationId && settings.conversationOverrides) {
+		const override = settings.conversationOverrides[context.conversationId];
+		if (override && !isMuteExpired(override.mutedUntil)) {
+			return override.level;
+		}
+	}
+
+	if (context.channelId && settings.channelOverrides) {
+		const override = settings.channelOverrides[context.channelId];
+		if (override && !isMuteExpired(override.mutedUntil)) {
+			return override.level;
+		}
+	}
+
+	if (context.serverId && settings.serverOverrides) {
+		const override = settings.serverOverrides[context.serverId];
+		if (override && !isMuteExpired(override.mutedUntil)) {
+			return override.level;
+		}
+	}
+
+	return settings.globalNotifications;
+}
+
+function isInQuietHours(settings: NotificationSettings): boolean {
+	if (!settings.quietHoursStart || !settings.quietHoursEnd) {
+		return false;
+	}
+
+	const now = new Date();
+	let currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+	if (settings.quietHoursTimezone) {
+		try {
+			const formatter = new Intl.DateTimeFormat("en-US", {
+				timeZone: settings.quietHoursTimezone,
+				hour: "2-digit",
+				minute: "2-digit",
+				hour12: false,
+			});
+			const parts = formatter.formatToParts(now);
+			const hours = Number(
+				parts.find((part) => part.type === "hour")?.value ?? "0",
+			);
+			const minutes = Number(
+				parts.find((part) => part.type === "minute")?.value ?? "0",
+			);
+			currentMinutes = hours * 60 + minutes;
+		} catch {
+			// Fall back to local time if timezone is invalid.
+		}
+	}
+
+	const [startHour, startMin] = settings.quietHoursStart.split(":").map(Number);
+	const [endHour, endMin] = settings.quietHoursEnd.split(":").map(Number);
+
+	const startMinutes = startHour * 60 + startMin;
+	const endMinutes = endHour * 60 + endMin;
+
+	if (startMinutes > endMinutes) {
+		return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+	}
+
+	return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+}
+
+function normalizeNotificationSettings(
+	value: unknown,
+	recipientId: string,
+): NotificationSettings | null {
+	if (!value || typeof value !== "object") {
+		return null;
+	}
+
+	const settings = value as Partial<NotificationSettings>;
+	if (
+		typeof settings.globalNotifications !== "string" ||
+		typeof settings.desktopNotifications !== "boolean" ||
+		typeof settings.pushNotifications !== "boolean" ||
+		typeof settings.notificationSound !== "boolean"
+	) {
+		return null;
+	}
+
+	return {
+		$id: typeof settings.$id === "string" ? settings.$id : "",
+		userId:
+			typeof settings.userId === "string" ? settings.userId : recipientId,
+		globalNotifications:
+			settings.globalNotifications === "all" ||
+			settings.globalNotifications === "mentions" ||
+			settings.globalNotifications === "nothing"
+				? settings.globalNotifications
+				: "all",
+		directMessagePrivacy:
+			settings.directMessagePrivacy === "friends" ? "friends" : "everyone",
+		dmEncryptionEnabled:
+			typeof settings.dmEncryptionEnabled === "boolean"
+				? settings.dmEncryptionEnabled
+				: undefined,
+		desktopNotifications: settings.desktopNotifications,
+		pushNotifications: settings.pushNotifications,
+		notificationSound: settings.notificationSound,
+		quietHoursStart:
+			typeof settings.quietHoursStart === "string"
+				? settings.quietHoursStart
+				: undefined,
+		quietHoursEnd:
+			typeof settings.quietHoursEnd === "string"
+				? settings.quietHoursEnd
+				: undefined,
+		quietHoursTimezone:
+			typeof settings.quietHoursTimezone === "string"
+				? settings.quietHoursTimezone
+				: undefined,
+		serverOverrides: settings.serverOverrides ?? {},
+		channelOverrides: settings.channelOverrides ?? {},
+		conversationOverrides: settings.conversationOverrides ?? {},
+		$createdAt:
+			typeof settings.$createdAt === "string"
+				? settings.$createdAt
+				: undefined,
+		$updatedAt:
+			typeof settings.$updatedAt === "string"
+				? settings.$updatedAt
+				: undefined,
+	};
+}
+
+async function getOrCreateNotificationSettings(
+	recipientId: string,
+): Promise<NotificationSettings | null> {
+	if (typeof window === "undefined") {
+		return null;
+	}
+
+	const cached = notificationSettingsCache.get(recipientId);
+	if (cached && cached.expiresAt > Date.now()) {
+		return cached.settings;
+	}
+
+	const pendingRequest = pendingNotificationSettingsRequests.get(recipientId);
+	if (pendingRequest) {
+		return pendingRequest;
+	}
+
+	const request = (async () => {
+		try {
+			const response = await fetch("/api/notifications/settings", {
+				cache: "no-store",
+				headers: {
+					Accept: "application/json",
+				},
+			});
+
+			if (!response.ok) {
+				return null;
+			}
+
+			const payload = (await response.json()) as unknown;
+			const settings = normalizeNotificationSettings(payload, recipientId);
+			if (!settings) {
+				return null;
+			}
+
+			notificationSettingsCache.set(recipientId, {
+				expiresAt: Date.now() + NOTIFICATION_SETTINGS_CACHE_TTL_MS,
+				settings,
+			});
+
+			return settings;
+		} catch {
+			return null;
+		} finally {
+			pendingNotificationSettingsRequests.delete(recipientId);
+		}
+	})();
+
+	pendingNotificationSettingsRequests.set(recipientId, request);
+	return request;
 }
 
 /**

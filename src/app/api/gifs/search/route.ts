@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { AuthError, requireAuth } from "@/lib/auth-server";
 import {
+    GifSearchValidationError,
     getGifProvider,
     getGiphyConfig,
     getTenorConfig,
@@ -113,6 +114,16 @@ export async function GET(request: NextRequest) {
                 );
             }
 
+            if (!tenorConfig.clientKey) {
+                logger.warn(
+                    "TENOR_CLIENT_KEY missing while GIF search is enabled",
+                );
+                return jsonResponse(
+                    { error: "GIF provider is not configured" },
+                    { status: 503 },
+                );
+            }
+
             url.searchParams.set("key", tenorConfig.apiKey);
             url.searchParams.set("client_key", tenorConfig.clientKey);
             url.searchParams.set("q", params.query);
@@ -176,11 +187,17 @@ export async function GET(request: NextRequest) {
             return jsonResponse({ error: error.message }, { status: 401 });
         }
 
-        if (error instanceof Error && error.message.includes("q is required")) {
+        if (error instanceof GifSearchValidationError) {
             return jsonResponse({ error: error.message }, { status: 400 });
         }
 
         if (isAbortError(error)) {
+            trackApiCall(
+                "/api/gifs/search",
+                "GET",
+                504,
+                Date.now() - startTime,
+            );
             return jsonResponse(
                 { error: "GIF search timed out" },
                 { status: 504 },

@@ -146,8 +146,8 @@ vi.mock("@/components/chat-surface-panel", () => ({
                 jump-unread-channel
             </button>
             <button
-                onClick={() => {
-                    void composer?.onSubmit?.();
+                onClick={async () => {
+                    await composer?.onSubmit?.();
                 }}
                 type="button"
             >

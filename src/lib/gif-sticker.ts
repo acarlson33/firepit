@@ -1,15 +1,22 @@
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import type { GifSearchItem, StickerPack } from "@/lib/types";
 
-export type TenorContentFilter = "off" | "low" | "medium" | "high";
-export type GifProvider = "giphy" | "tenor";
+type TenorContentFilter = "off" | "low" | "medium" | "high";
+type GifProvider = "giphy" | "tenor";
 
-export type GifSearchParams = {
+type GifSearchParams = {
     cursor?: string;
     limit: number;
     query: string;
     contentFilter: TenorContentFilter;
 };
+
+export class GifSearchValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "GifSearchValidationError";
+    }
+}
 
 export type TenorSearchResponse = {
     results?: Array<{
@@ -104,19 +111,10 @@ function normalizeContentFilter(value: string | null): TenorContentFilter {
     return "medium";
 }
 
-export function parseTenorSearchParams(searchParams: URLSearchParams): {
-    cursor?: string;
-    limit: number;
-    query: string;
-    contentFilter: TenorContentFilter;
-} {
-    return parseGifSearchParams(searchParams);
-}
-
 export function parseGifSearchParams(searchParams: URLSearchParams): GifSearchParams {
     const query = toStringValue(searchParams.get("q"));
     if (!query) {
-        throw new Error("Query parameter q is required");
+        throw new GifSearchValidationError("Query parameter q is required");
     }
 
     const limitRaw = Number(searchParams.get("limit") ?? 20);
@@ -296,10 +294,6 @@ export async function isGifSearchEnabled(): Promise<boolean> {
     } catch {
         return false;
     }
-}
-
-export async function isTenorGifSearchEnabled(): Promise<boolean> {
-    return isGifSearchEnabled();
 }
 
 export function getTenorConfig() {

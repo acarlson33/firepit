@@ -15,11 +15,36 @@ import {
     trackApiCall,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
+import { apiCache } from "@/lib/cache-utils";
 
 type SearchResult = {
     type: "channel" | "dm";
     message: Message | DirectMessage;
 };
+
+const SEARCH_CACHE_TTL_MS = 10 * 1000;
+
+function canUseSearchCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeSearchCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = SEARCH_CACHE_TTL_MS,
+): Promise<T> {
+    if (!canUseSearchCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, ttl);
+}
+
+function buildSortedIdsKey(values: string[]): string {
+    return Array.from(new Set(values.filter((value) => value.length > 0)))
+        .sort()
+        .join(",");
+}
 
 /**
  * Parse search filters from query string
@@ -179,10 +204,14 @@ export async function GET(request: NextRequest) {
         // Search channel messages
         try {
             const dbStartTime = Date.now();
-            const channelMessages = await databases.listDocuments(
-                env.databaseId,
-                env.collections.messages,
-                messageQueries,
+            const channelMessages = await dedupeSearchCache(
+                `search:messages:${user.$id}:${messageQueries.join("|")}`,
+                () =>
+                    databases.listDocuments(
+                        env.databaseId,
+                        env.collections.messages,
+                        messageQueries,
+                    ),
             );
 
             trackApiCall(
@@ -289,10 +318,14 @@ export async function GET(request: NextRequest) {
 
             try {
                 const dbStartTime = Date.now();
-                const directMessages = await databases.listDocuments(
-                    env.databaseId,
-                    env.collections.directMessages,
-                    dmQueries,
+                const directMessages = await dedupeSearchCache(
+                    `search:dms:${user.$id}:${dmQueries.join("|")}`,
+                    () =>
+                        databases.listDocuments(
+                            env.databaseId,
+                            env.collections.directMessages,
+                            dmQueries,
+                        ),
                 );
 
                 trackApiCall(
@@ -366,9 +399,10 @@ export async function GET(request: NextRequest) {
             relationshipSubjects.add(directMessage.senderId);
         }
 
-        const relationshipMap = await getRelationshipMap(
-            user.$id,
-            Array.from(relationshipSubjects),
+        const relationshipSubjectsList = Array.from(relationshipSubjects);
+        const relationshipMap = await dedupeSearchCache(
+            `search:relationships:${user.$id}:${buildSortedIdsKey(relationshipSubjectsList)}`,
+            () => getRelationshipMap(user.$id, relationshipSubjectsList),
         );
         const visibleResults = results.filter((result) => {
             if (result.type === "channel") {
@@ -412,24 +446,30 @@ export async function GET(request: NextRequest) {
             { displayName?: string; avatarUrl?: string; pronouns?: string }
         >();
         try {
-            const profiles = await databases.listDocuments(
-                env.databaseId,
-                env.collections.profiles,
-                [Query.equal("userId", Array.from(userIds)), Query.limit(100)],
-            );
+            const profileIds = Array.from(userIds);
+            if (profileIds.length > 0) {
+                const profiles = await dedupeSearchCache(
+                    `search:profiles:${buildSortedIdsKey(profileIds)}`,
+                    () =>
+                        databases.listDocuments(env.databaseId, env.collections.profiles, [
+                            Query.equal("userId", profileIds),
+                            Query.limit(100),
+                        ]),
+                );
 
-            for (const profile of profiles.documents) {
-                profileMap.set(String(profile.userId), {
-                    displayName: profile.displayName
-                        ? String(profile.displayName)
-                        : undefined,
-                    avatarUrl: profile.avatarFileId
-                        ? getAvatarUrl(String(profile.avatarFileId))
-                        : undefined,
-                    pronouns: profile.pronouns
-                        ? String(profile.pronouns)
-                        : undefined,
-                });
+                for (const profile of profiles.documents) {
+                    profileMap.set(String(profile.userId), {
+                        displayName: profile.displayName
+                            ? String(profile.displayName)
+                            : undefined,
+                        avatarUrl: profile.avatarFileId
+                            ? getAvatarUrl(String(profile.avatarFileId))
+                            : undefined,
+                        pronouns: profile.pronouns
+                            ? String(profile.pronouns)
+                            : undefined,
+                    });
+                }
             }
         } catch (error) {
             logger.error("Failed to fetch profiles for search results", {

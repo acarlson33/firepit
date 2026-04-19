@@ -69,7 +69,7 @@ function fetchProfileIntoCache(userId: string): Promise<void> {
     return requestPromise;
 }
 
-export function useProfilePrefetch() {
+function useProfilePrefetch() {
     const prefetchProfile = useCallback(async (userId: string) => {
         if (getCachedProfileValue(userId) !== undefined) {
             return;

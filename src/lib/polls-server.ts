@@ -2,8 +2,11 @@ import { Query } from "node-appwrite";
 import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 import { buildMessagePoll, type PollDocShape } from "@/lib/polls";
 import type { MessagePoll } from "@/lib/types";
+
+const POLL_VOTES_PAGE_LIMIT = 1000;
 
 type PollVoteDocShape = {
     $id: string;
@@ -82,20 +85,54 @@ export async function getPollDocumentByMessageId(
     return normalizePollDocument(response.documents[0]);
 }
 
-export async function listVotesForPoll(
+async function listVotesForPoll(
     databases: Databases,
     env: EnvConfig,
     pollId: string,
 ): Promise<PollVoteDocShape[]> {
-    const response = await databases.listDocuments(
-        env.databaseId,
-        env.collections.pollVotes,
-        [Query.equal("pollId", pollId), Query.limit(3000)],
-    );
+    const votes: PollVoteDocShape[] = [];
+    let cursor: string | undefined;
 
-    return response.documents
-        .map((rawVote) => normalizePollVoteDocument(rawVote))
-        .filter((vote): vote is PollVoteDocShape => vote !== null);
+    while (true) {
+        const queries = [
+            Query.equal("pollId", pollId),
+            Query.orderAsc("$id"),
+            Query.limit(POLL_VOTES_PAGE_LIMIT),
+            ...(cursor ? [Query.cursorAfter(cursor)] : []),
+        ];
+
+        const response = await databases.listDocuments(
+            env.databaseId,
+            env.collections.pollVotes,
+            queries,
+        );
+
+        votes.push(
+            ...response.documents
+                .map((rawVote) => normalizePollVoteDocument(rawVote))
+                .filter((vote): vote is PollVoteDocShape => vote !== null),
+        );
+
+        if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
+            break;
+        }
+
+        const lastDocument = response.documents.at(-1);
+        if (!lastDocument || typeof lastDocument.$id !== "string") {
+            break;
+        }
+
+        cursor = lastDocument.$id;
+    }
+
+    if (votes.length >= POLL_VOTES_PAGE_LIMIT) {
+        logger.warn("Poll has high vote count requiring pagination", {
+            pollId,
+            totalVotes: votes.length,
+        });
+    }
+
+    return votes;
 }
 
 export async function getPollStateForMessage(

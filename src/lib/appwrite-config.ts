@@ -2,7 +2,7 @@
 // Keep a minimal shim for backward compatibility until all imports removed.
 import { getEnvConfig } from "./appwrite-core";
 
-export type AppwriteIds = ReturnType<typeof getEnvConfig>["collections"] & {
+type AppwriteIds = ReturnType<typeof getEnvConfig>["collections"] & {
     databaseId: string;
 };
 

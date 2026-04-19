@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { requireAdmin, requireAuth, requireModerator } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -12,11 +13,11 @@ const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || undefined;
 
-export type ServerCreationResult =
+type ServerCreationResult =
     | { success: true; serverId: string; serverName: string }
     | { success: false; error: string };
 
-export type ChannelCreationResult =
+type ChannelCreationResult =
     | {
           success: true;
           channelId: string;
@@ -25,7 +26,7 @@ export type ChannelCreationResult =
       }
     | { success: false; error: string };
 
-export type ServerListResult = {
+type ServerListResult = {
     servers: Array<{
         $id: string;
         name: string;
@@ -35,7 +36,7 @@ export type ServerListResult = {
     }>;
 };
 
-export type ChannelListResult = {
+type ChannelListResult = {
     channels: Array<{
         $id: string;
         name: string;
@@ -44,6 +45,10 @@ export type ChannelListResult = {
         createdAt: string;
     }>;
 };
+
+type MutationResult =
+    | { success: true }
+    | { success: false; error: string };
 
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 
@@ -104,7 +109,12 @@ export async function createServerAction(
                     },
                     membershipPerms,
                 );
-            } catch {
+            } catch (error) {
+                logger.error("Membership creation failed after server creation", {
+                    serverId: serverDoc.$id,
+                    ownerId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
                 // Non-critical: membership creation failed but server exists
             }
         }
@@ -220,7 +230,7 @@ export async function listServersAction(): Promise<ServerListResult> {
  */
 export async function setDefaultSignupServerAction(
     serverId: string | null,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 
@@ -231,15 +241,29 @@ export async function setDefaultSignupServerAction(
             [Query.equal("defaultOnSignup", true), Query.limit(200)],
         );
 
-        for (const server of defaultsResponse.documents) {
-            if (server.defaultOnSignup === true) {
-                await databases.updateDocument(
+        const resetResults = await Promise.allSettled(
+            defaultsResponse.documents.map((server) =>
+                databases.updateDocument(
                     DATABASE_ID,
                     SERVERS_COLLECTION_ID,
                     server.$id,
                     { defaultOnSignup: false },
-                );
-            }
+                ),
+            ),
+        );
+
+        const resetFailures = resetResults.filter(
+            (result) => result.status === "rejected",
+        );
+        if (resetFailures.length > 0) {
+            logger.error("Failed to clear existing default signup servers", {
+                failureCount: resetFailures.length,
+            });
+
+            return {
+                success: false,
+                error: "Failed to clear existing default signup servers",
+            };
         }
 
         if (serverId) {
@@ -297,16 +321,12 @@ export async function listChannelsAction(
     }
 }
 
-export type DeleteResult =
-    | { success: true }
-    | { success: false; error: string };
-
 /**
  * Delete a server (Admin only)
  */
 export async function deleteServerAction(
     serverId: string,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 
@@ -340,7 +360,7 @@ export async function deleteServerAction(
  */
 export async function deleteChannelAction(
     channelId: string,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 

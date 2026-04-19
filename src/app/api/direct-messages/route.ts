@@ -32,12 +32,14 @@ import {
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { shouldCompress } from "@/lib/compression-utils";
+import { apiCache } from "@/lib/cache-utils";
 import {
     buildAttachmentDocumentData,
     buildLegacyAttachmentDocumentData,
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
+import { rememberDmUnreadThreadSnapshot } from "@/lib/unread-consistency";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -47,6 +49,169 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const SYSTEM_SENDER_USER_ID = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
 const SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON =
     "Replies are disabled for system announcements";
+const DIRECT_MESSAGES_CACHE_TTL_MS = 10 * 1000;
+
+if (SYSTEM_SENDER_USER_ID === null && process.env.NODE_ENV !== "test") {
+    logger.warn(
+        "SYSTEM_SENDER_USER_ID is not configured. System announcement threads will be read-only for all users.",
+        {
+            envVar: "SYSTEM_SENDER_USER_ID",
+            impact:
+                "Replies to system announcement threads are disabled unless this is set to the system sender user id.",
+        },
+    );
+}
+
+type ConversationThreadReplySignal = {
+    latestReplyAt?: string;
+    replyCount: number;
+};
+
+function canUseDirectMessageCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeDirectMessageCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = DIRECT_MESSAGES_CACHE_TTL_MS,
+): Promise<T> {
+    if (!canUseDirectMessageCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, ttl);
+}
+
+function normalizeDistinctIds(ids: string[], excluding?: string): string[] {
+    return Array.from(
+        new Set(
+            ids.filter(
+                (id) =>
+                    id.length > 0 &&
+                    (excluding === undefined || id !== excluding),
+            ),
+        ),
+    ).sort();
+}
+
+function maxIsoTimestamp(left?: string, right?: string) {
+    if (left && right) {
+        return left.localeCompare(right) >= 0 ? left : right;
+    }
+
+    return left ?? right;
+}
+
+async function paginateReplies(params: {
+    databases: ReturnType<typeof getServerClient>["databases"];
+    conversationIds: string[];
+    maxThreadParentPages: number;
+    pageSize: number;
+}) {
+    const { databases, conversationIds, maxThreadParentPages, pageSize } =
+        params;
+    const replySignalsByParentId = new Map<string, ConversationThreadReplySignal>();
+    let cursorAfterId: string | null = null;
+    let replyPageCount = 0;
+    let replySignalsTruncated = false;
+
+    while (replyPageCount < maxThreadParentPages) {
+        replyPageCount += 1;
+        const replyPage = await databases.listDocuments(
+            DATABASE_ID,
+            DIRECT_MESSAGES_COLLECTION,
+            [
+                Query.equal("conversationId", conversationIds),
+                Query.isNotNull("threadId"),
+                Query.orderAsc("$id"),
+                Query.limit(pageSize),
+                ...(cursorAfterId ? [Query.cursorAfter(cursorAfterId)] : []),
+            ],
+        );
+
+        for (const document of replyPage.documents) {
+            const reply = document as Record<string, unknown>;
+            const parentMessageId =
+                typeof reply.threadId === "string" ? reply.threadId : null;
+            if (!parentMessageId) {
+                continue;
+            }
+
+            const createdAt =
+                typeof reply.$createdAt === "string"
+                    ? reply.$createdAt
+                    : undefined;
+            const existingSignal = replySignalsByParentId.get(parentMessageId);
+            if (existingSignal) {
+                existingSignal.replyCount += 1;
+                existingSignal.latestReplyAt = maxIsoTimestamp(
+                    existingSignal.latestReplyAt,
+                    createdAt,
+                );
+                continue;
+            }
+
+            replySignalsByParentId.set(parentMessageId, {
+                latestReplyAt: createdAt,
+                replyCount: 1,
+            });
+        }
+
+        if (replyPage.documents.length < pageSize) {
+            break;
+        }
+
+        const lastReplyDocument = replyPage.documents.at(-1) as
+            | Record<string, unknown>
+            | undefined;
+        cursorAfterId =
+            lastReplyDocument && typeof lastReplyDocument.$id === "string"
+                ? lastReplyDocument.$id
+                : null;
+
+        if (!cursorAfterId) {
+            break;
+        }
+    }
+
+    if (replyPageCount === maxThreadParentPages && cursorAfterId) {
+        replySignalsTruncated = true;
+    }
+
+    return { replySignalsByParentId, replySignalsTruncated };
+}
+
+function buildRelationshipMapCacheKey(userId: string, otherUserIds: string[]) {
+    const normalizedOtherUserIds = normalizeDistinctIds(otherUserIds, userId);
+    return `dm:relationship-map:${userId}:${normalizedOtherUserIds.join(",")}`;
+}
+
+function getCachedRelationshipMap(userId: string, otherUserIds: string[]) {
+    const normalizedOtherUserIds = normalizeDistinctIds(otherUserIds, userId);
+    if (normalizedOtherUserIds.length === 0) {
+        return Promise.resolve(new Map());
+    }
+
+    return dedupeDirectMessageCache(
+        buildRelationshipMapCacheKey(userId, normalizedOtherUserIds),
+        () => getRelationshipMap(userId, normalizedOtherUserIds),
+    );
+}
+
+function getCachedRelationshipStatus(userId: string, targetUserId: string) {
+    return dedupeDirectMessageCache(
+        `dm:relationship-status:${userId}:${targetUserId}`,
+        () => getRelationshipStatus(userId, targetUserId),
+    );
+}
+
+function getCachedDmEncryptionStateForPair(userId: string, peerUserId: string) {
+    return dedupeDirectMessageCache(
+        `dm:encryption-state:${userId}:${peerUserId}`,
+        () => getDmEncryptionStateForPair(userId, peerUserId),
+    );
+}
 
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
@@ -136,6 +301,7 @@ async function getDmEncryptionStateForPair(
  * Helper to create attachment records for a direct message
  */
 async function createAttachments(
+    databases: ReturnType<typeof getServerClient>["databases"],
     messageId: string,
     attachments: FileAttachment[],
 ): Promise<void> {
@@ -146,8 +312,6 @@ async function createAttachments(
     if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
         return;
     }
-
-    const { databases } = getServerClient();
 
     await Promise.all(
         attachments.map(async (attachment) => {
@@ -265,14 +429,15 @@ export async function GET(request: NextRequest) {
 
             const { databases } = getServerClient();
             const dbStartTime = Date.now();
-            const response = await databases.listDocuments(
-                DATABASE_ID,
-                CONVERSATIONS_COLLECTION,
-                [
-                    Query.contains("participants", session.$id),
-                    Query.orderDesc("lastMessageAt"),
-                    Query.limit(100),
-                ],
+            const response = await dedupeDirectMessageCache(
+                `dm:conversations:${session.$id}`,
+                () =>
+                    databases.listDocuments(DATABASE_ID, CONVERSATIONS_COLLECTION, [
+                        Query.contains("participants", session.$id),
+                        Query.orderDesc("lastMessageAt"),
+                        Query.limit(100),
+                    ]),
+                5 * 1000,
             );
 
             trackApiCall(
@@ -348,20 +513,33 @@ export async function GET(request: NextRequest) {
                 try {
                     const pageSize = 500;
                     const maxThreadParentPages = 20;
-                    let cursorAfterId: string | null = null;
-                    let pageCount = 0;
+                    const conversationIds = conversations.map(
+                        (conversation) => conversation.$id,
+                    );
+                    const replySignalsPromise = paginateReplies({
+                        databases,
+                        conversationIds,
+                        maxThreadParentPages,
+                        pageSize,
+                    });
 
-                    while (pageCount < maxThreadParentPages) {
-                        pageCount += 1;
+                    const threadParentsById = new Map<
+                        string,
+                        Record<string, unknown>
+                    >();
+                    let cursorAfterId: string | null = null;
+                    let threadParentPageCount = 0;
+                    let threadParentsTruncated = false;
+
+                    while (threadParentPageCount < maxThreadParentPages) {
+                        threadParentPageCount += 1;
                         const page = await databases.listDocuments(
                             DATABASE_ID,
                             DIRECT_MESSAGES_COLLECTION,
                             [
                                 Query.equal(
                                     "conversationId",
-                                    conversations.map(
-                                        (conversation) => conversation.$id,
-                                    ),
+                                    conversationIds,
                                 ),
                                 Query.greaterThan("threadMessageCount", 0),
                                 Query.orderAsc("$id"),
@@ -373,43 +551,16 @@ export async function GET(request: NextRequest) {
                         );
 
                         for (const document of page.documents) {
-                            const threadParent = document as Record<
-                                string,
-                                unknown
-                            >;
-                            const conversationId = String(
-                                threadParent.conversationId,
-                            );
-                            const messageId = String(threadParent.$id);
-                            const lastThreadReplyAt =
-                                typeof threadParent.lastThreadReplyAt ===
-                                "string"
-                                    ? threadParent.lastThreadReplyAt
-                                    : undefined;
-                            const threadMessageCount =
-                                typeof threadParent.threadMessageCount ===
-                                "number"
-                                    ? threadParent.threadMessageCount
-                                    : undefined;
-                            const lastReadAt =
-                                readStatesByConversationId.get(
-                                    conversationId,
-                                )?.[messageId];
-
-                            if (
-                                isThreadUnread({
-                                    lastReadAt,
-                                    lastThreadReplyAt,
-                                    threadMessageCount,
-                                })
-                            ) {
-                                unreadThreadsByConversationId.set(
-                                    conversationId,
-                                    (unreadThreadsByConversationId.get(
-                                        conversationId,
-                                    ) ?? 0) + 1,
-                                );
+                            const threadParent = document as Record<string, unknown>;
+                            const parentMessageId =
+                                typeof threadParent.$id === "string"
+                                    ? threadParent.$id
+                                    : null;
+                            if (!parentMessageId) {
+                                continue;
                             }
+
+                            threadParentsById.set(parentMessageId, threadParent);
                         }
 
                         if (page.documents.length < pageSize) {
@@ -428,8 +579,113 @@ export async function GET(request: NextRequest) {
                             break;
                         }
                     }
+                    if (
+                        threadParentPageCount === maxThreadParentPages &&
+                        cursorAfterId
+                    ) {
+                        threadParentsTruncated = true;
+                    }
+                    const { replySignalsByParentId, replySignalsTruncated } =
+                        await replySignalsPromise;
 
-                    if (pageCount === maxThreadParentPages && cursorAfterId) {
+                    const missingParentIds = Array.from(
+                        replySignalsByParentId.keys(),
+                    ).filter(
+                        (parentMessageId) =>
+                            !threadParentsById.has(parentMessageId),
+                    );
+
+                    for (
+                        let startIndex = 0;
+                        startIndex < missingParentIds.length;
+                        startIndex += 100
+                    ) {
+                        const parentIdChunk = missingParentIds.slice(
+                            startIndex,
+                            startIndex + 100,
+                        );
+                        const missingParentsPage = await databases.listDocuments(
+                            DATABASE_ID,
+                            DIRECT_MESSAGES_COLLECTION,
+                            [
+                                Query.equal("$id", parentIdChunk),
+                                Query.equal("conversationId", conversationIds),
+                                Query.limit(parentIdChunk.length),
+                            ],
+                        );
+
+                        for (const document of missingParentsPage.documents) {
+                            const threadParent = document as Record<string, unknown>;
+                            const parentMessageId =
+                                typeof threadParent.$id === "string"
+                                    ? threadParent.$id
+                                    : null;
+                            if (!parentMessageId) {
+                                continue;
+                            }
+
+                            threadParentsById.set(parentMessageId, threadParent);
+                        }
+                    }
+
+                    for (const threadParent of threadParentsById.values()) {
+                        const conversationId =
+                            typeof threadParent.conversationId === "string"
+                                ? threadParent.conversationId
+                                : null;
+                        const messageId =
+                            typeof threadParent.$id === "string"
+                                ? threadParent.$id
+                                : null;
+                        if (!conversationId || !messageId) {
+                            continue;
+                        }
+
+                        const signal = replySignalsByParentId.get(messageId);
+                        const lastThreadReplyAt = maxIsoTimestamp(
+                            typeof threadParent.lastThreadReplyAt === "string"
+                                ? threadParent.lastThreadReplyAt
+                                : undefined,
+                            signal?.latestReplyAt,
+                        );
+                        const metadataThreadCount =
+                            typeof threadParent.threadMessageCount === "number"
+                                ? threadParent.threadMessageCount
+                                : 0;
+                        const signalThreadCount = signal?.replyCount ?? 0;
+                        const effectiveThreadCount = Math.max(
+                            metadataThreadCount,
+                            signalThreadCount,
+                        );
+                        const threadMessageCount =
+                            effectiveThreadCount > 0
+                                ? effectiveThreadCount
+                                : lastThreadReplyAt
+                                  ? 1
+                                  : undefined;
+
+                        const lastReadAt =
+                            readStatesByConversationId.get(conversationId)?.[
+                                messageId
+                            ];
+
+                        if (
+                            isThreadUnread({
+                                lastReadAt,
+                                lastThreadReplyAt,
+                                threadMessageCount,
+                            })
+                        ) {
+                            unreadThreadsByConversationId.set(
+                                conversationId,
+                                (unreadThreadsByConversationId.get(
+                                    conversationId,
+                                ) ?? 0) + 1,
+                            );
+                        }
+                    }
+
+                    if (threadParentsTruncated || replySignalsTruncated) {
                         unreadThreadCountsTruncated = true;
                         logger.warn(
                             "Thread unread aggregation reached pagination cap",
@@ -445,7 +701,7 @@ export async function GET(request: NextRequest) {
                 }
             }
 
-            const relationshipMap = await getRelationshipMap(
+            const relationshipMap = await getCachedRelationshipMap(
                 session.$id,
                 oneToOneOtherUserIds,
             );
@@ -514,6 +770,17 @@ export async function GET(request: NextRequest) {
             logger.info("Listed conversations", {
                 userId: session.$id,
                 count: enrichedConversations.length,
+            });
+
+            const totalUnreadThreadCount = enrichedConversations.reduce(
+                (total, conversation) => total + conversation.unreadThreadCount,
+                0,
+            );
+            rememberDmUnreadThreadSnapshot({
+                conversationCount: enrichedConversations.length,
+                totalUnreadThreadCount,
+                truncated: unreadThreadCountsTruncated,
+                userId: session.$id,
             });
 
             return jsonResponse({ conversations: enrichedConversations });
@@ -643,11 +910,12 @@ export async function GET(request: NextRequest) {
                 }
 
                 if (oneToOne) {
-                    const relationship = await getRelationshipStatus(
+                    const relationship = await getCachedRelationshipStatus(
                         session.$id,
                         targetUserId,
                     );
-                    const encryptionState = await getDmEncryptionStateForPair(
+                    const encryptionState =
+                        await getCachedDmEncryptionStateForPair(
                         session.$id,
                         targetUserId,
                     );
@@ -715,11 +983,11 @@ export async function GET(request: NextRequest) {
                 );
             }
 
-            const relationship = await getRelationshipStatus(
+            const relationship = await getCachedRelationshipStatus(
                 session.$id,
                 targetUserId,
             );
-            const encryptionState = await getDmEncryptionStateForPair(
+            const encryptionState = await getCachedDmEncryptionStateForPair(
                 session.$id,
                 targetUserId,
             );
@@ -846,14 +1114,14 @@ export async function GET(request: NextRequest) {
                         (id) => id !== session.$id,
                     );
                     if (otherUserId && !isSystemAnnouncementThread) {
-                        relationship = await getRelationshipStatus(
+                        relationship = await getCachedRelationshipStatus(
                             session.$id,
                             otherUserId,
                         );
                         readOnly = !relationship.canSendDirectMessage;
                         readOnlyReason = getReadOnlyReason(relationship);
                         const encryptionState =
-                            await getDmEncryptionStateForPair(
+                            await getCachedDmEncryptionStateForPair(
                                 session.$id,
                                 otherUserId,
                             );
@@ -922,7 +1190,7 @@ export async function GET(request: NextRequest) {
                     ) || participants.length > 2;
 
                 if (isGroupConversation) {
-                    const relationshipMap = await getRelationshipMap(
+                    const relationshipMap = await getCachedRelationshipMap(
                         session.$id,
                         participants.filter((id) => id !== session.$id),
                     );
@@ -1044,7 +1312,7 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const relationshipMap = await getRelationshipMap(
+            const relationshipMap = await getCachedRelationshipMap(
                 session.$id,
                 participantIds.filter((id) => id !== session.$id),
             );
@@ -1284,7 +1552,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!isGroupConversation && targetReceiverId) {
-            const relationship = await getRelationshipStatus(
+            const relationship = await getCachedRelationshipStatus(
                 senderId,
                 targetReceiverId,
             );
@@ -1594,6 +1862,7 @@ export async function POST(request: NextRequest) {
         if (normalizedAttachments.length > 0) {
             try {
                 await createAttachments(
+                    databases,
                     String(message.$id),
                     normalizedAttachments,
                 );

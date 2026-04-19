@@ -174,7 +174,7 @@ type RelationshipDocumentList = {
  * @param {string} otherUserId - The other user id value.
  * @returns {{ firstUserId: string; secondUserId: string; pairKey: string; }} The return value.
  */
-export function normalizeUserPair(userId: string, otherUserId: string) {
+function normalizeUserPair(userId: string, otherUserId: string) {
     const [firstUserId, secondUserId] = [userId, otherUserId].sort();
     return {
         firstUserId,
@@ -229,7 +229,7 @@ function assertDistinctUsers(
  * @param {string} targetUserId - The target user id value.
  * @returns {Promise<Friendship | null>} The return value.
  */
-export async function getFriendshipByPair(
+async function getFriendshipByPair(
     userId: string,
     targetUserId: string,
 ) {
@@ -257,7 +257,7 @@ export async function getFriendshipByPair(
  * @param {string} blockedUserId - The blocked user id value.
  * @returns {Promise<BlockedUser | null>} The return value.
  */
-export async function getBlockRecord(userId: string, blockedUserId: string) {
+async function getBlockRecord(userId: string, blockedUserId: string) {
     const { databases } = getAdminClient();
     const response = await readRelationshipData<RelationshipDocumentList>(
         () =>
@@ -282,7 +282,7 @@ export async function getBlockRecord(userId: string, blockedUserId: string) {
  * @param {string} targetUserId - The target user id value.
  * @returns {Promise<{ blockedByMe: BlockedUser | null; blockedMe: BlockedUser | null; isBlocked: boolean; }>} The return value.
  */
-export async function getBlockStatus(userId: string, targetUserId: string) {
+async function getBlockStatus(userId: string, targetUserId: string) {
     const [blockedByMe, blockedMe] = await Promise.all([
         getBlockRecord(userId, targetUserId),
         getBlockRecord(targetUserId, userId),
@@ -717,7 +717,7 @@ export async function getRelationshipMap(
  * @param {string[]} otherUserIds - The other user ids value.
  * @returns {Promise<string[]>} The return value.
  */
-export async function filterVisibleUserIds(
+async function filterVisibleUserIds(
     userId: string,
     otherUserIds: string[],
 ) {

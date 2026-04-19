@@ -58,7 +58,7 @@ export function useDebouncedBatchUpdate<T>(
  * @param delay - Throttle delay in milliseconds (default: 150ms)
  * @returns Throttled function
  */
-export function useThrottle<T extends (...args: unknown[]) => void>(
+function useThrottle<T extends (...args: unknown[]) => void>(
   callback: T,
   delay = 150
 ): T {
