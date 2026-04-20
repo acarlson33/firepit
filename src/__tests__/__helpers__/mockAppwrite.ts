@@ -3,14 +3,14 @@ import { vi } from "vitest";
 // ---------------- Types ----------------
 type FailureConfig = {
   failCollections?: Record<string, Error | string>;
-  onCreate?: (args: any) => void;
+  onCreate?: (args: unknown) => void;
   userId?: string;
   idFactory?: () => string;
   overrides?: {
-    createDocument?: (...args: any[]) => Promise<any>;
-    listDocuments?: (...args: any[]) => Promise<any>;
-    updateDocument?: (...args: any[]) => Promise<any>;
-    deleteDocument?: (...args: any[]) => Promise<any>;
+    createDocument?: (...args: unknown[]) => Promise<unknown>;
+    listDocuments?: (...args: unknown[]) => Promise<unknown>;
+    updateDocument?: (...args: unknown[]) => Promise<unknown>;
+    deleteDocument?: (...args: unknown[]) => Promise<unknown>;
   };
 };
 

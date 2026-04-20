@@ -7,12 +7,9 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
-import { apiCache } from "@/lib/cache-utils";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
 import { logger } from "@/lib/newrelic-utils";
-
-const SERVER_MEMBERSHIP_CACHE_TTL_MS = 15 * 1000;
 
 type ListDocumentsResponse = Awaited<
     ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
@@ -132,14 +129,7 @@ export async function GET(request: NextRequest) {
             return Array.from(serverIds);
         };
 
-        const serverIds =
-            process.env.NODE_ENV === "test"
-                ? await loadServerIds()
-                : await apiCache.dedupe(
-                      `api:servers:membership-server-ids:${session.$id}`,
-                      loadServerIds,
-                      SERVER_MEMBERSHIP_CACHE_TTL_MS,
-                  );
+        const serverIds = await loadServerIds();
 
         if (serverIds.length === 0) {
             return compressedResponse(

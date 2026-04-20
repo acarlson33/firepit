@@ -86,10 +86,13 @@ export type MessagePollOption = {
     voterIds: string[];
 };
 
+export const POLL_CONTEXTS = ["channel", "conversation"] as const;
+export type PollContext = typeof POLL_CONTEXTS[number];
+
 export type MessagePoll = {
     id: string;
     messageId: string;
-    contextType: "channel" | "conversation";
+    contextType: PollContext;
     contextId: string;
     question: string;
     options: MessagePollOption[];

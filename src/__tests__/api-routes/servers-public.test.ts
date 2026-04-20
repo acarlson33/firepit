@@ -33,11 +33,12 @@ vi.mock("@/lib/membership-count", () => ({
 	getActualMemberCounts: (
 		databases: unknown,
 		serverIds: string[],
-	) => mockGetActualMemberCounts(serverIds),
+	) => mockGetActualMemberCounts(databases, serverIds),
 }));
 
 vi.mock("node-appwrite", () => ({
 	Query: {
+		equal: (field: string, value: unknown) => `equal(${field},${String(value)})`,
 		limit: (n: number) => `limit(${n})`,
 		orderDesc: (field: string) => `orderDesc(${field})`,
 	},
@@ -95,11 +96,12 @@ describe("GET /api/servers/public", () => {
 			"test-db",
 			"servers-collection",
 			expect.arrayContaining([
+				expect.stringContaining("equal(isPublic,true)"),
 				expect.stringContaining("limit"),
 				expect.stringContaining("orderDesc"),
 			])
 		);
-		expect(mockGetActualMemberCounts).toHaveBeenCalledWith(["server1"]);
+		expect(mockGetActualMemberCounts).toHaveBeenCalledWith(mockDatabases, ["server1"]);
 	});
 
 	it("should exclude legacy servers with missing visibility", async () => {

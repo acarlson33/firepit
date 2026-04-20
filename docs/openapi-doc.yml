@@ -159,7 +159,6 @@ components:
                 - isPublic
                 - defaultOnSignup
                 - memberCount
-                - $createdAt
             properties:
                 $id:
                     type: string
@@ -168,22 +167,17 @@ components:
                 ownerId:
                     type: string
                 iconFileId:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
                 iconUrl:
-                    type: string
+                    type: [string, "null"]
                     format: uri
-                    nullable: true
                 bannerFileId:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
                 bannerUrl:
-                    type: string
+                    type: [string, "null"]
                     format: uri
-                    nullable: true
                 description:
-                    type: string
-                    nullable: true
+                    type: [string, "null"]
                 isPublic:
                     type: boolean
                 defaultOnSignup:
@@ -747,8 +741,7 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Server"
                                     nextCursor:
-                                        type: string
-                                        nullable: true
+                                        type: [string, "null"]
 
     /api/servers/create:
         post:
@@ -858,9 +851,9 @@ paths:
                                 required: [server]
                                 properties:
                                     server:
-                                        nullable: true
-                                        allOf:
+                                        anyOf:
                                             - $ref: "#/components/schemas/ServerMinimal"
+                                            - type: "null"
                 "401":
                     description: Unauthorized
                     content:
@@ -899,19 +892,16 @@ paths:
                                 name:
                                     type: string
                                 description:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 isPublic:
                                     type: boolean
                                 defaultOnSignup:
                                     type: boolean
                                     description: Instance-wide signup default toggle. Requires instance admin privileges and returns 403 for non-admin callers.
                                 iconFileId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 bannerFileId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
             responses:
                 "200":
                     description: Updated server settings
@@ -1001,8 +991,7 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/ServerMember"
                                     nextCursor:
-                                        type: string
-                                        nullable: true
+                                        type: [string, "null"]
 
     /api/servers/{serverId}/permissions:
         get:
@@ -1159,8 +1148,7 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Channel"
                                     nextCursor:
-                                        type: string
-                                        nullable: true
+                                        type: [string, "null"]
 
     /api/channels/{channelId}:
         patch:
@@ -1184,8 +1172,7 @@ paths:
                                 name:
                                     type: string
                                 categoryId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 position:
                                     type: integer
             responses:

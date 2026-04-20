@@ -279,12 +279,12 @@ export function mapGiphyResults(params: {
     };
 }
 
-export async function isGifStickerSupportEnabled(): Promise<boolean> {
-    return true;
+export function isGifStickerSupportEnabled(): Promise<boolean> {
+    return Promise.resolve(true);
 }
 
-export async function isGifSearchEnabled(): Promise<boolean> {
-    return true;
+export function isGifSearchEnabled(): Promise<boolean> {
+    return Promise.resolve(true);
 }
 
 export function getTenorConfig() {

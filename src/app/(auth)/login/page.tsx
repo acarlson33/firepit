@@ -43,7 +43,8 @@ function LoginFormContent() {
         const updatedSearchParams = new URLSearchParams(searchParams.toString());
         updatedSearchParams.delete("verified");
         const nextQuery = updatedSearchParams.toString();
-        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+        const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+        window.history.replaceState(null, "", nextUrl);
     }, [pathname, router, searchParams]);
 
     const redirectPath = searchParams.get("redirect");

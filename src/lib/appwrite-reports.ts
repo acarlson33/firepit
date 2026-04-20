@@ -201,26 +201,6 @@ export async function listReports(
     };
 }
 
-async function getReportById(reportId: string): Promise<Report> {
-    const trimmedReportId = reportId.trim();
-    if (!trimmedReportId) {
-        throw new Error("Report id is required");
-    }
-    if (!REPORTS_COLLECTION_ID) {
-        throw new Error("Reports collection is not configured");
-    }
-
-    const { databases } = getServerClient();
-
-    const doc = await databases.getDocument(
-        DATABASE_ID,
-        REPORTS_COLLECTION_ID,
-        trimmedReportId,
-    );
-
-    return parseReport(doc);
-}
-
 export async function resolveReport(
     reportId: string,
     adminId: string,

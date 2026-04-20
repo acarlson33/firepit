@@ -159,6 +159,7 @@ export async function POST(request: Request) {
             success: true,
             server: {
                 $id: server.$id,
+                $createdAt: server.$createdAt,
                 name: server.name,
                 ownerId: server.ownerId,
                 memberCount: server.memberCount,
@@ -170,7 +171,7 @@ export async function POST(request: Request) {
                 isPublic: server.isPublic,
                 defaultOnSignup: server.defaultOnSignup,
             },
-        });
+        }, { status: 201 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

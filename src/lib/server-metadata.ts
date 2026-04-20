@@ -2,10 +2,10 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 
 const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const TRAILING_SLASH_PATTERN = /\/$/;
+const TRAILING_SLASH_PATTERN = /\/+$/;
 
 export function normalizeServerVisibility(value: unknown): boolean {
-    return value !== false;
+    return value === true;
 }
 
 function normalizeServerDefaultOnSignup(value: unknown): boolean {
