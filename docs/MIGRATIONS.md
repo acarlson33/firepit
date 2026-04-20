@@ -8,7 +8,7 @@ Some legacy server records may be missing `isPublic`. Current discovery behavior
 
 The setup script includes a helper named `migrateLegacyServersIsPublic` in `scripts/setup-appwrite.ts`.
 
-### Dry run and policy
+### Policy and run
 
 Choose your default policy for missing values:
 
@@ -16,6 +16,8 @@ Choose your default policy for missing values:
 - `false`: default to private visibility
 
 ### Run
+
+The following command performs the migration for real. It uses `MIGRATE_LEGACY_SERVERS_IS_PUBLIC` and `MIGRATE_LEGACY_SERVERS_IS_PUBLIC_DEFAULT` and then executes `bun run setup`.
 
 Use the setup script with migration flags:
 

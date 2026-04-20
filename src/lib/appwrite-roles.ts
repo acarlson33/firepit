@@ -244,19 +244,30 @@ async function fetchCustomTeamTags(
     teams: Teams | ServerTeams,
     teamMap: Record<string, { label: string; color?: string }>,
 ): Promise<RoleTag[]> {
-    const tags: RoleTag[] = [];
     const entries = Object.entries(teamMap);
-    for (const [teamId, cfg] of entries) {
-        try {
-            const match = await isMember(teamId, userId, teams);
-            if (match) {
-                tags.push({ id: teamId, label: cfg.label, color: cfg.color });
+    const tagCandidates = await Promise.all(
+        entries.map(async ([teamId, cfg]) => {
+            try {
+                const match = await isMember(teamId, userId, teams);
+                if (!match) {
+                    return null;
+                }
+
+                return cfg.color
+                    ? ({
+                          id: teamId,
+                          label: cfg.label,
+                          color: cfg.color,
+                      } satisfies RoleTag)
+                    : ({ id: teamId, label: cfg.label } satisfies RoleTag);
+            } catch {
+                // ignore individual team failures
+                return null;
             }
-        } catch {
-            // ignore individual team failures
-        }
-    }
-    return tags;
+        }),
+    );
+
+    return tagCandidates.filter((candidate): candidate is RoleTag => candidate !== null);
 }
 
 /**

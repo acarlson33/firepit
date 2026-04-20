@@ -185,7 +185,7 @@ export function registerPostHogProcessHandlers() {
         }
     };
 
-    process.on("beforeExit", () => {
+    process.once("beforeExit", () => {
         flushLifecycleEvent().catch(() => {});
     });
     process.once("SIGINT", () => {

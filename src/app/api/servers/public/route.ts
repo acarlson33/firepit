@@ -35,7 +35,11 @@ export async function GET() {
 		const response = await databases.listDocuments(
 			env.databaseId,
 			env.collections.servers,
-			[Query.limit(100), Query.orderDesc("$createdAt")]
+			[
+				Query.equal("isPublic", true),
+				Query.limit(100),
+				Query.orderDesc("$createdAt"),
+			]
 		);
 
 		const publicServerDocuments = response.documents.filter(

@@ -76,21 +76,30 @@ function isSystemSenderAccount(userId: string): boolean {
 }
 
 async function revokeSessionBestEffort(
-    account: Account,
+    userId: string,
     sessionId: string,
 ): Promise<void> {
-    await account
-        .deleteSession({ sessionId })
-        .catch(() => {
-            // Best effort cleanup.
-        });
+    try {
+        // Requires an API key with users.write/session-management scope.
+        const { client } = getServerClient();
+        const users = new Users(client);
+        await users.deleteSession({ userId, sessionId });
+    } catch {
+        // Best effort cleanup.
+    }
 }
 
-function buildVerificationRequiredResult(): AuthActionResult {
+function buildVerificationRequiredResult(options?: {
+    verificationLinkSent?: boolean;
+}): AuthActionResult {
+    const verificationLinkSent = options?.verificationLinkSent === true;
+
     return {
         success: false,
         error: "Please verify your email before signing in.",
-        message: "Please verify your email before signing in. We sent a verification link.",
+        message: verificationLinkSent
+            ? "Please verify your email before signing in. We sent a verification link."
+            : "Please verify your email before signing in. Request a new verification link and try again.",
         verificationRequired: true,
     };
 }
@@ -237,7 +246,7 @@ export async function loginAction(
 
         if (isSystemSenderAccount(session.userId)) {
             // Defense in depth: invalidate this session immediately and never issue app cookie.
-            await revokeSessionBestEffort(account, session.$id);
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: false,
@@ -251,17 +260,31 @@ export async function loginAction(
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (!emailVerified) {
+                let verificationLinkSent = false;
                 await sendVerificationEmailForSession({
                     endpoint,
                     project,
                     sessionSecret: session.secret,
-                }).catch(() => {
-                    // Best effort only. Sign-in is still denied until verified.
+                })
+                    .then(() => {
+                        verificationLinkSent = true;
+                    })
+                    .catch((verificationError) => {
+                        logger.error(
+                            "Failed to send verification email during login",
+                            {
+                                userId: session.userId,
+                                error:
+                                    verificationError instanceof Error
+                                        ? verificationError.message
+                                        : String(verificationError),
+                            },
+                        );
                 });
 
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(session.userId, session.$id);
 
-                return buildVerificationRequiredResult();
+                return buildVerificationRequiredResult({ verificationLinkSent });
             }
         }
 
@@ -404,7 +427,7 @@ export async function resendVerificationAction(
         });
 
         if (isSystemSenderAccount(session.userId)) {
-            await revokeSessionBestEffort(account, session.$id);
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: false,
@@ -417,7 +440,7 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            await revokeSessionBestEffort(account, session.$id);
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: true,
@@ -435,7 +458,7 @@ export async function resendVerificationAction(
             });
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
-            await revokeSessionBestEffort(account, session.$id);
+            await revokeSessionBestEffort(session.userId, session.$id);
         }
 
         return {

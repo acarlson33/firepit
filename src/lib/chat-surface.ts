@@ -97,14 +97,16 @@ function clonePoll(
         return undefined;
     }
 
-    if (typeof globalThis.structuredClone === "function") {
-        return globalThis.structuredClone(poll);
-    }
-
-    const safeOptions = Array.isArray(poll.options) ? poll.options : [];
+    const clonedPoll =
+        typeof globalThis.structuredClone === "function"
+            ? globalThis.structuredClone(poll)
+            : { ...poll };
+    const safeOptions = Array.isArray(clonedPoll.options)
+        ? clonedPoll.options
+        : [];
 
     return {
-        ...poll,
+        ...clonedPoll,
         options: safeOptions.map((option) => ({
             ...option,
             voterIds: Array.isArray(option.voterIds) ? [...option.voterIds] : [],

@@ -133,7 +133,7 @@ async function listPollDocumentsForMessages(params: {
         cursor = lastDocument.$id;
     }
 
-    if (fullPageCount > 1) {
+    if (fullPageCount > 0) {
         logger.warn("Poll query required multiple pages", {
             cursor: cursor ?? null,
             fullPageCount,
@@ -202,7 +202,7 @@ async function listVoteDocumentsForPolls(params: {
         cursor = lastDocument.$id;
     }
 
-    if (reachedMaxPages || fullPageCount > 1) {
+    if (reachedMaxPages || fullPageCount > 0) {
         logger.warn("Poll votes query required pagination safeguards", {
             hitMaxPages: reachedMaxPages,
             fullPageCount,

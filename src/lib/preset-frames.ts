@@ -328,7 +328,7 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
+export function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
     if (frame.imageUrl) {
         const encodedImageUrl = encodeURI(frame.imageUrl)
             .replaceAll('"', "%22")

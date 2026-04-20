@@ -50,6 +50,8 @@ type ServerBrowserProperties = {
 	joinedServerIds?: string[];
 };
 
+const SERVER_BROWSER_SKELETON_KEYS = ["s1", "s2", "s3", "s4"] as const;
+
 function compareByNewest(left: Server, right: Server) {
 	const leftTimestamp = Date.parse(left.$createdAt ?? "");
 	const rightTimestamp = Date.parse(right.$createdAt ?? "");
@@ -304,10 +306,10 @@ export function ServerBrowser({
 			<CardContent>
 				{loading ? (
 					<div className="grid gap-3 sm:grid-cols-2">
-						{Array.from({ length: 4 }).map((_, index) => (
+						{SERVER_BROWSER_SKELETON_KEYS.map((key) => (
 							<div
 								className="overflow-hidden rounded-xl border border-border/60"
-								key={`server-browser-skeleton-${index}`}
+								key={key}
 							>
 								<Skeleton className="h-20 w-full" />
 								<div className="space-y-3 p-3">

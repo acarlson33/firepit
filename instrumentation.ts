@@ -7,6 +7,18 @@
  * Documentation: https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  */
 
+const instrumentationLogger = {
+    error(message: string, attributes?: Record<string, unknown>) {
+        const payload = attributes
+            ? `${message} ${JSON.stringify(attributes)}`
+            : message;
+
+        if (typeof globalThis.reportError === "function") {
+            globalThis.reportError(new Error(payload));
+        }
+    },
+};
+
 export async function register() {
     // Only initialize New Relic on the Node.js runtime (not Edge runtime)
     if (process.env.NEXT_RUNTIME === "nodejs") {
@@ -17,9 +29,11 @@ export async function register() {
             registerPostHogProcessHandlers();
         } catch (error) {
             // PostHog runtime hooks are optional and should not block startup.
-            console.error(
-                "[PostHog] Failed to register process handlers:",
-                error instanceof Error ? error.message : String(error),
+            instrumentationLogger.error(
+                "[PostHog] Failed to register process handlers",
+                {
+                error: error instanceof Error ? error.message : String(error),
+                },
             );
         }
 

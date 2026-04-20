@@ -710,25 +710,3 @@ export async function getRelationshipMap(
     return new Map(entries);
 }
 
-/**
- * Handles filter visible user ids.
- *
- * @param {string} userId - The user id value.
- * @param {string[]} otherUserIds - The other user ids value.
- * @returns {Promise<string[]>} The return value.
- */
-async function filterVisibleUserIds(
-    userId: string,
-    otherUserIds: string[],
-) {
-    const relationshipMap = await getRelationshipMap(userId, otherUserIds);
-
-    return otherUserIds.filter((otherUserId) => {
-        if (!otherUserId || otherUserId === userId) {
-            return false;
-        }
-
-        const relationship = relationshipMap.get(otherUserId);
-        return !relationship?.blockedByMe && !relationship?.blockedMe;
-    });
-}

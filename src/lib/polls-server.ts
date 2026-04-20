@@ -98,13 +98,15 @@ async function listVotesForPoll(
 ): Promise<PollVoteDocShape[]> {
     const votes: PollVoteDocShape[] = [];
     const queryWithPagination = Query as QueryWithPagination;
-    const cursorAfterFn = queryWithPagination.cursorAfter;
+    const cursorAfterFn = (
+        queryWithPagination as { cursorAfter?: (cursor: string) => string }
+    ).cursorAfter;
     const orderQuery =
         typeof queryWithPagination.orderAsc === "function"
             ? queryWithPagination.orderAsc("$id")
             : null;
     const supportsStableCursorPagination =
-        cursorAfterFn && orderQuery;
+        cursorAfterFn !== undefined && orderQuery !== null;
     let cursor: string | undefined;
 
     while (true) {
@@ -112,7 +114,7 @@ async function listVotesForPoll(
             Query.equal("pollId", pollId),
             ...(orderQuery ? [orderQuery] : []),
             Query.limit(POLL_VOTES_PAGE_LIMIT),
-            ...(cursor && supportsStableCursorPagination
+            ...(cursor && supportsStableCursorPagination && cursorAfterFn
                 ? [cursorAfterFn(cursor)]
                 : []),
         ];

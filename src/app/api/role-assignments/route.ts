@@ -37,7 +37,7 @@ async function listRoleAssignmentsForServer(params: {
     let cursorAfter: string | null = null;
 
     while (true) {
-        const pageQueries = [
+        const pageQueries: string[] = [
             Query.equal("serverId", serverId),
             ...(roleId && canQueryContains
                 ? [Query.contains("roleIds", [roleId])]

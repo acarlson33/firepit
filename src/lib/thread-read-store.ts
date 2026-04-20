@@ -327,7 +327,7 @@ export async function listThreadReadsByContext(params: {
                 Query.limit(
                     Math.min(
                         THREAD_READ_QUERY_LIMIT,
-                        Math.max(100, contextIdChunk.length * 3),
+                        Math.max(contextIdChunk.length * 4, 1),
                     ),
                 ),
                 ...selectQuery(THREAD_READ_SELECT_FIELDS),
