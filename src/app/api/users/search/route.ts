@@ -21,14 +21,6 @@ function dedupeUsersSearchCache<T>(key: string, fetcher: () => Promise<T>) {
     return apiCache.dedupe(key, fetcher, USERS_SEARCH_CACHE_TTL_MS);
 }
 
-function buildRelationshipCacheKey(
-    userId: string,
-    otherUserIds: string[],
-): string {
-    const normalized = [...new Set(otherUserIds.filter(Boolean))].sort();
-    return `api:users-search:relationships:${userId}:${normalized.join("|")}`;
-}
-
 export async function GET(request: Request) {
     try {
         const session = await getServerSession();
@@ -87,9 +79,9 @@ export async function GET(request: Request) {
         }));
 
         const candidateUserIds = rawUsers.map((user) => user.userId);
-        const relationshipMap = await dedupeUsersSearchCache(
-            buildRelationshipCacheKey(session.$id, candidateUserIds),
-            () => getRelationshipMap(session.$id, candidateUserIds),
+        const relationshipMap = await getRelationshipMap(
+            session.$id,
+            candidateUserIds,
         );
         const users = rawUsers.filter((user) => {
             if (user.userId === session.$id) {

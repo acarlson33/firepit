@@ -59,6 +59,17 @@ const pendingNotificationSettingsRequests = new Map<
 	Promise<NotificationSettings | null>
 >();
 
+export function invalidateNotificationSettingsCache(recipientId?: string): void {
+	if (recipientId) {
+		notificationSettingsCache.delete(recipientId);
+		pendingNotificationSettingsRequests.delete(recipientId);
+		return;
+	}
+
+	notificationSettingsCache.clear();
+	pendingNotificationSettingsRequests.clear();
+}
+
 function isMuteExpired(mutedUntil: string | undefined): boolean {
 	if (!mutedUntil) {
 		return false;

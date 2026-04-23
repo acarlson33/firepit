@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -333,6 +334,11 @@ function observeInboxDmUnreadConsistency(params: {
         return;
     }
 
+    const hashedUserId = createHash("sha256")
+        .update(userId)
+        .digest("hex")
+        .slice(0, 16);
+
     recordEvent("InboxDmUnreadConsistencyObserved", {
         conversationCount: comparison.dmSnapshot.conversationCount,
         delta: comparison.delta,
@@ -342,7 +348,7 @@ function observeInboxDmUnreadConsistency(params: {
             comparison.inboxConversationThreadUnreadCount,
         mismatched: comparison.absDelta > 0,
         snapshotAgeMs: comparison.snapshotAgeMs,
-        userId,
+        userId: hashedUserId,
     });
 
     if (comparison.absDelta > 0) {
@@ -355,7 +361,7 @@ function observeInboxDmUnreadConsistency(params: {
             inboxConversationThreadUnreadCount:
                 comparison.inboxConversationThreadUnreadCount,
             snapshotAgeMs: comparison.snapshotAgeMs,
-            userId,
+            userId: hashedUserId,
         });
     }
 }

@@ -400,9 +400,9 @@ export async function GET(request: NextRequest) {
         }
 
         const relationshipSubjectsList = Array.from(relationshipSubjects);
-        const relationshipMap = await dedupeSearchCache(
-            `search:relationships:${user.$id}:${buildSortedIdsKey(relationshipSubjectsList)}`,
-            () => getRelationshipMap(user.$id, relationshipSubjectsList),
+        const relationshipMap = await getRelationshipMap(
+            user.$id,
+            relationshipSubjectsList,
         );
         const visibleResults = results.filter((result) => {
             if (result.type === "channel") {

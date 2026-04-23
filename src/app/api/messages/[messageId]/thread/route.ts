@@ -373,8 +373,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
         })();
 
+        const {
+            mentions: _rawMentions,
+            attachments: _rawAttachments,
+            ...replyWithoutSerializedFields
+        } = newReply;
+
         const replyPayload = {
-            ...newReply,
+            ...replyWithoutSerializedFields,
             ...(normalizedMentions ? { mentions: normalizedMentions } : {}),
             ...(normalizedAttachments.length > 0
                 ? { attachments: normalizedAttachments }

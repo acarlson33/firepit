@@ -312,7 +312,27 @@ export async function setDefaultSignupServerAction(
         if (resetFailures.length > 0) {
             logger.error("Failed to clear existing default signup servers", {
                 failureCount: resetFailures.length,
+                serverId,
             });
+
+            if (serverId) {
+                try {
+                    await databases.updateDocument(
+                        DATABASE_ID,
+                        SERVERS_COLLECTION_ID,
+                        serverId,
+                        { defaultOnSignup: false },
+                    );
+                } catch (rollbackError) {
+                    logger.error("Failed to rollback default signup server update", {
+                        error:
+                            rollbackError instanceof Error
+                                ? rollbackError.message
+                                : String(rollbackError),
+                        serverId,
+                    });
+                }
+            }
 
             return {
                 success: false,

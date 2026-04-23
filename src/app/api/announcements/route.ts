@@ -136,16 +136,29 @@ export async function POST(request: Request): Promise<NextResponse> {
     try {
         const { user } = await requireAdmin();
 
-        let payload: AnnouncementPayload;
+        let payloadValue: unknown;
 
         try {
-            payload = (await request.json()) as AnnouncementPayload;
+            payloadValue = await request.json();
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
                 { status: 400 },
             );
         }
+
+        if (
+            !payloadValue ||
+            typeof payloadValue !== "object" ||
+            Array.isArray(payloadValue)
+        ) {
+            return NextResponse.json(
+                { success: false, error: "Invalid JSON payload" },
+                { status: 400 },
+            );
+        }
+
+        const payload = payloadValue as AnnouncementPayload;
 
         if (typeof payload.body !== "string") {
             return NextResponse.json(

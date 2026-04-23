@@ -154,7 +154,7 @@ export function ServerAdminPanel({
         serverDescription ?? "",
     );
     const [settingsIsPublic, setSettingsIsPublic] = useState(
-        serverIsPublic !== false,
+        serverIsPublic === true,
     );
     const [settingsIconFileId, setSettingsIconFileId] = useState(
         serverIconFileId ?? "",
@@ -184,7 +184,7 @@ export function ServerAdminPanel({
 
         setSettingsName(serverName);
         setSettingsDescription(serverDescription ?? "");
-        setSettingsIsPublic(serverIsPublic !== false);
+        setSettingsIsPublic(serverIsPublic === true);
         setSettingsIconFileId(serverIconFileId ?? "");
         setSettingsIconUrl(serverIconUrl ?? null);
         setSettingsBannerFileId(serverBannerFileId ?? "");

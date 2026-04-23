@@ -367,7 +367,7 @@ export async function getAnnouncementsAction(
     const validatedLimit =
         input.limit === undefined
             ? undefined
-            : validateDispatchLimit(Math.floor(input.limit));
+            : validateDispatchLimit(input.limit);
 
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
@@ -442,6 +442,6 @@ export async function dispatchAnnouncementsAction(
         throw new Error("Forbidden");
     }
 
-    const validatedLimit = validateDispatchLimit(Math.floor(limit));
+    const validatedLimit = validateDispatchLimit(limit);
     return dispatchScheduledAnnouncements(validatedLimit);
 }

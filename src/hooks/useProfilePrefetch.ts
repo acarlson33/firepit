@@ -1,7 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
-
 type CachedProfileEntry = {
     data: unknown;
     cachedAt: number;
@@ -67,40 +65,6 @@ function fetchProfileIntoCache(userId: string): Promise<void> {
         promise: requestPromise,
     });
     return requestPromise;
-}
-
-function useProfilePrefetch() {
-    const prefetchProfile = useCallback(async (userId: string) => {
-        if (getCachedProfileValue(userId) !== undefined) {
-            return;
-        }
-
-        const existing = inFlightProfileFetches.get(userId);
-        if (existing) {
-            await existing.promise;
-            return;
-        }
-
-        await fetchProfileIntoCache(userId);
-    }, []);
-
-    const getCachedProfile = useCallback((userId: string) => {
-        return getCachedProfileValue(userId);
-    }, []);
-
-    const clearCache = useCallback(() => {
-        for (const inFlight of inFlightProfileFetches.values()) {
-            inFlight.controller.abort();
-        }
-        inFlightProfileFetches.clear();
-        profileCache.clear();
-    }, []);
-
-    return {
-        prefetchProfile,
-        getCachedProfile,
-        clearCache,
-    };
 }
 
 export const profilePrefetchPool = {

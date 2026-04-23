@@ -481,7 +481,7 @@ export async function GET(request: NextRequest) {
                 headers: {
                     // Cache channels for 60 seconds with 5 minute stale-while-revalidate
                     "Cache-Control":
-                        "public, s-maxage=60, stale-while-revalidate=300",
+                        "private, no-store",
                 },
             },
         );

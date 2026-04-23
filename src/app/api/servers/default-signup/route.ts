@@ -45,7 +45,6 @@ export async function GET() {
             error: error instanceof Error ? error.message : String(error),
             databaseId: env.databaseId,
             serversCollectionId: env.collections.servers,
-            userId: session.$id,
         });
         return NextResponse.json(
             { error: "Failed to load default signup server" },

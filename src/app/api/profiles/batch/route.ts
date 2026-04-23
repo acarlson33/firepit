@@ -84,9 +84,9 @@ export async function POST(request: NextRequest) {
         // Deduplicate user IDs
         const uniqueUserIds = [...new Set(userIds)];
 
-        const relationshipMap = await dedupeProfilesBatchCache(
-            `api:profiles-batch:relationships:${session.$id}:${stableIdsKey(uniqueUserIds)}`,
-            () => getRelationshipMap(session.$id, uniqueUserIds),
+        const relationshipMap = await getRelationshipMap(
+            session.$id,
+            uniqueUserIds,
         );
         const visibleUserIds = uniqueUserIds.filter((userId) => {
             if (userId === session.$id) {
