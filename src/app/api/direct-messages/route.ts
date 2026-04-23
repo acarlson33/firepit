@@ -115,6 +115,7 @@ async function paginateReplies(params: {
     let cursorAfterId: string | null = null;
     let replyPageCount = 0;
     let replySignalsTruncated = false;
+    let lastPageWasFull = false;
 
     while (replyPageCount < maxThreadParentPages) {
         replyPageCount += 1;
@@ -159,8 +160,11 @@ async function paginateReplies(params: {
         }
 
         if (replyPage.documents.length < pageSize) {
+            lastPageWasFull = false;
             break;
         }
+
+        lastPageWasFull = true;
 
         const lastReplyDocument = replyPage.documents.at(-1) as
             | Record<string, unknown>
@@ -175,7 +179,11 @@ async function paginateReplies(params: {
         }
     }
 
-    if (replyPageCount === maxThreadParentPages && cursorAfterId) {
+    if (
+        replyPageCount === maxThreadParentPages &&
+        cursorAfterId &&
+        lastPageWasFull
+    ) {
         replySignalsTruncated = true;
     }
 
@@ -196,13 +204,6 @@ function getCachedRelationshipMap(userId: string, otherUserIds: string[]) {
     return dedupeDirectMessageCache(
         buildRelationshipMapCacheKey(userId, normalizedOtherUserIds),
         () => getRelationshipMap(userId, normalizedOtherUserIds),
-    );
-}
-
-function getCachedRelationshipStatus(userId: string, targetUserId: string) {
-    return dedupeDirectMessageCache(
-        `dm:relationship-status:${userId}:${targetUserId}`,
-        () => getRelationshipStatus(userId, targetUserId),
     );
 }
 
@@ -516,11 +517,21 @@ export async function GET(request: NextRequest) {
                     const conversationIds = conversations.map(
                         (conversation) => conversation.$id,
                     );
+                    let replySignalsError: unknown;
                     const replySignalsPromise = paginateReplies({
                         databases,
                         conversationIds,
                         maxThreadParentPages,
                         pageSize,
+                    }).catch((error) => {
+                        replySignalsError = error;
+                        return {
+                            replySignalsByParentId: new Map<
+                                string,
+                                ConversationThreadReplySignal
+                            >(),
+                            replySignalsTruncated: true,
+                        };
                     });
 
                     const threadParentsById = new Map<
@@ -530,6 +541,7 @@ export async function GET(request: NextRequest) {
                     let cursorAfterId: string | null = null;
                     let threadParentPageCount = 0;
                     let threadParentsTruncated = false;
+                    let lastPageWasFull = false;
 
                     while (threadParentPageCount < maxThreadParentPages) {
                         threadParentPageCount += 1;
@@ -564,8 +576,11 @@ export async function GET(request: NextRequest) {
                         }
 
                         if (page.documents.length < pageSize) {
+                            lastPageWasFull = false;
                             break;
                         }
+
+                        lastPageWasFull = true;
 
                         const lastDocument = page.documents.at(-1) as
                             | Record<string, unknown>
@@ -581,12 +596,16 @@ export async function GET(request: NextRequest) {
                     }
                     if (
                         threadParentPageCount === maxThreadParentPages &&
-                        cursorAfterId
+                        cursorAfterId &&
+                        lastPageWasFull
                     ) {
                         threadParentsTruncated = true;
                     }
                     const { replySignalsByParentId, replySignalsTruncated } =
                         await replySignalsPromise;
+                    if (replySignalsError) {
+                        throw replySignalsError;
+                    }
 
                     const missingParentIds = Array.from(
                         replySignalsByParentId.keys(),
@@ -910,7 +929,7 @@ export async function GET(request: NextRequest) {
                 }
 
                 if (oneToOne) {
-                    const relationship = await getCachedRelationshipStatus(
+                    const relationship = await getRelationshipStatus(
                         session.$id,
                         targetUserId,
                     );
@@ -983,7 +1002,7 @@ export async function GET(request: NextRequest) {
                 );
             }
 
-            const relationship = await getCachedRelationshipStatus(
+            const relationship = await getRelationshipStatus(
                 session.$id,
                 targetUserId,
             );
@@ -1114,7 +1133,7 @@ export async function GET(request: NextRequest) {
                         (id) => id !== session.$id,
                     );
                     if (otherUserId && !isSystemAnnouncementThread) {
-                        relationship = await getCachedRelationshipStatus(
+                        relationship = await getRelationshipStatus(
                             session.$id,
                             otherUserId,
                         );
@@ -1552,7 +1571,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!isGroupConversation && targetReceiverId) {
-            const relationship = await getCachedRelationshipStatus(
+            const relationship = await getRelationshipStatus(
                 senderId,
                 targetReceiverId,
             );

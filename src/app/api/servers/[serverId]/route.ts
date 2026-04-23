@@ -229,18 +229,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
             while (true) {
                 const queryWithSelect = Query as QueryWithSelect;
-                const page: ListDocumentsResponse = await databases.listDocuments(
-                    env.databaseId,
-                    env.collections.servers,
-                    [
-                        Query.equal("defaultOnSignup", true),
-                        ...(typeof queryWithSelect.select === "function"
-                            ? [queryWithSelect.select(["$id"])]
-                            : []),
-                        Query.limit(pageSize),
-                        ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
-                    ],
-                );
+                let page: ListDocumentsResponse;
+                try {
+                    page = await databases.listDocuments(
+                        env.databaseId,
+                        env.collections.servers,
+                        [
+                            Query.equal("defaultOnSignup", true),
+                            ...(typeof queryWithSelect.select === "function"
+                                ? [queryWithSelect.select(["$id"])]
+                                : []),
+                            Query.limit(pageSize),
+                            ...(cursorAfter
+                                ? [Query.cursorAfter(cursorAfter)]
+                                : []),
+                        ],
+                    );
+                } catch (error) {
+                    logger.error("Failed to list default signup servers during PATCH", {
+                        error: error instanceof Error ? error.message : String(error),
+                        serverId,
+                        userId: session.$id,
+                    });
+                    return NextResponse.json(
+                        { error: "Internal server error" },
+                        { status: 500 },
+                    );
+                }
 
                 for (const document of page.documents) {
                     if (typeof document.$id === "string") {

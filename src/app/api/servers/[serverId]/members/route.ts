@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
+import { recordMetric } from "@/lib/monitoring";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -254,9 +255,16 @@ export async function GET(request: Request, context: RouteContext) {
                 orphanCount: orphanUserIds.length,
                 sampleUserIds: orphanUserIds.slice(0, 10),
             });
+            recordMetric("server.orphan_membership.detected", orphanUserIds.length, {
+                orphanCount: orphanUserIds.length,
+                serverId,
+            });
         }
 
-        return NextResponse.json({ members });
+        return NextResponse.json({
+            members,
+            orphanCount: orphanUserIds.length,
+        });
     } catch (error) {
         logger.error("Failed to list server members", {
             error: error instanceof Error ? error.message : String(error),

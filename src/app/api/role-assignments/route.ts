@@ -34,7 +34,21 @@ async function listRoleAssignmentsForServer(params: {
     const queryWithPagination = Query as QueryWithPagination;
     const supportsCursorAfter =
         typeof queryWithPagination.cursorAfter === "function";
+    const supportsOrderAsc = typeof queryWithPagination.orderAsc === "function";
     let cursorAfter: string | null = null;
+    let truncated = false;
+    let total: number | undefined;
+
+    if (supportsCursorAfter && !supportsOrderAsc) {
+        logger.warn(
+            "Role assignment pagination requires Query.orderAsc for stable cursor paging; returning potentially truncated first page",
+            {
+                pageSize,
+                roleId,
+                serverId,
+            },
+        );
+    }
 
     while (true) {
         const pageQueries: string[] = [
@@ -42,7 +56,7 @@ async function listRoleAssignmentsForServer(params: {
             ...(roleId && canQueryContains
                 ? [Query.contains("roleIds", [roleId])]
                 : []),
-            ...(typeof queryWithPagination.orderAsc === "function"
+            ...(supportsOrderAsc
                 ? [queryWithPagination.orderAsc("$id")]
                 : []),
             Query.limit(pageSize),
@@ -56,6 +70,10 @@ async function listRoleAssignmentsForServer(params: {
             roleAssignmentsCollectionId,
             pageQueries,
         );
+
+        if (typeof response.total === "number") {
+            total = response.total;
+        }
 
         if (roleId && !canQueryContains) {
             for (const document of response.documents) {
@@ -76,10 +94,13 @@ async function listRoleAssignmentsForServer(params: {
             break;
         }
 
-        if (!supportsCursorAfter) {
+        if (!supportsCursorAfter || !supportsOrderAsc) {
+            truncated = true;
             logger.warn(
-                "Role assignment pagination cursor helper unavailable; stopping after first full page",
+                "Role assignment pagination helpers unavailable; stopping after first full page",
                 {
+                    hasCursorAfter: supportsCursorAfter,
+                    hasOrderAsc: supportsOrderAsc,
                     pageSize,
                     roleId,
                     serverId,
@@ -95,11 +116,16 @@ async function listRoleAssignmentsForServer(params: {
                 : null;
 
         if (!cursorAfter) {
+            truncated = true;
             break;
         }
     }
 
-    return documents;
+    return {
+        documents,
+        total,
+        truncated,
+    };
 }
 
 async function requireManageRolesAccess(serverId: string) {
@@ -146,15 +172,33 @@ async function updateRoleMemberCount(
                       ],
                   )
               ).total
-            : (
-                  await listRoleAssignmentsForServer({
-                      canQueryContains,
-                      databases,
-                      pageSize: 100,
-                      roleId,
-                      serverId,
-                  })
-              ).length;
+            : await (async () => {
+                  const pagedRoleAssignments =
+                      await listRoleAssignmentsForServer({
+                          canQueryContains,
+                          databases,
+                          pageSize: 100,
+                          roleId,
+                          serverId,
+                      });
+
+                  if (pagedRoleAssignments.truncated) {
+                      logger.warn(
+                          "Skipping role memberCount update due to truncated role assignment pagination",
+                          {
+                              roleId,
+                              serverId,
+                          },
+                      );
+                      return null;
+                  }
+
+                  return pagedRoleAssignments.documents.length;
+              })();
+
+        if (memberCount === null) {
+            return;
+        }
 
         // Update role document
         await databases.updateDocument(databaseId, rolesCollectionId, roleId, {
@@ -198,13 +242,14 @@ export async function GET(request: NextRequest) {
         ];
 
         if (roleId) {
-            const roleAssignments = await listRoleAssignmentsForServer({
+            const roleAssignmentsResult = await listRoleAssignmentsForServer({
                 canQueryContains,
                 databases,
                 pageSize: 100,
                 roleId,
                 serverId,
             });
+            const roleAssignments = roleAssignmentsResult.documents;
 
             const profileUserIds = roleAssignments.map((assignment) =>
                 String(assignment.userId),
@@ -238,7 +283,13 @@ export async function GET(request: NextRequest) {
                 };
             });
 
-            return NextResponse.json({ members });
+            return NextResponse.json({
+                members,
+                ...(roleAssignmentsResult.total !== undefined
+                    ? { total: roleAssignmentsResult.total }
+                    : {}),
+                truncated: roleAssignmentsResult.truncated,
+            });
         }
 
         if (userId) {

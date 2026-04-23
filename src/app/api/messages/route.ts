@@ -82,6 +82,10 @@ function normalizeStringField(value: unknown): string | undefined {
     return normalized.length > 0 ? normalized : undefined;
 }
 
+function isValidMentionId(value: unknown): value is string {
+    return typeof value === "string" && value.trim().length > 0;
+}
+
 // Helper function to create attachment records
 async function createAttachments(
     messageId: string,
@@ -190,10 +194,15 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
-        const hasValidMentions =
-            !creatingPoll &&
-            Array.isArray(mentions) &&
-            mentions.length > 0;
+        const validMentions =
+            !creatingPoll && Array.isArray(mentions)
+                ? mentions
+                      .filter((mention): mention is string =>
+                          isValidMentionId(mention),
+                      )
+                      .map((mention) => mention.trim())
+                : [];
+        const hasValidMentions = validMentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
         if (creatingPoll) {
@@ -317,7 +326,7 @@ export async function POST(request: NextRequest) {
         }
         // Add mentions array if provided
         if (hasValidMentions) {
-            messageData.mentions = mentions;
+            messageData.mentions = validMentions;
         }
 
         const dbStartTime = Date.now();
@@ -385,7 +394,7 @@ export async function POST(request: NextRequest) {
                 latestActivityAt: String(
                     res.$createdAt ?? new Date().toISOString(),
                 ),
-                mentions,
+                mentions: validMentions,
                 messageId: String(res.$id),
                 previewText: text || "",
                 serverId: normalizedServerId,

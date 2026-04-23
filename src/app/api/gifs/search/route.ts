@@ -223,17 +223,18 @@ export async function GET(request: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
         });
 
-        const trackedStatus = resolveErrorStatusCode(error);
+        const upstreamStatus = resolveErrorStatusCode(error);
 
         trackApiCall(
             "/api/gifs/search",
             "GET",
-            trackedStatus,
+            500,
             Date.now() - startTime,
+            { upstreamStatus },
         );
 
         return jsonResponse(
-            { error: "Failed to search GIFs" },
+            { error: "Failed to search GIFs", upstreamStatus },
             { status: 500 },
         );
     }

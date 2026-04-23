@@ -68,10 +68,10 @@ export function ServerManagement({
 
     // Load servers on mount
     useEffect(() => {
-        if (isAdmin) {
+        if (isAdmin || isModerator) {
             void loadServers();
         }
-    }, [isAdmin]);
+    }, [isAdmin, isModerator]);
 
     // Load channels when server is selected
     useEffect(() => {
@@ -92,8 +92,17 @@ export function ServerManagement({
             );
             setSelectedDefaultSignupServerId(defaultSignupServer?.$id ?? "");
             setSelectedServerId(
-                (previousSelectedServerId) =>
-                    previousSelectedServerId || (result.servers[0]?.$id ?? ""),
+                (previousSelectedServerId) => {
+                    const hasPreviousSelection =
+                        previousSelectedServerId.length > 0 &&
+                        result.servers.some(
+                            (server) => server.$id === previousSelectedServerId,
+                        );
+
+                    return hasPreviousSelection
+                        ? previousSelectedServerId
+                        : (result.servers[0]?.$id ?? "");
+                },
             );
         } catch (error) {
             toast.error(

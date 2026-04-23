@@ -5,6 +5,7 @@ import {
 	isReplyToUser,
 	buildNotificationPayload,
 	shouldNotifyUser,
+	invalidateNotificationSettingsCache,
 } from "../lib/notification-triggers";
 
 const fetchMock = vi.fn();
@@ -14,6 +15,7 @@ describe("Notification Triggers", () => {
 		vi.clearAllMocks();
 		fetchMock.mockReset();
 		vi.stubGlobal("fetch", fetchMock);
+		invalidateNotificationSettingsCache();
 	});
 
 	afterEach(() => {

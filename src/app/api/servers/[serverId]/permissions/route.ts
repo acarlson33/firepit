@@ -46,6 +46,11 @@ type QueryWithIn = typeof Query & {
     in?: (attribute: string, values: string[]) => string;
 };
 
+type QueryWithPagination = typeof Query & {
+    cursorAfter?: (cursor: string) => string;
+    orderAsc?: (field: string) => string;
+};
+
 function buildRoleIdMembershipQuery(roleIds: string[]): string {
     const queryWithIn = Query as QueryWithIn;
     if (typeof queryWithIn.in === "function") {
@@ -64,9 +69,24 @@ async function listOverridePages(params: {
 }) {
     const { databases, pageSize, queries, warningContext } = params;
     const documents: Array<Record<string, unknown>> = [];
+    const queryWithPagination = Query as QueryWithPagination;
+    const supportsCursorAfter =
+        typeof queryWithPagination.cursorAfter === "function";
+    const supportsOrderAsc =
+        typeof queryWithPagination.orderAsc === "function";
     let cursorAfter: string | null = null;
     let hasMore = true;
     let warnedExceededPageSize = false;
+
+    if (supportsCursorAfter && !supportsOrderAsc) {
+        logger.warn(
+            "Channel override pagination requires Query.orderAsc for stable cursor paging; stopping after first page",
+            {
+                context: warningContext,
+                pageSize,
+            },
+        );
+    }
 
     while (hasMore) {
         const response: ListDocumentsResponse = await databases.listDocuments(
@@ -74,8 +94,13 @@ async function listOverridePages(params: {
             channelPermissionOverridesCollectionId,
             [
                 ...queries,
+                ...(supportsOrderAsc
+                    ? [queryWithPagination.orderAsc("$id")]
+                    : []),
                 Query.limit(pageSize),
-                ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+                ...(cursorAfter && supportsCursorAfter
+                    ? [queryWithPagination.cursorAfter(cursorAfter)]
+                    : []),
             ],
         );
 
@@ -99,6 +124,10 @@ async function listOverridePages(params: {
                 ? lastDocument.$id
                 : null;
         hasMore = response.documents.length >= pageSize && Boolean(cursorAfter);
+
+        if (!supportsCursorAfter || !supportsOrderAsc) {
+            hasMore = false;
+        }
     }
 
     return documents;
@@ -159,7 +188,7 @@ export async function GET(
         const [userOverrideDocuments, roleOverrideDocuments] = await Promise.all([
             listOverridePages({
                 databases,
-                pageSize: 100,
+                pageSize: 500,
                 queries: [
                     Query.equal("channelId", channelId),
                     Query.equal("userId", userId),
