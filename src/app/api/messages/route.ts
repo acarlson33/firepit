@@ -35,6 +35,7 @@ import {
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
 import { apiCache } from "@/lib/cache-utils";
+import { isValidMentionId, normalizeMentionIds } from "@/lib/mentions";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -80,10 +81,6 @@ function normalizeStringField(value: unknown): string | undefined {
 
     const normalized = value.trim();
     return normalized.length > 0 ? normalized : undefined;
-}
-
-function isValidMentionId(value: unknown): value is string {
-    return typeof value === "string" && value.trim().length > 0;
 }
 
 // Helper function to create attachment records
@@ -194,14 +191,13 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
-        const validMentions =
-            !creatingPoll && Array.isArray(mentions)
-                ? mentions
-                      .filter((mention): mention is string =>
-                          isValidMentionId(mention),
-                      )
-                      .map((mention) => mention.trim())
-                : [];
+        const validMentions = !creatingPoll
+            ? Array.from(
+                  new Set(
+                      normalizeMentionIds(mentions),
+                  ),
+              )
+            : [];
         const hasValidMentions = validMentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
@@ -539,13 +535,17 @@ export async function PATCH(request: NextRequest) {
 
         // Update the message with new text and editedAt timestamp
         const editedAt = new Date().toISOString();
-        const res = await databases.updateDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-            { text, editedAt },
-        );
-        apiCache.clear(getMessageDocumentCacheKey(messageId));
+        let res;
+        try {
+            res = await databases.updateDocument(
+                env.databaseId,
+                env.collections.messages,
+                messageId,
+                { text, editedAt },
+            );
+        } finally {
+            apiCache.clear(getMessageDocumentCacheKey(messageId));
+        }
 
         const doc = res as unknown as Record<string, unknown>;
         const message: Message = {
@@ -626,12 +626,16 @@ export async function DELETE(request: NextRequest) {
         }
 
         // Delete the message
-        await databases.deleteDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        );
-        apiCache.clear(getMessageDocumentCacheKey(messageId));
+        // Delete the message
+        try {
+            await databases.deleteDocument(
+                env.databaseId,
+                env.collections.messages,
+                messageId,
+            );
+        } finally {
+            apiCache.clear(getMessageDocumentCacheKey(messageId));
+        }
 
         const normalizedDeletedChannelId = normalizeStringField(
             existing.channelId,

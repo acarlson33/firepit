@@ -992,6 +992,9 @@ paths:
                                             $ref: "#/components/schemas/ServerMember"
                                     nextCursor:
                                         type: [string, "null"]
+                                    orphanCount:
+                                        type: integer
+                                        description: Count of memberships whose profile could not be resolved at read time
 
     /api/servers/{serverId}/permissions:
         get:

@@ -203,7 +203,7 @@ export function ServerAdminPanel({
     const handleServerImageUpload = useCallback(
         async (kind: "icon" | "banner", file: File) => {
             if (file.size > MAX_SERVER_IMAGE_UPLOAD_BYTES) {
-                toast.error("Image must be less than 5MB");
+                toast.error("Image must be 5MB or smaller");
                 return;
             }
 
@@ -293,7 +293,7 @@ export function ServerAdminPanel({
             if (updatedServer) {
                 setSettingsName(updatedServer.name);
                 setSettingsDescription(updatedServer.description ?? "");
-                setSettingsIsPublic(updatedServer.isPublic !== false);
+                setSettingsIsPublic(updatedServer.isPublic === true);
                 setSettingsIconFileId(updatedServer.iconFileId ?? "");
                 setSettingsIconUrl(updatedServer.iconUrl ?? null);
                 setSettingsBannerFileId(updatedServer.bannerFileId ?? "");
@@ -1476,7 +1476,6 @@ export function ServerAdminPanel({
                     ref={iconInputRef}
                     type="file"
                     id={iconInputId}
-                    aria-label="Upload server icon image"
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {
@@ -1494,7 +1493,6 @@ export function ServerAdminPanel({
                     ref={bannerInputRef}
                     type="file"
                     id={bannerInputId}
-                    aria-label="Upload server banner image"
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {

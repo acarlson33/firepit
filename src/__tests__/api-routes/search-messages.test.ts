@@ -81,6 +81,8 @@ vi.mock("@/lib/newrelic-utils", () => ({
 describe("Message Search API Route", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Ensure the mock queue for listDocuments is fully reset between tests
+        mockDatabases.listDocuments.mockReset();
         mockGetRelationshipMap.mockImplementation(
             async (_currentUserId: string, userIds: string[]) =>
                 new Map(

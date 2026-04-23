@@ -36,9 +36,7 @@ type ListDocumentsResponse = Awaited<
     ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
 >;
 
-type QueryWithSelect = typeof Query & {
-    select?: (attributes: string[]) => string;
-};
+
 
 function isNotFoundError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -228,22 +226,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             let cursorAfter: string | null = null;
 
             while (true) {
-                const queryWithSelect = Query as QueryWithSelect;
                 let page: ListDocumentsResponse;
                 try {
+                    const queryArgs: Array<unknown> = [
+                        Query.equal("defaultOnSignup", true),
+                        Query.limit(pageSize),
+                        ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+                    ];
+
+                    // Some Appwrite SDKs expose Query.select(), guard against undefined
+                    const q = Query as unknown as { select?: (attrs: string[]) => unknown };
+                    if (typeof q.select === "function") {
+                        queryArgs.splice(1, 0, q.select(["$id"]));
+                    }
+
                     page = await databases.listDocuments(
                         env.databaseId,
                         env.collections.servers,
-                        [
-                            Query.equal("defaultOnSignup", true),
-                            ...(typeof queryWithSelect.select === "function"
-                                ? [queryWithSelect.select(["$id"])]
-                                : []),
-                            Query.limit(pageSize),
-                            ...(cursorAfter
-                                ? [Query.cursorAfter(cursorAfter)]
-                                : []),
-                        ],
+                        queryArgs,
                     );
                 } catch (error) {
                     logger.error("Failed to list default signup servers during PATCH", {
@@ -385,6 +385,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         }
 
         if (hadResetFailure) {
+            // Attempt to restore any successfully-cleared previous defaults
+            const restorePromises = resetResults.map((result, idx) => {
+                if (result.status === "fulfilled") {
+                    const cleared = defaultServersToClear[idx];
+                    return databases.updateDocument(
+                        env.databaseId,
+                        env.collections.servers,
+                        cleared.$id,
+                        { defaultOnSignup: true },
+                    );
+                }
+
+                return Promise.resolve(null);
+            });
+
+            const restoreResults = await Promise.allSettled(restorePromises);
+            for (const [index, r] of restoreResults.entries()) {
+                if (r.status === "rejected") {
+                    logger.error("Failed to restore cleared default signup server during rollback", {
+                        defaultServerId: defaultServersToClear[index]?.$id,
+                        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+                        serverId,
+                        userId: session.$id,
+                    });
+                }
+            }
+
             try {
                 await databases.updateDocument(
                     env.databaseId,
@@ -447,7 +474,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             continue;
         }
 
-        logger.error("failed to delete stale file", {
+        logger.error("Failed to delete stale file", {
             bucketId: env.buckets.images,
             fileId: staleFileIdList[index],
             reason:

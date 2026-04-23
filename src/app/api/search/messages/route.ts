@@ -204,15 +204,18 @@ export async function GET(request: NextRequest) {
         // Search channel messages
         try {
             const dbStartTime = Date.now();
-            const channelMessages = await dedupeSearchCache(
-                `search:messages:${user.$id}:${messageQueries.join("|")}`,
-                () =>
-                    databases.listDocuments(
-                        env.databaseId,
-                        env.collections.messages,
-                        messageQueries,
-                    ),
+            const channelMessages = await databases.listDocuments(
+                env.databaseId,
+                env.collections.messages,
+                messageQueries,
             );
+
+            logger.info("Search: fetched channel messages", {
+                userId: user.$id,
+                count: Array.isArray(channelMessages.documents)
+                    ? channelMessages.documents.length
+                    : 0,
+            });
 
             trackApiCall(
                 "/api/search/messages",
@@ -318,15 +321,18 @@ export async function GET(request: NextRequest) {
 
             try {
                 const dbStartTime = Date.now();
-                const directMessages = await dedupeSearchCache(
-                    `search:dms:${user.$id}:${dmQueries.join("|")}`,
-                    () =>
-                        databases.listDocuments(
-                            env.databaseId,
-                            env.collections.directMessages,
-                            dmQueries,
-                        ),
+                const directMessages = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.directMessages,
+                    dmQueries,
                 );
+
+                logger.info("Search: fetched direct messages", {
+                    userId: user.$id,
+                    count: Array.isArray(directMessages.documents)
+                        ? directMessages.documents.length
+                        : 0,
+                });
 
                 trackApiCall(
                     "/api/search/messages",
@@ -447,14 +453,11 @@ export async function GET(request: NextRequest) {
         >();
         try {
             const profileIds = Array.from(userIds);
-            if (profileIds.length > 0) {
-                const profiles = await dedupeSearchCache(
-                    `search:profiles:${buildSortedIdsKey(profileIds)}`,
-                    () =>
-                        databases.listDocuments(env.databaseId, env.collections.profiles, [
-                            Query.equal("userId", profileIds),
-                            Query.limit(100),
-                        ]),
+                if (profileIds.length > 0) {
+                const profiles = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.profiles,
+                    [Query.equal("userId", profileIds), Query.limit(100)],
                 );
 
                 for (const profile of profiles.documents) {

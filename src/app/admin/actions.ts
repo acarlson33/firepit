@@ -16,6 +16,7 @@ import {
     createAnnouncement,
     dispatchScheduledAnnouncements,
     listAnnouncements,
+    ClientError,
 } from "@/lib/appwrite-announcements";
 import type {
     Announcement,
@@ -31,7 +32,6 @@ const databaseId = ids.databaseId;
 const messagesCollection = ids.messages;
 const channelsCollection = ids.channels;
 const DEFAULT_DISPATCH_LIMIT = 25;
-const SEND_NOW_DISPATCH_LIMIT = 100;
 const MAX_DISPATCH_LIMIT = 100;
 
 export type BackfillResult = {
@@ -50,7 +50,7 @@ type ChannelDoc = AppwriteDoc & {
     serverId?: string;
 };
 
-function validateDispatchLimit(limit: number): number {
+function validateAnnouncementDispatchLimit(limit: number): number {
     if (!Number.isFinite(limit)) {
         throw new Error("Dispatch limit must be a finite number");
     }
@@ -367,7 +367,7 @@ export async function getAnnouncementsAction(
     const validatedLimit =
         input.limit === undefined
             ? undefined
-            : validateDispatchLimit(input.limit);
+            : validateAnnouncementDispatchLimit(input.limit);
 
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
@@ -398,15 +398,25 @@ export async function createAnnouncementAction(
         throw new Error("Forbidden");
     }
 
-    const announcement = await createAnnouncement({
-        actorId: userId,
-        body: input.body,
-        idempotencyKey: input.idempotencyKey,
-        mode: input.mode,
-        priority: input.priority,
-        scheduledFor: input.scheduledFor,
-        title: input.title,
-    });
+    let announcement;
+    try {
+        announcement = await createAnnouncement({
+            actorId: userId,
+            body: input.body,
+            idempotencyKey: input.idempotencyKey,
+            mode: input.mode,
+            priority: input.priority,
+            scheduledFor: input.scheduledFor,
+            title: input.title,
+        });
+    } catch (error) {
+        if (error instanceof ClientError) {
+            // Map validation/client errors to a 400 response for callers.
+            throw new Response(error.message, { status: 400 });
+        }
+
+        throw error;
+    }
 
     if (input.mode !== "send_now") {
         return { announcement };
@@ -414,7 +424,7 @@ export async function createAnnouncementAction(
 
     try {
         const dispatched = await dispatchScheduledAnnouncements(
-            SEND_NOW_DISPATCH_LIMIT,
+            MAX_DISPATCH_LIMIT,
         );
         return { announcement, dispatched };
     } catch (error) {
@@ -442,6 +452,6 @@ export async function dispatchAnnouncementsAction(
         throw new Error("Forbidden");
     }
 
-    const validatedLimit = validateDispatchLimit(limit);
+    const validatedLimit = validateAnnouncementDispatchLimit(limit);
     return dispatchScheduledAnnouncements(validatedLimit);
 }

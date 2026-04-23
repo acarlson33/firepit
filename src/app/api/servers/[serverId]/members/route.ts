@@ -250,13 +250,12 @@ export async function GET(request: Request, context: RouteContext) {
         }
 
         if (orphanUserIds.length > 0) {
-            logger.warn("Detected orphan memberships during member listing", {
+            logger.info("Detected orphan memberships during member listing", {
                 serverId,
-                orphanCount: orphanUserIds.length,
                 sampleUserIds: orphanUserIds.slice(0, 10),
             });
-            recordMetric("server.orphan_membership.detected", orphanUserIds.length, {
-                orphanCount: orphanUserIds.length,
+            // Record a gauge-style metric with the orphan count as the value and avoid proliferating tags
+            recordMetric("server.orphan_membership.count", orphanUserIds.length, {
                 serverId,
             });
         }

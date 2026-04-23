@@ -94,11 +94,6 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
             break;
         }
 
-        logger.debug("Default signup server query page hit limit", {
-            pageLimit,
-            pageSize: page.documents.length,
-        });
-
         const lastId = page.documents.at(-1)?.$id;
         if (!lastId) {
             break;
@@ -106,6 +101,12 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
 
         cursorAfter = lastId;
     }
+
+    // Single summary debug log instead of per-page logging
+    logger.debug("Default signup servers fetched", {
+        count: defaults.length,
+        paginated: defaults.length > pageLimit,
+    });
 
     return defaults;
 }
@@ -282,62 +283,81 @@ export async function setDefaultSignupServerAction(
         const { databases } = getServerClient();
         const defaultServers = await listDefaultSignupServers();
 
-        if (serverId) {
-            await databases.updateDocument(
-                DATABASE_ID,
-                SERVERS_COLLECTION_ID,
-                serverId,
-                { defaultOnSignup: true },
-            );
-        }
-
+        // First, clear existing defaults (except the requested server)
         const serversToReset = defaultServers.filter(
             (server) => server.$id !== serverId,
         );
 
-        const resetResults = await Promise.allSettled(
-            serversToReset.map((server) =>
-                databases.updateDocument(
-                    DATABASE_ID,
-                    SERVERS_COLLECTION_ID,
-                    server.$id,
-                    { defaultOnSignup: false },
-                ),
-            ),
-        );
-
-        const resetFailures = resetResults.filter(
-            (result) => result.status === "rejected",
-        );
-        if (resetFailures.length > 0) {
-            logger.error("Failed to clear existing default signup servers", {
-                failureCount: resetFailures.length,
-                serverId,
-            });
-
-            if (serverId) {
-                try {
-                    await databases.updateDocument(
+        if (serversToReset.length > 0) {
+            const resetResults = await Promise.allSettled(
+                serversToReset.map((server) =>
+                    databases.updateDocument(
                         DATABASE_ID,
                         SERVERS_COLLECTION_ID,
-                        serverId,
+                        server.$id,
                         { defaultOnSignup: false },
-                    );
-                } catch (rollbackError) {
-                    logger.error("Failed to rollback default signup server update", {
-                        error:
-                            rollbackError instanceof Error
-                                ? rollbackError.message
-                                : String(rollbackError),
-                        serverId,
-                    });
-                }
-            }
+                    ),
+                ),
+            );
 
-            return {
-                success: false,
-                error: "Failed to clear existing default signup servers",
-            };
+            const resetFailures = resetResults.filter(
+                (result) => result.status === "rejected",
+            );
+            if (resetFailures.length > 0) {
+                logger.error("Failed to clear existing default signup servers", {
+                    failureCount: resetFailures.length,
+                    serverId,
+                });
+
+                return {
+                    success: false,
+                    error: "Failed to clear existing default signup servers",
+                };
+            }
+        }
+
+        // Now set the requested server as default (if provided)
+        if (serverId) {
+            try {
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    SERVERS_COLLECTION_ID,
+                    serverId,
+                    { defaultOnSignup: true },
+                );
+            } catch (setError) {
+                logger.error("Failed to set default signup server", {
+                    error: setError instanceof Error ? setError.message : String(setError),
+                    serverId,
+                });
+
+                // Attempt to restore any servers we cleared earlier
+                if (serversToReset.length > 0) {
+                    const restorePromises = serversToReset.map((s) =>
+                        databases.updateDocument(
+                            DATABASE_ID,
+                            SERVERS_COLLECTION_ID,
+                            s.$id,
+                            { defaultOnSignup: true },
+                        ),
+                    );
+
+                    const restoreResults = await Promise.allSettled(restorePromises);
+                    for (const [i, r] of restoreResults.entries()) {
+                        if (r.status === "rejected") {
+                            logger.error("Failed to restore cleared default signup server", {
+                                defaultServerId: serversToReset[i].$id,
+                                error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+                            });
+                        }
+                    }
+                }
+
+                return {
+                    success: false,
+                    error: "Failed to set default signup server",
+                };
+            }
         }
 
         return { success: true };

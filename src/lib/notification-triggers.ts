@@ -136,7 +136,7 @@ function isInQuietHours(settings: NotificationSettings): boolean {
 				timeZone: settings.quietHoursTimezone,
 				hour: "2-digit",
 				minute: "2-digit",
-				hour12: false,
+				hourCycle: "h23",
 			});
 			const parts = formatter.formatToParts(now);
 			const hours = Number(
