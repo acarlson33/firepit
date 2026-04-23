@@ -427,7 +427,11 @@ export async function resendVerificationAction(
         });
 
         if (isSystemSenderAccount(session.userId)) {
-            await revokeSessionBestEffort(session.userId, session.$id);
+            try {
+                await account.deleteSession({ sessionId: session.$id });
+            } catch {
+                // best-effort cleanup
+            }
 
             return {
                 success: false,
@@ -440,7 +444,11 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            await revokeSessionBestEffort(session.userId, session.$id);
+            try {
+                await account.deleteSession({ sessionId: session.$id });
+            } catch {
+                // best-effort cleanup
+            }
 
             return {
                 success: true,
@@ -458,7 +466,11 @@ export async function resendVerificationAction(
             });
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
-            await revokeSessionBestEffort(session.userId, session.$id);
+            try {
+                await account.deleteSession({ sessionId: session.$id });
+            } catch {
+                // ignore cleanup errors
+            }
         }
 
         return {

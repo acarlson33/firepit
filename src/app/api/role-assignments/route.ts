@@ -39,13 +39,15 @@ async function listRoleAssignmentsForServer(params: {
     let truncated = false;
     let total: number | undefined;
 
-    if (supportsCursorAfter && !supportsOrderAsc) {
+    if (!supportsCursorAfter || !supportsOrderAsc) {
         logger.warn(
-            "Role assignment pagination requires Query.orderAsc for stable cursor paging; returning potentially truncated first page",
+            "Role assignment pagination helpers unavailable; results may be truncated",
             {
                 pageSize,
                 roleId,
                 serverId,
+                hasCursorAfter: supportsCursorAfter,
+                hasOrderAsc: supportsOrderAsc,
             },
         );
     }
@@ -160,41 +162,49 @@ async function updateRoleMemberCount(
     try {
         const databases = getDatabases();
         const canQueryContains = typeof Query.contains === "function";
-        const memberCount = canQueryContains
-            ? (
-                  await databases.listDocuments(
-                      databaseId,
-                      roleAssignmentsCollectionId,
-                      [
-                          Query.equal("serverId", serverId),
-                          Query.contains("roleIds", [roleId]),
-                          Query.limit(1),
-                      ],
-                  )
-              ).total
-            : await (async () => {
-                  const pagedRoleAssignments =
-                      await listRoleAssignmentsForServer({
-                          canQueryContains,
-                          databases,
-                          pageSize: 100,
-                          roleId,
-                          serverId,
-                      });
+        let memberCount: number | null = null;
+        if (canQueryContains) {
+            try {
+                const res = await databases.listDocuments(
+                    databaseId,
+                    roleAssignmentsCollectionId,
+                    [
+                        Query.equal("serverId", serverId),
+                        Query.contains("roleIds", [roleId]),
+                        Query.limit(1),
+                    ],
+                );
+                memberCount = typeof res.total === "number" ? res.total : 0;
+            } catch (error) {
+                logger.warn("Failed to query role assignment count using contains", {
+                    roleId,
+                    serverId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                memberCount = null;
+            }
+        } else {
+            const pagedRoleAssignments = await listRoleAssignmentsForServer({
+                canQueryContains,
+                databases,
+                pageSize: 100,
+                roleId,
+                serverId,
+            });
 
-                  if (pagedRoleAssignments.truncated) {
-                      logger.warn(
-                          "Skipping role memberCount update due to truncated role assignment pagination",
-                          {
-                              roleId,
-                              serverId,
-                          },
-                      );
-                      return null;
-                  }
-
-                  return pagedRoleAssignments.documents.length;
-              })();
+            if (pagedRoleAssignments.truncated) {
+                logger.warn(
+                    "Skipping role memberCount update due to truncated role assignment pagination",
+                    {
+                        roleId,
+                        serverId,
+                    },
+                );
+                memberCount = null;
+            } else {
+                memberCount = pagedRoleAssignments.documents.length;
+            }
+        }
 
         if (memberCount === null) {
             return;

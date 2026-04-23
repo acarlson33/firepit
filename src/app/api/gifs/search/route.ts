@@ -118,17 +118,13 @@ export async function GET(request: NextRequest) {
             }
 
             if (!tenorConfig.clientKey) {
-                logger.warn(
-                    "TENOR_CLIENT_KEY missing while GIF search is enabled",
-                );
-                return jsonResponse(
-                    { error: "GIF provider is not configured" },
-                    { status: 503 },
-                );
+                logger.warn("TENOR_CLIENT_KEY missing while GIF search is enabled");
             }
 
             url.searchParams.set("key", tenorConfig.apiKey);
-            url.searchParams.set("client_key", tenorConfig.clientKey);
+            if (tenorConfig.clientKey) {
+                url.searchParams.set("client_key", tenorConfig.clientKey);
+            }
             url.searchParams.set("q", params.query);
             url.searchParams.set("limit", String(params.limit));
             url.searchParams.set(
@@ -234,7 +230,7 @@ export async function GET(request: NextRequest) {
         );
 
         return jsonResponse(
-            { error: "Failed to search GIFs", upstreamStatus },
+            { error: "Failed to search GIFs" },
             { status: 500 },
         );
     }

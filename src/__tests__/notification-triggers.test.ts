@@ -209,11 +209,13 @@ describe("Notification Triggers", () => {
 		});
 
 		function mockSettings(settings: NotificationSettings, status = 200) {
-			fetchMock.mockResolvedValue(
-				new Response(JSON.stringify(settings), {
-					headers: { "Content-Type": "application/json" },
-					status,
-				}),
+			fetchMock.mockImplementation(() =>
+				Promise.resolve(
+					new Response(JSON.stringify(settings), {
+						headers: { "Content-Type": "application/json" },
+						status,
+					}),
+				),
 			);
 		}
 
@@ -336,11 +338,13 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should handle missing settings gracefully", async () => {
-			fetchMock.mockResolvedValue(
-				new Response(JSON.stringify({ error: "failed" }), {
-					headers: { "Content-Type": "application/json" },
-					status: 500,
-				}),
+			fetchMock.mockImplementation(() =>
+				Promise.resolve(
+					new Response(JSON.stringify({ error: "failed" }), {
+						headers: { "Content-Type": "application/json" },
+						status: 500,
+					}),
+				),
 			);
 
 			const result = await shouldNotifyUser({

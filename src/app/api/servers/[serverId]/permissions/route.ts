@@ -78,12 +78,14 @@ async function listOverridePages(params: {
     let hasMore = true;
     let warnedExceededPageSize = false;
 
-    if (supportsCursorAfter && !supportsOrderAsc) {
+    if (!supportsCursorAfter || !supportsOrderAsc) {
         logger.warn(
-            "Channel override pagination requires Query.orderAsc for stable cursor paging; stopping after first page",
+            "Channel override pagination helpers unavailable; stopping after first page",
             {
                 context: warningContext,
                 pageSize,
+                hasCursorAfter: supportsCursorAfter,
+                hasOrderAsc: supportsOrderAsc,
             },
         );
     }

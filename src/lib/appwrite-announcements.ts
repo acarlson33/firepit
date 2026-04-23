@@ -99,6 +99,8 @@ function getAnnouncementThreadKey(systemSenderUserId: string, recipientId: strin
     return `${systemSenderUserId}:${recipientId}`;
 }
 
+export class ClientError extends Error {}
+
 function toErrorMessage(error: unknown): string {
     if (error instanceof Error) {
         return error.message;
@@ -210,7 +212,7 @@ function normalizeTitle(value?: string): string | undefined {
     }
 
     if (trimmedTitle.length > MAX_ANNOUNCEMENT_TITLE_LENGTH) {
-        throw new Error(
+        throw new ClientError(
             `Announcement title must be ${MAX_ANNOUNCEMENT_TITLE_LENGTH} characters or fewer`,
         );
     }
@@ -221,11 +223,11 @@ function normalizeTitle(value?: string): string | undefined {
 function normalizeBody(value: string): string {
     const trimmedBody = value.trim();
     if (!trimmedBody) {
-        throw new Error("Announcement body is required");
+        throw new ClientError("Announcement body is required");
     }
 
     if (trimmedBody.length > MAX_ANNOUNCEMENT_BODY_LENGTH) {
-        throw new Error(
+        throw new ClientError(
             `Announcement body must be ${MAX_ANNOUNCEMENT_BODY_LENGTH} characters or fewer`,
         );
     }
@@ -244,7 +246,7 @@ function resolvePriority(priority?: AnnouncementPriority): AnnouncementPriority 
 function parseIsoTimestamp(value: string): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-        throw new Error("Invalid scheduledFor timestamp");
+        throw new ClientError("Invalid scheduledFor timestamp");
     }
 
     return parsed.toISOString();
@@ -265,7 +267,7 @@ function resolveScheduledFor(params: {
     }
 
     if (typeof scheduledFor !== "string" || !scheduledFor.trim()) {
-        throw new Error("scheduledFor is required when mode is schedule");
+        throw new ClientError("scheduledFor is required when mode is schedule");
     }
 
     return parseIsoTimestamp(scheduledFor);

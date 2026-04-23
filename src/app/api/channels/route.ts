@@ -479,9 +479,8 @@ export async function GET(request: NextRequest) {
             },
             {
                 headers: {
-                    // Cache channels for 60 seconds with 5 minute stale-while-revalidate
-                    "Cache-Control":
-                        "private, no-store",
+                    // Responses are private and not cached by shared caches
+                    "Cache-Control": "private, no-store",
                 },
             },
         );

@@ -5,7 +5,9 @@ const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const TRAILING_SLASH_PATTERN = /\/+$/;
 
 export function normalizeServerVisibility(value: unknown): boolean {
-    return value === true;
+    // Treat missing/undefined visibility as public by default.
+    // Only an explicit `false` value should mark a server as private.
+    return value !== false;
 }
 
 function normalizeServerDefaultOnSignup(value: unknown): boolean {

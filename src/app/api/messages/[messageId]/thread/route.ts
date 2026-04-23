@@ -15,6 +15,7 @@ import {
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
+import { normalizeMentionIds } from "@/lib/mentions";
 
 type RouteContext = {
     params: Promise<{
@@ -228,8 +229,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (normalizedAttachments.length > 0) {
             messageData.attachments = JSON.stringify(normalizedAttachments);
         }
-        if (mentions && mentions.length > 0) {
-            messageData.mentions = JSON.stringify(mentions);
+        if (mentions) {
+            const normalized = normalizeMentionIds(mentions);
+            if (normalized.length > 0) {
+                messageData.mentions = normalized;
+            }
         }
 
         // Set permissions
@@ -331,20 +335,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
         }
 
-        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
-            await upsertMentionInboxItems({
-                authorUserId: user.$id,
-                contextId: String(parentMessage.channelId),
-                contextKind: "channel",
-                latestActivityAt: String(
-                    newReply.$createdAt ?? new Date().toISOString(),
-                ),
-                mentions,
-                messageId: String(newReply.$id),
-                parentMessageId: actualThreadId,
-                previewText: text || "",
-                serverId: parentMessage.serverId,
-            });
+        if (mentions) {
+            const normalized = normalizeMentionIds(mentions);
+            if (normalized.length > 0) {
+                await upsertMentionInboxItems({
+                    authorUserId: user.$id,
+                    contextId: String(parentMessage.channelId),
+                    contextKind: "channel",
+                    latestActivityAt: String(
+                        newReply.$createdAt ?? new Date().toISOString(),
+                    ),
+                    mentions: normalized,
+                    messageId: String(newReply.$id),
+                    parentMessageId: actualThreadId,
+                    previewText: text || "",
+                    serverId: parentMessage.serverId,
+                });
+            }
         }
 
         const duration = Date.now() - startTime;
@@ -356,21 +363,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.$id,
         });
 
+        // Use the mentions we normalized earlier when constructing messageData if available
         const normalizedMentions = (() => {
             if (Array.isArray(newReply.mentions)) {
-                return newReply.mentions;
+                return normalizeMentionIds(newReply.mentions);
             }
 
-            if (typeof newReply.mentions !== "string") {
-                return undefined;
+            if (typeof newReply.mentions === "string") {
+                return normalizeMentionIds(newReply.mentions);
             }
 
-            try {
-                const parsedMentions = JSON.parse(newReply.mentions);
-                return Array.isArray(parsedMentions) ? parsedMentions : undefined;
-            } catch {
-                return undefined;
-            }
+            return undefined;
         })();
 
         const {
