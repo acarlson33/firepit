@@ -3,7 +3,6 @@
  * Handles predefined frames (everyone has access) and seasonal frames (earned based on account age)
  */
 
-import type { CSSProperties } from "react";
 import { getEnvConfig } from "./appwrite-core";
 
 export type PresetFrame = {
@@ -328,25 +327,3 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
-    if (frame.imageUrl) {
-        const encodedImageUrl = encodeURI(frame.imageUrl)
-            .replaceAll('"', "%22")
-            .replaceAll("'", "%27")
-            .replaceAll("\\", "%5C")
-            .replaceAll("\n", "")
-            .replaceAll("\r", "");
-
-        return {
-            backgroundImage: `url("${encodedImageUrl}")`,
-            backgroundSize: "contain",
-            backgroundRepeat: "no-repeat",
-        };
-    }
-
-    return {
-        borderColor: frame.color || "#6366f1",
-        borderStyle: frame.borderStyle || "solid",
-        borderWidth: "2px",
-    };
-}

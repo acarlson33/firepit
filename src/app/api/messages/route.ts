@@ -34,45 +34,11 @@ import {
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
-import { apiCache } from "@/lib/cache-utils";
 import { normalizeMentionIds } from "@/lib/mentions";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
-const MESSAGE_ROUTE_CACHE_TTL_MS = 5 * 1000;
-
-function canUseMessageRouteCache(): boolean {
-    return process.env.NODE_ENV !== "test";
-}
-
-function getMessageDocumentCacheKey(messageId: string): string {
-    return `api:messages:document:${messageId}`;
-}
-
-async function getMessageDocumentWithCache(
-    messageId: string,
-): Promise<Record<string, unknown>> {
-    const env = getEnvConfig();
-    const { databases } = getServerClient();
-
-    const fetcher = async () =>
-        (await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        )) as unknown as Record<string, unknown>;
-
-    if (!canUseMessageRouteCache()) {
-        return fetcher();
-    }
-
-    return apiCache.dedupe(
-        getMessageDocumentCacheKey(messageId),
-        fetcher,
-        MESSAGE_ROUTE_CACHE_TTL_MS,
-    );
-}
 
 async function getMessageDocument(messageId: string): Promise<Record<string, unknown>> {
     const env = getEnvConfig();
@@ -549,7 +515,6 @@ export async function PATCH(request: NextRequest) {
                 { text, editedAt },
             );
         } finally {
-            apiCache.clear(getMessageDocumentCacheKey(messageId));
         }
 
         const doc = res as unknown as Record<string, unknown>;
@@ -637,7 +602,6 @@ export async function DELETE(request: NextRequest) {
                 messageId,
             );
         } finally {
-            apiCache.clear(getMessageDocumentCacheKey(messageId));
         }
 
         const normalizedDeletedChannelId = normalizeStringField(

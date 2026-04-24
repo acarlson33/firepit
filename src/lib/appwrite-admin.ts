@@ -24,7 +24,7 @@ function getCollectionIds() {
  * @param {unknown} error - The error value.
  * @returns {boolean} The return value.
  */
-function isDocumentNotFoundError(error: unknown) {
+export function isDocumentNotFoundError(error: unknown) {
     if (error instanceof AppwriteException) {
         return error.code === 404 || error.type === "document_not_found";
     }

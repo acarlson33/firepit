@@ -192,6 +192,10 @@ describe("Notification Triggers", () => {
 	});
 
 	describe("shouldNotifyUser", () => {
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
 		const createMockSettings = (
 			globalLevel: "all" | "mentions" | "nothing",
 			overrides = {}
@@ -210,12 +214,7 @@ describe("Notification Triggers", () => {
 
 		function mockSettings(settings: NotificationSettings, status = 200) {
 			fetchMock.mockImplementation(() =>
-				Promise.resolve(
-					new Response(JSON.stringify(settings), {
-						headers: { "Content-Type": "application/json" },
-						status,
-					}),
-				),
+				Promise.resolve(Response.json(settings, { status })),
 			);
 		}
 
@@ -306,8 +305,6 @@ describe("Notification Triggers", () => {
 
 			expect(result.shouldNotify).toBe(false);
 			expect(result.reason).toBe("quiet_hours");
-
-			vi.useRealTimers();
 		});
 
 		it("should notify for thread reply when level is 'mentions'", async () => {

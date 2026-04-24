@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
 				env.collections.servers,
 				serverId
 			)) as ServerDocument;
-			isPublicServer = normalizeServerVisibility(serverDocument.isPublic);
+			isPublicServer = serverDocument.isPublic !== false;
 		} catch {
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(

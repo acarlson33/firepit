@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
             const membershipFields = selectMembershipFieldQuery();
             const serverIds = new Set<string>();
 
-            const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+            const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
                 m.listPages({
                     databases,
                     databaseId: env.databaseId,
@@ -89,16 +89,20 @@ export async function GET(request: NextRequest) {
                 if (document.serverId.length > 0) serverIds.add(document.serverId);
             }
 
-            return Array.from(serverIds);
+            return {
+                serverIds: Array.from(serverIds),
+                truncated,
+            };
         };
 
-        const serverIds = await loadServerIds();
+        const { serverIds, truncated } = await loadServerIds();
 
         if (serverIds.length === 0) {
             return compressedResponse(
                 {
                     servers: [] as Server[],
                     nextCursor: null,
+                    truncated,
                 },
                 {
                     headers: {
@@ -145,6 +149,7 @@ export async function GET(request: NextRequest) {
             {
                 servers,
                 nextCursor,
+                truncated,
             },
             {
                 headers: {

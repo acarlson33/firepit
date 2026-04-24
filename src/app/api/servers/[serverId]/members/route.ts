@@ -81,7 +81,10 @@ export async function GET(request: Request, context: RouteContext) {
         );
 
         // Get role assignments for this server
-        const { documents: roleAssignments } = await listAllServerDocuments(
+        const {
+            documents: roleAssignments,
+            truncated: roleAssignmentsTruncated,
+        } = await listAllServerDocuments(
             serverId,
             roleAssignmentsCollectionId,
         );
@@ -232,6 +235,7 @@ export async function GET(request: Request, context: RouteContext) {
         return NextResponse.json({
             members,
             orphanCount: orphanUserIds.length,
+            truncated: membershipsTruncated || roleAssignmentsTruncated,
         });
     } catch (error) {
         logger.error("Failed to list server members", {

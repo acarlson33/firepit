@@ -12,20 +12,6 @@ const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
 
-const DIRECT_MESSAGE_SELECT_FIELDS = [
-    "$id",
-    "$permissions",
-    "$createdAt",
-    "conversationId",
-    "senderId",
-    "receiverId",
-    "text",
-    "editedAt",
-    "removedAt",
-    "removedBy",
-    "reactions",
-] as const;
-
 const ATTACHMENT_SELECT_FIELDS = [
     "messageId",
     "fileId",
@@ -738,7 +724,7 @@ export async function listDirectMessages(
         const response = await getDatabases().listDocuments({
             databaseId: DATABASE_ID,
             collectionId: DIRECT_MESSAGES_COLLECTION,
-            queries: [...queries, ...selectQuery(DIRECT_MESSAGE_SELECT_FIELDS)],
+            queries,
         });
 
         const items = response.documents.map((doc) => {

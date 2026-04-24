@@ -1,6 +1,7 @@
 import { Query } from "appwrite";
 
 import { logger } from "@/lib/client-logger";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getBrowserDatabases, getEnvConfig } from "@/lib/appwrite-core";
 import { buildMessagePoll, type PollDocShape } from "@/lib/polls";
 import type { Message } from "@/lib/types";
@@ -8,6 +9,7 @@ import type { Message } from "@/lib/types";
 const POLLS_PAGE_LIMIT = 100;
 const POLL_VOTES_PAGE_LIMIT = 1000;
 const MAX_POLL_PAGES = 50;
+const QUERY_ARRAY_LIMIT = 100;
 
 type PollVoteDocShape = {
     $id: string;
@@ -80,17 +82,30 @@ async function listPollDocumentsForMessages(params: {
     }
     const databases = getBrowserDatabases();
 
-    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId,
-            collectionId: pollsCollectionId,
-            baseQueries: [Query.equal("messageId", messageIds), Query.orderAsc("$id")],
-            pageSize: POLLS_PAGE_LIMIT,
-            maxPages: MAX_POLL_PAGES,
-            warningContext: "listPollDocumentsForMessages",
-        }),
+    const messageIdChunks: string[][] = [];
+    for (let index = 0; index < messageIds.length; index += QUERY_ARRAY_LIMIT) {
+        messageIdChunks.push(messageIds.slice(index, index + QUERY_ARRAY_LIMIT));
+    }
+
+    const pages = await Promise.all(
+        messageIdChunks.map((messageIdChunk) =>
+            listPages({
+                databases,
+                databaseId,
+                collectionId: pollsCollectionId,
+                baseQueries: [
+                    Query.equal("messageId", messageIdChunk),
+                    Query.orderAsc("$id"),
+                ],
+                pageSize: POLLS_PAGE_LIMIT,
+                maxPages: MAX_POLL_PAGES,
+                warningContext: "listPollDocumentsForMessages",
+            }),
+        ),
     );
+
+    const documents = pages.flatMap((page) => page.documents);
+    const truncated = pages.some((page) => page.truncated);
 
     const pollDocuments = documents
         .map((raw) => normalizePollDocument(raw))
@@ -117,17 +132,30 @@ async function listVoteDocumentsForPolls(params: {
     }
     const databases = getBrowserDatabases();
 
-    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId,
-            collectionId: pollVotesCollectionId,
-            baseQueries: [Query.equal("pollId", pollIds), Query.orderAsc("$id")],
-            pageSize: POLL_VOTES_PAGE_LIMIT,
-            maxPages: MAX_POLL_PAGES,
-            warningContext: "listVoteDocumentsForPolls",
-        }),
+    const pollIdChunks: string[][] = [];
+    for (let index = 0; index < pollIds.length; index += QUERY_ARRAY_LIMIT) {
+        pollIdChunks.push(pollIds.slice(index, index + QUERY_ARRAY_LIMIT));
+    }
+
+    const pages = await Promise.all(
+        pollIdChunks.map((pollIdChunk) =>
+            listPages({
+                databases,
+                databaseId,
+                collectionId: pollVotesCollectionId,
+                baseQueries: [
+                    Query.equal("pollId", pollIdChunk),
+                    Query.orderAsc("$id"),
+                ],
+                pageSize: POLL_VOTES_PAGE_LIMIT,
+                maxPages: MAX_POLL_PAGES,
+                warningContext: "listVoteDocumentsForPolls",
+            }),
+        ),
     );
+
+    const documents = pages.flatMap((page) => page.documents);
+    const truncated = pages.some((page) => page.truncated);
 
     const voteDocuments = documents
         .map((raw) => normalizePollVoteDocument(raw))

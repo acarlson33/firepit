@@ -2,6 +2,7 @@ import { ID, Query } from "node-appwrite";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/newrelic-utils";
+import { listPages } from "@/lib/appwrite-pagination";
 import type { ServerInvite, InviteUsage } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
@@ -113,20 +114,17 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
     let removed = 0;
     let flagged = 0;
 
-    const { documents: allDocs } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId: DATABASE_ID,
-            collectionId: INVITE_USAGE_COLLECTION_ID,
-            baseQueries: [Query.orderAsc("$createdAt")],
-            pageSize,
-            maxDocs: hardLimit,
-            warningContext: "reconcileOrphanedInviteUsageSlots",
-        }),
-    );
+    const { documents: allDocs } = await listPages({
+        databases,
+        databaseId: DATABASE_ID,
+        collectionId: INVITE_USAGE_COLLECTION_ID,
+        baseQueries: [Query.orderAsc("$createdAt")],
+        pageSize,
+        maxDocs: hardLimit,
+        warningContext: "reconcileOrphanedInviteUsageSlots",
+    });
 
-    const usageBatchAll = allDocs.slice(0, hardLimit);
-    scanned = usageBatchAll.length;
+    scanned = allDocs.length;
 
     const validUsageEntries: Array<{
         usageId: string;
@@ -135,34 +133,33 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
     }> = [];
     const userIdsByServerId = new Map<string, Set<string>>();
 
-    for (const usageDocument of usageBatchAll) {
-            const userId = (usageDocument as Record<string, unknown>).userId;
-            const serverId = (usageDocument as Record<string, unknown>)
-                .serverId;
+    for (const usageDocument of allDocs) {
+        const userId = (usageDocument as Record<string, unknown>).userId;
+        const serverId = (usageDocument as Record<string, unknown>).serverId;
 
-            if (typeof userId !== "string" || typeof serverId !== "string") {
-                flagged += 1;
-                logger.error(
-                    "Invalid invite usage document shape during reconciliation",
-                    {
-                        usageId: usageDocument.$id,
-                        userId,
-                        serverId,
-                    },
-                );
-                continue;
-            }
-
-            validUsageEntries.push({
-                usageId: String(usageDocument.$id),
-                userId,
-                serverId,
-            });
-
-            const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
-            serverUserIds.add(userId);
-            userIdsByServerId.set(serverId, serverUserIds);
+        if (typeof userId !== "string" || typeof serverId !== "string") {
+            flagged += 1;
+            logger.error(
+                "Invalid invite usage document shape during reconciliation",
+                {
+                    usageId: usageDocument.$id,
+                    userId,
+                    serverId,
+                },
+            );
+            continue;
         }
+
+        validUsageEntries.push({
+            usageId: String(usageDocument.$id),
+            userId,
+            serverId,
+        });
+
+        const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
+        serverUserIds.add(userId);
+        userIdsByServerId.set(serverId, serverUserIds);
+    }
 
         const existingMembershipKeys = new Set<string>();
         const failedMembershipKeys = new Set<string>();

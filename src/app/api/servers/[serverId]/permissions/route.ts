@@ -44,6 +44,16 @@ type QueryWithIn = typeof Query & {
     in?: (attribute: string, values: string[]) => string;
 };
 
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
 // Removed unused pagination-related type aliases; listPages is used instead.
 
 function buildRoleIdMembershipQuery(roleIds: string[]): string {
@@ -128,28 +138,35 @@ export async function GET(
             });
         }
 
-        const [userOverrideDocuments, roleOverrideDocuments] = await Promise.all([
-            listOverridePages({
-                databases,
-                pageSize: 500,
-                queries: [
-                    Query.equal("channelId", channelId),
-                    Query.equal("userId", userId),
-                ],
-                warningContext: "user-overrides",
-            }),
+        const userOverrideDocuments = await listOverridePages({
+            databases,
+            pageSize: 500,
+            queries: [
+                Query.equal("channelId", channelId),
+                Query.equal("userId", userId),
+            ],
+            warningContext: "user-overrides",
+        });
+
+        const roleOverrideDocuments =
             serverAccess.roleIds.length > 0
-                ? listOverridePages({
-                      databases,
-                      pageSize: 500,
-                      queries: [
-                          Query.equal("channelId", channelId),
-                          buildRoleIdMembershipQuery(serverAccess.roleIds),
-                      ],
-                      warningContext: "role-overrides",
-                  })
-                : Promise.resolve([]),
-        ]);
+                ? (
+                      await Promise.all(
+                          chunkValues(serverAccess.roleIds, QUERY_ARRAY_LIMIT).map(
+                              (roleIdChunk) =>
+                                  listOverridePages({
+                                      databases,
+                                      pageSize: 500,
+                                      queries: [
+                                          Query.equal("channelId", channelId),
+                                          buildRoleIdMembershipQuery(roleIdChunk),
+                                      ],
+                                      warningContext: "role-overrides",
+                                  }),
+                          ),
+                      )
+                  ).flat()
+                : [];
 
         const applicableOverrideDocuments = [
             ...userOverrideDocuments,
