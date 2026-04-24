@@ -3,28 +3,24 @@ export function isValidMentionId(value: unknown): value is string {
 }
 
 export function normalizeMentionIds(input: unknown): string[] {
+    let normalizedInput: unknown[];
     if (!Array.isArray(input)) {
         // Try parsing JSON string
         if (typeof input === "string") {
             try {
                 const parsed = JSON.parse(input);
-                if (Array.isArray(parsed)) {
-                    input = parsed;
-                } else {
-                    return [];
-                }
+                normalizedInput = Array.isArray(parsed) ? parsed : [];
             } catch {
                 return [];
             }
         } else {
             return [];
         }
+    } else {
+        normalizedInput = input;
     }
 
-    const trimmed = (input as unknown[])
-        .filter((v): v is string => isValidMentionId(v))
-        .map((v) => v.trim())
-        .filter((v) => v.length > 0);
+    const trimmed = normalizedInput.filter(isValidMentionId).map((v) => v.trim());
 
     // Dedupe while preserving order
     const seen = new Set<string>();

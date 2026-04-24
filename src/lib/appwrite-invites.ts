@@ -112,36 +112,30 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
     let scanned = 0;
     let removed = 0;
     let flagged = 0;
-    let cursorAfter: string | null = null;
 
-    while (scanned < hardLimit) {
-        const queries = [Query.orderAsc("$createdAt"), Query.limit(pageSize)];
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
+    const { documents: allDocs } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
+            databaseId: DATABASE_ID,
+            collectionId: INVITE_USAGE_COLLECTION_ID,
+            baseQueries: [Query.orderAsc("$createdAt")],
+            pageSize,
+            maxDocs: hardLimit,
+            warningContext: "reconcileOrphanedInviteUsageSlots",
+        }),
+    );
 
-        const usagePage = await databases.listDocuments(
-            DATABASE_ID,
-            INVITE_USAGE_COLLECTION_ID,
-            queries,
-        );
+    const usageBatchAll = allDocs.slice(0, hardLimit);
+    scanned = usageBatchAll.length;
 
-        if (usagePage.documents.length === 0) {
-            break;
-        }
+    const validUsageEntries: Array<{
+        usageId: string;
+        userId: string;
+        serverId: string;
+    }> = [];
+    const userIdsByServerId = new Map<string, Set<string>>();
 
-        const remaining = hardLimit - scanned;
-        const usageBatch = usagePage.documents.slice(0, remaining);
-        scanned += usageBatch.length;
-
-        const validUsageEntries: Array<{
-            usageId: string;
-            userId: string;
-            serverId: string;
-        }> = [];
-        const userIdsByServerId = new Map<string, Set<string>>();
-
-        for (const usageDocument of usageBatch) {
+    for (const usageDocument of usageBatchAll) {
             const userId = (usageDocument as Record<string, unknown>).userId;
             const serverId = (usageDocument as Record<string, unknown>)
                 .serverId;

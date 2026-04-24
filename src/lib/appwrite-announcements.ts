@@ -1,4 +1,5 @@
 import { ID, Permission, Query, Role } from "node-appwrite";
+import { randomUUID } from "node:crypto";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
@@ -507,7 +508,7 @@ export async function createAnnouncement(
     const resolvedIdempotencyKey =
         idempotencyKey.length > 0
             ? idempotencyKey
-            : `auto:${crypto.randomUUID()}`;
+            : `auto:${randomUUID()}`;
     const status = resolveStatusForMode(mode);
     const now = new Date().toISOString();
 
@@ -580,44 +581,23 @@ export async function createAnnouncement(
 async function listAllProfileUserIds(excludeUserId?: string): Promise<string[]> {
     const { databases } = getServerClient();
     const env = getEnvConfig();
+
+    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.profiles,
+            baseQueries: [Query.orderAsc("$id")],
+            pageSize: 100,
+            warningContext: "listAllProfileUserIds",
+        }),
+    );
+
     const recipientIds: string[] = [];
-    let cursorAfter: string | undefined;
-
-    while (true) {
-        const queries = [Query.orderAsc("$id"), Query.limit(100)];
-
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const response = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            queries,
-        );
-
-        for (const document of response.documents) {
-            const userId =
-                typeof document.userId === "string" ? document.userId.trim() : "";
-            if (!userId || userId === excludeUserId) {
-                continue;
-            }
-            recipientIds.push(userId);
-        }
-
-        if (response.documents.length < 100) {
-            break;
-        }
-
-        const lastDocument = response.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : undefined;
-
-        if (!cursorAfter) {
-            break;
-        }
+    for (const document of documents) {
+        const userId = typeof document.userId === "string" ? document.userId.trim() : "";
+        if (!userId || userId === excludeUserId) continue;
+        recipientIds.push(userId);
     }
 
     return Array.from(new Set(recipientIds));
@@ -905,53 +885,30 @@ async function rollupDeliveryStatus(
     let failed = 0;
     let pending = 0;
     let total = 0;
-    let cursorAfter: string | undefined;
-
-    while (true) {
-        const queries = [
-            Query.equal("announcementId", announcementId),
-            Query.orderAsc("$id"),
-            Query.limit(100),
-        ];
-
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const page = await databases.listDocuments(
+    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
             databaseId,
-            getAnnouncementDeliveriesCollectionId(),
-            queries,
-        );
+            collectionId: getAnnouncementDeliveriesCollectionId(),
+            baseQueries: [Query.equal("announcementId", announcementId), Query.orderAsc("$id")],
+            pageSize: 100,
+            warningContext: "rollupDeliveryStatus",
+        }),
+    );
 
-        for (const document of page.documents) {
-            total += 1;
-            if (document.status === "delivered") {
-                delivered += 1;
-                continue;
-            }
-
-            if (document.status === "pending") {
-                pending += 1;
-                continue;
-            }
-
-            failed += 1;
+    for (const document of documents) {
+        total += 1;
+        if (document.status === "delivered") {
+            delivered += 1;
+            continue;
         }
 
-        if (page.documents.length < 100) {
-            break;
+        if (document.status === "pending") {
+            pending += 1;
+            continue;
         }
 
-        const lastDocument = page.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : undefined;
-
-        if (!cursorAfter) {
-            break;
-        }
+        failed += 1;
     }
 
     return {
@@ -1105,13 +1062,7 @@ export async function dispatchScheduledAnnouncements(
                 },
             });
 
-            const rollup = await rollupDeliveryStatus(announcement.$id);
-            await finalizeAnnouncementDispatch({
-                announcement,
-                dispatchAttempts: nextDispatchAttempts,
-                rollup,
-            });
-
+            // Mark this announcement as updated (dispatch succeeded)
             updatedIds.push(announcement.$id);
         } catch (error) {
             logger.error("Announcement dispatch failed", {
@@ -1142,6 +1093,24 @@ export async function dispatchScheduledAnnouncements(
                 });
             }
 
+            continue;
+        }
+
+        // Perform post-dispatch bookkeeping separately so failures here do not
+        // consume retry budget or change dispatchAttempts/status.
+        try {
+            const rollup = await rollupDeliveryStatus(announcement.$id);
+            await finalizeAnnouncementDispatch({
+                announcement,
+                dispatchAttempts: nextDispatchAttempts,
+                rollup,
+            });
+        } catch (finalizeError) {
+            logger.error("Post-dispatch finalization failed", {
+                announcementId: announcement.$id,
+                error: toErrorMessage(finalizeError),
+            });
+            // Intentionally do not update dispatchAttempts or status here.
             continue;
         }
     }

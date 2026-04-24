@@ -5,9 +5,9 @@ const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const TRAILING_SLASH_PATTERN = /\/+$/;
 
 export function normalizeServerVisibility(value: unknown): boolean {
-    // Treat missing/undefined visibility as public by default.
-    // Only an explicit `false` value should mark a server as private.
-    return value !== false;
+    // Treat missing/legacy visibility as private. Only an explicit `true`
+    // value marks a server as public.
+    return value === true;
 }
 
 function normalizeServerDefaultOnSignup(value: unknown): boolean {
@@ -50,14 +50,23 @@ export function mapServerDocument(
     document: Record<string, unknown>,
     memberCount: number,
 ): Server {
+    // Validate required identity fields to avoid producing invalid Server objects
+    if (
+        typeof document.$id !== "string" || !document.$id.trim() ||
+        typeof document.name !== "string" || !document.name.trim() ||
+        typeof document.ownerId !== "string" || !document.ownerId.trim()
+    ) {
+        throw new Error("Invalid server document: missing required identity fields");
+    }
+
     const iconFileId = normalizeServerFileId(document.iconFileId);
     const bannerFileId = normalizeServerFileId(document.bannerFileId);
 
     return {
-        $id: String(document.$id ?? ""),
-        name: String(document.name ?? ""),
+        $id: document.$id as string,
+        name: (document.name as string).trim(),
         $createdAt: String(document.$createdAt ?? ""),
-        ownerId: String(document.ownerId ?? ""),
+        ownerId: (document.ownerId as string).trim(),
         memberCount,
         description: normalizeServerDescription(document.description),
         iconFileId,

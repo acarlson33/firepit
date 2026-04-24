@@ -15,36 +15,10 @@ import {
     trackApiCall,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
-import { apiCache } from "@/lib/cache-utils";
-
 type SearchResult = {
     type: "channel" | "dm";
     message: Message | DirectMessage;
 };
-
-const SEARCH_CACHE_TTL_MS = 10 * 1000;
-
-function canUseSearchCache(): boolean {
-    return process.env.NODE_ENV !== "test";
-}
-
-function dedupeSearchCache<T>(
-    key: string,
-    fetcher: () => Promise<T>,
-    ttl = SEARCH_CACHE_TTL_MS,
-): Promise<T> {
-    if (!canUseSearchCache()) {
-        return fetcher();
-    }
-
-    return apiCache.dedupe(key, fetcher, ttl);
-}
-
-function buildSortedIdsKey(values: string[]): string {
-    return Array.from(new Set(values.filter((value) => value.length > 0)))
-        .sort()
-        .join(",");
-}
 
 /**
  * Parse search filters from query string
@@ -453,7 +427,7 @@ export async function GET(request: NextRequest) {
         >();
         try {
             const profileIds = Array.from(userIds);
-                if (profileIds.length > 0) {
+            if (profileIds.length > 0) {
                 const profiles = await databases.listDocuments(
                     env.databaseId,
                     env.collections.profiles,

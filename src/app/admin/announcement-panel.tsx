@@ -180,6 +180,11 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                 title: title.trim() || undefined,
             });
 
+            if (result.error) {
+                toast.error(result.error);
+                return;
+            }
+
             setBody("");
             setIdempotencyKey("");
             setScheduledForLocal("");

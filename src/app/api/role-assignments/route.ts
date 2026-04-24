@@ -22,105 +22,49 @@ type QueryWithPagination = typeof Query & {
     orderAsc?: (field: string) => string;
 };
 
-async function listRoleAssignmentsForServer(params: {
-    canQueryContains: boolean;
-    databases: ReturnType<typeof getDatabases>;
-    pageSize: number;
-    roleId?: string;
-    serverId: string;
-}) {
     const { canQueryContains, databases, pageSize, roleId, serverId } = params;
-    const documents: Array<Record<string, unknown>> = [];
-    const queryWithPagination = Query as QueryWithPagination;
-    const supportsCursorAfter =
-        typeof queryWithPagination.cursorAfter === "function";
-    const supportsOrderAsc = typeof queryWithPagination.orderAsc === "function";
-    let cursorAfter: string | null = null;
-    let truncated = false;
-    let total: number | undefined;
 
-    if (!supportsCursorAfter || !supportsOrderAsc) {
-        logger.warn(
-            "Role assignment pagination helpers unavailable; results may be truncated",
-            {
-                pageSize,
-                roleId,
-                serverId,
-                hasCursorAfter: supportsCursorAfter,
-                hasOrderAsc: supportsOrderAsc,
-            },
-        );
+    const baseQueries: string[] = [Query.equal("serverId", serverId)];
+    if (roleId && canQueryContains) {
+        baseQueries.push(Query.contains("roleIds", [roleId]));
     }
 
-    while (true) {
-        const pageQueries: string[] = [
-            Query.equal("serverId", serverId),
-            ...(roleId && canQueryContains
-                ? [Query.contains("roleIds", [roleId])]
-                : []),
-            ...(supportsOrderAsc
-                ? [queryWithPagination.orderAsc("$id")]
-                : []),
-            Query.limit(pageSize),
-            ...(cursorAfter && supportsCursorAfter
-                ? [queryWithPagination.cursorAfter(cursorAfter)]
-                : []),
-        ];
-
-        const response = await databases.listDocuments(
-            databaseId,
-            roleAssignmentsCollectionId,
-            pageQueries,
+    const { documents, truncated } = await (async () => {
+        return await import("@/lib/appwrite-pagination").then((m) =>
+            m.listPages({
+                databases,
+                databaseId,
+                collectionId: roleAssignmentsCollectionId,
+                baseQueries,
+                pageSize,
+                warningContext: "role-assignments",
+            }),
         );
+    })();
 
-        if (typeof response.total === "number") {
-            total = response.total;
-        }
+    // If the server cannot perform contains() queries, we must filter client-side
+    // and compute a matching total for the filtered set.
+    let total: number | undefined;
+    let filteredDocs = documents;
+    if (roleId && !canQueryContains) {
+        filteredDocs = documents.filter((document) => {
+            const roleIds = Array.isArray(document.roleIds) ? (document.roleIds as string[]) : [];
+            return roleIds.includes(roleId);
+        });
+        total = filteredDocs.length;
+    }
 
-        if (roleId && !canQueryContains) {
-            for (const document of response.documents) {
-                const roleIds = Array.isArray(document.roleIds)
-                    ? (document.roleIds as string[])
-                    : [];
-                if (roleIds.includes(roleId)) {
-                    documents.push(document as Record<string, unknown>);
-                }
-            }
-        } else {
-            for (const document of response.documents) {
-                documents.push(document as Record<string, unknown>);
-            }
-        }
+    return {
+        documents: roleId && !canQueryContains ? filteredDocs : documents,
+        total,
+        truncated,
+    };
+    }
 
-        if (response.documents.length < pageSize) {
-            break;
-        }
-
-        if (!supportsCursorAfter || !supportsOrderAsc) {
-            truncated = true;
-            logger.warn(
-                "Role assignment pagination helpers unavailable; stopping after first full page",
-                {
-                    hasCursorAfter: supportsCursorAfter,
-                    hasOrderAsc: supportsOrderAsc,
-                    pageSize,
-                    roleId,
-                    serverId,
-                },
-            );
-            break;
-        }
-
-        const lastDocument = response.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : null;
-
-        if (!cursorAfter) {
-            truncated = true;
-            break;
-        }
+    // If we filtered client-side due to lack of Query.contains support,
+    // the server response.total is not representative of the filtered set.
+    if (roleId && !canQueryContains) {
+        total = documents.length;
     }
 
     return {

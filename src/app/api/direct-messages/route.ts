@@ -109,85 +109,41 @@ async function paginateReplies(params: {
     maxThreadParentPages: number;
     pageSize: number;
 }) {
-    const { databases, conversationIds, maxThreadParentPages, pageSize } =
-        params;
+    const { databases, conversationIds, maxThreadParentPages, pageSize } = params;
+
+    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
+            databaseId: DATABASE_ID,
+            collectionId: DIRECT_MESSAGES_COLLECTION,
+            baseQueries: [Query.equal("conversationId", conversationIds), Query.isNotNull("threadId")],
+            pageSize,
+            maxPages: maxThreadParentPages,
+            warningContext: "paginateReplies",
+        }),
+    );
+
     const replySignalsByParentId = new Map<string, ConversationThreadReplySignal>();
-    let cursorAfterId: string | null = null;
-    let replyPageCount = 0;
-    let replySignalsTruncated = false;
-    let lastPageWasFull = false;
+    for (const document of documents) {
+        const reply = document as Record<string, unknown>;
+        const parentMessageId = typeof reply.threadId === "string" ? reply.threadId : null;
+        if (!parentMessageId) continue;
 
-    while (replyPageCount < maxThreadParentPages) {
-        replyPageCount += 1;
-        const replyPage = await databases.listDocuments(
-            DATABASE_ID,
-            DIRECT_MESSAGES_COLLECTION,
-            [
-                Query.equal("conversationId", conversationIds),
-                Query.isNotNull("threadId"),
-                Query.orderAsc("$id"),
-                Query.limit(pageSize),
-                ...(cursorAfterId ? [Query.cursorAfter(cursorAfterId)] : []),
-            ],
-        );
-
-        for (const document of replyPage.documents) {
-            const reply = document as Record<string, unknown>;
-            const parentMessageId =
-                typeof reply.threadId === "string" ? reply.threadId : null;
-            if (!parentMessageId) {
-                continue;
-            }
-
-            const createdAt =
-                typeof reply.$createdAt === "string"
-                    ? reply.$createdAt
-                    : undefined;
-            const existingSignal = replySignalsByParentId.get(parentMessageId);
-            if (existingSignal) {
-                existingSignal.replyCount += 1;
-                existingSignal.latestReplyAt = maxIsoTimestamp(
-                    existingSignal.latestReplyAt,
-                    createdAt,
-                );
-                continue;
-            }
-
-            replySignalsByParentId.set(parentMessageId, {
-                latestReplyAt: createdAt,
-                replyCount: 1,
-            });
+        const createdAt = typeof reply.$createdAt === "string" ? reply.$createdAt : undefined;
+        const existingSignal = replySignalsByParentId.get(parentMessageId);
+        if (existingSignal) {
+            existingSignal.replyCount += 1;
+            existingSignal.latestReplyAt = maxIsoTimestamp(existingSignal.latestReplyAt, createdAt);
+            continue;
         }
 
-        if (replyPage.documents.length < pageSize) {
-            lastPageWasFull = false;
-            break;
-        }
-
-        lastPageWasFull = true;
-
-        const lastReplyDocument = replyPage.documents.at(-1) as
-            | Record<string, unknown>
-            | undefined;
-        cursorAfterId =
-            lastReplyDocument && typeof lastReplyDocument.$id === "string"
-                ? lastReplyDocument.$id
-                : null;
-
-        if (!cursorAfterId) {
-            break;
-        }
+        replySignalsByParentId.set(parentMessageId, {
+            latestReplyAt: createdAt,
+            replyCount: 1,
+        });
     }
 
-    if (
-        replyPageCount === maxThreadParentPages &&
-        cursorAfterId &&
-        lastPageWasFull
-    ) {
-        replySignalsTruncated = true;
-    }
-
-    return { replySignalsByParentId, replySignalsTruncated };
+    return { replySignalsByParentId, replySignalsTruncated: Boolean(truncated) };
 }
 
 function buildRelationshipMapCacheKey(userId: string, otherUserIds: string[]) {

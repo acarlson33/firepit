@@ -73,54 +73,23 @@ export async function getActualMemberCounts(
     }
 
     const pageSize = 1000;
-    let cursorAfter: string | undefined;
 
     try {
-        while (true) {
-            const queries = [
-                Query.equal("serverId", uniqueServerIds),
-                Query.limit(pageSize),
-                Query.orderAsc("$id"),
-            ];
+        const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+            m.listPages({
+                databases: databases as unknown as any,
+                databaseId: env.databaseId,
+                collectionId: membershipsCollectionId,
+                baseQueries: [Query.equal("serverId", uniqueServerIds), Query.orderAsc("$id")],
+                pageSize,
+                warningContext: "membership-count",
+            }),
+        );
 
-            if (cursorAfter) {
-                queries.push(Query.cursorAfter(cursorAfter));
-            }
-
-            const result = await databases.listDocuments(
-                env.databaseId,
-                membershipsCollectionId,
-                queries,
-            );
-
-            const documents =
-                (
-                    result as unknown as {
-                        documents?: Array<Record<string, unknown>>;
-                    }
-                ).documents ?? [];
-
-            for (const document of documents) {
-                const serverId =
-                    typeof document.serverId === "string"
-                        ? document.serverId
-                        : undefined;
-                if (!serverId || !counts.has(serverId)) {
-                    continue;
-                }
-                counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
-            }
-
-            if (documents.length < pageSize) {
-                break;
-            }
-
-            const lastDocument = documents.at(-1);
-            if (!lastDocument || typeof lastDocument.$id !== "string") {
-                break;
-            }
-
-            cursorAfter = lastDocument.$id;
+        for (const document of documents) {
+            const serverId = typeof document.serverId === "string" ? document.serverId : undefined;
+            if (!serverId || !counts.has(serverId)) continue;
+            counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
         }
     } catch {
         return counts;

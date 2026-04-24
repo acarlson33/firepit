@@ -61,6 +61,8 @@ function buildRoleIdMembershipQuery(roleIds: string[]): string {
     return Query.equal("roleId", roleIds);
 }
 
+import { listPages } from "@/lib/appwrite-pagination";
+
 async function listOverridePages(params: {
     databases: ReturnType<typeof getDatabases>;
     pageSize: number;
@@ -68,69 +70,15 @@ async function listOverridePages(params: {
     warningContext: string;
 }) {
     const { databases, pageSize, queries, warningContext } = params;
-    const documents: Array<Record<string, unknown>> = [];
-    const queryWithPagination = Query as QueryWithPagination;
-    const supportsCursorAfter =
-        typeof queryWithPagination.cursorAfter === "function";
-    const supportsOrderAsc =
-        typeof queryWithPagination.orderAsc === "function";
-    let cursorAfter: string | null = null;
-    let hasMore = true;
-    let warnedExceededPageSize = false;
 
-    if (!supportsCursorAfter || !supportsOrderAsc) {
-        logger.warn(
-            "Channel override pagination helpers unavailable; stopping after first page",
-            {
-                context: warningContext,
-                pageSize,
-                hasCursorAfter: supportsCursorAfter,
-                hasOrderAsc: supportsOrderAsc,
-            },
-        );
-    }
-
-    while (hasMore) {
-        const response: ListDocumentsResponse = await databases.listDocuments(
-            databaseId,
-            channelPermissionOverridesCollectionId,
-            [
-                ...queries,
-                ...(supportsOrderAsc
-                    ? [queryWithPagination.orderAsc("$id")]
-                    : []),
-                Query.limit(pageSize),
-                ...(cursorAfter && supportsCursorAfter
-                    ? [queryWithPagination.cursorAfter(cursorAfter)]
-                    : []),
-            ],
-        );
-
-        if (!warnedExceededPageSize && response.total > pageSize * 10) {
-            logger.warn("Channel permission overrides query has unusually high volume", {
-                context: warningContext,
-                fetched: response.documents.length,
-                pageSize,
-                total: response.total,
-            });
-            warnedExceededPageSize = true;
-        }
-
-        for (const document of response.documents) {
-            documents.push(document as Record<string, unknown>);
-        }
-
-        const lastDocument = response.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : null;
-        hasMore = response.documents.length >= pageSize && Boolean(cursorAfter);
-
-        if (!supportsCursorAfter || !supportsOrderAsc) {
-            hasMore = false;
-        }
-    }
+    const { documents } = await listPages({
+        databases,
+        databaseId,
+        collectionId: channelPermissionOverridesCollectionId,
+        baseQueries: queries,
+        pageSize,
+        warningContext,
+    });
 
     return documents;
 }
