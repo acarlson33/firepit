@@ -98,7 +98,7 @@ export function getPostHogClient() {
     return posthogClient;
 }
 
-export async function flushPostHog(timeoutMs = 1500) {
+async function flushPostHog(timeoutMs = 1500) {
     const client = posthogClient;
     if (!client) {
         return;
@@ -111,7 +111,7 @@ export async function flushPostHog(timeoutMs = 1500) {
     }
 }
 
-export async function shutdownPostHog(timeoutMs = 1500) {
+async function shutdownPostHog(timeoutMs = 1500) {
     const client = posthogClient;
     if (!client) {
         return;

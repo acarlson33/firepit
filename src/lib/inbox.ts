@@ -1023,17 +1023,31 @@ async function listUnreadChannelThreadItems(
         ),
     );
 
-    const replySignalsByParentId =
-        channelIdsFromThreadMetadata.length > 0
-            ? await listThreadReplySignals({
-                  collectionId: env.collections.messages,
-                  contextField: "channelId",
-                  contextIds: channelIdsFromThreadMetadata,
-              })
-            : await listRecentThreadReplySignals(
-                  env.collections.messages,
-                  INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS,
-              );
+    // Always include recent/global reply signals and merge channel-specific
+    // reply signals when available. This ensures we don't miss active threads
+    // in channels whose parent metadata may be stale.
+    const recentSignalsPromise = listRecentThreadReplySignals(
+        env.collections.messages,
+        INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS,
+    );
+
+    let channelSignalsPromise: Promise<Map<string, ThreadReplySignal>> | null = null;
+    if (channelIdsFromThreadMetadata.length > 0) {
+        channelSignalsPromise = listThreadReplySignals({
+            collectionId: env.collections.messages,
+            contextField: "channelId",
+            contextIds: channelIdsFromThreadMetadata,
+        });
+    }
+
+    const recentSignals = await recentSignalsPromise;
+    const channelSignals = channelSignalsPromise ? await channelSignalsPromise : new Map();
+
+    // Merge maps: channel-specific signals take precedence over recent/global ones
+    const replySignalsByParentId = new Map<string, ThreadReplySignal>(recentSignals);
+    for (const [k, v] of channelSignals.entries()) {
+        replySignalsByParentId.set(k, v);
+    }
 
     const threadParentsById = new Map<string, Record<string, unknown>>(
         threadParents

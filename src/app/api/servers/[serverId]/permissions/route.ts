@@ -3,6 +3,7 @@ import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
 import { logger } from "@/lib/newrelic-utils";
@@ -19,9 +20,6 @@ function getDatabases() {
     return getServerClient().databases;
 }
 
-type ListDocumentsResponse = Awaited<
-    ReturnType<ReturnType<typeof getDatabases>["listDocuments"]>
->;
 
 function mapOverride(
     doc: Record<string, unknown>,
@@ -46,10 +44,7 @@ type QueryWithIn = typeof Query & {
     in?: (attribute: string, values: string[]) => string;
 };
 
-type QueryWithPagination = typeof Query & {
-    cursorAfter?: (cursor: string) => string;
-    orderAsc?: (field: string) => string;
-};
+// Removed unused pagination-related type aliases; listPages is used instead.
 
 function buildRoleIdMembershipQuery(roleIds: string[]): string {
     const queryWithIn = Query as QueryWithIn;
@@ -60,8 +55,6 @@ function buildRoleIdMembershipQuery(roleIds: string[]): string {
     // Appwrite accepts Query.equal(field, [v1, v2]) as an IN-style fallback.
     return Query.equal("roleId", roleIds);
 }
-
-import { listPages } from "@/lib/appwrite-pagination";
 
 async function listOverridePages(params: {
     databases: ReturnType<typeof getDatabases>;

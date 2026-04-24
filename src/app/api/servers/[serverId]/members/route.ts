@@ -30,7 +30,7 @@ function chunkValues<T>(values: T[], size: number) {
 async function listAllServerDocuments(serverId: string, collectionId: string) {
     const { databases } = getServerClient();
 
-    const { documents } = await listPages({
+    const { documents, truncated } = await listPages({
         databases,
         databaseId,
         collectionId,
@@ -40,7 +40,7 @@ async function listAllServerDocuments(serverId: string, collectionId: string) {
         maxDocs: MAX_DOCS,
     });
 
-    return documents as Array<Record<string, unknown>>;
+    return { documents: documents as Array<Record<string, unknown>>, truncated };
 }
 
 type RouteContext = {
@@ -71,18 +71,17 @@ export async function GET(request: Request, context: RouteContext) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
+
         // Get all memberships for this server
-        const memberships = await listAllServerDocuments(
-            serverId,
-            membershipsCollectionId,
-        );
+        const { documents: memberships, truncated: membershipsTruncated } =
+            await listAllServerDocuments(serverId, membershipsCollectionId);
 
         const membershipUserIds = memberships.map((membership) =>
             String(membership.userId),
         );
 
         // Get role assignments for this server
-        const roleAssignments = await listAllServerDocuments(
+        const { documents: roleAssignments } = await listAllServerDocuments(
             serverId,
             roleAssignmentsCollectionId,
         );
@@ -218,6 +217,16 @@ export async function GET(request: Request, context: RouteContext) {
             recordMetric("server.orphan_membership.count", orphanUserIds.length, {
                 serverId,
             });
+            if (membershipsTruncated) {
+                logger.warn(
+                    "Membership listing truncated; orphanCount may be incomplete",
+                    {
+                        serverId,
+                        collectionId: membershipsCollectionId,
+                        pageSize: PAGE_SIZE,
+                    },
+                );
+            }
         }
 
         return NextResponse.json({

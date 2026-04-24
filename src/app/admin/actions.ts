@@ -68,6 +68,13 @@ function validateAnnouncementDispatchLimit(limit: number): number {
     return limit;
 }
 
+function normalizeListLimit(limit: number | undefined): number | undefined {
+    if (limit === undefined) return undefined;
+    if (!Number.isFinite(limit)) return undefined;
+    const n = Number(limit);
+    return Number.isFinite(n) ? n : undefined;
+}
+
 // Smaller helpers to keep complexity below threshold
 async function listMessagesNeedingServerId(limit: number) {
     const { databases } = getAdminClient();
@@ -364,10 +371,7 @@ export async function getAnnouncementsAction(
         throw new Error("Forbidden");
     }
 
-    const validatedLimit =
-        input.limit === undefined
-            ? undefined
-            : (Number.isFinite(Number(input.limit)) ? Number(input.limit) : undefined);
+    const validatedLimit = normalizeListLimit(input.limit);
 
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
@@ -399,7 +403,7 @@ export async function createAnnouncementAction(
         throw new Error("Forbidden");
     }
 
-    let announcement;
+    let announcement: Announcement | undefined;
     try {
         announcement = await createAnnouncement({
             actorId: userId,
@@ -429,7 +433,7 @@ export async function createAnnouncementAction(
         return { announcement, dispatched };
     } catch (error) {
         logger.error("Dispatch after send_now announcement creation failed", {
-            announcementId: announcement.$id,
+            announcementId: announcement?.$id,
             error: error instanceof Error ? error.message : String(error),
         });
 

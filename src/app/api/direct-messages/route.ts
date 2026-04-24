@@ -68,7 +68,10 @@ type ConversationThreadReplySignal = {
 };
 
 function canUseDirectMessageCache(): boolean {
-    return process.env.NODE_ENV !== "test";
+    return (
+        process.env.ENABLE_DIRECT_MESSAGE_CACHE === "true" ||
+        process.env.NODE_ENV === "production"
+    );
 }
 
 function dedupeDirectMessageCache<T>(
@@ -559,9 +562,6 @@ export async function GET(request: NextRequest) {
                     }
                     const { replySignalsByParentId, replySignalsTruncated } =
                         await replySignalsPromise;
-                    if (replySignalsError) {
-                        throw replySignalsError;
-                    }
 
                     const missingParentIds = Array.from(
                         replySignalsByParentId.keys(),
@@ -570,36 +570,54 @@ export async function GET(request: NextRequest) {
                             !threadParentsById.has(parentMessageId),
                     );
 
-                    for (
-                        let startIndex = 0;
-                        startIndex < missingParentIds.length;
-                        startIndex += 100
-                    ) {
-                        const parentIdChunk = missingParentIds.slice(
-                            startIndex,
-                            startIndex + 100,
-                        );
-                        const missingParentsPage = await databases.listDocuments(
-                            DATABASE_ID,
-                            DIRECT_MESSAGES_COLLECTION,
-                            [
-                                Query.equal("$id", parentIdChunk),
-                                Query.equal("conversationId", conversationIds),
-                                Query.limit(parentIdChunk.length),
-                            ],
+                    if (missingParentIds.length > 0) {
+                        const chunkPromises: Promise<unknown>[] = [];
+                        for (
+                            let startIndex = 0;
+                            startIndex < missingParentIds.length;
+                            startIndex += 100
+                        ) {
+                            const parentIdChunk = missingParentIds.slice(
+                                startIndex,
+                                startIndex + 100,
+                            );
+
+                            chunkPromises.push(
+                                databases.listDocuments(
+                                    DATABASE_ID,
+                                    DIRECT_MESSAGES_COLLECTION,
+                                    [
+                                        Query.equal("$id", parentIdChunk),
+                                        Query.equal("conversationId", conversationIds),
+                                        Query.limit(parentIdChunk.length),
+                                    ],
+                                ),
+                            );
+                        }
+
+                        const missingParentsPages = await Promise.all(
+                            chunkPromises,
                         );
 
-                        for (const document of missingParentsPage.documents) {
-                            const threadParent = document as Record<string, unknown>;
-                            const parentMessageId =
-                                typeof threadParent.$id === "string"
-                                    ? threadParent.$id
-                                    : null;
-                            if (!parentMessageId) {
-                                continue;
+                        for (const missingParentsPage of missingParentsPages) {
+                            // missingParentsPage is a ListDocumentsResponse-like object
+                            const page = missingParentsPage as {
+                                documents?: Array<Record<string, unknown>>;
+                            } | null;
+                            if (!page || !Array.isArray(page.documents)) continue;
+
+                            for (const document of page.documents) {
+                                const threadParent = document as Record<string, unknown>;
+                                const parentMessageId =
+                                    typeof threadParent.$id === "string"
+                                        ? threadParent.$id
+                                        : null;
+                                if (!parentMessageId) {
+                                    continue;
+                                }
+
+                                threadParentsById.set(parentMessageId, threadParent);
                             }
-
-                            threadParentsById.set(parentMessageId, threadParent);
                         }
                     }
 

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Query, ID } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
@@ -21,7 +22,14 @@ type QueryWithPagination = typeof Query & {
     cursorAfter?: (cursor: string) => string;
     orderAsc?: (field: string) => string;
 };
-
+// Helper: list role assignments for a server with optional client-side filtering
+async function listRoleAssignmentsForServer(params: {
+    canQueryContains: boolean;
+    databases: any;
+    pageSize: number;
+    roleId?: string | null;
+    serverId: string;
+}) {
     const { canQueryContains, databases, pageSize, roleId, serverId } = params;
 
     const baseQueries: string[] = [Query.equal("serverId", serverId)];
@@ -29,18 +37,14 @@ type QueryWithPagination = typeof Query & {
         baseQueries.push(Query.contains("roleIds", [roleId]));
     }
 
-    const { documents, truncated } = await (async () => {
-        return await import("@/lib/appwrite-pagination").then((m) =>
-            m.listPages({
-                databases,
-                databaseId,
-                collectionId: roleAssignmentsCollectionId,
-                baseQueries,
-                pageSize,
-                warningContext: "role-assignments",
-            }),
-        );
-    })();
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId,
+        collectionId: roleAssignmentsCollectionId,
+        baseQueries,
+        pageSize,
+        warningContext: "role-assignments",
+    });
 
     // If the server cannot perform contains() queries, we must filter client-side
     // and compute a matching total for the filtered set.
@@ -48,27 +52,16 @@ type QueryWithPagination = typeof Query & {
     let filteredDocs = documents;
     if (roleId && !canQueryContains) {
         filteredDocs = documents.filter((document) => {
-            const roleIds = Array.isArray(document.roleIds) ? (document.roleIds as string[]) : [];
-            return roleIds.includes(roleId);
+            const roleIds = Array.isArray(document.roleIds)
+                ? (document.roleIds as string[])
+                : [];
+            return roleIds.includes(roleId as string);
         });
         total = filteredDocs.length;
     }
 
     return {
         documents: roleId && !canQueryContains ? filteredDocs : documents,
-        total,
-        truncated,
-    };
-    }
-
-    // If we filtered client-side due to lack of Query.contains support,
-    // the server response.total is not representative of the filtered set.
-    if (roleId && !canQueryContains) {
-        total = documents.length;
-    }
-
-    return {
-        documents,
         total,
         truncated,
     };

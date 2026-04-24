@@ -258,13 +258,6 @@ async function reconcileOrphanedInviteUsageSlots(options?: {
             });
         }
 
-        const lastDocument = usagePage.documents.at(-1);
-        cursorAfter = lastDocument ? String(lastDocument.$id) : null;
-        if (usagePage.documents.length < pageSize || !cursorAfter) {
-            break;
-        }
-    }
-
     return {
         scanned,
         removed,
@@ -705,11 +698,38 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
     const { databases } = getServerClient();
 
     try {
+        // Load the invite so we can evict related caches after deletion
+        let inviteDoc: Record<string, unknown> | null = null;
+        try {
+            inviteDoc = (await databases.getDocument(
+                DATABASE_ID,
+                INVITES_COLLECTION_ID,
+                inviteId,
+            )) as unknown as Record<string, unknown>;
+        } catch {
+            // If the document cannot be loaded, continue to attempt deletion
+        }
+
         await databases.deleteDocument(
             DATABASE_ID,
             INVITES_COLLECTION_ID,
             inviteId,
         );
+
+        // Evict related cache keys so revoked invites are not served from cache
+        const code = typeof inviteDoc?.code === "string" ? inviteDoc.code : null;
+        const serverId = typeof inviteDoc?.serverId === "string" ? inviteDoc.serverId : null;
+
+        if (code) {
+            apiCache.clear(inviteByCodeCacheKey(code));
+            apiCache.clear(inviteUsageCacheKey(code));
+        }
+
+        if (serverId) {
+            apiCache.clear(serverInvitesCacheKey(serverId));
+            apiCache.clear(serverPreviewCacheKey(serverId));
+        }
+
         return true;
     } catch (error) {
         logger.error("Failed to revoke invite:", { error });
