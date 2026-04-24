@@ -595,7 +595,7 @@ export async function getChannelAccessForUser(
     );
 }
 
-export function clearServerChannelAccessCache(): void {
+function clearServerChannelAccessCache(): void {
     serverAccessCache.clear();
     pendingServerAccess.clear();
     channelAccessCache.clear();

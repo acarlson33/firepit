@@ -286,10 +286,15 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify during quiet hours", async () => {
+			vi.useFakeTimers();
+			// Freeze time to midday UTC so quiet-hours checks are deterministic
+			vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+
 			mockSettings(
 				createMockSettings("all", {
 					quietHoursStart: "00:00",
 					quietHoursEnd: "23:59",
+					quietHoursTimezone: "UTC",
 				}),
 			);
 
@@ -301,6 +306,8 @@ describe("Notification Triggers", () => {
 
 			expect(result.shouldNotify).toBe(false);
 			expect(result.reason).toBe("quiet_hours");
+
+			vi.useRealTimers();
 		});
 
 		it("should notify for thread reply when level is 'mentions'", async () => {

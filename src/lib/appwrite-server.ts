@@ -4,7 +4,7 @@
 import { Client, Databases, TablesDB, Teams, Storage } from "node-appwrite";
 import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
 
-export interface TablesDBWithTransactions extends Pick<
+interface TablesDBWithTransactions extends Pick<
     TablesDB,
     "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
 > {}

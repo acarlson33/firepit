@@ -179,15 +179,4 @@ function SelectScrollDownButton({
     );
 }
 
-export {
-    Select,
-    SelectGroup,
-    SelectValue,
-    SelectContent,
-    SelectLabel,
-    SelectItem,
-    SelectSeparator,
-    SelectScrollUpButton,
-    SelectScrollDownButton,
-    SelectTrigger,
-};
+export { Select, SelectTrigger, SelectContent, SelectItem, SelectValue };

@@ -1,5 +1,7 @@
-import { Query } from "node-appwrite";
+import { Query } from "appwrite";
 import { getEnvConfig } from "./appwrite-core";
+import { listPages } from "./appwrite-pagination";
+import { logger } from "@/lib/newrelic-utils";
 
 type MemberCountDatabases = {
     listDocuments: {
@@ -75,16 +77,21 @@ export async function getActualMemberCounts(
     const pageSize = 1000;
 
     try {
-        const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-            m.listPages({
-                databases: databases as unknown as any,
-                databaseId: env.databaseId,
+        const { documents, truncated } = await listPages({
+            databases: databases as unknown as any,
+            databaseId: env.databaseId,
+            collectionId: membershipsCollectionId,
+            baseQueries: [Query.equal("serverId", uniqueServerIds), Query.orderAsc("$id")],
+            pageSize,
+            warningContext: "membership-count",
+        });
+
+        if (truncated) {
+            logger.warn("membership-count: membership scan truncated", {
                 collectionId: membershipsCollectionId,
-                baseQueries: [Query.equal("serverId", uniqueServerIds), Query.orderAsc("$id")],
                 pageSize,
-                warningContext: "membership-count",
-            }),
-        );
+            });
+        }
 
         for (const document of documents) {
             const serverId = typeof document.serverId === "string" ? document.serverId : undefined;

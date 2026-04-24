@@ -53,14 +53,22 @@ export async function POST(request: Request) {
         const { name, description, iconFileId, bannerFileId, isPublic } =
             payload as Record<string, unknown>;
 
-        if (!name?.trim()) {
+        if (typeof name !== "string") {
             return NextResponse.json(
                 { success: false, error: "Server name is required" },
                 { status: 400 },
             );
         }
 
-        if (name.trim().length > MAX_SERVER_NAME_LENGTH) {
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+            return NextResponse.json(
+                { success: false, error: "Server name is required" },
+                { status: 400 },
+            );
+        }
+
+        if (trimmedName.length > MAX_SERVER_NAME_LENGTH) {
             return NextResponse.json(
                 {
                     success: false,
@@ -136,7 +144,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const server = await createServer(name.trim(), {
+        const server = await createServer(trimmedName, {
             description: normalizedDescription,
             iconFileId: normalizedIconFileId,
             bannerFileId: normalizedBannerFileId,

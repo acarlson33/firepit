@@ -2,11 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import {
-  createServer,
-  deleteServer,
-  joinServer,
-} from "@/lib/appwrite-servers";
+// Use server API endpoints from the client to avoid bundling server-only libs
 import type { Membership, Server } from "@/lib/types";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 
@@ -115,41 +111,65 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   }
 
   async function create(name: string, _ownerId: string) {
-    const server = await createServer(name);
-    setServers((prev) => [...prev, server]);
-    setSelectedServer(server.$id);
-    // Invalidate cache
-    if (userId) {
-      apiCache.clear(`servers:initial:${userId}`);
+    try {
+      const res = await fetch("/api/servers/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.success) {
+        throw new Error(payload?.error || "Failed to create server");
+      }
+      const server = payload.server as any;
+      setServers((prev) => [...prev, server]);
+      setSelectedServer(server.$id);
+      if (userId) apiCache.clear(`servers:initial:${userId}`);
+      return server;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create server");
+      throw err;
     }
-    return server;
   }
 
   async function join(id: string, uid: string) {
-    const membership = await joinServer(id, uid);
-    if (!membership) {
-      toast.error("Membership collection not configured");
+    try {
+      const res = await fetch("/api/servers/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serverId: id }),
+      });
+      const payload = await res.json();
+      if (!res.ok || payload.error) {
+        throw new Error(payload?.error || "Failed to join server");
+      }
+      const membership = payload as any;
+      setMemberships((prev) => [...prev, membership]);
+      setServers((prev) => filterAllowedServers(prev, [...memberships, membership]));
+      setSelectedServer(id);
+      apiCache.clear(`memberships:${uid}`);
+      return membership;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to join server");
       return null;
     }
-    setMemberships((prev) => [...prev, membership]);
-    setServers((prev) =>
-      filterAllowedServers(prev, [...memberships, membership])
-    );
-    setSelectedServer(id);
-    // Invalidate cache
-    apiCache.clear(`memberships:${uid}`);
-    return membership;
   }
 
   async function remove(serverId: string) {
-    await deleteServer(serverId);
-    setServers((prev) => prev.filter((s) => s.$id !== serverId));
-    if (selectedServer === serverId) {
-      setSelectedServer(null);
-    }
-    // Invalidate cache
-    if (userId) {
-      apiCache.clear(`servers:initial:${userId}`);
+    try {
+      const res = await fetch(`/api/servers/${encodeURIComponent(serverId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to delete server");
+      }
+      setServers((prev) => prev.filter((s) => s.$id !== serverId));
+      if (selectedServer === serverId) setSelectedServer(null);
+      if (userId) apiCache.clear(`servers:initial:${userId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete server");
+      throw err;
     }
   }
 

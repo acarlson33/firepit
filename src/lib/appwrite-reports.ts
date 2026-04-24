@@ -272,7 +272,7 @@ export async function getPendingReportCount(): Promise<number> {
     return res.total;
 }
 
-export async function hasExistingPendingReport(
+async function hasExistingPendingReport(
     reporterId: string,
     reportedUserId: string,
 ): Promise<boolean> {

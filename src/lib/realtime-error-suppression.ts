@@ -36,7 +36,7 @@ function resetInternalState() {
     originalConsoleError = null;
 }
 
-export const resetForTesting = shouldExposeTestingReset
+const resetForTesting = shouldExposeTestingReset
     ? resetInternalState
     : undefined;
 

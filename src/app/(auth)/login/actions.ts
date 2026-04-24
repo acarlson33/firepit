@@ -423,11 +423,7 @@ export async function resendVerificationAction(
         });
 
         if (isSystemSenderAccount(session.userId)) {
-            try {
-                await revokeSessionBestEffort(session.userId, session.$id);
-            } catch {
-                // best-effort cleanup
-            }
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: false,
@@ -440,11 +436,7 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            try {
-                await revokeSessionBestEffort(session.userId, session.$id);
-            } catch {
-                // best-effort cleanup
-            }
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: true,
@@ -462,11 +454,7 @@ export async function resendVerificationAction(
             });
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
-            try {
-                await revokeSessionBestEffort(session.userId, session.$id);
-            } catch {
-                // ignore cleanup errors
-            }
+            await revokeSessionBestEffort(session.userId, session.$id);
         }
 
         return {

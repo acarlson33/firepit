@@ -30,7 +30,7 @@ export const ATTACHMENT_SOURCE_VALUES = [
 
 export type AttachmentSource = (typeof ATTACHMENT_SOURCE_VALUES)[number];
 
-export const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
+const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
 export type AttachmentProvider = (typeof ATTACHMENT_PROVIDER_VALUES)[number];
 
 export type FileAttachment = {
@@ -86,7 +86,7 @@ export type MessagePollOption = {
     voterIds: string[];
 };
 
-export const POLL_CONTEXTS = ["channel", "conversation"] as const;
+const POLL_CONTEXTS = ["channel", "conversation"] as const;
 export type PollContext = typeof POLL_CONTEXTS[number];
 
 export type MessagePoll = {
@@ -164,7 +164,7 @@ export type Server = {
     defaultOnSignup?: boolean;
 };
 
-export const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
+const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
 export type ChannelType = (typeof CHANNEL_TYPE_VALUES)[number];
 
 export type Channel = {
@@ -205,9 +205,9 @@ export type FeatureFlag = {
     updatedBy?: string;
 };
 
-export const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
+const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
 
-export const ANNOUNCEMENT_CREATE_MODE_VALUES = [
+const ANNOUNCEMENT_CREATE_MODE_VALUES = [
     "draft",
     "schedule",
     "send_now",
@@ -219,7 +219,7 @@ export type AnnouncementCreateMode =
 export type AnnouncementPriority =
     (typeof ANNOUNCEMENT_PRIORITY_VALUES)[number];
 
-export const ANNOUNCEMENT_STATUS_VALUES = [
+const ANNOUNCEMENT_STATUS_VALUES = [
     "draft",
     "scheduled",
     "dispatching",
@@ -261,7 +261,7 @@ export type Announcement = {
     $updatedAt?: string;
 };
 
-export const ANNOUNCEMENT_DELIVERY_STATUS_VALUES = [
+const ANNOUNCEMENT_DELIVERY_STATUS_VALUES = [
     "pending",
     "delivered",
     "failed",
@@ -553,7 +553,7 @@ export type InviteUsage = {
     joinedAt: string;
 };
 
-export const FRIENDSHIP_STATUS_VALUES = [
+const FRIENDSHIP_STATUS_VALUES = [
     "pending",
     "accepted",
     "declined",

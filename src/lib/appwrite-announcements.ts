@@ -483,7 +483,7 @@ export function getAnnouncementRuntimeSettings() {
     };
 }
 
-export async function isInstanceAnnouncementsEnabled(): Promise<boolean> {
+async function isInstanceAnnouncementsEnabled(): Promise<boolean> {
     return true;
 }
 

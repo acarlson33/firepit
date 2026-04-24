@@ -186,9 +186,7 @@ export async function GET(request: NextRequest) {
 
             logger.info("Search: fetched channel messages", {
                 userId: user.$id,
-                count: Array.isArray(channelMessages.documents)
-                    ? channelMessages.documents.length
-                    : 0,
+                count: (channelMessages.documents ?? []).length,
             });
 
             trackApiCall(
@@ -303,9 +301,7 @@ export async function GET(request: NextRequest) {
 
                 logger.info("Search: fetched direct messages", {
                     userId: user.$id,
-                    count: Array.isArray(directMessages.documents)
-                        ? directMessages.documents.length
-                        : 0,
+                    count: (directMessages.documents ?? []).length,
                 });
 
                 trackApiCall(

@@ -28,7 +28,7 @@ if (typeof cleanupInterval === "object" && "unref" in cleanupInterval) {
     cleanupInterval.unref();
 }
 
-export type RateLimitConfig = {
+type RateLimitConfig = {
     maxRequests: number; // Maximum requests allowed
     windowMs: number; // Time window in milliseconds
 };

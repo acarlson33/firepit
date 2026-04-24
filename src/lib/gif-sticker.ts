@@ -279,11 +279,11 @@ export function mapGiphyResults(params: {
     };
 }
 
-export function isGifStickerSupportEnabled(): Promise<boolean> {
+function isGifStickerSupportEnabled(): Promise<boolean> {
     return Promise.resolve(true);
 }
 
-export function isGifSearchEnabled(): Promise<boolean> {
+function isGifSearchEnabled(): Promise<boolean> {
     return Promise.resolve(true);
 }
 

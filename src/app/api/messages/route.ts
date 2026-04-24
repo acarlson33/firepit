@@ -74,6 +74,17 @@ async function getMessageDocumentWithCache(
     );
 }
 
+async function getMessageDocument(messageId: string): Promise<Record<string, unknown>> {
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+
+    return (await databases.getDocument(
+        env.databaseId,
+        env.collections.messages,
+        messageId,
+    )) as unknown as Record<string, unknown>;
+}
+
 function normalizeStringField(value: unknown): string | undefined {
     if (typeof value !== "string") {
         return undefined;
@@ -519,7 +530,7 @@ export async function PATCH(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await getMessageDocumentWithCache(messageId);
+        const existing = await getMessageDocument(messageId);
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only edit your own messages" },
@@ -611,7 +622,7 @@ export async function DELETE(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await getMessageDocumentWithCache(messageId);
+        const existing = await getMessageDocument(messageId);
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only delete your own messages" },
