@@ -40,6 +40,7 @@ import {
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
 import { rememberDmUnreadThreadSnapshot } from "@/lib/unread-consistency";
+import { listPages } from "@/lib/appwrite-pagination";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -114,23 +115,23 @@ async function paginateReplies(params: {
 }) {
     const { databases, conversationIds, maxThreadParentPages, pageSize } = params;
 
-    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId: DATABASE_ID,
-            collectionId: DIRECT_MESSAGES_COLLECTION,
-            baseQueries: [Query.equal("conversationId", conversationIds), Query.isNotNull("threadId")],
-            pageSize,
-            maxPages: maxThreadParentPages,
-            warningContext: "paginateReplies",
-        }),
-    );
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId: DATABASE_ID,
+        collectionId: DIRECT_MESSAGES_COLLECTION,
+        baseQueries: [Query.equal("conversationId", conversationIds), Query.isNotNull("threadId")],
+        pageSize,
+        maxPages: maxThreadParentPages,
+        warningContext: "paginateReplies",
+    });
 
     const replySignalsByParentId = new Map<string, ConversationThreadReplySignal>();
     for (const document of documents) {
         const reply = document as Record<string, unknown>;
         const parentMessageId = typeof reply.threadId === "string" ? reply.threadId : null;
-        if (!parentMessageId) continue;
+        if (!parentMessageId) {
+            continue;
+        }
 
         const createdAt = typeof reply.$createdAt === "string" ? reply.$createdAt : undefined;
         const existingSignal = replySignalsByParentId.get(parentMessageId);
@@ -476,14 +477,21 @@ export async function GET(request: NextRequest) {
                     const conversationIds = conversations.map(
                         (conversation) => conversation.$id,
                     );
-                    let replySignalsError: unknown;
                     const replySignalsPromise = paginateReplies({
                         databases,
                         conversationIds,
                         maxThreadParentPages,
                         pageSize,
                     }).catch((error) => {
-                        replySignalsError = error;
+                        logger.warn("Failed to paginate direct-message thread reply signals", {
+                            userId: session.$id,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                            fallbackReplySignalsTruncated: true,
+                            fallbackUnreadThreadCountsTruncated: true,
+                        });
                         return {
                             replySignalsByParentId: new Map<
                                 string,
@@ -571,7 +579,10 @@ export async function GET(request: NextRequest) {
                     );
 
                     if (missingParentIds.length > 0) {
-                        const chunkPromises: Promise<unknown>[] = [];
+                        type ListDocumentsResult = Awaited<
+                            ReturnType<typeof databases.listDocuments>
+                        >;
+                        const chunkPromises: Array<Promise<ListDocumentsResult>> = [];
                         for (
                             let startIndex = 0;
                             startIndex < missingParentIds.length;
@@ -600,13 +611,11 @@ export async function GET(request: NextRequest) {
                         );
 
                         for (const missingParentsPage of missingParentsPages) {
-                            // missingParentsPage is a ListDocumentsResponse-like object
-                            const page = missingParentsPage as {
-                                documents?: Array<Record<string, unknown>>;
-                            } | null;
-                            if (!page || !Array.isArray(page.documents)) continue;
+                            if (!Array.isArray(missingParentsPage.documents)) {
+                                continue;
+                            }
 
-                            for (const document of page.documents) {
+                            for (const document of missingParentsPage.documents) {
                                 const threadParent = document as Record<string, unknown>;
                                 const parentMessageId =
                                     typeof threadParent.$id === "string"
@@ -1305,7 +1314,7 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            const relationshipMap = await getCachedRelationshipMap(
+            const relationshipMap = await getRelationshipMap(
                 session.$id,
                 participantIds.filter((id) => id !== session.$id),
             );

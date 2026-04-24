@@ -83,8 +83,12 @@ async function revokeSessionBestEffort(
         const { client } = getServerClient();
         const users = new Users(client);
         await users.deleteSession({ userId, sessionId });
-    } catch {
-        // Best effort cleanup.
+    } catch (err) {
+        logger.warn("Failed to revoke session for user", {
+            hasUserId: userId.length > 0,
+            hasSessionId: sessionId.length > 0,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 }
 
@@ -259,27 +263,27 @@ export async function loginAction(
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (!emailVerified) {
-                    let verificationLinkSent = false;
-                    try {
-                        await sendVerificationEmailForSession({
-                            endpoint,
-                            project,
-                            sessionSecret: session.secret,
-                        });
-                        verificationLinkSent = true;
-                    } catch (verificationError) {
-                        logger.error("Failed to send verification email during login", {
-                            userId: session.userId,
-                            error:
-                                verificationError instanceof Error
-                                    ? verificationError.message
-                                    : String(verificationError),
-                        });
-                    }
+                let verificationLinkSent = false;
+                try {
+                    await sendVerificationEmailForSession({
+                        endpoint,
+                        project,
+                        sessionSecret: session.secret,
+                    });
+                    verificationLinkSent = true;
+                } catch (verificationError) {
+                    logger.error("Failed to send verification email during login", {
+                        userId: session.userId,
+                        error:
+                            verificationError instanceof Error
+                                ? verificationError.message
+                                : String(verificationError),
+                    });
+                }
 
-                    await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(session.userId, session.$id);
 
-                    return buildVerificationRequiredResult({ verificationLinkSent });
+                return buildVerificationRequiredResult({ verificationLinkSent });
             }
         }
 
@@ -435,7 +439,7 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            await account.deleteSession({ sessionId: session.$id });
+            await revokeSessionBestEffort(session.userId, session.$id);
 
             return {
                 success: true,
@@ -453,7 +457,7 @@ export async function resendVerificationAction(
             });
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
-            await account.deleteSession({ sessionId: session.$id });
+            await revokeSessionBestEffort(session.userId, session.$id);
         }
 
         return {

@@ -92,6 +92,7 @@ async function listRoleAssignmentsForServer(params: {
 
     return {
         documents,
+        total: documents.length,
         truncated,
     };
 }
@@ -223,7 +224,7 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json({
                 members,
-                ...(roleAssignmentsResult.total !== undefined ? { total: roleAssignmentsResult.total } : {}),
+                total: roleAssignmentsResult.total,
                 truncated: roleAssignmentsResult.truncated,
             });
         }
@@ -235,6 +236,7 @@ export async function GET(request: NextRequest) {
                 [
                     Query.equal("serverId", serverId),
                     Query.equal("userId", userId),
+                    Query.limit(100),
                 ],
             );
 

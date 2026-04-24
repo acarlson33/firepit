@@ -14,7 +14,6 @@ import {
 	recordEvent,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
-import { normalizeServerVisibility } from "@/lib/server-metadata";
 
 type ServerDocument = {
 	$id: string;
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
 				env.collections.servers,
 				serverId
 			)) as ServerDocument;
-			isPublicServer = serverDocument.isPublic !== false;
+			isPublicServer = serverDocument.isPublic === true;
 		} catch {
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
@@ -118,7 +117,7 @@ export async function POST(request: NextRequest) {
 		// Create membership
 		const membershipPerms = perms.serverOwner(userId);
 		const dbStartTime = Date.now();
-		await databases.createDocument(
+		const membership = await databases.createDocument(
 			env.databaseId,
 			membershipCollectionId,
 			ID.unique(),
@@ -156,7 +155,10 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
-		return NextResponse.json({ success: true });
+		return NextResponse.json({
+			success: true,
+			membership,
+		});
 	} catch (error) {
 		recordError(
 			error instanceof Error ? error : new Error(String(error)),

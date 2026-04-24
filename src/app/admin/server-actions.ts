@@ -277,6 +277,39 @@ export async function setDefaultSignupServerAction(
                 (result) => result.status === "rejected",
             );
             if (resetFailures.length > 0) {
+                const successfullyResetServerIds = resetResults
+                    .map((result, index) =>
+                        result.status === "fulfilled"
+                            ? serversToReset[index]?.$id
+                            : null,
+                    )
+                    .filter((value): value is string => typeof value === "string");
+
+                if (successfullyResetServerIds.length > 0) {
+                    const restoreResults = await Promise.allSettled(
+                        successfullyResetServerIds.map((defaultServerId) =>
+                            databases.updateDocument(
+                                DATABASE_ID,
+                                SERVERS_COLLECTION_ID,
+                                defaultServerId,
+                                { defaultOnSignup: true },
+                            ),
+                        ),
+                    );
+
+                    for (const [index, restoreResult] of restoreResults.entries()) {
+                        if (restoreResult.status === "rejected") {
+                            logger.error("Failed to restore partially reset default signup server", {
+                                defaultServerId: successfullyResetServerIds[index],
+                                error:
+                                    restoreResult.reason instanceof Error
+                                        ? restoreResult.reason.message
+                                        : String(restoreResult.reason),
+                            });
+                        }
+                    }
+                }
+
                 logger.error("Failed to clear existing default signup servers", {
                     failureCount: resetFailures.length,
                     serverId,

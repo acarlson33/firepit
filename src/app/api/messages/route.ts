@@ -506,16 +506,12 @@ export async function PATCH(request: NextRequest) {
 
         // Update the message with new text and editedAt timestamp
         const editedAt = new Date().toISOString();
-        let res;
-        try {
-            res = await databases.updateDocument(
-                env.databaseId,
-                env.collections.messages,
-                messageId,
-                { text, editedAt },
-            );
-        } finally {
-        }
+        const res = await databases.updateDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+            { text, editedAt },
+        );
 
         const doc = res as unknown as Record<string, unknown>;
         const message: Message = {
@@ -595,14 +591,11 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        try {
-            await databases.deleteDocument(
-                env.databaseId,
-                env.collections.messages,
-                messageId,
-            );
-        } finally {
-        }
+        await databases.deleteDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        );
 
         const normalizedDeletedChannelId = normalizeStringField(
             existing.channelId,

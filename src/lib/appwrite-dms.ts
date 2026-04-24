@@ -2,6 +2,7 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
+import { listPages } from "./appwrite-pagination";
 import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
 import { normalizeFileAttachment } from "./file-attachments";
 
@@ -161,6 +162,14 @@ function getDatabases() {
     return getBrowserDatabases();
 }
 
+function chunkArray<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
+}
+
 /**
  * Normalizes and persists legacy reaction payloads when needed.
  * Accepts the same input formats supported by parseReactionsWithMetadata:
@@ -226,29 +235,32 @@ async function enrichDirectMessagesWithAttachments(
         // Get all message IDs
         const messageIds = messages.map((m) => m.$id);
 
-        // Query attachments for all messages
-        const response = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
-            queries: [
-                Query.equal("messageId", messageIds),
-                Query.equal("messageType", "dm"),
-                Query.limit(
-                    Math.min(
-                        1000,
-                        Math.max(
-                            50,
-                            messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE,
-                        ),
-                    ),
-                ),
-                ...selectQuery(ATTACHMENT_SELECT_FIELDS),
-            ],
-        });
+        const pageSize = Math.min(
+            1000,
+            Math.max(50, messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE),
+        );
+        const pagedAttachmentDocuments = await Promise.all(
+            chunkArray(messageIds, 100).map((messageIdChunk) =>
+                listPages({
+                    databases: getDatabases(),
+                    databaseId: DATABASE_ID,
+                    collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    baseQueries: [
+                        Query.equal("messageId", messageIdChunk),
+                        Query.equal("messageType", "dm"),
+                        ...selectQuery(ATTACHMENT_SELECT_FIELDS),
+                    ],
+                    pageSize,
+                    warningContext: "enrichDirectMessagesWithAttachments",
+                    maxPages: 50,
+                }).then((page) => page.documents),
+            ),
+        );
+        const attachmentDocuments = pagedAttachmentDocuments.flat();
 
         // Group attachments by messageId
         const attachmentsByMessageId = new Map<string, FileAttachment[]>();
-        for (const doc of response.documents) {
+        for (const doc of attachmentDocuments) {
             const d = doc as Record<string, unknown>;
             const messageId = String(d.messageId);
             const attachment = normalizeFileAttachment(d);
@@ -334,21 +346,19 @@ export async function getOrCreateConversation(
 
     try {
         // Try to find existing conversation using centralized pagination helper
-        const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-            m.listPages({
-                databases: getDatabases(),
-                databaseId: DATABASE_ID,
-                collectionId: CONVERSATIONS_COLLECTION,
-                baseQueries: [
-                    Query.contains("participants", user1),
-                    Query.contains("participants", user2),
-                    Query.orderAsc("$createdAt"),
-                ],
-                pageSize: 100,
-                warningContext: "find-one-to-one-conversation",
-                maxPages: 50,
-            }),
-        );
+        const { documents } = await listPages({
+            databases: getDatabases(),
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            baseQueries: [
+                Query.contains("participants", user1),
+                Query.contains("participants", user2),
+                Query.orderAsc("$createdAt"),
+            ],
+            pageSize: 100,
+            warningContext: "find-one-to-one-conversation",
+            maxPages: 50,
+        });
 
         const oneToOne = documents.find((document) => {
             const participantsList = (document as Record<string, unknown>)

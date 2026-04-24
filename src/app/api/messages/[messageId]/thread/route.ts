@@ -373,7 +373,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const replyPayload = {
             ...replyWithoutSerializedFields,
-            ...(normalizedMentions ? { mentions: normalizedMentions } : {}),
+            ...(normalizedMentions.length > 0
+                ? { mentions: normalizedMentions }
+                : {}),
             ...(normalizedAttachments.length > 0
                 ? { attachments: normalizedAttachments }
                 : {}),

@@ -2,6 +2,7 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 import { randomUUID } from "node:crypto";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { listPages } from "@/lib/appwrite-pagination";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerClient } from "@/lib/appwrite-server";
 import type {
@@ -20,21 +21,9 @@ const MAX_ANNOUNCEMENT_BODY_LENGTH = 65_000;
 const MAX_ANNOUNCEMENT_TITLE_LENGTH = 255;
 const MAX_DELIVERY_ATTEMPTS = 6;
 const MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS = 10;
+const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 10;
 const DELIVERY_BACKOFF_BASE_MS = 60_000;
-const DELIVERY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
-const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 20;
-
-type DeliveryUpdatePayload = {
-    attemptCount?: number;
-    conversationId?: string;
-    deliveredAt?: string;
-    failedAt?: string;
-    failureReason?: string;
-    messageId?: string;
-    nextAttemptAt?: string;
-    status: "pending" | "delivered" | "failed";
-};
-
+const DELIVERY_BACKOFF_MAX_MS = 30 * 60_000;
 type DeliveryOutcome =
     | {
           outcome: "already_delivered";
@@ -54,6 +43,17 @@ type DeliveryStatusRollup = {
     failed: number;
     pending: number;
     total: number;
+};
+
+type DeliveryUpdatePayload = {
+    attemptCount?: number;
+    conversationId?: string;
+    deliveredAt?: string;
+    failedAt?: string;
+    failureReason?: string;
+    messageId?: string;
+    nextAttemptAt?: string;
+    status: "pending" | "delivered" | "failed";
 };
 
 type CreateAnnouncementInput = {
@@ -483,10 +483,6 @@ export function getAnnouncementRuntimeSettings() {
     };
 }
 
-async function isInstanceAnnouncementsEnabled(): Promise<boolean> {
-    return true;
-}
-
 export async function createAnnouncement(
     input: CreateAnnouncementInput,
 ): Promise<Announcement> {
@@ -516,7 +512,11 @@ export async function createAnnouncement(
         const existing = await databases.listDocuments(
             databaseId,
             getAnnouncementsCollectionId(),
-            [Query.equal("idempotencyKey", idempotencyKey), Query.limit(1)],
+            [
+                Query.equal("idempotencyKey", idempotencyKey),
+                Query.equal("createdBy", input.actorId),
+                Query.limit(1),
+            ],
         );
 
         const existingDocument = existing.documents.at(0);
@@ -563,7 +563,11 @@ export async function createAnnouncement(
             const existing = await databases.listDocuments(
                 databaseId,
                 getAnnouncementsCollectionId(),
-                [Query.equal("idempotencyKey", idempotencyKey), Query.limit(1)],
+                [
+                    Query.equal("idempotencyKey", idempotencyKey),
+                    Query.equal("createdBy", input.actorId),
+                    Query.limit(1),
+                ],
             );
 
             const existingDocument = existing.documents.at(0);
@@ -582,21 +586,21 @@ async function listAllProfileUserIds(excludeUserId?: string): Promise<string[]> 
     const { databases } = getServerClient();
     const env = getEnvConfig();
 
-    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId: env.databaseId,
-            collectionId: env.collections.profiles,
-            baseQueries: [Query.orderAsc("$id")],
-            pageSize: 100,
-            warningContext: "listAllProfileUserIds",
-        }),
-    );
+    const { documents } = await listPages({
+        databases,
+        databaseId: env.databaseId,
+        collectionId: env.collections.profiles,
+        baseQueries: [Query.orderAsc("$id")],
+        pageSize: 100,
+        warningContext: "listAllProfileUserIds",
+    });
 
     const recipientIds: string[] = [];
     for (const document of documents) {
         const userId = typeof document.userId === "string" ? document.userId.trim() : "";
-        if (!userId || userId === excludeUserId) continue;
+        if (!userId || userId === excludeUserId) {
+            continue;
+        }
         recipientIds.push(userId);
     }
 
@@ -885,16 +889,14 @@ async function rollupDeliveryStatus(
     let failed = 0;
     let pending = 0;
     let total = 0;
-    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId,
-            collectionId: getAnnouncementDeliveriesCollectionId(),
-            baseQueries: [Query.equal("announcementId", announcementId), Query.orderAsc("$id")],
-            pageSize: 100,
-            warningContext: "rollupDeliveryStatus",
-        }),
-    );
+    const { documents } = await listPages({
+        databases,
+        databaseId,
+        collectionId: getAnnouncementDeliveriesCollectionId(),
+        baseQueries: [Query.equal("announcementId", announcementId), Query.orderAsc("$id")],
+        pageSize: 100,
+        warningContext: "rollupDeliveryStatus",
+    });
 
     for (const document of documents) {
         total += 1;

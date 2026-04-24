@@ -58,12 +58,18 @@ async function waitWithTimeout(promise: Promise<void>, timeoutMs: number) {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     try {
-        await Promise.race([
-            promise,
+        const completed = await Promise.race([
+            promise.then(() => true),
             new Promise<void>((resolve) => {
                 timer = setTimeout(resolve, timeoutMs);
-            }),
+            }).then(() => false),
         ]);
+
+        if (!completed) {
+            promise.catch(() => {
+                // Ignore late telemetry rejections after timeout wins.
+            });
+        }
     } finally {
         if (timer) {
             clearTimeout(timer);
@@ -108,21 +114,6 @@ async function flushPostHog(timeoutMs = 1500) {
         await waitWithTimeout(client.flush(), timeoutMs);
     } catch {
         // Telemetry flushing should never impact request handling.
-    }
-}
-
-async function shutdownPostHog(timeoutMs = 1500) {
-    const client = posthogClient;
-    if (!client) {
-        return;
-    }
-
-    try {
-        await waitWithTimeout(client.shutdown(), timeoutMs);
-    } catch {
-        // Telemetry shutdown should never impact request handling.
-    } finally {
-        posthogClient = null;
     }
 }
 
