@@ -367,7 +367,7 @@ export async function getAnnouncementsAction(
     const validatedLimit =
         input.limit === undefined
             ? undefined
-            : validateAnnouncementDispatchLimit(input.limit);
+            : (Number.isFinite(Number(input.limit)) ? Number(input.limit) : undefined);
 
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
@@ -389,9 +389,10 @@ export async function createAnnouncementAction(
     userId: string,
     input: CreateAnnouncementActionInput,
 ): Promise<{
-    announcement: Announcement;
+    announcement?: Announcement;
     dispatched?: { announcementIds: string[]; dueCount: number };
     dispatchError?: string;
+    error?: string;
 }> {
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
@@ -411,8 +412,7 @@ export async function createAnnouncementAction(
         });
     } catch (error) {
         if (error instanceof ClientError) {
-            // Map validation/client errors to a 400 response for callers.
-            throw new Response(error.message, { status: 400 });
+            return { error: error.message };
         }
 
         throw error;
@@ -424,7 +424,7 @@ export async function createAnnouncementAction(
 
     try {
         const dispatched = await dispatchScheduledAnnouncements(
-            MAX_DISPATCH_LIMIT,
+            DEFAULT_DISPATCH_LIMIT,
         );
         return { announcement, dispatched };
     } catch (error) {

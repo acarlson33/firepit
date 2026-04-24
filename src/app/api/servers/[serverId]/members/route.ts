@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
+import { listPages } from "@/lib/appwrite-pagination";
 import { recordMetric } from "@/lib/monitoring";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
@@ -28,59 +29,18 @@ function chunkValues<T>(values: T[], size: number) {
 
 async function listAllServerDocuments(serverId: string, collectionId: string) {
     const { databases } = getServerClient();
-    const documents: Array<Record<string, unknown>> = [];
-    let cursorAfter: string | null = null;
 
-    if (typeof Query.orderAsc !== "function") {
-        throw new Error("Query.orderAsc is not available");
-    }
+    const { documents } = await listPages({
+        databases,
+        databaseId,
+        collectionId,
+        baseQueries: [Query.equal("serverId", serverId)],
+        pageSize: PAGE_SIZE,
+        warningContext: `listAll:${collectionId}`,
+        maxDocs: MAX_DOCS,
+    });
 
-    if (typeof Query.cursorAfter !== "function") {
-        throw new Error("Query.cursorAfter is not available");
-    }
-
-    while (true) {
-        const queries = [
-            Query.equal("serverId", serverId),
-            Query.orderAsc("$id"),
-            Query.limit(PAGE_SIZE),
-        ];
-
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const page = await databases.listDocuments(
-            databaseId,
-            collectionId,
-            queries,
-        );
-        const pageDocuments = page.documents as Array<Record<string, unknown>>;
-
-        if (documents.length + pageDocuments.length > MAX_DOCS) {
-            throw new Error(
-                `Member pagination exceeded MAX_DOCS (${MAX_DOCS}) for collection ${collectionId}`,
-            );
-        }
-
-        documents.push(...pageDocuments);
-
-        if (pageDocuments.length < PAGE_SIZE) {
-            break;
-        }
-
-        const lastDocument = pageDocuments.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : null;
-
-        if (!cursorAfter) {
-            break;
-        }
-    }
-
-    return documents;
+    return documents as Array<Record<string, unknown>>;
 }
 
 type RouteContext = {

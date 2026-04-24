@@ -347,52 +347,33 @@ export async function getOrCreateConversation(
     }
 
     try {
-        // Try to find existing conversation
-        let oneToOne: Record<string, unknown> | undefined;
-        let cursorAfter: string | null = null;
-
-        while (!oneToOne) {
-            const queries = [
-                Query.contains("participants", user1),
-                Query.contains("participants", user2),
-                Query.orderAsc("$createdAt"),
-                Query.limit(100),
-            ];
-            if (cursorAfter) {
-                queries.push(Query.cursorAfter(cursorAfter));
-            }
-
-            const existing = await getDatabases().listDocuments({
+        // Try to find existing conversation using centralized pagination helper
+        const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+            m.listPages({
+                databases: getDatabases(),
                 databaseId: DATABASE_ID,
                 collectionId: CONVERSATIONS_COLLECTION,
-                queries,
-            });
+                baseQueries: [
+                    Query.contains("participants", user1),
+                    Query.contains("participants", user2),
+                    Query.orderAsc("$createdAt"),
+                ],
+                pageSize: 100,
+                warningContext: "find-one-to-one-conversation",
+                maxPages: 50,
+            }),
+        );
 
-            oneToOne = existing.documents.find((document) => {
-                const participantsList = (document as Record<string, unknown>)
-                    .participants;
-                return (
-                    Array.isArray(participantsList) &&
-                    participantsList.length === 2 &&
-                    participantsList.includes(user1) &&
-                    participantsList.includes(user2)
-                );
-            }) as Record<string, unknown> | undefined;
-
-            if (oneToOne || existing.documents.length < 100) {
-                break;
-            }
-
-            const lastDocument = existing.documents.at(-1) as
-                | Record<string, unknown>
-                | undefined;
-            cursorAfter =
-                typeof lastDocument?.$id === "string" ? lastDocument.$id : null;
-
-            if (!cursorAfter) {
-                break;
-            }
-        }
+        const oneToOne = documents.find((document) => {
+            const participantsList = (document as Record<string, unknown>)
+                .participants;
+            return (
+                Array.isArray(participantsList) &&
+                participantsList.length === 2 &&
+                participantsList.includes(user1) &&
+                participantsList.includes(user2)
+            );
+        }) as Record<string, unknown> | undefined;
 
         if (oneToOne) {
             const doc = oneToOne;

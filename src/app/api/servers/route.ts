@@ -69,61 +69,24 @@ export async function GET(request: NextRequest) {
 
         const loadServerIds = async () => {
             const pageSize = 100;
-            const maxPages = 50;
             const membershipFields = selectMembershipFieldQuery();
             const serverIds = new Set<string>();
-            let cursorAfter: string | null = null;
-            let pageCount = 0;
 
-            while (true) {
-                pageCount += 1;
-                if (pageCount > maxPages) {
-                    logger.warn(
-                        "Membership pagination reached configured max pages while resolving user servers",
-                        {
-                            cursorAfter,
-                            maxPages,
-                            pageSize,
-                            userId: session.$id,
-                        },
-                    );
-                    break;
-                }
+            const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+                m.listPages({
+                    databases,
+                    databaseId: env.databaseId,
+                    collectionId: env.collections.memberships,
+                    baseQueries: [Query.equal("userId", session.$id), ...membershipFields],
+                    pageSize,
+                    maxPages: 50,
+                    warningContext: "loadServerIds",
+                }),
+            );
 
-                const membershipsResponse: ListDocumentsResponse = await databases.listDocuments(
-                    env.databaseId,
-                    env.collections.memberships,
-                    [
-                        Query.equal("userId", session.$id),
-                        ...membershipFields,
-                        Query.limit(pageSize),
-                        ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
-                    ],
-                );
-
-                for (const document of membershipsResponse.documents) {
-                    if (!isMembershipDocument(document)) {
-                        continue;
-                    }
-
-                    if (document.serverId.length > 0) {
-                        serverIds.add(document.serverId);
-                    }
-                }
-
-                if (membershipsResponse.documents.length < pageSize) {
-                    break;
-                }
-
-                const lastDocument = membershipsResponse.documents.at(-1);
-                cursorAfter =
-                    lastDocument && typeof lastDocument.$id === "string"
-                        ? lastDocument.$id
-                        : null;
-
-                if (!cursorAfter) {
-                    break;
-                }
+            for (const document of documents) {
+                if (!isMembershipDocument(document)) continue;
+                if (document.serverId.length > 0) serverIds.add(document.serverId);
             }
 
             return Array.from(serverIds);

@@ -338,14 +338,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should handle missing settings gracefully", async () => {
-			fetchMock.mockImplementation(() =>
-				Promise.resolve(
-					new Response(JSON.stringify({ error: "failed" }), {
-						headers: { "Content-Type": "application/json" },
-						status: 500,
-					}),
-				),
-			);
+			mockSettings(createMockSettings("all"), 500);
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",

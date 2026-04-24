@@ -43,8 +43,15 @@ export async function POST(request: Request) {
             );
         }
 
+        if (typeof payload !== "object" || payload === null) {
+            return NextResponse.json(
+                { success: false, error: "Invalid JSON payload" },
+                { status: 400 },
+            );
+        }
+
         const { name, description, iconFileId, bannerFileId, isPublic } =
-            payload;
+            payload as Record<string, unknown>;
 
         if (!name?.trim()) {
             return NextResponse.json(
@@ -171,7 +178,7 @@ export async function POST(request: Request) {
                 isPublic: server.isPublic,
                 defaultOnSignup: server.defaultOnSignup,
             },
-        }, { status: 200 });
+        }, { status: 201 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

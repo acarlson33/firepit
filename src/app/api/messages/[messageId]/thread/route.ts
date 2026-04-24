@@ -364,17 +364,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         });
 
         // Use the mentions we normalized earlier when constructing messageData if available
-        const normalizedMentions = (() => {
-            if (Array.isArray(newReply.mentions)) {
-                return normalizeMentionIds(newReply.mentions);
-            }
-
-            if (typeof newReply.mentions === "string") {
-                return normalizeMentionIds(newReply.mentions);
-            }
-
-            return undefined;
-        })();
+        const normalizedMentions = newReply.mentions
+            ? normalizeMentionIds(newReply.mentions)
+            : undefined;
 
         const {
             mentions: _rawMentions,

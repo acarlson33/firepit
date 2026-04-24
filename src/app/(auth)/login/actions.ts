@@ -260,31 +260,27 @@ export async function loginAction(
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (!emailVerified) {
-                let verificationLinkSent = false;
-                await sendVerificationEmailForSession({
-                    endpoint,
-                    project,
-                    sessionSecret: session.secret,
-                })
-                    .then(() => {
+                    let verificationLinkSent = false;
+                    try {
+                        await sendVerificationEmailForSession({
+                            endpoint,
+                            project,
+                            sessionSecret: session.secret,
+                        });
                         verificationLinkSent = true;
-                    })
-                    .catch((verificationError) => {
-                        logger.error(
-                            "Failed to send verification email during login",
-                            {
-                                userId: session.userId,
-                                error:
-                                    verificationError instanceof Error
-                                        ? verificationError.message
-                                        : String(verificationError),
-                            },
-                        );
-                });
+                    } catch (verificationError) {
+                        logger.error("Failed to send verification email during login", {
+                            userId: session.userId,
+                            error:
+                                verificationError instanceof Error
+                                    ? verificationError.message
+                                    : String(verificationError),
+                        });
+                    }
 
-                await revokeSessionBestEffort(session.userId, session.$id);
+                    await revokeSessionBestEffort(session.userId, session.$id);
 
-                return buildVerificationRequiredResult({ verificationLinkSent });
+                    return buildVerificationRequiredResult({ verificationLinkSent });
             }
         }
 
@@ -428,7 +424,7 @@ export async function resendVerificationAction(
 
         if (isSystemSenderAccount(session.userId)) {
             try {
-                await account.deleteSession({ sessionId: session.$id });
+                await revokeSessionBestEffort(session.userId, session.$id);
             } catch {
                 // best-effort cleanup
             }
@@ -445,7 +441,7 @@ export async function resendVerificationAction(
 
         if (emailVerified) {
             try {
-                await account.deleteSession({ sessionId: session.$id });
+                await revokeSessionBestEffort(session.userId, session.$id);
             } catch {
                 // best-effort cleanup
             }
@@ -467,7 +463,7 @@ export async function resendVerificationAction(
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
             try {
-                await account.deleteSession({ sessionId: session.$id });
+                await revokeSessionBestEffort(session.userId, session.$id);
             } catch {
                 // ignore cleanup errors
             }

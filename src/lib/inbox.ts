@@ -313,60 +313,18 @@ async function listAllDocuments(params: {
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    const items: Record<string, unknown>[] = [];
-    let cursorAfter: string | undefined;
-    let shouldSelectFields = Boolean(selectFields && selectFields.length > 0);
+    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId,
+            baseQueries: [...queries, ...(selectFields && selectFields.length > 0 ? selectQuery(selectFields) : [])],
+            pageSize: pageLimit,
+            warningContext: `listAllDocuments:${collectionId}`,
+        }),
+    );
 
-    while (true) {
-        const pageQueries = [...queries, Query.limit(pageLimit)];
-        if (shouldSelectFields && selectFields && selectFields.length > 0) {
-            pageQueries.push(...selectQuery(selectFields));
-        }
-        if (cursorAfter) {
-            pageQueries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        let response: Awaited<ReturnType<typeof databases.listDocuments>>;
-        try {
-            response = await databases.listDocuments(
-                env.databaseId,
-                collectionId,
-                pageQueries,
-            );
-        } catch (error) {
-            if (shouldSelectFields && isSchemaAttributeMissingQueryError(error)) {
-                // Older schemas may not include all optional projected fields.
-                // Retry the same page without Query.select rather than failing.
-                shouldSelectFields = false;
-                continue;
-            }
-
-            throw error;
-        }
-        const documents = response.documents as unknown as Record<
-            string,
-            unknown
-        >[];
-
-        if (documents.length === 0) {
-            break;
-        }
-
-        items.push(...documents);
-
-        if (documents.length < pageLimit) {
-            break;
-        }
-
-        const lastId = documents.at(-1)?.$id;
-        if (typeof lastId !== "string" || lastId.length === 0) {
-            break;
-        }
-
-        cursorAfter = lastId;
-    }
-
-    return items;
+    return documents as Record<string, unknown>[];
 }
 
 async function listDocumentsByIds(params: {

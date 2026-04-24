@@ -78,67 +78,28 @@ async function listPollDocumentsForMessages(params: {
     if (messageIds.length === 0) {
         return [];
     }
-
     const databases = getBrowserDatabases();
-    const pollDocuments: PollDocShape[] = [];
-    let cursor: string | undefined;
-    let pageCount = 0;
-    let fullPageCount = 0;
 
-    while (true) {
-        pageCount += 1;
-        if (pageCount > MAX_POLL_PAGES) {
-            logger.error(
-                "Poll query pagination exceeded configured max pages",
-                undefined,
-                {
-                    cursor: cursor ?? null,
-                    maxPages: MAX_POLL_PAGES,
-                    messageCount: messageIds.length,
-                },
-            );
-            break;
-        }
-
-        const response = await databases.listDocuments({
+    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
             databaseId,
             collectionId: pollsCollectionId,
-            queries: [
-                Query.equal("messageId", messageIds),
-                Query.orderAsc("$id"),
-                Query.limit(POLLS_PAGE_LIMIT),
-                ...(cursor ? [Query.cursorAfter(cursor)] : []),
-            ],
-        });
+            baseQueries: [Query.equal("messageId", messageIds), Query.orderAsc("$id")],
+            pageSize: POLLS_PAGE_LIMIT,
+            maxPages: MAX_POLL_PAGES,
+            warningContext: "listPollDocumentsForMessages",
+        }),
+    );
 
-        pollDocuments.push(
-            ...response.documents
-                .map((raw) => normalizePollDocument(raw))
-                .filter((value): value is PollDocShape => value !== null),
-        );
+    const pollDocuments = documents
+        .map((raw) => normalizePollDocument(raw))
+        .filter((value): value is PollDocShape => value !== null);
 
-        if (response.documents.length === POLLS_PAGE_LIMIT) {
-            fullPageCount += 1;
-        }
-
-        if (response.documents.length < POLLS_PAGE_LIMIT) {
-            break;
-        }
-
-        const lastDocument = response.documents.at(-1);
-        if (!lastDocument || typeof lastDocument.$id !== "string") {
-            break;
-        }
-
-        cursor = lastDocument.$id;
-    }
-
-    if (fullPageCount > 0) {
+    if (truncated) {
         logger.warn("Poll query required multiple pages", {
-            cursor: cursor ?? null,
-            fullPageCount,
-            messageCount: messageIds.length,
             pageLimit: POLLS_PAGE_LIMIT,
+            messageCount: messageIds.length,
         });
     }
 
@@ -154,60 +115,27 @@ async function listVoteDocumentsForPolls(params: {
     if (pollIds.length === 0) {
         return [];
     }
-
     const databases = getBrowserDatabases();
-    const voteDocuments: PollVoteDocShape[] = [];
-    let cursor: string | undefined;
-    let totalPagesFetched = 0;
-    let fullPageCount = 0;
-    let reachedMaxPages = false;
 
-    while (true) {
-        totalPagesFetched += 1;
-        if (totalPagesFetched > MAX_POLL_PAGES) {
-            reachedMaxPages = true;
-            break;
-        }
-
-        const response = await databases.listDocuments({
+    const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
+        m.listPages({
+            databases,
             databaseId,
             collectionId: pollVotesCollectionId,
-            queries: [
-                Query.equal("pollId", pollIds),
-                Query.orderAsc("$id"),
-                Query.limit(POLL_VOTES_PAGE_LIMIT),
-                ...(cursor ? [Query.cursorAfter(cursor)] : []),
-            ],
-        });
+            baseQueries: [Query.equal("pollId", pollIds), Query.orderAsc("$id")],
+            pageSize: POLL_VOTES_PAGE_LIMIT,
+            maxPages: MAX_POLL_PAGES,
+            warningContext: "listVoteDocumentsForPolls",
+        }),
+    );
 
-        voteDocuments.push(
-            ...response.documents
-                .map((raw) => normalizePollVoteDocument(raw))
-                .filter((value): value is PollVoteDocShape => value !== null),
-        );
+    const voteDocuments = documents
+        .map((raw) => normalizePollVoteDocument(raw))
+        .filter((value): value is PollVoteDocShape => value !== null);
 
-        if (response.documents.length === POLL_VOTES_PAGE_LIMIT) {
-            fullPageCount += 1;
-        }
-
-        if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
-            break;
-        }
-
-        const lastDocument = response.documents.at(-1);
-        if (!lastDocument || typeof lastDocument.$id !== "string") {
-            break;
-        }
-
-        cursor = lastDocument.$id;
-    }
-
-    if (reachedMaxPages || fullPageCount > 0) {
+    if (truncated) {
         logger.warn("Poll votes query required pagination safeguards", {
-            hitMaxPages: reachedMaxPages,
-            fullPageCount,
             pageLimit: POLL_VOTES_PAGE_LIMIT,
-            totalPagesFetched,
             pollCount: pollIds.length,
         });
     }

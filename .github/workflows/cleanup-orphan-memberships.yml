@@ -1,0 +1,24 @@
+name: Cleanup orphan memberships
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Daily at 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Run orphan membership cleanup
+        env:
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          # Ensure APPWRITE_ENDPOINT and APPWRITE_PROJECT are set in repository secrets or environment
+          APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT: ${{ secrets.APPWRITE_PROJECT }}
+        run: |
+          bun run scripts/cleanup-orphan-memberships.ts

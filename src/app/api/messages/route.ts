@@ -35,7 +35,7 @@ import {
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
 import { apiCache } from "@/lib/cache-utils";
-import { isValidMentionId, normalizeMentionIds } from "@/lib/mentions";
+import { normalizeMentionIds } from "@/lib/mentions";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -191,13 +191,7 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
-        const validMentions = !creatingPoll
-            ? Array.from(
-                  new Set(
-                      normalizeMentionIds(mentions),
-                  ),
-              )
-            : [];
+        const validMentions = !creatingPoll ? normalizeMentionIds(mentions) : [];
         const hasValidMentions = validMentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
@@ -625,8 +619,6 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        // Delete the message
-        // Delete the message
         try {
             await databases.deleteDocument(
                 env.databaseId,

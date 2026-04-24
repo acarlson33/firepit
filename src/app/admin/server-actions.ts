@@ -13,38 +13,7 @@ const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || undefined;
 
-type ServerCreationResult =
-    | { success: true; serverId: string; serverName: string }
-    | { success: false; error: string };
-
-type ChannelCreationResult =
-    | {
-          success: true;
-          channelId: string;
-          channelName: string;
-          channelType: "text" | "voice" | "announcement";
-      }
-    | { success: false; error: string };
-
-type ServerListResult = {
-    servers: Array<{
-        $id: string;
-        name: string;
-        ownerId: string;
-        createdAt: string;
-        defaultOnSignup?: boolean;
-    }>;
-};
-
-type ChannelListResult = {
-    channels: Array<{
-        $id: string;
-        name: string;
-        type: "text" | "voice" | "announcement";
-        serverId: string;
-        createdAt: string;
-    }>;
-};
+// Result shapes are returned inline; no exported type aliases here.
 
 type MutationResult =
     | { success: true }
@@ -70,6 +39,7 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
     const pageLimit = 100;
     let cursorAfter: string | undefined;
     const defaults: Array<{ $id: string }> = [];
+    let paginated = false;
 
     while (true) {
         const queries = [
@@ -94,6 +64,11 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
             break;
         }
 
+        // If we fetched exactly pageLimit documents, pagination occurred
+        if (page.documents.length === pageLimit) {
+            paginated = true;
+        }
+
         const lastId = page.documents.at(-1)?.$id;
         if (!lastId) {
             break;
@@ -105,7 +80,7 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
     // Single summary debug log instead of per-page logging
     logger.debug("Default signup servers fetched", {
         count: defaults.length,
-        paginated: defaults.length > pageLimit,
+        paginated,
     });
 
     return defaults;
@@ -115,9 +90,7 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
  * Create a new server (Admin only)
  * Admins can always create servers regardless of feature flags
  */
-export async function createServerAction(
-    name: string,
-): Promise<ServerCreationResult> {
+export async function createServerAction(name: string) {
     try {
         // Require admin role to create servers
         const { user } = await requireAdmin();
@@ -188,7 +161,7 @@ export async function createChannelAction(
     serverId: string,
     name: string,
     type: "text" | "voice" | "announcement" = "text",
-): Promise<ChannelCreationResult> {
+) {
     try {
         const user = await requireAuth();
 
@@ -246,7 +219,7 @@ export async function createChannelAction(
 /**
  * List all servers (Admin only)
  */
-export async function listServersAction(): Promise<ServerListResult> {
+export async function listServersAction() {
     try {
         await requireAdmin();
 
@@ -375,9 +348,7 @@ export async function setDefaultSignupServerAction(
 /**
  * List channels for a server (Admin or Moderator)
  */
-export async function listChannelsAction(
-    serverId: string,
-): Promise<ChannelListResult> {
+export async function listChannelsAction(serverId: string) {
     try {
         await requireModerator();
 
