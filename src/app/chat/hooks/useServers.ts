@@ -170,14 +170,18 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       if (membership) {
         setMemberships(nextMemberships);
       }
-      setServers((prev) => [...prev, server]);
+      setServers((prev) => {
+        const nextServers = [...prev, server];
+        return membershipEnabled
+          ? filterAllowedServers(nextServers, nextMemberships)
+          : nextServers;
+      });
       setSelectedServer(server.$id);
       if (ownerId && membershipEnabled) {
         apiCache.clear(`memberships:${ownerId}`);
       }
-      if (userId) apiCache.clear(`servers:initial:${userId}`);
-      if (membershipEnabled) {
-        setServers((prev) => filterAllowedServers(prev, nextMemberships));
+      if (userId) {
+        apiCache.clear(`servers:initial:${userId}`);
       }
       return server;
     } catch (err) {
@@ -199,19 +203,14 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           body: JSON.stringify({ serverId: id }),
         });
         const payload = (await res.json().catch(() => null)) as {
+          membership?: Membership;
           error?: string;
         } | null;
         if (!res.ok) {
           throw new Error(payload?.error || "Failed to join server");
         }
 
-        membership = {
-          $id: `${id}:${uid}`,
-          serverId: id,
-          userId: uid,
-          role: "member",
-          $createdAt: new Date().toISOString(),
-        };
+        membership = payload?.membership ?? null;
       }
 
       if (!membership) {
@@ -247,9 +246,15 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
         }
       }
       setServers((prev) => prev.filter((s) => s.$id !== serverId));
-      if (selectedServer === serverId) setSelectedServer(null);
-      if (userId) apiCache.clear(`servers:initial:${userId}`);
-      if (userId && membershipEnabled) apiCache.clear(`memberships:${userId}`);
+      if (selectedServer === serverId) {
+        setSelectedServer(null);
+      }
+      if (userId) {
+        apiCache.clear(`servers:initial:${userId}`);
+      }
+      if (userId && membershipEnabled) {
+        apiCache.clear(`memberships:${userId}`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete server");
       throw err;

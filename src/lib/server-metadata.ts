@@ -61,12 +61,15 @@ export function mapServerDocument(
 
     const iconFileId = normalizeServerFileId(document.iconFileId);
     const bannerFileId = normalizeServerFileId(document.bannerFileId);
+    const serverId = document.$id.trim();
+    const serverName = document.name.trim();
+    const ownerId = document.ownerId.trim();
 
     return {
-        $id: document.$id as string,
-        name: (document.name as string).trim(),
+        $id: serverId,
+        name: serverName,
         $createdAt: String(document.$createdAt ?? ""),
-        ownerId: (document.ownerId as string).trim(),
+        ownerId,
         memberCount,
         description: normalizeServerDescription(document.description),
         iconFileId,

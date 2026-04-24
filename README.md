@@ -35,14 +35,14 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Tailwind CSS** - Modern, responsive UI styling
 - **shadcn/ui** - Accessible UI primitives
 - **PWA ready** - Installable web app support for mobile and desktop browsers
-- **Comprehensive tests** - 1913 passing tests with broad API, hook, and integration coverage
+- **Comprehensive tests** - 2204 passing tests with broad API, hook, and integration coverage
 - **Production hardening** - Error boundaries, rate limiting, security validation, and observability
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 
-- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preferred for perf. improvements) installed
+- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preferred for performance improvements) installed
 - An **Appwrite instance** (cloud or self-hosted):
     - Cloud: [appwrite.io](https://appwrite.io) (free tier available)
     - Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)

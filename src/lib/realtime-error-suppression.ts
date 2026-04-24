@@ -14,7 +14,7 @@ type ActiveSuppression = {
     shouldSuppress: ScopedConsoleErrorPredicate;
 };
 
-let subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
 const activeSuppressions: ActiveSuppression[] = [];
 let subscriptionMarkerCounter = 0;
 let activeSuppressionCounter = 0;

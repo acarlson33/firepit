@@ -1,21 +1,9 @@
 import { Query } from "appwrite";
-// Lightweight local logger to avoid pulling server-only telemetry into client bundles
+
 const logger = {
-    warn: (msg: string, attrs?: Record<string, unknown>) => {
-        if (process.env.NODE_ENV !== "production") {
-            console.warn("[WARN]", msg, attrs || "");
-        }
-    },
-    info: (msg: string, attrs?: Record<string, unknown>) => {
-        if (process.env.NODE_ENV !== "production") {
-            console.info("[INFO]", msg, attrs || "");
-        }
-    },
-    error: (msg: string, attrs?: Record<string, unknown>) => {
-        if (process.env.NODE_ENV !== "production") {
-            console.error("[ERROR]", msg, attrs || "");
-        }
-    },
+    warn: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
+    info: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
+    error: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
 };
 
 type ListDocumentsResponseLike = {
@@ -44,16 +32,9 @@ async function callListDocuments(
     collectionId: string,
     queries: string[],
 ): Promise<ListDocumentsResponseLike> {
-    const listDocuments = databases.listDocuments as {
-        length: number;
-        mock?: unknown;
-        _isMockFunction?: boolean;
-    };
-    const isMockFunction = Boolean(
-        listDocuments.mock || listDocuments._isMockFunction,
-    );
+    const listDocuments = databases.listDocuments as { length: number };
 
-    if (isMockFunction || listDocuments.length > 1) {
+    if (listDocuments.length > 1) {
         return databases.listDocuments(databaseId, collectionId, queries);
     }
 
@@ -97,8 +78,12 @@ export async function listPages(params: {
 
     const supportsCursorAfter = typeof queryWithPagination.cursorAfter === "function";
     const supportsOrderAsc = typeof queryWithPagination.orderAsc === "function";
-    const orderAsc = supportsOrderAsc ? queryWithPagination.orderAsc!.bind(Query) : undefined;
-    const cursorAfterFn = supportsCursorAfter ? queryWithPagination.cursorAfter!.bind(Query) : undefined;
+    const orderAsc = supportsOrderAsc
+        ? queryWithPagination.orderAsc?.bind(Query)
+        : undefined;
+    const cursorAfterFn = supportsCursorAfter
+        ? queryWithPagination.cursorAfter?.bind(Query)
+        : undefined;
 
     let cursorAfter: string | null = null;
     let warnedExceededPageSize = false;

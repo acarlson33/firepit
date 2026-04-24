@@ -220,16 +220,25 @@ export async function GET(request: Request, context: RouteContext) {
             recordMetric("server.orphan_membership.count", orphanUserIds.length, {
                 serverId,
             });
-            if (membershipsTruncated) {
-                logger.warn(
-                    "Membership listing truncated; orphanCount may be incomplete",
-                    {
-                        serverId,
-                        collectionId: membershipsCollectionId,
-                        pageSize: PAGE_SIZE,
-                    },
-                );
-            }
+        }
+
+        if (membershipsTruncated) {
+            logger.warn(
+                "Membership listing truncated; orphanCount may be incomplete",
+                {
+                    serverId,
+                    collectionId: membershipsCollectionId,
+                    pageSize: PAGE_SIZE,
+                },
+            );
+        }
+
+        if (roleAssignmentsTruncated) {
+            logger.warn("Role assignment listing truncated during member listing", {
+                serverId,
+                collectionId: roleAssignmentsCollectionId,
+                pageSize: PAGE_SIZE,
+            });
         }
 
         return NextResponse.json({

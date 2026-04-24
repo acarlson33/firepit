@@ -9,12 +9,12 @@ type MemberCountDatabases = {
             databaseId: string,
             collectionId: string,
             queries?: string[],
-        ): Promise<{ total: number }>;
+        ): Promise<{ total: number; documents?: Array<Record<string, unknown>> }>;
         (params: {
             databaseId: string;
             collectionId: string;
             queries?: string[];
-        }): Promise<{ total: number }>;
+        }): Promise<{ total: number; documents?: Array<Record<string, unknown>> }>;
     };
 };
 
@@ -78,10 +78,10 @@ export async function getActualMemberCounts(
 
     try {
         const { documents, truncated } = await listPages({
-            databases: databases as unknown as any,
+            databases,
             databaseId: env.databaseId,
             collectionId: membershipsCollectionId,
-            baseQueries: [Query.equal("serverId", uniqueServerIds), Query.orderAsc("$id")],
+            baseQueries: [Query.equal("serverId", uniqueServerIds)],
             pageSize,
             warningContext: "membership-count",
         });
@@ -95,7 +95,9 @@ export async function getActualMemberCounts(
 
         for (const document of documents) {
             const serverId = typeof document.serverId === "string" ? document.serverId : undefined;
-            if (!serverId || !counts.has(serverId)) continue;
+            if (!serverId || !counts.has(serverId)) {
+                continue;
+            }
             counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
         }
     } catch {

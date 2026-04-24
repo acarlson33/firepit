@@ -7,9 +7,9 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
-import { logger } from "@/lib/newrelic-utils";
 
 type ListDocumentsResponse = Awaited<
     ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
@@ -72,21 +72,23 @@ export async function GET(request: NextRequest) {
             const membershipFields = selectMembershipFieldQuery();
             const serverIds = new Set<string>();
 
-            const { documents, truncated } = await import("@/lib/appwrite-pagination").then((m) =>
-                m.listPages({
-                    databases,
-                    databaseId: env.databaseId,
-                    collectionId: env.collections.memberships,
-                    baseQueries: [Query.equal("userId", session.$id), ...membershipFields],
-                    pageSize,
-                    maxPages: 50,
-                    warningContext: "loadServerIds",
-                }),
-            );
+            const { documents, truncated } = await listPages({
+                databases,
+                databaseId: env.databaseId,
+                collectionId: env.collections.memberships,
+                baseQueries: [Query.equal("userId", session.$id), ...membershipFields],
+                pageSize,
+                maxPages: 50,
+                warningContext: "loadServerIds",
+            });
 
             for (const document of documents) {
-                if (!isMembershipDocument(document)) continue;
-                if (document.serverId.length > 0) serverIds.add(document.serverId);
+                if (!isMembershipDocument(document)) {
+                    continue;
+                }
+                if (document.serverId.length > 0) {
+                    serverIds.add(document.serverId);
+                }
             }
 
             return {

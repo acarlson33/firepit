@@ -71,8 +71,7 @@ function validateAnnouncementDispatchLimit(limit: number): number {
 function normalizeListLimit(limit: number | undefined): number | undefined {
     if (limit === undefined) return undefined;
     if (!Number.isFinite(limit)) return undefined;
-    const n = Number(limit);
-    return Number.isFinite(n) ? n : undefined;
+    return limit;
 }
 
 // Smaller helpers to keep complexity below threshold

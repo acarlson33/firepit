@@ -21,21 +21,9 @@ export async function POST(request: Request) {
             );
         }
 
-        let payload: {
-            name?: string;
-            description?: string;
-            iconFileId?: string;
-            bannerFileId?: string;
-            isPublic?: boolean;
-        };
+        let rawPayload: unknown;
         try {
-            payload = (await request.json()) as {
-                name?: string;
-                description?: string;
-                iconFileId?: string;
-                bannerFileId?: string;
-                isPublic?: boolean;
-            };
+            rawPayload = (await request.json()) as unknown;
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
@@ -43,12 +31,24 @@ export async function POST(request: Request) {
             );
         }
 
-        if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+        if (
+            typeof rawPayload !== "object" ||
+            rawPayload === null ||
+            Array.isArray(rawPayload)
+        ) {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
                 { status: 400 },
             );
         }
+
+        const payload = rawPayload as {
+            name?: unknown;
+            description?: unknown;
+            iconFileId?: unknown;
+            bannerFileId?: unknown;
+            isPublic?: unknown;
+        };
 
         const { name, description, iconFileId, bannerFileId, isPublic } = payload;
 
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
                 isPublic: server.isPublic,
                 defaultOnSignup: server.defaultOnSignup,
             },
-        }, { status: 200 });
+        }, { status: 201 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

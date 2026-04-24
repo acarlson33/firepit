@@ -330,6 +330,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             ),
         );
 
+        const hasResetFailure = resetResults.some(
+            (result) => result.status === "rejected",
+        );
+
         for (const [index, result] of resetResults.entries()) {
             if (result.status === "rejected") {
                 logger.error("Failed to unset previous default signup server", {
@@ -342,6 +346,63 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                     userId: session.$id,
                 });
             }
+        }
+
+        if (hasResetFailure) {
+            try {
+                await databases.updateDocument(
+                    env.databaseId,
+                    env.collections.servers,
+                    serverId,
+                    { defaultOnSignup: previousDefaultOnSignup },
+                );
+            } catch (rollbackError) {
+                logger.error("Failed to rollback current server defaultOnSignup", {
+                    serverId,
+                    userId: session.$id,
+                    error:
+                        rollbackError instanceof Error
+                            ? rollbackError.message
+                            : String(rollbackError),
+                });
+            }
+
+            const restoreResults = await Promise.allSettled(
+                resetResults.flatMap((result, index) =>
+                    result.status === "fulfilled"
+                        ? [
+                              databases.updateDocument(
+                                  env.databaseId,
+                                  env.collections.servers,
+                                  defaultServersToClear[index].$id,
+                                  { defaultOnSignup: true },
+                              ),
+                          ]
+                        : [],
+                ),
+            );
+
+            for (const [index, result] of restoreResults.entries()) {
+                if (result.status === "rejected") {
+                    logger.error(
+                        "Failed to rollback cleared default signup server",
+                        {
+                            rollbackIndex: index,
+                            serverId,
+                            userId: session.$id,
+                            error:
+                                result.reason instanceof Error
+                                    ? result.reason.message
+                                    : String(result.reason),
+                        },
+                    );
+                }
+            }
+
+            return NextResponse.json(
+                { error: "Failed to clear existing default signup server" },
+                { status: 500 },
+            );
         }
     }
 
@@ -459,14 +520,15 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     try {
+        // Best-effort cleanup performed in lib.deleteServer; reuse logic by calling it server-side
+        const { deleteServer } = await import("@/lib/appwrite-servers");
+        await deleteServer(serverId);
+
         await recordAudit("server_deleted", serverId, session.$id, {
             serverId,
             userId: session.$id,
         });
 
-        // Best-effort cleanup performed in lib.deleteServer; reuse logic by calling it server-side
-        const { deleteServer } = await import("@/lib/appwrite-servers");
-        await deleteServer(serverId);
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Failed to delete server", {

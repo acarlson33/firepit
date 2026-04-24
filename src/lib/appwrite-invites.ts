@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/newrelic-utils";
 import { listPages } from "@/lib/appwrite-pagination";
-import type { ServerInvite, InviteUsage } from "./types";
+import type { ServerInvite } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
@@ -62,10 +62,6 @@ function inviteByCodeCacheKey(code: string): string {
 
 function serverInvitesCacheKey(serverId: string): string {
     return `invite:server-list:${serverId}`;
-}
-
-function inviteUsageCacheKey(code: string): string {
-    return `invite:usage:${code}`;
 }
 
 function serverPreviewCacheKey(serverId: string): string {
@@ -650,7 +646,6 @@ export async function useInvite(
 
     apiCache.clear(inviteByCodeCacheKey(code));
     apiCache.clear(serverInvitesCacheKey(invite.serverId));
-    apiCache.clear(inviteUsageCacheKey(code));
     apiCache.clear(serverPreviewCacheKey(invite.serverId));
 
     return { success: true, serverId: invite.serverId };
@@ -719,7 +714,6 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
 
         if (code) {
             apiCache.clear(inviteByCodeCacheKey(code));
-            apiCache.clear(inviteUsageCacheKey(code));
         }
 
         if (serverId) {
@@ -731,33 +725,6 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
     } catch (error) {
         logger.error("Failed to revoke invite:", { error });
         return false;
-    }
-}
-
-/**
- * Get invite usage statistics for an invite
- *
- * @param {string} code - The code value.
- * @returns {Promise<InviteUsage[]>} The return value.
- */
-async function getInviteUsage(code: string): Promise<InviteUsage[]> {
-    const { databases } = getServerClient();
-
-    try {
-        const result = await dedupeInviteCache(
-            inviteUsageCacheKey(code),
-            () =>
-                databases.listDocuments(DATABASE_ID, INVITE_USAGE_COLLECTION_ID, [
-                    Query.equal("inviteCode", code),
-                    Query.orderDesc("joinedAt"),
-                    Query.limit(100),
-                ]),
-        );
-
-        return result.documents as unknown as InviteUsage[];
-    } catch (error) {
-        logger.error("Failed to get invite usage:", { error });
-        return [];
     }
 }
 
