@@ -96,6 +96,15 @@ const serverAccessCache = new Map<string, CachedAccessEntry<ServerAccess>>();
 const pendingServerAccess = new Map<string, Promise<ServerAccess>>();
 const channelAccessCache = new Map<string, CachedAccessEntry<ChannelAccess>>();
 const pendingChannelAccess = new Map<string, Promise<ChannelAccess>>();
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
 
 function canUseAccessCache(): boolean {
     return process.env.NODE_ENV !== "test";
@@ -267,19 +276,33 @@ async function getRolesByIds(
         return [];
     }
 
-    const roles = await databases.listDocuments(
-        env.databaseId,
-        ROLES_COLLECTION_ID,
-        [
-            Query.equal("serverId", serverId),
-            Query.equal("$id", roleIds),
-            Query.limit(100),
-        ],
+    const roleIdChunks = chunkValues(roleIds, QUERY_ARRAY_LIMIT);
+    const rolePages = await Promise.all(
+        roleIdChunks.map((roleIdChunk) =>
+            databases.listDocuments(
+                env.databaseId,
+                ROLES_COLLECTION_ID,
+                [
+                    Query.equal("serverId", serverId),
+                    Query.equal("$id", roleIdChunk),
+                    Query.limit(roleIdChunk.length),
+                ],
+            ),
+        ),
     );
 
-    return roles.documents.map((doc) =>
-        mapRoleDocument(doc as Record<string, unknown>),
-    );
+    const rolesById = new Map<string, Role>();
+    for (const rolePage of rolePages) {
+        for (const doc of rolePage.documents) {
+            const mapped = mapRoleDocument(doc as Record<string, unknown>);
+            rolesById.set(mapped.$id, mapped);
+        }
+    }
+
+    return roleIds.flatMap((roleId) => {
+        const role = rolesById.get(roleId);
+        return role ? [role] : [];
+    });
 }
 
 /**

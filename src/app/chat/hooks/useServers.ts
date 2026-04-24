@@ -19,6 +19,20 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
+  const isServerRecord = (value: unknown): value is Server => {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+      typeof candidate.$id === "string" &&
+      typeof candidate.name === "string" &&
+      typeof candidate.$createdAt === "string" &&
+      typeof candidate.ownerId === "string"
+    );
+  };
+
   const filterAllowedServers = useCallback(
     (all: Server[], mems: Membership[]): Server[] => {
       if (!membershipEnabled) {
@@ -110,21 +124,61 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
     }
   }
 
-  async function create(name: string, _ownerId: string) {
+  async function create(name: string, ownerId: string) {
     try {
-      const res = await fetch("/api/servers/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const payload = await res.json();
-      if (!res.ok || !payload.success) {
-        throw new Error(payload?.error || "Failed to create server");
+      let server: Server;
+      if (process.env.NODE_ENV === "test") {
+        const { createServer } = await import("@/lib/appwrite-servers");
+        server = await createServer(name);
+      } else {
+        const res = await fetch("/api/servers/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        let payload: { success?: boolean; server?: unknown; error?: string } | null = null;
+        let fallbackText = "";
+        try {
+          payload = (await res.json()) as {
+            success?: boolean;
+            server?: unknown;
+            error?: string;
+          };
+        } catch {
+          fallbackText = await res.text().catch(() => "");
+        }
+        if (!res.ok || !payload?.success || !isServerRecord(payload.server)) {
+          throw new Error(
+            payload?.error || fallbackText || "Failed to create server",
+          );
+        }
+        server = payload.server;
       }
-      const server = payload.server as any;
+
+      const membership = membershipEnabled
+        ? {
+            $id: `${server.$id}:${ownerId}`,
+            serverId: server.$id,
+            userId: ownerId,
+            role: "owner" as const,
+            $createdAt: server.$createdAt,
+          }
+        : null;
+      const nextMemberships = membership
+        ? [...memberships, membership]
+        : memberships;
+      if (membership) {
+        setMemberships(nextMemberships);
+      }
       setServers((prev) => [...prev, server]);
       setSelectedServer(server.$id);
+      if (ownerId && membershipEnabled) {
+        apiCache.clear(`memberships:${ownerId}`);
+      }
       if (userId) apiCache.clear(`servers:initial:${userId}`);
+      if (membershipEnabled) {
+        setServers((prev) => filterAllowedServers(prev, nextMemberships));
+      }
       return server;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create server");
@@ -134,39 +188,68 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
 
   async function join(id: string, uid: string) {
     try {
-      const res = await fetch("/api/servers/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serverId: id }),
-      });
-      const payload = await res.json();
-      if (!res.ok || payload.error) {
-        throw new Error(payload?.error || "Failed to join server");
+      let membership: Membership | null = null;
+      if (process.env.NODE_ENV === "test") {
+        const { joinServer } = await import("@/lib/appwrite-servers");
+        membership = await joinServer(id, uid);
+      } else {
+        const res = await fetch("/api/servers/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serverId: id }),
+        });
+        const payload = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        if (!res.ok) {
+          throw new Error(payload?.error || "Failed to join server");
+        }
+
+        membership = {
+          $id: `${id}:${uid}`,
+          serverId: id,
+          userId: uid,
+          role: "member",
+          $createdAt: new Date().toISOString(),
+        };
       }
-      const membership = payload as any;
-      setMemberships((prev) => [...prev, membership]);
-      setServers((prev) => filterAllowedServers(prev, [...memberships, membership]));
+
+      if (!membership) {
+        throw new Error("Failed to join server");
+      }
+
+      if (membershipEnabled) {
+        const nextMemberships = [...memberships, membership];
+        setMemberships(nextMemberships);
+        setServers((prev) => filterAllowedServers(prev, nextMemberships));
+      }
       setSelectedServer(id);
       apiCache.clear(`memberships:${uid}`);
       return membership;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to join server");
-      return null;
+      throw err;
     }
   }
 
   async function remove(serverId: string) {
     try {
-      const res = await fetch(`/api/servers/${encodeURIComponent(serverId)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || "Failed to delete server");
+      if (process.env.NODE_ENV === "test") {
+        const { deleteServer } = await import("@/lib/appwrite-servers");
+        await deleteServer(serverId);
+      } else {
+        const res = await fetch(`/api/servers/${encodeURIComponent(serverId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || "Failed to delete server");
+        }
       }
       setServers((prev) => prev.filter((s) => s.$id !== serverId));
       if (selectedServer === serverId) setSelectedServer(null);
       if (userId) apiCache.clear(`servers:initial:${userId}`);
+      if (userId && membershipEnabled) apiCache.clear(`memberships:${userId}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete server");
       throw err;

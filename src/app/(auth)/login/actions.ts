@@ -80,7 +80,6 @@ async function revokeSessionBestEffort(
     sessionId: string,
 ): Promise<void> {
     try {
-        // Requires an API key with users.write/session-management scope.
         const { client } = getServerClient();
         const users = new Users(client);
         await users.deleteSession({ userId, sessionId });
@@ -436,7 +435,7 @@ export async function resendVerificationAction(
         const emailVerified = Boolean(accountUser.emailVerification);
 
         if (emailVerified) {
-            await revokeSessionBestEffort(session.userId, session.$id);
+            await account.deleteSession({ sessionId: session.$id });
 
             return {
                 success: true,
@@ -454,7 +453,7 @@ export async function resendVerificationAction(
             });
         } finally {
             // Best-effort cleanup: do not keep the temporary session active.
-            await revokeSessionBestEffort(session.userId, session.$id);
+            await account.deleteSession({ sessionId: session.$id });
         }
 
         return {

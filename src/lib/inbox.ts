@@ -78,8 +78,6 @@ const INBOX_DM_THREAD_PARENT_SELECT_FIELDS = [
     "conversationId",
     "lastThreadReplyAt",
     "senderId",
-    "senderAvatarUrl",
-    "senderDisplayName",
     "text",
     "threadMessageCount",
 ] as const;
@@ -1064,8 +1062,6 @@ async function listUnreadChannelThreadItems(
     if (missingParentIds.length > 0) {
         const missingThreadParents = await listDocumentsByIds({
             collectionId: env.collections.messages,
-            contextField: "channelId",
-            contextIds: channelIdsFromThreadMetadata,
             ids: missingParentIds,
             selectFields: INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS,
         });

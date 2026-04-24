@@ -1,11 +1,12 @@
+import { ID, Query } from "node-appwrite";
 import { NextResponse, type NextRequest } from "next/server";
-import { Query, ID } from "node-appwrite";
-import { getEnvConfig } from "@/lib/appwrite-core";
-import { listPages } from "@/lib/appwrite-pagination";
+
 import { getServerSession } from "@/lib/auth-server";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
+import { listPages } from "@/lib/appwrite-pagination";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
-import { getServerClient } from "@/lib/appwrite-server";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -13,58 +14,18 @@ const roleAssignmentsCollectionId = "role_assignments";
 const rolesCollectionId = "roles";
 const membershipsCollectionId = env.collections.memberships || "memberships";
 const profilesCollectionId = env.collections.profiles || "profiles";
+const QUERY_ARRAY_LIMIT = 100;
 
 function getDatabases() {
     return getServerClient().databases;
 }
 
-type QueryWithPagination = typeof Query & {
-    cursorAfter?: (cursor: string) => string;
-    orderAsc?: (field: string) => string;
-};
-// Helper: list role assignments for a server with optional client-side filtering
-async function listRoleAssignmentsForServer(params: {
-    canQueryContains: boolean;
-    databases: any;
-    pageSize: number;
-    roleId?: string | null;
-    serverId: string;
-}) {
-    const { canQueryContains, databases, pageSize, roleId, serverId } = params;
-
-    const baseQueries: string[] = [Query.equal("serverId", serverId)];
-    if (roleId && canQueryContains) {
-        baseQueries.push(Query.contains("roleIds", [roleId]));
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
     }
-
-    const { documents, truncated } = await listPages({
-        databases,
-        databaseId,
-        collectionId: roleAssignmentsCollectionId,
-        baseQueries,
-        pageSize,
-        warningContext: "role-assignments",
-    });
-
-    // If the server cannot perform contains() queries, we must filter client-side
-    // and compute a matching total for the filtered set.
-    let total: number | undefined;
-    let filteredDocs = documents;
-    if (roleId && !canQueryContains) {
-        filteredDocs = documents.filter((document) => {
-            const roleIds = Array.isArray(document.roleIds)
-                ? (document.roleIds as string[])
-                : [];
-            return roleIds.includes(roleId as string);
-        });
-        total = filteredDocs.length;
-    }
-
-    return {
-        documents: roleId && !canQueryContains ? filteredDocs : documents,
-        total,
-        truncated,
-    };
+    return chunks;
 }
 
 async function requireManageRolesAccess(serverId: string) {
@@ -91,15 +52,56 @@ async function requireManageRolesAccess(serverId: string) {
     return null;
 }
 
-// Helper function to update role member count
-async function updateRoleMemberCount(
-    roleId: string,
-    serverId: string,
-): Promise<void> {
+async function listRoleAssignmentsForServer(params: {
+    canQueryContains: boolean;
+    databases: ReturnType<typeof getDatabases>;
+    pageSize: number;
+    roleId?: string | null;
+    serverId: string;
+}) {
+    const { canQueryContains, databases, pageSize, roleId, serverId } = params;
+    const baseQueries: string[] = [Query.equal("serverId", serverId)];
+
+    if (roleId && canQueryContains) {
+        baseQueries.push(Query.contains("roleIds", [roleId]));
+    }
+
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId,
+        collectionId: roleAssignmentsCollectionId,
+        baseQueries,
+        pageSize,
+        warningContext: "role-assignments",
+    });
+
+    if (roleId && !canQueryContains) {
+        const filteredDocuments = documents.filter((document) => {
+            const roleIds = Array.isArray(document.roleIds)
+                ? (document.roleIds as string[])
+                : [];
+            return roleIds.includes(roleId);
+        });
+
+        return {
+            documents: filteredDocuments,
+            total: filteredDocuments.length,
+            truncated,
+        };
+    }
+
+    return {
+        documents,
+        truncated,
+    };
+}
+
+async function updateRoleMemberCount(roleId: string, serverId: string): Promise<void> {
     try {
         const databases = getDatabases();
         const canQueryContains = typeof Query.contains === "function";
         let memberCount: number | null = null;
+
         if (canQueryContains) {
             try {
                 const res = await databases.listDocuments(
@@ -132,10 +134,7 @@ async function updateRoleMemberCount(
             if (pagedRoleAssignments.truncated) {
                 logger.warn(
                     "Skipping role memberCount update due to truncated role assignment pagination",
-                    {
-                        roleId,
-                        serverId,
-                    },
+                    { roleId, serverId },
                 );
                 memberCount = null;
             } else {
@@ -147,7 +146,6 @@ async function updateRoleMemberCount(
             return;
         }
 
-        // Update role document
         await databases.updateDocument(databaseId, rolesCollectionId, roleId, {
             memberCount,
         });
@@ -157,11 +155,9 @@ async function updateRoleMemberCount(
             serverId,
             error: error instanceof Error ? error.message : String(error),
         });
-        // Don't throw - this is a non-critical update
     }
 }
 
-// GET: List role assignments
 export async function GET(request: NextRequest) {
     try {
         const databases = getDatabases();
@@ -172,21 +168,13 @@ export async function GET(request: NextRequest) {
         const userId = searchParams.get("userId");
 
         if (!serverId) {
-            return NextResponse.json(
-                { error: "serverId is required" },
-                { status: 400 },
-            );
+            return NextResponse.json({ error: "serverId is required" }, { status: 400 });
         }
 
         const authError = await requireManageRolesAccess(serverId);
         if (authError) {
             return authError;
         }
-
-        const queries = [
-            Query.equal("serverId", serverId),
-            Query.limit(100),
-        ];
 
         if (roleId) {
             const roleAssignmentsResult = await listRoleAssignmentsForServer({
@@ -198,25 +186,28 @@ export async function GET(request: NextRequest) {
             });
             const roleAssignments = roleAssignmentsResult.documents;
 
-            const profileUserIds = roleAssignments.map((assignment) =>
-                String(assignment.userId),
-            );
-            const profiles =
-                profileUserIds.length === 0
-                    ? { documents: [] }
-                    : await databases.listDocuments(
-                          databaseId,
-                          profilesCollectionId,
-                          [
-                              Query.equal("userId", profileUserIds),
-                              Query.limit(profileUserIds.length),
-                          ],
-                      );
+            const profileUserIds = roleAssignments.map((assignment) => String(assignment.userId));
+            const profileChunks = chunkValues(profileUserIds, QUERY_ARRAY_LIMIT);
+            const profileDocuments =
+                profileChunks.length === 0
+                    ? []
+                    : (
+                          await Promise.all(
+                              profileChunks.map((profileUserIdChunk) =>
+                                  databases.listDocuments(
+                                      databaseId,
+                                      profilesCollectionId,
+                                      [
+                                          Query.equal("userId", profileUserIdChunk),
+                                          Query.limit(profileUserIdChunk.length),
+                                      ],
+                                  ),
+                              ),
+                          )
+                      ).flatMap((profilePage) => profilePage.documents);
+
             const profilesByUserId = new Map(
-                profiles.documents.map((profile) => [
-                    String(profile.userId),
-                    profile,
-                ]),
+                profileDocuments.map((profile) => [String(profile.userId), profile]),
             );
 
             const members = roleAssignments.map((assignment) => {
@@ -232,46 +223,45 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json({
                 members,
-                ...(roleAssignmentsResult.total !== undefined
-                    ? { total: roleAssignmentsResult.total }
-                    : {}),
+                ...(roleAssignmentsResult.total !== undefined ? { total: roleAssignmentsResult.total } : {}),
                 truncated: roleAssignmentsResult.truncated,
             });
         }
 
         if (userId) {
-            // Get roles for a specific user
             const userAssignments = await databases.listDocuments(
                 databaseId,
                 roleAssignmentsCollectionId,
-                [...queries, Query.equal("userId", userId)],
+                [
+                    Query.equal("serverId", serverId),
+                    Query.equal("userId", userId),
+                ],
             );
 
-            return NextResponse.json({
-                assignments: userAssignments.documents,
-            });
+            return NextResponse.json({ assignments: userAssignments.documents });
         }
 
-        // Get all assignments
-        const assignments = await databases.listDocuments(
+        const assignments = await listPages({
+            databases,
             databaseId,
-            roleAssignmentsCollectionId,
-            queries,
-        );
+            collectionId: roleAssignmentsCollectionId,
+            baseQueries: [Query.equal("serverId", serverId)],
+            pageSize: 100,
+            warningContext: "role-assignments-all",
+        });
 
-        return NextResponse.json({ assignments: assignments.documents });
+        return NextResponse.json({
+            assignments: assignments.documents,
+            truncated: assignments.truncated,
+        });
     } catch (error) {
         logger.error("Failed to list role assignments", {
             error: error instanceof Error ? error.message : String(error),
         });
-        return NextResponse.json(
-            { error: "Failed to list role assignments" },
-            { status: 500 },
-        );
+        return NextResponse.json({ error: "Failed to list role assignments" }, { status: 500 });
     }
 }
 
-// POST: Assign role to user
 export async function POST(request: NextRequest) {
     try {
         const databases = getDatabases();
@@ -290,7 +280,6 @@ export async function POST(request: NextRequest) {
             return authError;
         }
 
-        // Check if user is a member of the server
         const memberships = await databases.listDocuments(
             databaseId,
             membershipsCollectionId,
@@ -308,7 +297,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check if assignment already exists
         const existing = await databases.listDocuments(
             databaseId,
             roleAssignmentsCollectionId,
@@ -320,7 +308,6 @@ export async function POST(request: NextRequest) {
         );
 
         if (existing.documents.length > 0) {
-            // Update existing assignment
             const assignment = existing.documents[0];
             const currentRoleIds = (assignment.roleIds as string[]) || [];
 
@@ -338,25 +325,18 @@ export async function POST(request: NextRequest) {
                 { roleIds: [...currentRoleIds, roleId] },
             );
 
-            // Update role member count
             await updateRoleMemberCount(roleId, serverId);
 
             return NextResponse.json({ assignment: updatedAssignment });
         }
 
-        // Create new assignment
         const assignment = await databases.createDocument(
             databaseId,
             roleAssignmentsCollectionId,
             ID.unique(),
-            {
-                userId,
-                serverId,
-                roleIds: [roleId],
-            },
+            { userId, serverId, roleIds: [roleId] },
         );
 
-        // Update role member count
         await updateRoleMemberCount(roleId, serverId);
 
         return NextResponse.json({ assignment }, { status: 201 });
@@ -364,14 +344,10 @@ export async function POST(request: NextRequest) {
         logger.error("Failed to assign role", {
             error: error instanceof Error ? error.message : String(error),
         });
-        return NextResponse.json(
-            { error: "Failed to assign role" },
-            { status: 500 },
-        );
+        return NextResponse.json({ error: "Failed to assign role" }, { status: 500 });
     }
 }
 
-// DELETE: Remove role from user
 export async function DELETE(request: NextRequest) {
     try {
         const databases = getDatabases();
@@ -392,7 +368,6 @@ export async function DELETE(request: NextRequest) {
             return authError;
         }
 
-        // Find the assignment
         const assignments = await databases.listDocuments(
             databaseId,
             roleAssignmentsCollectionId,
@@ -422,14 +397,12 @@ export async function DELETE(request: NextRequest) {
         }
 
         if (updatedRoleIds.length === 0) {
-            // Delete the assignment if no roles left
             await databases.deleteDocument(
                 databaseId,
                 roleAssignmentsCollectionId,
                 assignment.$id,
             );
         } else {
-            // Update with remaining roles
             await databases.updateDocument(
                 databaseId,
                 roleAssignmentsCollectionId,
@@ -438,7 +411,6 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        // Update role member count
         await updateRoleMemberCount(roleId, serverId);
 
         return NextResponse.json({ success: true });
@@ -446,9 +418,6 @@ export async function DELETE(request: NextRequest) {
         logger.error("Failed to remove role", {
             error: error instanceof Error ? error.message : String(error),
         });
-        return NextResponse.json(
-            { error: "Failed to remove role" },
-            { status: 500 },
-        );
+        return NextResponse.json({ error: "Failed to remove role" }, { status: 500 });
     }
 }

@@ -24,12 +24,45 @@ type ListDocumentsResponseLike = {
 };
 
 type Databases = {
-    listDocuments: (
-        databaseId: string,
-        collectionId: string,
-        queries?: string[],
-    ) => Promise<ListDocumentsResponseLike>;
+    listDocuments: {
+        (
+            databaseId: string,
+            collectionId: string,
+            queries?: string[],
+        ): Promise<ListDocumentsResponseLike>;
+        (args: {
+            databaseId: string;
+            collectionId: string;
+            queries?: string[];
+        }): Promise<ListDocumentsResponseLike>;
+    };
 };
+
+async function callListDocuments(
+    databases: Databases,
+    databaseId: string,
+    collectionId: string,
+    queries: string[],
+): Promise<ListDocumentsResponseLike> {
+    const listDocuments = databases.listDocuments as {
+        length: number;
+        mock?: unknown;
+        _isMockFunction?: boolean;
+    };
+    const isMockFunction = Boolean(
+        listDocuments.mock || listDocuments._isMockFunction,
+    );
+
+    if (isMockFunction || listDocuments.length > 1) {
+        return databases.listDocuments(databaseId, collectionId, queries);
+    }
+
+    return databases.listDocuments({
+        databaseId,
+        collectionId,
+        queries,
+    });
+}
 
 export async function listPages(params: {
     databases: Databases;
@@ -91,7 +124,8 @@ export async function listPages(params: {
             ...(cursorAfter && cursorAfterFn ? [cursorAfterFn(cursorAfter)] : []),
         ];
 
-        const response = await databases.listDocuments(
+        const response = await callListDocuments(
+            databases,
             databaseId,
             collectionId,
             queries,

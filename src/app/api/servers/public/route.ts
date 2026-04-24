@@ -6,6 +6,8 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
+import { logger } from "@/lib/newrelic-utils";
+import type { Server } from "@/lib/types";
 
 type ServerDocument = Models.Document & {
 	description?: string | null;
@@ -52,12 +54,22 @@ export async function GET() {
 		);
 
 		// Enrich servers with actual member counts from memberships
-		const servers = publicServerDocuments.map((doc) =>
-			mapServerDocument(
-				doc,
-				memberCountsByServerId.get(String(doc.$id)) ?? 0,
-			),
-		);
+		const servers = [] as Server[];
+		for (const doc of publicServerDocuments) {
+			try {
+				servers.push(
+					mapServerDocument(
+						doc,
+						memberCountsByServerId.get(String(doc.$id)) ?? 0,
+					),
+				);
+			} catch (error) {
+				logger.error("Failed to map public server document", {
+					serverId: String(doc.$id),
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
 
 		return NextResponse.json({ servers });
 	} catch (error) {

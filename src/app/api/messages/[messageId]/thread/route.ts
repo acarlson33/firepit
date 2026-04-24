@@ -209,6 +209,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         // If parent is already a thread reply, use its threadId (flatten threads to single level)
         const actualThreadId = parentMessage.threadId ?? messageId;
+        const normalizedMentionsFromInput = mentions
+            ? normalizeMentionIds(mentions)
+            : [];
 
         // Create the thread reply message
         const messageData: Record<string, unknown> = {
@@ -229,11 +232,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (normalizedAttachments.length > 0) {
             messageData.attachments = JSON.stringify(normalizedAttachments);
         }
-        if (mentions) {
-            const normalized = normalizeMentionIds(mentions);
-            if (normalized.length > 0) {
-                messageData.mentions = normalized;
-            }
+        if (normalizedMentionsFromInput.length > 0) {
+            messageData.mentions = normalizedMentionsFromInput;
         }
 
         // Set permissions
@@ -335,23 +335,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
         }
 
-        if (mentions) {
-            const normalized = normalizeMentionIds(mentions);
-            if (normalized.length > 0) {
-                await upsertMentionInboxItems({
-                    authorUserId: user.$id,
-                    contextId: String(parentMessage.channelId),
-                    contextKind: "channel",
-                    latestActivityAt: String(
-                        newReply.$createdAt ?? new Date().toISOString(),
-                    ),
-                    mentions: normalized,
-                    messageId: String(newReply.$id),
-                    parentMessageId: actualThreadId,
-                    previewText: text || "",
-                    serverId: parentMessage.serverId,
-                });
-            }
+        if (normalizedMentionsFromInput.length > 0) {
+            await upsertMentionInboxItems({
+                authorUserId: user.$id,
+                contextId: String(parentMessage.channelId),
+                contextKind: "channel",
+                latestActivityAt: String(
+                    newReply.$createdAt ?? new Date().toISOString(),
+                ),
+                mentions: normalizedMentionsFromInput,
+                messageId: String(newReply.$id),
+                parentMessageId: actualThreadId,
+                previewText: text || "",
+                serverId: parentMessage.serverId,
+            });
         }
 
         const duration = Date.now() - startTime;
@@ -364,9 +361,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         });
 
         // Use the mentions we normalized earlier when constructing messageData if available
-        const normalizedMentions = newReply.mentions
+        const normalizedMentions = Array.isArray(newReply.mentions)
             ? normalizeMentionIds(newReply.mentions)
-            : undefined;
+            : normalizedMentionsFromInput;
 
         const {
             mentions: _rawMentions,

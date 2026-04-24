@@ -260,12 +260,17 @@ export function createServer(
             }
 
             // Get actual member count for return value
+            const serverRecord = {
+                ...serverData,
+                ...s,
+                ownerId,
+            };
             const actualMemberCount = await getActualMemberCount(
                 getDatabases(),
                 String(s.$id),
             );
 
-            return mapServerDocument(s, actualMemberCount);
+            return mapServerDocument(serverRecord, actualMemberCount);
         } catch (e) {
             throw normalizeError(e);
         }

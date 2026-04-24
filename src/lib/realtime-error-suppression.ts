@@ -20,26 +20,6 @@ let subscriptionMarkerCounter = 0;
 let activeSuppressionCounter = 0;
 let originalConsoleError: ConsoleErrorHandler | null = null;
 
-const shouldExposeTestingReset = process.env.NODE_ENV === "test";
-
-function resetInternalState() {
-    subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
-    activeSuppressions.length = 0;
-    subscriptionMarkerCounter = 0;
-    activeSuppressionCounter = 0;
-
-    if (originalConsoleError) {
-        // biome-ignore lint/suspicious/noConsole: Restoring captured console.error during test reset.
-        console.error = originalConsoleError;
-    }
-
-    originalConsoleError = null;
-}
-
-const resetForTesting = shouldExposeTestingReset
-    ? resetInternalState
-    : undefined;
-
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
 
@@ -153,28 +133,6 @@ function defaultSuppressionPredicate(
 }
 
 /**
- * Suppress known noisy Appwrite websocket console errors while performing
- * intentional realtime teardown operations.
- */
-async function withSuppressedRealtimeCloseErrors<T>(
-    operation: () => Promise<T>,
-    options?: {
-        marker?: string;
-        shouldSuppress?: ScopedConsoleErrorPredicate;
-    },
-): Promise<T> {
-    const marker = options?.marker ?? "realtime-close";
-    const shouldSuppress =
-        options?.shouldSuppress ?? defaultSuppressionPredicate;
-
-    return runWithScopedConsoleErrorSuppressed(
-        operation,
-        marker,
-        shouldSuppress,
-    );
-}
-
-/**
  * Close a realtime subscription while suppressing expected websocket teardown noise.
  */
 export async function closeSubscriptionSafely(
@@ -191,14 +149,12 @@ export async function closeSubscriptionSafely(
             : subscription.close.bind(subscription);
 
     try {
-        await withSuppressedRealtimeCloseErrors(
+        await runWithScopedConsoleErrorSuppressed(
             async () => {
                 await Promise.resolve(close());
             },
-            {
-                marker,
-                shouldSuppress: defaultSuppressionPredicate,
-            },
+            marker,
+            defaultSuppressionPredicate,
         );
     } catch (error) {
         if (process.env.NODE_ENV !== "production") {

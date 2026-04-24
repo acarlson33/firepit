@@ -4,6 +4,7 @@ import { Query } from "node-appwrite";
 
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
@@ -39,26 +40,7 @@ type ListDocumentsResponse = Awaited<
 
 
 function isNotFoundError(error: unknown): boolean {
-    if (!error || typeof error !== "object") {
-        return false;
-    }
-
-    const code = "code" in error ? Number(error.code) : Number.NaN;
-    if (code === 404) {
-        return true;
-    }
-
-    const type = "type" in error ? String(error.type).toLowerCase() : "";
-    if (type.includes("not_found") || type.includes("document_not_found")) {
-        return true;
-    }
-
-    const message =
-        "message" in error ? String(error.message).toLowerCase() : "";
-    return (
-        message.includes("not found") ||
-        message.includes("document with the requested id could not be found")
-    );
+    return isDocumentNotFoundError(error);
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -127,8 +109,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const updates: Record<string, unknown> = {};
     const changedFields: string[] = [];
     let defaultServersToClear: Array<{ $id: string }> = [];
-    
-    let resetResults: PromiseSettledResult<unknown>[] | undefined;
     if (Object.hasOwn(payload, "name")) {
         if (typeof payload.name !== "string") {
             return NextResponse.json(
@@ -316,76 +296,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     );
     const previousDefaultOnSignup = serverDocument.defaultOnSignup === true;
 
-    // If we're setting this server as the default signup server, clear
-    // previous defaults before persisting the primary server update. This
-    // ensures we don't mutate the primary server if clearing prior defaults
-    // fails.
-    if (payload.defaultOnSignup === true && defaultServersToClear.length > 0) {
-        resetResults = await Promise.allSettled(
-            defaultServersToClear.map((defaultServer) =>
-                databases.updateDocument(
-                    env.databaseId,
-                    env.collections.servers,
-                    defaultServer.$id,
-                    { defaultOnSignup: false },
-                ),
-            ),
-        );
-
-        let hadResetFailure = false;
-        for (const [index, result] of resetResults.entries()) {
-            if (result.status !== "rejected") {
-                continue;
-            }
-
-            hadResetFailure = true;
-            logger.error("Failed to unset previous default signup server", {
-                defaultServerId: defaultServersToClear[index]?.$id,
-                error:
-                    result.reason instanceof Error
-                        ? result.reason.message
-                        : String(result.reason),
-                serverId,
-                userId: session.$id,
-            });
-        }
-
-        if (hadResetFailure) {
-            // Restore any successfully-cleared servers by referencing the
-            // corresponding entries in defaultServersToClear (no null
-            // placeholders). This keeps indices meaningful.
-            const successfullyCleared = resetResults
-                .map((r, idx) => (r.status === "fulfilled" ? defaultServersToClear[idx] : null))
-                .filter((v): v is { $id: string } => v !== null);
-
-            const restorePromises = successfullyCleared.map((cleared) =>
-                databases.updateDocument(
-                    env.databaseId,
-                    env.collections.servers,
-                    cleared.$id,
-                    { defaultOnSignup: true },
-                ),
-            );
-
-            const restoreResults = await Promise.allSettled(restorePromises);
-            for (const [index, r] of restoreResults.entries()) {
-                if (r.status === "rejected") {
-                    logger.error("Failed to restore cleared default signup server during rollback", {
-                        defaultServerId: successfullyCleared[index]?.$id,
-                        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-                        serverId,
-                        userId: session.$id,
-                    });
-                }
-            }
-
-            return NextResponse.json(
-                { error: "Failed to clear existing default signup server" },
-                { status: 500 },
-            );
-        }
-    }
-
     let updatedServerDocument: Record<string, unknown>;
     try {
         updatedServerDocument = (await databases.updateDocument(
@@ -402,41 +312,37 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             userId: session.$id,
         });
 
-        // If we previously cleared other defaultOnSignup servers, attempt to
-        // restore them to avoid leaving the system with no defaults.
-        if (defaultServersToClear.length > 0 && resetResults) {
-            const successfullyCleared = resetResults
-                .map((r, idx) => (r.status === "fulfilled" ? defaultServersToClear[idx] : null))
-                .filter((v): v is { $id: string } => v !== null);
-
-            if (successfullyCleared.length > 0) {
-                const restorePromises = successfullyCleared.map((cleared) =>
-                    databases.updateDocument(
-                        env.databaseId,
-                        env.collections.servers,
-                        cleared.$id,
-                        { defaultOnSignup: true },
-                    ),
-                );
-
-                const restoreResults = await Promise.allSettled(restorePromises);
-                for (const [index, r] of restoreResults.entries()) {
-                    if (r.status === "rejected") {
-                        logger.error("Failed to restore cleared default signup server during rollback after primary update failure", {
-                            defaultServerId: successfullyCleared[index]?.$id,
-                            error: r.reason instanceof Error ? r.reason.message : String(r.reason),
-                            serverId,
-                            userId: session.$id,
-                        });
-                    }
-                }
-            }
-        }
-
         return NextResponse.json(
             { error: "Failed to update server" },
             { status: 500 },
         );
+    }
+
+    if (payload.defaultOnSignup === true && defaultServersToClear.length > 0) {
+        const resetResults = await Promise.allSettled(
+            defaultServersToClear.map((defaultServer) =>
+                databases.updateDocument(
+                    env.databaseId,
+                    env.collections.servers,
+                    defaultServer.$id,
+                    { defaultOnSignup: false },
+                ),
+            ),
+        );
+
+        for (const [index, result] of resetResults.entries()) {
+            if (result.status === "rejected") {
+                logger.error("Failed to unset previous default signup server", {
+                    defaultServerId: defaultServersToClear[index]?.$id,
+                    error:
+                        result.reason instanceof Error
+                            ? result.reason.message
+                            : String(result.reason),
+                    serverId,
+                    userId: session.$id,
+                });
+            }
+        }
     }
 
     const staleFileIds = new Set<string>();
@@ -501,9 +407,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const memberCount = await getActualMemberCount(databases, serverId);
+    const nextServerDocument = {
+        ...serverDocument,
+        ...updatedServerDocument,
+        ...payload,
+        serverId,
+    };
 
     return NextResponse.json({
-        server: mapServerDocument(updatedServerDocument, memberCount),
+        server: mapServerDocument(nextServerDocument, memberCount),
     });
 }
 
@@ -523,7 +435,19 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     try {
         serverDocument = (await databases.getDocument(env.databaseId, env.collections.servers, serverId)) as unknown as Record<string, unknown>;
     } catch (error) {
-        return NextResponse.json({ error: "Server not found" }, { status: 404 });
+        if (isNotFoundError(error)) {
+            return NextResponse.json({ error: "Server not found" }, { status: 404 });
+        }
+
+        logger.error("Failed to load server during DELETE", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+        return NextResponse.json(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
     }
 
     const isOwner = String(serverDocument.ownerId) === session.$id;
@@ -535,11 +459,24 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     try {
+        await recordAudit("server_deleted", serverId, session.$id, {
+            serverId,
+            userId: session.$id,
+        });
+
         // Best-effort cleanup performed in lib.deleteServer; reuse logic by calling it server-side
         const { deleteServer } = await import("@/lib/appwrite-servers");
         await deleteServer(serverId);
         return NextResponse.json({ success: true });
     } catch (error) {
-        return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to delete server" }, { status: 500 });
+        logger.error("Failed to delete server", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+        return NextResponse.json(
+            { error: "Failed to delete server" },
+            { status: 500 },
+        );
     }
 }
