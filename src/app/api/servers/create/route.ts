@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { Query } from "node-appwrite";
 
 import { createServer } from "@/lib/appwrite-servers";
+import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
@@ -23,7 +26,7 @@ export async function POST(request: Request) {
 
         let rawPayload: unknown;
         try {
-            rawPayload = (await request.json()) as unknown;
+            rawPayload = await request.json();
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
@@ -151,6 +154,56 @@ export async function POST(request: Request) {
             bypassFeatureCheck: true,
         });
 
+        let membership: {
+            $id: string;
+            $createdAt: string;
+            role: "owner" | "member";
+            serverId: string;
+            userId: string;
+        } | null = null;
+
+        try {
+            const env = getEnvConfig();
+            const { databases } = getServerClient();
+            const membershipsCollectionId = env.collections.memberships;
+
+            if (membershipsCollectionId) {
+                const membershipResult = await databases.listDocuments(
+                    env.databaseId,
+                    membershipsCollectionId,
+                    [
+                        Query.equal("serverId", server.$id),
+                        Query.equal("userId", session.$id),
+                        Query.limit(1),
+                    ],
+                );
+
+                const membershipDoc = membershipResult.documents.at(0) as
+                    | Record<string, unknown>
+                    | undefined;
+
+                if (membershipDoc) {
+                    membership = {
+                        $id: String(membershipDoc.$id),
+                        $createdAt: String(membershipDoc.$createdAt ?? ""),
+                        role:
+                            membershipDoc.role === "owner" ? "owner" : "member",
+                        serverId: String(membershipDoc.serverId),
+                        userId: String(membershipDoc.userId),
+                    };
+                }
+            }
+        } catch (membershipError) {
+            logger.warn("Failed to load owner membership after server creation", {
+                error:
+                    membershipError instanceof Error
+                        ? membershipError.message
+                        : String(membershipError),
+                serverId: server.$id,
+                userId: session.$id,
+            });
+        }
+
         const telemetryTask = getPostHogClient().capture({
             distinctId: session.$id,
             event: "server_created",
@@ -171,6 +224,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
+            membership,
             server: {
                 $id: server.$id,
                 $createdAt: server.$createdAt,

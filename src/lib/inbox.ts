@@ -3,6 +3,7 @@ import { Query } from "node-appwrite";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getServerClient } from "@/lib/appwrite-server";
 import { logger, recordEvent, recordMetric } from "@/lib/newrelic-utils";
 import {
@@ -311,16 +312,37 @@ async function listAllDocuments(params: {
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-        m.listPages({
-            databases,
-            databaseId: env.databaseId,
-            collectionId,
-            baseQueries: [...queries, ...(selectFields && selectFields.length > 0 ? selectQuery(selectFields) : [])],
-            pageSize: pageLimit,
-            warningContext: `listAllDocuments:${collectionId}`,
-        }),
-    );
+    const baseQueries = [
+        ...queries,
+        ...(selectFields && selectFields.length > 0 ? selectQuery(selectFields) : []),
+    ];
+
+    let shouldSelectFields = Boolean(selectFields && selectFields.length > 0);
+    let documents: Array<Record<string, unknown>> = [];
+
+    while (true) {
+        try {
+            const response = await listPages({
+                databases,
+                databaseId: env.databaseId,
+                collectionId,
+                baseQueries: shouldSelectFields
+                    ? baseQueries
+                    : [...queries],
+                pageSize: pageLimit,
+                warningContext: `listAllDocuments:${collectionId}`,
+            });
+            documents = response.documents;
+            break;
+        } catch (error) {
+            if (shouldSelectFields && isSchemaAttributeMissingQueryError(error)) {
+                shouldSelectFields = false;
+                continue;
+            }
+
+            throw error;
+        }
+    }
 
     return documents as Record<string, unknown>[];
 }
@@ -346,48 +368,63 @@ async function listDocumentsByIds(params: {
         return [] as Record<string, unknown>[];
     }
 
+    const contextIdChunks =
+        contextField && contextIds && contextIds.length > 0
+            ? chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE)
+            : [undefined];
+
     const responses = await Promise.all(
-        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).map(async (idChunk) => {
-            let shouldSelectFields = Boolean(
-                selectFields && selectFields.length > 0,
-            );
+        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).flatMap((idChunk) =>
+            contextIdChunks.map(async (contextIdChunk) => {
+                let shouldSelectFields = Boolean(
+                    selectFields && selectFields.length > 0,
+                );
 
-            while (true) {
-                const queries = [
-                    Query.equal("$id", idChunk),
-                    Query.limit(idChunk.length),
-                ];
-                if (contextField && contextIds && contextIds.length > 0) {
-                    queries.push(Query.equal(contextField, contextIds));
-                }
-                if (shouldSelectFields && selectFields && selectFields.length > 0) {
-                    queries.push(...selectQuery(selectFields));
-                }
-
-                try {
-                    return await databases.listDocuments(
-                        env.databaseId,
-                        collectionId,
-                        queries,
-                    );
-                } catch (error) {
-                    if (
-                        shouldSelectFields &&
-                        isSchemaAttributeMissingQueryError(error)
-                    ) {
-                        shouldSelectFields = false;
-                        continue;
+                while (true) {
+                    const queries = [
+                        Query.equal("$id", idChunk),
+                        Query.limit(idChunk.length),
+                    ];
+                    if (contextField && contextIdChunk && contextIdChunk.length > 0) {
+                        queries.push(Query.equal(contextField, contextIdChunk));
+                    }
+                    if (shouldSelectFields && selectFields && selectFields.length > 0) {
+                        queries.push(...selectQuery(selectFields));
                     }
 
-                    throw error;
+                    try {
+                        return await databases.listDocuments(
+                            env.databaseId,
+                            collectionId,
+                            queries,
+                        );
+                    } catch (error) {
+                        if (
+                            shouldSelectFields &&
+                            isSchemaAttributeMissingQueryError(error)
+                        ) {
+                            shouldSelectFields = false;
+                            continue;
+                        }
+
+                        throw error;
+                    }
                 }
-            }
-        }),
+            }),
+        ),
     );
 
-    return responses.flatMap(
-        (response) => response.documents as unknown as Record<string, unknown>[],
-    );
+    const deduped = new Map<string, Record<string, unknown>>();
+    for (const response of responses) {
+        const docs = response.documents as unknown as Record<string, unknown>[];
+        for (const doc of docs) {
+            if (typeof doc.$id === "string") {
+                deduped.set(doc.$id, doc);
+            }
+        }
+    }
+
+    return Array.from(deduped.values());
 }
 
 function toThreadReplySignals(
@@ -439,14 +476,21 @@ async function listThreadReplySignals(params: {
             ? INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS
             : INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS;
 
-    const documents = await listAllDocuments({
-        collectionId,
-        queries: [
-            Query.equal(contextField, contextIds),
-            Query.isNotNull("threadId"),
-        ],
-        selectFields,
-    });
+    const documents = (
+        await Promise.all(
+            chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
+                async (contextIdChunk) =>
+                    listAllDocuments({
+                        collectionId,
+                        queries: [
+                            Query.equal(contextField, contextIdChunk),
+                            Query.isNotNull("threadId"),
+                        ],
+                        selectFields,
+                    }),
+            ),
+        )
+    ).flat();
 
     return toThreadReplySignals(documents);
 }
@@ -854,14 +898,21 @@ async function listUnreadConversationThreadItems(
         userId,
     });
 
-    const threadParents = await listAllDocuments({
-        collectionId: env.collections.directMessages,
-        queries: [
-            Query.equal("conversationId", conversationIds),
-            Query.greaterThan("threadMessageCount", 0),
-        ],
-        selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
-    });
+    const threadParents = (
+        await Promise.all(
+            chunkArray(conversationIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
+                async (conversationIdChunk) =>
+                    listAllDocuments({
+                        collectionId: env.collections.directMessages,
+                        queries: [
+                            Query.equal("conversationId", conversationIdChunk),
+                            Query.greaterThan("threadMessageCount", 0),
+                        ],
+                        selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
+                    }),
+            ),
+        )
+    ).flat();
 
     const replySignalsByParentId = await listThreadReplySignals({
         collectionId: env.collections.directMessages,

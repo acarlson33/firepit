@@ -212,14 +212,24 @@ export async function GET(request: Request, context: RouteContext) {
         }
 
         if (orphanUserIds.length > 0) {
-            logger.info("Detected orphan memberships during member listing", {
+            logger.warn("Detected orphan memberships during member listing", {
                 serverId,
                 sampleUserIds: orphanUserIds.slice(0, 10),
             });
-            // Record a gauge-style metric with the orphan count as the value and avoid proliferating tags
-            recordMetric("server.orphan_membership.count", orphanUserIds.length, {
-                serverId,
-            });
+
+            try {
+                recordMetric(
+                    "server.orphan_membership.count",
+                    orphanUserIds.length,
+                );
+            } catch (metricError) {
+                logger.warn("Failed to record orphan membership metric", {
+                    error:
+                        metricError instanceof Error
+                            ? metricError.message
+                            : String(metricError),
+                });
+            }
         }
 
         if (membershipsTruncated) {

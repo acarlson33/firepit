@@ -5,6 +5,8 @@ import { Query } from "node-appwrite";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
+import { listPages } from "@/lib/appwrite-pagination";
+import { deleteServer } from "@/lib/appwrite-servers";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
@@ -32,16 +34,6 @@ type PatchPayload = {
     isPublic?: unknown;
     defaultOnSignup?: unknown;
 };
-
-type ListDocumentsResponse = Awaited<
-    ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
->;
-
-
-
-function isNotFoundError(error: unknown): boolean {
-    return isDocumentNotFoundError(error);
-}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
     const session = await getServerSession();
@@ -74,7 +66,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
         serverDocument = response as unknown as Record<string, unknown>;
     } catch (error) {
-        if (isNotFoundError(error)) {
+        if (isDocumentNotFoundError(error)) {
             return NextResponse.json(
                 { error: "Server not found" },
                 { status: 404 },
@@ -213,16 +205,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 }
                 baseQueries.push(Query.equal("defaultOnSignup", true));
 
-                const { documents } = await import("@/lib/appwrite-pagination").then((m) =>
-                    m.listPages({
-                        databases,
-                        databaseId: env.databaseId,
-                        collectionId: env.collections.servers,
-                        baseQueries,
-                        pageSize,
-                        warningContext: "listDefaultSignupServersPATCH",
-                    }),
-                );
+                const { documents } = await listPages({
+                    databases,
+                    databaseId: env.databaseId,
+                    collectionId: env.collections.servers,
+                    baseQueries,
+                    pageSize,
+                    warningContext: "listDefaultSignupServersPATCH",
+                });
 
                 for (const document of documents) {
                     if (typeof document.$id === "string") {
@@ -367,27 +357,35 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 });
             }
 
-            const restoreResults = await Promise.allSettled(
-                resetResults.flatMap((result, index) =>
+            const restoreItems = resetResults
+                .map((result, index) => ({ result, index }))
+                .flatMap(({ result, index }) =>
                     result.status === "fulfilled"
                         ? [
-                              databases.updateDocument(
-                                  env.databaseId,
-                                  env.collections.servers,
-                                  defaultServersToClear[index].$id,
-                                  { defaultOnSignup: true },
-                              ),
+                              {
+                                  serverId: defaultServersToClear[index].$id,
+                                  promise: databases.updateDocument(
+                                      env.databaseId,
+                                      env.collections.servers,
+                                      defaultServersToClear[index].$id,
+                                      { defaultOnSignup: true },
+                                  ),
+                              },
                           ]
                         : [],
-                ),
+                );
+
+            const restoreResults = await Promise.allSettled(
+                restoreItems.map((i) => i.promise),
             );
 
             for (const [index, result] of restoreResults.entries()) {
                 if (result.status === "rejected") {
+                    const failedId = restoreItems[index]?.serverId;
                     logger.error(
                         "Failed to rollback cleared default signup server",
                         {
-                            rollbackIndex: index,
+                            failedServerId: failedId,
                             serverId,
                             userId: session.$id,
                             error:
@@ -471,7 +469,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const nextServerDocument = {
         ...serverDocument,
         ...updatedServerDocument,
-        ...payload,
         serverId,
     };
 
@@ -496,7 +493,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     try {
         serverDocument = (await databases.getDocument(env.databaseId, env.collections.servers, serverId)) as unknown as Record<string, unknown>;
     } catch (error) {
-        if (isNotFoundError(error)) {
+        if (isDocumentNotFoundError(error)) {
             return NextResponse.json({ error: "Server not found" }, { status: 404 });
         }
 
@@ -521,15 +518,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     try {
         // Best-effort cleanup performed in lib.deleteServer; reuse logic by calling it server-side
-        const { deleteServer } = await import("@/lib/appwrite-servers");
         await deleteServer(serverId);
-
-        await recordAudit("server_deleted", serverId, session.$id, {
-            serverId,
-            userId: session.$id,
-        });
-
-        return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Failed to delete server", {
             error: error instanceof Error ? error.message : String(error),
@@ -541,4 +530,19 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
             { status: 500 },
         );
     }
+
+    try {
+        await recordAudit("server_deleted", serverId, session.$id, {
+            serverId,
+            userId: session.$id,
+        });
+    } catch (error) {
+        logger.error("Failed to record server deleted audit entry", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+    }
+
+    return NextResponse.json({ success: true });
 }

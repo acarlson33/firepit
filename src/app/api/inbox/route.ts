@@ -529,18 +529,23 @@ export async function PATCH(request: NextRequest) {
             limit: Number.POSITIVE_INFINITY,
             userId: session.$id,
         });
-        const scopedItems =
-            contextKind && contextId
-                ? inbox.items.filter(
-                      (item) =>
-                          item.contextKind === contextKind &&
-                          item.contextId === contextId,
-                  )
-                : contextKind
-                  ? inbox.items.filter(
-                        (item) => item.contextKind === contextKind,
-                    )
-                  : inbox.items;
+        const scopedItems = (() => {
+            if (contextKind && contextId) {
+                return inbox.items.filter(
+                    (item) =>
+                        item.contextKind === contextKind &&
+                        item.contextId === contextId,
+                );
+            }
+
+            if (contextKind) {
+                return inbox.items.filter(
+                    (item) => item.contextKind === contextKind,
+                );
+            }
+
+            return inbox.items;
+        })();
 
         const mentionItemIds = scopedItems
             .filter((item) => item.kind === "mention")

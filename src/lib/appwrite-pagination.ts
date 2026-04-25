@@ -1,9 +1,21 @@
 import { Query } from "appwrite";
 
-const logger = {
-    warn: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
-    info: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
-    error: (_msg: string, _attrs?: Record<string, unknown>) => undefined,
+export type PaginationLogger = {
+    warn: (msg: string, attrs?: Record<string, unknown>) => void;
+    info: (msg: string, attrs?: Record<string, unknown>) => void;
+    error: (msg: string, attrs?: Record<string, unknown>) => void;
+};
+
+const defaultLogger: PaginationLogger = {
+    warn: (msg, attrs) => {
+        console.warn(msg, attrs ?? {});
+    },
+    info: (msg, attrs) => {
+        console.info(msg, attrs ?? {});
+    },
+    error: (msg, attrs) => {
+        console.error(msg, attrs ?? {});
+    },
 };
 
 type ListDocumentsResponseLike = {
@@ -32,19 +44,27 @@ async function callListDocuments(
     collectionId: string,
     queries: string[],
 ): Promise<ListDocumentsResponseLike> {
-    const listDocuments = databases.listDocuments as { length: number };
-
-    if (listDocuments.length > 1) {
+    try {
+        return await databases.listDocuments({
+            databaseId,
+            collectionId,
+            queries,
+        });
+    } catch {
         return databases.listDocuments(databaseId, collectionId, queries);
     }
-
-    return databases.listDocuments({
-        databaseId,
-        collectionId,
-        queries,
-    });
 }
 
+export type ListPagesResult = {
+    documents: Array<Record<string, unknown>>;
+    truncated: boolean;
+};
+
+/**
+ * Lists documents across pages using cursor pagination when available.
+ * - `logger` controls warning/error visibility; defaults to console-based logging.
+ * - `highVolumeMultiplier` controls when high-volume warnings fire: `total > pageSize * highVolumeMultiplier`.
+ */
 export async function listPages(params: {
     databases: Databases;
     databaseId: string;
@@ -54,7 +74,9 @@ export async function listPages(params: {
     warningContext?: string;
     maxDocs?: number;
     maxPages?: number;
-}) {
+    logger?: PaginationLogger;
+    highVolumeMultiplier?: number;
+}): Promise<ListPagesResult> {
     const {
         databases,
         databaseId,
@@ -64,7 +86,11 @@ export async function listPages(params: {
         warningContext = "",
         maxDocs,
         maxPages,
+        logger = defaultLogger,
+        highVolumeMultiplier = 10,
     } = params;
+
+    const warningThreshold = Math.max(1, Math.floor(highVolumeMultiplier));
 
     if (typeof maxPages === "number" && maxPages <= 0) {
         return { documents: [] as Array<Record<string, unknown>>, truncated: false };
@@ -79,10 +105,10 @@ export async function listPages(params: {
     const supportsCursorAfter = typeof queryWithPagination.cursorAfter === "function";
     const supportsOrderAsc = typeof queryWithPagination.orderAsc === "function";
     const orderAsc = supportsOrderAsc
-        ? queryWithPagination.orderAsc?.bind(Query)
+        ? queryWithPagination.orderAsc.bind(Query)
         : undefined;
     const cursorAfterFn = supportsCursorAfter
-        ? queryWithPagination.cursorAfter?.bind(Query)
+        ? queryWithPagination.cursorAfter.bind(Query)
         : undefined;
 
     let cursorAfter: string | null = null;
@@ -116,22 +142,23 @@ export async function listPages(params: {
             queries,
         );
 
-        if (!warnedExceededPageSize && typeof response.total === "number" && response.total > pageSize * 10) {
+        if (!warnedExceededPageSize && typeof response.total === "number" && response.total > pageSize * warningThreshold) {
             logger.warn("Query has unusually high volume", {
                 context: warningContext,
                 fetched: response.documents?.length ?? 0,
                 pageSize,
                 total: response.total,
+                warningThreshold,
             });
             warnedExceededPageSize = true;
         }
 
         const pageDocs = response.documents ?? [];
         for (const document of pageDocs) {
-            documents.push(document as Record<string, unknown>);
-            if (maxDocs && documents.length > maxDocs) {
+            if (maxDocs && documents.length >= maxDocs) {
                 throw new Error(`Pagination exceeded maxDocs (${maxDocs}) for collection ${collectionId}`);
             }
+            documents.push(document as Record<string, unknown>);
         }
 
         const lastDocument = pageDocs.at(-1);
@@ -140,7 +167,6 @@ export async function listPages(params: {
         const pageFull = pageDocs.length >= pageSize && cursorAfter;
         if (!pageFull) {
             hasMore = false;
-            break;
         }
 
         if (typeof maxPages === "number" && pageCount >= maxPages) {

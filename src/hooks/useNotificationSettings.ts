@@ -91,7 +91,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to mute channel");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;
@@ -114,7 +117,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to unmute channel");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;
@@ -141,7 +147,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to mute server");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;
@@ -164,7 +173,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to unmute server");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;
@@ -191,7 +203,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to mute conversation");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;
@@ -214,7 +229,10 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 				throw new Error(errorData.error ?? "Failed to unmute conversation");
 			}
 
-			invalidateNotificationSettingsCache(settings?.userId);
+			const userId = settings?.userId;
+			if (userId) {
+				invalidateNotificationSettingsCache(userId);
+			}
 			// Refetch settings to get updated overrides
 			await fetchSettings();
 			return true;

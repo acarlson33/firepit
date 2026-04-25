@@ -64,10 +64,8 @@ async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
             break;
         }
 
-        // If we fetched exactly pageLimit documents, pagination occurred
-        if (page.documents.length === pageLimit) {
-            paginated = true;
-        }
+        // If we reached this point, pagination occurred.
+        paginated = true;
 
         const lastId = page.documents.at(-1)?.$id;
         if (!lastId) {

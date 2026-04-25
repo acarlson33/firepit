@@ -45,7 +45,7 @@ function LoginFormContent() {
         const nextQuery = updatedSearchParams.toString();
         const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
         window.history.replaceState(null, "", nextUrl);
-    }, [pathname, router, searchParams]);
+    }, [pathname, searchParams]);
 
     const redirectPath = searchParams.get("redirect");
     const destination =

@@ -80,11 +80,31 @@ export async function POST(request: NextRequest) {
 				serverId
 			)) as ServerDocument;
 			isPublicServer = serverDocument.isPublic === true;
-		} catch {
-			logger.warn("Server not found", { serverId });
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+			const isNotFound =
+				typeof error === "object" &&
+				error !== null &&
+				(("code" in error
+					? Number((error as { code?: unknown }).code) === 404
+					: false) || errorMessage.includes("not found"));
+
+			if (isNotFound) {
+				logger.warn("Server not found", { serverId });
+				return NextResponse.json(
+					{ error: "Server not found" },
+					{ status: 404 }
+				);
+			}
+
+			logger.error("Failed to load server during join", {
+				serverId,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			return NextResponse.json(
-				{ error: "Server not found" },
-				{ status: 404 }
+				{ error: "Internal server error" },
+				{ status: 500 }
 			);
 		}
 
@@ -155,9 +175,23 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
+		const safeMembership = membership
+			? {
+				  id: membership.$id,
+				  userId: membership.userId,
+				  serverId: membership.serverId,
+				  role: membership.role,
+				  createdAt: membership.$createdAt,
+				  updatedAt:
+					  typeof (membership as { $updatedAt?: unknown }).$updatedAt === "string"
+						  ? (membership as { $updatedAt?: string }).$updatedAt
+						  : undefined,
+			  }
+			: null;
+
 		return NextResponse.json({
 			success: true,
-			membership,
+			membership: safeMembership,
 		});
 	} catch (error) {
 		recordError(

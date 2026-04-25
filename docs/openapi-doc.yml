@@ -994,6 +994,7 @@ paths:
                                         type: [string, "null"]
                                     orphanCount:
                                         type: integer
+                                        minimum: 0
                                         description: Count of memberships whose profile could not be resolved at read time
 
     /api/servers/{serverId}/permissions:

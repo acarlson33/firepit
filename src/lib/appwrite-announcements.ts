@@ -100,7 +100,16 @@ function getAnnouncementThreadKey(systemSenderUserId: string, recipientId: strin
     return `${systemSenderUserId}:${recipientId}`;
 }
 
-export class ClientError extends Error {}
+export class ClientError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "ClientError";
+
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, ClientError);
+        }
+    }
+}
 
 function toErrorMessage(error: unknown): string {
     if (error instanceof Error) {
@@ -864,20 +873,29 @@ async function runWithConcurrency<T>(params: {
     }
 
     let nextIndex = 0;
+    let firstError: unknown;
     const runners = Array.from({ length: workerCount }, async () => {
         while (nextIndex < items.length) {
             const currentIndex = nextIndex;
             nextIndex += 1;
-            const item = items.at(currentIndex);
-            if (item === undefined) {
-                continue;
-            }
+            const item = items[currentIndex];
 
-            await worker(item);
+            try {
+                await worker(item);
+            } catch (error) {
+                if (!firstError) {
+                    firstError = error;
+                }
+                break;
+            }
         }
     });
 
-    await Promise.all(runners);
+    await Promise.allSettled(runners);
+
+    if (firstError) {
+        throw firstError;
+    }
 }
 
 async function rollupDeliveryStatus(
@@ -902,15 +920,11 @@ async function rollupDeliveryStatus(
         total += 1;
         if (document.status === "delivered") {
             delivered += 1;
-            continue;
-        }
-
-        if (document.status === "pending") {
+        } else if (document.status === "pending") {
             pending += 1;
-            continue;
+        } else {
+            failed += 1;
         }
-
-        failed += 1;
     }
 
     return {
@@ -1113,7 +1127,6 @@ export async function dispatchScheduledAnnouncements(
                 error: toErrorMessage(finalizeError),
             });
             // Intentionally do not update dispatchAttempts or status here.
-            continue;
         }
     }
 

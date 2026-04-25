@@ -1,16 +1,30 @@
+import type { Databases } from "appwrite";
 import { vi } from "vitest";
 
 // ---------------- Types ----------------
+type CreateDocumentArgs = Parameters<Databases["createDocument"]>;
+type CreateDocumentResult = ReturnType<Databases["createDocument"]>;
+type ListDocumentsArgs = Parameters<Databases["listDocuments"]>;
+type ListDocumentsResult = ReturnType<Databases["listDocuments"]>;
+type UpdateDocumentArgs = Parameters<Databases["updateDocument"]>;
+type UpdateDocumentResult = ReturnType<Databases["updateDocument"]>;
+type DeleteDocumentArgs = Parameters<Databases["deleteDocument"]>;
+type DeleteDocumentResult = ReturnType<Databases["deleteDocument"]>;
+
 type FailureConfig = {
   failCollections?: Record<string, Error | string>;
-  onCreate?: (args: unknown) => void;
+  onCreate?: (args: {
+    collectionId?: string;
+    data?: unknown;
+    permissions?: unknown;
+  }) => void;
   userId?: string;
   idFactory?: () => string;
   overrides?: {
-    createDocument?: (...args: unknown[]) => Promise<unknown>;
-    listDocuments?: (...args: unknown[]) => Promise<unknown>;
-    updateDocument?: (...args: unknown[]) => Promise<unknown>;
-    deleteDocument?: (...args: unknown[]) => Promise<unknown>;
+    createDocument?: (...args: CreateDocumentArgs) => CreateDocumentResult;
+    listDocuments?: (...args: ListDocumentsArgs) => ListDocumentsResult;
+    updateDocument?: (...args: UpdateDocumentArgs) => UpdateDocumentResult;
+    deleteDocument?: (...args: DeleteDocumentArgs) => DeleteDocumentResult;
   };
 };
 
@@ -46,14 +60,16 @@ vi.mock("appwrite", () => {
   }
 
   class Databases {
-    createDocument(...args: any[]) {
+    createDocument(...args: unknown[]) {
       // Override path
       if (currentConfig.overrides?.createDocument) {
-        return currentConfig.overrides.createDocument(...args);
+        return currentConfig.overrides.createDocument(
+          ...(args as CreateDocumentArgs)
+        );
       }
       let collectionId: string | undefined;
-      let data: any;
-      let permissions: any;
+      let data: unknown;
+      let permissions: unknown;
       if (
         args.length === 1 &&
         typeof args[0] === "object" &&
@@ -86,26 +102,32 @@ vi.mock("appwrite", () => {
         ...data,
       });
     }
-    listDocuments(...args: any[]) {
+    listDocuments(...args: unknown[]) {
       if (currentConfig.overrides?.listDocuments) {
-        return currentConfig.overrides.listDocuments(...args);
+        return currentConfig.overrides.listDocuments(
+          ...(args as ListDocumentsArgs)
+        );
       }
       return Promise.resolve({ documents: [] });
     }
-    updateDocument(...args: any[]) {
+    updateDocument(...args: unknown[]) {
       if (currentConfig.overrides?.updateDocument) {
-        return currentConfig.overrides.updateDocument(...args);
+        return currentConfig.overrides.updateDocument(
+          ...(args as UpdateDocumentArgs)
+        );
       }
-      if (args.length === 1 && typeof args[0] === "object") {
-        const o = args[0];
+      if (args.length === 1 && typeof args[0] === "object" && args[0] !== null) {
+        const o = args[0] as { data?: Record<string, unknown>; documentId?: unknown };
         return Promise.resolve({ ...(o.data || {}), $id: o.documentId });
       }
       const [, , id, data] = args;
-      return Promise.resolve({ $id: id, ...data });
+      return Promise.resolve({ $id: id, ...(data as Record<string, unknown>) });
     }
-    deleteDocument(...args: any[]) {
+    deleteDocument(...args: unknown[]) {
       if (currentConfig.overrides?.deleteDocument) {
-        return currentConfig.overrides.deleteDocument(...args);
+        return currentConfig.overrides.deleteDocument(
+          ...(args as DeleteDocumentArgs)
+        );
       }
       return Promise.resolve({});
     }

@@ -98,9 +98,7 @@ async function listVotesForPoll(
 ): Promise<PollVoteDocShape[]> {
     const votes: PollVoteDocShape[] = [];
     const queryWithPagination = Query as QueryWithPagination;
-    const cursorAfterFn = (
-        queryWithPagination as { cursorAfter?: (cursor: string) => string }
-    ).cursorAfter;
+    const cursorAfterFn = queryWithPagination.cursorAfter;
     const orderQuery =
         typeof queryWithPagination.orderAsc === "function"
             ? queryWithPagination.orderAsc("$id")

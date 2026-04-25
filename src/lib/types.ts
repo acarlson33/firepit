@@ -30,7 +30,7 @@ export const ATTACHMENT_SOURCE_VALUES = [
 
 export type AttachmentSource = (typeof ATTACHMENT_SOURCE_VALUES)[number];
 
-const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
+export const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
 export type AttachmentProvider = (typeof ATTACHMENT_PROVIDER_VALUES)[number];
 
 export type FileAttachment = {
@@ -87,7 +87,7 @@ export type MessagePollOption = {
 };
 
 const POLL_CONTEXTS = ["channel", "conversation"] as const;
-export type PollContext = typeof POLL_CONTEXTS[number];
+export type PollContext = (typeof POLL_CONTEXTS)[number];
 
 export type MessagePoll = {
     id: string;
@@ -164,7 +164,7 @@ export type Server = {
     defaultOnSignup?: boolean;
 };
 
-const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
+export const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
 export type ChannelType = (typeof CHANNEL_TYPE_VALUES)[number];
 
 export type Channel = {
@@ -636,7 +636,7 @@ export type EffectivePermissions = {
 export type PinnedMessage = {
     $id: string;
     messageId: string;
-    contextType: "channel" | "conversation";
+    contextType: PollContext;
     contextId: string;
     pinnedBy: string;
     pinnedAt: string;

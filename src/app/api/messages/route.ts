@@ -40,15 +40,37 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
 
-async function getMessageDocument(messageId: string): Promise<Record<string, unknown>> {
+async function getMessageDocument(
+    messageId: string,
+): Promise<Record<string, unknown> | null> {
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    return (await databases.getDocument(
-        env.databaseId,
-        env.collections.messages,
-        messageId,
-    )) as unknown as Record<string, unknown>;
+    try {
+        return (await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        )) as unknown as Record<string, unknown>;
+    } catch (error) {
+        const statusCode =
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            typeof (error as { code?: unknown }).code === "number"
+                ? (error as { code: number }).code
+                : undefined;
+        const message =
+            error instanceof Error
+                ? error.message.toLowerCase()
+                : String(error).toLowerCase();
+
+        if (statusCode === 404 || message.includes("not found")) {
+            return null;
+        }
+
+        throw error;
+    }
 }
 
 function normalizeStringField(value: unknown): string | undefined {
@@ -497,6 +519,13 @@ export async function PATCH(request: NextRequest) {
         const { databases } = getServerClient();
 
         const existing = await getMessageDocument(messageId);
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Message not found" },
+                { status: 404 },
+            );
+        }
+
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only edit your own messages" },
@@ -584,6 +613,13 @@ export async function DELETE(request: NextRequest) {
         const { databases } = getServerClient();
 
         const existing = await getMessageDocument(messageId);
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Message not found" },
+                { status: 404 },
+            );
+        }
+
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only delete your own messages" },

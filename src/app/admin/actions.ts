@@ -71,6 +71,8 @@ function validateAnnouncementDispatchLimit(limit: number): number {
 function normalizeListLimit(limit: number | undefined): number | undefined {
     if (limit === undefined) return undefined;
     if (!Number.isFinite(limit)) return undefined;
+    if (!Number.isInteger(limit)) return undefined;
+    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) return undefined;
     return limit;
 }
 

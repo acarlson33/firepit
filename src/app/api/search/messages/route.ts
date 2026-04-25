@@ -15,6 +15,7 @@ import {
     trackApiCall,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
+
 type SearchResult = {
     type: "channel" | "dm";
     message: Message | DirectMessage;
@@ -185,7 +186,6 @@ export async function GET(request: NextRequest) {
             );
 
             logger.info("Search: fetched channel messages", {
-                userId: user.$id,
                 count: channelMessages.documents.length,
             });
 
@@ -372,7 +372,13 @@ export async function GET(request: NextRequest) {
             }
 
             const directMessage = result.message as DirectMessage;
-            relationshipSubjects.add(directMessage.senderId);
+            const otherId =
+                directMessage.senderId === user.$id
+                    ? directMessage.receiverId
+                    : directMessage.senderId;
+            if (typeof otherId === "string" && otherId.length > 0) {
+                relationshipSubjects.add(otherId);
+            }
         }
 
         const relationshipSubjectsList = Array.from(relationshipSubjects);
@@ -388,9 +394,16 @@ export async function GET(request: NextRequest) {
                 return !relationship?.blockedByMe && !relationship?.blockedMe;
             }
 
-            const relationship = relationshipMap.get(
-                (result.message as DirectMessage).senderId,
-            );
+            const directMessage = result.message as DirectMessage;
+            const otherId =
+                directMessage.senderId === user.$id
+                    ? directMessage.receiverId
+                    : directMessage.senderId;
+            if (typeof otherId !== "string" || otherId.length === 0) {
+                return true;
+            }
+
+            const relationship = relationshipMap.get(otherId);
             return !relationship?.blockedByMe && !relationship?.blockedMe;
         });
 

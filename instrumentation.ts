@@ -11,11 +11,15 @@ const instrumentationLogger = {
     error(message: string, attributes?: Record<string, unknown>) {
         const payload = attributes
             ? `${message} ${JSON.stringify(attributes)}`
-            : message;
+            : `${message}`;
+        const error = new Error(payload);
 
         if (typeof globalThis.reportError === "function") {
-            globalThis.reportError(new Error(payload));
+            globalThis.reportError(error);
+            return;
         }
+
+        console.error(error);
     },
 };
 
@@ -32,7 +36,14 @@ export async function register() {
             instrumentationLogger.error(
                 "[PostHog] Failed to register process handlers",
                 {
-                error: error instanceof Error ? error.message : String(error),
+                    error:
+                        error instanceof Error
+                            ? {
+                                  message: error.message,
+                                  name: error.name,
+                                  stack: error.stack,
+                              }
+                            : String(error),
                 },
             );
         }

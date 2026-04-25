@@ -127,43 +127,49 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   async function create(name: string, ownerId: string) {
     try {
       let server: Server;
+      let createdMembership: Membership | null = null;
       if (process.env.NODE_ENV === "test") {
         const { createServer } = await import("@/lib/appwrite-servers");
         server = await createServer(name);
+        if (membershipEnabled) {
+          createdMembership = {
+            $id: `${server.$id}:${ownerId}`,
+            serverId: server.$id,
+            userId: ownerId,
+            role: "owner",
+            $createdAt: server.$createdAt,
+          };
+        }
       } else {
         const res = await fetch("/api/servers/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         });
-        let payload: { success?: boolean; server?: unknown; error?: string } | null = null;
+        const text = await res.text().catch(() => "");
+        let payload: unknown = null;
         let fallbackText = "";
-        try {
-          payload = (await res.json()) as {
-            success?: boolean;
-            server?: unknown;
-            error?: string;
-          };
-        } catch {
-          fallbackText = await res.text().catch(() => "");
+        if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            fallbackText = text;
+          }
         }
-        if (!res.ok || !payload?.success || !isServerRecord(payload.server)) {
-          throw new Error(
-            payload?.error || fallbackText || "Failed to create server",
-          );
+        const body = (payload as {
+          success?: boolean;
+          server?: unknown;
+          membership?: Membership;
+          error?: string;
+        } | null) ?? null;
+        if (!res.ok || !body?.success || !isServerRecord(body.server)) {
+          throw new Error(body?.error || fallbackText || "Failed to create server");
         }
-        server = payload.server;
+        server = body.server as Server;
+        createdMembership = body.membership ?? null;
       }
 
-      const membership = membershipEnabled
-        ? {
-            $id: `${server.$id}:${ownerId}`,
-            serverId: server.$id,
-            userId: ownerId,
-            role: "owner" as const,
-            $createdAt: server.$createdAt,
-          }
-        : null;
+      const membership = membershipEnabled ? createdMembership : null;
       const nextMemberships = membership
         ? [...memberships, membership]
         : memberships;
@@ -202,15 +208,21 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ serverId: id }),
         });
-        const payload = (await res.json().catch(() => null)) as {
-          membership?: Membership;
-          error?: string;
-        } | null;
+        const text = await res.text().catch(() => "");
+        let payload: unknown = null;
+        if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            // leave payload null, text used as fallback
+          }
+        }
+        const body = (payload as { membership?: Membership; error?: string } | null) ?? null;
         if (!res.ok) {
-          throw new Error(payload?.error || "Failed to join server");
+          throw new Error(body?.error || text || "Failed to join server");
         }
 
-        membership = payload?.membership ?? null;
+        membership = body?.membership ?? null;
       }
 
       if (!membership) {
@@ -241,8 +253,12 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           method: "DELETE",
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body?.error || "Failed to delete server");
+          const parsed: unknown = await res.json().catch(() => null);
+          let errorMessage: string | undefined;
+          if (parsed && typeof parsed === "object" && "error" in parsed) {
+            errorMessage = (parsed as { error?: string }).error;
+          }
+          throw new Error(errorMessage || "Failed to delete server");
         }
       }
       setServers((prev) => prev.filter((s) => s.$id !== serverId));

@@ -8,7 +8,7 @@ export type Reaction = {
     count: number;
 };
 
-type ParsedReactionsResult = {
+export type ParsedReactionsResult = {
     reactions: Reaction[];
     didNormalize: boolean;
 };

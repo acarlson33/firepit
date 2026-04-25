@@ -279,14 +279,6 @@ export function mapGiphyResults(params: {
     };
 }
 
-function isGifStickerSupportEnabled(): Promise<boolean> {
-    return Promise.resolve(true);
-}
-
-function isGifSearchEnabled(): Promise<boolean> {
-    return Promise.resolve(true);
-}
-
 export function getTenorConfig() {
     const apiKey = process.env.TENOR_API_KEY?.trim() || "";
     const clientKey = process.env.TENOR_CLIENT_KEY?.trim() || "firepit-web";

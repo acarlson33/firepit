@@ -479,7 +479,7 @@ export async function GET(request: NextRequest) {
             },
             {
                 headers: {
-                    // Responses are private and not cached by shared caches
+                    // User-specific data; responses are not cached.
                     "Cache-Control": "private, no-store",
                 },
             },
