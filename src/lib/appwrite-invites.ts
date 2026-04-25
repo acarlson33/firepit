@@ -622,7 +622,15 @@ export async function useInvite(
     // Unlimited invites skip read-modify-write updates; usage is tracked via invite_usage and can be reconciled periodically.
     if (reservedUseIndex !== undefined) {
         try {
-            const latestInvite = await getInviteByCode(code);
+            const latestInviteResult = await databases.listDocuments(
+                DATABASE_ID,
+                INVITES_COLLECTION_ID,
+                [Query.equal("code", code), Query.limit(1)],
+            );
+            const latestInvite =
+                latestInviteResult.documents.at(0) as
+                    | ServerInvite
+                    | undefined;
             const latestCurrentUses =
                 typeof latestInvite?.currentUses === "number"
                     ? latestInvite.currentUses
@@ -698,8 +706,12 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
                 INVITES_COLLECTION_ID,
                 inviteId,
             )) as unknown as Record<string, unknown>;
-        } catch {
-            // If the document cannot be loaded, continue to attempt deletion
+        } catch (error) {
+            logger.warn("Failed to preload invite before deletion; proceeding", {
+                error: error instanceof Error ? error.message : String(error),
+                inviteId,
+            });
+            // If the document cannot be loaded, continue to attempt deletion.
         }
 
         await databases.deleteDocument(

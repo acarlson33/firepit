@@ -99,6 +99,24 @@ interface ServerStats {
 
 const MAX_SERVER_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+function formatBytes(bytes: number): string {
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+
+    const formattedValue =
+        unitIndex === 0 || value >= 10
+            ? Math.round(value).toString()
+            : value.toFixed(1);
+
+    return `${formattedValue} ${units[unitIndex]}`;
+}
+
 export function ServerAdminPanel({
     serverId,
     serverName,
@@ -203,7 +221,8 @@ export function ServerAdminPanel({
     const handleServerImageUpload = useCallback(
         async (kind: "icon" | "banner", file: File) => {
             if (file.size > MAX_SERVER_IMAGE_UPLOAD_BYTES) {
-                toast.error("Image must be 5MB or smaller");
+                const maxUploadSize = formatBytes(MAX_SERVER_IMAGE_UPLOAD_BYTES);
+                toast.error(`Image must be ${maxUploadSize} or smaller`);
                 return;
             }
 

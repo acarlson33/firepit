@@ -282,7 +282,7 @@ bun start
 - Use secrets management for `APPWRITE_API_KEY`
 - Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
 - Set `SYSTEM_SENDER_USER_ID` to the dedicated Appwrite system-sender user `$id` in production
-- `SYSTEM_SENDER_USER_ID` controls reserved-account sign-in blocking and system-thread read-only behavior in `src/app/(auth)/login/actions.ts` and `src/lib/auth-server.ts`
+- `SYSTEM_SENDER_USER_ID` controls interactive sign-in blocking and system-thread read-only behavior in `src/app/(auth)/login/actions.ts` and `src/lib/auth-server.ts`
 
 **Reverse Proxy Setup (Nginx):**
 

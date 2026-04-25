@@ -132,9 +132,7 @@ function captureUnhandledServerError(params: {
         // Telemetry forwarding should never impact process-level handlers.
     }
 
-    flushPostHog().catch(() => {
-        // ignore background telemetry flush errors
-    });
+    void flushPostHog();
 }
 
 export function registerPostHogProcessHandlers() {
@@ -156,47 +154,36 @@ export function registerPostHogProcessHandlers() {
             error: reason,
             origin: "unhandled_rejection",
         });
+        process.exitCode = 1;
     });
 
     const flushLifecycleEvent = async (params?: {
         exitCode?: number;
-        shouldExit?: boolean;
     }) => {
-        const exitCode = params?.exitCode ?? 0;
-        const shouldExit = params?.shouldExit ?? false;
-
-        try {
-            await flushPostHog();
-        } catch {
-            // ignore lifecycle telemetry flush errors
-        } finally {
-            if (shouldExit) {
-                process.exit(exitCode);
-            }
+        await flushPostHog();
+        if (typeof params?.exitCode === "number") {
+            process.exitCode = params.exitCode;
         }
     };
 
     process.once("beforeExit", () => {
-        flushLifecycleEvent().catch(() => {});
+        void flushLifecycleEvent();
     });
     process.once("SIGINT", () => {
-        flushLifecycleEvent({
+        void flushLifecycleEvent({
             exitCode: 130,
-            shouldExit: true,
-        }).catch(() => {});
+        });
     });
     process.once("SIGTERM", () => {
-        flushLifecycleEvent({
+        void flushLifecycleEvent({
             exitCode: 143,
-            shouldExit: true,
-        }).catch(() => {});
+        });
     });
 }
 
 /**
  * Captures a server error event but does not flush automatically.
- * In short-lived/serverless paths, call flushPostHog() after this to
- * improve delivery reliability before execution ends.
+ * Flush behavior is handled internally by process lifecycle hooks.
  */
 export function capturePostHogServerError(
     error: unknown,

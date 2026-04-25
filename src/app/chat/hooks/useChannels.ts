@@ -12,6 +12,20 @@ type UseChannelsOptions = {
     servers: Server[];
 };
 
+export const isChannelRecord = (value: unknown): value is Channel => {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        typeof candidate.$id === "string" &&
+        typeof candidate.serverId === "string" &&
+        typeof candidate.name === "string" &&
+        typeof candidate.$createdAt === "string"
+    );
+};
+
 export function useChannels({
     selectedServer,
     userId,
@@ -22,19 +36,7 @@ export function useChannels({
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(false);
 
-    const isChannelRecord = (value: unknown): value is Channel => {
-        if (!value || typeof value !== "object") {
-            return false;
-        }
-
-        const candidate = value as Record<string, unknown>;
-        return (
-            typeof candidate.$id === "string" &&
-            typeof candidate.serverId === "string" &&
-            typeof candidate.name === "string" &&
-            typeof candidate.$createdAt === "string"
-        );
-    };
+    // Note: `isChannelRecord` moved to module scope to avoid recreation per render.
 
     const refresh = useCallback(async () => {
         if (!selectedServer) {
@@ -175,23 +177,27 @@ export function useChannels({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ serverId: selectedServer, name, type }),
                 });
-                let payload: { channel?: unknown; error?: string } | null = null;
+                const text = await res.text().catch(() => "");
+                let payload: unknown = null;
                 let fallbackText = "";
-                try {
-                    payload = (await res.json()) as {
-                        channel?: unknown;
-                        error?: string;
-                    };
-                } catch {
-                    fallbackText = await res.text().catch(() => "");
+                if (text) {
+                    try {
+                        payload = JSON.parse(text);
+                    } catch {
+                        fallbackText = text;
+                    }
                 }
 
-                if (!res.ok || !isChannelRecord(payload?.channel)) {
-                    throw new Error(
-                        payload?.error || fallbackText || "Failed to create channel",
-                    );
+                const body = (payload as { channel?: unknown; error?: string } | null) ?? null;
+
+                if (!res.ok || !isChannelRecord(body?.channel)) {
+                    const errMsg =
+                        (body && typeof body === "object" && "error" in body
+                            ? (body as { error?: string }).error
+                            : undefined) || fallbackText || "Failed to create channel";
+                    throw new Error(errMsg);
                 }
-                channel = payload.channel;
+                channel = body!.channel as Channel;
             }
             setChannels((prev) => [...prev, channel]);
             apiCache.clear(`channels:${selectedServer}:initial`);
@@ -213,8 +219,12 @@ export function useChannels({
                     method: "DELETE",
                 });
                 if (!res.ok) {
-                    const body = await res.json().catch(() => ({}));
-                    throw new Error(body?.error || "Failed to delete channel");
+                    const parsed: unknown = await res.json().catch(() => null);
+                    let errorMessage: string | undefined;
+                    if (parsed && typeof parsed === "object" && "error" in parsed) {
+                        errorMessage = (parsed as { error?: string }).error;
+                    }
+                    throw new Error(errorMessage || "Failed to delete channel");
                 }
             }
             setChannels((prev) => prev.filter((c) => c.$id !== channel.$id));

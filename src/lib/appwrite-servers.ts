@@ -6,7 +6,7 @@ import {
     normalizeError,
     withSession,
 } from "./appwrite-core";
-import type { Channel, ChannelCategory, Membership, Server } from "./types";
+import type { Channel, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
 import {
     getActualMemberCount,
@@ -22,7 +22,6 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
-const CATEGORIES_COLLECTION_ID = env.collections.categories;
 // Read memberships collection ID at call time for testability
 /**
  * Returns memberships collection id.
@@ -97,37 +96,6 @@ async function assertUserServerCreationEnabled(): Promise<void> {
  */
 function getDatabases() {
     return getBrowserDatabases();
-}
-
-/**
- * Lists servers.
- *
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Server[]>} The return value.
- */
-async function listServers(limit = 25): Promise<Server[]> {
-    const databases = getDatabases();
-    const res = await databases.listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: SERVERS_COLLECTION_ID,
-        // Use system attribute $createdAt for ordering to avoid schema attribute requirement
-        queries: [
-            Query.limit(Math.min(limit, 100)),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-
-    const memberCounts = await getActualMemberCounts(
-        databases,
-        res.documents.map((doc) => String(doc.$id)),
-    );
-
-    const servers = res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
-    });
-
-    return servers;
 }
 
 /**
@@ -278,43 +246,6 @@ export function createServer(
 }
 
 /**
- * Lists channels.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Channel[]>} The return value.
- */
-async function listChannels(
-    serverId: string,
-    limit = 100,
-): Promise<Channel[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CHANNELS_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            type: normalizeChannelType(d.type),
-            topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
-            categoryId:
-                typeof d.categoryId === "string" ? d.categoryId : undefined,
-            position: typeof d.position === "number" ? d.position : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies Channel;
-    });
-}
-
-/**
  * Lists channels page.
  *
  * @param {string} serverId - The server id value.
@@ -401,42 +332,6 @@ export async function createChannel(
         $createdAt: String(d.$createdAt ?? ""),
         $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
     } satisfies Channel;
-}
-
-/**
- * Lists categories.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<ChannelCategory[]>} The return value.
- */
-async function listCategories(
-    serverId: string,
-    limit = 100,
-): Promise<ChannelCategory[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CATEGORIES_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("position"),
-        ],
-    });
-
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            position: typeof d.position === "number" ? d.position : 0,
-            createdBy:
-                typeof d.createdBy === "string" ? d.createdBy : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies ChannelCategory;
-    });
 }
 
 // Membership utilities

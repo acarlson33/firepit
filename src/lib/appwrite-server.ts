@@ -11,7 +11,7 @@ import { AppwriteIntegrationError, getEnvConfig } from "./appwrite-core";
  * This function should ONLY be called from server-side code (server components, API routes, server actions).
  * @returns {{ client: Client; databases: Databases; tablesDB: TablesDBWithTransactions; teams: Teams; storage: Storage; }} The return value.
  */
-type TablesDBWithTransactions = Pick<
+export type TablesDBWithTransactions = Pick<
     TablesDB,
     "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
 >;

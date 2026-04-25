@@ -236,11 +236,14 @@ export async function GET(request: NextRequest) {
                 [
                     Query.equal("serverId", serverId),
                     Query.equal("userId", userId),
-                    Query.limit(100),
+                    Query.limit(1),
                 ],
             );
 
-            return NextResponse.json({ assignments: userAssignments.documents });
+            return NextResponse.json({
+                assignments: userAssignments.documents,
+                truncated: false,
+            });
         }
 
         const assignments = await listPages({

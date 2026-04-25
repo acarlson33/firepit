@@ -246,69 +246,78 @@ export async function loginAction(
             email,
             password,
         });
-
-        if (isSystemSenderAccount(session.userId)) {
-            // Defense in depth: invalidate this session immediately and never issue app cookie.
-            await revokeSessionBestEffort(session.userId, session.$id);
-
-            return {
-                success: false,
-                error: "This account is reserved for system announcements and cannot sign in.",
-            };
-        }
-
-        if (await isEmailVerificationEnabled()) {
-            const users = new Users(client);
-            const accountUser = await users.get(session.userId);
-            const emailVerified = Boolean(accountUser.emailVerification);
-
-            if (!emailVerified) {
-                let verificationLinkSent = false;
-                try {
-                    await sendVerificationEmailForSession({
-                        endpoint,
-                        project,
-                        sessionSecret: session.secret,
-                    });
-                    verificationLinkSent = true;
-                } catch (verificationError) {
-                    logger.error("Failed to send verification email during login", {
-                        userId: session.userId,
-                        error:
-                            verificationError instanceof Error
-                                ? verificationError.message
-                                : String(verificationError),
-                    });
-                }
-
+        let shouldRevokeTemporarySession = true;
+        try {
+            if (isSystemSenderAccount(session.userId)) {
+                // Defense in depth: invalidate this session immediately and never issue app cookie.
                 await revokeSessionBestEffort(session.userId, session.$id);
+                shouldRevokeTemporarySession = false;
 
-                return buildVerificationRequiredResult({ verificationLinkSent });
+                return {
+                    success: false,
+                    error: "This account is reserved for system announcements and cannot sign in.",
+                };
+            }
+
+            if (await isEmailVerificationEnabled()) {
+                const users = new Users(client);
+                const accountUser = await users.get(session.userId);
+                const emailVerified = Boolean(accountUser.emailVerification);
+
+                if (!emailVerified) {
+                    let verificationLinkSent = false;
+                    try {
+                        await sendVerificationEmailForSession({
+                            endpoint,
+                            project,
+                            sessionSecret: session.secret,
+                        });
+                        verificationLinkSent = true;
+                    } catch (verificationError) {
+                        logger.error("Failed to send verification email during login", {
+                            userId: session.userId,
+                            error:
+                                verificationError instanceof Error
+                                    ? verificationError.message
+                                    : String(verificationError),
+                        });
+                    }
+
+                    await revokeSessionBestEffort(session.userId, session.$id);
+                    shouldRevokeTemporarySession = false;
+
+                    return buildVerificationRequiredResult({ verificationLinkSent });
+                }
+            }
+
+            // CRITICAL: Use session.secret as cookie value (only available with admin client)
+            // This is documented in Appwrite SSR docs
+            const sessionSecret = session.secret;
+
+            if (!sessionSecret) {
+                return {
+                    success: false,
+                    error: "Session created but no secret returned - check API key",
+                };
+            }
+
+            // Manually set the session cookie in Next.js
+            const cookieStore = await cookies();
+            cookieStore.set(`a_session_${project}`, sessionSecret, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "lax",
+                maxAge: 60 * 60 * 24 * 365, // 1 year (matches Appwrite default)
+                path: "/",
+            });
+
+            shouldRevokeTemporarySession = false;
+            return { success: true, userId: session.userId };
+        } finally {
+            if (shouldRevokeTemporarySession) {
+                await revokeSessionBestEffort(session.userId, session.$id);
             }
         }
-
-        // CRITICAL: Use session.secret as cookie value (only available with admin client)
-        // This is documented in Appwrite SSR docs
-        const sessionSecret = session.secret;
-
-        if (!sessionSecret) {
-            return {
-                success: false,
-                error: "Session created but no secret returned - check API key",
-            };
-        }
-
-        // Manually set the session cookie in Next.js
-        const cookieStore = await cookies();
-        cookieStore.set(`a_session_${project}`, sessionSecret, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 365, // 1 year (matches Appwrite default)
-            path: "/",
-        });
-
-        return { success: true, userId: session.userId };
     } catch (error) {
         // Provide helpful error messages for common issues
         // Enhanced error handling to prevent "unexpected response" errors
@@ -424,46 +433,50 @@ export async function resendVerificationAction(
             email,
             password,
         });
-
-        if (isSystemSenderAccount(session.userId)) {
-            await revokeSessionBestEffort(session.userId, session.$id);
-
-            return {
-                success: false,
-                error: "This account is reserved for system announcements and cannot sign in.",
-            };
-        }
-
-        const users = new Users(client);
-        const accountUser = await users.get(session.userId);
-        const emailVerified = Boolean(accountUser.emailVerification);
-
-        if (emailVerified) {
-            await revokeSessionBestEffort(session.userId, session.$id);
-
-            return {
-                success: true,
-                alreadyVerified: true,
-                message: "This email is already verified. You can sign in now.",
-            };
-        }
-
-        // Send a fresh verification link using this temporary session, then revoke it.
+        let shouldRevokeTemporarySession = true;
         try {
+            if (isSystemSenderAccount(session.userId)) {
+                await revokeSessionBestEffort(session.userId, session.$id);
+                shouldRevokeTemporarySession = false;
+
+                return {
+                    success: false,
+                    error: "This account is reserved for system announcements and cannot sign in.",
+                };
+            }
+
+            const users = new Users(client);
+            const accountUser = await users.get(session.userId);
+            const emailVerified = Boolean(accountUser.emailVerification);
+
+            if (emailVerified) {
+                await revokeSessionBestEffort(session.userId, session.$id);
+                shouldRevokeTemporarySession = false;
+
+                return {
+                    success: true,
+                    alreadyVerified: true,
+                    message: "This email is already verified. You can sign in now.",
+                };
+            }
+
+            // Send a fresh verification link using this temporary session, then revoke it.
             await sendVerificationEmailForSession({
                 endpoint,
                 project,
                 sessionSecret: session.secret,
             });
-        } finally {
-            // Best-effort cleanup: do not keep the temporary session active.
-            await revokeSessionBestEffort(session.userId, session.$id);
-        }
 
-        return {
-            success: true,
-            message: "Verification email sent. Check your inbox.",
-        };
+            return {
+                success: true,
+                message: "Verification email sent. Check your inbox.",
+            };
+        } finally {
+            if (shouldRevokeTemporarySession) {
+                // Best-effort cleanup: do not keep the temporary session active.
+                await revokeSessionBestEffort(session.userId, session.$id);
+            }
+        }
     } catch (error) {
         if (error instanceof Error) {
             const message = error.message.toLowerCase();

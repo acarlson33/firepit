@@ -360,10 +360,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.$id,
         });
 
-        // Use the mentions we normalized earlier when constructing messageData if available
-        const normalizedMentions = Array.isArray(newReply.mentions)
-            ? normalizeMentionIds(newReply.mentions)
-            : normalizedMentionsFromInput;
+        // Reuse input-normalized mentions to avoid redundant normalization work.
+        const normalizedMentions = normalizedMentionsFromInput;
 
         const {
             mentions: _rawMentions,

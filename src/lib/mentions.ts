@@ -22,15 +22,7 @@ export function normalizeMentionIds(input: unknown): string[] {
 
     const trimmed = normalizedInput.filter(isValidMentionId).map((v) => v.trim());
 
-    // Dedupe while preserving order
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const id of trimmed) {
-        if (!seen.has(id)) {
-            seen.add(id);
-            result.push(id);
-        }
-    }
+    const result: string[] = Array.from(new Set(trimmed));
 
     return result;
 }

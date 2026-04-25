@@ -170,6 +170,32 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     return chunks;
 }
 
+async function mapWithConcurrency<T, R>(params: {
+    items: T[];
+    concurrency: number;
+    mapper: (item: T) => Promise<R>;
+}): Promise<R[]> {
+    const { items, concurrency, mapper } = params;
+    if (items.length === 0) {
+        return [];
+    }
+
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await mapper(items[currentIndex]);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+}
+
 /**
  * Normalizes and persists legacy reaction payloads when needed.
  * Accepts the same input formats supported by parseReactionsWithMetadata:
@@ -239,9 +265,11 @@ async function enrichDirectMessagesWithAttachments(
             1000,
             Math.max(50, messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE),
         );
-        const pagedAttachmentDocuments = await Promise.all(
-            chunkArray(messageIds, 100).map((messageIdChunk) =>
-                listPages({
+        const pagedAttachmentDocuments = await mapWithConcurrency({
+            items: chunkArray(messageIds, 100),
+            concurrency: 4,
+            mapper: async (messageIdChunk) => {
+                const page = await listPages({
                     databases: getDatabases(),
                     databaseId: DATABASE_ID,
                     collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
@@ -253,9 +281,10 @@ async function enrichDirectMessagesWithAttachments(
                     pageSize,
                     warningContext: "enrichDirectMessagesWithAttachments",
                     maxPages: 50,
-                }).then((page) => page.documents),
-            ),
-        );
+                });
+                return page.documents;
+            },
+        });
         const attachmentDocuments = pagedAttachmentDocuments.flat();
 
         // Group attachments by messageId
@@ -345,44 +374,51 @@ export async function getOrCreateConversation(
     }
 
     try {
-        // Try to find existing conversation using centralized pagination helper
-        const { documents } = await listPages({
-            databases: getDatabases(),
-            databaseId: DATABASE_ID,
-            collectionId: CONVERSATIONS_COLLECTION,
-            baseQueries: [
-                Query.contains("participants", user1),
-                Query.contains("participants", user2),
-                Query.orderAsc("$createdAt"),
-            ],
-            pageSize: 100,
-            warningContext: "find-one-to-one-conversation",
-            maxPages: 50,
-        });
+        const databases = getDatabases();
+        const queriesWithParticipantCount = [
+            Query.contains("participants", user1),
+            Query.contains("participants", user2),
+            Query.equal("participantCount", 2),
+            Query.orderAsc("$createdAt"),
+            Query.limit(1),
+        ];
 
-        const oneToOne = documents.find((document) => {
-            const participantsList = (document as Record<string, unknown>)
-                .participants;
-            return (
-                Array.isArray(participantsList) &&
-                participantsList.length === 2 &&
-                participantsList.includes(user1) &&
-                participantsList.includes(user2)
-            );
-        }) as Record<string, unknown> | undefined;
+        let documents: Array<Record<string, unknown>> = [];
+        try {
+            const response = await databases.listDocuments({
+                databaseId: DATABASE_ID,
+                collectionId: CONVERSATIONS_COLLECTION,
+                queries: queriesWithParticipantCount,
+            });
+            documents = (response.documents ?? []) as Array<Record<string, unknown>>;
+        } catch {
+            const fallbackResponse = await databases.listDocuments({
+                databaseId: DATABASE_ID,
+                collectionId: CONVERSATIONS_COLLECTION,
+                queries: [
+                    Query.contains("participants", user1),
+                    Query.contains("participants", user2),
+                    Query.orderAsc("$createdAt"),
+                    Query.limit(1),
+                ],
+            });
+            documents = (fallbackResponse.documents ?? []) as Array<Record<string, unknown>>;
+        }
 
+        const oneToOne = documents.at(0);
         if (oneToOne) {
-            const doc = oneToOne;
             return {
-                $id: String(doc.$id),
-                $permissions: Array.isArray(doc.$permissions)
-                    ? (doc.$permissions as string[])
+                $id: String(oneToOne.$id),
+                $permissions: Array.isArray(oneToOne.$permissions)
+                    ? (oneToOne.$permissions as string[])
                     : undefined,
-                participants: doc.participants as string[],
-                lastMessageAt: doc.lastMessageAt
-                    ? String(doc.lastMessageAt)
+                participants: Array.isArray(oneToOne.participants)
+                    ? (oneToOne.participants as string[])
+                    : participants,
+                lastMessageAt: oneToOne.lastMessageAt
+                    ? String(oneToOne.lastMessageAt)
                     : undefined,
-                $createdAt: String(doc.$createdAt),
+                $createdAt: String(oneToOne.$createdAt),
             };
         }
     } catch {
@@ -407,6 +443,7 @@ export async function getOrCreateConversation(
             documentId: deterministicConversationId,
             data: {
                 participants,
+                participantCount: participants.length,
                 lastMessageAt: new Date().toISOString(),
             },
             permissions,

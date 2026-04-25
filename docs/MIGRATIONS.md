@@ -8,7 +8,7 @@ Some legacy server records may be missing `isPublic`. Current discovery behavior
 
 The setup script includes a helper named `migrateLegacyServersIsPublic` in `scripts/setup-appwrite.ts`.
 
-### Policy and run
+### Policy
 
 Choose your default policy for missing values:
 

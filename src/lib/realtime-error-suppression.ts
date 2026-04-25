@@ -157,17 +157,10 @@ export async function closeSubscriptionSafely(
             defaultSuppressionPredicate,
         );
     } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-            logger.warn("Realtime subscription close failed", {
-                marker,
-                error: error instanceof Error ? error.message : String(error),
-            });
-        } else {
-            logger.info("Realtime subscription close failed (prod)", {
-                marker,
-                error: error instanceof Error ? error.message : String(error),
-            });
-        }
+        logger.warn("Realtime subscription close failed", {
+            marker,
+            error: error instanceof Error ? error.message : String(error),
+        });
 
         // Ignore teardown errors when websocket is already disconnected.
     }

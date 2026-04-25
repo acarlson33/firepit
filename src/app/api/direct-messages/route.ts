@@ -659,12 +659,12 @@ export async function GET(request: NextRequest) {
                             metadataThreadCount,
                             signalThreadCount,
                         );
-                        const threadMessageCount =
-                            effectiveThreadCount > 0
-                                ? effectiveThreadCount
-                                : lastThreadReplyAt
-                                  ? 1
-                                  : undefined;
+                        let threadMessageCount: number | undefined;
+                        if (effectiveThreadCount > 0) {
+                            threadMessageCount = effectiveThreadCount;
+                        } else if (lastThreadReplyAt) {
+                            threadMessageCount = 1;
+                        }
 
                         const lastReadAt =
                             readStatesByConversationId.get(conversationId)?.[
@@ -698,8 +698,12 @@ export async function GET(request: NextRequest) {
                             },
                         );
                     }
-                } catch {
-                    // Skip unread aggregates if the supporting query fails.
+                } catch (error) {
+                    unreadThreadCountsTruncated = true;
+                    logger.error("Failed to aggregate unread thread counts", {
+                        error: error instanceof Error ? error.message : String(error),
+                        userId: session.$id,
+                    });
                 }
             }
 
