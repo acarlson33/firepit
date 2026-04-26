@@ -82,6 +82,41 @@ components:
                     type: boolean
                     default: true
 
+        JoinMembership:
+            type: object
+            required:
+                - id
+                - userId
+                - serverId
+                - role
+                - createdAt
+            properties:
+                id:
+                    type: string
+                userId:
+                    type: string
+                serverId:
+                    type: string
+                role:
+                    type: string
+                    enum: [owner, member]
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+
+        JoinResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                  properties:
+                      membership:
+                          $ref: "#/components/schemas/JoinMembership"
+
         UserSummary:
             type: object
             properties:
@@ -827,7 +862,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: "#/components/schemas/Success"
+                                $ref: "#/components/schemas/JoinResponse"
                 "403":
                     description: Server is private and requires an invite
                     content:

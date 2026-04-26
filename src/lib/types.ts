@@ -190,12 +190,6 @@ export type ChannelCategory = {
     $updatedAt?: string;
 };
 
-type InstanceSettings = {
-    $id: string;
-    allowUserServers: boolean;
-    updatedAt: string;
-};
-
 export type FeatureFlag = {
     $id: string;
     key: string;
@@ -602,14 +596,6 @@ export type RelationshipStatus = {
     canReceiveFriendRequest: boolean;
 };
 
-type RoleAssignment = {
-    $id: string;
-    userId: string;
-    serverId: string;
-    roleIds: string[]; // Array of role IDs assigned to this user
-    $createdAt?: string;
-};
-
 export type ChannelPermissionOverride = {
     $id: string;
     channelId: string;
@@ -618,14 +604,6 @@ export type ChannelPermissionOverride = {
     allow: Permission[]; // Permissions explicitly allowed
     deny: Permission[]; // Permissions explicitly denied (takes precedence)
     $createdAt?: string;
-};
-
-// Utility type for checking if user has specific permission
-type PermissionCheck = {
-    userId: string;
-    serverId: string;
-    channelId?: string;
-    permission: Permission;
 };
 
 // Utility type for effective permissions after calculating hierarchy
@@ -730,18 +708,4 @@ export type NotificationPayload = {
         conversationId?: string;
         senderId?: string;
     };
-};
-
-/**
- * Result of checking if a user should be notified
- */
-type NotificationCheckResult = {
-    shouldNotify: boolean;
-    reason?:
-        | "muted"
-        | "quiet_hours"
-        | "level_mismatch"
-        | "user_online"
-        | "blocked";
-    effectiveLevel: NotificationLevel;
 };

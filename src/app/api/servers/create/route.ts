@@ -9,6 +9,7 @@ import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { normalizeServerFileId } from "@/lib/server-metadata";
+import type { Membership } from "@/lib/types";
 
 const MAX_SERVER_NAME_LENGTH = 100;
 const MAX_SERVER_DESCRIPTION_LENGTH = 500;
@@ -154,13 +155,7 @@ export async function POST(request: Request) {
             bypassFeatureCheck: true,
         });
 
-        let membership: {
-            $id: string;
-            $createdAt: string;
-            role: "owner" | "member";
-            serverId: string;
-            userId: string;
-        } | null = null;
+        let membership: Membership | null = null;
 
         try {
             const env = getEnvConfig();

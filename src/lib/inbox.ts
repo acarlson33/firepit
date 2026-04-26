@@ -295,7 +295,7 @@ async function runInBatches<T>(params: {
  * Lists all documents for a collection using cursor pagination.
  *
  * @param {{ collectionId: string; pageLimit?: number | undefined; queries?: string[] | undefined; }} params - The params value.
- * @returns {Promise<Record<string, unknown>[]>} The return value.
+ * @returns {Promise<{ documents: Record<string, unknown>[]; truncated: boolean; }>} The return value.
  */
 async function listAllDocuments(params: {
     collectionId: string;
@@ -319,6 +319,7 @@ async function listAllDocuments(params: {
 
     let shouldSelectFields = Boolean(selectFields && selectFields.length > 0);
     let documents: Array<Record<string, unknown>> = [];
+    let truncated = false;
 
     while (true) {
         try {
@@ -333,6 +334,7 @@ async function listAllDocuments(params: {
                 warningContext: `listAllDocuments:${collectionId}`,
             });
             documents = response.documents;
+            truncated = response.truncated;
             break;
         } catch (error) {
             if (shouldSelectFields && isSchemaAttributeMissingQueryError(error)) {
@@ -344,7 +346,10 @@ async function listAllDocuments(params: {
         }
     }
 
-    return documents as Record<string, unknown>[];
+    return {
+        documents: documents as Record<string, unknown>[],
+        truncated,
+    };
 }
 
 async function listDocumentsByIds(params: {
@@ -476,7 +481,7 @@ async function listThreadReplySignals(params: {
             ? INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS
             : INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS;
 
-    const documents = (
+    const responses =
         await Promise.all(
             chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
                 async (contextIdChunk) =>
@@ -489,8 +494,17 @@ async function listThreadReplySignals(params: {
                         selectFields,
                     }),
             ),
-        )
-    ).flat();
+        );
+
+    const truncated = responses.some((response) => response.truncated);
+    if (truncated) {
+        logger.warn("Thread reply signal scan truncated", {
+            collectionId,
+            contextField,
+        });
+    }
+
+    const documents = responses.flatMap((response) => response.documents);
 
     return toThreadReplySignals(documents);
 }
@@ -606,7 +620,7 @@ async function countUnreadRepliesByParent(params: {
  */
 async function listConversationDocuments(userId: string) {
     const env = getEnvConfig();
-    const documents = await listAllDocuments({
+    const { documents, truncated } = await listAllDocuments({
         collectionId: env.collections.conversations,
         queries: [
             Query.contains("participants", userId),
@@ -614,6 +628,12 @@ async function listConversationDocuments(userId: string) {
         ],
         selectFields: INBOX_CONVERSATION_SELECT_FIELDS,
     });
+
+    if (truncated) {
+        logger.warn("Conversation listing truncated while building inbox", {
+            userId,
+        });
+    }
 
     return documents as Array<Record<string, unknown>>;
 }
@@ -898,7 +918,7 @@ async function listUnreadConversationThreadItems(
         userId,
     });
 
-    const threadParents = (
+    const threadParentResponses =
         await Promise.all(
             chunkArray(conversationIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
                 async (conversationIdChunk) =>
@@ -911,8 +931,17 @@ async function listUnreadConversationThreadItems(
                         selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
                     }),
             ),
-        )
-    ).flat();
+        );
+
+    if (threadParentResponses.some((response) => response.truncated)) {
+        logger.warn("Conversation thread parent scan truncated", {
+            userId,
+        });
+    }
+
+    const threadParents = threadParentResponses.flatMap(
+        (response) => response.documents,
+    );
 
     const replySignalsByParentId = await listThreadReplySignals({
         collectionId: env.collections.directMessages,
@@ -1056,11 +1085,19 @@ async function listUnreadChannelThreadItems(
     },
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
-    const threadParents = await listAllDocuments({
+    const threadParentResponse = await listAllDocuments({
         collectionId: env.collections.messages,
         queries: [Query.greaterThan("threadMessageCount", 0)],
         selectFields: INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS,
     });
+
+    if (threadParentResponse.truncated) {
+        logger.warn("Channel thread parent scan truncated", {
+            userId,
+        });
+    }
+
+    const threadParents = threadParentResponse.documents;
 
     const channelIdsFromThreadMetadata = Array.from(
         new Set(
@@ -1260,7 +1297,7 @@ async function listPersistedMentionItems(
     },
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
-    const documents = await listAllDocuments({
+    const documentResponse = await listAllDocuments({
         collectionId: env.collections.inboxItems,
         queries: [
             Query.equal("userId", userId),
@@ -1270,6 +1307,14 @@ async function listPersistedMentionItems(
         ],
         selectFields: INBOX_PERSISTED_MENTION_SELECT_FIELDS,
     });
+
+    if (documentResponse.truncated) {
+        logger.warn("Persisted mention scan truncated", {
+            userId,
+        });
+    }
+
+    const documents = documentResponse.documents;
 
     const visibleDocuments = await filterReadableChannelContexts(
         userId,

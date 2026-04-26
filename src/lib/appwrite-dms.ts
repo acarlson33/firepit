@@ -391,6 +391,20 @@ export async function getOrCreateConversation(
                 queries: queriesWithParticipantCount,
             });
             documents = (response.documents ?? []) as Array<Record<string, unknown>>;
+
+            if (documents.length === 0) {
+                const fallbackResponse = await databases.listDocuments({
+                    databaseId: DATABASE_ID,
+                    collectionId: CONVERSATIONS_COLLECTION,
+                    queries: [
+                        Query.contains("participants", user1),
+                        Query.contains("participants", user2),
+                        Query.orderAsc("$createdAt"),
+                        Query.limit(1),
+                    ],
+                });
+                documents = (fallbackResponse.documents ?? []) as Array<Record<string, unknown>>;
+            }
         } catch {
             const fallbackResponse = await databases.listDocuments({
                 databaseId: DATABASE_ID,

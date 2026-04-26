@@ -6,6 +6,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -197,6 +198,13 @@ export async function POST(request: NextRequest) {
             overrideData,
         );
 
+        const channel = await databases.getDocument(
+            databaseId,
+            env.collections.channels,
+            channelId,
+        );
+        invalidateChannelsServerCaches(String(channel.serverId));
+
         return NextResponse.json({ override }, { status: 201 });
     } catch (error) {
         logger.error("Failed to create channel permission", {
@@ -274,6 +282,13 @@ export async function PUT(request: NextRequest) {
             },
         );
 
+        const channel = await databases.getDocument(
+            databaseId,
+            env.collections.channels,
+            String(existingOverride.channelId),
+        );
+        invalidateChannelsServerCaches(String(channel.serverId));
+
         return NextResponse.json({ override });
     } catch (error) {
         logger.error("Failed to update channel permission", {
@@ -317,6 +332,13 @@ export async function DELETE(request: NextRequest) {
             overridesCollectionId,
             overrideId,
         );
+
+        const channel = await databases.getDocument(
+            databaseId,
+            env.collections.channels,
+            String(existingOverride.channelId),
+        );
+        invalidateChannelsServerCaches(String(channel.serverId));
 
         return NextResponse.json({ success: true });
     } catch (error) {

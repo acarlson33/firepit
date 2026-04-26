@@ -101,7 +101,7 @@ function normalizeDistinctIds(ids: string[], excluding?: string): string[] {
 
 function maxIsoTimestamp(left?: string, right?: string) {
     if (left && right) {
-        return left.localeCompare(right) >= 0 ? left : right;
+        return left >= right ? left : right;
     }
 
     return left ?? right;

@@ -73,7 +73,7 @@ function LoginFormContent() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 router.push(destination as any);
             } else {
-                toast.error(result.error);
+                toast.error(result.message ?? result.error);
             }
         } catch (err) {
             // Enhanced error handling to prevent "unexpected response" errors

@@ -5,6 +5,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -129,6 +130,8 @@ export async function PATCH(
             channelId,
             updateData,
         );
+
+        invalidateChannelsServerCaches(String(channel.serverId));
 
         return NextResponse.json({ channel });
     } catch (error) {

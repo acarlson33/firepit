@@ -232,7 +232,18 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       if (membershipEnabled) {
         const nextMemberships = [...memberships, membership];
         setMemberships(nextMemberships);
-        setServers((prev) => filterAllowedServers(prev, nextMemberships));
+        const membershipServer =
+          "server" in (membership as unknown as Record<string, unknown>)
+            ? (membership as unknown as { server?: unknown }).server
+            : null;
+
+        if (isServerRecord(membershipServer)) {
+          setServers((prev) =>
+            filterAllowedServers([...prev, membershipServer], nextMemberships)
+          );
+        } else {
+          await refresh();
+        }
       }
       setSelectedServer(id);
       apiCache.clear(`memberships:${uid}`);

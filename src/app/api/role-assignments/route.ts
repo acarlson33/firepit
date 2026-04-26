@@ -7,6 +7,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { listPages } from "@/lib/appwrite-pagination";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -216,7 +217,7 @@ export async function GET(request: NextRequest) {
                 return {
                     userId: assignment.userId,
                     displayName: profile?.displayName,
-                    userName: profile?.userId,
+                    userName: profile?.userName,
                     avatarUrl: profile?.avatarUrl,
                     roleIds: assignment.roleIds as string[],
                 };
@@ -330,6 +331,11 @@ export async function POST(request: NextRequest) {
                 { roleIds: [...currentRoleIds, roleId] },
             );
 
+            invalidateChannelsUserCaches({
+                serverId,
+                userId,
+            });
+
             await updateRoleMemberCount(roleId, serverId);
 
             return NextResponse.json({ assignment: updatedAssignment });
@@ -341,6 +347,11 @@ export async function POST(request: NextRequest) {
             ID.unique(),
             { userId, serverId, roleIds: [roleId] },
         );
+
+        invalidateChannelsUserCaches({
+            serverId,
+            userId,
+        });
 
         await updateRoleMemberCount(roleId, serverId);
 
@@ -415,6 +426,11 @@ export async function DELETE(request: NextRequest) {
                 { roleIds: updatedRoleIds },
             );
         }
+
+        invalidateChannelsUserCaches({
+            serverId,
+            userId,
+        });
 
         await updateRoleMemberCount(roleId, serverId);
 

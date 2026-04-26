@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 import {
     Shield,
     Users,
@@ -192,8 +192,8 @@ export function ServerAdminPanel({
     const iconInputRef = useRef<HTMLInputElement>(null);
     const bannerInputRef = useRef<HTMLInputElement>(null);
     const canEditServerSettings = isOwner || canManageServer;
-    const iconInputId = "server-settings-icon-upload";
-    const bannerInputId = "server-settings-banner-upload";
+    const iconInputId = useId();
+    const bannerInputId = useId();
 
     useEffect(() => {
         if (!open) {

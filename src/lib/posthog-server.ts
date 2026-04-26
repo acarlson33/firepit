@@ -3,6 +3,9 @@ import { PostHog } from "posthog-node";
 type PostHogShim = {
     capture: (...args: Parameters<PostHog["capture"]>) => void;
     captureException: (...args: Parameters<PostHog["captureException"]>) => void;
+    captureExceptionImmediate: (
+        ...args: Parameters<PostHog["captureException"]>
+    ) => Promise<void>;
     flush: () => Promise<void>;
     shutdown: () => Promise<void>;
 };
@@ -13,6 +16,9 @@ function createNoOpShim(): PostHogShim {
             // no-op: PostHog project API key not configured
         },
         captureException(..._args) {
+            // no-op: PostHog project API key not configured
+        },
+        async captureExceptionImmediate(..._args) {
             // no-op: PostHog project API key not configured
         },
         async flush() {
@@ -117,14 +123,14 @@ async function flushPostHog(timeoutMs = 1500) {
     }
 }
 
-function captureUnhandledServerError(params: {
+async function captureUnhandledServerError(params: {
     error: unknown;
     origin: string;
 }) {
     const { error, origin } = params;
 
     try {
-        getPostHogClient().captureException(toError(error), "server", {
+        await getPostHogClient().captureExceptionImmediate(toError(error), "server", {
             origin,
             ...toErrorMetadata(error),
         });
@@ -132,7 +138,7 @@ function captureUnhandledServerError(params: {
         // Telemetry forwarding should never impact process-level handlers.
     }
 
-    void flushPostHog();
+    await flushPostHog();
 }
 
 export function registerPostHogProcessHandlers() {
@@ -143,14 +149,14 @@ export function registerPostHogProcessHandlers() {
     posthogProcessHandlersRegistered = true;
 
     process.on("uncaughtExceptionMonitor", (error, origin) => {
-        captureUnhandledServerError({
+        void captureUnhandledServerError({
             error,
             origin: `uncaught_exception:${origin}`,
         });
     });
 
     process.on("unhandledRejection", (reason) => {
-        captureUnhandledServerError({
+        void captureUnhandledServerError({
             error: reason,
             origin: "unhandled_rejection",
         });

@@ -157,9 +157,16 @@ export async function closeSubscriptionSafely(
             defaultSuppressionPredicate,
         );
     } catch (error) {
-        logger.warn("Realtime subscription close failed", {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        const isBenignTeardownError = isExpectedAppwriteWebSocketError([
+            errorMessage,
+        ]);
+
+        const log = isBenignTeardownError ? logger.info : logger.warn;
+        log("Realtime subscription close failed", {
             marker,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
         });
 
         // Ignore teardown errors when websocket is already disconnected.

@@ -11,6 +11,7 @@ import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { apiCache } from "@/lib/cache-utils";
+import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 
 function sortChannels(channels: Channel[]) {
     return [...channels].sort((left, right) => {
@@ -182,6 +183,9 @@ export async function POST(request: NextRequest) {
         );
 
         const channel = created as unknown as Record<string, unknown>;
+
+        invalidateChannelsServerCaches(serverId);
+
         return NextResponse.json(
             {
                 channel: {
