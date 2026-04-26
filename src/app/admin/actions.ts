@@ -51,30 +51,27 @@ type ChannelDoc = AppwriteDoc & {
     serverId?: string;
 };
 
+function parseDispatchLimit(limit: number): number | undefined {
+    if (!Number.isFinite(limit)) return undefined;
+    if (!Number.isInteger(limit)) return undefined;
+    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) return undefined;
+    return limit;
+}
+
 function validateAnnouncementDispatchLimit(limit: number): number {
-    if (!Number.isFinite(limit)) {
-        throw new Error("Dispatch limit must be a finite number");
-    }
-
-    if (!Number.isInteger(limit)) {
-        throw new Error("Dispatch limit must be an integer");
-    }
-
-    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) {
+    const parsedLimit = parseDispatchLimit(limit);
+    if (parsedLimit === undefined) {
         throw new Error(
             `Dispatch limit must be between 1 and ${String(MAX_DISPATCH_LIMIT)}`,
         );
     }
 
-    return limit;
+    return parsedLimit;
 }
 
 function normalizeListLimit(limit: number | undefined): number | undefined {
     if (limit === undefined) return undefined;
-    if (!Number.isFinite(limit)) return undefined;
-    if (!Number.isInteger(limit)) return undefined;
-    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) return undefined;
-    return limit;
+    return parseDispatchLimit(limit);
 }
 
 // Smaller helpers to keep complexity below threshold
@@ -434,7 +431,7 @@ export async function createAnnouncementAction(
         );
         const dispatched = immediateDispatch.dispatched
             ? { announcementIds: [announcement.$id], dueCount: 1 }
-            : await dispatchScheduledAnnouncements(DEFAULT_DISPATCH_LIMIT);
+            : { announcementIds: [], dueCount: 0 };
         return { announcement, dispatched };
     } catch (error) {
         logger.error("Dispatch after send_now announcement creation failed", {

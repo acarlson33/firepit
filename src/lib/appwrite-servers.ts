@@ -153,8 +153,31 @@ export function createServer(
         iconFileId?: string;
         bannerFileId?: string;
         isPublic?: boolean;
+        includeMembership?: false;
     },
-): Promise<Server> {
+): Promise<Server>;
+export function createServer(
+    name: string,
+    options: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership: true;
+    },
+): Promise<{ membership: Membership | null; server: Server }>;
+export function createServer(
+    name: string,
+    options?: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership?: boolean;
+    },
+): Promise<Server | { membership: Membership | null; server: Server }> {
     return withSession(async ({ userId }) => {
         const ownerId = userId;
 
@@ -198,6 +221,7 @@ export function createServer(
                 permissions,
             });
             const s = serverDoc as unknown as Record<string, unknown>;
+            let membership: Membership | null = null;
             const membershipsCollectionId = getMembershipsCollectionId();
             if (membershipsCollectionId) {
                 try {
@@ -206,7 +230,7 @@ export function createServer(
                         Permission.update(Role.user(ownerId)),
                         Permission.delete(Role.user(ownerId)),
                     ];
-                    await getDatabases().createDocument({
+                    const membershipDoc = await getDatabases().createDocument({
                         databaseId: DATABASE_ID,
                         collectionId: membershipsCollectionId,
                         documentId: ID.unique(),
@@ -217,6 +241,25 @@ export function createServer(
                         },
                         permissions: membershipPerms,
                     });
+
+                    const membershipRecord = membershipDoc as Record<
+                        string,
+                        unknown
+                    >;
+                    membership = {
+                        $id: String(membershipRecord.$id),
+                        $createdAt: String(membershipRecord.$createdAt ?? ""),
+                        $updatedAt:
+                            typeof membershipRecord.$updatedAt === "string"
+                                ? membershipRecord.$updatedAt
+                                : undefined,
+                        role:
+                            membershipRecord.role === "owner"
+                                ? "owner"
+                                : "member",
+                        serverId: String(membershipRecord.serverId),
+                        userId: String(membershipRecord.userId),
+                    };
                 } catch {
                     // ignore membership creation failure
                 }
@@ -238,7 +281,16 @@ export function createServer(
                 String(s.$id),
             );
 
-            return mapServerDocument(serverRecord, actualMemberCount);
+            const mappedServer = mapServerDocument(serverRecord, actualMemberCount);
+
+            if (options?.includeMembership) {
+                return {
+                    membership,
+                    server: mappedServer,
+                };
+            }
+
+            return mappedServer;
         } catch (e) {
             throw normalizeError(e);
         }

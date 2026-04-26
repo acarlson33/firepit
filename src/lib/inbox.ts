@@ -758,8 +758,11 @@ async function loadRelationshipMap(
         })),
     );
 
+    const resolvedRelationshipMap = new Map<string, RelationshipStatus>();
+
     for (const { relationshipMap, userIdChunk } of relationshipEntries) {
         for (const [otherUserId, relationshipStatus] of relationshipMap) {
+            resolvedRelationshipMap.set(otherUserId, relationshipStatus);
             cache?.relationshipCache.set(otherUserId, relationshipStatus);
         }
 
@@ -770,10 +773,23 @@ async function loadRelationshipMap(
         }
     }
 
+    if (cache) {
+        return uniqueUserIds.reduce<Map<string, RelationshipStatus>>(
+            (accumulator, otherUserId) => {
+                const relationshipStatus = cache.relationshipCache.get(otherUserId);
+                if (relationshipStatus !== undefined && relationshipStatus !== null) {
+                    accumulator.set(otherUserId, relationshipStatus);
+                }
+                return accumulator;
+            },
+            new Map<string, RelationshipStatus>(),
+        );
+    }
+
     return uniqueUserIds.reduce<Map<string, RelationshipStatus>>(
         (accumulator, otherUserId) => {
-            const relationshipStatus = cache?.relationshipCache.get(otherUserId);
-            if (relationshipStatus !== undefined && relationshipStatus !== null) {
+            const relationshipStatus = resolvedRelationshipMap.get(otherUserId);
+            if (relationshipStatus) {
                 accumulator.set(otherUserId, relationshipStatus);
             }
             return accumulator;

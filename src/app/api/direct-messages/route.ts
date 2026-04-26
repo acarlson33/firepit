@@ -4,7 +4,7 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import type { FileAttachment } from "@/lib/types";
+import type { FileAttachment, RelationshipStatus } from "@/lib/types";
 import {
     getRelationshipMap,
     getRelationshipStatus,
@@ -155,10 +155,13 @@ function buildRelationshipMapCacheKey(userId: string, otherUserIds: string[]) {
     return `dm:relationship-map:${userId}:${normalizedOtherUserIds.join(",")}`;
 }
 
-function getCachedRelationshipMap(userId: string, otherUserIds: string[]) {
+function getCachedRelationshipMap(
+    userId: string,
+    otherUserIds: string[],
+): Promise<Map<string, RelationshipStatus>> {
     const normalizedOtherUserIds = normalizeDistinctIds(otherUserIds, userId);
     if (normalizedOtherUserIds.length === 0) {
-        return Promise.resolve(new Map());
+        return Promise.resolve(new Map<string, RelationshipStatus>());
     }
 
     return dedupeDirectMessageCache(
@@ -463,6 +466,7 @@ export async function GET(request: NextRequest) {
                 });
             } catch (error) {
                 threadReadLookupFailed = true;
+                unreadThreadCountsTruncated = true;
                 logger.warn("Thread read lookup failed for conversations", {
                     error:
                         error instanceof Error ? error.message : String(error),
@@ -505,69 +509,33 @@ export async function GET(request: NextRequest) {
                         string,
                         Record<string, unknown>
                     >();
-                    let cursorAfterId: string | null = null;
-                    let threadParentPageCount = 0;
-                    let threadParentsTruncated = false;
-                    let lastPageWasFull = false;
+                    const threadParentPages = await listPages({
+                        databases,
+                        databaseId: DATABASE_ID,
+                        collectionId: DIRECT_MESSAGES_COLLECTION,
+                        baseQueries: [
+                            Query.equal("conversationId", conversationIds),
+                            Query.greaterThan("threadMessageCount", 0),
+                        ],
+                        pageSize,
+                        maxPages: maxThreadParentPages,
+                        warningContext: "direct-messages-thread-parents",
+                    });
 
-                    while (threadParentPageCount < maxThreadParentPages) {
-                        threadParentPageCount += 1;
-                        const page = await databases.listDocuments(
-                            DATABASE_ID,
-                            DIRECT_MESSAGES_COLLECTION,
-                            [
-                                Query.equal(
-                                    "conversationId",
-                                    conversationIds,
-                                ),
-                                Query.greaterThan("threadMessageCount", 0),
-                                Query.orderAsc("$id"),
-                                Query.limit(pageSize),
-                                ...(cursorAfterId
-                                    ? [Query.cursorAfter(cursorAfterId)]
-                                    : []),
-                            ],
-                        );
-
-                        for (const document of page.documents) {
-                            const threadParent = document as Record<string, unknown>;
-                            const parentMessageId =
-                                typeof threadParent.$id === "string"
-                                    ? threadParent.$id
-                                    : null;
-                            if (!parentMessageId) {
-                                continue;
-                            }
-
-                            threadParentsById.set(parentMessageId, threadParent);
-                        }
-
-                        if (page.documents.length < pageSize) {
-                            lastPageWasFull = false;
-                            break;
-                        }
-
-                        lastPageWasFull = true;
-
-                        const lastDocument = page.documents.at(-1) as
-                            | Record<string, unknown>
-                            | undefined;
-                        cursorAfterId =
-                            lastDocument && typeof lastDocument.$id === "string"
-                                ? lastDocument.$id
+                    for (const document of threadParentPages.documents) {
+                        const threadParent = document as Record<string, unknown>;
+                        const parentMessageId =
+                            typeof threadParent.$id === "string"
+                                ? threadParent.$id
                                 : null;
-
-                        if (!cursorAfterId) {
-                            break;
+                        if (!parentMessageId) {
+                            continue;
                         }
+
+                        threadParentsById.set(parentMessageId, threadParent);
                     }
-                    if (
-                        threadParentPageCount === maxThreadParentPages &&
-                        cursorAfterId &&
-                        lastPageWasFull
-                    ) {
-                        threadParentsTruncated = true;
-                    }
+
+                    const threadParentsTruncated = threadParentPages.truncated;
                     const { replySignalsByParentId, replySignalsTruncated } =
                         await replySignalsPromise;
 

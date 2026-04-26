@@ -170,6 +170,19 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       }
 
       const membership = membershipEnabled ? createdMembership : null;
+
+      if (membershipEnabled && membership === null) {
+        await refresh();
+        setSelectedServer(server.$id);
+        if (ownerId) {
+          apiCache.clear(`memberships:${ownerId}`);
+        }
+        if (userId) {
+          apiCache.clear(`servers:initial:${userId}`);
+        }
+        return server;
+      }
+
       const nextMemberships = membership
         ? [...memberships, membership]
         : memberships;
@@ -232,18 +245,7 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       if (membershipEnabled) {
         const nextMemberships = [...memberships, membership];
         setMemberships(nextMemberships);
-        const membershipServer =
-          "server" in (membership as unknown as Record<string, unknown>)
-            ? (membership as unknown as { server?: unknown }).server
-            : null;
-
-        if (isServerRecord(membershipServer)) {
-          setServers((prev) =>
-            filterAllowedServers([...prev, membershipServer], nextMemberships)
-          );
-        } else {
-          await refresh();
-        }
+        await refresh();
       }
       setSelectedServer(id);
       apiCache.clear(`memberships:${uid}`);

@@ -38,6 +38,22 @@ type Databases = {
     };
 };
 
+function shouldRetryWithPositionalCall(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    const message = error.message.toLowerCase();
+    const isTypeError = error.name === "TypeError";
+
+    return (
+        isTypeError ||
+        message.includes("invalid argument") ||
+        message.includes("invalid arguments") ||
+        message.includes("unexpected argument")
+    );
+}
+
 async function callListDocuments(
     databases: Databases,
     databaseId: string,
@@ -50,7 +66,11 @@ async function callListDocuments(
             collectionId,
             queries,
         });
-    } catch {
+    } catch (error) {
+        if (!shouldRetryWithPositionalCall(error)) {
+            throw error;
+        }
+
         return databases.listDocuments(databaseId, collectionId, queries);
     }
 }
@@ -169,7 +189,11 @@ export async function listPages(params: {
             hasMore = false;
         }
 
-        if (typeof maxPages === "number" && pageCount >= maxPages) {
+        if (
+            typeof maxPages === "number" &&
+            pageCount >= maxPages &&
+            Boolean(pageFull || hasMore)
+        ) {
             truncated = true;
             break;
         }

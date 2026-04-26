@@ -137,8 +137,6 @@ async function captureUnhandledServerError(params: {
     } catch {
         // Telemetry forwarding should never impact process-level handlers.
     }
-
-    await flushPostHog();
 }
 
 export function registerPostHogProcessHandlers() {
@@ -167,7 +165,10 @@ export function registerPostHogProcessHandlers() {
         exitCode?: number;
     }) => {
         await flushPostHog();
-        if (typeof params?.exitCode === "number") {
+        if (
+            typeof params?.exitCode === "number" &&
+            (process.exitCode === undefined || process.exitCode === 0)
+        ) {
             process.exitCode = params.exitCode;
         }
     };

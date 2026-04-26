@@ -132,6 +132,17 @@ function defaultSuppressionPredicate(
     return isExpectedAppwriteWebSocketError(args);
 }
 
+function isBenignThrownTeardownError(errorMessage: string): boolean {
+    const normalized = errorMessage.toLowerCase();
+    return (
+        normalized.includes("closing or closed") ||
+        normalized.includes("already in closing") ||
+        normalized.includes("closed before") ||
+        normalized.includes("aborterror") ||
+        normalized.includes("domexception")
+    );
+}
+
 /**
  * Close a realtime subscription while suppressing expected websocket teardown noise.
  */
@@ -159,15 +170,21 @@ export async function closeSubscriptionSafely(
     } catch (error) {
         const errorMessage =
             error instanceof Error ? error.message : String(error);
-        const isBenignTeardownError = isExpectedAppwriteWebSocketError([
-            errorMessage,
-        ]);
+        const isBenignTeardownError =
+            isExpectedAppwriteWebSocketError([errorMessage]) ||
+            isBenignThrownTeardownError(errorMessage);
 
-        const log = isBenignTeardownError ? logger.info : logger.warn;
-        log("Realtime subscription close failed", {
-            marker,
-            error: errorMessage,
-        });
+        if (isBenignTeardownError) {
+            logger.info("Realtime subscription close failed", {
+                marker,
+                error: errorMessage,
+            });
+        } else {
+            logger.warn("Realtime subscription close failed", {
+                marker,
+                error: errorMessage,
+            });
+        }
 
         // Ignore teardown errors when websocket is already disconnected.
     }

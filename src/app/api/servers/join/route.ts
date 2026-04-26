@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import {
 	logger,
 	recordError,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
+import type { Membership } from "@/lib/types";
 
 type ServerDocument = {
 	$id: string;
@@ -52,15 +54,31 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const body = await request.json();
-		const { serverId } = body;
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch {
+			return NextResponse.json(
+				{ error: "Invalid JSON payload" },
+				{ status: 400 }
+			);
+		}
 
-		if (!serverId) {
+		if (typeof body !== "object" || body === null || Array.isArray(body)) {
+			return NextResponse.json(
+				{ error: "Invalid JSON payload" },
+				{ status: 400 }
+			);
+		}
+
+		const serverIdValue = (body as { serverId?: unknown }).serverId;
+		if (typeof serverIdValue !== "string" || serverIdValue.trim().length === 0) {
 			return NextResponse.json(
 				{ error: "serverId is required" },
 				{ status: 400 }
 			);
 		}
+		const serverId = serverIdValue.trim();
 
 		// Use authenticated user's ID, not from request body (security)
 		const userId = user.$id;
@@ -82,16 +100,7 @@ export async function POST(request: NextRequest) {
 			)) as ServerDocument;
 			isPublicServer = serverDocument.isPublic === true;
 		} catch (error) {
-			const errorMessage =
-				error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-			const isNotFound =
-				typeof error === "object" &&
-				error !== null &&
-				(("code" in error
-					? Number((error as { code?: unknown }).code) === 404
-					: false) || errorMessage.includes("not found"));
-
-			if (isNotFound) {
+			if (isDocumentNotFoundError(error)) {
 				logger.warn("Server not found", { serverId });
 				return NextResponse.json(
 					{ error: "Server not found" },
@@ -176,17 +185,17 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
-		const safeMembership = membership
+		const safeMembership: Membership | null = membership
 			? {
-				  id: membership.$id,
-				  userId: membership.userId,
-				  serverId: membership.serverId,
-				  role: membership.role,
-				  createdAt: membership.$createdAt,
-				  updatedAt:
+				  $id: String(membership.$id),
+				  $createdAt: String(membership.$createdAt ?? ""),
+				  $updatedAt:
 					  typeof (membership as { $updatedAt?: unknown }).$updatedAt === "string"
 						  ? (membership as { $updatedAt?: string }).$updatedAt
 						  : undefined,
+				  userId: String(membership.userId),
+				  serverId: String(membership.serverId),
+				  role: membership.role === "owner" ? "owner" : "member",
 			  }
 			: null;
 

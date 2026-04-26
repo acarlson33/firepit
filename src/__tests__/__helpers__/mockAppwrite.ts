@@ -87,7 +87,14 @@ vi.mock("appwrite", () => {
         permissions = opts.permissions;
         currentConfig.onCreate?.(opts);
       } else {
-        [, collectionId, , data, permissions] = args;
+        collectionId = typeof args[1] === "string" ? args[1] : undefined;
+        data =
+          typeof args[3] === "object" &&
+          args[3] !== null &&
+          !Array.isArray(args[3])
+            ? (args[3] as Record<string, unknown>)
+            : undefined;
+        permissions = Array.isArray(args[4]) ? args[4] : undefined;
         currentConfig.onCreate?.({ collectionId, data, permissions });
       }
       if (!collectionId) {
@@ -104,9 +111,13 @@ vi.mock("appwrite", () => {
       }
       const idFromArgs =
         args.length > 1 && typeof args[2] === "string" ? args[2] : undefined;
+      const safeData =
+        typeof data === "object" && data !== null && !Array.isArray(data)
+          ? (data as Record<string, unknown>)
+          : {};
       return Promise.resolve({
         $id: idFromArgs || `${collectionId}-doc`,
-        ...data,
+        ...safeData,
       });
     }
     listDocuments(...args: unknown[]) {

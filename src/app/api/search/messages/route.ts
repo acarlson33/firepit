@@ -415,7 +415,14 @@ export async function GET(request: NextRequest) {
                 user.$id,
             );
             if (!otherId) {
-                return true;
+                logger.warn(
+                    "Dropping malformed direct message search result with missing counterparty",
+                    {
+                        directMessageId: directMessage.$id,
+                        userId: user.$id,
+                    },
+                );
+                return false;
             }
 
             const relationship = relationshipMap.get(otherId);

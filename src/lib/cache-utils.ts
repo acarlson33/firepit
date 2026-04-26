@@ -11,6 +11,28 @@ type CacheEntry<T> = {
 class SimpleCache {
     private cache = new Map<string, CacheEntry<unknown>>();
     private pendingRequests = new Map<string, Promise<unknown>>();
+    private prefixTokens = new Map<string, number>();
+
+    private capturePrefixTokensForKey(key: string): Array<[string, number]> {
+        const tokens: Array<[string, number]> = [];
+        for (const [prefix, token] of this.prefixTokens.entries()) {
+            if (key.startsWith(prefix)) {
+                tokens.push([prefix, token]);
+            }
+        }
+
+        return tokens;
+    }
+
+    private arePrefixTokensCurrent(tokens: Array<[string, number]>): boolean {
+        for (const [prefix, token] of tokens) {
+            if ((this.prefixTokens.get(prefix) ?? 0) !== token) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /**
      * Get cached data if it exists and hasn't expired
@@ -58,6 +80,8 @@ class SimpleCache {
      * Clear all cache and pending request entries that start with a prefix.
      */
     clearPrefix(prefix: string): void {
+        this.prefixTokens.set(prefix, (this.prefixTokens.get(prefix) ?? 0) + 1);
+
         for (const key of this.cache.keys()) {
             if (key.startsWith(prefix)) {
                 this.cache.delete(key);
@@ -93,9 +117,12 @@ class SimpleCache {
         }
 
         // Execute new request
+        const requestPrefixTokens = this.capturePrefixTokensForKey(key);
         const promise = fetcher()
             .then((data) => {
-                this.set(key, data, ttl);
+                if (this.arePrefixTokensCurrent(requestPrefixTokens)) {
+                    this.set(key, data, ttl);
+                }
                 this.pendingRequests.delete(key);
                 return data;
             })
@@ -147,10 +174,19 @@ class SimpleCache {
                     | Promise<T>
                     | undefined;
                 if (!pending) {
+                    const requestPrefixTokens = this.capturePrefixTokensForKey(
+                        key,
+                    );
                     // Execute background refresh
                     const promise = fetcher()
                         .then((data) => {
-                            this.set(key, data, ttl);
+                            if (
+                                this.arePrefixTokensCurrent(
+                                    requestPrefixTokens,
+                                )
+                            ) {
+                                this.set(key, data, ttl);
+                            }
                             this.pendingRequests.delete(key);
                             if (onUpdate) {
                                 onUpdate(data);

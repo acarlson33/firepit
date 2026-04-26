@@ -282,6 +282,13 @@ async function enrichDirectMessagesWithAttachments(
                     warningContext: "enrichDirectMessagesWithAttachments",
                     maxPages: 50,
                 });
+
+                if (page.truncated) {
+                    throw new Error(
+                        `Attachment enrichment truncated for warningContext=enrichDirectMessagesWithAttachments chunk=${messageIdChunk.join(",")}`,
+                    );
+                }
+
                 return page.documents;
             },
         });
@@ -314,9 +321,12 @@ async function enrichDirectMessagesWithAttachments(
             }
             return message;
         });
-    } catch {
-        // If attachment fetch fails, return messages without attachments
-        return messages;
+    } catch (error) {
+        throw new Error(
+            `Failed to enrich direct messages with attachments: ${
+                error instanceof Error ? error.message : String(error)
+            }`,
+        );
     }
 }
 
@@ -384,13 +394,29 @@ export async function getOrCreateConversation(
         ];
 
         let documents: Array<Record<string, unknown>> = [];
+        const isExactPairConversation = (record: Record<string, unknown>) => {
+            const participantList = Array.isArray(record.participants)
+                ? (record.participants as string[])
+                : [];
+
+            return (
+                participantList.length === 2 &&
+                participantList.includes(user1) &&
+                participantList.includes(user2)
+            );
+        };
         try {
             const response = await databases.listDocuments({
                 databaseId: DATABASE_ID,
                 collectionId: CONVERSATIONS_COLLECTION,
                 queries: queriesWithParticipantCount,
             });
-            documents = (response.documents ?? []) as Array<Record<string, unknown>>;
+            documents = (response.documents ?? [])
+                .filter(
+                    (document): document is Record<string, unknown> =>
+                        typeof document === "object" && document !== null,
+                )
+                .filter(isExactPairConversation);
 
             if (documents.length === 0) {
                 const fallbackResponse = await databases.listDocuments({
@@ -403,7 +429,12 @@ export async function getOrCreateConversation(
                         Query.limit(1),
                     ],
                 });
-                documents = (fallbackResponse.documents ?? []) as Array<Record<string, unknown>>;
+                documents = (fallbackResponse.documents ?? [])
+                    .filter(
+                        (document): document is Record<string, unknown> =>
+                            typeof document === "object" && document !== null,
+                    )
+                    .filter(isExactPairConversation);
             }
         } catch {
             const fallbackResponse = await databases.listDocuments({
@@ -416,7 +447,12 @@ export async function getOrCreateConversation(
                     Query.limit(1),
                 ],
             });
-            documents = (fallbackResponse.documents ?? []) as Array<Record<string, unknown>>;
+            documents = (fallbackResponse.documents ?? [])
+                .filter(
+                    (document): document is Record<string, unknown> =>
+                        typeof document === "object" && document !== null,
+                )
+                .filter(isExactPairConversation);
         }
 
         const oneToOne = documents.at(0);

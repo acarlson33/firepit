@@ -85,14 +85,20 @@ components:
         JoinMembership:
             type: object
             required:
-                - id
+                - $id
+                - $createdAt
                 - userId
                 - serverId
                 - role
-                - createdAt
             properties:
-                id:
+                $id:
                     type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
                 userId:
                     type: string
                 serverId:
@@ -100,12 +106,6 @@ components:
                 role:
                     type: string
                     enum: [owner, member]
-                createdAt:
-                    type: string
-                    format: date-time
-                updatedAt:
-                    type: string
-                    format: date-time
 
         JoinResponse:
             allOf:
