@@ -87,12 +87,13 @@ export type MessagePollOption = {
 };
 
 const POLL_CONTEXTS = ["channel", "conversation"] as const;
-export type PollContext = (typeof POLL_CONTEXTS)[number];
+export type MessageContextType = (typeof POLL_CONTEXTS)[number];
+export type PollContext = MessageContextType;
 
 export type MessagePoll = {
     id: string;
     messageId: string;
-    contextType: PollContext;
+    contextType: MessageContextType;
     contextId: string;
     question: string;
     options: MessagePollOption[];
@@ -614,7 +615,7 @@ export type EffectivePermissions = {
 export type PinnedMessage = {
     $id: string;
     messageId: string;
-    contextType: PollContext;
+    contextType: MessageContextType;
     contextId: string;
     pinnedBy: string;
     pinnedAt: string;

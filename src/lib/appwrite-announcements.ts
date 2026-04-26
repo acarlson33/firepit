@@ -59,6 +59,7 @@ type DeliveryUpdatePayload = {
 type CreateAnnouncementInput = {
     actorId: string;
     body: string;
+    recipientScope?: Announcement["recipientScope"];
     title?: string;
     mode?: AnnouncementCreateMode;
     scheduledFor?: string;
@@ -129,26 +130,15 @@ function isDuplicateConstraintError(error: unknown): boolean {
     }
 
     const candidate = error as {
-        code?: unknown;
-        message?: unknown;
         type?: unknown;
     };
-    const message =
-        typeof candidate.message === "string"
-            ? candidate.message.toLowerCase()
-            : "";
-    const type =
-        typeof candidate.type === "string"
-            ? candidate.type.toLowerCase()
-            : "";
+    if (typeof candidate.type !== "string") {
+        return false;
+    }
 
     return (
-        candidate.code === 409 ||
-        message.includes("duplicate") ||
-        message.includes("already exists") ||
-        message.includes("unique") ||
-        type.includes("conflict") ||
-        type.includes("duplicate")
+        candidate.type === "row_already_exists" ||
+        candidate.type === "attribute_already_exists"
     );
 }
 
@@ -213,6 +203,24 @@ function parseAnnouncementStatus(value: unknown): AnnouncementStatus {
         default:
             return "draft";
     }
+}
+
+function parseRecipientScope(
+    value: unknown,
+    context: string,
+): Announcement["recipientScope"] {
+    if (value === "all_profiles") {
+        return value;
+    }
+
+    if (value !== undefined) {
+        logger.warn("Invalid announcement recipient scope; defaulting", {
+            context,
+            recipientScope: value,
+        });
+    }
+
+    return "all_profiles";
 }
 
 function normalizeTitle(value?: string): string | undefined {
@@ -462,7 +470,10 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             typeof document.publishedAt === "string"
                 ? document.publishedAt
                 : undefined,
-        recipientScope: "all_profiles",
+        recipientScope: parseRecipientScope(
+            document.recipientScope,
+            "toAnnouncement",
+        ),
         scheduledFor:
             typeof document.scheduledFor === "string"
                 ? document.scheduledFor
@@ -518,6 +529,10 @@ export async function createAnnouncement(
         idempotencyKey.length > 0
             ? idempotencyKey
             : `auto:${randomUUID()}`;
+    const recipientScope = parseRecipientScope(
+        input.recipientScope,
+        "createAnnouncement",
+    );
     const status = resolveStatusForMode(mode);
     const now = new Date().toISOString();
 
@@ -559,7 +574,7 @@ export async function createAnnouncement(
                 lastDispatchAt: undefined,
                 priority,
                 publishedAt: mode === "send_now" ? now : undefined,
-                recipientScope: "all_profiles",
+                recipientScope,
                 scheduledFor,
                 status,
                 title,
@@ -1159,7 +1174,7 @@ export async function dispatchAnnouncementById(
 
     const announcementRecord = document as unknown as Record<string, unknown>;
     const status = parseAnnouncementStatus(announcementRecord.status);
-    if (status !== "scheduled" && status !== "dispatching") {
+    if (status !== "scheduled") {
         return { dispatched: false };
     }
 

@@ -47,7 +47,13 @@ async function requireManageChannelsAccessByChannelId(channelId: string) {
         env.collections.channels,
         channelId,
     );
-    return requireManageChannelsAccessByServerId(String(channel.serverId));
+    const serverId = String(channel.serverId);
+    const authError = await requireManageChannelsAccessByServerId(serverId);
+    if (authError) {
+        return authError;
+    }
+
+    return { serverId };
 }
 
 // GET: List permission overrides for a channel
@@ -64,10 +70,11 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const authError =
-            await requireManageChannelsAccessByChannelId(channelId);
-        if (authError) {
-            return authError;
+        const authResult = await requireManageChannelsAccessByChannelId(
+            channelId,
+        );
+        if (authResult instanceof NextResponse) {
+            return authResult;
         }
 
         const overrides = await databases.listDocuments(
@@ -102,10 +109,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const authError =
-            await requireManageChannelsAccessByChannelId(channelId);
-        if (authError) {
-            return authError;
+        const authResult = await requireManageChannelsAccessByChannelId(
+            channelId,
+        );
+        if (authResult instanceof NextResponse) {
+            return authResult;
         }
 
         if (!roleId && !userId) {
@@ -198,12 +206,7 @@ export async function POST(request: NextRequest) {
             overrideData,
         );
 
-        const channel = await databases.getDocument(
-            databaseId,
-            env.collections.channels,
-            channelId,
-        );
-        invalidateChannelsServerCaches(String(channel.serverId));
+        invalidateChannelsServerCaches(authResult.serverId);
 
         return NextResponse.json({ override }, { status: 201 });
     } catch (error) {
@@ -236,11 +239,11 @@ export async function PUT(request: NextRequest) {
             overridesCollectionId,
             overrideId,
         );
-        const authError = await requireManageChannelsAccessByChannelId(
+        const authResult = await requireManageChannelsAccessByChannelId(
             String(existingOverride.channelId),
         );
-        if (authError) {
-            return authError;
+        if (authResult instanceof NextResponse) {
+            return authResult;
         }
 
         // Validate permissions
@@ -282,12 +285,7 @@ export async function PUT(request: NextRequest) {
             },
         );
 
-        const channel = await databases.getDocument(
-            databaseId,
-            env.collections.channels,
-            String(existingOverride.channelId),
-        );
-        invalidateChannelsServerCaches(String(channel.serverId));
+        invalidateChannelsServerCaches(authResult.serverId);
 
         return NextResponse.json({ override });
     } catch (error) {
@@ -320,11 +318,11 @@ export async function DELETE(request: NextRequest) {
             overridesCollectionId,
             overrideId,
         );
-        const authError = await requireManageChannelsAccessByChannelId(
+        const authResult = await requireManageChannelsAccessByChannelId(
             String(existingOverride.channelId),
         );
-        if (authError) {
-            return authError;
+        if (authResult instanceof NextResponse) {
+            return authResult;
         }
 
         await databases.deleteDocument(
@@ -333,12 +331,7 @@ export async function DELETE(request: NextRequest) {
             overrideId,
         );
 
-        const channel = await databases.getDocument(
-            databaseId,
-            env.collections.channels,
-            String(existingOverride.channelId),
-        );
-        invalidateChannelsServerCaches(String(channel.serverId));
+        invalidateChannelsServerCaches(authResult.serverId);
 
         return NextResponse.json({ success: true });
     } catch (error) {

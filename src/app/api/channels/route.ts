@@ -12,6 +12,7 @@ import { compressedResponse } from "@/lib/api-compression";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { apiCache } from "@/lib/cache-utils";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
+import { listPages } from "@/lib/appwrite-pagination";
 
 function sortChannels(channels: Channel[]) {
     return [...channels].sort((left, right) => {
@@ -38,6 +39,7 @@ const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 const CHANNELS_ROUTE_CACHE_TTL_MS = 10 * 1000;
+const QUERY_ARRAY_LIMIT = 100;
 
 function canUseChannelsRouteCache(): boolean {
     return process.env.NODE_ENV !== "test";
@@ -62,6 +64,14 @@ function stableIdsKey(ids: string[]): string {
 
 function stableIdsHashKey(ids: string[]): string {
     return createHash("sha256").update(stableIdsKey(ids)).digest("hex");
+}
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
 }
 
 function normalizeChannelType(value: unknown): Channel["type"] {
@@ -362,12 +372,27 @@ export async function GET(request: NextRequest) {
                 ),
                 dedupeChannelsRouteCache(
                     `api:channels:overrides:${serverId}:${stableIdsHashKey(channelIds)}`,
-                    () =>
-                        databases.listDocuments(
-                            env.databaseId,
-                            CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
-                            [Query.equal("channelId", channelIds), Query.limit(1000)],
-                        ),
+                    async () => {
+                        const overridePages = await listPages({
+                            databases,
+                            databaseId: env.databaseId,
+                            collectionId:
+                                CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID,
+                            baseQueries: [Query.equal("channelId", channelIds)],
+                            pageSize: 1000,
+                            warningContext: "channels-route-overrides",
+                        });
+
+                        if (overridePages.truncated) {
+                            throw new Error(
+                                "Channel override lookup truncated; refusing partial visibility evaluation",
+                            );
+                        }
+
+                        return {
+                            documents: overridePages.documents,
+                        };
+                    },
                 ),
             ]);
 
@@ -379,47 +404,86 @@ export async function GET(request: NextRequest) {
 
             const roles: Role[] =
                 roleIds.length > 0
-                    ? (
-                          await dedupeChannelsRouteCache(
-                              `api:channels:roles:${serverId}:${stableIdsHashKey(roleIds)}`,
-                              () =>
-                                  databases.listDocuments(
-                                      env.databaseId,
-                                      ROLES_COLLECTION_ID,
-                                      [
-                                          Query.equal("serverId", serverId),
-                                          Query.equal("$id", roleIds),
-                                          Query.limit(100),
-                                      ],
+                    ? await dedupeChannelsRouteCache(
+                          `api:channels:roles:${serverId}:${stableIdsHashKey(roleIds)}`,
+                          async () => {
+                              const rolePages = await Promise.all(
+                                  chunkValues(roleIds, QUERY_ARRAY_LIMIT).map(
+                                      (roleIdChunk) =>
+                                          databases.listDocuments(
+                                              env.databaseId,
+                                              ROLES_COLLECTION_ID,
+                                              [
+                                                  Query.equal(
+                                                      "serverId",
+                                                      serverId,
+                                                  ),
+                                                  Query.equal(
+                                                      "$id",
+                                                      roleIdChunk,
+                                                  ),
+                                                  Query.limit(
+                                                      roleIdChunk.length,
+                                                  ),
+                                              ],
+                                          ),
                                   ),
-                          )
-                      ).documents.map((doc) => {
-                          const d = doc as Record<string, unknown>;
-                          return {
-                              $id: String(d.$id),
-                              serverId: String(d.serverId),
-                              name: String(d.name),
-                              color: String(d.color ?? "#6B7280"),
-                              position:
-                                  typeof d.position === "number"
-                                      ? d.position
-                                      : 0,
-                              readMessages: Boolean(d.readMessages),
-                              sendMessages: Boolean(d.sendMessages),
-                              manageMessages: Boolean(d.manageMessages),
-                              manageChannels: Boolean(d.manageChannels),
-                              manageRoles: Boolean(d.manageRoles),
-                              manageServer: Boolean(d.manageServer),
-                              mentionEveryone: Boolean(d.mentionEveryone),
-                              administrator: Boolean(d.administrator),
-                              mentionable: Boolean(d.mentionable),
-                              $createdAt: String(d.$createdAt ?? ""),
-                              memberCount:
-                                  typeof d.memberCount === "number"
-                                      ? d.memberCount
-                                      : undefined,
-                          } satisfies Role;
-                      })
+                              );
+
+                              const rolesById = new Map<string, Role>();
+                              for (const rolePage of rolePages) {
+                                  for (const document of rolePage.documents) {
+                                      const d = document as Record<
+                                          string,
+                                          unknown
+                                      >;
+                                      const role = {
+                                          $id: String(d.$id),
+                                          serverId: String(d.serverId),
+                                          name: String(d.name),
+                                          color: String(d.color ?? "#6B7280"),
+                                          position:
+                                              typeof d.position === "number"
+                                                  ? d.position
+                                                  : 0,
+                                          readMessages: Boolean(d.readMessages),
+                                          sendMessages: Boolean(d.sendMessages),
+                                          manageMessages: Boolean(
+                                              d.manageMessages,
+                                          ),
+                                          manageChannels: Boolean(
+                                              d.manageChannels,
+                                          ),
+                                          manageRoles: Boolean(d.manageRoles),
+                                          manageServer: Boolean(
+                                              d.manageServer,
+                                          ),
+                                          mentionEveryone: Boolean(
+                                              d.mentionEveryone,
+                                          ),
+                                          administrator: Boolean(
+                                              d.administrator,
+                                          ),
+                                          mentionable: Boolean(d.mentionable),
+                                          $createdAt: String(
+                                              d.$createdAt ?? "",
+                                          ),
+                                          memberCount:
+                                              typeof d.memberCount ===
+                                              "number"
+                                                  ? d.memberCount
+                                                  : undefined,
+                                      } satisfies Role;
+                                      rolesById.set(role.$id, role);
+                                  }
+                              }
+
+                              return roleIds.flatMap((roleId) => {
+                                  const role = rolesById.get(roleId);
+                                  return role ? [role] : [];
+                              });
+                          },
+                      )
                     : [];
 
             const overridesByChannel = new Map<

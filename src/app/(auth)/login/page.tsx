@@ -159,9 +159,7 @@ function LoginFormContent() {
                 </Button>
                 <Button
                     disabled={loading || resendingVerification}
-                    onClick={async () => {
-                        await onResendVerification();
-                    }}
+                    onClick={onResendVerification}
                     type="button"
                     variant="outline"
                 >

@@ -194,6 +194,7 @@ export function ServerAdminPanel({
     const canEditServerSettings = isOwner || canManageServer;
     const iconInputId = useId();
     const bannerInputId = useId();
+        const publicDiscoveryId = `${useId()}-public-discovery`;
 
     useEffect(() => {
         if (!open) {
@@ -817,7 +818,7 @@ export function ServerAdminPanel({
                                         <div>
                                             <Label
                                                 className="text-sm font-medium"
-                                                htmlFor="server-settings-public-discovery"
+                                                   htmlFor={publicDiscoveryId}
                                             >
                                                 Public discovery
                                             </Label>
@@ -827,7 +828,7 @@ export function ServerAdminPanel({
                                             </p>
                                         </div>
                                         <Switch
-                                            id="server-settings-public-discovery"
+                                               id={publicDiscoveryId}
                                             checked={settingsIsPublic}
                                             onCheckedChange={setSettingsIsPublic}
                                         />

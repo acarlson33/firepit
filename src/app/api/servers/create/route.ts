@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
-import { Query } from "node-appwrite";
 
 import { createServer } from "@/lib/appwrite-servers";
-import { getEnvConfig } from "@/lib/appwrite-core";
-import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger } from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { normalizeServerFileId } from "@/lib/server-metadata";
-import type { Membership } from "@/lib/types";
 
 const MAX_SERVER_NAME_LENGTH = 100;
 const MAX_SERVER_DESCRIPTION_LENGTH = 500;
@@ -147,57 +143,14 @@ export async function POST(request: Request) {
             );
         }
 
-        const server = await createServer(trimmedName, {
+        const { membership, server } = await createServer(trimmedName, {
             description: normalizedDescription,
             iconFileId: normalizedIconFileId,
             bannerFileId: normalizedBannerFileId,
             isPublic,
             bypassFeatureCheck: true,
+            includeMembership: true,
         });
-
-        let membership: Membership | null = null;
-
-        try {
-            const env = getEnvConfig();
-            const { databases } = getServerClient();
-            const membershipsCollectionId = env.collections.memberships;
-
-            if (membershipsCollectionId) {
-                const membershipResult = await databases.listDocuments(
-                    env.databaseId,
-                    membershipsCollectionId,
-                    [
-                        Query.equal("serverId", server.$id),
-                        Query.equal("userId", session.$id),
-                        Query.limit(1),
-                    ],
-                );
-
-                const membershipDoc = membershipResult.documents.at(0) as
-                    | Record<string, unknown>
-                    | undefined;
-
-                if (membershipDoc) {
-                    membership = {
-                        $id: String(membershipDoc.$id),
-                        $createdAt: String(membershipDoc.$createdAt ?? ""),
-                        role:
-                            membershipDoc.role === "owner" ? "owner" : "member",
-                        serverId: String(membershipDoc.serverId),
-                        userId: String(membershipDoc.userId),
-                    };
-                }
-            }
-        } catch (membershipError) {
-            logger.warn("Failed to load owner membership after server creation", {
-                error:
-                    membershipError instanceof Error
-                        ? membershipError.message
-                        : String(membershipError),
-                serverId: server.$id,
-                userId: session.$id,
-            });
-        }
 
         const telemetryTask = getPostHogClient().capture({
             distinctId: session.$id,

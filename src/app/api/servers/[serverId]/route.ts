@@ -482,7 +482,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 }
 
 // DELETE: Delete a server (must be server owner or have manageServer permission)
-export async function DELETE(request: NextRequest, context: RouteContext) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
     const session = await getServerSession();
     if (!session?.$id) {
         return NextResponse.json({ error: "Authentication required" }, { status: 401 });

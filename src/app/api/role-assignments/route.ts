@@ -187,8 +187,15 @@ export async function GET(request: NextRequest) {
                 serverId,
             });
             const roleAssignments = roleAssignmentsResult.documents;
+            const validRoleAssignments = roleAssignments.filter(
+                (assignment) =>
+                    typeof assignment.userId === "string" &&
+                    assignment.userId.length > 0,
+            );
 
-            const profileUserIds = roleAssignments.map((assignment) => String(assignment.userId));
+            const profileUserIds = validRoleAssignments.map(
+                (assignment) => assignment.userId,
+            );
             const profileChunks = chunkValues(profileUserIds, QUERY_ARRAY_LIMIT);
             const profileDocuments =
                 profileChunks.length === 0
@@ -212,7 +219,7 @@ export async function GET(request: NextRequest) {
                 profileDocuments.map((profile) => [String(profile.userId), profile]),
             );
 
-            const members = roleAssignments.map((assignment) => {
+            const members = validRoleAssignments.map((assignment) => {
                 const profile = profilesByUserId.get(String(assignment.userId));
                 return {
                     userId: assignment.userId,
