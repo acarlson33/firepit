@@ -82,6 +82,10 @@ type DispatchScheduledAnnouncementsResult = {
     announcementIds: string[];
 };
 
+type DispatchOneResult = {
+    dispatched: boolean;
+};
+
 function getAnnouncementsCollectionId(): string {
     return (
         process.env.APPWRITE_ANNOUNCEMENTS_COLLECTION_ID?.trim() ||
@@ -1134,4 +1138,116 @@ export async function dispatchScheduledAnnouncements(
         announcementIds: updatedIds,
         dueCount: updatedIds.length,
     };
+}
+
+export async function dispatchAnnouncementById(
+    announcementId: string,
+): Promise<DispatchOneResult> {
+    const { databases } = getServerClient();
+    const { databaseId } = getEnvConfig();
+    const { systemSenderUserId } = getAnnouncementRuntimeSettings();
+
+    if (!systemSenderUserId) {
+        throw new Error("SYSTEM_SENDER_USER_ID is required to dispatch announcements");
+    }
+
+    const document = await databases.getDocument(
+        databaseId,
+        getAnnouncementsCollectionId(),
+        announcementId,
+    );
+
+    const announcementRecord = document as unknown as Record<string, unknown>;
+    const status = parseAnnouncementStatus(announcementRecord.status);
+    if (status !== "scheduled" && status !== "dispatching") {
+        return { dispatched: false };
+    }
+
+    const now = new Date().toISOString();
+    const announcement = toAnnouncement(announcementRecord);
+    const dispatchAttempts =
+        typeof announcementRecord.dispatchAttempts === "number"
+            ? announcementRecord.dispatchAttempts
+            : 0;
+    const nextDispatchAttempts = dispatchAttempts + 1;
+
+    try {
+        await databases.updateDocument(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            announcement.$id,
+            {
+                dispatchAttempts: nextDispatchAttempts,
+                lastDispatchAt: now,
+                status: "dispatching",
+            },
+        );
+
+        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
+        await runWithConcurrency({
+            items: recipientIds,
+            concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
+            worker: async (recipientUserId) => {
+                try {
+                    await dispatchToRecipient({
+                        announcement,
+                        recipientUserId,
+                        systemSenderUserId,
+                    });
+                } catch (error) {
+                    logger.error("Announcement delivery worker crashed", {
+                        announcementId: announcement.$id,
+                        error: toErrorMessage(error),
+                        recipientUserId,
+                    });
+                }
+            },
+        });
+    } catch (error) {
+        logger.error("Announcement dispatch failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(error),
+        });
+
+        try {
+            const failedStatus: AnnouncementStatus =
+                nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
+                    ? "failed"
+                    : "dispatching";
+
+            await databases.updateDocument(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                announcement.$id,
+                {
+                    dispatchAttempts: nextDispatchAttempts,
+                    lastDispatchAt: now,
+                    status: failedStatus,
+                },
+            );
+        } catch (updateError) {
+            logger.error("Failed to persist announcement failure state", {
+                announcementId: announcement.$id,
+                error: toErrorMessage(updateError),
+            });
+        }
+
+        return { dispatched: false };
+    }
+
+    try {
+        const rollup = await rollupDeliveryStatus(announcement.$id);
+        await finalizeAnnouncementDispatch({
+            announcement,
+            dispatchAttempts: nextDispatchAttempts,
+            rollup,
+        });
+    } catch (finalizeError) {
+        logger.error("Post-dispatch finalization failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(finalizeError),
+        });
+    }
+
+    return { dispatched: true };
 }

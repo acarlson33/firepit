@@ -21,6 +21,20 @@ type SearchResult = {
     message: Message | DirectMessage;
 };
 
+function getOtherIdFromDirectMessage(
+    directMessage: DirectMessage,
+    currentUserId: string,
+) {
+    const otherId =
+        directMessage.senderId === currentUserId
+            ? directMessage.receiverId
+            : directMessage.senderId;
+
+    return typeof otherId === "string" && otherId.length > 0
+        ? otherId
+        : undefined;
+}
+
 /**
  * Parse search filters from query string
  * Supports: from:@username, in:#channel, has:image, mentions:me, before:date, after:date
@@ -186,6 +200,7 @@ export async function GET(request: NextRequest) {
             );
 
             logger.info("Search: fetched channel messages", {
+                userId: user.$id,
                 count: channelMessages.documents.length,
             });
 
@@ -372,11 +387,11 @@ export async function GET(request: NextRequest) {
             }
 
             const directMessage = result.message as DirectMessage;
-            const otherId =
-                directMessage.senderId === user.$id
-                    ? directMessage.receiverId
-                    : directMessage.senderId;
-            if (typeof otherId === "string" && otherId.length > 0) {
+            const otherId = getOtherIdFromDirectMessage(
+                directMessage,
+                user.$id,
+            );
+            if (otherId) {
                 relationshipSubjects.add(otherId);
             }
         }
@@ -395,11 +410,11 @@ export async function GET(request: NextRequest) {
             }
 
             const directMessage = result.message as DirectMessage;
-            const otherId =
-                directMessage.senderId === user.$id
-                    ? directMessage.receiverId
-                    : directMessage.senderId;
-            if (typeof otherId !== "string" || otherId.length === 0) {
+            const otherId = getOtherIdFromDirectMessage(
+                directMessage,
+                user.$id,
+            );
+            if (!otherId) {
                 return true;
             }
 

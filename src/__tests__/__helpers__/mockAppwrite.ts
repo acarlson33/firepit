@@ -11,7 +11,7 @@ type UpdateDocumentResult = ReturnType<Databases["updateDocument"]>;
 type DeleteDocumentArgs = Parameters<Databases["deleteDocument"]>;
 type DeleteDocumentResult = ReturnType<Databases["deleteDocument"]>;
 
-type FailureConfig = {
+export type FailureConfig = {
   failCollections?: Record<string, Error | string>;
   onCreate?: (args: {
     collectionId?: string;
@@ -28,7 +28,7 @@ type FailureConfig = {
   };
 };
 
-type MockAppwriteHandles = {
+export type MockAppwriteHandles = {
   created: Array<{
     collectionId: string;
     data: unknown;
@@ -73,10 +73,16 @@ vi.mock("appwrite", () => {
       if (
         args.length === 1 &&
         typeof args[0] === "object" &&
+        args[0] !== null &&
         !Array.isArray(args[0])
       ) {
-        const opts = args[0];
-        collectionId = opts.collectionId;
+        const opts = args[0] as {
+          collectionId?: unknown;
+          data?: unknown;
+          permissions?: unknown;
+        };
+        collectionId =
+          typeof opts.collectionId === "string" ? opts.collectionId : undefined;
         data = opts.data;
         permissions = opts.permissions;
         currentConfig.onCreate?.(opts);
@@ -96,7 +102,8 @@ vi.mock("appwrite", () => {
           typeof fail === "string" ? new Error(fail) : fail
         );
       }
-      const idFromArgs = args.length > 1 ? args[2] : undefined;
+      const idFromArgs =
+        args.length > 1 && typeof args[2] === "string" ? args[2] : undefined;
       return Promise.resolve({
         $id: idFromArgs || `${collectionId}-doc`,
         ...data,

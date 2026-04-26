@@ -175,7 +175,11 @@ export async function listPages(params: {
         }
 
         if (!supportsCursorAfter || !supportsOrderAsc) {
-            truncated = true;
+            if (pageFull) {
+                truncated = true;
+            } else {
+                hasMore = false;
+            }
             break;
         }
     }

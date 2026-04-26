@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
 import { muteConversation, unmuteConversation } from "@/lib/notification-settings";
+import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -72,6 +73,8 @@ export async function POST(
 		} else {
 			updatedSettings = await unmuteConversation(user.$id, conversationId);
 		}
+
+		invalidateNotificationSettingsCache(user.$id);
 
 		// Get the conversation override from the updated settings
 		const conversationOverride = updatedSettings.conversationOverrides?.[conversationId];

@@ -73,7 +73,7 @@ async function listOverridePages(params: {
 }) {
     const { databases, pageSize, queries, warningContext } = params;
 
-    const { documents } = await listPages({
+    const { documents, truncated } = await listPages({
         databases,
         databaseId,
         collectionId: channelPermissionOverridesCollectionId,
@@ -81,6 +81,12 @@ async function listOverridePages(params: {
         pageSize,
         warningContext,
     });
+
+    if (truncated) {
+        throw new Error(
+            `listOverridePages truncated for ${channelPermissionOverridesCollectionId} (${warningContext})`,
+        );
+    }
 
     return documents;
 }

@@ -55,6 +55,23 @@ class SimpleCache {
     }
 
     /**
+     * Clear all cache and pending request entries that start with a prefix.
+     */
+    clearPrefix(prefix: string): void {
+        for (const key of this.cache.keys()) {
+            if (key.startsWith(prefix)) {
+                this.cache.delete(key);
+            }
+        }
+
+        for (const key of this.pendingRequests.keys()) {
+            if (key.startsWith(prefix)) {
+                this.pendingRequests.delete(key);
+            }
+        }
+    }
+
+    /**
      * Deduplicate concurrent requests for the same key
      * If a request is already in flight, return the pending promise
      */

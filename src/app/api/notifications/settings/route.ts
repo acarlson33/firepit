@@ -6,6 +6,7 @@ import {
     getOrCreateNotificationSettings,
     updateNotificationSettings,
 } from "@/lib/notification-settings";
+import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
 import { getUserProfile } from "@/lib/appwrite-profiles";
 import type {
     DirectMessagePrivacy,
@@ -344,6 +345,8 @@ export async function PATCH(request: Request) {
                 { status: 500 },
             );
         }
+
+        invalidateNotificationSettingsCache(user.$id);
 
         return NextResponse.json(
             await buildNotificationSettingsResponse(user.$id, updatedSettings),

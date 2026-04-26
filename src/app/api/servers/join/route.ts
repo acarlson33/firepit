@@ -14,6 +14,7 @@ import {
 	recordEvent,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
+import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
 
 type ServerDocument = {
 	$id: string;
@@ -188,6 +189,11 @@ export async function POST(request: NextRequest) {
 						  : undefined,
 			  }
 			: null;
+
+		invalidateChannelsUserCaches({
+			serverId,
+			userId,
+		});
 
 		return NextResponse.json({
 			success: true,

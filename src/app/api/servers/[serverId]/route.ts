@@ -205,7 +205,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 }
                 baseQueries.push(Query.equal("defaultOnSignup", true));
 
-                const { documents } = await listPages({
+                const { documents, truncated } = await listPages({
                     databases,
                     databaseId: env.databaseId,
                     collectionId: env.collections.servers,
@@ -213,6 +213,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                     pageSize,
                     warningContext: "listDefaultSignupServersPATCH",
                 });
+
+                if (truncated) {
+                    throw new Error("listDefaultSignupServersPATCH truncated");
+                }
 
                 for (const document of documents) {
                     if (typeof document.$id === "string") {

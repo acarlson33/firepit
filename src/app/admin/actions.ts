@@ -14,6 +14,7 @@ import {
 } from "@/lib/feature-flags";
 import {
     createAnnouncement,
+    dispatchAnnouncementById,
     dispatchScheduledAnnouncements,
     listAnnouncements,
     ClientError,
@@ -428,9 +429,12 @@ export async function createAnnouncementAction(
     }
 
     try {
-        const dispatched = await dispatchScheduledAnnouncements(
-            DEFAULT_DISPATCH_LIMIT,
+        const immediateDispatch = await dispatchAnnouncementById(
+            announcement.$id,
         );
+        const dispatched = immediateDispatch.dispatched
+            ? { announcementIds: [announcement.$id], dueCount: 1 }
+            : await dispatchScheduledAnnouncements(DEFAULT_DISPATCH_LIMIT);
         return { announcement, dispatched };
     } catch (error) {
         logger.error("Dispatch after send_now announcement creation failed", {
