@@ -200,7 +200,7 @@ export async function POST(request: Request) {
                 isPublic: server.isPublic,
                 defaultOnSignup: server.defaultOnSignup ?? false,
             },
-        }, { status: 200 });
+        }, { status: 201 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

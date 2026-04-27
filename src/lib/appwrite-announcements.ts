@@ -1038,6 +1038,7 @@ async function dispatchOneAnnouncement(params: {
                         error: toErrorMessage(error),
                         recipientUserId,
                     });
+                    throw error;
                 }
             },
         });

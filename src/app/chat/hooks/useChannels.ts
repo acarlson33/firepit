@@ -204,8 +204,12 @@ export function useChannels({
             window.dispatchEvent(new Event("firepit:channels-changed"));
             return channel;
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to create channel");
-            throw err;
+            const error =
+                err instanceof Error
+                    ? err
+                    : new Error("Failed to create channel", { cause: err });
+            toast.error(error.message);
+            throw error;
         }
     }
 
@@ -231,8 +235,12 @@ export function useChannels({
             if (selectedServer) {apiCache.clear(`channels:${selectedServer}:initial`);}
             window.dispatchEvent(new Event("firepit:channels-changed"));
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to delete channel");
-            throw err;
+            const error =
+                err instanceof Error
+                    ? err
+                    : new Error("Failed to delete channel", { cause: err });
+            toast.error(error.message);
+            throw error;
         }
     }
 

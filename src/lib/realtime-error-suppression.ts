@@ -21,6 +21,8 @@ let activeSuppressionCounter = 0;
 let originalConsoleError: ConsoleErrorHandler | null = null;
 
 function matchWebSocketErrorMessage(message: string): boolean {
+    const normalizedMessage = message.replace(/\u2019/g, "'").toLowerCase();
+
     if (message.startsWith("WebSocket error:")) {
         return true;
     }
@@ -34,15 +36,8 @@ function matchWebSocketErrorMessage(message: string): boolean {
     }
 
     if (
-        message.toLowerCase().includes("can’t establish a connection") &&
-        message.includes("/v1/realtime")
-    ) {
-        return true;
-    }
-
-    if (
-        message.toLowerCase().includes("can't establish a connection") &&
-        message.includes("/v1/realtime")
+        normalizedMessage.includes("can't establish a connection") &&
+        normalizedMessage.includes("/v1/realtime")
     ) {
         return true;
     }

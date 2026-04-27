@@ -74,7 +74,7 @@ describe("Servers create route", () => {
         const response = await POST(request);
         const data = await response.json();
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(201);
         expect(data.success).toBe(true);
         expect(data.server.name).toBe("My Server");
         expect(mockCreateServer).toHaveBeenCalledWith(
@@ -108,7 +108,7 @@ describe("Servers create route", () => {
         const response = await POST(request);
         const data = await response.json();
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(201);
         expect(data.success).toBe(true);
         expect(mockCreateServer).toHaveBeenCalledWith(
             "My Server",

@@ -19,6 +19,6 @@ jobs:
           APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
           # Ensure APPWRITE_ENDPOINT and APPWRITE_PROJECT are set in repository secrets or environment
           APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
-          APPWRITE_PROJECT: ${{ secrets.APPWRITE_PROJECT }}
+          APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
         run: |
           bun run scripts/cleanup-orphan-memberships.ts

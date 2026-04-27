@@ -814,7 +814,9 @@ paths:
                                     success:
                                         type: boolean
                                     membership:
-                                        $ref: "#/components/schemas/JoinMembership"
+                                        oneOf:
+                                            - $ref: "#/components/schemas/JoinMembership"
+                                            - type: "null"
                                     server:
                                         $ref: "#/components/schemas/Server"
                 "400":

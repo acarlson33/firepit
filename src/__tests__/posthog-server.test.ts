@@ -21,15 +21,15 @@ describe("posthog-server", () => {
         vi.resetModules();
         vi.clearAllMocks();
 
-        process.env.POSTHOG_PROJECT_API_KEY = undefined;
-        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = undefined;
-        process.env.POSTHOG_HOST = undefined;
+        delete process.env.POSTHOG_PROJECT_API_KEY;
+        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+        delete process.env.POSTHOG_HOST;
     });
 
     afterEach(() => {
-        process.env.POSTHOG_PROJECT_API_KEY = undefined;
-        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = undefined;
-        process.env.POSTHOG_HOST = undefined;
+        delete process.env.POSTHOG_PROJECT_API_KEY;
+        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+        delete process.env.POSTHOG_HOST;
         vi.restoreAllMocks();
     });
 
@@ -60,6 +60,9 @@ describe("posthog-server", () => {
             const processOnSpy = vi
                 .spyOn(process, "on")
                 .mockImplementation((() => process) as typeof process.on);
+            const processOnceSpy = vi
+                .spyOn(process, "once")
+                .mockImplementation((() => process) as typeof process.once);
 
             const { registerPostHogProcessHandlers } = await import(
                 "@/lib/posthog-server"
@@ -80,14 +83,14 @@ describe("posthog-server", () => {
             expect(typeof handler).toBe("function");
             const unhandledRejectionHandler = handler as (
                 reason: unknown,
-            ) => void;
+            ) => Promise<void>;
             const setImmediateSpy = vi
                 .spyOn(globalThis, "setImmediate")
                 .mockImplementation((callback: (...args: unknown[]) => void) => {
                     return callback as never;
                 });
 
-            unhandledRejectionHandler(new Error("rejection failure"));
+            await unhandledRejectionHandler(new Error("rejection failure"));
 
             expect(mockPostHogCaptureException).toHaveBeenCalledWith(
                 expect.objectContaining({ message: "rejection failure" }),
@@ -95,6 +98,18 @@ describe("posthog-server", () => {
                 expect.objectContaining({ origin: "unhandled_rejection" }),
             );
             expect(setImmediateSpy).toHaveBeenCalled();
+            expect(processOnceSpy).toHaveBeenCalledWith(
+                "beforeExit",
+                expect.any(Function),
+            );
+            expect(processOnceSpy).toHaveBeenCalledWith(
+                "SIGINT",
+                expect.any(Function),
+            );
+            expect(processOnceSpy).toHaveBeenCalledWith(
+                "SIGTERM",
+                expect.any(Function),
+            );
 
             const unhandledRejectionListenerCount = firstPassCalls.filter(
                 (call) => call[0] === "unhandledRejection",

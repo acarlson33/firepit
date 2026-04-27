@@ -76,14 +76,15 @@ function isSystemSenderAccount(userId: string): boolean {
 }
 
 async function revokeSessionBestEffort(
-    account: Account,
+    users: Users,
+    userId: string,
     sessionId: string,
 ): Promise<void> {
     try {
-        await account.deleteSession({ sessionId });
+        await users.deleteSession(userId, sessionId);
     } catch (err) {
         logger.warn("Failed to revoke session for user", {
-            hasUserId: true,
+            hasUserId: userId.length > 0,
             hasSessionId: sessionId.length > 0,
             error: err instanceof Error ? err.message : String(err),
         });
@@ -238,6 +239,7 @@ export async function loginAction(
             .setKey(apiKey); // Admin client with API key
 
         const account = new Account(client);
+        const users = new Users(client);
 
         // Create email/password session on Appwrite server
         const session = await account.createEmailPasswordSession({
@@ -248,7 +250,11 @@ export async function loginAction(
         try {
             if (isSystemSenderAccount(session.userId)) {
                 // Defense in depth: invalidate this session immediately and never issue app cookie.
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -281,7 +287,11 @@ export async function loginAction(
                         });
                     }
 
-                    await revokeSessionBestEffort(account, session.$id);
+                    await revokeSessionBestEffort(
+                        users,
+                        session.userId,
+                        session.$id,
+                    );
                     shouldRevokeTemporarySession = false;
 
                     return buildVerificationRequiredResult({ verificationLinkSent });
@@ -313,7 +323,11 @@ export async function loginAction(
             return { success: true, userId: session.userId };
         } finally {
             if (shouldRevokeTemporarySession) {
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
             }
         }
     } catch (error) {
@@ -431,10 +445,15 @@ export async function resendVerificationAction(
             email,
             password,
         });
+        const users = new Users(client);
         let shouldRevokeTemporarySession = true;
         try {
             if (isSystemSenderAccount(session.userId)) {
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -443,12 +462,15 @@ export async function resendVerificationAction(
                 };
             }
 
-            const users = new Users(client);
             const accountUser = await users.get(session.userId);
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (emailVerified) {
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -472,7 +494,11 @@ export async function resendVerificationAction(
         } finally {
             if (shouldRevokeTemporarySession) {
                 // Best-effort cleanup: do not keep the temporary session active.
-                await revokeSessionBestEffort(account, session.$id);
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
             }
         }
     } catch (error) {
