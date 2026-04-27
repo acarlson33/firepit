@@ -11,6 +11,10 @@ type UpdateDocumentResult = ReturnType<Databases["updateDocument"]>;
 type DeleteDocumentArgs = Parameters<Databases["deleteDocument"]>;
 type DeleteDocumentResult = ReturnType<Databases["deleteDocument"]>;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export type FailureConfig = {
   failCollections?: Record<string, Error | string>;
   onCreate?: (args: {
@@ -85,14 +89,12 @@ vi.mock("appwrite", () => {
           typeof opts.collectionId === "string" ? opts.collectionId : undefined;
         data = opts.data;
         permissions = opts.permissions;
-        currentConfig.onCreate?.(opts);
+        currentConfig.onCreate?.({ collectionId, data, permissions });
       } else {
         collectionId = typeof args[1] === "string" ? args[1] : undefined;
         data =
-          typeof args[3] === "object" &&
-          args[3] !== null &&
-          !Array.isArray(args[3])
-            ? (args[3] as Record<string, unknown>)
+          isPlainObject(args[3])
+            ? args[3]
             : undefined;
         permissions = Array.isArray(args[4]) ? args[4] : undefined;
         currentConfig.onCreate?.({ collectionId, data, permissions });
@@ -112,8 +114,8 @@ vi.mock("appwrite", () => {
       const idFromArgs =
         args.length > 1 && typeof args[2] === "string" ? args[2] : undefined;
       const safeData =
-        typeof data === "object" && data !== null && !Array.isArray(data)
-          ? (data as Record<string, unknown>)
+        isPlainObject(data)
+          ? data
           : {};
       return Promise.resolve({
         $id: idFromArgs || `${collectionId}-doc`,
@@ -134,12 +136,18 @@ vi.mock("appwrite", () => {
           ...(args as UpdateDocumentArgs)
         );
       }
-      if (args.length === 1 && typeof args[0] === "object" && args[0] !== null) {
+      if (
+        args.length === 1 &&
+        typeof args[0] === "object" &&
+        args[0] !== null &&
+        !Array.isArray(args[0])
+      ) {
         const o = args[0] as { data?: Record<string, unknown>; documentId?: unknown };
-        return Promise.resolve({ ...(o.data || {}), $id: o.documentId });
+        return Promise.resolve({ ...(isPlainObject(o.data) ? o.data : {}), $id: o.documentId });
       }
       const [, , id, data] = args;
-      return Promise.resolve({ $id: id, ...(data as Record<string, unknown>) });
+      const safeData = isPlainObject(data) ? data : {};
+      return Promise.resolve({ $id: id, ...safeData });
     }
     deleteDocument(...args: unknown[]) {
       if (currentConfig.overrides?.deleteDocument) {

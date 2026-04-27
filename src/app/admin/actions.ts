@@ -52,9 +52,9 @@ type ChannelDoc = AppwriteDoc & {
 };
 
 function parseDispatchLimit(limit: number): number | undefined {
-    if (!Number.isFinite(limit)) return undefined;
-    if (!Number.isInteger(limit)) return undefined;
-    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) return undefined;
+    if (!Number.isFinite(limit)) {return undefined;}
+    if (!Number.isInteger(limit)) {return undefined;}
+    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) {return undefined;}
     return limit;
 }
 
@@ -70,7 +70,7 @@ function validateAnnouncementDispatchLimit(limit: number): number {
 }
 
 function normalizeListLimit(limit: number | undefined): number | undefined {
-    if (limit === undefined) return undefined;
+    if (limit === undefined) {return undefined;}
     return parseDispatchLimit(limit);
 }
 
@@ -435,7 +435,7 @@ export async function createAnnouncementAction(
         return { announcement, dispatched };
     } catch (error) {
         logger.error("Dispatch after send_now announcement creation failed", {
-            announcementId: announcement?.$id,
+            announcementId: announcement.$id,
             error: error instanceof Error ? error.message : String(error),
         });
 
@@ -444,7 +444,7 @@ export async function createAnnouncementAction(
             dispatchError:
                 error instanceof Error
                     ? error.message
-                    : "Failed to dispatch scheduled announcements",
+                    : "Failed to dispatch announcement by id",
         };
     }
 }

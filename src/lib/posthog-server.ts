@@ -158,7 +158,9 @@ export function registerPostHogProcessHandlers() {
             error: reason,
             origin: "unhandled_rejection",
         });
-        process.exitCode = 1;
+        setImmediate(() => {
+            throw toError(reason);
+        });
     });
 
     const flushLifecycleEvent = async (params?: {

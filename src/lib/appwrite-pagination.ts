@@ -7,15 +7,9 @@ export type PaginationLogger = {
 };
 
 const defaultLogger: PaginationLogger = {
-    warn: (msg, attrs) => {
-        console.warn(msg, attrs ?? {});
-    },
-    info: (msg, attrs) => {
-        console.info(msg, attrs ?? {});
-    },
-    error: (msg, attrs) => {
-        console.error(msg, attrs ?? {});
-    },
+    warn: (_msg, _attrs) => {},
+    info: (_msg, _attrs) => {},
+    error: (_msg, _attrs) => {},
 };
 
 type ListDocumentsResponseLike = {
@@ -60,18 +54,20 @@ async function callListDocuments(
     collectionId: string,
     queries: string[],
 ): Promise<ListDocumentsResponseLike> {
+    const listDocuments = databases.listDocuments;
+
     try {
-        return await databases.listDocuments({
-            databaseId,
-            collectionId,
-            queries,
-        });
+        return await listDocuments(databaseId, collectionId, queries);
     } catch (error) {
         if (!shouldRetryWithPositionalCall(error)) {
             throw error;
         }
 
-        return databases.listDocuments(databaseId, collectionId, queries);
+        return listDocuments({
+            databaseId,
+            collectionId,
+            queries,
+        });
     }
 }
 
@@ -82,7 +78,7 @@ export type ListPagesResult = {
 
 /**
  * Lists documents across pages using cursor pagination when available.
- * - `logger` controls warning/error visibility; defaults to console-based logging.
+ * - `logger` controls warning/error visibility; defaults to a no-op logger.
  * - `highVolumeMultiplier` controls when high-volume warnings fire: `total > pageSize * highVolumeMultiplier`.
  */
 export async function listPages(params: {

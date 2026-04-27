@@ -69,7 +69,7 @@
         "happy-dom": "^20.9.0",
         "jsdom": "^27.4.0",
         "knip": "^6.7.0",
-        "postcss": "^8.5.10",
+        "postcss": "^8.5.12",
         "tailwindcss": "^4.2.4",
         "typescript": "^5.9.3",
         "vitest": "^3.2.4",

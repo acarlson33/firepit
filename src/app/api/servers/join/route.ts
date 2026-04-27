@@ -5,7 +5,6 @@ import { ID, Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import {
 	logger,
 	recordError,
@@ -91,32 +90,19 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		let isPublicServer = false;
-		try {
-			const serverDocument = (await databases.getDocument(
-				env.databaseId,
-				env.collections.servers,
-				serverId
-			)) as ServerDocument;
-			isPublicServer = serverDocument.isPublic === true;
-		} catch (error) {
-			if (isDocumentNotFoundError(error)) {
-				logger.warn("Server not found", { serverId });
-				return NextResponse.json(
-					{ error: "Server not found" },
-					{ status: 404 }
-				);
-			}
+		const serverDocument = (await databases
+			.getDocument(env.databaseId, env.collections.servers, serverId)
+			.catch(() => undefined)) as ServerDocument | undefined;
 
-			logger.error("Failed to load server during join", {
-				serverId,
-				error: error instanceof Error ? error.message : String(error),
-			});
+		if (!serverDocument) {
+			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
-				{ error: "Internal server error" },
-				{ status: 500 }
+				{ error: "Server not found" },
+				{ status: 404 },
 			);
 		}
+
+		const isPublicServer = serverDocument.isPublic !== false;
 
 		if (!isPublicServer) {
 			return NextResponse.json(
@@ -189,10 +175,6 @@ export async function POST(request: NextRequest) {
 			? {
 				  $id: String(membership.$id),
 				  $createdAt: String(membership.$createdAt ?? ""),
-				  $updatedAt:
-					  typeof (membership as { $updatedAt?: unknown }).$updatedAt === "string"
-						  ? (membership as { $updatedAt?: string }).$updatedAt
-						  : undefined,
 				  userId: String(membership.userId),
 				  serverId: String(membership.serverId),
 				  role: membership.role === "owner" ? "owner" : "member",

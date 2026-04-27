@@ -143,7 +143,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const { membership, server } = await createServer(trimmedName, {
+        const createdServer = await createServer(trimmedName, {
             description: normalizedDescription,
             iconFileId: normalizedIconFileId,
             bannerFileId: normalizedBannerFileId,
@@ -151,6 +151,19 @@ export async function POST(request: Request) {
             bypassFeatureCheck: true,
             includeMembership: true,
         });
+
+        const server =
+            typeof createdServer === "object" &&
+            createdServer !== null &&
+            "server" in createdServer
+                ? createdServer.server
+                : createdServer;
+        const membership =
+            typeof createdServer === "object" &&
+            createdServer !== null &&
+            "membership" in createdServer
+                ? createdServer.membership
+                : null;
 
         const telemetryTask = getPostHogClient().capture({
             distinctId: session.$id,
@@ -178,16 +191,16 @@ export async function POST(request: Request) {
                 $createdAt: server.$createdAt,
                 name: server.name,
                 ownerId: server.ownerId,
-                memberCount: server.memberCount,
+                memberCount: server.memberCount ?? 0,
                 description: server.description,
                 iconFileId: server.iconFileId,
                 iconUrl: server.iconUrl,
                 bannerFileId: server.bannerFileId,
                 bannerUrl: server.bannerUrl,
                 isPublic: server.isPublic,
-                defaultOnSignup: server.defaultOnSignup,
+                defaultOnSignup: server.defaultOnSignup ?? false,
             },
-        }, { status: 201 });
+        }, { status: 200 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

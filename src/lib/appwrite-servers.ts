@@ -249,10 +249,6 @@ export function createServer(
                     membership = {
                         $id: String(membershipRecord.$id),
                         $createdAt: String(membershipRecord.$createdAt ?? ""),
-                        $updatedAt:
-                            typeof membershipRecord.$updatedAt === "string"
-                                ? membershipRecord.$updatedAt
-                                : undefined,
                         role:
                             membershipRecord.role === "owner"
                                 ? "owner"
