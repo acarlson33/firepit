@@ -245,8 +245,8 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       if (membershipEnabled) {
         const nextMemberships = [...memberships, membership];
         setMemberships(nextMemberships);
-        await refresh();
       }
+      await refresh();
       setSelectedServer(id);
       apiCache.clear(`memberships:${uid}`);
       return membership;

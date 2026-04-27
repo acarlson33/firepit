@@ -71,6 +71,7 @@ type ThreadParentSnapshot = {
 
 type ThreadContextField = "channelId" | "conversationId";
 const DEFAULT_PAGE_LIMIT = 100;
+const MAX_RECENT_THREAD_SIGNAL_PAGES = 20;
 
 const INBOX_CONVERSATION_SELECT_FIELDS = ["$id"] as const;
 const INBOX_DM_THREAD_PARENT_SELECT_FIELDS = [
@@ -515,16 +516,27 @@ async function listRecentThreadReplySignals(
 ) {
     const env = getEnvConfig();
     const { databases } = getServerClient();
-    const response = await databases.listDocuments(
-        env.databaseId,
+    const response = await listPages({
+        databases,
+        databaseId: env.databaseId,
         collectionId,
-        [
+        baseQueries: [
             Query.isNotNull("threadId"),
             Query.orderDesc("$createdAt"),
-            Query.limit(DEFAULT_PAGE_LIMIT),
             ...selectQuery(selectFields),
         ],
-    );
+        pageSize: DEFAULT_PAGE_LIMIT,
+        maxPages: MAX_RECENT_THREAD_SIGNAL_PAGES,
+        warningContext: "listRecentThreadReplySignals",
+    });
+
+    if (response.truncated) {
+        logger.warn("Recent thread reply signal scan truncated", {
+            collectionId,
+            maxPages: MAX_RECENT_THREAD_SIGNAL_PAGES,
+            pageSize: DEFAULT_PAGE_LIMIT,
+        });
+    }
 
     return toThreadReplySignals(
         response.documents as unknown as Array<Record<string, unknown>>,

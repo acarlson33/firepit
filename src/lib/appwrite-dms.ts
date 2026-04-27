@@ -5,6 +5,7 @@ import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
 import { listPages } from "./appwrite-pagination";
 import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
 import { normalizeFileAttachment } from "./file-attachments";
+import { logger } from "./client-logger";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -322,11 +323,68 @@ async function enrichDirectMessagesWithAttachments(
             return message;
         });
     } catch (error) {
-        throw new Error(
-            `Failed to enrich direct messages with attachments: ${
-                error instanceof Error ? error.message : String(error)
-            }`,
+        logger.warn("Failed to enrich direct messages with attachments", {
+            error: error instanceof Error ? error.message : String(error),
+            messageCount: messages.length,
+        });
+        return messages;
+    }
+}
+
+async function findExactPairConversation(params: {
+    databases: ReturnType<typeof getDatabases>;
+    user1: string;
+    user2: string;
+    requireParticipantCount: boolean;
+}): Promise<Record<string, unknown> | undefined> {
+    const { databases, user1, user2, requireParticipantCount } = params;
+    const pageSize = 100;
+    let cursorAfter: string | undefined;
+
+    const isExactPairConversation = (record: Record<string, unknown>) => {
+        const participantList = Array.isArray(record.participants)
+            ? (record.participants as string[])
+            : [];
+
+        return (
+            participantList.length === 2 &&
+            participantList.includes(user1) &&
+            participantList.includes(user2)
         );
+    };
+
+    while (true) {
+        const response = await databases.listDocuments({
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            queries: [
+                Query.contains("participants", user1),
+                Query.contains("participants", user2),
+                ...(requireParticipantCount
+                    ? [Query.equal("participantCount", 2)]
+                    : []),
+                Query.orderAsc("$createdAt"),
+                Query.limit(pageSize),
+                ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+            ],
+        });
+
+        const documents = (response.documents ?? []).filter(
+            (document) => typeof document === "object" && document !== null,
+        ) as Array<Record<string, unknown>>;
+
+        for (const document of documents) {
+            if (isExactPairConversation(document)) {
+                return document;
+            }
+        }
+
+        const last = documents.at(-1);
+        if (documents.length < pageSize || typeof last?.$id !== "string") {
+            return undefined;
+        }
+
+        cursorAfter = last.$id;
     }
 }
 
@@ -385,77 +443,27 @@ export async function getOrCreateConversation(
 
     try {
         const databases = getDatabases();
-        const queriesWithParticipantCount = [
-            Query.contains("participants", user1),
-            Query.contains("participants", user2),
-            Query.equal("participantCount", 2),
-            Query.orderAsc("$createdAt"),
-            Query.limit(1),
-        ];
-
-        let documents: Array<Record<string, unknown>> = [];
-        const isExactPairConversation = (record: Record<string, unknown>) => {
-            const participantList = Array.isArray(record.participants)
-                ? (record.participants as string[])
-                : [];
-
-            return (
-                participantList.length === 2 &&
-                participantList.includes(user1) &&
-                participantList.includes(user2)
-            );
-        };
+        let oneToOne: Record<string, unknown> | undefined;
         try {
-            const response = await databases.listDocuments({
-                databaseId: DATABASE_ID,
-                collectionId: CONVERSATIONS_COLLECTION,
-                queries: queriesWithParticipantCount,
+            oneToOne = await findExactPairConversation({
+                databases,
+                user1,
+                user2,
+                requireParticipantCount: true,
             });
-            documents = (response.documents ?? [])
-                .filter(
-                    (document): document is Record<string, unknown> =>
-                        typeof document === "object" && document !== null,
-                )
-                .filter(isExactPairConversation);
-
-            if (documents.length === 0) {
-                const fallbackResponse = await databases.listDocuments({
-                    databaseId: DATABASE_ID,
-                    collectionId: CONVERSATIONS_COLLECTION,
-                    queries: [
-                        Query.contains("participants", user1),
-                        Query.contains("participants", user2),
-                        Query.orderAsc("$createdAt"),
-                        Query.limit(1),
-                    ],
-                });
-                documents = (fallbackResponse.documents ?? [])
-                    .filter(
-                        (document): document is Record<string, unknown> =>
-                            typeof document === "object" && document !== null,
-                    )
-                    .filter(isExactPairConversation);
-            }
         } catch {
-            const fallbackResponse = await databases.listDocuments({
-                databaseId: DATABASE_ID,
-                collectionId: CONVERSATIONS_COLLECTION,
-                queries: [
-                    Query.contains("participants", user1),
-                    Query.contains("participants", user2),
-                    Query.orderAsc("$createdAt"),
-                    Query.limit(1),
-                ],
-            });
-            documents = (fallbackResponse.documents ?? [])
-                .filter(
-                    (document): document is Record<string, unknown> =>
-                        typeof document === "object" && document !== null,
-                )
-                .filter(isExactPairConversation);
+            // Fall through to broader query when participantCount cannot be relied on.
         }
 
-        const oneToOne = documents.at(0);
+        if (!oneToOne) {
+            oneToOne = await findExactPairConversation({
+                databases,
+                user1,
+                user2,
+                requireParticipantCount: false,
+            });
+        }
+
         if (oneToOne) {
             return {
                 $id: String(oneToOne.$id),

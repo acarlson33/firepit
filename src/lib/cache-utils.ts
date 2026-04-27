@@ -8,16 +8,49 @@ type CacheEntry<T> = {
     ttl: number;
 };
 
+type PrefixTokenMetadata = {
+    token: number;
+    lastUsed: number;
+};
+
+const PREFIX_TOKEN_MAX_ENTRIES = 1024;
+const PREFIX_TOKEN_TTL_MS = 60 * 60 * 1000;
+
 class SimpleCache {
     private cache = new Map<string, CacheEntry<unknown>>();
     private pendingRequests = new Map<string, Promise<unknown>>();
-    private prefixTokens = new Map<string, number>();
+    private prefixTokens = new Map<string, PrefixTokenMetadata>();
+
+    private prunePrefixTokens(now = Date.now()): void {
+        for (const [prefix, metadata] of this.prefixTokens.entries()) {
+            if (now - metadata.lastUsed > PREFIX_TOKEN_TTL_MS) {
+                this.prefixTokens.delete(prefix);
+            }
+        }
+
+        if (this.prefixTokens.size <= PREFIX_TOKEN_MAX_ENTRIES) {
+            return;
+        }
+
+        const entriesByLastUsed = Array.from(this.prefixTokens.entries()).sort(
+            (left, right) => left[1].lastUsed - right[1].lastUsed,
+        );
+
+        const overflowCount = this.prefixTokens.size - PREFIX_TOKEN_MAX_ENTRIES;
+        for (const [prefix] of entriesByLastUsed.slice(0, overflowCount)) {
+            this.prefixTokens.delete(prefix);
+        }
+    }
 
     private capturePrefixTokensForKey(key: string): Array<[string, number]> {
+        const now = Date.now();
+        this.prunePrefixTokens(now);
+
         const tokens: Array<[string, number]> = [];
-        for (const [prefix, token] of this.prefixTokens.entries()) {
+        for (const [prefix, metadata] of this.prefixTokens.entries()) {
             if (key.startsWith(prefix)) {
-                tokens.push([prefix, token]);
+                metadata.lastUsed = now;
+                tokens.push([prefix, metadata.token]);
             }
         }
 
@@ -26,7 +59,7 @@ class SimpleCache {
 
     private arePrefixTokensCurrent(tokens: Array<[string, number]>): boolean {
         for (const [prefix, token] of tokens) {
-            if ((this.prefixTokens.get(prefix) ?? 0) !== token) {
+            if ((this.prefixTokens.get(prefix)?.token ?? 0) !== token) {
                 return false;
             }
         }
@@ -80,7 +113,13 @@ class SimpleCache {
      * Clear all cache and pending request entries that start with a prefix.
      */
     clearPrefix(prefix: string): void {
-        this.prefixTokens.set(prefix, (this.prefixTokens.get(prefix) ?? 0) + 1);
+        const now = Date.now();
+        const previousToken = this.prefixTokens.get(prefix)?.token ?? 0;
+        this.prefixTokens.set(prefix, {
+            token: previousToken + 1,
+            lastUsed: now,
+        });
+        this.prunePrefixTokens(now);
 
         for (const key of this.cache.keys()) {
             if (key.startsWith(prefix)) {

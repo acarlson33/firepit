@@ -809,10 +809,12 @@ paths:
                         application/json:
                             schema:
                                 type: object
-                                required: [success, server]
+                                required: [success, membership, server]
                                 properties:
                                     success:
                                         type: boolean
+                                    membership:
+                                        $ref: "#/components/schemas/JoinMembership"
                                     server:
                                         $ref: "#/components/schemas/Server"
                 "400":

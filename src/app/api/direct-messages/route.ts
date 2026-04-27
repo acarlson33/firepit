@@ -87,6 +87,18 @@ function dedupeDirectMessageCache<T>(
     return apiCache.dedupe(key, fetcher, ttl);
 }
 
+function clearDmConversationsCache(participantIds: string[]): void {
+    const uniqueParticipantIds = new Set(
+        participantIds
+            .map((participantId) => participantId.trim())
+            .filter((participantId) => participantId.length > 0),
+    );
+
+    for (const participantId of uniqueParticipantIds) {
+        apiCache.clear(`dm:conversations:${participantId}`);
+    }
+}
+
 function normalizeDistinctIds(ids: string[], excluding?: string): string[] {
     return Array.from(
         new Set(
@@ -1337,6 +1349,8 @@ export async function POST(request: NextRequest) {
                 permissions,
             );
 
+            clearDmConversationsCache(sortedParticipants);
+
             return jsonResponse(
                 {
                     conversation: {
@@ -1892,6 +1906,7 @@ export async function POST(request: NextRequest) {
                     lastMessageAt: new Date().toISOString(),
                 },
             );
+            clearDmConversationsCache(participants);
         } catch {
             // Don't fail if conversation update fails
         }

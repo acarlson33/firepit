@@ -7,6 +7,7 @@ const mockPostHogShutdown = vi.fn(async () => undefined);
 const mockPostHogConstructor = vi.fn(() => ({
     capture: mockPostHogCapture,
     captureException: mockPostHogCaptureException,
+    captureExceptionImmediate: mockPostHogCaptureException,
     flush: mockPostHogFlush,
     shutdown: mockPostHogShutdown,
 }));
@@ -80,6 +81,12 @@ describe("posthog-server", () => {
             const unhandledRejectionHandler = handler as (
                 reason: unknown,
             ) => void;
+            const setImmediateSpy = vi
+                .spyOn(globalThis, "setImmediate")
+                .mockImplementation((callback: (...args: unknown[]) => void) => {
+                    return callback as never;
+                });
+
             unhandledRejectionHandler(new Error("rejection failure"));
 
             expect(mockPostHogCaptureException).toHaveBeenCalledWith(
@@ -87,7 +94,7 @@ describe("posthog-server", () => {
                 "server",
                 expect.objectContaining({ origin: "unhandled_rejection" }),
             );
-            expect(mockPostHogFlush).toHaveBeenCalled();
+            expect(setImmediateSpy).toHaveBeenCalled();
 
             const unhandledRejectionListenerCount = firstPassCalls.filter(
                 (call) => call[0] === "unhandledRejection",

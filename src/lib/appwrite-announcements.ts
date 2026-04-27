@@ -990,6 +990,109 @@ async function finalizeAnnouncementDispatch(params: {
     );
 }
 
+async function dispatchOneAnnouncement(params: {
+    announcement: Announcement;
+    databases: ReturnType<typeof getServerClient>["databases"];
+    databaseId: string;
+    dispatchAttempts: number;
+    systemSenderUserId: string;
+}): Promise<DispatchOneResult> {
+    const {
+        announcement,
+        databases,
+        databaseId,
+        dispatchAttempts,
+        systemSenderUserId,
+    } = params;
+
+    const now = new Date().toISOString();
+    const nextDispatchAttempts = dispatchAttempts + 1;
+
+    try {
+        await databases.updateDocument(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            announcement.$id,
+            {
+                dispatchAttempts: nextDispatchAttempts,
+                lastDispatchAt: now,
+                status: "dispatching",
+            },
+        );
+
+        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
+
+        await runWithConcurrency({
+            items: recipientIds,
+            concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
+            worker: async (recipientUserId) => {
+                try {
+                    await dispatchToRecipient({
+                        announcement,
+                        recipientUserId,
+                        systemSenderUserId,
+                    });
+                } catch (error) {
+                    logger.error("Announcement delivery worker crashed", {
+                        announcementId: announcement.$id,
+                        error: toErrorMessage(error),
+                        recipientUserId,
+                    });
+                }
+            },
+        });
+    } catch (error) {
+        logger.error("Announcement dispatch failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(error),
+        });
+
+        try {
+            const failedStatus: AnnouncementStatus =
+                nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
+                    ? "failed"
+                    : "dispatching";
+
+            await databases.updateDocument(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                announcement.$id,
+                {
+                    dispatchAttempts: nextDispatchAttempts,
+                    lastDispatchAt: now,
+                    status: failedStatus,
+                },
+            );
+        } catch (updateError) {
+            logger.error("Failed to persist announcement failure state", {
+                announcementId: announcement.$id,
+                error: toErrorMessage(updateError),
+            });
+        }
+
+        return { dispatched: false };
+    }
+
+    // Perform post-dispatch bookkeeping separately so failures here do not
+    // consume retry budget or change dispatchAttempts/status.
+    try {
+        const rollup = await rollupDeliveryStatus(announcement.$id);
+        await finalizeAnnouncementDispatch({
+            announcement,
+            dispatchAttempts: nextDispatchAttempts,
+            rollup,
+        });
+    } catch (finalizeError) {
+        logger.error("Post-dispatch finalization failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(finalizeError),
+        });
+        // Intentionally do not update dispatchAttempts or status here.
+    }
+
+    return { dispatched: true };
+}
+
 export async function listAnnouncements(
     options: ListAnnouncementsOptions = {},
 ): Promise<ListAnnouncementsResult> {
@@ -1061,91 +1164,16 @@ export async function dispatchScheduledAnnouncements(
             typeof document.dispatchAttempts === "number"
                 ? document.dispatchAttempts
                 : 0;
-        const nextDispatchAttempts = dispatchAttempts + 1;
+        const result = await dispatchOneAnnouncement({
+            announcement,
+            databases,
+            databaseId,
+            dispatchAttempts,
+            systemSenderUserId,
+        });
 
-        try {
-            await databases.updateDocument(
-                databaseId,
-                getAnnouncementsCollectionId(),
-                announcement.$id,
-                {
-                    dispatchAttempts: nextDispatchAttempts,
-                    lastDispatchAt: now,
-                    status: "dispatching",
-                },
-            );
-
-            const recipientIds = await listAllProfileUserIds(systemSenderUserId);
-
-            await runWithConcurrency({
-                items: recipientIds,
-                concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
-                worker: async (recipientUserId) => {
-                    try {
-                        await dispatchToRecipient({
-                            announcement,
-                            recipientUserId,
-                            systemSenderUserId,
-                        });
-                    } catch (error) {
-                        logger.error("Announcement delivery worker crashed", {
-                            announcementId: announcement.$id,
-                            error: toErrorMessage(error),
-                            recipientUserId,
-                        });
-                    }
-                },
-            });
-
-            // Mark this announcement as updated (dispatch succeeded)
+        if (result.dispatched) {
             updatedIds.push(announcement.$id);
-        } catch (error) {
-            logger.error("Announcement dispatch failed", {
-                announcementId: announcement.$id,
-                error: toErrorMessage(error),
-            });
-
-            try {
-                const failedStatus: AnnouncementStatus =
-                    nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
-                        ? "failed"
-                        : "dispatching";
-
-                await databases.updateDocument(
-                    databaseId,
-                    getAnnouncementsCollectionId(),
-                    announcement.$id,
-                    {
-                        dispatchAttempts: nextDispatchAttempts,
-                        lastDispatchAt: now,
-                        status: failedStatus,
-                    },
-                );
-            } catch (updateError) {
-                logger.error("Failed to persist announcement failure state", {
-                    announcementId: announcement.$id,
-                    error: toErrorMessage(updateError),
-                });
-            }
-
-            continue;
-        }
-
-        // Perform post-dispatch bookkeeping separately so failures here do not
-        // consume retry budget or change dispatchAttempts/status.
-        try {
-            const rollup = await rollupDeliveryStatus(announcement.$id);
-            await finalizeAnnouncementDispatch({
-                announcement,
-                dispatchAttempts: nextDispatchAttempts,
-                rollup,
-            });
-        } catch (finalizeError) {
-            logger.error("Post-dispatch finalization failed", {
-                announcementId: announcement.$id,
-                error: toErrorMessage(finalizeError),
-            });
-            // Intentionally do not update dispatchAttempts or status here.
         }
     }
 
@@ -1178,91 +1206,16 @@ export async function dispatchAnnouncementById(
         return { dispatched: false };
     }
 
-    const now = new Date().toISOString();
     const announcement = toAnnouncement(announcementRecord);
     const dispatchAttempts =
         typeof announcementRecord.dispatchAttempts === "number"
             ? announcementRecord.dispatchAttempts
             : 0;
-    const nextDispatchAttempts = dispatchAttempts + 1;
-
-    try {
-        await databases.updateDocument(
-            databaseId,
-            getAnnouncementsCollectionId(),
-            announcement.$id,
-            {
-                dispatchAttempts: nextDispatchAttempts,
-                lastDispatchAt: now,
-                status: "dispatching",
-            },
-        );
-
-        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
-        await runWithConcurrency({
-            items: recipientIds,
-            concurrency: ANNOUNCEMENT_DELIVERY_CONCURRENCY,
-            worker: async (recipientUserId) => {
-                try {
-                    await dispatchToRecipient({
-                        announcement,
-                        recipientUserId,
-                        systemSenderUserId,
-                    });
-                } catch (error) {
-                    logger.error("Announcement delivery worker crashed", {
-                        announcementId: announcement.$id,
-                        error: toErrorMessage(error),
-                        recipientUserId,
-                    });
-                }
-            },
-        });
-    } catch (error) {
-        logger.error("Announcement dispatch failed", {
-            announcementId: announcement.$id,
-            error: toErrorMessage(error),
-        });
-
-        try {
-            const failedStatus: AnnouncementStatus =
-                nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
-                    ? "failed"
-                    : "dispatching";
-
-            await databases.updateDocument(
-                databaseId,
-                getAnnouncementsCollectionId(),
-                announcement.$id,
-                {
-                    dispatchAttempts: nextDispatchAttempts,
-                    lastDispatchAt: now,
-                    status: failedStatus,
-                },
-            );
-        } catch (updateError) {
-            logger.error("Failed to persist announcement failure state", {
-                announcementId: announcement.$id,
-                error: toErrorMessage(updateError),
-            });
-        }
-
-        return { dispatched: false };
-    }
-
-    try {
-        const rollup = await rollupDeliveryStatus(announcement.$id);
-        await finalizeAnnouncementDispatch({
-            announcement,
-            dispatchAttempts: nextDispatchAttempts,
-            rollup,
-        });
-    } catch (finalizeError) {
-        logger.error("Post-dispatch finalization failed", {
-            announcementId: announcement.$id,
-            error: toErrorMessage(finalizeError),
-        });
-    }
-
-    return { dispatched: true };
+    return dispatchOneAnnouncement({
+        announcement,
+        databases,
+        databaseId,
+        dispatchAttempts,
+        systemSenderUserId,
+    });
 }

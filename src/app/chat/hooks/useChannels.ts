@@ -228,7 +228,7 @@ export function useChannels({
                 }
             }
             setChannels((prev) => prev.filter((c) => c.$id !== channel.$id));
-            if (selectedServer) apiCache.clear(`channels:${selectedServer}:initial`);
+            if (selectedServer) {apiCache.clear(`channels:${selectedServer}:initial`);}
             window.dispatchEvent(new Event("firepit:channels-changed"));
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to delete channel");

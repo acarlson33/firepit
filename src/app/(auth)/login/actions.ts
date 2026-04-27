@@ -76,16 +76,14 @@ function isSystemSenderAccount(userId: string): boolean {
 }
 
 async function revokeSessionBestEffort(
-    userId: string,
+    account: Account,
     sessionId: string,
 ): Promise<void> {
     try {
-        const { client } = getServerClient();
-        const users = new Users(client);
-        await users.deleteSession({ userId, sessionId });
+        await account.deleteSession({ sessionId });
     } catch (err) {
         logger.warn("Failed to revoke session for user", {
-            hasUserId: userId.length > 0,
+            hasUserId: true,
             hasSessionId: sessionId.length > 0,
             error: err instanceof Error ? err.message : String(err),
         });
@@ -250,7 +248,7 @@ export async function loginAction(
         try {
             if (isSystemSenderAccount(session.userId)) {
                 // Defense in depth: invalidate this session immediately and never issue app cookie.
-                await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(account, session.$id);
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -283,7 +281,7 @@ export async function loginAction(
                         });
                     }
 
-                    await revokeSessionBestEffort(session.userId, session.$id);
+                    await revokeSessionBestEffort(account, session.$id);
                     shouldRevokeTemporarySession = false;
 
                     return buildVerificationRequiredResult({ verificationLinkSent });
@@ -315,7 +313,7 @@ export async function loginAction(
             return { success: true, userId: session.userId };
         } finally {
             if (shouldRevokeTemporarySession) {
-                await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(account, session.$id);
             }
         }
     } catch (error) {
@@ -436,7 +434,7 @@ export async function resendVerificationAction(
         let shouldRevokeTemporarySession = true;
         try {
             if (isSystemSenderAccount(session.userId)) {
-                await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(account, session.$id);
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -450,7 +448,7 @@ export async function resendVerificationAction(
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (emailVerified) {
-                await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(account, session.$id);
                 shouldRevokeTemporarySession = false;
 
                 return {
@@ -474,7 +472,7 @@ export async function resendVerificationAction(
         } finally {
             if (shouldRevokeTemporarySession) {
                 // Best-effort cleanup: do not keep the temporary session active.
-                await revokeSessionBestEffort(session.userId, session.$id);
+                await revokeSessionBestEffort(account, session.$id);
             }
         }
     } catch (error) {
