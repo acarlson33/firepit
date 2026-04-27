@@ -4,6 +4,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
+class MockAppwriteException extends Error {
+	code: number;
+	type: string;
+	response: { status: number };
+
+	constructor(message: string, code = 404) {
+		super(message);
+		this.code = code;
+		this.type = "document_not_found";
+		this.response = { status: code };
+	}
+}
+
 // Create persistent mocks
 const { mockGetDocument, mockListDocuments, mockCreateDocument, mockUpdateDocument, mockGetServerSession } = vi.hoisted(() => ({
 	mockGetDocument: vi.fn(),
@@ -43,6 +56,7 @@ vi.mock("@/lib/appwrite-core", () => ({
 }));
 
 vi.mock("node-appwrite", () => ({
+	AppwriteException: MockAppwriteException,
 	ID: {
 		unique: () => "mock-membership-id",
 	},
@@ -117,7 +131,9 @@ describe("Server Join API", () => {
 				name: "Test User",
 			});
 
-			mockGetDocument.mockRejectedValue(new Error("Document not found"));
+			mockGetDocument.mockRejectedValue(
+				new MockAppwriteException("Document not found"),
+			);
 
 			const request = new NextRequest("http://localhost/api/servers/join", {
 				method: "POST",
@@ -164,6 +180,7 @@ describe("Server Join API", () => {
 			mockGetDocument.mockResolvedValue({
 				$id: "server-1",
 				name: "Test Server",
+				isPublic: true,
 				memberCount: 5,
 			});
 
@@ -198,6 +215,7 @@ describe("Server Join API", () => {
 			mockGetDocument.mockResolvedValue({
 				$id: "server-1",
 				name: "Test Server",
+				isPublic: true,
 				memberCount: 5,
 			});
 
@@ -248,6 +266,7 @@ describe("Server Join API", () => {
 			mockGetDocument.mockResolvedValue({
 				$id: "server-1",
 				name: "Test Server",
+				isPublic: true,
 				// No memberCount field
 			});
 

@@ -25,12 +25,13 @@ function getCollectionIds() {
  * @returns {boolean} The return value.
  */
 export function isDocumentNotFoundError(error: unknown) {
-    if (typeof AppwriteException !== "undefined" && error instanceof AppwriteException) {
+    if (error instanceof AppwriteException) {
         return error.code === 404 || error.type === "document_not_found";
     }
 
-    if (error instanceof Error) {
-        return error.message.toLowerCase().includes("document not found");
+    if (typeof error === "object" && error !== null) {
+        const candidate = error as { code?: unknown; type?: unknown };
+        return candidate.code === 404 || candidate.type === "document_not_found";
     }
 
     return false;

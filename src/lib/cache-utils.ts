@@ -42,29 +42,25 @@ class SimpleCache {
         }
     }
 
-    private capturePrefixTokensForKey(key: string): Array<[string, number]> {
+    private capturePrefixTokensForKey(key: string): number {
         const now = Date.now();
         this.prunePrefixTokens(now);
 
-        const tokens: Array<[string, number]> = [];
+        let token = 0;
         for (const [prefix, metadata] of this.prefixTokens.entries()) {
             if (key.startsWith(prefix)) {
                 metadata.lastUsed = now;
-                tokens.push([prefix, metadata.token]);
+                if (metadata.token > token) {
+                    token = metadata.token;
+                }
             }
         }
 
-        return tokens;
+        return token;
     }
 
-    private arePrefixTokensCurrent(tokens: Array<[string, number]>): boolean {
-        for (const [prefix, token] of tokens) {
-            if ((this.prefixTokens.get(prefix)?.token ?? 0) !== token) {
-                return false;
-            }
-        }
-
-        return true;
+    private arePrefixTokensCurrent(key: string, token: number): boolean {
+        return this.capturePrefixTokensForKey(key) === token;
     }
 
     /**
@@ -106,6 +102,7 @@ class SimpleCache {
         } else {
             this.cache.clear();
             this.pendingRequests.clear();
+            this.prefixTokens.clear();
         }
     }
 
@@ -159,7 +156,7 @@ class SimpleCache {
         const requestPrefixTokens = this.capturePrefixTokensForKey(key);
         const promise = fetcher()
             .then((data) => {
-                if (this.arePrefixTokensCurrent(requestPrefixTokens)) {
+                if (this.arePrefixTokensCurrent(key, requestPrefixTokens)) {
                     this.set(key, data, ttl);
                 }
                 this.pendingRequests.delete(key);
@@ -221,6 +218,7 @@ class SimpleCache {
                         .then((data) => {
                             if (
                                 this.arePrefixTokensCurrent(
+                                    key,
                                     requestPrefixTokens,
                                 )
                             ) {

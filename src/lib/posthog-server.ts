@@ -153,8 +153,8 @@ export function registerPostHogProcessHandlers() {
         });
     });
 
-    process.on("unhandledRejection", (reason) => {
-        void captureUnhandledServerError({
+    process.on("unhandledRejection", async (reason) => {
+        await captureUnhandledServerError({
             error: reason,
             origin: "unhandled_rejection",
         });

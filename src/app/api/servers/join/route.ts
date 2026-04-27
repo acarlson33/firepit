@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
+import { AppwriteException } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -21,6 +22,30 @@ type ServerDocument = {
 	$id: string;
 	isPublic?: boolean;
 };
+
+function isDocumentNotFoundError(error: unknown): boolean {
+	if (typeof AppwriteException === "function" && error instanceof AppwriteException) {
+		return error.code === 404 || error.type === "document_not_found";
+	}
+
+	if (typeof error !== "object" || error === null) {
+		return false;
+	}
+
+	const candidate = error as {
+		code?: unknown;
+		type?: unknown;
+		response?: {
+			status?: unknown;
+		};
+	};
+
+	return (
+		candidate.code === 404 ||
+		candidate.type === "document_not_found" ||
+		candidate.response?.status === 404
+	);
+}
 
 /**
  * POST /api/servers/join
@@ -90,11 +115,18 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		const serverDocument = (await databases
-			.getDocument(env.databaseId, env.collections.servers, serverId)
-			.catch(() => undefined)) as ServerDocument | undefined;
+		let serverDocument: ServerDocument;
+		try {
+			serverDocument = (await databases.getDocument(
+				env.databaseId,
+				env.collections.servers,
+				serverId,
+			)) as ServerDocument;
+		} catch (error) {
+			if (!isDocumentNotFoundError(error)) {
+				throw error;
+			}
 
-		if (!serverDocument) {
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
 				{ error: "Server not found" },
@@ -102,7 +134,7 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const isPublicServer = serverDocument.isPublic !== false;
+		const isPublicServer = serverDocument.isPublic === true;
 
 		if (!isPublicServer) {
 			return NextResponse.json(

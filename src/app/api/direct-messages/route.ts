@@ -182,13 +182,6 @@ function getCachedRelationshipMap(
     );
 }
 
-function getCachedDmEncryptionStateForPair(userId: string, peerUserId: string) {
-    return dedupeDirectMessageCache(
-        `dm:encryption-state:${userId}:${peerUserId}`,
-        () => getDmEncryptionStateForPair(userId, peerUserId),
-    );
-}
-
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
     blockedMe: boolean;
@@ -413,7 +406,7 @@ export async function GET(request: NextRequest) {
                         Query.orderDesc("lastMessageAt"),
                         Query.limit(100),
                     ]),
-                5 * 1000,
+                DIRECT_MESSAGES_CACHE_TTL_MS,
             );
 
             trackApiCall(
@@ -591,10 +584,6 @@ export async function GET(request: NextRequest) {
                         );
 
                         for (const missingParentsPage of missingParentsPages) {
-                            if (!Array.isArray(missingParentsPage.documents)) {
-                                continue;
-                            }
-
                             for (const document of missingParentsPage.documents) {
                                 const threadParent = document as Record<string, unknown>;
                                 const parentMessageId =
@@ -900,8 +889,7 @@ export async function GET(request: NextRequest) {
                         session.$id,
                         targetUserId,
                     );
-                    const encryptionState =
-                        await getCachedDmEncryptionStateForPair(
+                    const encryptionState = await getDmEncryptionStateForPair(
                         session.$id,
                         targetUserId,
                     );
@@ -973,7 +961,7 @@ export async function GET(request: NextRequest) {
                 session.$id,
                 targetUserId,
             );
-            const encryptionState = await getCachedDmEncryptionStateForPair(
+            const encryptionState = await getDmEncryptionStateForPair(
                 session.$id,
                 targetUserId,
             );
@@ -1107,7 +1095,7 @@ export async function GET(request: NextRequest) {
                         readOnly = !relationship.canSendDirectMessage;
                         readOnlyReason = getReadOnlyReason(relationship);
                         const encryptionState =
-                            await getCachedDmEncryptionStateForPair(
+                            await getDmEncryptionStateForPair(
                                 session.$id,
                                 otherUserId,
                             );

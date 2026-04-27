@@ -72,6 +72,7 @@ vi.mock("appwrite", () => {
         );
       }
       let collectionId: string | undefined;
+      let documentId: string | undefined;
       let data: unknown;
       let permissions: unknown;
       if (
@@ -81,10 +82,13 @@ vi.mock("appwrite", () => {
         !Array.isArray(args[0])
       ) {
         const opts = args[0] as {
+          documentId?: unknown;
           collectionId?: unknown;
           data?: unknown;
           permissions?: unknown;
         };
+        documentId =
+          typeof opts.documentId === "string" ? opts.documentId : undefined;
         collectionId =
           typeof opts.collectionId === "string" ? opts.collectionId : undefined;
         data = opts.data;
@@ -112,7 +116,8 @@ vi.mock("appwrite", () => {
         );
       }
       const idFromArgs =
-        args.length > 1 && typeof args[2] === "string" ? args[2] : undefined;
+        documentId ??
+        (args.length > 1 && typeof args[2] === "string" ? args[2] : undefined);
       const safeData =
         isPlainObject(data)
           ? data
