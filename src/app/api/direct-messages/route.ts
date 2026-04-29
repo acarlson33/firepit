@@ -998,6 +998,8 @@ export async function GET(request: NextRequest) {
                 permissions,
             );
 
+            clearDmConversationsCache(participants);
+
             return jsonResponse({
                 conversation: {
                     $id: newConv.$id,
@@ -1549,8 +1551,12 @@ export async function POST(request: NextRequest) {
             typeof text === "string" &&
             text.trim().length > 0 &&
             !hasEncryptedText;
+        const hasAnyContent =
+            hasPlaintextText ||
+            Boolean(imageFileId) ||
+            normalizedAttachments.length > 0;
 
-        if (!isGroupConversation && targetReceiverId && hasPlaintextText) {
+        if (!isGroupConversation && targetReceiverId && hasAnyContent) {
             const [senderSettings, receiverSettings, senderProfile, receiverProfile] =
                 await Promise.all([
                     getNotificationSettings(senderId).catch((error) => {
@@ -1630,7 +1636,7 @@ export async function POST(request: NextRequest) {
                 senderProfilePublicKey.length > 0 &&
                 receiverProfilePublicKey.length > 0;
 
-            if (requiresEncryptedText) {
+            if (requiresEncryptedText && !hasEncryptedText) {
                 return jsonResponse(
                     {
                         error:
@@ -1894,9 +1900,10 @@ export async function POST(request: NextRequest) {
                     lastMessageAt: new Date().toISOString(),
                 },
             );
-            clearDmConversationsCache(participants);
         } catch {
             // Don't fail if conversation update fails
+        } finally {
+            clearDmConversationsCache(participants);
         }
 
         // Track DM sent event

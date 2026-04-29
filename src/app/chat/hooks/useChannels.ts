@@ -12,7 +12,7 @@ type UseChannelsOptions = {
     servers: Server[];
 };
 
-export const isChannelRecord = (value: unknown): value is Channel => {
+export const isValidChannelResponse = (value: unknown): value is Channel => {
     if (!value || typeof value !== "object") {
         return false;
     }
@@ -36,7 +36,7 @@ export function useChannels({
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(false);
 
-    // Note: `isChannelRecord` moved to module scope to avoid recreation per render.
+    // Note: `isValidChannelResponse` moved to module scope to avoid recreation per render.
 
     const refresh = useCallback(async () => {
         if (!selectedServer) {
@@ -188,22 +188,18 @@ export function useChannels({
                     }
                 }
 
-                const body = (payload as { channel?: unknown; error?: string } | null) ?? null;
+                const body = payload as { channel?: unknown; error?: string } | null;
 
                 if (!res.ok) {
                     const errMsg =
-                        (body && typeof body === "object" && "error" in body
-                            ? (body as { error?: string }).error
-                            : undefined) || fallbackText || "Failed to create channel";
+                        body?.error || fallbackText || "Failed to create channel";
                     throw new Error(errMsg);
                 }
 
                 const channelRecord = body?.channel;
-                if (!isChannelRecord(channelRecord)) {
+                if (!isValidChannelResponse(channelRecord)) {
                     const errMsg =
-                        (body && typeof body === "object" && "error" in body
-                            ? (body as { error?: string }).error
-                            : undefined) || fallbackText || "Failed to create channel";
+                        body?.error || fallbackText || "Failed to create channel";
                     throw new Error(errMsg);
                 }
                 channel = channelRecord;

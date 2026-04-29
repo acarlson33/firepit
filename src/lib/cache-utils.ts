@@ -13,6 +13,11 @@ type PrefixTokenMetadata = {
     lastUsed: number;
 };
 
+type RequestSnapshot = {
+    token: number;
+    clearEpoch: number;
+};
+
 const PREFIX_TOKEN_MAX_ENTRIES = 1024;
 const PREFIX_TOKEN_TTL_MS = 60 * 60 * 1000;
 
@@ -20,6 +25,7 @@ class SimpleCache {
     private cache = new Map<string, CacheEntry<unknown>>();
     private pendingRequests = new Map<string, Promise<unknown>>();
     private prefixTokens = new Map<string, PrefixTokenMetadata>();
+    private clearEpoch = 0;
 
     private prunePrefixTokens(now = Date.now()): void {
         for (const [prefix, metadata] of this.prefixTokens.entries()) {
@@ -42,7 +48,7 @@ class SimpleCache {
         }
     }
 
-    private capturePrefixTokensForKey(key: string): number {
+    private capturePrefixTokensForKey(key: string): RequestSnapshot {
         const now = Date.now();
         this.prunePrefixTokens(now);
 
@@ -56,11 +62,18 @@ class SimpleCache {
             }
         }
 
-        return token;
+        return {
+            token,
+            clearEpoch: this.clearEpoch,
+        };
     }
 
-    private arePrefixTokensCurrent(key: string, token: number): boolean {
-        return this.capturePrefixTokensForKey(key) === token;
+    private isSnapshotCurrent(key: string, snapshot: RequestSnapshot): boolean {
+        if (snapshot.clearEpoch !== this.clearEpoch) {
+            return false;
+        }
+
+        return this.capturePrefixTokensForKey(key).token === snapshot.token;
     }
 
     /**
@@ -84,7 +97,11 @@ class SimpleCache {
     /**
      * Set data in cache with TTL (in milliseconds)
      */
-    set<T>(key: string, data: T, ttl: number): void {
+    set<T>(key: string, data: T, ttl: number, snapshot?: RequestSnapshot): void {
+        if (snapshot && !this.isSnapshotCurrent(key, snapshot)) {
+            return;
+        }
+
         this.cache.set(key, {
             data,
             timestamp: Date.now(),
@@ -100,6 +117,7 @@ class SimpleCache {
             this.cache.delete(key);
             this.pendingRequests.delete(key);
         } else {
+            this.clearEpoch += 1;
             this.cache.clear();
             this.pendingRequests.clear();
             this.prefixTokens.clear();
@@ -156,8 +174,8 @@ class SimpleCache {
         const requestPrefixTokens = this.capturePrefixTokensForKey(key);
         const promise = fetcher()
             .then((data) => {
-                if (this.arePrefixTokensCurrent(key, requestPrefixTokens)) {
-                    this.set(key, data, ttl);
+                if (this.isSnapshotCurrent(key, requestPrefixTokens)) {
+                    this.set(key, data, ttl, requestPrefixTokens);
                 }
                 this.pendingRequests.delete(key);
                 return data;
@@ -210,19 +228,12 @@ class SimpleCache {
                     | Promise<T>
                     | undefined;
                 if (!pending) {
-                    const requestPrefixTokens = this.capturePrefixTokensForKey(
-                        key,
-                    );
+                    const requestPrefixTokens = this.capturePrefixTokensForKey(key);
                     // Execute background refresh
                     const promise = fetcher()
                         .then((data) => {
-                            if (
-                                this.arePrefixTokensCurrent(
-                                    key,
-                                    requestPrefixTokens,
-                                )
-                            ) {
-                                this.set(key, data, ttl);
+                            if (this.isSnapshotCurrent(key, requestPrefixTokens)) {
+                                this.set(key, data, ttl, requestPrefixTokens);
                             }
                             this.pendingRequests.delete(key);
                             if (onUpdate) {

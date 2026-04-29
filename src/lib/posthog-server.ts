@@ -26,7 +26,7 @@ function createNoOpShim(): PostHogShim {
 
 let posthogClient: PostHog | PostHogShim | null = null;
 let posthogProcessHandlersRegistered = false;
-const capturedUnhandledRejectionErrors = new WeakSet<object>();
+const capturedUnhandledRejectionErrors = new WeakSet<Error>();
 
 function toError(value: unknown): Error {
     if (value instanceof Error) {

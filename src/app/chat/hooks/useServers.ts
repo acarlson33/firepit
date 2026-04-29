@@ -171,12 +171,11 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           membership?: Membership;
           error?: string;
         }>(res);
-        const body = payload;
-        if (!res.ok || !body?.success || !isServerRecord(body.server)) {
-          throw new Error(body?.error || fallbackText || "Failed to create server");
+        if (!res.ok || !payload?.success || !isServerRecord(payload.server)) {
+          throw new Error(payload?.error || fallbackText || "Failed to create server");
         }
-        server = body.server as Server;
-        createdMembership = body.membership ?? null;
+        server = payload.server as Server;
+        createdMembership = payload.membership ?? null;
       }
 
       const membership = membershipEnabled ? createdMembership : null;
@@ -229,12 +228,11 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           membership?: Membership;
           error?: string;
         }>(res);
-        const body = payload;
         if (!res.ok) {
-          throw new Error(body?.error || fallbackText || "Failed to join server");
+          throw new Error(payload?.error || fallbackText || "Failed to join server");
         }
 
-        membership = body?.membership ?? null;
+        membership = payload?.membership ?? null;
       }
 
       if (!membership) {

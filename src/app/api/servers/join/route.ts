@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
 			$createdAt: String(membership.$createdAt ?? ""),
 			userId: String(membership.userId),
 			serverId: String(membership.serverId),
-			role: membership.role === "owner" ? "owner" : "member",
+			role: "member",
 		};
 
 		invalidateChannelsUserCaches({

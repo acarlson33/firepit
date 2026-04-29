@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
+import { deleteChannel } from "@/lib/appwrite-servers";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
@@ -26,11 +28,23 @@ async function requireManageChannelsAccess(channelId: string) {
         );
     }
 
-    const channel = await databases.getDocument(
-        databaseId,
-        env.collections.channels,
-        channelId,
-    );
+    let channel;
+    try {
+        channel = await databases.getDocument(
+            databaseId,
+            env.collections.channels,
+            channelId,
+        );
+    } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Channel not found" },
+                { status: 404 },
+            );
+        }
+
+        throw error;
+    }
     const access = await getServerPermissionsForUser(
         databases,
         env,
@@ -140,6 +154,39 @@ export async function PATCH(
         });
         return NextResponse.json(
             { error: "Failed to update channel" },
+            { status: 500 },
+        );
+    }
+}
+
+export async function DELETE(
+    _request: NextRequest,
+    context: { params: Promise<{ channelId: string }> },
+) {
+    try {
+        const { channelId } = await context.params;
+        if (!channelId) {
+            return NextResponse.json(
+                { error: "channelId is required" },
+                { status: 400 },
+            );
+        }
+
+        const authError = await requireManageChannelsAccess(channelId);
+        if (authError) {
+            return authError;
+        }
+
+        await deleteChannel(channelId);
+        invalidateChannelsServerCaches(String(channelId));
+
+        return new NextResponse(null, { status: 204 });
+    } catch (error) {
+        logger.error("Failed to delete channel", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            { error: "Failed to delete channel" },
             { status: 500 },
         );
     }

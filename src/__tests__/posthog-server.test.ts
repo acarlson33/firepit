@@ -21,15 +21,21 @@ describe("posthog-server", () => {
         vi.resetModules();
         vi.clearAllMocks();
 
-        delete process.env.POSTHOG_PROJECT_API_KEY;
-        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
-        delete process.env.POSTHOG_HOST;
+        Reflect.deleteProperty(process.env, "POSTHOG_PROJECT_API_KEY");
+        Reflect.deleteProperty(
+            process.env,
+            "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN",
+        );
+        Reflect.deleteProperty(process.env, "POSTHOG_HOST");
     });
 
     afterEach(() => {
-        delete process.env.POSTHOG_PROJECT_API_KEY;
-        delete process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
-        delete process.env.POSTHOG_HOST;
+        Reflect.deleteProperty(process.env, "POSTHOG_PROJECT_API_KEY");
+        Reflect.deleteProperty(
+            process.env,
+            "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN",
+        );
+        Reflect.deleteProperty(process.env, "POSTHOG_HOST");
         vi.restoreAllMocks();
     });
 
@@ -122,7 +128,11 @@ describe("posthog-server", () => {
             ).length;
             expect(unhandledRejectionListenerCount).toBe(1);
         } finally {
-            process.env.NODE_ENV = previousNodeEnv;
+            if (previousNodeEnv === undefined) {
+                Reflect.deleteProperty(process.env, "NODE_ENV");
+            } else {
+                process.env.NODE_ENV = previousNodeEnv;
+            }
         }
     });
 });
