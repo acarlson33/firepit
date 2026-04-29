@@ -548,12 +548,11 @@ describe("useServers", () => {
 				expect(result.current.initialLoading).toBe(false);
 			});
 
-			let joinedMembership: Membership | null = null;
-			await act(async () => {
-				joinedMembership = await result.current.join("server2", mockUserId);
-			});
-
-			expect(joinedMembership).toBeNull();
+			await expect(
+				act(async () => {
+					await result.current.join("server2", mockUserId);
+				}),
+			).rejects.toThrow("Failed to join server");
 		});
 
 		it("should handle join error", async () => {

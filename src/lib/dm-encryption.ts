@@ -70,13 +70,13 @@ type StoredKeyMetadata = {
     version: string;
 };
 
-export type DmEncryptionKeyPair = {
+type DmEncryptionKeyPair = {
     privateKeyBase64: string;
     publicKeyBase64: string;
     version: string;
 };
 
-export type DmEncryptedPayload = {
+type DmEncryptedPayload = {
     encryptedText: string;
     encryptionNonce: string;
     encryptionSenderPublicKey: string;
@@ -613,7 +613,7 @@ async function saveKeyPairToStorage(
     }
 }
 
-export async function getDmEncryptionKeyPair(
+async function getDmEncryptionKeyPair(
     userId: string,
 ): Promise<DmEncryptionKeyPair | null> {
     return loadKeyPairFromStorage(userId);
@@ -637,7 +637,7 @@ function hasStoredDmEncryptionKeyRecord(userId: string): boolean {
     }
 }
 
-export async function ensureDmEncryptionKeyPair(
+async function ensureDmEncryptionKeyPair(
     userId: string,
 ): Promise<DmEncryptionKeyPair> {
     const existing = await loadKeyPairFromStorage(userId);
@@ -714,7 +714,7 @@ async function parseResponseBody(
     return { text };
 }
 
-export async function publishDmEncryptionPublicKey(
+async function publishDmEncryptionPublicKey(
     publicKeyBase64: string,
 ): Promise<void> {
     const response = await fetch("/api/me/dm-encryption-key", {
@@ -845,7 +845,7 @@ export async function encryptDmText(params: {
     };
 }
 
-export async function decryptDmText(params: {
+async function decryptDmText(params: {
     encryptedText: string;
     encryptionNonce: string;
     encryptionSenderPublicKey: string;
@@ -902,7 +902,7 @@ export async function decryptDmText(params: {
     }
 }
 
-export async function decryptDmTextForSender(params: {
+async function decryptDmTextForSender(params: {
     encryptedText: string;
     encryptionNonce: string;
     recipientPublicKeyBase64: string;

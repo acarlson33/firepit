@@ -1,5 +1,7 @@
-import { Query } from "node-appwrite";
+import { Query } from "appwrite";
 import { getEnvConfig } from "./appwrite-core";
+import { listPages } from "./appwrite-pagination";
+import { logger } from "@/lib/newrelic-utils";
 
 type MemberCountDatabases = {
     listDocuments: {
@@ -7,12 +9,12 @@ type MemberCountDatabases = {
             databaseId: string,
             collectionId: string,
             queries?: string[],
-        ): Promise<{ total: number }>;
+        ): Promise<{ total: number; documents?: Array<Record<string, unknown>> }>;
         (params: {
             databaseId: string;
             collectionId: string;
             queries?: string[];
-        }): Promise<{ total: number }>;
+        }): Promise<{ total: number; documents?: Array<Record<string, unknown>> }>;
     };
 };
 
@@ -73,54 +75,30 @@ export async function getActualMemberCounts(
     }
 
     const pageSize = 1000;
-    let cursorAfter: string | undefined;
 
     try {
-        while (true) {
-            const queries = [
-                Query.equal("serverId", uniqueServerIds),
-                Query.limit(pageSize),
-                Query.orderAsc("$id"),
-            ];
+        const { documents, truncated } = await listPages({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: membershipsCollectionId,
+            baseQueries: [Query.equal("serverId", uniqueServerIds)],
+            pageSize,
+            warningContext: "membership-count",
+        });
 
-            if (cursorAfter) {
-                queries.push(Query.cursorAfter(cursorAfter));
+        if (truncated) {
+            logger.warn("membership-count: membership scan truncated", {
+                collectionId: membershipsCollectionId,
+                pageSize,
+            });
+        }
+
+        for (const document of documents) {
+            const serverId = typeof document.serverId === "string" ? document.serverId : undefined;
+            if (!serverId || !counts.has(serverId)) {
+                continue;
             }
-
-            const result = await databases.listDocuments(
-                env.databaseId,
-                membershipsCollectionId,
-                queries,
-            );
-
-            const documents =
-                (
-                    result as unknown as {
-                        documents?: Array<Record<string, unknown>>;
-                    }
-                ).documents ?? [];
-
-            for (const document of documents) {
-                const serverId =
-                    typeof document.serverId === "string"
-                        ? document.serverId
-                        : undefined;
-                if (!serverId || !counts.has(serverId)) {
-                    continue;
-                }
-                counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
-            }
-
-            if (documents.length < pageSize) {
-                break;
-            }
-
-            const lastDocument = documents.at(-1);
-            if (!lastDocument || typeof lastDocument.$id !== "string") {
-                break;
-            }
-
-            cursorAfter = lastDocument.$id;
+            counts.set(serverId, (counts.get(serverId) ?? 0) + 1);
         }
     } catch {
         return counts;

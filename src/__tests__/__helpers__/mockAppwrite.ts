@@ -1,21 +1,43 @@
+import type { Databases } from "appwrite";
 import { vi } from "vitest";
 
 // ---------------- Types ----------------
+type CreateDocumentArgs = Parameters<Databases["createDocument"]>;
+type CreateDocumentResult = ReturnType<Databases["createDocument"]>;
+type ListDocumentsArgs = Parameters<Databases["listDocuments"]>;
+type ListDocumentsResult = ReturnType<Databases["listDocuments"]>;
+type UpdateDocumentArgs = Parameters<Databases["updateDocument"]>;
+type UpdateDocumentResult = ReturnType<Databases["updateDocument"]>;
+type DeleteDocumentArgs = Parameters<Databases["deleteDocument"]>;
+type DeleteDocumentResult = ReturnType<Databases["deleteDocument"]>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export type FailureConfig = {
   failCollections?: Record<string, Error | string>;
-  onCreate?: (args: any) => void;
+  onCreate?: (args: {
+    collectionId?: string;
+    data?: unknown;
+    permissions?: unknown;
+  }) => void;
   userId?: string;
   idFactory?: () => string;
   overrides?: {
-    createDocument?: (...args: any[]) => Promise<any>;
-    listDocuments?: (...args: any[]) => Promise<any>;
-    updateDocument?: (...args: any[]) => Promise<any>;
-    deleteDocument?: (...args: any[]) => Promise<any>;
+    createDocument?: (...args: CreateDocumentArgs) => CreateDocumentResult;
+    listDocuments?: (...args: ListDocumentsArgs) => ListDocumentsResult;
+    updateDocument?: (...args: UpdateDocumentArgs) => UpdateDocumentResult;
+    deleteDocument?: (...args: DeleteDocumentArgs) => DeleteDocumentResult;
   };
 };
 
 export type MockAppwriteHandles = {
-  created: Array<{ collectionId: string; data: any; permissions?: any }>;
+  created: Array<{
+    collectionId: string;
+    data: unknown;
+    permissions?: unknown;
+  }>;
   reset: () => void;
 };
 
@@ -42,26 +64,43 @@ vi.mock("appwrite", () => {
   }
 
   class Databases {
-    createDocument(...args: any[]) {
+    createDocument(...args: unknown[]) {
       // Override path
       if (currentConfig.overrides?.createDocument) {
-        return currentConfig.overrides.createDocument(...args);
+        return currentConfig.overrides.createDocument(
+          ...(args as CreateDocumentArgs)
+        );
       }
       let collectionId: string | undefined;
-      let data: any;
-      let permissions: any;
+      let documentId: string | undefined;
+      let data: unknown;
+      let permissions: unknown;
       if (
         args.length === 1 &&
         typeof args[0] === "object" &&
+        args[0] !== null &&
         !Array.isArray(args[0])
       ) {
-        const opts = args[0];
-        collectionId = opts.collectionId;
+        const opts = args[0] as {
+          documentId?: unknown;
+          collectionId?: unknown;
+          data?: unknown;
+          permissions?: unknown;
+        };
+        documentId =
+          typeof opts.documentId === "string" ? opts.documentId : undefined;
+        collectionId =
+          typeof opts.collectionId === "string" ? opts.collectionId : undefined;
         data = opts.data;
         permissions = opts.permissions;
-        currentConfig.onCreate?.(opts);
+        currentConfig.onCreate?.({ collectionId, data, permissions });
       } else {
-        [, collectionId, , data, permissions] = args;
+        collectionId = typeof args[1] === "string" ? args[1] : undefined;
+        data =
+          isPlainObject(args[3])
+            ? args[3]
+            : undefined;
+        permissions = Array.isArray(args[4]) ? args[4] : undefined;
         currentConfig.onCreate?.({ collectionId, data, permissions });
       }
       if (!collectionId) {
@@ -76,32 +115,50 @@ vi.mock("appwrite", () => {
           typeof fail === "string" ? new Error(fail) : fail
         );
       }
-      const idFromArgs = args.length > 1 ? args[2] : undefined;
+      const idFromArgs =
+        documentId ??
+        (args.length > 1 && typeof args[2] === "string" ? args[2] : undefined);
+      const safeData =
+        isPlainObject(data)
+          ? data
+          : {};
       return Promise.resolve({
         $id: idFromArgs || `${collectionId}-doc`,
-        ...data,
+        ...safeData,
       });
     }
-    listDocuments(...args: any[]) {
+    listDocuments(...args: unknown[]) {
       if (currentConfig.overrides?.listDocuments) {
-        return currentConfig.overrides.listDocuments(...args);
+        return currentConfig.overrides.listDocuments(
+          ...(args as ListDocumentsArgs)
+        );
       }
       return Promise.resolve({ documents: [] });
     }
-    updateDocument(...args: any[]) {
+    updateDocument(...args: unknown[]) {
       if (currentConfig.overrides?.updateDocument) {
-        return currentConfig.overrides.updateDocument(...args);
+        return currentConfig.overrides.updateDocument(
+          ...(args as UpdateDocumentArgs)
+        );
       }
-      if (args.length === 1 && typeof args[0] === "object") {
-        const o = args[0];
-        return Promise.resolve({ ...(o.data || {}), $id: o.documentId });
+      if (
+        args.length === 1 &&
+        typeof args[0] === "object" &&
+        args[0] !== null &&
+        !Array.isArray(args[0])
+      ) {
+        const o = args[0] as { data?: Record<string, unknown>; documentId?: unknown };
+        return Promise.resolve({ ...(isPlainObject(o.data) ? o.data : {}), $id: o.documentId });
       }
       const [, , id, data] = args;
-      return Promise.resolve({ $id: id, ...data });
+      const safeData = isPlainObject(data) ? data : {};
+      return Promise.resolve({ $id: id, ...safeData });
     }
-    deleteDocument(...args: any[]) {
+    deleteDocument(...args: unknown[]) {
       if (currentConfig.overrides?.deleteDocument) {
-        return currentConfig.overrides.deleteDocument(...args);
+        return currentConfig.overrides.deleteDocument(
+          ...(args as DeleteDocumentArgs)
+        );
       }
       return Promise.resolve({});
     }
@@ -128,6 +185,7 @@ vi.mock("appwrite", () => {
     orderAsc: (f: string) => `orderAsc(${f})`,
     orderDesc: (f: string) => `orderDesc(${f})`,
     equal: (k: string, v: any) => `equal(${k},${v})`,
+    select: (fields: string[]) => `select(${JSON.stringify(fields)})`,
   };
 
   class Storage {

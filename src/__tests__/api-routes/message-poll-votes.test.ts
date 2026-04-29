@@ -21,7 +21,9 @@ vi.mock("node-appwrite", () => ({
     ID: { unique: () => "vote-id" },
     Query: {
         equal: vi.fn((field: string, value: string) => `equal(${field},${value})`),
+        orderAsc: vi.fn((field: string) => `orderAsc(${field})`),
         limit: vi.fn((value: number) => `limit(${value})`),
+        cursorAfter: vi.fn((value: string) => `cursorAfter(${value})`),
     },
 }));
 
@@ -175,7 +177,8 @@ describe("Message Poll Votes API", () => {
         const payload = await response.json();
         expect(response.status).toBe(200);
         expect(payload.poll).toBeDefined();
-        expect(payload.poll.options[0].count).toBe(1);
-        expect(payload.poll.options[0].voterIds).toEqual(["user-1"]);
+        const firstOption = payload.poll.options.at(0);
+        expect(firstOption?.count).toBe(1);
+        expect(firstOption?.voterIds).toEqual(["user-1"]);
     });
 });

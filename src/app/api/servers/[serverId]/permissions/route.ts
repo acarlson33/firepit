@@ -3,6 +3,7 @@ import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
 import { logger } from "@/lib/newrelic-utils";
@@ -18,6 +19,7 @@ const channelPermissionOverridesCollectionId = "channel_permission_overrides";
 function getDatabases() {
     return getServerClient().databases;
 }
+
 
 function mapOverride(
     doc: Record<string, unknown>,
@@ -36,6 +38,57 @@ function mapOverride(
             : [],
         $createdAt: String(doc.$createdAt ?? ""),
     };
+}
+
+type QueryWithIn = typeof Query & {
+    in?: (attribute: string, values: string[]) => string;
+};
+
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+
+function buildRoleIdMembershipQuery(roleIds: string[]): string {
+    const queryWithIn = Query as QueryWithIn;
+    if (typeof queryWithIn.in === "function") {
+        return queryWithIn.in("roleId", roleIds);
+    }
+
+    // Appwrite accepts Query.equal(field, [v1, v2]) as an IN-style fallback.
+    return Query.equal("roleId", roleIds);
+}
+
+async function listOverridePages(params: {
+    databases: ReturnType<typeof getDatabases>;
+    pageSize: number;
+    queries: string[];
+    warningContext: string;
+}) {
+    const { databases, pageSize, queries, warningContext } = params;
+
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId,
+        collectionId: channelPermissionOverridesCollectionId,
+        baseQueries: queries,
+        pageSize,
+        warningContext,
+    });
+
+    if (truncated) {
+        throw new Error(
+            `listOverridePages truncated for ${channelPermissionOverridesCollectionId} (${warningContext})`,
+        );
+    }
+
+    return documents;
 }
 
 // GET: Get user's effective permissions for a server/channel
@@ -90,27 +143,53 @@ export async function GET(
             });
         }
 
-        const overridesResponse = await databases.listDocuments(
-            databaseId,
-            channelPermissionOverridesCollectionId,
-            [Query.equal("channelId", channelId), Query.limit(1000)],
-        );
+        const userOverrideDocumentsPromise = listOverridePages({
+            databases,
+            pageSize: 500,
+            queries: [
+                Query.equal("channelId", channelId),
+                Query.equal("userId", userId),
+            ],
+            warningContext: "user-overrides",
+        });
 
-        const applicableOverrides: ChannelPermissionOverride[] = [];
-        for (const document of overridesResponse.documents) {
-            const override = mapOverride(
+        const roleOverrideDocumentsPromise =
+            serverAccess.roleIds.length > 0
+                ? Promise.all(
+                      chunkValues(serverAccess.roleIds, QUERY_ARRAY_LIMIT).map(
+                          (roleIdChunk) =>
+                              listOverridePages({
+                                  databases,
+                                  pageSize: 500,
+                                  queries: [
+                                      Query.equal("channelId", channelId),
+                                      buildRoleIdMembershipQuery(roleIdChunk),
+                                  ],
+                                  warningContext: "role-overrides",
+                              }),
+                      ),
+                  ).then((chunks) => chunks.flat())
+                : Promise.resolve([] as Array<Record<string, unknown>>);
+
+        const [userOverrideDocuments, roleOverrideDocuments] =
+            await Promise.all([
+                userOverrideDocumentsPromise,
+                roleOverrideDocumentsPromise,
+            ]);
+
+        const applicableOverrideDocuments = [
+            ...userOverrideDocuments,
+            ...roleOverrideDocuments,
+        ];
+        const applicableOverridesById = new Map<string, ChannelPermissionOverride>();
+        for (const document of applicableOverrideDocuments) {
+            const mappedOverride = mapOverride(
                 document as Record<string, unknown>,
                 channelId,
             );
-            const appliesToUser = override.userId === userId;
-            const roleId = override.roleId ?? "";
-            const appliesToRole =
-                roleId !== "" && serverAccess.roleIds.includes(roleId);
-
-            if (appliesToUser || appliesToRole) {
-                applicableOverrides.push(override);
-            }
+            applicableOverridesById.set(mappedOverride.$id, mappedOverride);
         }
+        const applicableOverrides = Array.from(applicableOverridesById.values());
 
         const effectivePerms = getEffectivePermissions(
             serverAccess.roles,

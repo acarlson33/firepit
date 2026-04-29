@@ -221,7 +221,6 @@ describe("Login Security", () => {
     });
 
     it("loginAction should block the configured system sender account", async () => {
-        vi.clearAllMocks();
         mockGetFeatureFlag.mockResolvedValue(false);
 
         process.env.SYSTEM_SENDER_USER_ID = "system-account-id";
@@ -270,7 +269,7 @@ describe("Login Security", () => {
                     deleteSession: vi.fn().mockResolvedValue({}),
                 }) as never,
         );
-        vi.mocked(Users).mockImplementationOnce(
+        vi.mocked(Users).mockImplementation(
             () =>
                 ({
                     get: vi.fn().mockResolvedValue({
@@ -332,7 +331,6 @@ describe("Login Security", () => {
                 () =>
                     ({
                         createEmailPasswordSession,
-                        deleteSession,
                     }) as never,
             )
             .mockImplementationOnce(
@@ -348,6 +346,7 @@ describe("Login Security", () => {
                         $id: "unverified-user-id",
                         emailVerification: false,
                     }),
+                    deleteSession,
                 }) as never,
         );
 
@@ -372,9 +371,10 @@ describe("Login Security", () => {
                 url: expect.stringContaining("/api/auth/verify-email"),
             }),
         );
-        expect(deleteSession).toHaveBeenCalledWith({
-            sessionId: "unverified-session-id",
-        });
+        expect(deleteSession).toHaveBeenCalledWith(
+            "unverified-user-id",
+            "unverified-session-id",
+        );
     });
 
     it("resendVerificationAction should report already verified users", async () => {
@@ -392,7 +392,6 @@ describe("Login Security", () => {
                         secret: "verified-session-secret",
                     }),
                     createVerification: vi.fn().mockResolvedValue({}),
-                    deleteSession,
                 }) as never,
         );
         vi.mocked(Users).mockImplementationOnce(
@@ -402,6 +401,7 @@ describe("Login Security", () => {
                         $id: "verified-user-id",
                         emailVerification: true,
                     }),
+                    deleteSession,
                 }) as never,
         );
 
@@ -420,9 +420,10 @@ describe("Login Security", () => {
             expect(result.alreadyVerified).toBe(true);
             expect(result.message).toContain("already verified");
         }
-        expect(deleteSession).toHaveBeenCalledWith({
-            sessionId: "verified-session-id",
-        });
+        expect(deleteSession).toHaveBeenCalledWith(
+            "verified-user-id",
+            "verified-session-id",
+        );
     });
 
     it("registerAction should handle errors gracefully without throwing", async () => {

@@ -179,9 +179,10 @@ async function createAttachments(
 
     const env = getEnvConfig();
     const { databases } = getServerClient();
+    const createdAttachmentIds: string[] = [];
 
-    await Promise.all(
-        attachments.map(async (attachment) => {
+    try {
+        for (const attachment of attachments) {
             const payload = buildAttachmentDocumentData({
                 attachment,
                 messageId,
@@ -189,30 +190,74 @@ async function createAttachments(
             });
 
             try {
+                const documentId = ID.unique();
                 await databases.createDocument(
                     env.databaseId,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
+                    documentId,
                     payload,
                 );
+                createdAttachmentIds.push(documentId);
             } catch (error) {
                 if (!isUnknownAttachmentAttributeError(error)) {
                     throw error;
                 }
 
+                logger.info(
+                    "Using legacy attachment payload fallback for DM thread attachment write",
+                    {
+                        attachmentFileId: attachment.fileId,
+                        attachmentFileName: attachment.fileName,
+                        messageId,
+                        reason:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
+
+                const legacyDocumentId = ID.unique();
                 await databases.createDocument(
                     env.databaseId,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
+                    legacyDocumentId,
                     buildLegacyAttachmentDocumentData({
                         attachment,
                         messageId,
                         messageType: "dm",
                     }),
                 );
+                createdAttachmentIds.push(legacyDocumentId);
             }
-        }),
-    );
+        }
+    } catch (error) {
+        const rollbackResults = await Promise.allSettled(
+            createdAttachmentIds.map((attachmentDocumentId) =>
+                databases.deleteDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    attachmentDocumentId,
+                ),
+            ),
+        );
+
+        for (const [index, rollbackResult] of rollbackResults.entries()) {
+            if (rollbackResult.status !== "rejected") {
+                continue;
+            }
+
+            logger.warn("Failed to rollback DM thread attachment document", {
+                attachmentDocumentId: createdAttachmentIds[index],
+                messageId,
+                reason:
+                    rollbackResult.reason instanceof Error
+                        ? rollbackResult.reason.message
+                        : String(rollbackResult.reason),
+            });
+        }
+
+        throw error;
+    }
 }
 
 function parseLimit(url: string): number {

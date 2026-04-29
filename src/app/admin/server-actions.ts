@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { requireAdmin, requireAuth, requireModerator } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -12,38 +13,11 @@ const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || undefined;
 
-export type ServerCreationResult =
-    | { success: true; serverId: string; serverName: string }
+// Result shapes are returned inline; no exported type aliases here.
+
+type MutationResult =
+    | { success: true }
     | { success: false; error: string };
-
-export type ChannelCreationResult =
-    | {
-          success: true;
-          channelId: string;
-          channelName: string;
-          channelType: "text" | "voice" | "announcement";
-      }
-    | { success: false; error: string };
-
-export type ServerListResult = {
-    servers: Array<{
-        $id: string;
-        name: string;
-        ownerId: string;
-        createdAt: string;
-        defaultOnSignup?: boolean;
-    }>;
-};
-
-export type ChannelListResult = {
-    channels: Array<{
-        $id: string;
-        name: string;
-        type: "text" | "voice" | "announcement";
-        serverId: string;
-        createdAt: string;
-    }>;
-};
 
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 
@@ -60,13 +34,61 @@ function normalizeChannelType(
     return "text";
 }
 
+async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
+    const { databases } = getServerClient();
+    const pageLimit = 100;
+    let cursorAfter: string | undefined;
+    const defaults: Array<{ $id: string }> = [];
+    let paginated = false;
+
+    while (true) {
+        const queries = [
+            Query.equal("defaultOnSignup", true),
+            Query.orderAsc("$id"),
+            Query.limit(pageLimit),
+        ];
+
+        if (cursorAfter) {
+            queries.push(Query.cursorAfter(cursorAfter));
+        }
+
+        const page = await databases.listDocuments(
+            DATABASE_ID,
+            SERVERS_COLLECTION_ID,
+            queries,
+        );
+
+        defaults.push(...page.documents.map((server) => ({ $id: server.$id })));
+
+        if (page.documents.length < pageLimit) {
+            break;
+        }
+
+        // If we reached this point, pagination occurred.
+        paginated = true;
+
+        const lastId = page.documents.at(-1)?.$id;
+        if (!lastId) {
+            break;
+        }
+
+        cursorAfter = lastId;
+    }
+
+    // Single summary debug log instead of per-page logging
+    logger.debug("Default signup servers fetched", {
+        count: defaults.length,
+        paginated,
+    });
+
+    return defaults;
+}
+
 /**
  * Create a new server (Admin only)
  * Admins can always create servers regardless of feature flags
  */
-export async function createServerAction(
-    name: string,
-): Promise<ServerCreationResult> {
+export async function createServerAction(name: string) {
     try {
         // Require admin role to create servers
         const { user } = await requireAdmin();
@@ -104,7 +126,12 @@ export async function createServerAction(
                     },
                     membershipPerms,
                 );
-            } catch {
+            } catch (error) {
+                logger.error("Membership creation failed after server creation", {
+                    serverId: serverDoc.$id,
+                    ownerId,
+                    error: error instanceof Error ? error.message : String(error),
+                });
                 // Non-critical: membership creation failed but server exists
             }
         }
@@ -132,7 +159,7 @@ export async function createChannelAction(
     serverId: string,
     name: string,
     type: "text" | "voice" | "announcement" = "text",
-): Promise<ChannelCreationResult> {
+) {
     try {
         const user = await requireAuth();
 
@@ -190,7 +217,7 @@ export async function createChannelAction(
 /**
  * List all servers (Admin only)
  */
-export async function listServersAction(): Promise<ServerListResult> {
+export async function listServersAction() {
     try {
         await requireAdmin();
 
@@ -220,35 +247,121 @@ export async function listServersAction(): Promise<ServerListResult> {
  */
 export async function setDefaultSignupServerAction(
     serverId: string | null,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 
         const { databases } = getServerClient();
-        const defaultsResponse = await databases.listDocuments(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            [Query.equal("defaultOnSignup", true), Query.limit(200)],
+        const defaultServers = await listDefaultSignupServers();
+
+        // First, clear existing defaults (except the requested server)
+        const serversToReset = defaultServers.filter(
+            (server) => server.$id !== serverId,
         );
 
-        for (const server of defaultsResponse.documents) {
-            if (server.defaultOnSignup === true) {
-                await databases.updateDocument(
-                    DATABASE_ID,
-                    SERVERS_COLLECTION_ID,
-                    server.$id,
-                    { defaultOnSignup: false },
-                );
+        if (serversToReset.length > 0) {
+            const resetResults = await Promise.allSettled(
+                serversToReset.map((server) =>
+                    databases.updateDocument(
+                        DATABASE_ID,
+                        SERVERS_COLLECTION_ID,
+                        server.$id,
+                        { defaultOnSignup: false },
+                    ),
+                ),
+            );
+
+            const resetFailures = resetResults.filter(
+                (result) => result.status === "rejected",
+            );
+            if (resetFailures.length > 0) {
+                const successfullyResetServerIds = resetResults
+                    .map((result, index) =>
+                        result.status === "fulfilled"
+                            ? serversToReset[index]?.$id
+                            : null,
+                    )
+                    .filter((value): value is string => typeof value === "string");
+
+                if (successfullyResetServerIds.length > 0) {
+                    const restoreResults = await Promise.allSettled(
+                        successfullyResetServerIds.map((defaultServerId) =>
+                            databases.updateDocument(
+                                DATABASE_ID,
+                                SERVERS_COLLECTION_ID,
+                                defaultServerId,
+                                { defaultOnSignup: true },
+                            ),
+                        ),
+                    );
+
+                    for (const [index, restoreResult] of restoreResults.entries()) {
+                        if (restoreResult.status === "rejected") {
+                            logger.error("Failed to restore partially reset default signup server", {
+                                defaultServerId: successfullyResetServerIds[index],
+                                error:
+                                    restoreResult.reason instanceof Error
+                                        ? restoreResult.reason.message
+                                        : String(restoreResult.reason),
+                            });
+                        }
+                    }
+                }
+
+                logger.error("Failed to clear existing default signup servers", {
+                    failureCount: resetFailures.length,
+                    serverId,
+                });
+
+                return {
+                    success: false,
+                    error: "Failed to clear existing default signup servers",
+                };
             }
         }
 
+        // Now set the requested server as default (if provided)
         if (serverId) {
-            await databases.updateDocument(
-                DATABASE_ID,
-                SERVERS_COLLECTION_ID,
-                serverId,
-                { defaultOnSignup: true },
-            );
+            try {
+                await databases.updateDocument(
+                    DATABASE_ID,
+                    SERVERS_COLLECTION_ID,
+                    serverId,
+                    { defaultOnSignup: true },
+                );
+            } catch (setError) {
+                logger.error("Failed to set default signup server", {
+                    error: setError instanceof Error ? setError.message : String(setError),
+                    serverId,
+                });
+
+                // Attempt to restore any servers we cleared earlier
+                if (serversToReset.length > 0) {
+                    const restorePromises = serversToReset.map((s) =>
+                        databases.updateDocument(
+                            DATABASE_ID,
+                            SERVERS_COLLECTION_ID,
+                            s.$id,
+                            { defaultOnSignup: true },
+                        ),
+                    );
+
+                    const restoreResults = await Promise.allSettled(restorePromises);
+                    for (const [i, r] of restoreResults.entries()) {
+                        if (r.status === "rejected") {
+                            logger.error("Failed to restore cleared default signup server", {
+                                defaultServerId: serversToReset[i].$id,
+                                error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+                            });
+                        }
+                    }
+                }
+
+                return {
+                    success: false,
+                    error: "Failed to set default signup server",
+                };
+            }
         }
 
         return { success: true };
@@ -266,9 +379,7 @@ export async function setDefaultSignupServerAction(
 /**
  * List channels for a server (Admin or Moderator)
  */
-export async function listChannelsAction(
-    serverId: string,
-): Promise<ChannelListResult> {
+export async function listChannelsAction(serverId: string) {
     try {
         await requireModerator();
 
@@ -297,16 +408,12 @@ export async function listChannelsAction(
     }
 }
 
-export type DeleteResult =
-    | { success: true }
-    | { success: false; error: string };
-
 /**
  * Delete a server (Admin only)
  */
 export async function deleteServerAction(
     serverId: string,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 
@@ -340,7 +447,7 @@ export async function deleteServerAction(
  */
 export async function deleteChannelAction(
     channelId: string,
-): Promise<DeleteResult> {
+): Promise<MutationResult> {
     try {
         await requireAdmin();
 

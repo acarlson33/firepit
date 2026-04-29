@@ -6,7 +6,7 @@ import {
     normalizeError,
     withSession,
 } from "./appwrite-core";
-import type { Channel, ChannelCategory, Membership, Server } from "./types";
+import type { Channel, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
 import {
     getActualMemberCount,
@@ -22,7 +22,6 @@ const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
-const CATEGORIES_COLLECTION_ID = env.collections.categories;
 // Read memberships collection ID at call time for testability
 /**
  * Returns memberships collection id.
@@ -45,6 +44,38 @@ function normalizeChannelType(value: unknown): Channel["type"] {
     }
 
     return "text";
+}
+
+function mapMembershipDocument(doc: Record<string, unknown>): Membership {
+    const id = typeof doc.$id === "string" && doc.$id.trim().length > 0
+        ? doc.$id
+        : (() => {
+              throw new Error("mapMembershipDocument requires a valid $id");
+          })();
+    const serverId =
+        typeof doc.serverId === "string" && doc.serverId.trim().length > 0
+            ? doc.serverId
+            : (() => {
+                  throw new Error(
+                      "mapMembershipDocument requires a valid serverId",
+                  );
+              })();
+    const userId =
+        typeof doc.userId === "string" && doc.userId.trim().length > 0
+            ? doc.userId
+            : (() => {
+                  throw new Error(
+                      "mapMembershipDocument requires a valid userId",
+                  );
+              })();
+
+    return {
+        $id: id,
+        $createdAt: String(doc.$createdAt ?? ""),
+        role: doc.role === "owner" ? "owner" : "member",
+        serverId,
+        userId,
+    };
 }
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
@@ -97,37 +128,6 @@ async function assertUserServerCreationEnabled(): Promise<void> {
  */
 function getDatabases() {
     return getBrowserDatabases();
-}
-
-/**
- * Lists servers.
- *
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Server[]>} The return value.
- */
-export async function listServers(limit = 25): Promise<Server[]> {
-    const databases = getDatabases();
-    const res = await databases.listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: SERVERS_COLLECTION_ID,
-        // Use system attribute $createdAt for ordering to avoid schema attribute requirement
-        queries: [
-            Query.limit(Math.min(limit, 100)),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-
-    const memberCounts = await getActualMemberCounts(
-        databases,
-        res.documents.map((doc) => String(doc.$id)),
-    );
-
-    const servers = res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
-    });
-
-    return servers;
 }
 
 /**
@@ -185,8 +185,31 @@ export function createServer(
         iconFileId?: string;
         bannerFileId?: string;
         isPublic?: boolean;
+        includeMembership?: false;
     },
-): Promise<Server> {
+): Promise<Server>;
+export function createServer(
+    name: string,
+    options: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership: true;
+    },
+): Promise<{ membership: Membership | null; server: Server }>;
+export function createServer(
+    name: string,
+    options?: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership?: boolean;
+    },
+): Promise<Server | { membership: Membership | null; server: Server }> {
     return withSession(async ({ userId }) => {
         const ownerId = userId;
 
@@ -230,6 +253,7 @@ export function createServer(
                 permissions,
             });
             const s = serverDoc as unknown as Record<string, unknown>;
+            let membership: Membership | null = null;
             const membershipsCollectionId = getMembershipsCollectionId();
             if (membershipsCollectionId) {
                 try {
@@ -238,7 +262,7 @@ export function createServer(
                         Permission.update(Role.user(ownerId)),
                         Permission.delete(Role.user(ownerId)),
                     ];
-                    await getDatabases().createDocument({
+                    const membershipDoc = await getDatabases().createDocument({
                         databaseId: DATABASE_ID,
                         collectionId: membershipsCollectionId,
                         documentId: ID.unique(),
@@ -249,6 +273,10 @@ export function createServer(
                         },
                         permissions: membershipPerms,
                     });
+
+                    membership = mapMembershipDocument(
+                        membershipDoc as Record<string, unknown>,
+                    );
                 } catch {
                     // ignore membership creation failure
                 }
@@ -260,52 +288,29 @@ export function createServer(
             }
 
             // Get actual member count for return value
+            const serverRecord = {
+                ...serverData,
+                ...s,
+                ownerId,
+            };
             const actualMemberCount = await getActualMemberCount(
                 getDatabases(),
                 String(s.$id),
             );
 
-            return mapServerDocument(s, actualMemberCount);
+            const mappedServer = mapServerDocument(serverRecord, actualMemberCount);
+
+            if (options?.includeMembership) {
+                return {
+                    membership,
+                    server: mappedServer,
+                };
+            }
+
+            return mappedServer;
         } catch (e) {
             throw normalizeError(e);
         }
-    });
-}
-
-/**
- * Lists channels.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Channel[]>} The return value.
- */
-export async function listChannels(
-    serverId: string,
-    limit = 100,
-): Promise<Channel[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CHANNELS_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            type: normalizeChannelType(d.type),
-            topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
-            categoryId:
-                typeof d.categoryId === "string" ? d.categoryId : undefined,
-            position: typeof d.position === "number" ? d.position : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies Channel;
     });
 }
 
@@ -398,42 +403,6 @@ export async function createChannel(
     } satisfies Channel;
 }
 
-/**
- * Lists categories.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<ChannelCategory[]>} The return value.
- */
-export async function listCategories(
-    serverId: string,
-    limit = 100,
-): Promise<ChannelCategory[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CATEGORIES_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("position"),
-        ],
-    });
-
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            position: typeof d.position === "number" ? d.position : 0,
-            createdBy:
-                typeof d.createdBy === "string" ? d.createdBy : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies ChannelCategory;
-    });
-}
-
 // Membership utilities
 /**
  * Lists memberships for user.
@@ -453,16 +422,9 @@ export async function listMembershipsForUser(
         collectionId: membershipsCollectionId,
         queries: [Query.equal("userId", userId), Query.limit(MAX_LIST_LIMIT)],
     });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            userId: String(d.userId),
-            role: d.role as "owner" | "member",
-            $createdAt: String(d.$createdAt ?? ""),
-        } satisfies Membership;
-    });
+    return res.documents.map((doc) =>
+        mapMembershipDocument(doc as Record<string, unknown>),
+    );
 }
 
 /**
@@ -492,19 +454,12 @@ export async function joinServer(
         data: { serverId, userId, role: "member" },
         permissions,
     });
-    const d = res as unknown as Record<string, unknown>;
     try {
         await assignDefaultRoleBrowser(serverId, userId);
     } catch {
         // Non-fatal: continue even if role assignment fails
     }
-    return {
-        $id: String(d.$id),
-        serverId: String(d.serverId),
-        userId: String(d.userId),
-        role: d.role as "owner" | "member",
-        $createdAt: String(d.$createdAt ?? ""),
-    } satisfies Membership;
+    return mapMembershipDocument(res as Record<string, unknown>);
 }
 
 /**

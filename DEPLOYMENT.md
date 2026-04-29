@@ -113,6 +113,11 @@ APPWRITE_PROJECT_ID=your-project-id-here
 APPWRITE_API_KEY=your-api-key-here
 # ☝️ From Step 1B - the full API key you just created
 
+# System announcement sender account (production recommended)
+SYSTEM_SENDER_USER_ID=your-system-sender-user-id
+# ☝️ Set to the Appwrite user ID used for system announcement DMs.
+# If omitted, system announcement threads are read-only for all users.
+
 # === OPTIONAL: Collection IDs ===
 # Leave these with default values - setup script will create them
 # Only change if you have existing collections to use
@@ -142,7 +147,25 @@ APPWRITE_ADMIN_TEAM_ID=
 APPWRITE_MODERATOR_TEAM_ID=
 ```
 
-#### C. Validation
+#### C. System Announcement Sender Account (Production Recommended)
+
+`SYSTEM_SENDER_USER_ID` should point to a dedicated non-human Appwrite user account used only for automated announcement delivery.
+
+How to get the value:
+
+1. In Appwrite Console, open **Auth -> Users**.
+2. Click **Create User**, enter a valid email (for example, `system+sender@yourdomain.com`) and a strong password that satisfies Appwrite requirements.
+3. Mark the email as verified in Appwrite (or complete your verification flow) so the account can send system messages.
+4. Do not add this account to special teams unless your deployment explicitly needs team-scoped permissions.
+5. Copy the created user's `$id` and set it as `SYSTEM_SENDER_USER_ID`.
+
+Why this matters:
+
+- System announcement threads can be safely identified and treated as read-only for recipients.
+- Interactive sign-in blocking is enforced by Firepit auth logic when `SYSTEM_SENDER_USER_ID` is set (see `src/app/(auth)/login/actions.ts` and `src/lib/auth-server.ts`); Appwrite does not auto-disable login for that user, so use Appwrite Console (**Auth -> Users**) only if you also want to manually restrict the account there.
+- If this variable is unset, Firepit defaults to read-only behavior for all system announcement threads.
+
+#### D. Validation
 
 Validate your configuration:
 
@@ -258,6 +281,8 @@ bun start
 - Set all variables from `.env.local` in your hosting environment
 - Use secrets management for `APPWRITE_API_KEY`
 - Ensure `APPWRITE_ENDPOINT` points to your production Appwrite
+- Set `SYSTEM_SENDER_USER_ID` to the dedicated Appwrite system-sender user `$id` in production
+- `SYSTEM_SENDER_USER_ID` controls interactive sign-in blocking and system-thread read-only behavior in `src/app/(auth)/login/actions.ts` and `src/lib/auth-server.ts`
 
 **Reverse Proxy Setup (Nginx):**
 

@@ -12,18 +12,19 @@ import {
     setFeatureFlag,
     type FeatureFlagKey,
 } from "@/lib/feature-flags";
-import type { FeatureFlag } from "@/lib/types";
 import {
     createAnnouncement,
+    dispatchAnnouncementById,
     dispatchScheduledAnnouncements,
-    isInstanceAnnouncementsEnabled,
     listAnnouncements,
-    type AnnouncementCreateMode,
+    ClientError,
 } from "@/lib/appwrite-announcements";
 import type {
     Announcement,
+    AnnouncementCreateMode,
     AnnouncementPriority,
     AnnouncementStatus,
+    FeatureFlag,
 } from "@/lib/types";
 
 // Server actions run on the server; use server-side env variables first.
@@ -31,6 +32,8 @@ const ids = getAppwriteIds();
 const databaseId = ids.databaseId;
 const messagesCollection = ids.messages;
 const channelsCollection = ids.channels;
+const DEFAULT_DISPATCH_LIMIT = 25;
+const MAX_DISPATCH_LIMIT = 100;
 
 export type BackfillResult = {
     updated: number;
@@ -47,6 +50,37 @@ type MessageDoc = AppwriteDoc & {
 type ChannelDoc = AppwriteDoc & {
     serverId?: string;
 };
+
+function parseDispatchLimit(limit: number): number | undefined {
+    if (!Number.isFinite(limit)) {return undefined;}
+    if (!Number.isInteger(limit)) {return undefined;}
+    if (limit < 1 || limit > MAX_DISPATCH_LIMIT) {return undefined;}
+    return limit;
+}
+
+function validateAnnouncementDispatchLimit(limit: number): number {
+    const parsedLimit = parseDispatchLimit(limit);
+    if (parsedLimit === undefined) {
+        throw new Error(
+            `Dispatch limit must be between 1 and ${String(MAX_DISPATCH_LIMIT)}`,
+        );
+    }
+
+    return parsedLimit;
+}
+
+function normalizeListLimit(limit: number | undefined): number | undefined {
+    if (limit === undefined) {return undefined;}
+
+    const parsedLimit = parseDispatchLimit(limit);
+    if (parsedLimit === undefined) {
+        logger.warn("normalizeListLimit received invalid limit; falling back to undefined", {
+            limit,
+        });
+    }
+
+    return parsedLimit;
+}
 
 // Smaller helpers to keep complexity below threshold
 async function listMessagesNeedingServerId(limit: number) {
@@ -344,16 +378,11 @@ export async function getAnnouncementsAction(
         throw new Error("Forbidden");
     }
 
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
-    }
+    const validatedLimit = normalizeListLimit(input.limit);
 
     return listAnnouncements({
         cursorAfter: input.cursorAfter,
-        limit: input.limit,
+        limit: validatedLimit,
         statuses: input.statuses,
     });
 }
@@ -371,54 +400,72 @@ export async function createAnnouncementAction(
     userId: string,
     input: CreateAnnouncementActionInput,
 ): Promise<{
-    announcement: Announcement;
+    announcement?: Announcement;
     dispatched?: { announcementIds: string[]; dueCount: number };
+    dispatchError?: string;
+    error?: string;
 }> {
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
         throw new Error("Forbidden");
     }
 
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
-    }
+    let announcement: Announcement | undefined;
+    try {
+        announcement = await createAnnouncement({
+            actorId: userId,
+            body: input.body,
+            idempotencyKey: input.idempotencyKey,
+            mode: input.mode,
+            priority: input.priority,
+            scheduledFor: input.scheduledFor,
+            title: input.title,
+        });
+    } catch (error) {
+        if (error instanceof ClientError) {
+            return { error: error.message };
+        }
 
-    const announcement = await createAnnouncement({
-        actorId: userId,
-        body: input.body,
-        idempotencyKey: input.idempotencyKey,
-        mode: input.mode,
-        priority: input.priority,
-        scheduledFor: input.scheduledFor,
-        title: input.title,
-    });
+        throw error;
+    }
 
     if (input.mode !== "send_now") {
         return { announcement };
     }
 
-    const dispatched = await dispatchScheduledAnnouncements(100);
-    return { announcement, dispatched };
+    try {
+        const immediateDispatch = await dispatchAnnouncementById(
+            announcement.$id,
+        );
+        const dispatched = immediateDispatch.dispatched
+            ? { announcementIds: [announcement.$id], dueCount: 1 }
+            : { announcementIds: [], dueCount: 0 };
+        return { announcement, dispatched };
+    } catch (error) {
+        logger.error("Dispatch after send_now announcement creation failed", {
+            announcementId: announcement.$id,
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        return {
+            announcement,
+            dispatchError:
+                error instanceof Error
+                    ? error.message
+                    : "Failed to dispatch announcement by id",
+        };
+    }
 }
 
 export async function dispatchAnnouncementsAction(
     userId: string,
-    limit = 25,
+    limit = DEFAULT_DISPATCH_LIMIT,
 ): Promise<{ announcementIds: string[]; dueCount: number }> {
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
         throw new Error("Forbidden");
     }
 
-    const enabled = await isInstanceAnnouncementsEnabled();
-    if (!enabled) {
-        throw new Error(
-            "Instance announcements are disabled. Enable the feature flag first.",
-        );
-    }
-
-    return dispatchScheduledAnnouncements(limit);
+    const validatedLimit = validateAnnouncementDispatchLimit(limit);
+    return dispatchScheduledAnnouncements(validatedLimit);
 }

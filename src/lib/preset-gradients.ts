@@ -2,7 +2,7 @@
  * Preset gradients for profile backgrounds
  */
 
-export type PresetGradient = {
+type PresetGradient = {
     id: string;
     name: string;
     cssValue: string;
@@ -103,11 +103,3 @@ export const PRESET_COLORS = [
     "#fd79a8",
     "#81ecec",
 ] as const;
-
-export function getPresetGradientById(id: string): PresetGradient | undefined {
-    return PRESET_GRADIENTS.find((g) => g.id === id);
-}
-
-export function isValidPresetGradientId(id: string): boolean {
-    return Boolean(getPresetGradientById(id));
-}

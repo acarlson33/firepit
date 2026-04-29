@@ -84,6 +84,148 @@ const NO_PERMISSIONS: EffectivePermissions = {
     administrator: false,
 };
 
+const ACCESS_CACHE_TTL_MS = 5 * 1000;
+const MAX_ACCESS_CACHE_SIZE = 1000;
+
+type CachedAccessEntry<T> = {
+    value: T;
+    expiresAt: number;
+};
+
+const serverAccessCache = new Map<string, CachedAccessEntry<ServerAccess>>();
+const pendingServerAccess = new Map<string, Promise<ServerAccess>>();
+const channelAccessCache = new Map<string, CachedAccessEntry<ChannelAccess>>();
+const pendingChannelAccess = new Map<string, Promise<ChannelAccess>>();
+const QUERY_ARRAY_LIMIT = 100;
+
+function chunkValues<T>(values: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+function canUseAccessCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function getCachedAccess<T>(
+    cache: Map<string, CachedAccessEntry<T>>,
+    pending: Map<string, Promise<T>>,
+    key: string,
+): T | null {
+    const entry = cache.get(key);
+    if (!entry) {
+        return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+        cache.delete(key);
+        pending.delete(key);
+        return null;
+    }
+
+    // LRU refresh for active entries.
+    cache.delete(key);
+    cache.set(key, entry);
+
+    return entry.value;
+}
+
+function sweepExpiredAccessEntries<T>(
+    cache: Map<string, CachedAccessEntry<T>>,
+    pending: Map<string, Promise<T>>,
+): void {
+    const now = Date.now();
+
+    for (const [key, entry] of cache.entries()) {
+        if (entry.expiresAt <= now) {
+            cache.delete(key);
+            pending.delete(key);
+        }
+    }
+}
+
+function setCachedAccess<T>(
+    cache: Map<string, CachedAccessEntry<T>>,
+    pending: Map<string, Promise<T>>,
+    key: string,
+    value: T,
+): void {
+    sweepExpiredAccessEntries(cache, pending);
+
+    if (cache.has(key)) {
+        cache.delete(key);
+    }
+
+    while (cache.size >= MAX_ACCESS_CACHE_SIZE) {
+        const oldestKey = cache.keys().next().value;
+        if (typeof oldestKey !== "string") {
+            break;
+        }
+
+        cache.delete(oldestKey);
+        pending.delete(oldestKey);
+    }
+
+    cache.set(key, {
+        value,
+        expiresAt: Date.now() + ACCESS_CACHE_TTL_MS,
+    });
+}
+
+function resolveWithAccessCache<T>(
+    key: string,
+    cache: Map<string, CachedAccessEntry<T>>,
+    pending: Map<string, Promise<T>>,
+    fetcher: () => Promise<T>,
+): Promise<T> {
+    if (!canUseAccessCache()) {
+        return fetcher();
+    }
+
+    const cached = getCachedAccess(cache, pending, key);
+    if (cached !== null) {
+        return Promise.resolve(cached);
+    }
+
+    const pendingRequest = pending.get(key);
+    if (pendingRequest) {
+        return pendingRequest;
+    }
+
+    const promise = fetcher()
+        .then((value) => {
+            setCachedAccess(cache, pending, key, value);
+            pending.delete(key);
+            return value;
+        })
+        .catch((error: unknown) => {
+            pending.delete(key);
+            throw error;
+        });
+
+    pending.set(key, promise);
+    return promise;
+}
+
+function getServerAccessCacheKey(
+    env: EnvConfig,
+    serverId: string,
+    userId: string,
+): string {
+    return `${env.databaseId}:server:${serverId}:user:${userId}`;
+}
+
+function getChannelAccessCacheKey(
+    env: EnvConfig,
+    channelId: string,
+    userId: string,
+): string {
+    return `${env.databaseId}:channel:${channelId}:user:${userId}`;
+}
+
 /**
  * Returns role ids for user.
  *
@@ -134,19 +276,33 @@ async function getRolesByIds(
         return [];
     }
 
-    const roles = await databases.listDocuments(
-        env.databaseId,
-        ROLES_COLLECTION_ID,
-        [
-            Query.equal("serverId", serverId),
-            Query.equal("$id", roleIds),
-            Query.limit(100),
-        ],
+    const roleIdChunks = chunkValues(roleIds, QUERY_ARRAY_LIMIT);
+    const rolePages = await Promise.all(
+        roleIdChunks.map((roleIdChunk) =>
+            databases.listDocuments(
+                env.databaseId,
+                ROLES_COLLECTION_ID,
+                [
+                    Query.equal("serverId", serverId),
+                    Query.equal("$id", roleIdChunk),
+                    Query.limit(roleIdChunk.length),
+                ],
+            ),
+        ),
     );
 
-    return roles.documents.map((doc) =>
-        mapRoleDocument(doc as Record<string, unknown>),
-    );
+    const rolesById = new Map<string, Role>();
+    for (const rolePage of rolePages) {
+        for (const doc of rolePage.documents) {
+            const mapped = mapRoleDocument(doc as Record<string, unknown>);
+            rolesById.set(mapped.$id, mapped);
+        }
+    }
+
+    return roleIds.flatMap((roleId) => {
+        const role = rolesById.get(roleId);
+        return role ? [role] : [];
+    });
 }
 
 /**
@@ -221,7 +377,7 @@ async function getBaseServerAccess(
  * @param {string} userId - The user id value.
  * @returns {Promise<ServerAccess>} The return value.
  */
-export async function getServerPermissionsForUser(
+async function computeServerPermissionsForUser(
     databases: Databases,
     env: EnvConfig,
     serverId: string,
@@ -264,6 +420,20 @@ export async function getServerPermissionsForUser(
         roleIds: baseAccess.roleIds,
         roles: baseAccess.roles,
     };
+}
+
+export async function getServerPermissionsForUser(
+    databases: Databases,
+    env: EnvConfig,
+    serverId: string,
+    userId: string,
+): Promise<ServerAccess> {
+    return resolveWithAccessCache(
+        getServerAccessCacheKey(env, serverId, userId),
+        serverAccessCache,
+        pendingServerAccess,
+        () => computeServerPermissionsForUser(databases, env, serverId, userId),
+    );
 }
 
 /**
@@ -320,7 +490,7 @@ async function hasAccessToCategory(
  * @param {string} userId - The user id value.
  * @returns {Promise<ChannelAccess>} The return value.
  */
-export async function getChannelAccessForUser(
+async function computeChannelAccessForUser(
     databases: Databases,
     env: EnvConfig,
     channelId: string,
@@ -432,4 +602,25 @@ export async function getChannelAccessForUser(
         canRead,
         canSend,
     };
+}
+
+export async function getChannelAccessForUser(
+    databases: Databases,
+    env: EnvConfig,
+    channelId: string,
+    userId: string,
+): Promise<ChannelAccess> {
+    return resolveWithAccessCache(
+        getChannelAccessCacheKey(env, channelId, userId),
+        channelAccessCache,
+        pendingChannelAccess,
+        () => computeChannelAccessForUser(databases, env, channelId, userId),
+    );
+}
+
+export function clearServerChannelAccessCache(): void {
+    serverAccessCache.clear();
+    pendingServerAccess.clear();
+    channelAccessCache.clear();
+    pendingChannelAccess.clear();
 }

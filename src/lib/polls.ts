@@ -11,13 +11,13 @@ type PollVoteRecord = {
     optionId: string;
 };
 
-export const POLL_COMMAND_PREFIX = "/poll";
+const POLL_COMMAND_PREFIX = "/poll";
 const MAX_POLL_OPTIONS = 10;
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_QUESTION_LENGTH = 300;
 const MAX_POLL_OPTION_LENGTH = 120;
 
-export type ParsedPollCommand = {
+type ParsedPollCommand = {
     question: string;
     options: PollOptionRecord[];
 };
@@ -84,7 +84,17 @@ function normalizePollStatus(value: unknown): "open" | "closed" {
 }
 
 export function isPollCommand(text: string): boolean {
-    return text.trimStart().startsWith(POLL_COMMAND_PREFIX);
+    const trimmed = text.trimStart();
+    if (!trimmed.startsWith(POLL_COMMAND_PREFIX)) {
+        return false;
+    }
+
+    if (trimmed.length === POLL_COMMAND_PREFIX.length) {
+        return true;
+    }
+
+    const nextCharacter = trimmed.at(POLL_COMMAND_PREFIX.length) ?? "";
+    return /\s/.test(nextCharacter);
 }
 
 export function parsePollCommand(text: string): ParsedPollCommand {
@@ -197,10 +207,10 @@ export function buildMessagePoll(params: {
 }): MessagePoll {
     const { poll, votes } = params;
     const optionTemplate = parsePollOptions(poll.options);
-    const voteMap = new Map<string, string[]>();
+    const voteMap = new Map<string, Set<string>>();
 
     for (const option of optionTemplate) {
-        voteMap.set(option.id, []);
+        voteMap.set(option.id, new Set());
     }
 
     for (const vote of votes) {
@@ -208,18 +218,11 @@ export function buildMessagePoll(params: {
             continue;
         }
 
-        const voterIds = voteMap.get(vote.optionId);
-        if (!voterIds) {
-            continue;
-        }
-
-        if (!voterIds.includes(vote.userId)) {
-            voterIds.push(vote.userId);
-        }
+        voteMap.get(vote.optionId)?.add(vote.userId);
     }
 
     const options: MessagePollOption[] = optionTemplate.map((option) => {
-        const voterIds = voteMap.get(option.id) ?? [];
+        const voterIds = Array.from(voteMap.get(option.id) ?? new Set<string>());
         return {
             id: option.id,
             text: option.text,
@@ -231,7 +234,8 @@ export function buildMessagePoll(params: {
     return {
         id: poll.$id,
         messageId: poll.messageId,
-        channelId: poll.channelId,
+        contextType: "channel",
+        contextId: poll.channelId,
         question: poll.question,
         options,
         status: normalizePollStatus(poll.status),

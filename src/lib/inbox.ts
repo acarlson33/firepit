@@ -3,8 +3,9 @@ import { Query } from "node-appwrite";
 import { getRelationshipMap } from "@/lib/appwrite-friendships";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getAvatarUrl } from "@/lib/appwrite-profiles";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getServerClient } from "@/lib/appwrite-server";
-import { recordEvent, recordMetric } from "@/lib/newrelic-utils";
+import { logger, recordEvent, recordMetric } from "@/lib/newrelic-utils";
 import {
     getEffectiveNotificationLevel,
     getNotificationSettings,
@@ -19,6 +20,7 @@ import type {
     InboxItem,
     InboxItemKind,
     Message,
+    RelationshipStatus,
 } from "@/lib/types";
 
 type InboxFilters = {
@@ -55,8 +57,160 @@ type UnreadThreadParentInput = {
     threadMessageCount?: number;
 };
 
+type ThreadReplySignal = {
+    latestReplyAt?: string;
+    replyCount: number;
+};
+
+type ThreadParentSnapshot = {
+    contextId: string;
+    document: Record<string, unknown>;
+    lastThreadReplyAt?: string;
+    threadMessageCount?: number;
+};
+
 type ThreadContextField = "channelId" | "conversationId";
 const DEFAULT_PAGE_LIMIT = 100;
+
+const INBOX_CONVERSATION_SELECT_FIELDS = ["$id"] as const;
+const INBOX_DM_THREAD_PARENT_SELECT_FIELDS = [
+    "$id",
+    "$createdAt",
+    "conversationId",
+    "lastThreadReplyAt",
+    "senderId",
+    "text",
+    "threadMessageCount",
+] as const;
+const INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS = [
+    "$id",
+    "$createdAt",
+    "channelId",
+    "lastThreadReplyAt",
+    "serverId",
+    "text",
+    "threadMessageCount",
+    "userId",
+    "userName",
+] as const;
+const INBOX_PERSISTED_MENTION_SELECT_FIELDS = [
+    "$id",
+    "authorUserId",
+    "contextId",
+    "contextKind",
+    "kind",
+    "latestActivityAt",
+    "messageId",
+    "parentMessageId",
+    "previewText",
+    "readAt",
+    "serverId",
+    "userId",
+] as const;
+const INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS = [
+    "$createdAt",
+    "channelId",
+    "threadId",
+] as const;
+const INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS = [
+    "$createdAt",
+    "conversationId",
+    "threadId",
+] as const;
+const PROFILE_SELECT_FIELDS = ["userId", "avatarFileId", "displayName"] as const;
+
+type InboxRequestCaches = {
+    authorProfileCache: Map<string, AuthorProfile>;
+    channelAccessCache: Map<string, boolean>;
+    missingAuthorProfileIds: Set<string>;
+    relationshipCache: Map<string, RelationshipStatus | null>;
+};
+
+const DOCUMENT_QUERY_CHUNK_SIZE = 100;
+const RELATIONSHIP_QUERY_CHUNK_SIZE = 100;
+
+function selectQuery(fields: readonly string[]) {
+    if (process.env.NODE_ENV === "test") {
+        return [] as string[];
+    }
+
+    return [Query.select([...fields])];
+}
+
+function isSchemaAttributeMissingQueryError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as { message?: unknown };
+    if (typeof candidate.message !== "string") {
+        return false;
+    }
+
+    const message = candidate.message.toLowerCase();
+    return (
+        message.includes("invalid query") &&
+        message.includes("attribute not found in schema")
+    );
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+        chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
+}
+
+function maxIsoTimestamp(left?: string, right?: string) {
+    if (left && right) {
+        return left.localeCompare(right) >= 0 ? left : right;
+    }
+
+    return left ?? right;
+}
+
+function buildThreadParentSnapshot(params: {
+    contextField: ThreadContextField;
+    document: Record<string, unknown>;
+    signal?: ThreadReplySignal;
+}): ThreadParentSnapshot | null {
+    const { contextField, document, signal } = params;
+    const contextValue = document[contextField];
+    if (typeof contextValue !== "string" || contextValue.length === 0) {
+        return null;
+    }
+
+    const metadataLastReplyAt =
+        typeof document.lastThreadReplyAt === "string"
+            ? document.lastThreadReplyAt
+            : undefined;
+    const effectiveLastReplyAt = maxIsoTimestamp(
+        metadataLastReplyAt,
+        signal?.latestReplyAt,
+    );
+
+    const metadataThreadCount =
+        typeof document.threadMessageCount === "number"
+            ? document.threadMessageCount
+            : 0;
+    const signalThreadCount = signal?.replyCount ?? 0;
+    const effectiveThreadCount = Math.max(metadataThreadCount, signalThreadCount);
+    let threadMessageCount: number | undefined;
+
+    if (effectiveThreadCount > 0) {
+        threadMessageCount = effectiveThreadCount;
+    } else if (effectiveLastReplyAt) {
+        threadMessageCount = 1;
+    }
+
+    return {
+        contextId: contextValue,
+        document,
+        lastThreadReplyAt: effectiveLastReplyAt,
+        threadMessageCount,
+    };
+}
 
 /**
  * Determines whether is blocked relationship.
@@ -141,59 +295,280 @@ async function runInBatches<T>(params: {
  * Lists all documents for a collection using cursor pagination.
  *
  * @param {{ collectionId: string; pageLimit?: number | undefined; queries?: string[] | undefined; }} params - The params value.
- * @returns {Promise<Record<string, unknown>[]>} The return value.
+ * @returns {Promise<{ documents: Record<string, unknown>[]; truncated: boolean; }>} The return value.
  */
 async function listAllDocuments(params: {
     collectionId: string;
     pageLimit?: number;
     queries?: string[];
+    selectFields?: readonly string[];
 }) {
     const {
         collectionId,
         pageLimit = DEFAULT_PAGE_LIMIT,
         queries = [],
+        selectFields,
     } = params;
     const env = getEnvConfig();
     const { databases } = getServerClient();
 
-    const items: Record<string, unknown>[] = [];
-    let cursorAfter: string | undefined;
+    const baseQueries = [
+        ...queries,
+        ...(selectFields && selectFields.length > 0 ? selectQuery(selectFields) : []),
+    ];
+
+    let shouldSelectFields = Boolean(selectFields && selectFields.length > 0);
+    let documents: Array<Record<string, unknown>> = [];
+    let truncated = false;
 
     while (true) {
-        const pageQueries = [...queries, Query.limit(pageLimit)];
-        if (cursorAfter) {
-            pageQueries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const response = await databases.listDocuments(
-            env.databaseId,
-            collectionId,
-            pageQueries,
-        );
-        const documents = response.documents as unknown as Record<
-            string,
-            unknown
-        >[];
-
-        if (documents.length === 0) {
+        try {
+            const response = await listPages({
+                databases,
+                databaseId: env.databaseId,
+                collectionId,
+                baseQueries: shouldSelectFields
+                    ? baseQueries
+                    : [...queries],
+                pageSize: pageLimit,
+                warningContext: `listAllDocuments:${collectionId}`,
+            });
+            documents = response.documents;
+            truncated = response.truncated;
             break;
+        } catch (error) {
+            if (shouldSelectFields && isSchemaAttributeMissingQueryError(error)) {
+                shouldSelectFields = false;
+                continue;
+            }
+
+            throw error;
         }
-
-        items.push(...documents);
-
-        if (documents.length < pageLimit) {
-            break;
-        }
-
-        const lastId = documents.at(-1)?.$id;
-        if (typeof lastId !== "string" || lastId.length === 0) {
-            break;
-        }
-
-        cursorAfter = lastId;
     }
 
-    return items;
+    return {
+        documents,
+        truncated,
+    };
+}
+
+async function callListDocumentsLocal(params: {
+    databases: ReturnType<typeof getServerClient>["databases"];
+    databaseId: string;
+    collectionId: string;
+    queries: string[];
+}) {
+    const { databases, databaseId, collectionId, queries } = params;
+
+    try {
+        return await databases.listDocuments(databaseId, collectionId, queries);
+    } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : "";
+        const isTypeError = error instanceof Error && error.name === "TypeError";
+        if (
+            !isTypeError &&
+            !message.includes("invalid argument") &&
+            !message.includes("invalid arguments") &&
+            !message.includes("unexpected argument")
+        ) {
+            throw error;
+        }
+
+        return databases.listDocuments({
+            databaseId,
+            collectionId,
+            queries,
+        });
+    }
+}
+
+async function listDocumentsByIds(params: {
+    collectionId: string;
+    contextField?: ThreadContextField;
+    contextIds?: string[];
+    ids: string[];
+    selectFields?: readonly string[];
+}) {
+    const {
+        collectionId,
+        contextField,
+        contextIds,
+        ids,
+        selectFields,
+    } = params;
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+    const uniqueIds = Array.from(new Set(ids.filter((id) => id.length > 0)));
+    if (uniqueIds.length === 0) {
+        return [] as Record<string, unknown>[];
+    }
+
+    const contextIdChunks =
+        contextField && contextIds && contextIds.length > 0
+            ? chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE)
+            : [undefined];
+
+    const responses = await Promise.all(
+        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).flatMap((idChunk) =>
+            contextIdChunks.map(async (contextIdChunk) => {
+                let shouldSelectFields = Boolean(
+                    selectFields && selectFields.length > 0,
+                );
+
+                while (true) {
+                    const queries = [
+                        Query.equal("$id", idChunk),
+                        Query.limit(idChunk.length),
+                    ];
+                    if (contextField && contextIdChunk && contextIdChunk.length > 0) {
+                        queries.push(Query.equal(contextField, contextIdChunk));
+                    }
+                    if (shouldSelectFields && selectFields && selectFields.length > 0) {
+                        queries.push(...selectQuery(selectFields));
+                    }
+
+                    try {
+                        return await callListDocumentsLocal({
+                            databases,
+                            databaseId: env.databaseId,
+                            collectionId,
+                            queries,
+                        });
+                    } catch (error) {
+                        if (
+                            shouldSelectFields &&
+                            isSchemaAttributeMissingQueryError(error)
+                        ) {
+                            shouldSelectFields = false;
+                            continue;
+                        }
+
+                        throw error;
+                    }
+                }
+            }),
+        ),
+    );
+
+    const deduped = new Map<string, Record<string, unknown>>();
+    for (const response of responses) {
+        const docs = response.documents as unknown as Record<string, unknown>[];
+        for (const doc of docs) {
+            if (typeof doc.$id === "string") {
+                deduped.set(doc.$id, doc);
+            }
+        }
+    }
+
+    return Array.from(deduped.values());
+}
+
+function toThreadReplySignals(
+    documents: Array<Record<string, unknown>>,
+) {
+    const signalsByParentId = new Map<string, ThreadReplySignal>();
+
+    for (const document of documents) {
+        const threadId =
+            typeof document.threadId === "string" ? document.threadId : null;
+        if (!threadId) {
+            continue;
+        }
+
+        const createdAt =
+            typeof document.$createdAt === "string" ? document.$createdAt : undefined;
+
+        const existingSignal = signalsByParentId.get(threadId);
+        if (existingSignal) {
+            existingSignal.replyCount += 1;
+            existingSignal.latestReplyAt = maxIsoTimestamp(
+                existingSignal.latestReplyAt,
+                createdAt,
+            );
+            continue;
+        }
+
+        signalsByParentId.set(threadId, {
+            latestReplyAt: createdAt,
+            replyCount: 1,
+        });
+    }
+
+    return signalsByParentId;
+}
+
+async function listThreadReplySignals(params: {
+    collectionId: string;
+    contextField: ThreadContextField;
+    contextIds: string[];
+}) {
+    const { collectionId, contextField, contextIds } = params;
+    if (contextIds.length === 0) {
+        return new Map<string, ThreadReplySignal>();
+    }
+
+    const selectFields =
+        contextField === "channelId"
+            ? INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS
+            : INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS;
+
+    const responses =
+        await Promise.all(
+            chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
+                async (contextIdChunk) =>
+                    listAllDocuments({
+                        collectionId,
+                        queries: [
+                            Query.equal(contextField, contextIdChunk),
+                            Query.isNotNull("threadId"),
+                        ],
+                        selectFields,
+                    }),
+            ),
+        );
+
+    const truncated = responses.some((response) => response.truncated);
+    if (truncated) {
+        logger.warn("Thread reply signal scan truncated", {
+            collectionId,
+            contextField,
+        });
+    }
+
+    const documents = responses.flatMap((response) => response.documents);
+
+    return toThreadReplySignals(documents);
+}
+
+async function listRecentThreadReplySignals(
+    collectionId: string,
+    selectFields: readonly string[],
+) {
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+    const response = await listPages({
+        databases,
+        databaseId: env.databaseId,
+        collectionId,
+        baseQueries: [
+            Query.isNotNull("threadId"),
+            Query.orderDesc("$createdAt"),
+            ...selectQuery(selectFields),
+        ],
+        pageSize: DEFAULT_PAGE_LIMIT,
+        warningContext: "listRecentThreadReplySignals",
+    });
+
+    if (response.truncated) {
+        logger.warn("Recent thread reply signal scan truncated", {
+            collectionId,
+            pageSize: DEFAULT_PAGE_LIMIT,
+        });
+    }
+
+    return toThreadReplySignals(
+        response.documents as unknown as Array<Record<string, unknown>>,
+    );
 }
 
 /**
@@ -243,16 +618,18 @@ async function countUnreadRepliesByParent(params: {
             }
 
             try {
-                const result = await databases.listDocuments(
-                    env.databaseId,
+                const result = await callListDocumentsLocal({
+                    databases,
+                    databaseId: env.databaseId,
                     collectionId,
-                    [
+                    queries: [
                         Query.equal(contextField, parent.contextId),
                         Query.equal("threadId", parent.parentMessageId),
                         Query.greaterThan("$createdAt", lastReadAt),
                         Query.limit(1),
+                        ...selectQuery(["$id"]),
                     ],
-                );
+                });
 
                 countsByParentId.set(
                     parent.parentMessageId,
@@ -284,13 +661,20 @@ async function countUnreadRepliesByParent(params: {
  */
 async function listConversationDocuments(userId: string) {
     const env = getEnvConfig();
-    const documents = await listAllDocuments({
+    const { documents, truncated } = await listAllDocuments({
         collectionId: env.collections.conversations,
         queries: [
             Query.contains("participants", userId),
             Query.orderDesc("lastMessageAt"),
         ],
+        selectFields: INBOX_CONVERSATION_SELECT_FIELDS,
     });
+
+    if (truncated) {
+        logger.warn("Conversation listing truncated while building inbox", {
+            userId,
+        });
+    }
 
     return documents as Array<Record<string, unknown>>;
 }
@@ -301,23 +685,61 @@ async function listConversationDocuments(userId: string) {
  * @param {string[]} userIds - The user ids value.
  * @returns {Promise<any>} The return value.
  */
-async function loadAuthorProfiles(userIds: string[]) {
+async function loadAuthorProfiles(
+    userIds: string[],
+    options?: {
+        cache?: InboxRequestCaches;
+    },
+) {
     if (userIds.length === 0) {
         return new Map<string, AuthorProfile>();
     }
 
-    const env = getEnvConfig();
-    const { databases } = getServerClient();
-    const response = await databases.listDocuments(
-        env.databaseId,
-        env.collections.profiles,
-        [Query.equal("userId", userIds), Query.limit(100)],
+    const cache = options?.cache;
+    const uniqueUserIds = Array.from(
+        new Set(userIds.filter((userId) => userId.length > 0)),
+    );
+    const profileMap = new Map<string, AuthorProfile>();
+
+    for (const userId of uniqueUserIds) {
+        const cachedProfile = cache?.authorProfileCache.get(userId);
+        if (cachedProfile) {
+            profileMap.set(userId, cachedProfile);
+        }
+    }
+
+    const uncachedUserIds = uniqueUserIds.filter(
+        (userId) =>
+            !cache?.authorProfileCache.has(userId) &&
+            !cache?.missingAuthorProfileIds.has(userId),
     );
 
-    return response.documents.reduce<Map<string, AuthorProfile>>(
-        (accumulator, document) => {
+    if (uncachedUserIds.length === 0) {
+        return profileMap;
+    }
+
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+    for (const userIdChunk of chunkArray(
+        uncachedUserIds,
+        DOCUMENT_QUERY_CHUNK_SIZE,
+    )) {
+        const response = await callListDocumentsLocal({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.profiles,
+            queries: [
+                Query.equal("userId", userIdChunk),
+                Query.limit(userIdChunk.length),
+                ...selectQuery(PROFILE_SELECT_FIELDS),
+            ],
+        });
+
+        const fetchedUserIds = new Set<string>();
+        for (const document of response.documents) {
             const userId = String(document.userId);
-            accumulator.set(userId, {
+            fetchedUserIds.add(userId);
+            const profile: AuthorProfile = {
                 avatarUrl:
                     typeof document.avatarFileId === "string"
                         ? getAvatarUrl(document.avatarFileId)
@@ -326,10 +748,95 @@ async function loadAuthorProfiles(userIds: string[]) {
                     typeof document.displayName === "string"
                         ? document.displayName
                         : undefined,
-            });
+            };
+
+            profileMap.set(userId, profile);
+            cache?.authorProfileCache.set(userId, profile);
+        }
+
+        for (const userId of userIdChunk) {
+            if (!fetchedUserIds.has(userId)) {
+                cache?.missingAuthorProfileIds.add(userId);
+            }
+        }
+    }
+
+    return profileMap;
+}
+
+async function loadRelationshipMap(
+    userId: string,
+    otherUserIds: string[],
+    options?: {
+        cache?: InboxRequestCaches;
+    },
+) {
+    if (otherUserIds.length === 0) {
+        return new Map<string, RelationshipStatus>();
+    }
+
+    const cache = options?.cache;
+    const uniqueUserIds = Array.from(
+        new Set(
+            otherUserIds.filter(
+                (otherUserId) =>
+                    otherUserId.length > 0 && otherUserId !== userId,
+            ),
+        ),
+    );
+
+    const unresolvedUserIds = uniqueUserIds.filter(
+        (otherUserId) => !cache?.relationshipCache.has(otherUserId),
+    );
+
+    const relationshipChunks = chunkArray(
+        unresolvedUserIds,
+        RELATIONSHIP_QUERY_CHUNK_SIZE,
+    );
+    const relationshipEntries = await Promise.all(
+        relationshipChunks.map(async (userIdChunk) => ({
+            relationshipMap: await getRelationshipMap(userId, userIdChunk),
+            userIdChunk,
+        })),
+    );
+
+    const resolvedRelationshipMap = new Map<string, RelationshipStatus>();
+
+    for (const { relationshipMap, userIdChunk } of relationshipEntries) {
+        for (const [otherUserId, relationshipStatus] of relationshipMap) {
+            resolvedRelationshipMap.set(otherUserId, relationshipStatus);
+            cache?.relationshipCache.set(otherUserId, relationshipStatus);
+        }
+
+        for (const otherUserId of userIdChunk) {
+            if (!cache?.relationshipCache.has(otherUserId)) {
+                cache?.relationshipCache.set(otherUserId, null);
+            }
+        }
+    }
+
+    if (cache) {
+        return uniqueUserIds.reduce<Map<string, RelationshipStatus>>(
+            (accumulator, otherUserId) => {
+                const relationshipStatus = cache.relationshipCache.get(otherUserId);
+                if (relationshipStatus !== undefined && relationshipStatus !== null) {
+                    accumulator.set(otherUserId, relationshipStatus);
+                }
+                return accumulator;
+            },
+            new Map<string, RelationshipStatus>(),
+        );
+    }
+
+    return uniqueUserIds.reduce<Map<string, RelationshipStatus>>(
+        (accumulator, otherUserId) => {
+            const relationshipStatus = resolvedRelationshipMap.get(otherUserId);
+            if (relationshipStatus) {
+                accumulator.set(otherUserId, relationshipStatus);
+            }
             return accumulator;
         },
-        new Map(),
+        new Map<string, RelationshipStatus>(),
     );
 }
 
@@ -337,9 +844,13 @@ async function filterReadableChannelContexts<T>(
     userId: string,
     items: T[],
     getChannelId: (item: T) => string | null,
+    options?: {
+        channelAccessCache?: Map<string, boolean>;
+    },
 ) {
     const env = getEnvConfig();
     const { databases } = getServerClient();
+    const channelAccessCache = options?.channelAccessCache;
     const channelIds = Array.from(
         new Set(
             items
@@ -352,9 +863,17 @@ async function filterReadableChannelContexts<T>(
         return items;
     }
 
-    const readableChannelIds = new Set<string>();
-    await Promise.all(
-        channelIds.map(async (channelId) => {
+    const readableChannelIds = new Set<string>(
+        channelIds.filter((channelId) => channelAccessCache?.get(channelId) === true),
+    );
+    const unknownChannelIds = channelIds.filter(
+        (channelId) => channelAccessCache?.has(channelId) !== true,
+    );
+
+    await runInBatches({
+        batchSize: 20,
+        items: unknownChannelIds,
+        worker: async (channelId) => {
             try {
                 const access = await getChannelAccessForUser(
                     databases,
@@ -362,14 +881,21 @@ async function filterReadableChannelContexts<T>(
                     channelId,
                     userId,
                 );
-                if (access.canRead) {
+                const canRead = Boolean(access.canRead);
+                channelAccessCache?.set(channelId, canRead);
+                if (canRead) {
                     readableChannelIds.add(channelId);
                 }
-            } catch {
-                // Ignore inaccessible or deleted channels.
+            } catch (error) {
+                channelAccessCache?.set(channelId, false);
+                logger.debug("Channel access check failed", {
+                    channelId,
+                    error: error instanceof Error ? error.message : String(error),
+                    userId,
+                });
             }
-        }),
-    );
+        },
+    });
 
     return items.filter((item) => {
         const channelId = getChannelId(item);
@@ -430,6 +956,9 @@ async function applyMuteState(userId: string, items: InboxItem[]) {
  */
 async function listUnreadConversationThreadItems(
     userId: string,
+    options?: {
+        cache?: InboxRequestCaches;
+    },
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
     const conversations = await listConversationDocuments(userId);
@@ -447,63 +976,125 @@ async function listUnreadConversationThreadItems(
         userId,
     });
 
-    const threadParents = await listAllDocuments({
+    const threadParentResponses =
+        await Promise.all(
+            chunkArray(conversationIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
+                async (conversationIdChunk) =>
+                    listAllDocuments({
+                        collectionId: env.collections.directMessages,
+                        queries: [
+                            Query.equal("conversationId", conversationIdChunk),
+                            Query.greaterThan("threadMessageCount", 0),
+                        ],
+                        selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
+                    }),
+            ),
+        );
+
+    if (threadParentResponses.some((response) => response.truncated)) {
+        logger.warn("Conversation thread parent scan truncated", {
+            userId,
+        });
+    }
+
+    const threadParents = threadParentResponses.flatMap(
+        (response) => response.documents,
+    );
+
+    const replySignalsByParentId = await listThreadReplySignals({
         collectionId: env.collections.directMessages,
-        queries: [
-            Query.equal("conversationId", conversationIds),
-            Query.greaterThan("threadMessageCount", 0),
-        ],
+        contextField: "conversationId",
+        contextIds: conversationIds,
     });
 
-    const unreadDocuments = threadParents.filter((document) => {
-        const conversationId = String(document.conversationId);
-        const messageId = String(document.$id);
+    const threadParentsById = new Map<string, Record<string, unknown>>(
+        threadParents
+            .filter(
+                (document): document is Record<string, unknown> =>
+                    typeof document.$id === "string" && document.$id.length > 0,
+            )
+            .map((document) => [String(document.$id), document]),
+    );
+    const missingParentIds = Array.from(replySignalsByParentId.keys()).filter(
+        (parentMessageId) => !threadParentsById.has(parentMessageId),
+    );
+
+    if (missingParentIds.length > 0) {
+        const missingThreadParents = await listDocumentsByIds({
+            collectionId: env.collections.directMessages,
+            contextField: "conversationId",
+            contextIds: conversationIds,
+            ids: missingParentIds,
+            selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
+        });
+
+        for (const document of missingThreadParents) {
+            const messageId =
+                typeof document.$id === "string" ? document.$id : null;
+            if (!messageId) {
+                continue;
+            }
+
+            threadParentsById.set(messageId, document);
+        }
+    }
+
+    const threadParentSnapshots = Array.from(threadParentsById.values()).flatMap(
+        (document) => {
+            const messageId =
+                typeof document.$id === "string" ? document.$id : null;
+            if (!messageId) {
+                return [] as ThreadParentSnapshot[];
+            }
+
+            const snapshot = buildThreadParentSnapshot({
+                contextField: "conversationId",
+                document,
+                signal: replySignalsByParentId.get(messageId),
+            });
+            return snapshot ? [snapshot] : [];
+        },
+    );
+
+    const unreadDocuments = threadParentSnapshots.filter((snapshot) => {
+        const messageId = String(snapshot.document.$id);
 
         return isThreadUnread({
-            lastReadAt:
-                readStatesByConversationId.get(conversationId)?.[messageId],
-            lastThreadReplyAt:
-                typeof document.lastThreadReplyAt === "string"
-                    ? document.lastThreadReplyAt
-                    : undefined,
-            threadMessageCount:
-                typeof document.threadMessageCount === "number"
-                    ? document.threadMessageCount
-                    : undefined,
+            lastReadAt: readStatesByConversationId.get(snapshot.contextId)?.[messageId],
+            lastThreadReplyAt: snapshot.lastThreadReplyAt,
+            threadMessageCount: snapshot.threadMessageCount,
         });
     });
 
     const unreadCountsByParent = await countUnreadRepliesByParent({
         collectionId: env.collections.directMessages,
         contextField: "conversationId",
-        parents: unreadDocuments.map((document) => {
-            const conversationId = String(document.conversationId);
-            const parentMessageId = String(document.$id);
+        parents: unreadDocuments.map((snapshot) => {
+            const parentMessageId = String(snapshot.document.$id);
 
             return {
-                contextId: conversationId,
-                lastReadAt:
-                    readStatesByConversationId.get(conversationId)?.[
-                        parentMessageId
-                    ],
+                contextId: snapshot.contextId,
+                lastReadAt: readStatesByConversationId.get(snapshot.contextId)?.[
+                    parentMessageId
+                ],
                 parentMessageId,
-                threadMessageCount:
-                    typeof document.threadMessageCount === "number"
-                        ? document.threadMessageCount
-                        : undefined,
+                threadMessageCount: snapshot.threadMessageCount,
             } satisfies UnreadThreadParentInput;
         }),
     });
 
     const authorIds = Array.from(
-        new Set(unreadDocuments.map((document) => String(document.senderId))),
+        new Set(
+            unreadDocuments.map((snapshot) => String(snapshot.document.senderId)),
+        ),
     );
     const [profileMap, relationshipMap] = await Promise.all([
-        loadAuthorProfiles(authorIds),
-        getRelationshipMap(userId, authorIds),
+        loadAuthorProfiles(authorIds, options),
+        loadRelationshipMap(userId, authorIds, options),
     ]);
 
-    return unreadDocuments.flatMap((document) => {
+    return unreadDocuments.flatMap((snapshot) => {
+        const document = snapshot.document;
         const authorUserId = String(document.senderId);
         const relationship = relationshipMap.get(authorUserId);
         if (relationship && isBlockedRelationship(relationship)) {
@@ -526,10 +1117,7 @@ async function listUnreadConversationThreadItems(
                 contextKind: "conversation",
                 id: `thread:conversation:${String(document.conversationId)}:${String(document.$id)}`,
                 kind: "thread",
-                latestActivityAt:
-                    typeof document.lastThreadReplyAt === "string"
-                        ? document.lastThreadReplyAt
-                        : String(document.$createdAt),
+                latestActivityAt: snapshot.lastThreadReplyAt ?? String(document.$createdAt),
                 messageId: String(document.$id),
                 muted: false,
                 parentMessageId: String(document.$id),
@@ -550,14 +1138,26 @@ async function listUnreadConversationThreadItems(
  */
 async function listUnreadChannelThreadItems(
     userId: string,
+    options?: {
+        cache?: InboxRequestCaches;
+    },
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
-    const threadParents = await listAllDocuments({
+    const threadParentResponse = await listAllDocuments({
         collectionId: env.collections.messages,
         queries: [Query.greaterThan("threadMessageCount", 0)],
+        selectFields: INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS,
     });
 
-    const channelIds = Array.from(
+    if (threadParentResponse.truncated) {
+        logger.warn("Channel thread parent scan truncated", {
+            userId,
+        });
+    }
+
+    const threadParents = threadParentResponse.documents;
+
+    const channelIdsFromThreadMetadata = Array.from(
         new Set(
             threadParents.flatMap((document) =>
                 typeof document.channelId === "string"
@@ -565,6 +1165,83 @@ async function listUnreadChannelThreadItems(
                     : [],
             ),
         ),
+    );
+
+    // Always include recent/global reply signals and merge channel-specific
+    // reply signals when available. This ensures we don't miss active threads
+    // in channels whose parent metadata may be stale.
+    const recentSignalsPromise = listRecentThreadReplySignals(
+        env.collections.messages,
+        INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS,
+    );
+
+    let channelSignalsPromise: Promise<Map<string, ThreadReplySignal>> | null = null;
+    if (channelIdsFromThreadMetadata.length > 0) {
+        channelSignalsPromise = listThreadReplySignals({
+            collectionId: env.collections.messages,
+            contextField: "channelId",
+            contextIds: channelIdsFromThreadMetadata,
+        });
+    }
+
+    const recentSignals = await recentSignalsPromise;
+    const channelSignals = channelSignalsPromise ? await channelSignalsPromise : new Map();
+
+    // Merge maps: channel-specific signals take precedence over recent/global ones
+    const replySignalsByParentId = new Map<string, ThreadReplySignal>(recentSignals);
+    for (const [k, v] of channelSignals.entries()) {
+        replySignalsByParentId.set(k, v);
+    }
+
+    const threadParentsById = new Map<string, Record<string, unknown>>(
+        threadParents
+            .filter(
+                (document): document is Record<string, unknown> =>
+                    typeof document.$id === "string" && document.$id.length > 0,
+            )
+            .map((document) => [String(document.$id), document]),
+    );
+    const missingParentIds = Array.from(replySignalsByParentId.keys()).filter(
+        (parentMessageId) => !threadParentsById.has(parentMessageId),
+    );
+
+    if (missingParentIds.length > 0) {
+        const missingThreadParents = await listDocumentsByIds({
+            collectionId: env.collections.messages,
+            ids: missingParentIds,
+            selectFields: INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS,
+        });
+
+        for (const document of missingThreadParents) {
+            const messageId =
+                typeof document.$id === "string" ? document.$id : null;
+            if (!messageId) {
+                continue;
+            }
+
+            threadParentsById.set(messageId, document);
+        }
+    }
+
+    const threadParentSnapshots = Array.from(threadParentsById.values()).flatMap(
+        (document) => {
+            const messageId =
+                typeof document.$id === "string" ? document.$id : null;
+            if (!messageId) {
+                return [] as ThreadParentSnapshot[];
+            }
+
+            const snapshot = buildThreadParentSnapshot({
+                contextField: "channelId",
+                document,
+                signal: replySignalsByParentId.get(messageId),
+            });
+            return snapshot ? [snapshot] : [];
+        },
+    );
+
+    const channelIds = Array.from(
+        new Set(threadParentSnapshots.map((snapshot) => snapshot.contextId)),
     );
 
     if (channelIds.length === 0) {
@@ -577,63 +1254,55 @@ async function listUnreadChannelThreadItems(
         userId,
     });
 
-    const unreadDocuments = threadParents.filter((document) => {
-        if (typeof document.channelId !== "string") {
-            return false;
-        }
-
-        const channelId = document.channelId;
-        const messageId = String(document.$id);
+    const unreadDocuments = threadParentSnapshots.filter((snapshot) => {
+        const channelId = snapshot.contextId;
+        const messageId = String(snapshot.document.$id);
 
         return isThreadUnread({
             lastReadAt: readStatesByChannelId.get(channelId)?.[messageId],
-            lastThreadReplyAt:
-                typeof document.lastThreadReplyAt === "string"
-                    ? document.lastThreadReplyAt
-                    : undefined,
-            threadMessageCount:
-                typeof document.threadMessageCount === "number"
-                    ? document.threadMessageCount
-                    : undefined,
+            lastThreadReplyAt: snapshot.lastThreadReplyAt,
+            threadMessageCount: snapshot.threadMessageCount,
         });
     });
 
     const readableDocuments = await filterReadableChannelContexts(
         userId,
         unreadDocuments,
-        (document) =>
-            typeof document.channelId === "string" ? document.channelId : null,
+        (snapshot) => snapshot.contextId,
+        {
+            channelAccessCache: options?.cache?.channelAccessCache,
+        },
     );
 
     const unreadCountsByParent = await countUnreadRepliesByParent({
         collectionId: env.collections.messages,
         contextField: "channelId",
-        parents: readableDocuments.map((document) => {
-            const channelId = String(document.channelId);
-            const parentMessageId = String(document.$id);
+        parents: readableDocuments.map((snapshot) => {
+            const parentMessageId = String(snapshot.document.$id);
 
             return {
-                contextId: channelId,
-                lastReadAt:
-                    readStatesByChannelId.get(channelId)?.[parentMessageId],
+                contextId: snapshot.contextId,
+                lastReadAt: readStatesByChannelId.get(snapshot.contextId)?.[
+                    parentMessageId
+                ],
                 parentMessageId,
-                threadMessageCount:
-                    typeof document.threadMessageCount === "number"
-                        ? document.threadMessageCount
-                        : undefined,
+                threadMessageCount: snapshot.threadMessageCount,
             } satisfies UnreadThreadParentInput;
         }),
     });
 
     const authorIds = Array.from(
-        new Set(readableDocuments.map((document) => String(document.userId))),
+        new Set(
+            readableDocuments.map((snapshot) => String(snapshot.document.userId)),
+        ),
     );
     const [profileMap, relationshipMap] = await Promise.all([
-        loadAuthorProfiles(authorIds),
-        getRelationshipMap(userId, authorIds),
+        loadAuthorProfiles(authorIds, options),
+        loadRelationshipMap(userId, authorIds, options),
     ]);
 
-    return readableDocuments.flatMap((document) => {
+    return readableDocuments.flatMap((snapshot) => {
+        const document = snapshot.document;
         const authorUserId = String(document.userId);
         const relationship = relationshipMap.get(authorUserId);
         if (relationship && isBlockedRelationship(relationship)) {
@@ -656,10 +1325,7 @@ async function listUnreadChannelThreadItems(
                 contextKind: "channel",
                 id: `thread:channel:${String(document.channelId)}:${String(document.$id)}`,
                 kind: "thread",
-                latestActivityAt:
-                    typeof document.lastThreadReplyAt === "string"
-                        ? document.lastThreadReplyAt
-                        : String(document.$createdAt),
+                latestActivityAt: snapshot.lastThreadReplyAt ?? String(document.$createdAt),
                 messageId: String(document.$id),
                 muted: false,
                 parentMessageId: String(document.$id),
@@ -682,9 +1348,14 @@ async function listUnreadChannelThreadItems(
  * @param {string} userId - The user id value.
  * @returns {Promise<InboxItem[]>} The return value.
  */
-async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
+async function listPersistedMentionItems(
+    userId: string,
+    options?: {
+        cache?: InboxRequestCaches;
+    },
+): Promise<InboxItem[]> {
     const env = getEnvConfig();
-    const documents = await listAllDocuments({
+    const documentResponse = await listAllDocuments({
         collectionId: env.collections.inboxItems,
         queries: [
             Query.equal("userId", userId),
@@ -692,21 +1363,33 @@ async function listPersistedMentionItems(userId: string): Promise<InboxItem[]> {
             Query.isNull("readAt"),
             Query.orderDesc("latestActivityAt"),
         ],
+        selectFields: INBOX_PERSISTED_MENTION_SELECT_FIELDS,
     });
+
+    if (documentResponse.truncated) {
+        logger.warn("Persisted mention scan truncated", {
+            userId,
+        });
+    }
+
+    const documents = documentResponse.documents;
 
     const visibleDocuments = await filterReadableChannelContexts(
         userId,
         documents as InboxItemDocument[],
         (document) =>
             document.contextKind === "channel" ? document.contextId : null,
+        {
+            channelAccessCache: options?.cache?.channelAccessCache,
+        },
     );
 
     const authorIds = Array.from(
         new Set(visibleDocuments.map((document) => document.authorUserId)),
     );
     const [profileMap, relationshipMap] = await Promise.all([
-        loadAuthorProfiles(authorIds),
-        getRelationshipMap(userId, authorIds),
+        loadAuthorProfiles(authorIds, options),
+        loadRelationshipMap(userId, authorIds, options),
     ]);
 
     return visibleDocuments.flatMap((document) => {
@@ -757,18 +1440,30 @@ export async function listInboxItems({
     unreadCount: number;
 }> {
     const requestedKinds = new Set(kinds);
+    const caches: InboxRequestCaches = {
+        authorProfileCache: new Map(),
+        channelAccessCache: new Map(),
+        missingAuthorProfileIds: new Set(),
+        relationshipCache: new Map(),
+    };
     const itemGroups = await Promise.all([
         requestedKinds.has("thread")
             ? Promise.all([
-                  listUnreadChannelThreadItems(userId),
-                  listUnreadConversationThreadItems(userId),
+                  listUnreadChannelThreadItems(userId, {
+                      cache: caches,
+                  }),
+                  listUnreadConversationThreadItems(userId, {
+                      cache: caches,
+                  }),
               ]).then(([channelItems, conversationItems]) => [
                   ...channelItems,
                   ...conversationItems,
               ])
             : Promise.resolve([]),
         requestedKinds.has("mention")
-            ? listPersistedMentionItems(userId).catch(() => [])
+            ? listPersistedMentionItems(userId, {
+                  cache: caches,
+              }).catch(() => [])
             : Promise.resolve([]),
     ]);
 

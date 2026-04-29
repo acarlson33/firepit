@@ -202,11 +202,16 @@ export function useMessages({
     const previousLengthRef = useRef<number>(messages.length);
     const scrollBottomThreshold = 160; // px tolerance to consider user near bottom
     const currentChannelIdRef = useRef<string | null>(channelId);
+    const messagesRef = useRef<Message[]>(messages);
 
     // Update ref when channelId changes
     useEffect(() => {
         currentChannelIdRef.current = channelId;
     }, [channelId]);
+
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
 
     // Reduced initial page size for faster first render (Performance Optimization)
     // Load more messages when scrolling up
@@ -978,22 +983,38 @@ export function useMessages({
                 return;
             }
 
-            const targetMessage = messages.find(
+            const previousPoll = messagesRef.current.find(
                 (message) => message.$id === messageId,
-            );
-            const previousPoll = targetMessage?.poll;
+            )?.poll;
 
             if (!previousPoll || previousPoll.status === "closed") {
                 return;
             }
 
-            const optimisticPoll = applyOptimisticPollVote({
-                optionId,
-                poll: previousPoll,
-                userId,
+            setMessages((prev) => {
+                const targetMessage = prev.find(
+                    (message) => message.$id === messageId,
+                );
+                const poll = targetMessage?.poll;
+
+                if (!poll || poll.status === "closed") {
+                    return prev;
+                }
+
+                const optimisticPoll = applyOptimisticPollVote({
+                    optionId,
+                    poll,
+                    userId,
+                });
+
+                return prev.map((message) =>
+                    message.$id === messageId
+                        ? { ...message, poll: optimisticPoll }
+                        : message,
+                );
             });
 
-            replaceMessagePoll(messageId, optimisticPoll);
+            const rollbackPoll = previousPoll;
 
             try {
                 const response = await fetch(
@@ -1015,13 +1036,19 @@ export function useMessages({
 
                 replaceMessagePoll(messageId, payload.poll);
             } catch (err) {
-                replaceMessagePoll(messageId, previousPoll);
+                setMessages((prev) =>
+                    prev.map((message) =>
+                        message.$id === messageId
+                            ? { ...message, poll: rollbackPoll }
+                            : message,
+                    ),
+                );
                 toast.error(
                     err instanceof Error ? err.message : "Failed to cast vote.",
                 );
             }
         },
-        [messages, replaceMessagePoll, userId],
+        [replaceMessagePoll, userId],
     );
 
     const closePoll = useCallback(
@@ -1030,20 +1057,37 @@ export function useMessages({
                 return;
             }
 
-            const targetMessage = messages.find(
+            const previousPoll = messagesRef.current.find(
                 (message) => message.$id === messageId,
-            );
-            const previousPoll = targetMessage?.poll;
+            )?.poll;
 
             if (!previousPoll || previousPoll.status === "closed") {
                 return;
             }
 
-            const optimisticPoll = applyOptimisticPollClose({
-                poll: previousPoll,
-                userId,
+            setMessages((prev) => {
+                const targetMessage = prev.find(
+                    (message) => message.$id === messageId,
+                );
+                const poll = targetMessage?.poll;
+
+                if (!poll || poll.status === "closed") {
+                    return prev;
+                }
+
+                const optimisticPoll = applyOptimisticPollClose({
+                    poll,
+                    userId,
+                });
+
+                return prev.map((message) =>
+                    message.$id === messageId
+                        ? { ...message, poll: optimisticPoll }
+                        : message,
+                );
             });
-            replaceMessagePoll(messageId, optimisticPoll);
+
+            const rollbackPoll = previousPoll;
 
             try {
                 const response = await fetch(
@@ -1063,13 +1107,19 @@ export function useMessages({
 
                 replaceMessagePoll(messageId, payload.poll);
             } catch (err) {
-                replaceMessagePoll(messageId, previousPoll);
+                setMessages((prev) =>
+                    prev.map((message) =>
+                        message.$id === messageId
+                            ? { ...message, poll: rollbackPoll }
+                            : message,
+                    ),
+                );
                 toast.error(
                     err instanceof Error ? err.message : "Failed to close poll.",
                 );
             }
         },
-        [messages, replaceMessagePoll, userId],
+        [replaceMessagePoll, userId],
     );
 
     function sendTypingState(state: boolean) {

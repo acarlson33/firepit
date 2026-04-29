@@ -126,9 +126,7 @@ export function EmojiPicker({
                 size="icon"
                 disabled={disabled}
                 onClick={() => {
-                    if (!disabled) {
-                        setOpen(true);
-                    }
+                    setOpen(true);
                 }}
                 aria-label="Insert emoji"
                 title="Insert emoji"

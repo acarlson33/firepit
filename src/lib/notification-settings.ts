@@ -6,6 +6,8 @@
 import { ID, Query } from "node-appwrite";
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig, perms } from "./appwrite-core";
+import { apiCache } from "./cache-utils";
+import { logger } from "./newrelic-utils";
 import type {
     Conversation,
     NotificationSettings,
@@ -20,6 +22,7 @@ import type {
 
 const LABEL_LOOKUP_LIMIT = 500;
 const DM_ENCRYPTION_ATTRIBUTE_KEY = "dmEncryptionEnabled";
+const NOTIFICATION_OVERRIDE_LABEL_CACHE_TTL_MS = 15 * 1000;
 
 const DEFAULT_SETTINGS: Omit<
     NotificationSettings,
@@ -39,7 +42,7 @@ const DEFAULT_SETTINGS: Omit<
     conversationOverrides: {},
 };
 
-export class NotificationSettingsSchemaError extends Error {
+class NotificationSettingsSchemaError extends Error {
     status: number;
 
     constructor(message: string, status = 503) {
@@ -80,6 +83,16 @@ function createSchemaUnavailableError() {
     return new NotificationSettingsSchemaError(
         "Notification settings schema is missing dmEncryptionEnabled. Run `bun run setup` to provision the latest Appwrite attributes.",
     );
+}
+
+function cloneOverrideLabels(
+    value: NotificationOverrideLabelMap,
+): NotificationOverrideLabelMap {
+    if (typeof globalThis.structuredClone === "function") {
+        return globalThis.structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value)) as NotificationOverrideLabelMap;
 }
 
 async function ensureDmEncryptionSettingsAttribute(): Promise<boolean> {
@@ -152,6 +165,19 @@ function createEmptyOverrideLabels(): NotificationOverrideLabelMap {
         channelOverrides: {},
         conversationOverrides: {},
     };
+}
+
+function buildOverrideLabelCacheKey(
+    userId: string,
+    serverOverrideIds: string[],
+    channelOverrideIds: string[],
+    conversationOverrideIds: string[],
+): string {
+    const sortedServerIds = [...serverOverrideIds].sort().join(",");
+    const sortedChannelIds = [...channelOverrideIds].sort().join(",");
+    const sortedConversationIds = [...conversationOverrideIds].sort().join(",");
+
+    return `notification-overrides:${userId}:servers=${sortedServerIds}:channels=${sortedChannelIds}:conversations=${sortedConversationIds}`;
 }
 
 /**
@@ -510,7 +536,7 @@ async function listProfilesByUserId(
  * @param {{ $id: string; userId: string; globalNotifications: NotificationLevel; directMessagePrivacy: 'everyone' | 'friends'; desktopNotifications: boolean; pushNotifications: boolean; notificationSound: boolean; quietHoursStart?: string | undefined; quietHoursEnd?: string | undefined; quietHoursTimezone?: string | undefined; serverOverrides?: NotificationOverrideMap | undefined; channelOverrides?: NotificationOverrideMap | undefined; conversationOverrides?: NotificationOverrideMap | undefined; $createdAt?: string | undefined; $updatedAt?: string | undefined; }} settings - The settings value.
  * @returns {Promise<NotificationOverrideLabelMap>} The return value.
  */
-export async function resolveNotificationOverrideLabels(
+async function resolveNotificationOverrideLabels(
     userId: string,
     settings: NotificationSettings,
 ): Promise<NotificationOverrideLabelMap> {
@@ -529,84 +555,108 @@ export async function resolveNotificationOverrideLabels(
         return labels;
     }
 
-    try {
-        const servers = await listAccessibleServersById(
-            userId,
-            serverOverrideIds,
-        );
-        const serverNameById = new Map(
-            servers.map((server) => [String(server.$id), String(server.name)]),
-        );
-        const allowedServerIds = Array.from(serverNameById.keys());
+    const fetchLabels = async () => {
+        try {
+            const servers = await listAccessibleServersById(
+                userId,
+                serverOverrideIds,
+            );
+            const serverNameById = new Map(
+                servers.map((server) => [String(server.$id), String(server.name)]),
+            );
+            const allowedServerIds = Array.from(serverNameById.keys());
 
-        for (const server of servers) {
-            const serverId = String(server.$id);
-            labels.serverOverrides[serverId] = {
-                title: String(server.name),
-                subtitle: "Server notification override",
-            };
-        }
+            for (const server of servers) {
+                const serverId = String(server.$id);
+                labels.serverOverrides[serverId] = {
+                    title: String(server.name),
+                    subtitle: "Server notification override",
+                };
+            }
 
-        const channels = await listAccessibleChannelsById(
-            allowedServerIds,
-            channelOverrideIds,
-        );
-        for (const channel of channels) {
-            const channelId = String(channel.$id);
-            const serverId = String(channel.serverId);
-            labels.channelOverrides[channelId] = {
-                title: `#${String(channel.name)}`,
-                subtitle:
-                    serverNameById.get(serverId) ??
-                    "Channel notification override",
-                meta: `Channel in ${serverNameById.get(serverId) ?? "server"}`,
-            };
-        }
+            const [channels, conversations] = await Promise.all([
+                listAccessibleChannelsById(
+                    allowedServerIds,
+                    channelOverrideIds,
+                ),
+                listAccessibleConversationsById(
+                    userId,
+                    conversationOverrideIds,
+                ),
+            ]);
 
-        const conversations = await listAccessibleConversationsById(
-            userId,
-            conversationOverrideIds,
-        );
-        const otherParticipantIds = Array.from(
-            new Set(
-                conversations.flatMap((conversation) =>
-                    conversation.participants.filter(
-                        (participantId) => participantId !== userId,
+            for (const channel of channels) {
+                const channelId = String(channel.$id);
+                const serverId = String(channel.serverId);
+                labels.channelOverrides[channelId] = {
+                    title: `#${String(channel.name)}`,
+                    subtitle:
+                        serverNameById.get(serverId) ??
+                        "Channel notification override",
+                    meta: `Channel in ${serverNameById.get(serverId) ?? "server"}`,
+                };
+            }
+
+            const otherParticipantIds = Array.from(
+                new Set(
+                    conversations.flatMap((conversation) =>
+                        conversation.participants.filter(
+                            (participantId) => participantId !== userId,
+                        ),
                     ),
                 ),
-            ),
-        );
-        const profileNameByUserId =
-            await listProfilesByUserId(otherParticipantIds);
-
-        for (const conversation of conversations) {
-            const otherParticipants = conversation.participants.filter(
-                (participantId) => participantId !== userId,
             );
-            const participantNames = otherParticipants.map(
-                (participantId) =>
-                    profileNameByUserId.get(participantId) ?? participantId,
-            );
-            const title =
-                conversation.name ||
-                participantNames.at(0) ||
-                (conversation.isGroup ? "Group DM" : "Direct message");
+            const profileNameByUserId =
+                await listProfilesByUserId(otherParticipantIds);
 
-            labels.conversationOverrides[conversation.$id] = {
-                title,
-                subtitle: conversation.isGroup
-                    ? `${conversation.participantCount ?? conversation.participants.length} participants`
-                    : "Direct message override",
-                meta: conversation.isGroup
-                    ? participantNames.slice(0, 3).join(", ")
-                    : participantNames.at(0),
-            };
+            for (const conversation of conversations) {
+                const otherParticipants = conversation.participants.filter(
+                    (participantId) => participantId !== userId,
+                );
+                const participantNames = otherParticipants.map(
+                    (participantId) =>
+                        profileNameByUserId.get(participantId) ?? participantId,
+                );
+                const title =
+                    conversation.name ||
+                    participantNames.at(0) ||
+                    (conversation.isGroup ? "Group DM" : "Direct message");
+
+                labels.conversationOverrides[conversation.$id] = {
+                    title,
+                    subtitle: conversation.isGroup
+                        ? `${conversation.participantCount ?? conversation.participants.length} participants`
+                        : "Direct message override",
+                    meta: conversation.isGroup
+                        ? participantNames.slice(0, 3).join(", ")
+                        : participantNames.at(0),
+                };
+            }
+        } catch (error) {
+            logger.error("Failed to resolve notification override labels", {
+                userId,
+                error: getErrorMessage(error),
+            });
+            return createEmptyOverrideLabels();
         }
-    } catch {
-        return labels;
+
+        return cloneOverrideLabels(labels);
+    };
+
+    if (process.env.NODE_ENV === "test") {
+        return fetchLabels();
     }
 
-    return labels;
+    return apiCache.dedupe(
+        buildOverrideLabelCacheKey(
+            userId,
+            serverOverrideIds,
+            channelOverrideIds,
+            conversationOverrideIds,
+        ),
+        fetchLabels,
+        NOTIFICATION_OVERRIDE_LABEL_CACHE_TTL_MS,
+    );
 }
 
 /**

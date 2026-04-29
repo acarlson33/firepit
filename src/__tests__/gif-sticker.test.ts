@@ -56,7 +56,9 @@ describe("gif-sticker helpers", () => {
 
         expect(mapped.next).toBe("1");
         expect(mapped.items).toHaveLength(1);
-        expect(mapped.items[0]).toEqual(
+        const firstMappedGiphy = mapped.items.at(0);
+        expect(firstMappedGiphy).toBeDefined();
+        expect(firstMappedGiphy).toEqual(
             expect.objectContaining({
                 id: "item-2",
                 title: "hello giphy",
@@ -92,7 +94,9 @@ describe("gif-sticker helpers", () => {
 
         expect(mapped.next).toBe("abc");
         expect(mapped.items).toHaveLength(1);
-        expect(mapped.items[0]).toEqual(
+        const firstMappedTenor = mapped.items.at(0);
+        expect(firstMappedTenor).toBeDefined();
+        expect(firstMappedTenor).toEqual(
             expect.objectContaining({
                 id: "item-1",
                 title: "hello gif",
@@ -114,7 +118,9 @@ describe("gif-sticker helpers", () => {
         const packs = getBuiltinStickerPacks();
 
         expect(packs.length).toBeGreaterThan(0);
-        expect(packs[0].id).toBe("builtin-hello");
-        expect(packs[0].items.length).toBeGreaterThan(0);
+        const firstPack = packs.at(0);
+        expect(firstPack).toBeDefined();
+        expect(firstPack?.id).toBe("builtin-hello");
+        expect(firstPack?.items.length).toBeGreaterThan(0);
     });
 });

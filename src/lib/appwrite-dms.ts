@@ -2,8 +2,10 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 
 import type { Conversation, DirectMessage, FileAttachment } from "./types";
 import { getBrowserDatabases, getEnvConfig } from "./appwrite-core";
+import { listPages } from "./appwrite-pagination";
 import { parseReactionsWithMetadata, type Reaction } from "./reactions-utils";
 import { normalizeFileAttachment } from "./file-attachments";
+import { logger } from "./client-logger";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -11,6 +13,35 @@ const CONVERSATIONS_COLLECTION = env.collections.conversations;
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
+
+const ATTACHMENT_SELECT_FIELDS = [
+    "messageId",
+    "fileId",
+    "fileName",
+    "fileSize",
+    "fileType",
+    "fileUrl",
+    "thumbnailUrl",
+    "mediaKind",
+    "source",
+    "provider",
+    "providerAssetId",
+    "packId",
+    "itemId",
+    "previewUrl",
+] as const;
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+function selectQuery(fields: readonly string[]) {
+    const queryWithSelect = Query as typeof Query & {
+        select?: (selectedFields: string[]) => string;
+    };
+
+    return typeof queryWithSelect.select === "function"
+        ? [queryWithSelect.select([...fields])]
+        : [];
+}
 
 function isConflictError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -132,6 +163,40 @@ function getDatabases() {
     return getBrowserDatabases();
 }
 
+function chunkArray<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function mapWithConcurrency<T, R>(params: {
+    items: T[];
+    concurrency: number;
+    mapper: (item: T) => Promise<R>;
+}): Promise<R[]> {
+    const { items, concurrency, mapper } = params;
+    if (items.length === 0) {
+        return [];
+    }
+
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await mapper(items[currentIndex]);
+        }
+    });
+
+    await Promise.all(workers);
+    return results;
+}
+
 /**
  * Normalizes and persists legacy reaction payloads when needed.
  * Accepts the same input formats supported by parseReactionsWithMetadata:
@@ -197,20 +262,45 @@ async function enrichDirectMessagesWithAttachments(
         // Get all message IDs
         const messageIds = messages.map((m) => m.$id);
 
-        // Query attachments for all messages
-        const response = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
-            queries: [
-                Query.equal("messageId", messageIds),
-                Query.equal("messageType", "dm"),
-                Query.limit(1000), // High limit to get all attachments
-            ],
+        const pageSize = Math.min(
+            1000,
+            Math.max(50, messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE),
+        );
+        const pagedAttachmentDocuments = await mapWithConcurrency({
+            items: chunkArray(messageIds, 100),
+            concurrency: 4,
+            mapper: async (messageIdChunk) => {
+                const page = await listPages({
+                    databases: getDatabases(),
+                    databaseId: DATABASE_ID,
+                    collectionId: MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    baseQueries: [
+                        Query.equal("messageId", messageIdChunk),
+                        Query.equal("messageType", "dm"),
+                        ...selectQuery(ATTACHMENT_SELECT_FIELDS),
+                    ],
+                    pageSize,
+                    warningContext: "enrichDirectMessagesWithAttachments",
+                    maxPages: 50,
+                });
+
+                if (page.truncated) {
+                    const previewCount = 5;
+                    const previewIds = messageIdChunk.slice(0, previewCount);
+                    const remainingCount = messageIdChunk.length - previewCount;
+                    throw new Error(
+                        `Attachment enrichment truncated for warningContext=enrichDirectMessagesWithAttachments chunkCount=${messageIdChunk.length} chunkPreview=${previewIds.join(",")}${remainingCount > 0 ? ` ...(+${remainingCount} more)` : ""}`,
+                    );
+                }
+
+                return page.documents;
+            },
         });
+        const attachmentDocuments = pagedAttachmentDocuments.flat();
 
         // Group attachments by messageId
         const attachmentsByMessageId = new Map<string, FileAttachment[]>();
-        for (const doc of response.documents) {
+        for (const doc of attachmentDocuments) {
             const d = doc as Record<string, unknown>;
             const messageId = String(d.messageId);
             const attachment = normalizeFileAttachment(d);
@@ -235,9 +325,76 @@ async function enrichDirectMessagesWithAttachments(
             }
             return message;
         });
-    } catch {
-        // If attachment fetch fails, return messages without attachments
+    } catch (error) {
+        logger.warn("Failed to enrich direct messages with attachments", {
+            error: error instanceof Error ? error.message : String(error),
+            messageCount: messages.length,
+        });
         return messages;
+    }
+}
+
+async function findExactPairConversation(params: {
+    databases: ReturnType<typeof getDatabases>;
+    user1: string;
+    user2: string;
+    requireParticipantCount: boolean;
+}): Promise<Record<string, unknown> | undefined> {
+    const { databases, user1, user2, requireParticipantCount } = params;
+    const pageSize = 100;
+    const MAX_PAGES = 100;
+    let cursorAfter: string | undefined;
+    let pageCount = 0;
+
+    const isExactPairConversation = (record: Record<string, unknown>) => {
+        const participantList = Array.isArray(record.participants)
+            ? (record.participants as string[])
+            : [];
+
+        return (
+            participantList.length === 2 &&
+            participantList.includes(user1) &&
+            participantList.includes(user2)
+        );
+    };
+
+    while (true) {
+        pageCount += 1;
+        const response = await databases.listDocuments({
+            databaseId: DATABASE_ID,
+            collectionId: CONVERSATIONS_COLLECTION,
+            queries: [
+                Query.contains("participants", user1),
+                Query.contains("participants", user2),
+                ...(requireParticipantCount
+                    ? [Query.equal("participantCount", 2)]
+                    : []),
+                Query.orderAsc("$createdAt"),
+                Query.limit(pageSize),
+                ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+            ],
+        });
+
+        const documents = (response.documents ?? []).filter(
+            (document) => typeof document === "object" && document !== null,
+        ) as Array<Record<string, unknown>>;
+
+        for (const document of documents) {
+            if (isExactPairConversation(document)) {
+                return document;
+            }
+        }
+
+        const last = documents.at(-1);
+        if (documents.length < pageSize || typeof last?.$id !== "string") {
+            return undefined;
+        }
+
+        if (pageCount >= MAX_PAGES) {
+            return undefined;
+        }
+
+        cursorAfter = last.$id;
     }
 }
 
@@ -295,65 +452,41 @@ export async function getOrCreateConversation(
     }
 
     try {
-        // Try to find existing conversation
+        const databases = getDatabases();
         let oneToOne: Record<string, unknown> | undefined;
-        let cursorAfter: string | null = null;
-
-        while (!oneToOne) {
-            const queries = [
-                Query.contains("participants", user1),
-                Query.contains("participants", user2),
-                Query.orderAsc("$createdAt"),
-                Query.limit(100),
-            ];
-            if (cursorAfter) {
-                queries.push(Query.cursorAfter(cursorAfter));
-            }
-
-            const existing = await getDatabases().listDocuments({
-                databaseId: DATABASE_ID,
-                collectionId: CONVERSATIONS_COLLECTION,
-                queries,
+        try {
+            oneToOne = await findExactPairConversation({
+                databases,
+                user1,
+                user2,
+                requireParticipantCount: true,
             });
+        } catch {
+            // Fall through to broader query when participantCount cannot be relied on.
+        }
 
-            oneToOne = existing.documents.find((document) => {
-                const participantsList = (document as Record<string, unknown>)
-                    .participants;
-                return (
-                    Array.isArray(participantsList) &&
-                    participantsList.length === 2 &&
-                    participantsList.includes(user1) &&
-                    participantsList.includes(user2)
-                );
-            }) as Record<string, unknown> | undefined;
-
-            if (oneToOne || existing.documents.length < 100) {
-                break;
-            }
-
-            const lastDocument = existing.documents.at(-1) as
-                | Record<string, unknown>
-                | undefined;
-            cursorAfter =
-                typeof lastDocument?.$id === "string" ? lastDocument.$id : null;
-
-            if (!cursorAfter) {
-                break;
-            }
+        if (!oneToOne) {
+            oneToOne = await findExactPairConversation({
+                databases,
+                user1,
+                user2,
+                requireParticipantCount: false,
+            });
         }
 
         if (oneToOne) {
-            const doc = oneToOne;
             return {
-                $id: String(doc.$id),
-                $permissions: Array.isArray(doc.$permissions)
-                    ? (doc.$permissions as string[])
+                $id: String(oneToOne.$id),
+                $permissions: Array.isArray(oneToOne.$permissions)
+                    ? (oneToOne.$permissions as string[])
                     : undefined,
-                participants: doc.participants as string[],
-                lastMessageAt: doc.lastMessageAt
-                    ? String(doc.lastMessageAt)
+                participants: Array.isArray(oneToOne.participants)
+                    ? (oneToOne.participants as string[])
+                    : participants,
+                lastMessageAt: oneToOne.lastMessageAt
+                    ? String(oneToOne.lastMessageAt)
                     : undefined,
-                $createdAt: String(doc.$createdAt),
+                $createdAt: String(oneToOne.$createdAt),
             };
         }
     } catch {
@@ -378,6 +511,7 @@ export async function getOrCreateConversation(
             documentId: deterministicConversationId,
             data: {
                 participants,
+                participantCount: participants.length,
                 lastMessageAt: new Date().toISOString(),
             },
             permissions,
@@ -462,6 +596,7 @@ export async function createGroupConversation(
             isGroup: true,
             name: options?.name ?? null,
             avatarUrl: options?.avatarUrl ?? null,
+            participantCount: uniqueParticipants.length,
         },
         permissions,
     });

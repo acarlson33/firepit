@@ -2,8 +2,17 @@ import { Query } from "node-appwrite";
 import type { Databases } from "node-appwrite";
 
 import type { EnvConfig } from "@/lib/appwrite-core";
+import { logger } from "@/lib/newrelic-utils";
 import { buildMessagePoll, type PollDocShape } from "@/lib/polls";
 import type { MessagePoll } from "@/lib/types";
+
+const POLL_VOTES_PAGE_LIMIT = 1000;
+
+// Some test mocks/older SDK surfaces may not expose Query cursor helpers.
+type QueryWithPagination = typeof Query & {
+    cursorAfter?: (cursor: string) => string;
+    orderAsc?: (field: string) => string;
+};
 
 type PollVoteDocShape = {
     $id: string;
@@ -82,20 +91,77 @@ export async function getPollDocumentByMessageId(
     return normalizePollDocument(response.documents[0]);
 }
 
-export async function listVotesForPoll(
+async function listVotesForPoll(
     databases: Databases,
     env: EnvConfig,
     pollId: string,
 ): Promise<PollVoteDocShape[]> {
-    const response = await databases.listDocuments(
-        env.databaseId,
-        env.collections.pollVotes,
-        [Query.equal("pollId", pollId), Query.limit(3000)],
-    );
+    const votes: PollVoteDocShape[] = [];
+    const queryWithPagination = Query as QueryWithPagination;
+    const cursorAfterFn = queryWithPagination.cursorAfter;
+    const orderQuery =
+        typeof queryWithPagination.orderAsc === "function"
+            ? queryWithPagination.orderAsc("$id")
+            : null;
+    const supportsStableCursorPagination =
+        cursorAfterFn !== undefined && orderQuery !== null;
+    let cursor: string | undefined;
 
-    return response.documents
-        .map((rawVote) => normalizePollVoteDocument(rawVote))
-        .filter((vote): vote is PollVoteDocShape => vote !== null);
+    while (true) {
+        const queries = [
+            Query.equal("pollId", pollId),
+            ...(orderQuery ? [orderQuery] : []),
+            Query.limit(POLL_VOTES_PAGE_LIMIT),
+            ...(cursor && supportsStableCursorPagination && cursorAfterFn
+                ? [cursorAfterFn(cursor)]
+                : []),
+        ];
+
+        const response = await databases.listDocuments(
+            env.databaseId,
+            env.collections.pollVotes,
+            queries,
+        );
+
+        votes.push(
+            ...response.documents
+                .map((rawVote) => normalizePollVoteDocument(rawVote))
+                .filter((vote): vote is PollVoteDocShape => vote !== null),
+        );
+
+        if (response.documents.length < POLL_VOTES_PAGE_LIMIT) {
+            break;
+        }
+
+        if (!supportsStableCursorPagination) {
+            logger.warn(
+                "Poll votes pagination helpers unavailable; stopping after first full page",
+                {
+                    hasOrderAsc: Boolean(orderQuery),
+                    hasCursorAfter: Boolean(cursorAfterFn),
+                    pageLimit: POLL_VOTES_PAGE_LIMIT,
+                    pollId,
+                },
+            );
+            break;
+        }
+
+        const lastDocument = response.documents.at(-1);
+        if (!lastDocument || typeof lastDocument.$id !== "string") {
+            break;
+        }
+
+        cursor = lastDocument.$id;
+    }
+
+    if (votes.length >= POLL_VOTES_PAGE_LIMIT) {
+        logger.warn("Poll has high vote count requiring pagination", {
+            pollId,
+            totalVotes: votes.length,
+        });
+    }
+
+    return votes;
 }
 
 export async function getPollStateForMessage(

@@ -236,6 +236,7 @@ describe("DM Thread API", () => {
                 {
                     method: "POST",
                     body: JSON.stringify({
+                        text: "ok",
                         attachments: [{ fileId: "invalid" }],
                     }),
                 },

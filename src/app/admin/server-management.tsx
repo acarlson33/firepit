@@ -68,10 +68,10 @@ export function ServerManagement({
 
     // Load servers on mount
     useEffect(() => {
-        if (isAdmin) {
+        if (isAdmin || isModerator) {
             void loadServers();
         }
-    }, [isAdmin]);
+    }, [isAdmin, isModerator]);
 
     // Load channels when server is selected
     useEffect(() => {
@@ -91,9 +91,19 @@ export function ServerManagement({
                 (server) => server.defaultOnSignup === true,
             );
             setSelectedDefaultSignupServerId(defaultSignupServer?.$id ?? "");
-            if (result.servers.length > 0 && !selectedServerId) {
-                setSelectedServerId(result.servers[0].$id);
-            }
+            setSelectedServerId(
+                (previousSelectedServerId) => {
+                    const hasPreviousSelection =
+                        previousSelectedServerId.length > 0 &&
+                        result.servers.some(
+                            (server) => server.$id === previousSelectedServerId,
+                        );
+
+                    return hasPreviousSelection
+                        ? previousSelectedServerId
+                        : (result.servers[0]?.$id ?? "");
+                },
+            );
         } catch (error) {
             toast.error(
                 error instanceof Error
@@ -378,6 +388,7 @@ export function ServerManagement({
                                     isCreatingServer || !serverName.trim()
                                 }
                                 onClick={handleCreateServer}
+                                type="button"
                             >
                                 {isCreatingServer
                                     ? "Creating..."
@@ -457,7 +468,7 @@ export function ServerManagement({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {!isAdmin && servers.length === 0 && (
+                            {isLoadingServers && servers.length === 0 && (
                             <p className="text-muted-foreground text-sm">
                                 Loading servers...
                             </p>
@@ -552,6 +563,7 @@ export function ServerManagement({
                                         !selectedServerId
                                     }
                                     onClick={handleCreateChannel}
+                                    type="button"
                                 >
                                     {isCreatingChannel
                                         ? "Creating..."

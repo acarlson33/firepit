@@ -221,28 +221,6 @@ export function canManageRole(
 }
 
 /**
- * Validate that a permission name is valid.
- *
- * @param {string} permission - The permission value.
- * @returns {boolean} The return value.
- */
-export function isValidPermission(
-    permission: string,
-): permission is Permission {
-    const validPermissions: Permission[] = [
-        "readMessages",
-        "sendMessages",
-        "manageMessages",
-        "manageChannels",
-        "manageRoles",
-        "manageServer",
-        "mentionEveryone",
-        "administrator",
-    ];
-    return validPermissions.includes(permission as Permission);
-}
-
-/**
  * Get all permissions as an array.
  * @returns {Permission[]} The return value.
  */

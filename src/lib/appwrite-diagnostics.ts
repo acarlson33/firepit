@@ -13,7 +13,7 @@ import { getEnvConfig } from "./appwrite-core";
  Remove after resolving permission issues.
 */
 
-export type AuthDiagnosticReport = {
+type AuthDiagnosticReport = {
     browserClientConfigured: boolean;
     accountSession?: {
         ok: boolean;
@@ -91,9 +91,10 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticReport> {
         const me = await account.get();
         report.accountSession = { ok: true, userId: me.$id };
     } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
         report.accountSession = {
             ok: false,
-            error: (e as Error).message,
+            error: errorMessage,
         };
     }
 
@@ -104,7 +105,7 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticReport> {
             const total = (res as unknown as { total?: number }).total;
             report.collectionsTried.push({ id: col, ok: true, total });
         } catch (e) {
-            const msg = (e as Error).message;
+            const msg = e instanceof Error ? e.message : String(e);
             report.collectionsTried.push({
                 id: col,
                 ok: false,

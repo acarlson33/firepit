@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 import {
     Shield,
     Users,
     MessageSquare,
     Hash,
+    LayoutDashboard,
     Settings,
     Ban,
     UserX,
@@ -96,6 +97,26 @@ interface ServerStats {
     mutedUsers: number;
 }
 
+const MAX_SERVER_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+function formatBytes(bytes: number): string {
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+
+    const formattedValue =
+        unitIndex === 0 || value >= 10
+            ? Math.round(value).toString()
+            : value.toFixed(1);
+
+    return `${formattedValue} ${units[unitIndex]}`;
+}
+
 export function ServerAdminPanel({
     serverId,
     serverName,
@@ -151,7 +172,7 @@ export function ServerAdminPanel({
         serverDescription ?? "",
     );
     const [settingsIsPublic, setSettingsIsPublic] = useState(
-        serverIsPublic !== false,
+        serverIsPublic === true,
     );
     const [settingsIconFileId, setSettingsIconFileId] = useState(
         serverIconFileId ?? "",
@@ -171,6 +192,9 @@ export function ServerAdminPanel({
     const iconInputRef = useRef<HTMLInputElement>(null);
     const bannerInputRef = useRef<HTMLInputElement>(null);
     const canEditServerSettings = isOwner || canManageServer;
+    const iconInputId = useId();
+    const bannerInputId = useId();
+        const publicDiscoveryId = `${useId()}-public-discovery`;
 
     useEffect(() => {
         if (!open) {
@@ -179,7 +203,7 @@ export function ServerAdminPanel({
 
         setSettingsName(serverName);
         setSettingsDescription(serverDescription ?? "");
-        setSettingsIsPublic(serverIsPublic !== false);
+        setSettingsIsPublic(serverIsPublic === true);
         setSettingsIconFileId(serverIconFileId ?? "");
         setSettingsIconUrl(serverIconUrl ?? null);
         setSettingsBannerFileId(serverBannerFileId ?? "");
@@ -197,6 +221,12 @@ export function ServerAdminPanel({
 
     const handleServerImageUpload = useCallback(
         async (kind: "icon" | "banner", file: File) => {
+            if (file.size > MAX_SERVER_IMAGE_UPLOAD_BYTES) {
+                const maxUploadSize = formatBytes(MAX_SERVER_IMAGE_UPLOAD_BYTES);
+                toast.error(`Image must be ${maxUploadSize} or smaller`);
+                return;
+            }
+
             if (kind === "icon") {
                 setUploadingIcon(true);
             } else {
@@ -255,7 +285,7 @@ export function ServerAdminPanel({
             bannerFileId: string | null;
         } = {
             name: trimmedName,
-            description: settingsDescription,
+            description: settingsDescription.trim(),
             isPublic: settingsIsPublic,
             iconFileId: settingsIconFileId || null,
             bannerFileId: settingsBannerFileId || null,
@@ -283,7 +313,7 @@ export function ServerAdminPanel({
             if (updatedServer) {
                 setSettingsName(updatedServer.name);
                 setSettingsDescription(updatedServer.description ?? "");
-                setSettingsIsPublic(updatedServer.isPublic !== false);
+                setSettingsIsPublic(updatedServer.isPublic === true);
                 setSettingsIconFileId(updatedServer.iconFileId ?? "");
                 setSettingsIconUrl(updatedServer.iconUrl ?? null);
                 setSettingsBannerFileId(updatedServer.bannerFileId ?? "");
@@ -583,7 +613,7 @@ export function ServerAdminPanel({
                         }`}
                     >
                         <TabsTrigger value="overview">
-                            <Settings className="h-4 w-4 mr-2" />
+                            <LayoutDashboard className="h-4 w-4 mr-2" />
                             Overview
                         </TabsTrigger>
                         {canEditServerSettings && (
@@ -786,15 +816,19 @@ export function ServerAdminPanel({
 
                                     <div className="flex items-center justify-between rounded-lg border p-3">
                                         <div>
-                                            <p className="text-sm font-medium">
+                                            <Label
+                                                className="text-sm font-medium"
+                                                   htmlFor={publicDiscoveryId}
+                                            >
                                                 Public discovery
-                                            </p>
+                                            </Label>
                                             <p className="text-xs text-muted-foreground">
                                                 Private servers are hidden from
                                                 discovery and direct join.
                                             </p>
                                         </div>
                                         <Switch
+                                               id={publicDiscoveryId}
                                             checked={settingsIsPublic}
                                             onCheckedChange={setSettingsIsPublic}
                                         />
@@ -802,7 +836,9 @@ export function ServerAdminPanel({
 
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <div className="space-y-2">
-                                            <Label>Server icon</Label>
+                                            <Label htmlFor={iconInputId}>
+                                                Server icon
+                                            </Label>
                                             <div className="rounded-lg border p-3 space-y-3">
                                                 <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden">
                                                     {settingsIconUrl ? (
@@ -854,7 +890,9 @@ export function ServerAdminPanel({
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label>Server banner</Label>
+                                            <Label htmlFor={bannerInputId}>
+                                                Server banner
+                                            </Label>
                                             <div className="rounded-lg border p-3 space-y-3">
                                                 <div className="h-16 w-full rounded-lg bg-muted overflow-hidden">
                                                     {settingsBannerUrl ? (
@@ -1457,6 +1495,7 @@ export function ServerAdminPanel({
                 <input
                     ref={iconInputRef}
                     type="file"
+                    id={iconInputId}
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {
@@ -1473,6 +1512,7 @@ export function ServerAdminPanel({
                 <input
                     ref={bannerInputRef}
                     type="file"
+                    id={bannerInputId}
                     accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={(event) => {

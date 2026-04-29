@@ -57,7 +57,10 @@ export default [
             },
         },
         rules: {
-            // Next.js configs already include TypeScript ESLint recommended rules
+            // Commit note: chore(eslint) keep custom flat config and intentionally omit
+            // eslint-config-next + eslint-plugin-jsx-a11y from package.json.
+            // Rationale: avoid Next-specific lint coupling in this mixed codebase and
+            // keep accessibility enforcement in custom rules/tooling during migration.
             "no-console": "off",
             "no-debugger": "error",
             eqeqeq: ["error", "always"],

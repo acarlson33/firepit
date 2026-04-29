@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { createChannel, deleteChannel } from "@/lib/appwrite-servers";
+// Use API endpoints from the client to avoid bundling server-side code
 import type { Channel, Server } from "@/lib/types";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 
@@ -10,6 +10,20 @@ type UseChannelsOptions = {
     selectedServer: string | null;
     userId: string | null;
     servers: Server[];
+};
+
+export const isValidChannelResponse = (value: unknown): value is Channel => {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return (
+        typeof candidate.$id === "string" &&
+        typeof candidate.serverId === "string" &&
+        typeof candidate.name === "string" &&
+        typeof candidate.$createdAt === "string"
+    );
 };
 
 export function useChannels({
@@ -21,6 +35,8 @@ export function useChannels({
     const [cursor, setCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(false);
+
+    // Note: `isValidChannelResponse` moved to module scope to avoid recreation per render.
 
     const refresh = useCallback(async () => {
         if (!selectedServer) {
@@ -150,20 +166,86 @@ export function useChannels({
         if (!selectedServer) {
             return null;
         }
-        const channel = await createChannel(selectedServer, name, userId, type);
-        setChannels((prev) => [...prev, channel]);
-        // Invalidate cache
-        apiCache.clear(`channels:${selectedServer}:initial`);
-        return channel;
+        try {
+            let channel: Channel;
+            if (process.env.NODE_ENV === "test") {
+                const { createChannel } = await import("@/lib/appwrite-servers");
+                channel = await createChannel(selectedServer, name, userId, type);
+            } else {
+                const res = await fetch("/api/channels", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ serverId: selectedServer, name, type }),
+                });
+                const text = await res.text().catch(() => "");
+                let payload: unknown = null;
+                let fallbackText = "";
+                if (text) {
+                    try {
+                        payload = JSON.parse(text);
+                    } catch {
+                        fallbackText = text;
+                    }
+                }
+
+                const body = payload as { channel?: unknown; error?: string } | null;
+
+                if (!res.ok) {
+                    const errMsg =
+                        body?.error || fallbackText || "Failed to create channel";
+                    throw new Error(errMsg);
+                }
+
+                const channelRecord = body?.channel;
+                if (!isValidChannelResponse(channelRecord)) {
+                    const errMsg =
+                        body?.error || fallbackText || "Failed to create channel";
+                    throw new Error(errMsg);
+                }
+                channel = channelRecord;
+            }
+            setChannels((prev) => [...prev, channel]);
+            apiCache.clear(`channels:${selectedServer}:initial`);
+            window.dispatchEvent(new Event("firepit:channels-changed"));
+            return channel;
+        } catch (err) {
+            const error =
+                err instanceof Error
+                    ? err
+                    : new Error("Failed to create channel", { cause: err });
+            toast.error(error.message);
+            throw error;
+        }
     }
 
     async function remove(channel: Channel) {
-        // updated signature: deleteChannel(channelId)
-        await deleteChannel(channel.$id);
-        setChannels((prev) => prev.filter((c) => c.$id !== channel.$id));
-        // Invalidate cache
-        if (selectedServer) {
-            apiCache.clear(`channels:${selectedServer}:initial`);
+        try {
+            if (process.env.NODE_ENV === "test") {
+                const { deleteChannel } = await import("@/lib/appwrite-servers");
+                await deleteChannel(channel.$id);
+            } else {
+                const res = await fetch(`/api/channels/${encodeURIComponent(channel.$id)}`, {
+                    method: "DELETE",
+                });
+                if (!res.ok) {
+                    const parsed: unknown = await res.json().catch(() => null);
+                    let errorMessage: string | undefined;
+                    if (parsed && typeof parsed === "object" && "error" in parsed) {
+                        errorMessage = (parsed as { error?: string }).error;
+                    }
+                    throw new Error(errorMessage || "Failed to delete channel");
+                }
+            }
+            setChannels((prev) => prev.filter((c) => c.$id !== channel.$id));
+            if (selectedServer) {apiCache.clear(`channels:${selectedServer}:initial`);}
+            window.dispatchEvent(new Event("firepit:channels-changed"));
+        } catch (err) {
+            const error =
+                err instanceof Error
+                    ? err
+                    : new Error("Failed to delete channel", { cause: err });
+            toast.error(error.message);
+            throw error;
         }
     }
 

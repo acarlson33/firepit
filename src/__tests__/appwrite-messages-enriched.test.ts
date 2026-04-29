@@ -1,19 +1,43 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+type TestMessage = {
+	$id: string;
+	$createdAt: string;
+	channelId: string;
+	text: string;
+	userId: string;
+	profile?: TestProfile | null;
+	[key: string]: unknown;
+};
+
+type TestProfile = {
+	$id?: string;
+	displayName?: string;
+	username?: string;
+	[key: string]: unknown;
+};
+
+type TestGlobals = typeof globalThis & {
+	__mockMessages?: TestMessage[];
+	__mockProfiles?: Record<string, TestProfile>;
+};
+
+const testGlobals = globalThis as TestGlobals;
+
 // Mock appwrite-messages
 vi.mock("../lib/appwrite-messages", () => ({
 	listRecentMessages: vi.fn(
 		async (pageSize: number, cursor?: string, channelId?: string) => {
-			const allMessages = (globalThis as any).__mockMessages || [];
+			const allMessages = testGlobals.__mockMessages || [];
 			
 			// Filter by channel if provided
 			let filtered = channelId
-				? allMessages.filter((m: any) => m.channelId === channelId)
+				? allMessages.filter((message) => message.channelId === channelId)
 				: allMessages;
 
 			// Simple cursor pagination
 			if (cursor) {
-				const cursorIndex = filtered.findIndex((m: any) => m.$id === cursor);
+				const cursorIndex = filtered.findIndex((message) => message.$id === cursor);
 				filtered = filtered.slice(cursorIndex + 1);
 			}
 
@@ -24,8 +48,8 @@ vi.mock("../lib/appwrite-messages", () => ({
 
 // Mock enrich-messages
 vi.mock("../lib/enrich-messages", () => ({
-	enrichMessagesWithProfiles: vi.fn(async (messages: any[]) => {
-		const profiles = (globalThis as any).__mockProfiles || {};
+	enrichMessagesWithProfiles: vi.fn(async (messages: TestMessage[]) => {
+		const profiles = testGlobals.__mockProfiles || {};
 		return messages.map((msg) => ({
 			...msg,
 			profile: profiles[msg.userId] || null,
@@ -34,20 +58,38 @@ vi.mock("../lib/enrich-messages", () => ({
 }));
 
 vi.mock("../lib/appwrite-polls", () => ({
-	enrichMessagesWithPolls: vi.fn(async (messages: any[]) => messages),
+	enrichMessagesWithPolls: vi.fn(async (messages: TestMessage[]) => messages),
 }));
 
-function setMockMessages(messages: any[]) {
-	(globalThis as any).__mockMessages = messages;
+function setMockMessages(messages: TestMessage[]) {
+	testGlobals.__mockMessages = messages;
 }
 
-function setMockProfiles(profiles: Record<string, any>) {
-	(globalThis as any).__mockProfiles = profiles;
+function setMockProfiles(profiles: Record<string, TestProfile>) {
+	testGlobals.__mockProfiles = profiles;
 }
 
 function clearMocks() {
-	(globalThis as any).__mockMessages = [];
-	(globalThis as any).__mockProfiles = {};
+	testGlobals.__mockMessages = [];
+	testGlobals.__mockProfiles = {};
+}
+
+function isProfileMessage(
+	message: unknown,
+): message is { profile?: TestProfile | null } {
+	if (!message || typeof message !== "object") {
+		return false;
+	}
+
+	return "profile" in message;
+}
+
+function getProfile(message: unknown): TestProfile | null | undefined {
+	if (!isProfileMessage(message)) {
+		return undefined;
+	}
+
+	return message.profile;
 }
 
 describe("appwrite-messages-enriched", () => {
@@ -82,7 +124,7 @@ describe("appwrite-messages-enriched", () => {
 
 			expect(result).toHaveLength(1);
 			expect(result[0].text).toBe("Hello");
-			expect((result[0] as any).profile).toEqual({
+			expect(getProfile(result[0])).toEqual({
 				$id: "user-1",
 				displayName: "Alice",
 				username: "alice",
@@ -234,8 +276,8 @@ describe("appwrite-messages-enriched", () => {
 			const result = await getEnrichedMessages(10);
 
 			expect(result).toHaveLength(2);
-			expect((result[0] as any).profile?.displayName).toBe("Alice");
-			expect((result[1] as any).profile?.displayName).toBe("Bob");
+			expect(getProfile(result[0])?.displayName).toBe("Alice");
+			expect(getProfile(result[1])?.displayName).toBe("Bob");
 		});
 
 		it("should handle messages with missing profiles", async () => {
@@ -257,7 +299,7 @@ describe("appwrite-messages-enriched", () => {
 			const result = await getEnrichedMessages(10);
 
 			expect(result).toHaveLength(1);
-			expect((result[0] as any).profile).toBeNull();
+			expect(getProfile(result[0])).toBeNull();
 		});
 
 		it("should handle empty message list", async () => {

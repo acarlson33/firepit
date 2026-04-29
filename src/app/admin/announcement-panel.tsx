@@ -91,7 +91,7 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [mode, setMode] = useState<Mode>("draft");
-    const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+    const [nextCursor, setNextCursor] = useState<string | undefined>();
     const [priority, setPriority] = useState<Priority>("normal");
     const [scheduledForLocal, setScheduledForLocal] = useState("");
     const [title, setTitle] = useState("");
@@ -180,6 +180,11 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                 title: title.trim() || undefined,
             });
 
+            if (result.error) {
+                toast.error(result.error);
+                return;
+            }
+
             setBody("");
             setIdempotencyKey("");
             setScheduledForLocal("");
@@ -190,6 +195,10 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
             if (result.dispatched) {
                 toast.success(
                     `Announcement queued and dispatched to ${result.dispatched.dueCount} scheduled job(s)`,
+                );
+            } else if (result.dispatchError) {
+                toast.error(
+                    `Announcement created, but dispatcher failed: ${result.dispatchError}`,
                 );
             } else {
                 toast.success("Announcement created");
@@ -233,7 +242,10 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
             <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                     <div className="mb-2 flex items-center gap-2">
-                        <Megaphone className="h-5 w-5 text-muted-foreground" />
+                        <Megaphone
+                            aria-hidden="true"
+                            className="h-5 w-5 text-muted-foreground"
+                        />
                         <h2 className="text-lg font-semibold">
                             Instance Announcements
                         </h2>
@@ -252,7 +264,7 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                     type="button"
                     variant="outline"
                 >
-                    <SendHorizontal className="mr-2 h-4 w-4" />
+                    <SendHorizontal aria-hidden="true" className="mr-2 h-4 w-4" />
                     {isDispatching ? "Dispatching..." : "Run Dispatcher"}
                 </Button>
             </div>
@@ -362,8 +374,12 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                     </h3>
 
                     <div className="flex items-center gap-2">
+                        <Label className="sr-only" htmlFor="announcement-status-filter">
+                            Announcement status filter
+                        </Label>
                         <select
                             className="flex h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            id="announcement-status-filter"
                             value={filter}
                             onChange={(event) =>
                                 setFilter(event.target.value as AnnouncementFilter)
@@ -385,7 +401,7 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                             type="button"
                             variant="ghost"
                         >
-                            <RefreshCw className="mr-2 h-4 w-4" />
+                            <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />
                             Refresh
                         </Button>
                     </div>
@@ -409,7 +425,7 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                     </p>
                 )}
 
-                {!error && announcements.length > 0 && (
+                {!error && !isLoading && announcements.length > 0 && (
                     <div className="space-y-3">
                         {announcements.map((announcement) => (
                             <article

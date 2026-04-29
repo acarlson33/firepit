@@ -130,7 +130,7 @@ describe("GET /api/servers", () => {
             "memberships-collection",
             expect.arrayContaining([
                 expect.stringContaining("equal(userId,user-1)"),
-                expect.stringContaining("limit(1000)"),
+                expect.stringContaining("limit(100)"),
             ]),
         );
         expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
@@ -197,6 +197,71 @@ describe("GET /api/servers", () => {
             "servers-collection",
             expect.arrayContaining([
                 expect.stringContaining("cursorAfter(server-2)"),
+            ]),
+        );
+    });
+
+    it("paginates memberships when user has more than one page", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1" });
+
+        const firstMembershipPage = Array.from({ length: 100 }, (_, index) => ({
+            $id: `membership-${String(index + 1)}`,
+            serverId: "server-1",
+        }));
+        const secondMembershipPage = Array.from(
+            { length: 40 },
+            (_, index) => ({
+                $id: `membership-${String(index + 101)}`,
+                serverId: "server-1",
+            }),
+        );
+
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({
+                total: 140,
+                documents: firstMembershipPage,
+            })
+            .mockResolvedValueOnce({
+                total: 140,
+                documents: secondMembershipPage,
+            })
+            .mockResolvedValueOnce({
+                total: 1,
+                documents: [
+                    {
+                        $id: "server-1",
+                        name: "Alpha",
+                        ownerId: "owner-1",
+                        isPublic: true,
+                        $createdAt: "2024-01-01T00:00:00.000Z",
+                    },
+                ],
+            });
+
+        mockGetActualMemberCounts.mockResolvedValue(
+            new Map<string, number>([["server-1", 140]]),
+        );
+
+        const request = new NextRequest("http://localhost/api/servers?limit=25");
+        const response = await GET(request);
+
+        expect(response.status).toBe(200);
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            2,
+            "test-db",
+            "memberships-collection",
+            expect.arrayContaining([
+                expect.stringContaining("equal(userId,user-1)"),
+                expect.stringContaining("limit(100)"),
+                expect.stringContaining("cursorAfter(membership-100)"),
+            ]),
+        );
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            3,
+            "test-db",
+            "servers-collection",
+            expect.arrayContaining([
+                expect.stringContaining("equal($id,server-1)"),
             ]),
         );
     });

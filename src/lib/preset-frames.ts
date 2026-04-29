@@ -3,7 +3,6 @@
  * Handles predefined frames (everyone has access) and seasonal frames (earned based on account age)
  */
 
-import type { CSSProperties } from "react";
 import { getEnvConfig } from "./appwrite-core";
 
 export type PresetFrame = {
@@ -213,7 +212,7 @@ export function getPresetFrameStorageFileId(id: string): string | undefined {
     return frame.storageFileId ?? frame.id;
 }
 
-export function getPresetFrameMetaById(id: string): PresetFrame | undefined {
+function getPresetFrameMetaById(id: string): PresetFrame | undefined {
     return PRESET_FRAMES.find((candidate) => candidate.id === id);
 }
 
@@ -269,7 +268,7 @@ export function getSeasonalFramesForUser(
         .filter((frame): frame is PresetFrame => frame !== undefined);
 }
 
-export function getSeasonalFrameIdsForUser(accountCreatedAt: string): string[] {
+function getSeasonalFrameIdsForUser(accountCreatedAt: string): string[] {
     const createdDate = new Date(accountCreatedAt);
     if (Number.isNaN(createdDate.getTime())) {
         return [];
@@ -328,25 +327,3 @@ export function getEligibleFramesForUser(
     return [...defaultFrames, ...seasonalFrames];
 }
 
-export function getFramePreviewStyle(frame: PresetFrame): CSSProperties {
-    if (frame.imageUrl) {
-        const encodedImageUrl = encodeURI(frame.imageUrl)
-            .replaceAll('"', "%22")
-            .replaceAll("'", "%27")
-            .replaceAll("\\", "%5C")
-            .replaceAll("\n", "")
-            .replaceAll("\r", "");
-
-        return {
-            backgroundImage: `url("${encodedImageUrl}")`,
-            backgroundSize: "contain",
-            backgroundRepeat: "no-repeat",
-        };
-    }
-
-    return {
-        borderColor: frame.color || "#6366f1",
-        borderStyle: frame.borderStyle || "solid",
-        borderWidth: "2px",
-    };
-}

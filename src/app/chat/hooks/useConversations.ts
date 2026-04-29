@@ -1,6 +1,6 @@
 "use client";
 
-import { Channel } from "appwrite";
+import { Channel, Query } from "appwrite";
 import { useEffect, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -156,6 +156,7 @@ export function useConversations(userId: string | null, enabled = true) {
                                 );
                             });
                     },
+                            [Query.contains("participants", userId)],
                 );
 
                 if (cancelled) {

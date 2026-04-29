@@ -5,6 +5,7 @@ import { ID } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import type { Message, FileAttachment } from "@/lib/types";
 import {
     logger,
@@ -34,10 +35,39 @@ import {
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
+import { normalizeMentionIds } from "@/lib/mentions";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
+
+async function getMessageDocument(
+    messageId: string,
+): Promise<Record<string, unknown> | null> {
+    const env = getEnvConfig();
+    const { databases } = getServerClient();
+
+    try {
+        return (await databases.getDocument(
+            env.databaseId,
+            env.collections.messages,
+            messageId,
+        )) as unknown as Record<string, unknown>;
+    } catch (error) {
+        const statusCode =
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            typeof (error as { code?: unknown }).code === "number"
+                ? (error as { code: number }).code
+                : undefined;
+        if (statusCode === 404 || isDocumentNotFoundError(error)) {
+            return null;
+        }
+
+        throw error;
+    }
+}
 
 function normalizeStringField(value: unknown): string | undefined {
     if (typeof value !== "string") {
@@ -80,6 +110,21 @@ async function createAttachments(
                 if (!isUnknownAttachmentAttributeError(error)) {
                     throw error;
                 }
+
+                logger.warn(
+                    "Using legacy attachment payload fallback for message attachment write",
+                    {
+                        attachmentFileId: attachment.fileId,
+                        attachmentMediaKind: attachment.mediaKind,
+                        attachmentSource: attachment.source,
+                        messageId,
+                        messageType,
+                        reason:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
 
                 await databases.createDocument(
                     env.databaseId,
@@ -141,6 +186,8 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
+        const validMentions = !creatingPoll ? normalizeMentionIds(mentions) : [];
+        const hasValidMentions = validMentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
         if (creatingPoll) {
@@ -202,7 +249,7 @@ export async function POST(request: NextRequest) {
             hasImage: !!imageFileId,
             hasAttachments: normalizedAttachments.length > 0,
             isReply: !!replyToId,
-            hasMentions: mentions && mentions.length > 0,
+            hasMentions: hasValidMentions,
         }); // Create message permissions
         const permissions = perms.message(userId, {
             mod: env.teams.moderatorTeamId,
@@ -263,13 +310,8 @@ export async function POST(request: NextRequest) {
             messageData.replyToId = replyToId;
         }
         // Add mentions array if provided
-        if (
-            !creatingPoll &&
-            mentions &&
-            Array.isArray(mentions) &&
-            mentions.length > 0
-        ) {
-            messageData.mentions = mentions;
+        if (hasValidMentions) {
+            messageData.mentions = validMentions;
         }
 
         const dbStartTime = Date.now();
@@ -284,6 +326,7 @@ export async function POST(request: NextRequest) {
         let pollResponse: Message["poll"];
 
         if (parsedPoll) {
+            const serializedOptions = serializePollOptions(parsedPoll.options);
             const pollDocument = await databases.createDocument(
                 env.databaseId,
                 env.collections.polls,
@@ -292,7 +335,7 @@ export async function POST(request: NextRequest) {
                     messageId: String(res.$id),
                     channelId: normalizedChannelId,
                     question: parsedPoll.question,
-                    options: serializePollOptions(parsedPoll.options),
+                    options: serializedOptions,
                     status: "open",
                     createdBy: userId,
                 },
@@ -305,7 +348,7 @@ export async function POST(request: NextRequest) {
                     messageId: String(res.$id),
                     channelId: normalizedChannelId,
                     question: parsedPoll.question,
-                    options: serializePollOptions(parsedPoll.options),
+                    options: serializedOptions,
                     status: "open",
                     createdBy: userId,
                 },
@@ -320,10 +363,7 @@ export async function POST(request: NextRequest) {
         });
 
         // Create attachment records if provided
-        if (
-            attachments &&
-            normalizedAttachments.length > 0
-        ) {
+        if (normalizedAttachments.length > 0) {
             await createAttachments(
                 String(res.$id),
                 "channel",
@@ -331,12 +371,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (
-            !creatingPoll &&
-            mentions &&
-            Array.isArray(mentions) &&
-            mentions.length > 0
-        ) {
+        if (hasValidMentions) {
             await upsertMentionInboxItems({
                 authorUserId: userId,
                 contextId: normalizedChannelId,
@@ -344,7 +379,7 @@ export async function POST(request: NextRequest) {
                 latestActivityAt: String(
                     res.$createdAt ?? new Date().toISOString(),
                 ),
-                mentions,
+                mentions: validMentions,
                 messageId: String(res.$id),
                 previewText: text || "",
                 serverId: normalizedServerId,
@@ -454,7 +489,6 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
-        const env = getEnvConfig();
         const { searchParams } = new URL(request.url);
         const messageId = searchParams.get("id");
         const body = await request.json();
@@ -477,13 +511,17 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
+        const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        );
+        const existing = await getMessageDocument(messageId);
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Message not found" },
+                { status: 404 },
+            );
+        }
+
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only edit your own messages" },
@@ -557,7 +595,6 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        const env = getEnvConfig();
         const { searchParams } = new URL(request.url);
         const messageId = searchParams.get("id");
 
@@ -568,13 +605,17 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
+        const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const existing = await databases.getDocument(
-            env.databaseId,
-            env.collections.messages,
-            messageId,
-        );
+        const existing = await getMessageDocument(messageId);
+        if (!existing) {
+            return NextResponse.json(
+                { error: "Message not found" },
+                { status: 404 },
+            );
+        }
+
         if (String(existing.userId) !== user.$id) {
             return NextResponse.json(
                 { error: "You can only delete your own messages" },
@@ -582,7 +623,6 @@ export async function DELETE(request: NextRequest) {
             );
         }
 
-        // Delete the message
         await databases.deleteDocument(
             env.databaseId,
             env.collections.messages,

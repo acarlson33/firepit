@@ -2,12 +2,15 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 
 const APPWRITE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const TRAILING_SLASH_PATTERN = /\/+$/;
 
 export function normalizeServerVisibility(value: unknown): boolean {
-    return value !== false;
+    // Treat missing/legacy visibility as private. Only an explicit `true`
+    // value marks a server as public.
+    return value === true;
 }
 
-export function normalizeServerDefaultOnSignup(value: unknown): boolean {
+function normalizeServerDefaultOnSignup(value: unknown): boolean {
     return value === true;
 }
 
@@ -33,9 +36,9 @@ export function normalizeServerFileId(value: unknown): string | undefined {
     return trimmedValue;
 }
 
-export function buildServerImageUrl(fileId: string): string {
+function buildServerImageUrl(fileId: string): string {
     const env = getEnvConfig();
-    const endpoint = env.endpoint.replace(/\/$/, "");
+    const endpoint = env.endpoint.replace(TRAILING_SLASH_PATTERN, "");
     const bucketId = encodeURIComponent(env.buckets.images);
     const projectId = encodeURIComponent(env.project);
     const encodedFileId = encodeURIComponent(fileId);
@@ -47,14 +50,26 @@ export function mapServerDocument(
     document: Record<string, unknown>,
     memberCount: number,
 ): Server {
+    // Validate required identity fields to avoid producing invalid Server objects
+    if (
+        typeof document.$id !== "string" || !document.$id.trim() ||
+        typeof document.name !== "string" || !document.name.trim() ||
+        typeof document.ownerId !== "string" || !document.ownerId.trim()
+    ) {
+        throw new Error("Invalid server document: missing required identity fields");
+    }
+
     const iconFileId = normalizeServerFileId(document.iconFileId);
     const bannerFileId = normalizeServerFileId(document.bannerFileId);
+    const serverId = document.$id.trim();
+    const serverName = document.name.trim();
+    const ownerId = document.ownerId.trim();
 
     return {
-        $id: String(document.$id),
-        name: String(document.name),
+        $id: serverId,
+        name: serverName,
         $createdAt: String(document.$createdAt ?? ""),
-        ownerId: String(document.ownerId),
+        ownerId,
         memberCount,
         description: normalizeServerDescription(document.description),
         iconFileId,

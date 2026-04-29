@@ -34,27 +34,70 @@ type GifStickerPickerProps = {
 };
 
 function inferImageMimeType(url: string): string {
-    const normalized = url.toLowerCase();
+    let pathname = url;
 
-    if (normalized.includes(".gif")) {
+    try {
+        pathname = new URL(url).pathname;
+    } catch {
+        pathname = url.split("?")[0] ?? url;
+    }
+
+    const normalizedPathname = pathname.toLowerCase();
+
+    if (/\.gif$/.test(normalizedPathname)) {
         return "image/gif";
     }
-    if (normalized.includes(".webp")) {
+    if (/\.webp$/.test(normalizedPathname)) {
         return "image/webp";
     }
-    if (normalized.includes(".jpg") || normalized.includes(".jpeg")) {
+    if (/\.jpe?g$/.test(normalizedPathname)) {
         return "image/jpeg";
     }
 
     return "image/png";
 }
 
+function mimeTypeToExtension(mimeType: string): string {
+    switch (mimeType) {
+        case "image/webp": {
+            return "webp";
+        }
+        case "image/jpeg": {
+            return "jpg";
+        }
+        case "image/png": {
+            return "png";
+        }
+        default: {
+            return "gif";
+        }
+    }
+}
+
+function toSafeFileBaseName(value: string | undefined): string {
+    const trimmed = value?.trim() ?? "";
+    if (!trimmed) {
+        return "gif";
+    }
+
+    const sanitized = trimmed
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[-.]+|[-.]+$/g, "");
+
+    return sanitized || "gif";
+}
+
 function toGifAttachment(item: GifSearchItem): FileAttachment {
+    const fileType = inferImageMimeType(item.gifUrl);
+    const fileExtension = mimeTypeToExtension(fileType);
+    const safeTitle = toSafeFileBaseName(item.title);
+
     return {
         fileId: `${item.source}-${item.id}`,
-        fileName: `${item.title || "gif"}.gif`,
+        fileName: `${safeTitle}.${fileExtension}`,
         fileSize: 0,
-        fileType: "image/gif",
+        fileType,
         fileUrl: item.gifUrl,
         thumbnailUrl: item.previewUrl,
         previewUrl: item.previewUrl,
@@ -73,7 +116,7 @@ function toStickerAttachment(params: {
 
     return {
         fileId: `sticker-${pack.id}-${item.id}`,
-        fileName: `${item.name || item.id}.sticker`,
+        fileName: `${toSafeFileBaseName(item.name || item.id)}.sticker`,
         fileSize: 0,
         fileType: inferImageMimeType(item.mediaUrl),
         fileUrl: item.mediaUrl,
@@ -98,9 +141,7 @@ export function GifStickerPicker({
     const [hasFetchedGifs, setHasFetchedGifs] = useState(false);
 
     const [gifResults, setGifResults] = useState<GifSearchItem[]>([]);
-    const [gifNextCursor, setGifNextCursor] = useState<string | undefined>(
-        undefined,
-    );
+    const [gifNextCursor, setGifNextCursor] = useState<string | undefined>();
     const [gifLoading, setGifLoading] = useState(false);
     const [gifLoadingMore, setGifLoadingMore] = useState(false);
     const [gifError, setGifError] = useState<string | null>(null);
@@ -259,7 +300,7 @@ export function GifStickerPicker({
             .map((pack) => {
                 const packMatches = pack.name.toLowerCase().includes(search);
                 const items = pack.items.filter((item) =>
-                    item.name.toLowerCase().includes(search),
+                    (item.name ?? "").toLowerCase().includes(search),
                 );
 
                 if (packMatches) {
@@ -378,7 +419,7 @@ export function GifStickerPicker({
                                             {gifResults.map((item) => (
                                                 <button
                                                     className="overflow-hidden rounded-lg border border-border/60 bg-muted/20 text-left transition hover:border-primary/60 hover:bg-muted/40"
-                                                    key={item.id}
+                                                    key={`${item.source}-${item.id}`}
                                                     onClick={() => {
                                                         onSelectAttachment(
                                                             toGifAttachment(item),
@@ -474,11 +515,11 @@ export function GifStickerPicker({
                                                                 );
                                                                 setOpen(false);
                                                             }}
-                                                            title={item.name}
+                                                            title={item.name || "Sticker"}
                                                             type="button"
                                                         >
                                                             <img
-                                                                alt={item.name}
+                                                                alt={item.name || "Sticker"}
                                                                 className="aspect-square h-auto w-full object-cover"
                                                                 loading="lazy"
                                                                 src={

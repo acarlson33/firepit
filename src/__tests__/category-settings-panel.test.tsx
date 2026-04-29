@@ -259,9 +259,14 @@ describe("CategorySettingsPanel", () => {
         const createButtons = screen.getAllByRole("button", {
             name: /create/i,
         });
+        const fallbackCreateButton = createButtons.at(0);
         const createButton = channelSetupCard
             ? within(channelSetupCard).getByRole("button", { name: /create/i })
-            : createButtons[0];
+            : fallbackCreateButton;
+
+        if (!createButton) {
+            throw new Error("Create button was not found");
+        }
 
         fireEvent.click(createButton);
 

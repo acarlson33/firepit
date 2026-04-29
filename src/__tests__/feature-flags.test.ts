@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { clearFeatureFlagsCache, FEATURE_FLAGS } from "../lib/feature-flags";
 
+const requiredFlagKeys = [
+    "ALLOW_USER_SERVERS",
+    "ENABLE_AUDIT_LOGGING",
+    "ENABLE_EMAIL_VERIFICATION",
+] as const;
+
 describe("Feature Flags", () => {
     describe("FEATURE_FLAGS constants", () => {
         it("should have ALLOW_USER_SERVERS flag with correct key", () => {
@@ -14,47 +20,15 @@ describe("Feature Flags", () => {
             );
         });
 
-        it("should have ENABLE_INSTANCE_ANNOUNCEMENTS flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS).toBe(
-                "enable_instance_announcements",
-            );
-        });
-
         it("should have ENABLE_EMAIL_VERIFICATION flag with correct key", () => {
             expect(FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
                 "enable_email_verification",
             );
         });
 
-        it("should have ENABLE_GIF_STICKER_SUPPORT flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
-                "enable_gif_sticker_support",
-            );
-        });
-
-        it("should have ENABLE_TENOR_GIF_SEARCH flag with correct key", () => {
-            expect(FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
-                "enable_tenor_gif_search",
-            );
-        });
-
-        it("should have all required feature flags defined", () => {
-            // Ensure the FEATURE_FLAGS object has the expected structure
-            expect(FEATURE_FLAGS).toBeDefined();
-            expect(typeof FEATURE_FLAGS.ALLOW_USER_SERVERS).toBe("string");
-            expect(typeof FEATURE_FLAGS.ENABLE_AUDIT_LOGGING).toBe("string");
-            expect(
-                typeof FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS,
-            ).toBe("string");
-            expect(typeof FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION).toBe(
-                "string",
-            );
-            expect(typeof FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT).toBe(
-                "string",
-            );
-            expect(typeof FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH).toBe(
-                "string",
-            );
+        it.each(requiredFlagKeys)("should define %s as a string", (key) => {
+            expect(FEATURE_FLAGS[key]).toBeDefined();
+            expect(typeof FEATURE_FLAGS[key]).toBe("string");
         });
     });
 

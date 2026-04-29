@@ -79,6 +79,8 @@ vi.mock("node-appwrite", () => ({
     Query: {
         equal: (field: string, value: string | string[]) =>
             `equal(${field},${JSON.stringify(value)})`,
+        contains: (field: string, value: string | string[]) =>
+            `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
         limit: (n: number) => `limit(${n})`,
     },
 }));
@@ -201,8 +203,8 @@ describe("Role Assignments API", () => {
             const data = await response.json();
 
             expect(response.status).toBe(200);
-            expect(data.assignments).toBeDefined();
-            expect(data.assignments[0].roleIds).toEqual(["role-1", "role-2"]);
+            expect(Array.isArray(data)).toBe(true);
+            expect(data[0].roleIds).toEqual(["role-1", "role-2"]);
         });
 
         it("should return 400 if serverId is missing", async () => {

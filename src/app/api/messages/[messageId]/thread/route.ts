@@ -15,6 +15,7 @@ import {
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
+import { normalizeMentionIds } from "@/lib/mentions";
 
 type RouteContext = {
     params: Promise<{
@@ -208,6 +209,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         // If parent is already a thread reply, use its threadId (flatten threads to single level)
         const actualThreadId = parentMessage.threadId ?? messageId;
+        const normalizedMentionsFromInput = mentions
+            ? normalizeMentionIds(mentions)
+            : [];
 
         // Create the thread reply message
         const messageData: Record<string, unknown> = {
@@ -228,8 +232,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (normalizedAttachments.length > 0) {
             messageData.attachments = JSON.stringify(normalizedAttachments);
         }
-        if (mentions && mentions.length > 0) {
-            messageData.mentions = JSON.stringify(mentions);
+        if (normalizedMentionsFromInput.length > 0) {
+            messageData.mentions = normalizedMentionsFromInput;
         }
 
         // Set permissions
@@ -331,7 +335,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             }
         }
 
-        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+        if (normalizedMentionsFromInput.length > 0) {
             await upsertMentionInboxItems({
                 authorUserId: user.$id,
                 contextId: String(parentMessage.channelId),
@@ -339,7 +343,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 latestActivityAt: String(
                     newReply.$createdAt ?? new Date().toISOString(),
                 ),
-                mentions,
+                mentions: normalizedMentionsFromInput,
                 messageId: String(newReply.$id),
                 parentMessageId: actualThreadId,
                 previewText: text || "",
@@ -356,23 +360,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
             userId: user.$id,
         });
 
+        // Reuse input-normalized mentions to avoid redundant normalization work.
+        const normalizedMentions = normalizedMentionsFromInput;
+
+        const {
+            mentions: _rawMentions,
+            attachments: _rawAttachments,
+            ...replyWithoutSerializedFields
+        } = newReply;
+
+        const replyPayload = {
+            ...replyWithoutSerializedFields,
+            ...(normalizedMentions.length > 0
+                ? { mentions: normalizedMentions }
+                : {}),
+            ...(normalizedAttachments.length > 0
+                ? { attachments: normalizedAttachments }
+                : {}),
+        };
+
         return NextResponse.json(
             {
                 success: true,
-                message: {
-                    ...newReply,
-                    attachments:
-                        normalizedAttachments.length > 0
-                            ? normalizedAttachments
-                            : undefined,
-                },
-                reply: {
-                    ...newReply,
-                    attachments:
-                        normalizedAttachments.length > 0
-                            ? normalizedAttachments
-                            : undefined,
-                },
+                message: replyPayload,
+                reply: replyPayload,
                 threadId: actualThreadId,
             },
             { status: 201 },

@@ -1,10 +1,11 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import {
     dispatchScheduledAnnouncements,
     getAnnouncementRuntimeSettings,
-    isInstanceAnnouncementsEnabled,
 } from "@/lib/appwrite-announcements";
+import { logger } from "@/lib/newrelic-utils";
 
 function parseLimit(rawLimit: string | null): number {
     if (!rawLimit) {
@@ -20,16 +21,6 @@ function parseLimit(rawLimit: string | null): number {
 }
 
 export async function POST(request: Request) {
-    if (!(await isInstanceAnnouncementsEnabled())) {
-        return NextResponse.json(
-            {
-                success: false,
-                error: "Instance announcements are disabled",
-            },
-            { status: 404 },
-        );
-    }
-
     const { dispatcherSecret, systemSenderUserId } =
         getAnnouncementRuntimeSettings();
 
@@ -53,8 +44,32 @@ export async function POST(request: Request) {
         );
     }
 
-    const providedSecret = request.headers.get("x-announcements-dispatcher-secret");
-    if (providedSecret !== dispatcherSecret) {
+    const providedSecret = request.headers.get(
+        "x-announcements-dispatcher-secret",
+    );
+    if (!providedSecret) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: "Unauthorized",
+            },
+            { status: 401 },
+        );
+    }
+
+    const providedSecretBuffer = Buffer.from(providedSecret);
+    const dispatcherSecretBuffer = Buffer.from(dispatcherSecret);
+    if (providedSecretBuffer.length !== dispatcherSecretBuffer.length) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: "Unauthorized",
+            },
+            { status: 401 },
+        );
+    }
+
+    if (!timingSafeEqual(providedSecretBuffer, dispatcherSecretBuffer)) {
         return NextResponse.json(
             {
                 success: false,
@@ -66,11 +81,26 @@ export async function POST(request: Request) {
 
     const requestUrl = new URL(request.url);
     const limit = parseLimit(requestUrl.searchParams.get("limit"));
-    const result = await dispatchScheduledAnnouncements(limit);
+    try {
+        const result = await dispatchScheduledAnnouncements(limit);
 
-    return NextResponse.json({
-        success: true,
-        dispatched: result.dueCount,
-        announcementIds: result.announcementIds,
-    });
+        return NextResponse.json({
+            success: true,
+            dispatched: result.dueCount,
+            announcementIds: result.announcementIds,
+        });
+    } catch (error) {
+        logger.error("Failed to dispatch announcements from API route", {
+            error: error instanceof Error ? error.message : String(error),
+            limit,
+        });
+
+        return NextResponse.json(
+            {
+                success: false,
+                error: "Failed to dispatch announcements",
+            },
+            { status: 500 },
+        );
+    }
 }

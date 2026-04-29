@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
 import { muteChannel, unmuteChannel } from "@/lib/notification-settings";
+import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -72,6 +73,8 @@ export async function POST(
 		} else {
 			updatedSettings = await unmuteChannel(user.$id, channelId);
 		}
+
+		invalidateNotificationSettingsCache(user.$id);
 
 		// Get the channel override from the updated settings
 		const channelOverride = updatedSettings.channelOverrides?.[channelId];

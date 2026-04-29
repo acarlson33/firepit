@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { useInvite } from "@/lib/appwrite-invites";
 import { logger, recordError } from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
 
 /**
  * POST /api/invites/[code]/join - Join a server via invite code
@@ -52,6 +53,13 @@ export async function POST(
       event: "server_joined_via_invite",
       properties: { serverId: result.serverId },
     });
+
+    if (typeof result.serverId === "string" && result.serverId.length > 0) {
+      invalidateChannelsUserCaches({
+        serverId: result.serverId,
+        userId,
+      });
+    }
 
     return NextResponse.json({
       success: true,

@@ -7,8 +7,41 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
+import { listPages } from "@/lib/appwrite-pagination";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
+
+type ListDocumentsResponse = Awaited<
+    ReturnType<ReturnType<typeof getServerClient>["databases"]["listDocuments"]>
+>;
+
+type MembershipDocument = {
+    serverId: string;
+};
+
+type ServerDocument = Record<string, unknown> & {
+    $id: string;
+};
+
+type QueryWithSelect = typeof Query & {
+    select?: (attributes: string[]) => string;
+};
+
+const selectMembershipFieldQuery = () => {
+    const queryWithSelect = Query as QueryWithSelect;
+    return typeof queryWithSelect.select === "function"
+        ? [queryWithSelect.select(["$id", "serverId"])]
+        : [];
+};
+
+function isMembershipDocument(document: unknown): document is MembershipDocument {
+    if (!document || typeof document !== "object") {
+        return false;
+    }
+
+    const candidate = document as Record<string, unknown>;
+    return typeof candidate.serverId === "string";
+}
 
 /**
  * GET /api/servers
@@ -34,25 +67,44 @@ export async function GET(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const membershipsResponse = await databases.listDocuments(
-            env.databaseId,
-            env.collections.memberships,
-            [Query.equal("userId", session.$id), Query.limit(1000)],
-        );
+        const loadServerIds = async () => {
+            const pageSize = 100;
+            const membershipFields = selectMembershipFieldQuery();
+            const serverIds = new Set<string>();
 
-        const serverIds = Array.from(
-            new Set(
-                membershipsResponse.documents.map((document) =>
-                    String((document as { serverId?: unknown }).serverId ?? ""),
-                ),
-            ),
-        ).filter((id) => id.length > 0);
+            const { documents, truncated } = await listPages({
+                databases,
+                databaseId: env.databaseId,
+                collectionId: env.collections.memberships,
+                baseQueries: [Query.equal("userId", session.$id), ...membershipFields],
+                pageSize,
+                maxPages: 50,
+                warningContext: "loadServerIds",
+            });
+
+            for (const document of documents) {
+                if (!isMembershipDocument(document)) {
+                    continue;
+                }
+                if (document.serverId.length > 0) {
+                    serverIds.add(document.serverId);
+                }
+            }
+
+            return {
+                serverIds: Array.from(serverIds),
+                truncated,
+            };
+        };
+
+        const { serverIds, truncated } = await loadServerIds();
 
         if (serverIds.length === 0) {
             return compressedResponse(
                 {
                     servers: [] as Server[],
                     nextCursor: null,
+                    truncated,
                 },
                 {
                     headers: {
@@ -72,7 +124,7 @@ export async function GET(request: NextRequest) {
             queries.push(Query.cursorAfter(cursor));
         }
 
-        const res = await databases.listDocuments(
+        const res: ListDocumentsResponse = await databases.listDocuments(
             env.databaseId,
             env.collections.servers,
             queries,
@@ -86,7 +138,7 @@ export async function GET(request: NextRequest) {
 
         const servers: Server[] = res.documents.map((doc) =>
             mapServerDocument(
-                doc as unknown as Record<string, unknown>,
+                doc as ServerDocument,
                 memberCounts.get(String(doc.$id)) ?? 0,
             ),
         );
@@ -99,6 +151,7 @@ export async function GET(request: NextRequest) {
             {
                 servers,
                 nextCursor,
+                truncated,
             },
             {
                 headers: {

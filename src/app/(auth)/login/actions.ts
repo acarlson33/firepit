@@ -6,12 +6,14 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
+import { logger } from "@/lib/newrelic-utils";
 
 type AuthActionResult =
     | { success: true; userId: string }
     | {
           success: false;
           error: string;
+          message?: string;
           verificationRequired?: boolean;
       };
 
@@ -52,7 +54,9 @@ async function sendVerificationEmailForSession(params: {
     const { endpoint, project, sessionSecret } = params;
 
     if (!sessionSecret) {
-        return;
+        throw new Error(
+            "Cannot send verification email because session secret is missing.",
+        );
     }
 
     const verificationClient = new Client()
@@ -64,6 +68,60 @@ async function sendVerificationEmailForSession(params: {
     await verificationAccount.createVerification({
         url: getVerificationRedirectUrl(),
     });
+}
+
+function isSystemSenderAccount(userId: string): boolean {
+    const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
+    return Boolean(systemSenderUserId && userId === systemSenderUserId);
+}
+
+async function revokeSessionBestEffort(
+    users: Users,
+    userId: string,
+    sessionId: string,
+): Promise<void> {
+    try {
+        await users.deleteSession(userId, sessionId);
+    } catch (err) {
+        logger.warn("Failed to revoke session for user", {
+            hasUserId: userId.length > 0,
+            hasSessionId: sessionId.length > 0,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+function buildVerificationRequiredResult(options?: {
+    verificationLinkSent?: boolean;
+}): AuthActionResult {
+    const verificationLinkSent = options?.verificationLinkSent === true;
+
+    return {
+        success: false,
+        error: "Please verify your email before signing in.",
+        message: verificationLinkSent
+            ? "Please verify your email before signing in. We sent a verification link."
+            : "Please verify your email before signing in. Request a new verification link and try again.",
+        verificationRequired: true,
+    };
+}
+
+function sanitizeAuthError(
+    error: unknown,
+): string | { message: string; name?: string; stack?: string } {
+    if (error instanceof Error) {
+        return {
+            message: error.message,
+            name: error.name,
+            stack: error.stack?.slice(0, 2_000),
+        };
+    }
+
+    if (typeof error === "string") {
+        return error;
+    }
+
+    return "[non-serializable error]";
 }
 
 /**
@@ -84,7 +142,20 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
     try {
         const { databases } = getServerClient();
 
-        let targetServerId: string | null = null;
+        async function getSingleServerIdFallback(): Promise<string | null> {
+            // Fallback: auto-join if there's exactly one server on the instance.
+            const serversResponse = await databases.listDocuments(
+                env.databaseId,
+                env.collections.servers,
+                [Query.limit(2)],
+            );
+
+            if (serversResponse.documents.length !== 1) {
+                return null;
+            }
+
+            return serversResponse.documents[0].$id;
+        }
 
         // Prefer explicitly configured signup default server.
         const defaultServersResponse = await databases.listDocuments(
@@ -96,27 +167,10 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
                 Query.limit(1),
             ],
         );
-        if (defaultServersResponse.documents.length > 0) {
-            targetServerId = defaultServersResponse.documents[0].$id;
-        }
-
-        // Fallback: auto-join if there's exactly one server on the instance.
-        if (!targetServerId) {
-            const serversResponse = await databases.listDocuments(
-                env.databaseId,
-                env.collections.servers,
-                [Query.limit(2)],
-            );
-
-            if (serversResponse.documents.length !== 1) {
-                return;
-            }
-
-            targetServerId = serversResponse.documents[0].$id;
-        }
-
-        const serverId = targetServerId;
-        if (!serverId) {
+        const defaultServerId = defaultServersResponse.documents[0]?.$id;
+        const resolvedServerId =
+            defaultServerId || (await getSingleServerIdFallback());
+        if (!resolvedServerId) {
             return;
         }
 
@@ -126,7 +180,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
             membershipCollectionId,
             [
                 Query.equal("userId", userId),
-                Query.equal("serverId", serverId),
+                Query.equal("serverId", resolvedServerId),
                 Query.limit(1),
             ],
         );
@@ -142,7 +196,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
             membershipCollectionId,
             ID.unique(),
             {
-                serverId,
+                serverId: resolvedServerId,
                 userId,
                 role: "member",
             },
@@ -150,7 +204,7 @@ async function autoJoinServerOnSignup(userId: string): Promise<void> {
         );
 
         try {
-            await assignDefaultRoleServer(serverId, userId);
+            await assignDefaultRoleServer(resolvedServerId, userId);
         } catch {
             // Non-critical: default role assignment is best-effort
         }
@@ -203,78 +257,93 @@ export async function loginAction(
             .setKey(apiKey); // Admin client with API key
 
         const account = new Account(client);
+        const users = new Users(client);
 
         // Create email/password session on Appwrite server
         const session = await account.createEmailPasswordSession({
             email,
             password,
         });
-
-        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
-        if (systemSenderUserId && session.userId === systemSenderUserId) {
-            // Defense in depth: invalidate this session immediately and never issue app cookie.
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup; login is still denied either way.
-                });
-
-            return {
-                success: false,
-                error: "This account is reserved for system announcements and cannot sign in.",
-            };
-        }
-
-        if (await isEmailVerificationEnabled()) {
-            const users = new Users(client);
-            const accountUser = await users.get(session.userId);
-            const emailVerified = Boolean(accountUser.emailVerification);
-
-            if (!emailVerified) {
-                await sendVerificationEmailForSession({
-                    endpoint,
-                    project,
-                    sessionSecret: session.secret,
-                }).catch(() => {
-                    // Best effort only. Sign-in is still denied until verified.
-                });
-
-                await account
-                    .deleteSession({ sessionId: session.$id })
-                    .catch(() => {
-                        // Best effort cleanup.
-                    });
+        let shouldRevokeTemporarySession = true;
+        try {
+            if (isSystemSenderAccount(session.userId)) {
+                // Defense in depth: invalidate this session immediately and never issue app cookie.
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
+                shouldRevokeTemporarySession = false;
 
                 return {
                     success: false,
-                    error: "Please verify your email before signing in. We sent a verification link.",
-                    verificationRequired: true,
+                    error: "This account is reserved for system announcements and cannot sign in.",
                 };
             }
+
+            if (await isEmailVerificationEnabled()) {
+                const accountUser = await users.get(session.userId);
+                const emailVerified = Boolean(accountUser.emailVerification);
+
+                if (!emailVerified) {
+                    let verificationLinkSent = false;
+                    try {
+                        await sendVerificationEmailForSession({
+                            endpoint,
+                            project,
+                            sessionSecret: session.secret,
+                        });
+                        verificationLinkSent = true;
+                    } catch (verificationError) {
+                        logger.error("Failed to send verification email during login", {
+                            userId: session.userId,
+                            error: sanitizeAuthError(verificationError),
+                        });
+                    }
+
+                    await revokeSessionBestEffort(
+                        users,
+                        session.userId,
+                        session.$id,
+                    );
+                    shouldRevokeTemporarySession = false;
+
+                    return buildVerificationRequiredResult({ verificationLinkSent });
+                }
+            }
+
+            // CRITICAL: Use session.secret as cookie value (only available with admin client)
+            // This is documented in Appwrite SSR docs
+            const sessionSecret = session.secret;
+
+            if (!sessionSecret) {
+                return {
+                    success: false,
+                    error: "Session created but no secret returned - check API key",
+                };
+            }
+
+            // Manually set the session cookie in Next.js
+            const cookieStore = await cookies();
+            cookieStore.set(`a_session_${project}`, sessionSecret, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "lax",
+                maxAge: 60 * 60 * 24 * 365, // 1 year (matches Appwrite default)
+                path: "/",
+            });
+
+            shouldRevokeTemporarySession = false;
+            return { success: true, userId: session.userId };
+        } finally {
+            if (shouldRevokeTemporarySession) {
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
+            }
         }
-
-        // CRITICAL: Use session.secret as cookie value (only available with admin client)
-        // This is documented in Appwrite SSR docs
-        const sessionSecret = session.secret;
-
-        if (!sessionSecret) {
-            return {
-                success: false,
-                error: "Session created but no secret returned - check API key",
-            };
-        }
-
-        // Manually set the session cookie in Next.js
-        const cookieStore = await cookies();
-        cookieStore.set(`a_session_${project}`, sessionSecret, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 365, // 1 year (matches Appwrite default)
-            path: "/",
-        });
-
-        return { success: true, userId: session.userId };
     } catch (error) {
         // Provide helpful error messages for common issues
         // Enhanced error handling to prevent "unexpected response" errors
@@ -327,13 +396,20 @@ export async function loginAction(
                 };
             }
 
+            logger.error("Login action failed", {
+                error: sanitizeAuthError(error),
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
 
         // Handle non-Error objects
+        logger.error("Login action failed", {
+            error: sanitizeAuthError(error),
+        });
         return {
             success: false,
             error: "Login failed. Please try again.",
@@ -383,55 +459,62 @@ export async function resendVerificationAction(
             email,
             password,
         });
-
-        const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
-        if (systemSenderUserId && session.userId === systemSenderUserId) {
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup.
-                });
-
-            return {
-                success: false,
-                error: "This account is reserved for system announcements and cannot sign in.",
-            };
-        }
-
         const users = new Users(client);
-        const accountUser = await users.get(session.userId);
-        const emailVerified = Boolean(accountUser.emailVerification);
+        let shouldRevokeTemporarySession = true;
+        try {
+            if (isSystemSenderAccount(session.userId)) {
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
+                shouldRevokeTemporarySession = false;
 
-        if (emailVerified) {
-            await account
-                .deleteSession({ sessionId: session.$id })
-                .catch(() => {
-                    // Best effort cleanup.
-                });
+                return {
+                    success: false,
+                    error: "This account is reserved for system announcements and cannot sign in.",
+                };
+            }
+
+            const accountUser = await users.get(session.userId);
+            const emailVerified = Boolean(accountUser.emailVerification);
+
+            if (emailVerified) {
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
+                shouldRevokeTemporarySession = false;
+
+                return {
+                    success: true,
+                    alreadyVerified: true,
+                    message: "This email is already verified. You can sign in now.",
+                };
+            }
+
+            // Send a fresh verification link using this temporary session, then revoke it.
+            await sendVerificationEmailForSession({
+                endpoint,
+                project,
+                sessionSecret: session.secret,
+            });
 
             return {
                 success: true,
-                alreadyVerified: true,
-                message: "This email is already verified. You can sign in now.",
+                message: "Verification email sent. Check your inbox.",
             };
+        } finally {
+            if (shouldRevokeTemporarySession) {
+                // Best-effort cleanup: do not keep the temporary session active.
+                await revokeSessionBestEffort(
+                    users,
+                    session.userId,
+                    session.$id,
+                );
+            }
         }
-
-        await sendVerificationEmailForSession({
-            endpoint,
-            project,
-            sessionSecret: session.secret,
-        });
-
-        await account
-            .deleteSession({ sessionId: session.$id })
-            .catch(() => {
-                // Best effort cleanup.
-            });
-
-        return {
-            success: true,
-            message: "Verification email sent. Check your inbox.",
-        };
     } catch (error) {
         if (error instanceof Error) {
             const message = error.message.toLowerCase();
@@ -453,11 +536,19 @@ export async function resendVerificationAction(
                 };
             }
 
+            logger.error("Resend verification failed", {
+                error: sanitizeAuthError(error),
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
+
+        logger.error("Resend verification failed", {
+            error: sanitizeAuthError(error),
+        });
 
         return {
             success: false,
@@ -553,11 +644,19 @@ export async function registerAction(
                 };
             }
 
+            logger.error("Registration action failed", {
+                error: sanitizeAuthError(error),
+            });
+
             return {
                 success: false,
-                error: error.message,
+                error: "An unexpected error occurred. Please try again.",
             };
         }
+
+        logger.error("Registration action failed", {
+            error: sanitizeAuthError(error),
+        });
 
         return {
             success: false,

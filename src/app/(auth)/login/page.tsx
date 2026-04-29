@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { loginAction, resendVerificationAction } from "./actions";
 
 function LoginFormContent() {
+    const pathname = usePathname();
     const router = useRouter();
     const searchParams = useSearchParams();
     const { refreshUser } = useAuth();
@@ -35,12 +36,16 @@ function LoginFormContent() {
 
         if (verifiedStatus === "1") {
             toast.success("Email verified. You can now sign in.");
-        }
-
-        if (verifiedStatus === "0") {
+        } else if (verifiedStatus === "0") {
             toast.error("Email verification link is invalid or expired.");
         }
-    }, [searchParams]);
+
+        const updatedSearchParams = new URLSearchParams(searchParams.toString());
+        updatedSearchParams.delete("verified");
+        const nextQuery = updatedSearchParams.toString();
+        const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+        window.history.replaceState(null, "", nextUrl);
+    }, [pathname, searchParams]);
 
     const redirectPath = searchParams.get("redirect");
     const destination =
@@ -68,7 +73,7 @@ function LoginFormContent() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 router.push(destination as any);
             } else {
-                toast.error(result.error);
+                toast.error(result.message ?? result.error);
             }
         } catch (err) {
             // Enhanced error handling to prevent "unexpected response" errors
@@ -101,10 +106,9 @@ function LoginFormContent() {
             const result = await resendVerificationAction(formData);
             if (result.success) {
                 toast.success(result.message);
-                return;
+            } else {
+                toast.error(result.error);
             }
-
-            toast.error(result.error);
         } catch (err) {
             const message =
                 err instanceof Error
@@ -155,9 +159,7 @@ function LoginFormContent() {
                 </Button>
                 <Button
                     disabled={loading || resendingVerification}
-                    onClick={() => {
-                        void onResendVerification();
-                    }}
+                    onClick={onResendVerification}
                     type="button"
                     variant="outline"
                 >

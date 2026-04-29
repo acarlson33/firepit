@@ -46,15 +46,15 @@ export const docsPages = [
     },
 ] as const;
 
-export type DocsPageMeta = (typeof docsPages)[number];
+type DocsPageMeta = (typeof docsPages)[number];
 
-export type DocsTocEntry = {
+type DocsTocEntry = {
     id: string;
     title: string;
     level: 2 | 3;
 };
 
-export type DocsPage = DocsPageMeta & {
+type DocsPage = DocsPageMeta & {
     content: string;
     tableOfContents: DocsTocEntry[];
 };
@@ -141,7 +141,7 @@ type OpenApiSpec = {
     paths?: Record<string, OpenApiPathItem>;
 };
 
-export type ApiOperationSummary = {
+type ApiOperationSummary = {
     anchorId: string;
     method: string;
     path: string;
@@ -170,7 +170,7 @@ export type ApiSchemaSummary = {
     fields: ApiSchemaField[];
 };
 
-export type ApiParameterSummary = {
+type ApiParameterSummary = {
     name: string;
     location: string;
     required: boolean;
@@ -178,14 +178,14 @@ export type ApiParameterSummary = {
     schema: string;
 };
 
-export type ApiRequestBodySummary = {
+type ApiRequestBodySummary = {
     required: boolean;
     contentTypes: string[];
     schema: string;
     schemaDetails: ApiSchemaSummary | null;
 };
 
-export type ApiResponseSummary = {
+type ApiResponseSummary = {
     status: string;
     description: string;
     contentTypes: string[];
@@ -193,7 +193,7 @@ export type ApiResponseSummary = {
     schemaDetails: ApiSchemaSummary | null;
 };
 
-export type ApiOperationDetail = ApiOperationSummary & {
+type ApiOperationDetail = ApiOperationSummary & {
     description: string;
     auth: "public" | "session" | "mixed";
     parameters: ApiParameterSummary[];
@@ -201,13 +201,13 @@ export type ApiOperationDetail = ApiOperationSummary & {
     responses: ApiResponseSummary[];
 };
 
-export type ApiTagSummary = {
+type ApiTagSummary = {
     name: string;
     description: string;
     operations: ApiOperationDetail[];
 };
 
-export type ApiReferenceData = {
+type ApiReferenceData = {
     title: string;
     version: string;
     description: string;
@@ -882,4 +882,4 @@ export async function getApiReferenceData(): Promise<ApiReferenceData> {
     };
 }
 
-export { getOperationAnchorId, getTagAnchorId };
+export { getTagAnchorId };

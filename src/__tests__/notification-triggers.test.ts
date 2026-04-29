@@ -1,29 +1,25 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NotificationSettings } from "../lib/types";
 import {
 	extractMentionedUserIds,
 	isReplyToUser,
 	buildNotificationPayload,
 	shouldNotifyUser,
+	invalidateNotificationSettingsCache,
 } from "../lib/notification-triggers";
-import {
-	getOrCreateNotificationSettings,
-	getEffectiveNotificationLevel,
-	isInQuietHours,
-} from "../lib/notification-settings";
 
-// Mock the notification-settings module
-vi.mock("../lib/notification-settings", () => {
-	return {
-		getOrCreateNotificationSettings: vi.fn(),
-		getEffectiveNotificationLevel: vi.fn(),
-		isInQuietHours: vi.fn(),
-	};
-});
+const fetchMock = vi.fn();
 
 describe("Notification Triggers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		fetchMock.mockReset();
+		vi.stubGlobal("fetch", fetchMock);
+		invalidateNotificationSettingsCache();
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	describe("extractMentionedUserIds", () => {
@@ -196,6 +192,10 @@ describe("Notification Triggers", () => {
 	});
 
 	describe("shouldNotifyUser", () => {
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
 		const createMockSettings = (
 			globalLevel: "all" | "mentions" | "nothing",
 			overrides = {}
@@ -212,6 +212,12 @@ describe("Notification Triggers", () => {
 			...overrides,
 		});
 
+		function mockSettings(settings: NotificationSettings, status = 200) {
+			fetchMock.mockImplementation(() =>
+				Promise.resolve(Response.json(settings, { status })),
+			);
+		}
+
 		it("should not notify when sender is recipient", async () => {
 			const result = await shouldNotifyUser({
 				senderId: "user-123",
@@ -224,11 +230,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for DM when level is 'all'", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("all")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("all");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("all"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -244,11 +246,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for mention when level is 'mentions'", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("mentions")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("mentions");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("mentions"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -262,11 +260,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify for regular message when level is 'mentions'", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("mentions")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("mentions");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("mentions"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -279,11 +273,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify when level is 'nothing'", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("nothing")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("nothing");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("nothing"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -295,10 +285,17 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should not notify during quiet hours", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("all")
+			vi.useFakeTimers();
+			// Freeze time to midday UTC so quiet-hours checks are deterministic
+			vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+
+			mockSettings(
+				createMockSettings("all", {
+					quietHoursStart: "00:00",
+					quietHoursEnd: "23:59",
+					quietHoursTimezone: "UTC",
+				}),
 			);
-			vi.mocked(isInQuietHours).mockReturnValue(true);
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -311,11 +308,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should notify for thread reply when level is 'mentions'", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("mentions")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("mentions");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("mentions"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -329,14 +322,12 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should respect notification preferences in result", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue({
+			mockSettings({
 				...createMockSettings("all"),
 				desktopNotifications: false,
 				pushNotifications: false,
 				notificationSound: false,
 			});
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("all");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -351,7 +342,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should handle missing settings gracefully", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(null as never);
+			mockSettings(createMockSettings("all"), 500);
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",
@@ -364,11 +355,7 @@ describe("Notification Triggers", () => {
 		});
 
 		it("should determine event type as 'message' for regular channel message", async () => {
-			vi.mocked(getOrCreateNotificationSettings).mockResolvedValue(
-				createMockSettings("all")
-			);
-			vi.mocked(getEffectiveNotificationLevel).mockReturnValue("all");
-			vi.mocked(isInQuietHours).mockReturnValue(false);
+			mockSettings(createMockSettings("all"));
 
 			const result = await shouldNotifyUser({
 				senderId: "sender-123",

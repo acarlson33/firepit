@@ -80,7 +80,7 @@ async function handleReportAction(
     revalidatePath("/admin/reports");
 }
 
-export async function actionResolveReport(
+async function actionResolveReport(
     reportId: string,
     resolutionNotes?: string,
 ) {
@@ -93,7 +93,7 @@ export async function actionResolveReport(
     );
 }
 
-export async function actionDismissReport(
+async function actionDismissReport(
     reportId: string,
     resolutionNotes?: string,
 ) {

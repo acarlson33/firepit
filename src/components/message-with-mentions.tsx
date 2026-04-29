@@ -52,7 +52,6 @@ export function MessageWithMentions({
         users,
         currentUserId,
     });
-
     const textWithTokens = injectMentionTokens(text, allMatches, mentionTokens);
 
     return (
@@ -426,7 +425,7 @@ function injectMentionTokens(
             parts.push(text.substring(lastIndex, match.startIndex));
         }
 
-        parts.push(mentionTokens[index]?.token || match.fullMatch);
+        parts.push(mentionTokens.at(index)?.token || match.fullMatch);
         lastIndex = match.endIndex;
     }
 
