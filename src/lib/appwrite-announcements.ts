@@ -24,6 +24,7 @@ const MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS = 10;
 const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 10;
 const DELIVERY_BACKOFF_BASE_MS = 60_000;
 const DELIVERY_BACKOFF_MAX_MS = 30 * 60_000;
+const ANNOUNCEMENT_DISPATCH_LEASE_MS = 15 * 60_000;
 type DeliveryOutcome =
     | {
           outcome: "already_delivered";
@@ -208,12 +209,17 @@ function parseAnnouncementStatus(value: unknown): AnnouncementStatus {
 function parseRecipientScope(
     value: unknown,
     context: string,
+    options?: { strict?: boolean },
 ): Announcement["recipientScope"] {
     if (value === "all_profiles") {
         return value;
     }
 
     if (value !== undefined) {
+        if (options?.strict) {
+            throw new ClientError("Invalid recipientScope");
+        }
+
         logger.warn("Invalid announcement recipient scope; defaulting", {
             context,
             recipientScope: value,
@@ -313,6 +319,46 @@ function defaultUrgentBypass(
         globalNotifications: isUrgent,
         directMessagePrivacy: isUrgent,
     };
+}
+
+function createAnnouncementDispatchLease(leaseRunId: string) {
+    const leaseExpiresAt = new Date(
+        Date.now() + ANNOUNCEMENT_DISPATCH_LEASE_MS,
+    ).toISOString();
+
+    return {
+        leaseExpiresAt,
+        leaseRunId,
+    };
+}
+
+function isAnnouncementLeaseActive(
+    announcement: Pick<Announcement, "leaseExpiresAt" | "leaseRunId">,
+): boolean {
+    if (!announcement.leaseRunId || !announcement.leaseExpiresAt) {
+        return false;
+    }
+
+    const expiresAt = Date.parse(announcement.leaseExpiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function canClaimAnnouncementDispatch(
+    announcement: Pick<
+        Announcement,
+        "leaseExpiresAt" | "leaseRunId" | "status"
+    >,
+    dispatchRunId: string,
+): boolean {
+    if (announcement.status !== "dispatching") {
+        return true;
+    }
+
+    if (announcement.leaseRunId === dispatchRunId) {
+        return true;
+    }
+
+    return !isAnnouncementLeaseActive(announcement);
 }
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
@@ -465,6 +511,14 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             typeof document.lastDispatchAt === "string"
                 ? document.lastDispatchAt
                 : undefined,
+        leaseRunId:
+            typeof document.leaseRunId === "string"
+                ? document.leaseRunId
+                : undefined,
+        leaseExpiresAt:
+            typeof document.leaseExpiresAt === "string"
+                ? document.leaseExpiresAt
+                : undefined,
         priority: document.priority === "urgent" ? "urgent" : "normal",
         publishedAt:
             typeof document.publishedAt === "string"
@@ -532,6 +586,7 @@ export async function createAnnouncement(
     const recipientScope = parseRecipientScope(
         input.recipientScope,
         "createAnnouncement",
+        { strict: true },
     );
     const status = resolveStatusForMode(mode);
     const now = new Date().toISOString();
@@ -798,9 +853,16 @@ async function sendSystemAnnouncementMessage(params: {
 async function dispatchToRecipient(params: {
     announcement: Announcement;
     recipientUserId: string;
+    dispatchRunId: string;
     systemSenderUserId: string;
 }): Promise<DeliveryOutcome> {
-    const { announcement, recipientUserId, systemSenderUserId } = params;
+    const { announcement, recipientUserId, dispatchRunId, systemSenderUserId } =
+        params;
+
+    if (announcement.leaseRunId !== dispatchRunId) {
+        return { outcome: "deferred_retry" };
+    }
+
     const existingDelivery = await getDeliveryRecord(
         announcement.$id,
         recipientUserId,
@@ -995,6 +1057,7 @@ async function dispatchOneAnnouncement(params: {
     databases: ReturnType<typeof getServerClient>["databases"];
     databaseId: string;
     dispatchAttempts: number;
+    dispatchRunId: string;
     systemSenderUserId: string;
 }): Promise<DispatchOneResult> {
     const {
@@ -1002,14 +1065,16 @@ async function dispatchOneAnnouncement(params: {
         databases,
         databaseId,
         dispatchAttempts,
+        dispatchRunId,
         systemSenderUserId,
     } = params;
 
     const now = new Date().toISOString();
     const nextDispatchAttempts = dispatchAttempts + 1;
+    const lease = createAnnouncementDispatchLease(dispatchRunId);
 
     try {
-        await databases.updateDocument(
+        const claimedAnnouncementRecord = await databases.updateDocument(
             databaseId,
             getAnnouncementsCollectionId(),
             announcement.$id,
@@ -1017,8 +1082,18 @@ async function dispatchOneAnnouncement(params: {
                 dispatchAttempts: nextDispatchAttempts,
                 lastDispatchAt: now,
                 status: "dispatching",
+                leaseExpiresAt: lease.leaseExpiresAt,
+                leaseRunId: lease.leaseRunId,
             },
         );
+
+        const claimedAnnouncement = toAnnouncement(
+            claimedAnnouncementRecord as unknown as Record<string, unknown>,
+        );
+
+        if (claimedAnnouncement.leaseRunId !== dispatchRunId) {
+            return { dispatched: false };
+        }
 
         const recipientIds = await listAllProfileUserIds(systemSenderUserId);
 
@@ -1028,13 +1103,14 @@ async function dispatchOneAnnouncement(params: {
             worker: async (recipientUserId) => {
                 try {
                     await dispatchToRecipient({
-                        announcement,
+                        announcement: claimedAnnouncement,
+                        dispatchRunId,
                         recipientUserId,
                         systemSenderUserId,
                     });
                 } catch (error) {
                     logger.error("Announcement delivery worker crashed", {
-                        announcementId: announcement.$id,
+                        announcementId: claimedAnnouncement.$id,
                         error: toErrorMessage(error),
                         recipientUserId,
                     });
@@ -1143,6 +1219,7 @@ export async function dispatchScheduledAnnouncements(
 
     const now = new Date().toISOString();
     const clampedLimit = Math.max(1, Math.min(limit, 100));
+    const dispatchRunId = randomUUID();
 
     const due = await databases.listDocuments(
         databaseId,
@@ -1161,6 +1238,9 @@ export async function dispatchScheduledAnnouncements(
         const announcement = toAnnouncement(
             document as unknown as Record<string, unknown>,
         );
+        if (!canClaimAnnouncementDispatch(announcement, dispatchRunId)) {
+            continue;
+        }
         const dispatchAttempts =
             typeof document.dispatchAttempts === "number"
                 ? document.dispatchAttempts
@@ -1170,6 +1250,7 @@ export async function dispatchScheduledAnnouncements(
             databases,
             databaseId,
             dispatchAttempts,
+            dispatchRunId,
             systemSenderUserId,
         });
 
@@ -1195,6 +1276,8 @@ export async function dispatchAnnouncementById(
         throw new Error("SYSTEM_SENDER_USER_ID is required to dispatch announcements");
     }
 
+    const dispatchRunId = randomUUID();
+
     const document = await databases.getDocument(
         databaseId,
         getAnnouncementsCollectionId(),
@@ -1208,6 +1291,9 @@ export async function dispatchAnnouncementById(
     }
 
     const announcement = toAnnouncement(announcementRecord);
+    if (!canClaimAnnouncementDispatch(announcement, dispatchRunId)) {
+        return { dispatched: false };
+    }
     const dispatchAttempts =
         typeof announcementRecord.dispatchAttempts === "number"
             ? announcementRecord.dispatchAttempts
@@ -1217,6 +1303,7 @@ export async function dispatchAnnouncementById(
         databases,
         databaseId,
         dispatchAttempts,
+        dispatchRunId,
         systemSenderUserId,
     });
 }

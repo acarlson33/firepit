@@ -352,6 +352,36 @@ async function listAllDocuments(params: {
     };
 }
 
+async function callListDocumentsLocal(params: {
+    databases: ReturnType<typeof getServerClient>["databases"];
+    databaseId: string;
+    collectionId: string;
+    queries: string[];
+}) {
+    const { databases, databaseId, collectionId, queries } = params;
+
+    try {
+        return await databases.listDocuments(databaseId, collectionId, queries);
+    } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : "";
+        const isTypeError = error instanceof Error && error.name === "TypeError";
+        if (
+            !isTypeError &&
+            !message.includes("invalid argument") &&
+            !message.includes("invalid arguments") &&
+            !message.includes("unexpected argument")
+        ) {
+            throw error;
+        }
+
+        return databases.listDocuments({
+            databaseId,
+            collectionId,
+            queries,
+        });
+    }
+}
+
 async function listDocumentsByIds(params: {
     collectionId: string;
     contextField?: ThreadContextField;
@@ -398,11 +428,12 @@ async function listDocumentsByIds(params: {
                     }
 
                     try {
-                        return await databases.listDocuments(
-                            env.databaseId,
+                        return await callListDocumentsLocal({
+                            databases,
+                            databaseId: env.databaseId,
                             collectionId,
                             queries,
-                        );
+                        });
                     } catch (error) {
                         if (
                             shouldSelectFields &&
@@ -587,17 +618,18 @@ async function countUnreadRepliesByParent(params: {
             }
 
             try {
-                const result = await databases.listDocuments(
-                    env.databaseId,
+                const result = await callListDocumentsLocal({
+                    databases,
+                    databaseId: env.databaseId,
                     collectionId,
-                    [
+                    queries: [
                         Query.equal(contextField, parent.contextId),
                         Query.equal("threadId", parent.parentMessageId),
                         Query.greaterThan("$createdAt", lastReadAt),
                         Query.limit(1),
                         ...selectQuery(["$id"]),
                     ],
-                );
+                });
 
                 countsByParentId.set(
                     parent.parentMessageId,
@@ -692,15 +724,16 @@ async function loadAuthorProfiles(
         uncachedUserIds,
         DOCUMENT_QUERY_CHUNK_SIZE,
     )) {
-        const response = await databases.listDocuments(
-            env.databaseId,
-            env.collections.profiles,
-            [
+        const response = await callListDocumentsLocal({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.profiles,
+            queries: [
                 Query.equal("userId", userIdChunk),
                 Query.limit(userIdChunk.length),
                 ...selectQuery(PROFILE_SELECT_FIELDS),
             ],
-        );
+        });
 
         const fetchedUserIds = new Set<string>();
         for (const document of response.documents) {

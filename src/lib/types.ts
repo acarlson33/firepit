@@ -244,6 +244,8 @@ export type Announcement = {
     scheduledFor?: string;
     publishedAt?: string;
     lastDispatchAt?: string;
+    leaseRunId?: string;
+    leaseExpiresAt?: string;
     urgentBypass?: AnnouncementUrgentBypass;
     deliverySummary?: {
         attempted: number;

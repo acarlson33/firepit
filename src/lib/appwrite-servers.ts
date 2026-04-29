@@ -47,12 +47,34 @@ function normalizeChannelType(value: unknown): Channel["type"] {
 }
 
 function mapMembershipDocument(doc: Record<string, unknown>): Membership {
+    const id = typeof doc.$id === "string" && doc.$id.trim().length > 0
+        ? doc.$id
+        : (() => {
+              throw new Error("mapMembershipDocument requires a valid $id");
+          })();
+    const serverId =
+        typeof doc.serverId === "string" && doc.serverId.trim().length > 0
+            ? doc.serverId
+            : (() => {
+                  throw new Error(
+                      "mapMembershipDocument requires a valid serverId",
+                  );
+              })();
+    const userId =
+        typeof doc.userId === "string" && doc.userId.trim().length > 0
+            ? doc.userId
+            : (() => {
+                  throw new Error(
+                      "mapMembershipDocument requires a valid userId",
+                  );
+              })();
+
     return {
-        $id: String(doc.$id),
+        $id: id,
         $createdAt: String(doc.$createdAt ?? ""),
         role: doc.role === "owner" ? "owner" : "member",
-        serverId: String(doc.serverId),
-        userId: String(doc.userId),
+        serverId,
+        userId,
     };
 }
 // Authorization diagnostics constants

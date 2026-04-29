@@ -106,6 +106,24 @@ function buildVerificationRequiredResult(options?: {
     };
 }
 
+function sanitizeAuthError(
+    error: unknown,
+): string | { message: string; name?: string; stack?: string } {
+    if (error instanceof Error) {
+        return {
+            message: error.message,
+            name: error.name,
+            stack: error.stack?.slice(0, 2_000),
+        };
+    }
+
+    if (typeof error === "string") {
+        return error;
+    }
+
+    return "[non-serializable error]";
+}
+
 /**
  * Automatically joins a user to a server at signup time.
  * Priority:
@@ -264,7 +282,6 @@ export async function loginAction(
             }
 
             if (await isEmailVerificationEnabled()) {
-                const users = new Users(client);
                 const accountUser = await users.get(session.userId);
                 const emailVerified = Boolean(accountUser.emailVerification);
 
@@ -280,10 +297,7 @@ export async function loginAction(
                     } catch (verificationError) {
                         logger.error("Failed to send verification email during login", {
                             userId: session.userId,
-                            error:
-                                verificationError instanceof Error
-                                    ? verificationError.message
-                                    : String(verificationError),
+                            error: sanitizeAuthError(verificationError),
                         });
                     }
 
@@ -382,8 +396,8 @@ export async function loginAction(
                 };
             }
 
-            logger.error("Unexpected login error", {
-                message: error.message,
+            logger.error("Login action failed", {
+                error: sanitizeAuthError(error),
             });
 
             return {
@@ -393,8 +407,8 @@ export async function loginAction(
         }
 
         // Handle non-Error objects
-        logger.error("Login action failed with non-Error value", {
-            error,
+        logger.error("Login action failed", {
+            error: sanitizeAuthError(error),
         });
         return {
             success: false,
@@ -522,8 +536,8 @@ export async function resendVerificationAction(
                 };
             }
 
-            logger.error("Unexpected resend verification error", {
-                message: error.message,
+            logger.error("Resend verification failed", {
+                error: sanitizeAuthError(error),
             });
 
             return {
@@ -532,8 +546,8 @@ export async function resendVerificationAction(
             };
         }
 
-        logger.error("Resend verification failed with non-Error value", {
-            error,
+        logger.error("Resend verification failed", {
+            error: sanitizeAuthError(error),
         });
 
         return {
@@ -630,8 +644,8 @@ export async function registerAction(
                 };
             }
 
-            logger.error("Unexpected registration error", {
-                message: error.message,
+            logger.error("Registration action failed", {
+                error: sanitizeAuthError(error),
             });
 
             return {
@@ -640,8 +654,8 @@ export async function registerAction(
             };
         }
 
-        logger.error("Registration action failed with non-Error value", {
-            error,
+        logger.error("Registration action failed", {
+            error: sanitizeAuthError(error),
         });
 
         return {
