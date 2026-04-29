@@ -347,7 +347,7 @@ async function listAllDocuments(params: {
     }
 
     return {
-        documents: documents as Record<string, unknown>[],
+        documents,
         truncated,
     };
 }

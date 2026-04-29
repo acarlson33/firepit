@@ -285,8 +285,11 @@ async function enrichDirectMessagesWithAttachments(
                 });
 
                 if (page.truncated) {
+                    const previewCount = 5;
+                    const previewIds = messageIdChunk.slice(0, previewCount);
+                    const remainingCount = messageIdChunk.length - previewCount;
                     throw new Error(
-                        `Attachment enrichment truncated for warningContext=enrichDirectMessagesWithAttachments chunk=${messageIdChunk.join(",")}`,
+                        `Attachment enrichment truncated for warningContext=enrichDirectMessagesWithAttachments chunkCount=${messageIdChunk.length} chunkPreview=${previewIds.join(",")}${remainingCount > 0 ? ` ...(+${remainingCount} more)` : ""}`,
                     );
                 }
 
@@ -339,7 +342,9 @@ async function findExactPairConversation(params: {
 }): Promise<Record<string, unknown> | undefined> {
     const { databases, user1, user2, requireParticipantCount } = params;
     const pageSize = 100;
+    const MAX_PAGES = 100;
     let cursorAfter: string | undefined;
+    let pageCount = 0;
 
     const isExactPairConversation = (record: Record<string, unknown>) => {
         const participantList = Array.isArray(record.participants)
@@ -354,6 +359,7 @@ async function findExactPairConversation(params: {
     };
 
     while (true) {
+        pageCount += 1;
         const response = await databases.listDocuments({
             databaseId: DATABASE_ID,
             collectionId: CONVERSATIONS_COLLECTION,
@@ -381,6 +387,10 @@ async function findExactPairConversation(params: {
 
         const last = documents.at(-1);
         if (documents.length < pageSize || typeof last?.$id !== "string") {
+            return undefined;
+        }
+
+        if (pageCount >= MAX_PAGES) {
             return undefined;
         }
 
@@ -586,6 +596,7 @@ export async function createGroupConversation(
             isGroup: true,
             name: options?.name ?? null,
             avatarUrl: options?.avatarUrl ?? null,
+            participantCount: uniqueParticipants.length,
         },
         permissions,
     });

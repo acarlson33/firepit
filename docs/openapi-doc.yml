@@ -115,7 +115,9 @@ components:
                       - membership
                   properties:
                       membership:
-                          $ref: "#/components/schemas/JoinMembership"
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
 
         UserSummary:
             type: object
@@ -782,6 +784,11 @@ paths:
         post:
             tags: [Servers]
             summary: Create a server
+            description: >-
+                Returns JoinResponse with JoinMembership when the membership
+                document is created successfully. membership may be null when
+                the memberships collection is unavailable or membership
+                creation fails.
             security:
                 - sessionCookie: []
             requestBody:
@@ -808,17 +815,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
-                                required: [success, membership, server]
-                                properties:
-                                    success:
-                                        type: boolean
-                                    membership:
-                                        oneOf:
-                                            - $ref: "#/components/schemas/JoinMembership"
-                                            - type: "null"
-                                    server:
-                                        $ref: "#/components/schemas/Server"
+                                $ref: "#/components/schemas/JoinResponse"
                 "400":
                     description: Invalid request
                     content:
@@ -2912,6 +2909,10 @@ paths:
         get:
             tags: [Roles]
             summary: List role assignments by server, role, or user
+            description: >-
+                Requests with userId return the raw role assignment array for
+                compatibility. Server and role lookups continue to return the
+                object form with assignments and truncated.
             security:
                 - sessionCookie: []
             parameters:

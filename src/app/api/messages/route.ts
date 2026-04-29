@@ -5,6 +5,7 @@ import { ID } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import type { Message, FileAttachment } from "@/lib/types";
 import {
     logger,
@@ -60,12 +61,7 @@ async function getMessageDocument(
             typeof (error as { code?: unknown }).code === "number"
                 ? (error as { code: number }).code
                 : undefined;
-        const message =
-            error instanceof Error
-                ? error.message.toLowerCase()
-                : String(error).toLowerCase();
-
-        if (statusCode === 404 || message.includes("not found")) {
+        if (statusCode === 404 || isDocumentNotFoundError(error)) {
             return null;
         }
 

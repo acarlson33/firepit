@@ -190,14 +190,23 @@ export function useChannels({
 
                 const body = (payload as { channel?: unknown; error?: string } | null) ?? null;
 
-                if (!res.ok || !isChannelRecord(body?.channel)) {
+                if (!res.ok) {
                     const errMsg =
                         (body && typeof body === "object" && "error" in body
                             ? (body as { error?: string }).error
                             : undefined) || fallbackText || "Failed to create channel";
                     throw new Error(errMsg);
                 }
-                channel = body!.channel as Channel;
+
+                const channelRecord = body?.channel;
+                if (!isChannelRecord(channelRecord)) {
+                    const errMsg =
+                        (body && typeof body === "object" && "error" in body
+                            ? (body as { error?: string }).error
+                            : undefined) || fallbackText || "Failed to create channel";
+                    throw new Error(errMsg);
+                }
+                channel = channelRecord;
             }
             setChannels((prev) => [...prev, channel]);
             apiCache.clear(`channels:${selectedServer}:initial`);

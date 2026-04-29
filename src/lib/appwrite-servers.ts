@@ -45,6 +45,16 @@ function normalizeChannelType(value: unknown): Channel["type"] {
 
     return "text";
 }
+
+function mapMembershipDocument(doc: Record<string, unknown>): Membership {
+    return {
+        $id: String(doc.$id),
+        $createdAt: String(doc.$createdAt ?? ""),
+        role: doc.role === "owner" ? "owner" : "member",
+        serverId: String(doc.serverId),
+        userId: String(doc.userId),
+    };
+}
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
 
@@ -242,20 +252,9 @@ export function createServer(
                         permissions: membershipPerms,
                     });
 
-                    const membershipRecord = membershipDoc as Record<
-                        string,
-                        unknown
-                    >;
-                    membership = {
-                        $id: String(membershipRecord.$id),
-                        $createdAt: String(membershipRecord.$createdAt ?? ""),
-                        role:
-                            membershipRecord.role === "owner"
-                                ? "owner"
-                                : "member",
-                        serverId: String(membershipRecord.serverId),
-                        userId: String(membershipRecord.userId),
-                    };
+                    membership = mapMembershipDocument(
+                        membershipDoc as Record<string, unknown>,
+                    );
                 } catch {
                     // ignore membership creation failure
                 }
@@ -401,16 +400,9 @@ export async function listMembershipsForUser(
         collectionId: membershipsCollectionId,
         queries: [Query.equal("userId", userId), Query.limit(MAX_LIST_LIMIT)],
     });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            userId: String(d.userId),
-            role: d.role as "owner" | "member",
-            $createdAt: String(d.$createdAt ?? ""),
-        } satisfies Membership;
-    });
+    return res.documents.map((doc) =>
+        mapMembershipDocument(doc as Record<string, unknown>),
+    );
 }
 
 /**
@@ -440,19 +432,12 @@ export async function joinServer(
         data: { serverId, userId, role: "member" },
         permissions,
     });
-    const d = res as unknown as Record<string, unknown>;
     try {
         await assignDefaultRoleBrowser(serverId, userId);
     } catch {
         // Non-fatal: continue even if role assignment fails
     }
-    return {
-        $id: String(d.$id),
-        serverId: String(d.serverId),
-        userId: String(d.userId),
-        role: d.role as "owner" | "member",
-        $createdAt: String(d.$createdAt ?? ""),
-    } satisfies Membership;
+    return mapMembershipDocument(res as Record<string, unknown>);
 }
 
 /**

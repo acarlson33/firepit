@@ -71,7 +71,15 @@ function validateAnnouncementDispatchLimit(limit: number): number {
 
 function normalizeListLimit(limit: number | undefined): number | undefined {
     if (limit === undefined) {return undefined;}
-    return parseDispatchLimit(limit);
+
+    const parsedLimit = parseDispatchLimit(limit);
+    if (parsedLimit === undefined) {
+        logger.warn("normalizeListLimit received invalid limit; falling back to undefined", {
+            limit,
+        });
+    }
+
+    return parsedLimit;
 }
 
 // Smaller helpers to keep complexity below threshold

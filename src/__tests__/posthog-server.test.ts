@@ -87,7 +87,13 @@ describe("posthog-server", () => {
             const setImmediateSpy = vi
                 .spyOn(globalThis, "setImmediate")
                 .mockImplementation((callback: (...args: unknown[]) => void) => {
-                    return callback as never;
+                    try {
+                        callback();
+                    } catch {
+                        // The real callback throws to trigger process-level handling.
+                    }
+
+                    return 0 as never;
                 });
 
             await unhandledRejectionHandler(new Error("rejection failure"));

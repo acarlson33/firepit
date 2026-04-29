@@ -224,6 +224,7 @@ export async function GET(request: Request, context: RouteContext) {
                 );
             } catch (metricError) {
                 logger.warn("Failed to record orphan membership metric", {
+                    serverId,
                     error:
                         metricError instanceof Error
                             ? metricError.message

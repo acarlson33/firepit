@@ -32,7 +32,7 @@ type Databases = {
     };
 };
 
-function shouldRetryWithPositionalCall(error: unknown): boolean {
+function shouldRetryWithObjectCall(error: unknown): boolean {
     if (!(error instanceof Error)) {
         return false;
     }
@@ -54,16 +54,14 @@ async function callListDocuments(
     collectionId: string,
     queries: string[],
 ): Promise<ListDocumentsResponseLike> {
-    const listDocuments = databases.listDocuments;
-
     try {
-        return await listDocuments(databaseId, collectionId, queries);
+        return await databases.listDocuments(databaseId, collectionId, queries);
     } catch (error) {
-        if (!shouldRetryWithPositionalCall(error)) {
+        if (!shouldRetryWithObjectCall(error)) {
             throw error;
         }
 
-        return listDocuments({
+        return databases.listDocuments({
             databaseId,
             collectionId,
             queries,
@@ -106,7 +104,7 @@ export async function listPages(params: {
         highVolumeMultiplier = 10,
     } = params;
 
-    const warningThreshold = Math.max(1, Math.floor(highVolumeMultiplier));
+    const warningMultiplier = Math.max(1, Math.floor(highVolumeMultiplier));
 
     if (typeof maxPages === "number" && maxPages <= 0) {
         return { documents: [] as Array<Record<string, unknown>>, truncated: false };
@@ -158,13 +156,13 @@ export async function listPages(params: {
             queries,
         );
 
-        if (!warnedExceededPageSize && typeof response.total === "number" && response.total > pageSize * warningThreshold) {
+        if (!warnedExceededPageSize && typeof response.total === "number" && response.total > pageSize * warningMultiplier) {
             logger.warn("Query has unusually high volume", {
                 context: warningContext,
                 fetched: response.documents?.length ?? 0,
                 pageSize,
                 total: response.total,
-                warningThreshold,
+                warningMultiplier,
             });
             warnedExceededPageSize = true;
         }
