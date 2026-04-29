@@ -3,9 +3,6 @@ import { PostHog } from "posthog-node";
 type PostHogShim = {
     capture: (...args: Parameters<PostHog["capture"]>) => void;
     captureException: (...args: Parameters<PostHog["captureException"]>) => void;
-    captureExceptionImmediate: (
-        ...args: Parameters<PostHog["captureException"]>
-    ) => Promise<void>;
     flush: () => Promise<void>;
     shutdown: () => Promise<void>;
 };
@@ -16,9 +13,6 @@ function createNoOpShim(): PostHogShim {
             // no-op: PostHog project API key not configured
         },
         captureException(..._args) {
-            // no-op: PostHog project API key not configured
-        },
-        async captureExceptionImmediate(..._args) {
             // no-op: PostHog project API key not configured
         },
         async flush() {
@@ -32,6 +26,7 @@ function createNoOpShim(): PostHogShim {
 
 let posthogClient: PostHog | PostHogShim | null = null;
 let posthogProcessHandlersRegistered = false;
+const capturedUnhandledRejectionErrors = new WeakSet<object>();
 
 function toError(value: unknown): Error {
     if (value instanceof Error) {
@@ -130,10 +125,12 @@ async function captureUnhandledServerError(params: {
     const { error, origin } = params;
 
     try {
-        await getPostHogClient().captureExceptionImmediate(toError(error), "server", {
+        const client = getPostHogClient();
+        client.captureException(toError(error), "server", {
             origin,
             ...toErrorMetadata(error),
         });
+        await client.flush();
     } catch {
         // Telemetry forwarding should never impact process-level handlers.
     }
@@ -147,6 +144,10 @@ export function registerPostHogProcessHandlers() {
     posthogProcessHandlersRegistered = true;
 
     process.on("uncaughtExceptionMonitor", (error, origin) => {
+        if (error instanceof Error && capturedUnhandledRejectionErrors.has(error)) {
+            return;
+        }
+
         void captureUnhandledServerError({
             error,
             origin: `uncaught_exception:${origin}`,
@@ -154,12 +155,14 @@ export function registerPostHogProcessHandlers() {
     });
 
     process.on("unhandledRejection", async (reason) => {
+        const error = toError(reason);
+        capturedUnhandledRejectionErrors.add(error);
         await captureUnhandledServerError({
             error: reason,
             origin: "unhandled_rejection",
         });
         setImmediate(() => {
-            throw toError(reason);
+            throw error;
         });
     });
 
@@ -179,14 +182,20 @@ export function registerPostHogProcessHandlers() {
         void flushLifecycleEvent();
     });
     process.once("SIGINT", () => {
-        void flushLifecycleEvent({
-            exitCode: 130,
-        });
+        void (async () => {
+            await flushLifecycleEvent({
+                exitCode: 130,
+            });
+            process.exit(130);
+        })();
     });
     process.once("SIGTERM", () => {
-        void flushLifecycleEvent({
-            exitCode: 143,
-        });
+        void (async () => {
+            await flushLifecycleEvent({
+                exitCode: 143,
+            });
+            process.exit(143);
+        })();
     });
 }
 

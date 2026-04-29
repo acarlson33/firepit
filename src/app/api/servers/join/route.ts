@@ -203,15 +203,13 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
-		const safeMembership: Membership | null = membership
-			? {
-				  $id: String(membership.$id),
-				  $createdAt: String(membership.$createdAt ?? ""),
-				  userId: String(membership.userId),
-				  serverId: String(membership.serverId),
-				  role: membership.role === "owner" ? "owner" : "member",
-			  }
-			: null;
+		const safeMembership: Membership = {
+			$id: String(membership.$id),
+			$createdAt: String(membership.$createdAt ?? ""),
+			userId: String(membership.userId),
+			serverId: String(membership.serverId),
+			role: membership.role === "owner" ? "owner" : "member",
+		};
 
 		invalidateChannelsUserCaches({
 			serverId,

@@ -11,6 +11,25 @@ type UseServersOptions = {
   membershipEnabled: boolean;
 };
 
+async function safeParseJson<T>(res: Response): Promise<{
+  payload: T | null;
+  text: string;
+}> {
+  const text = await res.text().catch(() => "");
+  if (!text) {
+    return { payload: null, text: "" };
+  }
+
+  try {
+    return {
+      payload: JSON.parse(text) as T,
+      text,
+    };
+  } catch {
+    return { payload: null, text };
+  }
+}
+
 export function useServers({ userId, membershipEnabled }: UseServersOptions) {
   const [servers, setServers] = useState<Server[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
@@ -146,22 +165,13 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         });
-        const text = await res.text().catch(() => "");
-        let payload: unknown = null;
-        let fallbackText = "";
-        if (text) {
-          try {
-            payload = JSON.parse(text);
-          } catch {
-            fallbackText = text;
-          }
-        }
-        const body = (payload as {
+        const { payload, text: fallbackText } = await safeParseJson<{
           success?: boolean;
           server?: unknown;
           membership?: Membership;
           error?: string;
-        } | null) ?? null;
+        }>(res);
+        const body = payload;
         if (!res.ok || !body?.success || !isServerRecord(body.server)) {
           throw new Error(body?.error || fallbackText || "Failed to create server");
         }
@@ -174,12 +184,6 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       if (membershipEnabled && membership === null) {
         await refresh();
         setSelectedServer(server.$id);
-        if (ownerId) {
-          apiCache.clear(`memberships:${ownerId}`);
-        }
-        if (userId) {
-          apiCache.clear(`servers:initial:${userId}`);
-        }
         return server;
       }
 
@@ -221,18 +225,13 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ serverId: id }),
         });
-        const text = await res.text().catch(() => "");
-        let payload: unknown = null;
-        if (text) {
-          try {
-            payload = JSON.parse(text);
-          } catch {
-            // leave payload null, text used as fallback
-          }
-        }
-        const body = (payload as { membership?: Membership; error?: string } | null) ?? null;
+        const { payload, text: fallbackText } = await safeParseJson<{
+          membership?: Membership;
+          error?: string;
+        }>(res);
+        const body = payload;
         if (!res.ok) {
-          throw new Error(body?.error || text || "Failed to join server");
+          throw new Error(body?.error || fallbackText || "Failed to join server");
         }
 
         membership = body?.membership ?? null;

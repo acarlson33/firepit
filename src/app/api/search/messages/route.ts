@@ -25,14 +25,21 @@ function getOtherIdFromDirectMessage(
     directMessage: DirectMessage,
     currentUserId: string,
 ) {
-    const otherId =
-        directMessage.senderId === currentUserId
+    if (directMessage.senderId === currentUserId) {
+        return typeof directMessage.receiverId === "string" &&
+            directMessage.receiverId.length > 0
             ? directMessage.receiverId
-            : directMessage.senderId;
+            : undefined;
+    }
 
-    return typeof otherId === "string" && otherId.length > 0
-        ? otherId
-        : undefined;
+    if (directMessage.receiverId === currentUserId) {
+        return typeof directMessage.senderId === "string" &&
+            directMessage.senderId.length > 0
+            ? directMessage.senderId
+            : undefined;
+    }
+
+    return undefined;
 }
 
 /**
@@ -380,6 +387,7 @@ export async function GET(request: NextRequest) {
 
         // Sort all results by date (most recent first)
         const relationshipSubjects = new Set<string>();
+        const dmCounterpartyMap = new Map<string, string | undefined>();
         for (const result of results) {
             if (result.type === "channel") {
                 relationshipSubjects.add((result.message as Message).userId);
@@ -391,6 +399,7 @@ export async function GET(request: NextRequest) {
                 directMessage,
                 user.$id,
             );
+            dmCounterpartyMap.set(directMessage.$id, otherId);
             if (otherId) {
                 relationshipSubjects.add(otherId);
             }
@@ -410,10 +419,7 @@ export async function GET(request: NextRequest) {
             }
 
             const directMessage = result.message as DirectMessage;
-            const otherId = getOtherIdFromDirectMessage(
-                directMessage,
-                user.$id,
-            );
+            const otherId = dmCounterpartyMap.get(directMessage.$id);
             if (!otherId) {
                 logger.warn(
                     "Dropping malformed direct message search result with missing counterparty",

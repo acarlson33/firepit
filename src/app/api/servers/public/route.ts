@@ -55,7 +55,6 @@ export async function GET() {
 
 		// Enrich servers with actual member counts from memberships
 		const servers = [] as Server[];
-		let failedCount = 0;
 		const failedIds: string[] = [];
 		for (const doc of publicServerDocuments) {
 			try {
@@ -66,7 +65,6 @@ export async function GET() {
 					),
 				);
 			} catch (error) {
-				failedCount += 1;
 				failedIds.push(String(doc.$id));
 				logger.error("Failed to map public server document", {
 					serverId: String(doc.$id),
@@ -75,7 +73,7 @@ export async function GET() {
 			}
 		}
 
-		return NextResponse.json({ servers, failedCount, failedIds });
+		return NextResponse.json({ servers, failedIds });
 	} catch (error) {
 		return NextResponse.json(
 			{

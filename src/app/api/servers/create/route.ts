@@ -152,18 +152,12 @@ export async function POST(request: Request) {
             includeMembership: true,
         });
 
-        const server =
+        const hasMembership =
             typeof createdServer === "object" &&
             createdServer !== null &&
-            "server" in createdServer
-                ? createdServer.server
-                : createdServer;
-        const membership =
-            typeof createdServer === "object" &&
-            createdServer !== null &&
-            "membership" in createdServer
-                ? createdServer.membership
-                : null;
+            "server" in createdServer;
+        const server = hasMembership ? createdServer.server : createdServer;
+        const membership = hasMembership ? createdServer.membership : null;
 
         const telemetryTask = getPostHogClient().capture({
             distinctId: session.$id,

@@ -23,14 +23,14 @@ let originalConsoleError: ConsoleErrorHandler | null = null;
 function matchWebSocketErrorMessage(message: string): boolean {
     const normalizedMessage = message.replace(/\u2019/g, "'").toLowerCase();
 
-    if (message.startsWith("WebSocket error:")) {
+    if (normalizedMessage.startsWith("websocket error:")) {
         return true;
     }
 
     // Firefox/Appwrite can log this on intentional subscription churn during route switches.
     if (
-        message.includes("was interrupted while the page was loading") &&
-        message.includes("/v1/realtime")
+        normalizedMessage.includes("was interrupted while the page was loading") &&
+        normalizedMessage.includes("/v1/realtime")
     ) {
         return true;
     }

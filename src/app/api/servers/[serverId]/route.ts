@@ -361,23 +361,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                 });
             }
 
-            const restoreItems = resetResults
-                .map((result, index) => ({ result, index }))
-                .flatMap(({ result, index }) =>
-                    result.status === "fulfilled"
-                        ? [
-                              {
-                                  serverId: defaultServersToClear[index].$id,
-                                  promise: databases.updateDocument(
-                                      env.databaseId,
-                                      env.collections.servers,
-                                      defaultServersToClear[index].$id,
-                                      { defaultOnSignup: true },
-                                  ),
-                              },
-                          ]
-                        : [],
-                );
+            const restoreItems = resetResults.flatMap((result, index) =>
+                result.status === "fulfilled"
+                    ? [
+                          {
+                              serverId: defaultServersToClear[index].$id,
+                              promise: databases.updateDocument(
+                                  env.databaseId,
+                                  env.collections.servers,
+                                  defaultServersToClear[index].$id,
+                                  { defaultOnSignup: true },
+                              ),
+                          },
+                      ]
+                    : [],
+            );
 
             const restoreResults = await Promise.allSettled(
                 restoreItems.map((i) => i.promise),

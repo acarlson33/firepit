@@ -248,10 +248,7 @@ export async function GET(request: NextRequest) {
                 ],
             );
 
-            return NextResponse.json({
-                assignments: userAssignments.documents,
-                truncated: false,
-            });
+            return NextResponse.json(userAssignments.documents);
         }
 
         const assignments = await listPages({
