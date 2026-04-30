@@ -2934,12 +2934,20 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
-                                properties:
-                                    assignments:
-                                        type: array
-                                        items:
-                                            $ref: "#/components/schemas/RoleAssignment"
+                                oneOf:
+                                    - type: array
+                                      items:
+                                          $ref: "#/components/schemas/RoleAssignment"
+                                    - type: object
+                                      properties:
+                                          assignments:
+                                              type: array
+                                              items:
+                                                  $ref: "#/components/schemas/RoleAssignment"
+                                          truncated:
+                                              type: boolean
+                                      required:
+                                          - assignments
         post:
             tags: [Roles]
             summary: Assign a role to a user

@@ -56,7 +56,7 @@ async function requireManageChannelsAccess(channelId: string) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    return null;
+    return { channel };
 }
 
 export async function PATCH(
@@ -73,9 +73,9 @@ export async function PATCH(
             );
         }
 
-        const authError = await requireManageChannelsAccess(channelId);
-        if (authError) {
-            return authError;
+        const accessResult = await requireManageChannelsAccess(channelId);
+        if (accessResult instanceof NextResponse) {
+            return accessResult;
         }
 
         const body = (await request.json()) as {
@@ -172,13 +172,13 @@ export async function DELETE(
             );
         }
 
-        const authError = await requireManageChannelsAccess(channelId);
-        if (authError) {
-            return authError;
+        const accessResult = await requireManageChannelsAccess(channelId);
+        if (accessResult instanceof NextResponse) {
+            return accessResult;
         }
 
         await deleteChannel(channelId);
-        invalidateChannelsServerCaches(String(channelId));
+        invalidateChannelsServerCaches(String(accessResult.channel.serverId));
 
         return new NextResponse(null, { status: 204 });
     } catch (error) {

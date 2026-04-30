@@ -95,7 +95,7 @@ function clearDmConversationsCache(participantIds: string[]): void {
     );
 
     for (const participantId of uniqueParticipantIds) {
-        apiCache.clear(`dm:conversations:${participantId}`);
+        apiCache.clearPrefix(`dm:conversations:${participantId}`);
     }
 }
 

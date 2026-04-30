@@ -26,12 +26,12 @@ function getCollectionIds() {
  */
 export function isDocumentNotFoundError(error: unknown) {
     if (error instanceof AppwriteException) {
-        return error.code === 404 || error.type === "document_not_found";
+        return error.type === "document_not_found";
     }
 
     if (typeof error === "object" && error !== null) {
         const candidate = error as { code?: unknown; type?: unknown };
-        return candidate.code === 404 || candidate.type === "document_not_found";
+        return candidate.type === "document_not_found";
     }
 
     return false;

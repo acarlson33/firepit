@@ -207,8 +207,9 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       }
       return server;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create server");
-      throw err;
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast.error(error.message);
+      throw error;
     }
   }
 
@@ -248,8 +249,9 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
       apiCache.clear(`memberships:${uid}`);
       return membership;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to join server");
-      throw err;
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast.error(error.message);
+      throw error;
     }
   }
 
@@ -282,8 +284,9 @@ export function useServers({ userId, membershipEnabled }: UseServersOptions) {
         apiCache.clear(`memberships:${userId}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete server");
-      throw err;
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast.error(error.message);
+      throw error;
     }
   }
 

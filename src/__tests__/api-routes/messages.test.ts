@@ -417,6 +417,29 @@ describe("Messages API Routes", () => {
             expect(data.error).toBe("You can only edit your own messages");
             expect(mockUpdateDocument).not.toHaveBeenCalled();
         });
+
+        it("should return 404 when editing a missing message", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockGetDocument.mockResolvedValue(null);
+
+            const request = new NextRequest(
+                "http://localhost/api/messages?id=missing-msg",
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({ text: "Updated" }),
+                },
+            );
+
+            const response = await PATCH(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data).toEqual({ error: "Message not found" });
+            expect(mockUpdateDocument).not.toHaveBeenCalled();
+        });
     });
 
     describe("DELETE /api/messages", () => {
@@ -443,6 +466,28 @@ describe("Messages API Routes", () => {
 
             expect(response.status).toBe(403);
             expect(data.error).toBe("You can only delete your own messages");
+            expect(mockDeleteDocument).not.toHaveBeenCalled();
+        });
+
+        it("should return 404 when deleting a missing message", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockGetDocument.mockResolvedValue(null);
+
+            const request = new NextRequest(
+                "http://localhost/api/messages?id=missing-msg",
+                {
+                    method: "DELETE",
+                },
+            );
+
+            const response = await DELETE(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data).toEqual({ error: "Message not found" });
             expect(mockDeleteDocument).not.toHaveBeenCalled();
         });
     });

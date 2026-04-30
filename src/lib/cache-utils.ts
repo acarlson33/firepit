@@ -68,12 +68,15 @@ class SimpleCache {
         };
     }
 
-    private isSnapshotCurrent(key: string, snapshot: RequestSnapshot): boolean {
-        if (snapshot.clearEpoch !== this.clearEpoch) {
+    private isSnapshotCurrent(
+        currentSnapshot: RequestSnapshot,
+        snapshot: RequestSnapshot,
+    ): boolean {
+        if (currentSnapshot.clearEpoch !== snapshot.clearEpoch) {
             return false;
         }
 
-        return this.capturePrefixTokensForKey(key).token === snapshot.token;
+        return currentSnapshot.token === snapshot.token;
     }
 
     /**
@@ -97,11 +100,7 @@ class SimpleCache {
     /**
      * Set data in cache with TTL (in milliseconds)
      */
-    set<T>(key: string, data: T, ttl: number, snapshot?: RequestSnapshot): void {
-        if (snapshot && !this.isSnapshotCurrent(key, snapshot)) {
-            return;
-        }
-
+    set<T>(key: string, data: T, ttl: number): void {
         this.cache.set(key, {
             data,
             timestamp: Date.now(),
@@ -174,8 +173,14 @@ class SimpleCache {
         const requestPrefixTokens = this.capturePrefixTokensForKey(key);
         const promise = fetcher()
             .then((data) => {
-                if (this.isSnapshotCurrent(key, requestPrefixTokens)) {
-                    this.set(key, data, ttl, requestPrefixTokens);
+                const currentPrefixTokens = this.capturePrefixTokensForKey(key);
+                if (
+                    this.isSnapshotCurrent(
+                        currentPrefixTokens,
+                        requestPrefixTokens,
+                    )
+                ) {
+                    this.set(key, data, ttl);
                 }
                 this.pendingRequests.delete(key);
                 return data;
@@ -232,8 +237,14 @@ class SimpleCache {
                     // Execute background refresh
                     const promise = fetcher()
                         .then((data) => {
-                            if (this.isSnapshotCurrent(key, requestPrefixTokens)) {
-                                this.set(key, data, ttl, requestPrefixTokens);
+                            const currentPrefixTokens = this.capturePrefixTokensForKey(key);
+                            if (
+                                this.isSnapshotCurrent(
+                                    currentPrefixTokens,
+                                    requestPrefixTokens,
+                                )
+                            ) {
+                                this.set(key, data, ttl);
                             }
                             this.pendingRequests.delete(key);
                             if (onUpdate) {

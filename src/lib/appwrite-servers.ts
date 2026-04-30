@@ -483,24 +483,49 @@ export async function deleteChannel(channelId: string) {
  * @returns {Promise<void>} The return value.
  */
 export async function deleteServer(serverId: string) {
-    // Best effort delete channels first
-    try {
-        const chans = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: CHANNELS_COLLECTION_ID,
-            queries: [
-                Query.equal("serverId", serverId),
-                Query.limit(MAX_LIST_LIMIT),
-            ],
-        });
-        for (const c of chans.documents) {
-            const id = String((c as unknown as Record<string, unknown>).$id);
+    const channelIds: string[] = [];
+    let offset = 0;
 
-            await deleteChannel(id);
+    while (true) {
+        try {
+            const chans = await getDatabases().listDocuments({
+                databaseId: DATABASE_ID,
+                collectionId: CHANNELS_COLLECTION_ID,
+                queries: [
+                    Query.equal("serverId", serverId),
+                    Query.limit(MAX_LIST_LIMIT),
+                    Query.offset(offset),
+                ],
+            });
+
+            if (chans.documents.length === 0) {
+                break;
+            }
+
+            channelIds.push(
+                ...chans.documents.map((channel) =>
+                    String((channel as unknown as Record<string, unknown>).$id),
+                ),
+            );
+
+            if (chans.documents.length < MAX_LIST_LIMIT) {
+                break;
+            }
+
+            offset += MAX_LIST_LIMIT;
+        } catch {
+            break;
         }
-    } catch {
-        // ignore
     }
+
+    for (const channelId of channelIds) {
+        try {
+            await deleteChannel(channelId);
+        } catch {
+            // ignore individual channel cleanup failures
+        }
+    }
+
     await getDatabases().deleteDocument({
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,

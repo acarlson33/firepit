@@ -269,7 +269,7 @@ describe("Login Security", () => {
                     deleteSession: vi.fn().mockResolvedValue({}),
                 }) as never,
         );
-        vi.mocked(Users).mockImplementation(
+        vi.mocked(Users).mockImplementationOnce(
             () =>
                 ({
                     get: vi.fn().mockResolvedValue({

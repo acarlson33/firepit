@@ -130,7 +130,7 @@ async function captureUnhandledServerError(params: {
             origin,
             ...toErrorMetadata(error),
         });
-        await client.flush();
+        await waitWithTimeout(client.flush(), 1500);
     } catch {
         // Telemetry forwarding should never impact process-level handlers.
     }

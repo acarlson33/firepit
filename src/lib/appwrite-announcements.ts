@@ -32,6 +32,9 @@ type DeliveryOutcome =
     | {
           outcome: "deferred_retry";
       }
+        | {
+                    outcome: "terminal_failure";
+            }
     | {
           outcome: "delivered";
       }
@@ -874,6 +877,13 @@ async function dispatchToRecipient(params: {
 
     if (
         existingDelivery?.status === "failed" &&
+        !existingDelivery.nextAttemptAt
+    ) {
+        return { outcome: "terminal_failure" };
+    }
+
+    if (
+        existingDelivery?.status === "failed" &&
         existingDelivery.nextAttemptAt &&
         Date.parse(existingDelivery.nextAttemptAt) > Date.now()
     ) {
@@ -882,35 +892,20 @@ async function dispatchToRecipient(params: {
 
     const attemptCount = (existingDelivery?.attemptCount ?? 0) + 1;
 
+    let conversationId: string;
+    let messageId: string;
+
     try {
-        const conversationId = await ensureAnnouncementThreadConversation({
+        conversationId = await ensureAnnouncementThreadConversation({
             recipientUserId,
             systemSenderUserId,
         });
-        const messageId = await sendSystemAnnouncementMessage({
+        messageId = await sendSystemAnnouncementMessage({
             announcement,
             conversationId,
             recipientUserId,
             systemSenderUserId,
         });
-
-        await upsertDeliveryRecord({
-            announcementId: announcement.$id,
-            delivery: {
-                attemptCount,
-                conversationId,
-                deliveredAt: new Date().toISOString(),
-                failureReason: undefined,
-                failedAt: undefined,
-                messageId,
-                nextAttemptAt: undefined,
-                status: "delivered",
-            },
-            existing: existingDelivery,
-            recipientUserId,
-        });
-
-        return { outcome: "delivered" };
     } catch (error) {
         const exhaustedAttempts = attemptCount >= MAX_DELIVERY_ATTEMPTS;
 
@@ -939,6 +934,24 @@ async function dispatchToRecipient(params: {
 
         return { outcome: "failed" };
     }
+
+    await upsertDeliveryRecord({
+        announcementId: announcement.$id,
+        delivery: {
+            attemptCount,
+            conversationId,
+            deliveredAt: new Date().toISOString(),
+            failureReason: undefined,
+            failedAt: undefined,
+            messageId,
+            nextAttemptAt: undefined,
+            status: "delivered",
+        },
+        existing: existingDelivery,
+        recipientUserId,
+    });
+
+    return { outcome: "delivered" };
 }
 
 async function runWithConcurrency<T>(params: {
@@ -1058,6 +1071,7 @@ async function dispatchOneAnnouncement(params: {
     databaseId: string;
     dispatchAttempts: number;
     dispatchRunId: string;
+    recipientIds: string[];
     systemSenderUserId: string;
 }): Promise<DispatchOneResult> {
     const {
@@ -1066,6 +1080,7 @@ async function dispatchOneAnnouncement(params: {
         databaseId,
         dispatchAttempts,
         dispatchRunId,
+        recipientIds,
         systemSenderUserId,
     } = params;
 
@@ -1094,8 +1109,6 @@ async function dispatchOneAnnouncement(params: {
         if (claimedAnnouncement.leaseRunId !== dispatchRunId) {
             return { dispatched: false };
         }
-
-        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
 
         await runWithConcurrency({
             items: recipientIds,
@@ -1220,6 +1233,7 @@ export async function dispatchScheduledAnnouncements(
     const now = new Date().toISOString();
     const clampedLimit = Math.max(1, Math.min(limit, 100));
     const dispatchRunId = randomUUID();
+    const recipientIds = await listAllProfileUserIds(systemSenderUserId);
 
     const due = await databases.listDocuments(
         databaseId,
@@ -1251,6 +1265,7 @@ export async function dispatchScheduledAnnouncements(
             databaseId,
             dispatchAttempts,
             dispatchRunId,
+            recipientIds,
             systemSenderUserId,
         });
 
@@ -1298,12 +1313,14 @@ export async function dispatchAnnouncementById(
         typeof announcementRecord.dispatchAttempts === "number"
             ? announcementRecord.dispatchAttempts
             : 0;
+    const recipientIds = await listAllProfileUserIds(systemSenderUserId);
     return dispatchOneAnnouncement({
         announcement,
         databases,
         databaseId,
         dispatchAttempts,
         dispatchRunId,
+        recipientIds,
         systemSenderUserId,
     });
 }

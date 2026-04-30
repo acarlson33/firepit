@@ -110,18 +110,12 @@ describe("posthog-server", () => {
                 expect.objectContaining({ origin: "unhandled_rejection" }),
             );
             expect(setImmediateSpy).toHaveBeenCalled();
-            expect(processOnceSpy).toHaveBeenCalledWith(
-                "beforeExit",
-                expect.any(Function),
-            );
-            expect(processOnceSpy).toHaveBeenCalledWith(
-                "SIGINT",
-                expect.any(Function),
-            );
-            expect(processOnceSpy).toHaveBeenCalledWith(
-                "SIGTERM",
-                expect.any(Function),
-            );
+
+            const onceCalls = processOnceSpy.mock.calls.map((call) => call[0]);
+            expect(onceCalls).toHaveLength(3);
+            expect(onceCalls.filter((event) => event === "beforeExit")).toHaveLength(1);
+            expect(onceCalls.filter((event) => event === "SIGINT")).toHaveLength(1);
+            expect(onceCalls.filter((event) => event === "SIGTERM")).toHaveLength(1);
 
             const unhandledRejectionListenerCount = firstPassCalls.filter(
                 (call) => call[0] === "unhandledRejection",
