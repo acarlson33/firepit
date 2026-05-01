@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { ImageWithSkeleton } from "@/components/image-with-skeleton";

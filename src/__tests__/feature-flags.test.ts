@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 
 import { clearFeatureFlagsCache, FEATURE_FLAGS } from "../lib/feature-flags";
 
@@ -26,10 +26,12 @@ describe("Feature Flags", () => {
             );
         });
 
-        it.each(requiredFlagKeys)("should define %s as a string", (key) => {
-            expect(FEATURE_FLAGS[key]).toBeDefined();
-            expect(typeof FEATURE_FLAGS[key]).toBe("string");
-        });
+        for (const key of requiredFlagKeys) {
+            it(`should define ${key} as a string`, () => {
+                expect(FEATURE_FLAGS[key]).toBeDefined();
+                expect(typeof FEATURE_FLAGS[key]).toBe("string");
+            });
+        }
     });
 
     describe("clearFeatureFlagsCache", () => {

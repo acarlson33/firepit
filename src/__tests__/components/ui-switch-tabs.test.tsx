@@ -1,6 +1,7 @@
 /**
  * Tests for Switch and Tabs UI components
  */
+/// <reference lib="dom" />
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Switch } from "@/components/ui/switch";

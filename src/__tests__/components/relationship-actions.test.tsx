@@ -1,7 +1,9 @@
+/// <reference lib="dom" />
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { RelationshipActions } from "@/components/relationship-actions";
+import { RelationshipActions } from "../../components/relationship-actions";
 
 const { mockUseRelationship, mockToastSuccess } = vi.hoisted(() => ({
     mockUseRelationship: vi.fn(),

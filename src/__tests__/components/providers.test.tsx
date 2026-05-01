@@ -1,9 +1,11 @@
 /**
  * Tests for Providers component
  */
+/// <reference lib="dom" />
+
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import Providers from "@/components/providers";
+import Providers from "../../components/providers";
 
 // Mock the AuthProvider context
 vi.mock("@/contexts/auth-context", () => ({

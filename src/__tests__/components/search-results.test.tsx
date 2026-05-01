@@ -1,8 +1,10 @@
+/// <reference lib="dom" />
+
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SearchResults } from "../../components/search-results";
-import type { Message, DirectMessage } from "@/lib/types";
+import type { Message, DirectMessage } from "../../lib/types";
 
 // Mock date-fns
 vi.mock("date-fns", () => ({

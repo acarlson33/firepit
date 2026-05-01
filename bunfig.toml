@@ -1,2 +1,8 @@
 [install]
 linker = "isolated"
+
+[test]
+root="src/__tests__/"
+preload="./src/__tests__/setup.ts"
+pathIgnorePatterns="src/__tests__/__helpers__/**"
+timeout=10000

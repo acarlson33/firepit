@@ -21,6 +21,7 @@ export default defineConfig({
         "**/__tests__/setup.ts",
       ],
     },
+    maxWorkers: 10,
   },
   resolve: {
     alias: {
