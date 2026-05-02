@@ -106,22 +106,18 @@ function buildVerificationRequiredResult(options?: {
     };
 }
 
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const PHONE_PATTERN = /\b\+?\d[\d\s().-]{7,}\d\b/g;
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const IDENTIFIER_LABEL_PATTERN = /\b(userId|user_id|accountId|profileId|sessionId|documentId|channelId|serverId|conversationId|messageId|email|phone|phoneNumber)\s*[:=]\s*(['"]?)([^,;\s"')]+)\2/gi;
+
 function redactAuthErrorText(value: string): string {
-    const redactedEmails = value.replace(
-        /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
-        "[REDACTED_EMAIL]",
-    );
-    const redactedPhones = redactedEmails.replace(
-        /\b\+?\d[\d\s().-]{7,}\d\b/g,
-        "[REDACTED_PHONE]",
-    );
-    const redactedIds = redactedPhones.replace(
-        /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
-        "[REDACTED_ID]",
-    );
+    const redactedEmails = value.replace(EMAIL_PATTERN, "[REDACTED_EMAIL]");
+    const redactedPhones = redactedEmails.replace(PHONE_PATTERN, "[REDACTED_PHONE]");
+    const redactedIds = redactedPhones.replace(UUID_PATTERN, "[REDACTED_ID]");
 
     return redactedIds.replace(
-        /\b(userId|user_id|accountId|profileId|sessionId|documentId|channelId|serverId|conversationId|messageId|email|phone|phoneNumber)\s*[:=]\s*(['"]?)([^,;\s"')]+)\2/gi,
+        IDENTIFIER_LABEL_PATTERN,
         (_match, label) => `${label}=[REDACTED_IDENTIFIER]`,
     );
 }

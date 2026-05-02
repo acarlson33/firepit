@@ -188,7 +188,7 @@ describe("createServer fallback branches", () => {
         const { deleteServer } = await import("../lib/appwrite-servers");
         await expect(deleteServer("s1")).rejects.toThrow("list err");
         expect(deleted).toHaveLength(500);
-        expect(deleted[0]).toBe("c1");
+        expect(deleted.at(0)).toBe("c1");
         expect(deleted.at(-1)).toBe("c500");
     });
     it("listChannelsPage paginates and nextCursor logic works", async () => {

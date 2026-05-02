@@ -60,6 +60,20 @@ const { GET } = await import("../../app/api/gifs/search/route");
 describe("GIF search API route", () => {
     let mockFetch: ReturnType<typeof vi.fn>;
 
+    const extractFetchUrl = (mockFn: ReturnType<typeof vi.fn>) => {
+        const raw = mockFn.mock.calls.at(0)?.at(0);
+
+        if (raw instanceof URL) {
+            return raw;
+        }
+
+        if (typeof raw === "string") {
+            return new URL(raw);
+        }
+
+        throw new Error("Expected the first fetch call to receive a URL or string");
+    };
+
     beforeEach(() => {
         vi.clearAllMocks();
         mockFetch = vi.fn();
@@ -188,8 +202,7 @@ describe("GIF search API route", () => {
         expect(data.items[0].id).toBe("gif-1");
         expect(data.items[0].source).toBe("giphy");
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const raw = mockFetch.mock.calls[0]?.[0];
-        const request = typeof raw === "string" ? new URL(raw) : (raw as URL);
+        const request = extractFetchUrl(mockFetch);
         expect(request.toString()).toContain("api.giphy.com/v1/gifs/search");
         expect(request.searchParams.get("api_key")).toBe("giphy-key");
         expect(request.searchParams.get("q")).toBe("wave");
@@ -253,8 +266,7 @@ describe("GIF search API route", () => {
         expect(data.items).toHaveLength(1);
         expect(data.items[0].source).toBe("tenor");
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const raw = mockFetch.mock.calls[0]?.[0];
-        const request = typeof raw === "string" ? new URL(raw) : (raw as URL);
+        const request = extractFetchUrl(mockFetch);
         expect(request.toString()).toContain("tenor.googleapis.com/v2/search");
         expect(request.searchParams.get("key")).toBe("tenor-key");
         expect(request.searchParams.get("client_key")).toBe("client-key");

@@ -52,7 +52,6 @@ describe("useFriends", () => {
 
     afterEach(() => {
         global.fetch = originalFetch;
-        vi.clearAllMocks();
     });
 
     it("loads friend lists for the current user", async () => {

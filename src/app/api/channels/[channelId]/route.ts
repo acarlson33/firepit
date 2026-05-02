@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { Models } from "appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -10,6 +11,8 @@ import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 import type { Channel } from "@/lib/types";
 
+type ChannelDocument = Models.Document & Channel;
+
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
@@ -17,6 +20,19 @@ type ChannelType = (typeof CHANNEL_TYPES)[number];
 
 function getDatabases() {
     return getServerClient().databases;
+}
+
+function isChannel(value: unknown): value is Channel {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as Partial<Channel>;
+    return (
+        typeof candidate.serverId === "string" &&
+        typeof candidate.name === "string" &&
+        typeof candidate.$id === "string"
+    );
 }
 
 async function requireManageChannelsAccess(channelId: string) {
@@ -31,11 +47,17 @@ async function requireManageChannelsAccess(channelId: string) {
 
     let channel: Channel;
     try {
-        channel = (await databases.getDocument(
+        const fetchedChannel = await databases.getDocument<ChannelDocument>(
             databaseId,
             env.collections.channels,
             channelId,
-        )) as unknown as Channel;
+        );
+
+        if (!isChannel(fetchedChannel)) {
+            throw new Error("Invalid channel document");
+        }
+
+        channel = fetchedChannel;
     } catch (error) {
         if (isDocumentNotFoundError(error)) {
             return NextResponse.json(

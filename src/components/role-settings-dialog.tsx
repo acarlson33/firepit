@@ -127,7 +127,7 @@ export function RoleSettingsDialog({
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-175">
+                <DialogContent className="max-h-[90vh] overflow-x-hidden overflow-y-auto sm:max-w-175">
                     <DialogHeader>
                         <DialogTitle>Role Settings - {serverName}</DialogTitle>
                         <DialogDescription>
@@ -137,14 +137,14 @@ export function RoleSettingsDialog({
                     </DialogHeader>
 
                     <div className="py-4">
-                        <Tabs className="space-y-4" defaultValue="roles">
+                        <Tabs className="min-w-0 space-y-4 overflow-x-hidden" defaultValue="roles">
                             <TabsList className="grid w-full grid-cols-2 rounded-2xl">
                                 <TabsTrigger value="roles">Roles</TabsTrigger>
                                 <TabsTrigger value="categories">
                                     Categories
                                 </TabsTrigger>
                             </TabsList>
-                            <TabsContent className="space-y-4" value="roles">
+                            <TabsContent className="min-w-0 space-y-4 overflow-x-hidden" value="roles">
                                 {loading ? (
                                     <p className="py-8 text-center text-sm text-muted-foreground">
                                         Loading roles...
@@ -161,7 +161,7 @@ export function RoleSettingsDialog({
                                 )}
                             </TabsContent>
                             <TabsContent
-                                className="space-y-4"
+                                className="min-w-0 space-y-4 overflow-x-hidden"
                                 value="categories"
                             >
                                 <CategorySettingsPanel

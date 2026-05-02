@@ -52,7 +52,7 @@ export default function RootLayout({
                 <link rel="dns-prefetch" href="https://nyc.cloud.appwrite.io" />
             </head>
             <body
-                className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+                className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden antialiased bg-background text-foreground`}
             >
                 <ServiceWorkerRegistration />
                 <Providers>

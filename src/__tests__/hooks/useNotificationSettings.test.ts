@@ -7,9 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NotificationSettings } from "../../lib/types";
 import { useNotificationSettings } from "../../hooks/useNotificationSettings";
 
-function createMockSettings(
+const createMockSettings = (
     overrides: Partial<NotificationSettings> = {},
-): NotificationSettings {
+): NotificationSettings => {
     return {
         $id: "settings-1",
         channelOverrides: {},
@@ -23,7 +23,7 @@ function createMockSettings(
         userId: "user-1",
         ...overrides,
     };
-}
+};
 
 describe("useNotificationSettings", () => {
     beforeEach(() => {

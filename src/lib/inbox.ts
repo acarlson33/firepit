@@ -364,12 +364,7 @@ async function callListDocumentsLocal(params: {
     try {
         return await databases.listDocuments(databaseId, collectionId, queries);
     } catch (error) {
-        const message =
-            error instanceof Error
-                ? error.message.toLowerCase()
-                : typeof error === "string"
-                  ? error.toLowerCase()
-                  : "";
+        const message = getErrorMessage(error);
         const signatureMismatchPhrases = [
             "invalid argument",
             "invalid arguments",
@@ -389,6 +384,18 @@ async function callListDocumentsLocal(params: {
             queries,
         });
     }
+}
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message.toLowerCase();
+    }
+
+    if (typeof error === "string") {
+        return error.toLowerCase();
+    }
+
+    return "";
 }
 
 async function listDocumentsByIds(params: {
