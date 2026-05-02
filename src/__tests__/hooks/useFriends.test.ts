@@ -4,7 +4,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockAuthState, mockUseAuth } = vi.hoisted(() => ({
     mockAuthState: {
@@ -33,8 +33,12 @@ function createWrapper(queryClient: QueryClient) {
 }
 
 describe("useFriends", () => {
+    let originalFetch: typeof global.fetch;
+    let mockedFetch: ReturnType<typeof vi.fn>;
+
     beforeEach(() => {
         vi.clearAllMocks();
+        originalFetch = global.fetch;
         mockAuthState.userData = {
             email: "test@example.com",
             name: "Test User",
@@ -42,11 +46,17 @@ describe("useFriends", () => {
             userId: "user-1",
         };
         mockUseAuth.mockReturnValue(mockAuthState);
-        global.fetch = vi.fn();
+        mockedFetch = vi.fn();
+        global.fetch = mockedFetch as typeof global.fetch;
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
+        vi.clearAllMocks();
     });
 
     it("loads friend lists for the current user", async () => {
-        (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        mockedFetch.mockResolvedValueOnce({
             ok: true,
             json: async () => ({
                 friends: [
@@ -96,7 +106,7 @@ describe("useFriends", () => {
     });
 
     it("invalidates the cached list after accepting a request", async () => {
-        (global.fetch as ReturnType<typeof vi.fn>)
+        mockedFetch
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({ friends: [], incoming: [], outgoing: [] }),
@@ -132,7 +142,7 @@ describe("useFriends", () => {
     });
 
     it("surfaces friend action failures", async () => {
-        (global.fetch as ReturnType<typeof vi.fn>)
+        mockedFetch
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({ friends: [], incoming: [], outgoing: [] }),

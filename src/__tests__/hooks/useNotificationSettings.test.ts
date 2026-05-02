@@ -4,7 +4,26 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { NotificationSettings } from "../../lib/types";
 import { useNotificationSettings } from "../../hooks/useNotificationSettings";
+
+function createMockSettings(
+    overrides: Partial<NotificationSettings> = {},
+): NotificationSettings {
+    return {
+        $id: "settings-1",
+        channelOverrides: {},
+        conversationOverrides: {},
+        desktopNotifications: true,
+        directMessagePrivacy: "everyone",
+        globalNotifications: "all",
+        notificationSound: true,
+        pushNotifications: true,
+        serverOverrides: {},
+        userId: "user-1",
+        ...overrides,
+    };
+}
 
 describe("useNotificationSettings", () => {
     beforeEach(() => {
@@ -15,20 +34,7 @@ describe("useNotificationSettings", () => {
     it("loads settings on mount", async () => {
         (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
             ok: true,
-            json: async () => ({
-                $id: "settings-1",
-                channelOverrides: {},
-                conversationOverrides: {},
-                desktopNotifications: true,
-                directMessagePrivacy: "everyone",
-                globalNotifications: "all",
-                notificationSound: true,
-                pushNotifications: true,
-                quietHoursEnd: null,
-                quietHoursStart: null,
-                serverOverrides: {},
-                userId: "user-1",
-            }),
+            json: async () => createMockSettings(),
         });
 
         const { result } = renderHook(() => useNotificationSettings());
@@ -45,37 +51,15 @@ describe("useNotificationSettings", () => {
         (global.fetch as ReturnType<typeof vi.fn>)
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({
-                    $id: "settings-1",
-                    channelOverrides: {},
-                    conversationOverrides: {},
-                    desktopNotifications: true,
-                    directMessagePrivacy: "everyone",
-                    globalNotifications: "all",
-                    notificationSound: true,
-                    pushNotifications: true,
-                    quietHoursEnd: null,
-                    quietHoursStart: null,
-                    serverOverrides: {},
-                    userId: "user-1",
-                }),
+                json: async () => createMockSettings(),
             })
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({
-                    $id: "settings-1",
-                    channelOverrides: {},
-                    conversationOverrides: {},
-                    desktopNotifications: false,
-                    directMessagePrivacy: "everyone",
-                    globalNotifications: "mentions",
-                    notificationSound: true,
-                    pushNotifications: true,
-                    quietHoursEnd: null,
-                    quietHoursStart: null,
-                    serverOverrides: {},
-                    userId: "user-1",
-                }),
+                json: async () =>
+                    createMockSettings({
+                        desktopNotifications: false,
+                        globalNotifications: "mentions",
+                    }),
             });
 
         const { result } = renderHook(() => useNotificationSettings());
@@ -112,58 +96,25 @@ describe("useNotificationSettings", () => {
         (global.fetch as ReturnType<typeof vi.fn>)
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({
-                    $id: "settings-1",
-                    channelOverrides: {},
-                    conversationOverrides: {},
-                    desktopNotifications: true,
-                    directMessagePrivacy: "everyone",
-                    globalNotifications: "all",
-                    notificationSound: true,
-                    pushNotifications: true,
-                    quietHoursEnd: null,
-                    quietHoursStart: null,
-                    serverOverrides: {},
-                    userId: "user-1",
-                }),
+                json: async () => createMockSettings(),
             })
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({
-                    $id: "settings-1",
-                    channelOverrides: {
-                        "channel-1": { level: "nothing" },
-                    },
-                    conversationOverrides: {},
-                    desktopNotifications: true,
-                    directMessagePrivacy: "everyone",
-                    globalNotifications: "all",
-                    notificationSound: true,
-                    pushNotifications: true,
-                    quietHoursEnd: null,
-                    quietHoursStart: null,
-                    serverOverrides: {},
-                    userId: "user-1",
-                }),
+                json: async () =>
+                    createMockSettings({
+                        channelOverrides: {
+                            "channel-1": { level: "nothing" },
+                        },
+                    }),
             })
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({
-                    $id: "settings-1",
-                    channelOverrides: {
-                        "channel-1": { level: "nothing" },
-                    },
-                    conversationOverrides: {},
-                    desktopNotifications: true,
-                    directMessagePrivacy: "everyone",
-                    globalNotifications: "all",
-                    notificationSound: true,
-                    pushNotifications: true,
-                    quietHoursEnd: null,
-                    quietHoursStart: null,
-                    serverOverrides: {},
-                    userId: "user-1",
-                }),
+                json: async () =>
+                    createMockSettings({
+                        channelOverrides: {
+                            "channel-1": { level: "nothing" },
+                        },
+                    }),
             });
 
         const { result } = renderHook(() => useNotificationSettings());

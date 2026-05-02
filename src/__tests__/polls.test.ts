@@ -1,11 +1,11 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 import {
     buildMessagePoll,
     isPollCommand,
     parsePollCommand,
     parsePollOptions,
-} from "@/lib/polls";
+} from "../lib/polls";
 
 describe("poll helpers", () => {
     it("parses valid poll slash command", () => {

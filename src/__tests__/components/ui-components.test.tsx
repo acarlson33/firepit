@@ -2,8 +2,6 @@
  * Tests for UI components
  * Target coverage: badge, label, textarea, sonner, avatar
  */
-/// <reference lib="dom" />
-
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Badge } from "../../components/ui/badge";

@@ -1,9 +1,7 @@
-/// <reference lib="dom" />
-
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { NewConversationDialog } from "@/app/chat/components/NewConversationDialog";
+import { NewConversationDialog } from "../../app/chat/components/NewConversationDialog";
 
 const mockSendFriendRequest = vi.fn();
 const mockAcceptFriendRequest = vi.fn();

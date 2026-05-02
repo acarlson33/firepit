@@ -1,10 +1,8 @@
-/// <reference lib="dom" />
-
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
-import { DirectMessageView } from "@/app/chat/components/DirectMessageView";
+import { DirectMessageView } from "../../app/chat/components/DirectMessageView";
 
 vi.mock("@/components/image-viewer", () => ({
     ImageViewer: () => null,
@@ -87,7 +85,6 @@ describe("DirectMessageView", () => {
                 currentUserId="current-user"
                 loading={false}
                 messages={[]}
-                surfaceMessages={[]}
                 onDelete={vi.fn()}
                 onEdit={vi.fn()}
                 onSend={vi.fn()}

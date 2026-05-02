@@ -135,6 +135,7 @@ describe("announcements API routes", () => {
         expect(mockCreateAnnouncement).not.toHaveBeenCalled();
     });
 
+    // `mockCreateAnnouncement` is expected to receive the raw POST payload here; whitespace is preserved by design for `body`, `title`, and `idempotencyKey`.
     it("creates announcements with validated fields", async () => {
         mockCreateAnnouncement.mockResolvedValue({
             $id: "ann-1",

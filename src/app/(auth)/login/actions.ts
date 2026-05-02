@@ -106,19 +106,41 @@ function buildVerificationRequiredResult(options?: {
     };
 }
 
+function redactAuthErrorText(value: string): string {
+    const redactedEmails = value.replace(
+        /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+        "[REDACTED_EMAIL]",
+    );
+    const redactedPhones = redactedEmails.replace(
+        /\b\+?\d[\d\s().-]{7,}\d\b/g,
+        "[REDACTED_PHONE]",
+    );
+    const redactedIds = redactedPhones.replace(
+        /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
+        "[REDACTED_ID]",
+    );
+
+    return redactedIds.replace(
+        /\b(userId|user_id|accountId|profileId|sessionId|documentId|channelId|serverId|conversationId|messageId|email|phone|phoneNumber)\s*[:=]\s*(['"]?)([^,;\s"')]+)\2/gi,
+        (_match, label) => `${label}=[REDACTED_IDENTIFIER]`,
+    );
+}
+
 function sanitizeAuthError(
     error: unknown,
 ): string | { message: string; name?: string; stack?: string } {
     if (error instanceof Error) {
         return {
-            message: error.message,
+            message: redactAuthErrorText(error.message),
             name: error.name,
-            stack: error.stack?.slice(0, 2_000),
+            stack: error.stack
+                ? redactAuthErrorText(error.stack.slice(0, 2_000))
+                : undefined,
         };
     }
 
     if (typeof error === "string") {
-        return error;
+        return redactAuthErrorText(error);
     }
 
     return "[non-serializable error]";

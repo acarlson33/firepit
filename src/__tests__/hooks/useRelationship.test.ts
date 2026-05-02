@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockAuthState, mockUseAuth } = vi.hoisted(() => ({
     mockAuthState: {
@@ -34,7 +34,11 @@ describe("useRelationship", () => {
             userId: "user-1",
         };
         mockUseAuth.mockReturnValue(mockAuthState);
-        global.fetch = vi.fn();
+        vi.stubGlobal("fetch", vi.fn());
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it("skips loading when target user is missing", () => {

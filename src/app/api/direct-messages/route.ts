@@ -1636,7 +1636,7 @@ export async function POST(request: NextRequest) {
                 senderProfilePublicKey.length > 0 &&
                 receiverProfilePublicKey.length > 0;
 
-            if (requiresEncryptedText && !hasEncryptedText) {
+            if (requiresEncryptedText && hasPlaintextText && !hasEncryptedText) {
                 return jsonResponse(
                     {
                         error:

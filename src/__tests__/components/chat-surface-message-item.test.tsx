@@ -1,10 +1,8 @@
-/// <reference lib="dom" />
-
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ChatSurfaceMessageItem } from "@/components/chat-surface-message-item";
-import type { ChatSurfaceMessage } from "@/lib/chat-surface";
+import { ChatSurfaceMessageItem } from "../../components/chat-surface-message-item";
+import type { ChatSurfaceMessage } from "../../lib/chat-surface";
 
 vi.mock("@/components/file-attachment-display", () => ({
     FileAttachmentDisplay: () => null,

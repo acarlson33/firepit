@@ -138,6 +138,7 @@ describe("GIF search API route", () => {
         expect(response.headers.get("retry-after")).toBe("45");
         expect(data.error).toBe("Too many GIF searches. Please try again shortly.");
         expect(mockFetch).not.toHaveBeenCalled();
+        // `GET` returns before `mockTrackApiCall` on rate-limited requests, so analytics are intentionally skipped for this `NextRequest`.
     });
 
     it("searches Giphy and normalizes the results", async () => {
@@ -187,7 +188,8 @@ describe("GIF search API route", () => {
         expect(data.items[0].id).toBe("gif-1");
         expect(data.items[0].source).toBe("giphy");
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const request = mockFetch.mock.calls[0]?.[0] as URL;
+        const raw = mockFetch.mock.calls[0]?.[0];
+        const request = typeof raw === "string" ? new URL(raw) : (raw as URL);
         expect(request.toString()).toContain("api.giphy.com/v1/gifs/search");
         expect(request.searchParams.get("api_key")).toBe("giphy-key");
         expect(request.searchParams.get("q")).toBe("wave");
@@ -251,7 +253,8 @@ describe("GIF search API route", () => {
         expect(data.items).toHaveLength(1);
         expect(data.items[0].source).toBe("tenor");
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        const request = mockFetch.mock.calls[0]?.[0] as URL;
+        const raw = mockFetch.mock.calls[0]?.[0];
+        const request = typeof raw === "string" ? new URL(raw) : (raw as URL);
         expect(request.toString()).toContain("tenor.googleapis.com/v2/search");
         expect(request.searchParams.get("key")).toBe("tenor-key");
         expect(request.searchParams.get("client_key")).toBe("client-key");

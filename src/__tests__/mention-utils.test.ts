@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import {
 	parseMentions,
 	extractMentionedUsernames,
@@ -6,7 +6,7 @@ import {
 	getMentionAtCursor,
 	replaceMentionAtCursor,
 	MENTION_REGEX,
-} from "@/lib/mention-utils";
+} from "../lib/mention-utils";
 
 describe("Mention Utils", () => {
 	describe("MENTION_REGEX", () => {

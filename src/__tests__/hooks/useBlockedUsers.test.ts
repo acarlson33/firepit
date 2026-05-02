@@ -74,9 +74,12 @@ describe("useBlockedUsers", () => {
             expect(result.current.loading).toBe(false);
         });
 
+        let unblocked = false;
         await act(async () => {
-            expect(await result.current.unblock("user-2")).toBe(true);
+            unblocked = await result.current.unblock("user-2");
         });
+
+        expect(unblocked).toBe(true);
 
         expect(global.fetch).toHaveBeenNthCalledWith(2, "/api/users/user-2/block", {
             method: "DELETE",

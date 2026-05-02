@@ -75,7 +75,7 @@ describe("useNotifications", () => {
     });
 
     it("returns denied when notifications are unavailable", async () => {
-        vi.unstubAllGlobals();
+        Reflect.deleteProperty(globalThis, "Notification");
 
         const { result } = renderHook(() =>
             useNotifications({ userId: "user-1" }),

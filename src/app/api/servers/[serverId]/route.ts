@@ -366,14 +366,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                     return [];
                 }
 
-                const serverId = defaultServersToClear[index].$id;
+                const restoredServerId = defaultServersToClear[index].$id;
                 return [
                     {
-                        serverId,
+                        serverId: restoredServerId,
                         promise: databases.updateDocument(
                             env.databaseId,
                             env.collections.servers,
-                            serverId,
+                            restoredServerId,
                             { defaultOnSignup: true },
                         ),
                     },

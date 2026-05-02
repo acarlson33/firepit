@@ -69,14 +69,14 @@ class SimpleCache {
     }
 
     private isSnapshotCurrent(
-        currentSnapshot: RequestSnapshot,
-        snapshot: RequestSnapshot,
+        requestSnapshot: RequestSnapshot,
+        latestSnapshot: RequestSnapshot,
     ): boolean {
-        if (currentSnapshot.clearEpoch !== snapshot.clearEpoch) {
+        if (requestSnapshot.clearEpoch !== latestSnapshot.clearEpoch) {
             return false;
         }
 
-        return currentSnapshot.token === snapshot.token;
+        return requestSnapshot.token === latestSnapshot.token;
     }
 
     /**
@@ -176,8 +176,8 @@ class SimpleCache {
                 const currentPrefixTokens = this.capturePrefixTokensForKey(key);
                 if (
                     this.isSnapshotCurrent(
-                        currentPrefixTokens,
                         requestPrefixTokens,
+                        currentPrefixTokens,
                     )
                 ) {
                     this.set(key, data, ttl);
@@ -240,8 +240,8 @@ class SimpleCache {
                             const currentPrefixTokens = this.capturePrefixTokensForKey(key);
                             if (
                                 this.isSnapshotCurrent(
-                                    currentPrefixTokens,
                                     requestPrefixTokens,
+                                    currentPrefixTokens,
                                 )
                             ) {
                                 this.set(key, data, ttl);

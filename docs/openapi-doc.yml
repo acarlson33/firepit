@@ -2948,6 +2948,7 @@ paths:
                                               type: boolean
                                       required:
                                           - assignments
+                                          - truncated
         post:
             tags: [Roles]
             summary: Assign a role to a user

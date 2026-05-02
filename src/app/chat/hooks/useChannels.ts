@@ -189,17 +189,14 @@ export function useChannels({
                 }
 
                 const body = payload as { channel?: unknown; error?: string } | null;
+                const errMsg = body?.error || fallbackText || "Failed to create channel";
 
                 if (!res.ok) {
-                    const errMsg =
-                        body?.error || fallbackText || "Failed to create channel";
                     throw new Error(errMsg);
                 }
 
                 const channelRecord = body?.channel;
                 if (!isValidChannelResponse(channelRecord)) {
-                    const errMsg =
-                        body?.error || fallbackText || "Failed to create channel";
                     throw new Error(errMsg);
                 }
                 channel = channelRecord;

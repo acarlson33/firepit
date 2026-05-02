@@ -1,6 +1,4 @@
-/// <reference lib="dom" />
-
-import React from "react";
+import type { ChangeEvent } from "react";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -61,7 +59,7 @@ describe("Input Component", () => {
 	it("should handle onChange event", async () => {
 		const user = userEvent.setup();
 		let value = "";
-		const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
 			value = e.target.value;
 		};
 		

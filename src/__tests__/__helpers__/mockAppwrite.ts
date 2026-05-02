@@ -181,6 +181,7 @@ vi.mock("appwrite", () => {
   };
   const queryUtil = {
     limit: (n: number) => `limit(${n})`,
+    offset: (n: number) => `offset(${n})`,
     cursorAfter: (id: string) => `cursorAfter(${id})`,
     orderAsc: (f: string) => `orderAsc(${f})`,
     orderDesc: (f: string) => `orderDesc(${f})`,

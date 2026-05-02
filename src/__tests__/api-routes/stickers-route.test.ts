@@ -116,7 +116,7 @@ describe("stickers API route", () => {
         );
     });
 
-    it("returns 500 when sticker listing fails", async () => {
+    it("returns 500 when auth fails", async () => {
         mockRequireAuth.mockRejectedValue(new Error("boom"));
 
         const response = await GET(

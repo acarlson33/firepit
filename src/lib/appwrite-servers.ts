@@ -12,6 +12,7 @@ import {
     getActualMemberCount,
     getActualMemberCounts,
 } from "./membership-count";
+import { logger } from "./newrelic-utils";
 import {
     mapServerDocument,
     normalizeServerDescription,
@@ -47,27 +48,21 @@ function normalizeChannelType(value: unknown): Channel["type"] {
 }
 
 function mapMembershipDocument(doc: Record<string, unknown>): Membership {
-    const id = typeof doc.$id === "string" && doc.$id.trim().length > 0
-        ? doc.$id
-        : (() => {
-              throw new Error("mapMembershipDocument requires a valid $id");
-          })();
-    const serverId =
-        typeof doc.serverId === "string" && doc.serverId.trim().length > 0
-            ? doc.serverId
-            : (() => {
-                  throw new Error(
-                      "mapMembershipDocument requires a valid serverId",
-                  );
-              })();
-    const userId =
-        typeof doc.userId === "string" && doc.userId.trim().length > 0
-            ? doc.userId
-            : (() => {
-                  throw new Error(
-                      "mapMembershipDocument requires a valid userId",
-                  );
-              })();
+    if (typeof doc.$id !== "string" || doc.$id.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid $id");
+    }
+
+    if (typeof doc.serverId !== "string" || doc.serverId.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid serverId");
+    }
+
+    if (typeof doc.userId !== "string" || doc.userId.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid userId");
+    }
+
+    const id = doc.$id;
+    const serverId = doc.serverId;
+    const userId = doc.userId;
 
     return {
         $id: id,
@@ -485,6 +480,7 @@ export async function deleteChannel(channelId: string) {
 export async function deleteServer(serverId: string) {
     const channelIds: string[] = [];
     let offset = 0;
+    let paginationError: unknown = null;
 
     while (true) {
         try {
@@ -513,17 +509,38 @@ export async function deleteServer(serverId: string) {
             }
 
             offset += MAX_LIST_LIMIT;
-        } catch {
+        } catch (error) {
+            paginationError = error;
+            logger.error("Failed to list channels while deleting server", {
+                error: error instanceof Error ? error.message : String(error),
+                offset,
+                serverId,
+            });
             break;
         }
     }
 
-    for (const channelId of channelIds) {
-        try {
-            await deleteChannel(channelId);
-        } catch {
-            // ignore individual channel cleanup failures
+    if (channelIds.length > 0) {
+        const deleteResults = await Promise.allSettled(
+            channelIds.map((channelId) => deleteChannel(channelId)),
+        );
+
+        for (const [index, result] of deleteResults.entries()) {
+            if (result.status === "rejected") {
+                logger.error("Failed to delete channel while deleting server", {
+                    channelId: channelIds[index],
+                    error:
+                        result.reason instanceof Error
+                            ? result.reason.message
+                            : String(result.reason),
+                    serverId,
+                });
+            }
         }
+    }
+
+    if (paginationError) {
+        throw paginationError;
     }
 
     await getDatabases().deleteDocument({

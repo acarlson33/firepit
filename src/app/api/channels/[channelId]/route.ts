@@ -8,6 +8,7 @@ import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
+import type { Channel } from "@/lib/types";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -28,13 +29,13 @@ async function requireManageChannelsAccess(channelId: string) {
         );
     }
 
-    let channel;
+    let channel: Channel;
     try {
-        channel = await databases.getDocument(
+        channel = (await databases.getDocument(
             databaseId,
             env.collections.channels,
             channelId,
-        );
+        )) as unknown as Channel;
     } catch (error) {
         if (isDocumentNotFoundError(error)) {
             return NextResponse.json(

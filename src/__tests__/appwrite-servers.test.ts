@@ -143,7 +143,7 @@ describe("createServer fallback branches", () => {
         const joined = await mod.joinServer("s1", "userNoMem");
         expect(joined).toBeNull();
     });
-    it("deleteServer cascades channel deletions and swallows list failure", async () => {
+    it("deleteServer cascades channel deletions and surfaces list failure", async () => {
         const cache4 = (global as any).require?.cache || {};
         for (const k of Object.keys(cache4)) {
             if (k.includes("appwrite-servers") || k.includes("appwrite-core")) {
@@ -151,22 +151,24 @@ describe("createServer fallback branches", () => {
             }
         }
         const deleted: string[] = [];
-        let failList = true;
+        let listCalls = 0;
         setupMockAppwrite({
             userId: "userDel",
             overrides: {
                 listDocuments: (opts: any) => {
                     if (opts.collectionId === "channels") {
-                        if (failList) {
-                            failList = false;
-                            return Promise.reject(new Error("list err"));
+                        listCalls += 1;
+                        if (listCalls === 1) {
+                            const documents = Array.from({ length: 500 }, (_, index) => ({
+                                $id: `c${index + 1}`,
+                                serverId: "s1",
+                            }));
+
+                            return Promise.resolve({
+                                documents,
+                            });
                         }
-                        return Promise.resolve({
-                            documents: [
-                                { $id: "c1", serverId: "s1" },
-                                { $id: "c2", serverId: "s1" },
-                            ],
-                        });
+                        return Promise.reject(new Error("list err"));
                     }
                     return Promise.resolve({ documents: [] });
                 },
@@ -184,10 +186,10 @@ describe("createServer fallback branches", () => {
         const core2 = await import("../lib/appwrite-core");
         core2.resetEnvCache();
         const { deleteServer } = await import("../lib/appwrite-servers");
-        await deleteServer("s1");
-        // After first failure, second attempt should succeed listing none (since we didn't call listing again) but server delete should still happen
-        // We only track deleted doc ids; ensure server id present
-        expect(deleted).toContain("s1");
+        await expect(deleteServer("s1")).rejects.toThrow("list err");
+        expect(deleted).toHaveLength(500);
+        expect(deleted[0]).toBe("c1");
+        expect(deleted.at(-1)).toBe("c500");
     });
     it("listChannelsPage paginates and nextCursor logic works", async () => {
         const cache5 = (global as any).require?.cache || {};

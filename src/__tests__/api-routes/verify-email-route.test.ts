@@ -5,15 +5,16 @@ const {
     mockGetFeatureFlag,
     mockLoggerError,
     mockUpdateVerification,
+    mockSetEndpoint,
+    mockSetProject,
 } = vi.hoisted(() => ({
     mockGetEnvConfig: vi.fn(),
     mockGetFeatureFlag: vi.fn(),
     mockLoggerError: vi.fn(),
     mockUpdateVerification: vi.fn(),
+    mockSetEndpoint: vi.fn().mockReturnThis(),
+    mockSetProject: vi.fn().mockReturnThis(),
 }));
-
-const mockSetEndpoint = vi.fn().mockReturnThis();
-const mockSetProject = vi.fn().mockReturnThis();
 
 vi.mock("node-appwrite", () => ({
     Account: vi.fn(() => ({
@@ -53,6 +54,7 @@ describe("verify-email API route", () => {
             project: "firepit",
         });
         mockGetFeatureFlag.mockResolvedValue(true);
+        mockUpdateVerification.mockResolvedValue({});
     });
 
     it("redirects to login when email verification is disabled", async () => {

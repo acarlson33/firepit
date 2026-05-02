@@ -360,17 +360,26 @@ async function callListDocumentsLocal(params: {
 }) {
     const { databases, databaseId, collectionId, queries } = params;
 
+    // Handle Appwrite SDK signature differences between runtime versions and Vitest mocks.
     try {
         return await databases.listDocuments(databaseId, collectionId, queries);
     } catch (error) {
-        const message = error instanceof Error ? error.message.toLowerCase() : "";
-        const isTypeError = error instanceof Error && error.name === "TypeError";
-        if (
-            !isTypeError &&
-            !message.includes("invalid argument") &&
-            !message.includes("invalid arguments") &&
-            !message.includes("unexpected argument")
-        ) {
+        const message =
+            error instanceof Error
+                ? error.message.toLowerCase()
+                : typeof error === "string"
+                  ? error.toLowerCase()
+                  : "";
+        const signatureMismatchPhrases = [
+            "invalid argument",
+            "invalid arguments",
+            "unexpected argument",
+            "expected 3 arguments",
+            "too many arguments",
+            "signature",
+        ];
+
+        if (!signatureMismatchPhrases.some((phrase) => message.includes(phrase))) {
             throw error;
         }
 

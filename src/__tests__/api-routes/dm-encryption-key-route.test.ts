@@ -100,6 +100,46 @@ describe("DM encryption key API route", () => {
         expect(mockUpdateUserProfile).not.toHaveBeenCalled();
     });
 
+    it("returns 401 for unauthenticated PATCH requests", async () => {
+        mockGetServerSession.mockResolvedValue(null);
+
+        const response = await PATCH(
+            new Request("http://localhost/api/me/dm-encryption-key", {
+                body: JSON.stringify({ dmEncryptionPublicKey: validKey }),
+                method: "PATCH",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(data.error).toBe("Authentication required");
+        expect(mockUpdateUserProfile).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when updating metadata fails", async () => {
+        mockGetOrCreateUserProfile.mockResolvedValue({
+            $id: "profile-1",
+        });
+        mockUpdateUserProfile.mockRejectedValue(new Error("db down"));
+
+        const response = await PATCH(
+            new Request("http://localhost/api/me/dm-encryption-key", {
+                body: JSON.stringify({ dmEncryptionPublicKey: validKey }),
+                method: "PATCH",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(data.error).toBe("Internal server error");
+        expect(mockLoggerError).toHaveBeenCalledWith(
+            "Failed to update DM encryption key metadata",
+            expect.objectContaining({
+                error: "db down",
+            }),
+        );
+    });
+
     it("updates the DM encryption key metadata", async () => {
         mockGetOrCreateUserProfile.mockResolvedValue({
             $id: "profile-1",
