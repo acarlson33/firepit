@@ -278,105 +278,107 @@ describe("ChatSurfacePanel", () => {
 
     it("scrolls the composer into view for large previews and after submit", async () => {
         const scrollIntoView = vi.fn();
-        const original = HTMLElement.prototype.scrollIntoView;
         const onSubmit = vi.fn().mockResolvedValue(undefined);
+        const scrollIntoViewSpy = vi
+            .spyOn(HTMLElement.prototype, "scrollIntoView")
+            .mockImplementation(scrollIntoView);
 
-        HTMLElement.prototype.scrollIntoView = scrollIntoView;
+        try {
+            const { rerender } = render(
+                <ChatSurfacePanel
+                    composer={{
+                        disabled: false,
+                        fileAttachments: [],
+                        fileInputRef: { current: null },
+                        onEmojiSelect: vi.fn(),
+                        onFileAttachmentSelect: vi.fn(),
+                        onRemoveFileAttachment: vi.fn(),
+                        onSelectImageFile: vi.fn(),
+                        onSubmit,
+                        onTextChange: vi.fn(),
+                        placeholder: "Type a message",
+                        selectedImagePreview: "data:image/png;base64,abc",
+                        text: "draft",
+                    }}
+                    currentUserId="user-1"
+                    deleteConfirmId={null}
+                    editingMessageId={null}
+                    emptyDescription="No messages"
+                    emptyTitle="Nothing here"
+                    loading={false}
+                    onOpenImageViewer={vi.fn()}
+                    onRemove={vi.fn()}
+                    onStartEdit={vi.fn()}
+                    onStartReply={vi.fn()}
+                    onToggleReaction={vi.fn().mockResolvedValue(undefined)}
+                    setDeleteConfirmId={vi.fn()}
+                    surfaceMessages={[baseMessage]}
+                    virtualizationThreshold={10}
+                />,
+            );
 
-        const { rerender } = render(
-            <ChatSurfacePanel
-                composer={{
-                    disabled: false,
-                    fileAttachments: [],
-                    fileInputRef: { current: null },
-                    onEmojiSelect: vi.fn(),
-                    onFileAttachmentSelect: vi.fn(),
-                    onRemoveFileAttachment: vi.fn(),
-                    onSelectImageFile: vi.fn(),
-                    onSubmit,
-                    onTextChange: vi.fn(),
-                    placeholder: "Type a message",
-                    selectedImagePreview: "data:image/png;base64,abc",
-                    text: "draft",
-                }}
-                currentUserId="user-1"
-                deleteConfirmId={null}
-                editingMessageId={null}
-                emptyDescription="No messages"
-                emptyTitle="Nothing here"
-                loading={false}
-                onOpenImageViewer={vi.fn()}
-                onRemove={vi.fn()}
-                onStartEdit={vi.fn()}
-                onStartReply={vi.fn()}
-                onToggleReaction={vi.fn().mockResolvedValue(undefined)}
-                setDeleteConfirmId={vi.fn()}
-                surfaceMessages={[baseMessage]}
-                virtualizationThreshold={10}
-            />,
-        );
+            await waitFor(() => {
+                expect(scrollIntoView).toHaveBeenCalled();
+            });
+            expect(scrollIntoView).toHaveBeenCalledWith({
+                behavior: "smooth",
+                block: "nearest",
+                inline: "nearest",
+            });
 
-        await waitFor(() => {
-            expect(scrollIntoView).toHaveBeenCalled();
-        });
-        expect(scrollIntoView).toHaveBeenCalledWith({
-            behavior: "smooth",
-            block: "nearest",
-            inline: "nearest",
-        });
+            fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-        fireEvent.click(screen.getByRole("button", { name: "Send" }));
+            await waitFor(() => {
+                expect(onSubmit).toHaveBeenCalledOnce();
+            });
 
-        await waitFor(() => {
-            expect(onSubmit).toHaveBeenCalledOnce();
-        });
+            rerender(
+                <ChatSurfacePanel
+                    composer={{
+                        disabled: false,
+                        fileAttachments: [],
+                        fileInputRef: { current: null },
+                        onEmojiSelect: vi.fn(),
+                        onFileAttachmentSelect: vi.fn(),
+                        onRemoveFileAttachment: vi.fn(),
+                        onSelectImageFile: vi.fn(),
+                        onSubmit,
+                        onTextChange: vi.fn(),
+                        placeholder: "Type a message",
+                        text: "",
+                    }}
+                    currentUserId="user-1"
+                    deleteConfirmId={null}
+                    editingMessageId={null}
+                    emptyDescription="No messages"
+                    emptyTitle="Nothing here"
+                    loading={false}
+                    onOpenImageViewer={vi.fn()}
+                    onRemove={vi.fn()}
+                    onStartEdit={vi.fn()}
+                    onStartReply={vi.fn()}
+                    onToggleReaction={vi.fn().mockResolvedValue(undefined)}
+                    setDeleteConfirmId={vi.fn()}
+                    surfaceMessages={[
+                        baseMessage,
+                        {
+                            ...baseMessage,
+                            createdAt: "2026-03-10T12:01:00.000Z",
+                            id: "msg-2",
+                            sourceMessageId: "msg-2",
+                            text: "Sent message",
+                        },
+                    ]}
+                    virtualizationThreshold={10}
+                />,
+            );
 
-        rerender(
-            <ChatSurfacePanel
-                composer={{
-                    disabled: false,
-                    fileAttachments: [],
-                    fileInputRef: { current: null },
-                    onEmojiSelect: vi.fn(),
-                    onFileAttachmentSelect: vi.fn(),
-                    onRemoveFileAttachment: vi.fn(),
-                    onSelectImageFile: vi.fn(),
-                    onSubmit,
-                    onTextChange: vi.fn(),
-                    placeholder: "Type a message",
-                    text: "",
-                }}
-                currentUserId="user-1"
-                deleteConfirmId={null}
-                editingMessageId={null}
-                emptyDescription="No messages"
-                emptyTitle="Nothing here"
-                loading={false}
-                onOpenImageViewer={vi.fn()}
-                onRemove={vi.fn()}
-                onStartEdit={vi.fn()}
-                onStartReply={vi.fn()}
-                onToggleReaction={vi.fn().mockResolvedValue(undefined)}
-                setDeleteConfirmId={vi.fn()}
-                surfaceMessages={[
-                    baseMessage,
-                    {
-                        ...baseMessage,
-                        createdAt: "2026-03-10T12:01:00.000Z",
-                        id: "msg-2",
-                        sourceMessageId: "msg-2",
-                        text: "Sent message",
-                    },
-                ]}
-                virtualizationThreshold={10}
-            />,
-        );
-
-        await waitFor(() => {
-            expect(scrollIntoView).toHaveBeenCalledTimes(3);
-        });
-
-        HTMLElement.prototype.scrollIntoView = original;
+            await waitFor(() => {
+                expect(scrollIntoView).toHaveBeenCalledTimes(3);
+            });
+        } finally {
+            scrollIntoViewSpy.mockRestore();
+        }
     });
 
     it("re-requests bottom scroll when trailing virtualized media finishes loading", async () => {

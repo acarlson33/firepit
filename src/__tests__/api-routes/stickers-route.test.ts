@@ -87,6 +87,7 @@ describe("stickers API route", () => {
 
         expect(response.status).toBe(401);
         expect(data.error).toBe("Unauthorized");
+        expect(mockGetBuiltinStickerPacks).not.toHaveBeenCalled();
         expect(mockTrackApiCall).toHaveBeenCalledWith(
             "/api/stickers",
             "GET",

@@ -319,6 +319,7 @@ export function ChatSurfaceMessageItem({
 
                 {!removed && (
                     <div
+                        data-testid="message-action-buttons"
                         className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
                     >
                         <ReactionPicker

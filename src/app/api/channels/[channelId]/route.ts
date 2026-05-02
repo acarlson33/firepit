@@ -172,6 +172,13 @@ export async function PATCH(
 
         return NextResponse.json({ channel });
     } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Channel not found" },
+                { status: 404 },
+            );
+        }
+
         logger.error("Failed to update channel", {
             error: error instanceof Error ? error.message : String(error),
         });
@@ -200,7 +207,19 @@ export async function DELETE(
             return accessResult;
         }
 
-        await deleteChannel(channelId);
+        try {
+            await deleteChannel(channelId);
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Channel not found" },
+                    { status: 404 },
+                );
+            }
+
+            throw error;
+        }
+
         invalidateChannelsServerCaches(String(accessResult.channel.serverId));
 
         return new NextResponse(null, { status: 204 });

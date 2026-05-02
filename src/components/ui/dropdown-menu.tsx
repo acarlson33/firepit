@@ -1,13 +1,21 @@
 "use client";
 
+/* eslint-disable suggestCanonicalClasses */
+
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+const DATA_DISABLED_SELECTOR = "data-[disabled]";
+const DATA_INSET_SELECTOR = "data-[inset]";
+
+const BASE_ITEM_CLASS =
+  `relative flex cursor-default select-none items-center gap-2 rounded-sm text-sm outline-hidden focus:bg-accent focus:text-accent-foreground ${DATA_DISABLED_SELECTOR}:pointer-events-none ${DATA_DISABLED_SELECTOR}:opacity-50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0`;
+
 const STATIC_ITEM_CLASS =
-  "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-inset:pl-8 data-[variant=destructive]:text-destructive data-disabled:opacity-50 data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:*:[svg]:text-destructive! [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0";
+  `${BASE_ITEM_CLASS} px-2 py-1.5 ${DATA_INSET_SELECTOR}:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:*:[svg]:text-destructive! [&_svg:not([class*='text-'])]:text-muted-foreground`;
 
 function DropdownMenu({
   ...props
@@ -92,7 +100,7 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       checked={checked}
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        `${BASE_ITEM_CLASS} py-1.5 pr-2 pl-8`,
         className
       )}
       data-slot="dropdown-menu-checkbox-item"
@@ -127,7 +135,7 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        `${BASE_ITEM_CLASS} py-1.5 pr-2 pl-8`,
         className
       )}
       data-slot="dropdown-menu-radio-item"
@@ -153,7 +161,7 @@ function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        "px-2 py-1.5 text-sm font-medium data-inset:pl-8",
+        `px-2 py-1.5 text-sm font-medium ${DATA_INSET_SELECTOR}:pl-8`,
         className
       )}
       data-inset={inset}
@@ -209,7 +217,7 @@ function DropdownMenuSubTrigger({
   return (
     <DropdownMenuPrimitive.SubTrigger
       className={cn(
-        "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-inset:pl-8 data-[state=open]:text-accent-foreground",
+        `flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent ${DATA_INSET_SELECTOR}:pl-8 data-[state=open]:text-accent-foreground`,
         className
       )}
       data-inset={inset}

@@ -14,7 +14,10 @@ type PrefixTokenMetadata = {
 };
 
 type RequestSnapshot = {
-    token: number;
+    prefixTokens: Array<{
+        prefix: string;
+        token: number;
+    }>;
     clearEpoch: number;
 };
 
@@ -52,18 +55,18 @@ class SimpleCache {
         const now = Date.now();
         this.prunePrefixTokens(now);
 
-        let token = 0;
+        const prefixTokens: Array<{ prefix: string; token: number }> = [];
         for (const [prefix, metadata] of this.prefixTokens.entries()) {
             if (key.startsWith(prefix)) {
                 metadata.lastUsed = now;
-                if (metadata.token > token) {
-                    token = metadata.token;
-                }
+                prefixTokens.push({ prefix, token: metadata.token });
             }
         }
 
+        prefixTokens.sort((left, right) => left.prefix.localeCompare(right.prefix));
+
         return {
-            token,
+            prefixTokens,
             clearEpoch: this.clearEpoch,
         };
     }
@@ -76,7 +79,26 @@ class SimpleCache {
             return false;
         }
 
-        return requestSnapshot.token === latestSnapshot.token;
+        if (
+            requestSnapshot.prefixTokens.length !==
+            latestSnapshot.prefixTokens.length
+        ) {
+            return false;
+        }
+
+        for (let index = 0; index < requestSnapshot.prefixTokens.length; index += 1) {
+            const requestToken = requestSnapshot.prefixTokens[index];
+            const latestToken = latestSnapshot.prefixTokens[index];
+
+            if (
+                requestToken.prefix !== latestToken.prefix ||
+                requestToken.token !== latestToken.token
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

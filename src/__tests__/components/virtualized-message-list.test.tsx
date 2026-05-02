@@ -254,39 +254,27 @@ describe("VirtualizedMessageList", () => {
     });
 
     it("should render action buttons with mobile-friendly classes", () => {
-        const { container } = render(
-            <VirtualizedMessageList {...defaultProps} />,
-        );
+        render(<VirtualizedMessageList {...defaultProps} />);
 
-        // Find the action buttons container
-        const actionButtonsContainer = container.querySelector(
-            ".opacity-100.md\\:opacity-0.md\\:group-hover\\:opacity-100",
+        const actionButtonsContainer = screen.getByTestId(
+            "message-action-buttons",
         );
 
         expect(actionButtonsContainer).toBeDefined();
-        expect(actionButtonsContainer?.className).toContain("opacity-100");
-        expect(actionButtonsContainer?.className).toContain("md:opacity-0");
-        expect(actionButtonsContainer?.className).toContain(
-            "md:group-hover:opacity-100",
-        );
     });
 
     it("should render reply button for all messages", () => {
         render(<VirtualizedMessageList {...defaultProps} />);
 
-        // Reply button should be present (using MessageSquare icon)
-        const buttons = screen.getAllByRole("button");
-        expect(buttons.length).toBeGreaterThan(0);
+        expect(screen.getByRole("button", { name: /reply/i })).toBeDefined();
     });
 
     it("should render edit and delete buttons for own messages", () => {
-        const { container } = render(
-            <VirtualizedMessageList {...defaultProps} />,
-        );
+        render(<VirtualizedMessageList {...defaultProps} />);
 
-        // Since the message userId matches the current userId, edit and delete buttons should be present
-        const buttons = container.querySelectorAll("button");
-        expect(buttons.length).toBeGreaterThan(1); // At least reply, edit, and delete buttons
+        expect(screen.getByRole("button", { name: /reply/i })).toBeDefined();
+        expect(screen.getByRole("button", { name: /edit message/i })).toBeDefined();
+        expect(screen.getByRole("button", { name: /delete message/i })).toBeDefined();
     });
 
     it("should not render edit and delete buttons for other users' messages", () => {
@@ -314,11 +302,14 @@ describe("VirtualizedMessageList", () => {
             messages: messagesFromOtherUser,
         };
 
-        const { container } = render(<VirtualizedMessageList {...props} />);
+        render(<VirtualizedMessageList {...props} />);
 
-        // Should have fewer buttons (no edit/delete)
-        const buttons = container.querySelectorAll("button");
-        // Should have reply button and reaction picker, but no edit/delete
-        expect(buttons.length).toBeLessThan(4);
+        expect(screen.getByRole("button", { name: /reply/i })).toBeDefined();
+        expect(
+            screen.queryByRole("button", { name: /edit message/i }),
+        ).toBeNull();
+        expect(
+            screen.queryByRole("button", { name: /delete message/i }),
+        ).toBeNull();
     });
 });

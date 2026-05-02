@@ -119,6 +119,21 @@ components:
                               - $ref: "#/components/schemas/JoinMembership"
                               - type: "null"
 
+        CreateServerResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                      - server
+                  properties:
+                      membership:
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
+                      server:
+                          $ref: "#/components/schemas/Server"
+
         UserSummary:
             type: object
             properties:
@@ -815,7 +830,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: "#/components/schemas/JoinResponse"
+                                $ref: "#/components/schemas/CreateServerResponse"
                 "400":
                     description: Invalid request
                     content:

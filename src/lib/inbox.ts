@@ -127,6 +127,7 @@ type InboxRequestCaches = {
 };
 
 const DOCUMENT_QUERY_CHUNK_SIZE = 100;
+const CONCURRENT_DOCUMENT_QUERIES = 4;
 const RELATIONSHIP_QUERY_CHUNK_SIZE = 100;
 
 function selectQuery(fields: readonly string[]) {
@@ -424,47 +425,57 @@ async function listDocumentsByIds(params: {
             ? chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE)
             : [undefined];
 
-    const responses = await Promise.all(
-        chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).flatMap((idChunk) =>
-            contextIdChunks.map(async (contextIdChunk) => {
-                let shouldSelectFields = Boolean(
-                    selectFields && selectFields.length > 0,
-                );
+    const responses: Array<{ documents: Record<string, unknown>[] }> = [];
+    await runInBatches({
+        batchSize: CONCURRENT_DOCUMENT_QUERIES,
+        items: chunkArray(uniqueIds, DOCUMENT_QUERY_CHUNK_SIZE).flatMap(
+            (idChunk) =>
+                contextIdChunks.map((contextIdChunk) => ({
+                    contextIdChunk,
+                    idChunk,
+                })),
+        ),
+        worker: async ({ contextIdChunk, idChunk }) => {
+            let shouldSelectFields = Boolean(
+                selectFields && selectFields.length > 0,
+            );
 
-                while (true) {
-                    const queries = [
-                        Query.equal("$id", idChunk),
-                        Query.limit(idChunk.length),
-                    ];
-                    if (contextField && contextIdChunk && contextIdChunk.length > 0) {
-                        queries.push(Query.equal(contextField, contextIdChunk));
-                    }
-                    if (shouldSelectFields && selectFields && selectFields.length > 0) {
-                        queries.push(...selectQuery(selectFields));
-                    }
+            while (true) {
+                const queries = [
+                    Query.equal("$id", idChunk),
+                    Query.limit(idChunk.length),
+                ];
+                if (contextField && contextIdChunk && contextIdChunk.length > 0) {
+                    queries.push(Query.equal(contextField, contextIdChunk));
+                }
+                if (shouldSelectFields && selectFields && selectFields.length > 0) {
+                    queries.push(...selectQuery(selectFields));
+                }
 
-                    try {
-                        return await callListDocumentsLocal({
+                try {
+                    responses.push(
+                        await callListDocumentsLocal({
                             databases,
                             databaseId: env.databaseId,
                             collectionId,
                             queries,
-                        });
-                    } catch (error) {
-                        if (
-                            shouldSelectFields &&
-                            isSchemaAttributeMissingQueryError(error)
-                        ) {
-                            shouldSelectFields = false;
-                            continue;
-                        }
-
-                        throw error;
+                        }),
+                    );
+                    return;
+                } catch (error) {
+                    if (
+                        shouldSelectFields &&
+                        isSchemaAttributeMissingQueryError(error)
+                    ) {
+                        shouldSelectFields = false;
+                        continue;
                     }
+
+                    throw error;
                 }
-            }),
-        ),
-    );
+            }
+        },
+    });
 
     const deduped = new Map<string, Record<string, unknown>>();
     for (const response of responses) {
@@ -528,20 +539,26 @@ async function listThreadReplySignals(params: {
             ? INBOX_CHANNEL_THREAD_REPLY_SIGNAL_SELECT_FIELDS
             : INBOX_CONVERSATION_THREAD_REPLY_SIGNAL_SELECT_FIELDS;
 
-    const responses =
-        await Promise.all(
-            chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
-                async (contextIdChunk) =>
-                    listAllDocuments({
-                        collectionId,
-                        queries: [
-                            Query.equal(contextField, contextIdChunk),
-                            Query.isNotNull("threadId"),
-                        ],
-                        selectFields,
-                    }),
-            ),
-        );
+    const responses: Array<{
+        documents: Record<string, unknown>[];
+        truncated: boolean;
+    }> = [];
+    await runInBatches({
+        batchSize: CONCURRENT_DOCUMENT_QUERIES,
+        items: chunkArray(contextIds, DOCUMENT_QUERY_CHUNK_SIZE),
+        worker: async (contextIdChunk) => {
+            responses.push(
+                await listAllDocuments({
+                    collectionId,
+                    queries: [
+                        Query.equal(contextField, contextIdChunk),
+                        Query.isNotNull("threadId"),
+                    ],
+                    selectFields,
+                }),
+            );
+        },
+    });
 
     const truncated = responses.some((response) => response.truncated);
     if (truncated) {
@@ -992,20 +1009,26 @@ async function listUnreadConversationThreadItems(
         userId,
     });
 
-    const threadParentResponses =
-        await Promise.all(
-            chunkArray(conversationIds, DOCUMENT_QUERY_CHUNK_SIZE).map(
-                async (conversationIdChunk) =>
-                    listAllDocuments({
-                        collectionId: env.collections.directMessages,
-                        queries: [
-                            Query.equal("conversationId", conversationIdChunk),
-                            Query.greaterThan("threadMessageCount", 0),
-                        ],
-                        selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
-                    }),
-            ),
-        );
+    const threadParentResponses: Array<{
+        documents: Record<string, unknown>[];
+        truncated: boolean;
+    }> = [];
+    await runInBatches({
+        batchSize: CONCURRENT_DOCUMENT_QUERIES,
+        items: chunkArray(conversationIds, DOCUMENT_QUERY_CHUNK_SIZE),
+        worker: async (conversationIdChunk) => {
+            threadParentResponses.push(
+                await listAllDocuments({
+                    collectionId: env.collections.directMessages,
+                    queries: [
+                        Query.equal("conversationId", conversationIdChunk),
+                        Query.greaterThan("threadMessageCount", 0),
+                    ],
+                    selectFields: INBOX_DM_THREAD_PARENT_SELECT_FIELDS,
+                }),
+            );
+        },
+    });
 
     if (threadParentResponses.some((response) => response.truncated)) {
         logger.warn("Conversation thread parent scan truncated", {
@@ -1369,73 +1392,88 @@ async function listPersistedMentionItems(
     options?: {
         cache?: InboxRequestCaches;
     },
-): Promise<InboxItem[]> {
-    const env = getEnvConfig();
-    const documentResponse = await listAllDocuments({
-        collectionId: env.collections.inboxItems,
-        queries: [
-            Query.equal("userId", userId),
-            Query.equal("kind", "mention"),
-            Query.isNull("readAt"),
-            Query.orderDesc("latestActivityAt"),
-        ],
-        selectFields: INBOX_PERSISTED_MENTION_SELECT_FIELDS,
-    });
-
-    if (documentResponse.truncated) {
-        logger.warn("Persisted mention scan truncated", {
-            userId,
+): Promise<{ degraded: boolean; items: InboxItem[] }> {
+    try {
+        const env = getEnvConfig();
+        const documentResponse = await listAllDocuments({
+            collectionId: env.collections.inboxItems,
+            queries: [
+                Query.equal("userId", userId),
+                Query.equal("kind", "mention"),
+                Query.isNull("readAt"),
+                Query.orderDesc("latestActivityAt"),
+            ],
+            selectFields: INBOX_PERSISTED_MENTION_SELECT_FIELDS,
         });
-    }
 
-    const documents = documentResponse.documents;
-
-    const visibleDocuments = await filterReadableChannelContexts(
-        userId,
-        documents as InboxItemDocument[],
-        (document) =>
-            document.contextKind === "channel" ? document.contextId : null,
-        {
-            channelAccessCache: options?.cache?.channelAccessCache,
-        },
-    );
-
-    const authorIds = Array.from(
-        new Set(visibleDocuments.map((document) => document.authorUserId)),
-    );
-    const [profileMap, relationshipMap] = await Promise.all([
-        loadAuthorProfiles(authorIds, options),
-        loadRelationshipMap(userId, authorIds, options),
-    ]);
-
-    return visibleDocuments.flatMap((document) => {
-        const authorUserId = document.authorUserId;
-        const relationship = relationshipMap.get(authorUserId);
-        if (relationship && isBlockedRelationship(relationship)) {
-            return [] as InboxItem[];
+        if (documentResponse.truncated) {
+            logger.warn("Persisted mention scan truncated", {
+                userId,
+            });
         }
 
-        const profile = profileMap.get(authorUserId);
+        const documents = documentResponse.documents;
 
-        return [
+        const visibleDocuments = await filterReadableChannelContexts(
+            userId,
+            documents as InboxItemDocument[],
+            (document) =>
+                document.contextKind === "channel" ? document.contextId : null,
             {
-                authorAvatarUrl: profile?.avatarUrl,
-                authorLabel: profile?.displayName ?? authorUserId,
-                authorUserId,
-                contextId: document.contextId,
-                contextKind: document.contextKind,
-                id: document.$id,
-                kind: "mention",
-                latestActivityAt: document.latestActivityAt,
-                messageId: document.messageId,
-                muted: false,
-                parentMessageId: document.parentMessageId,
-                previewText: document.previewText ?? "",
-                serverId: document.serverId,
-                unreadCount: 1,
-            } satisfies InboxItem,
-        ];
-    });
+                channelAccessCache: options?.cache?.channelAccessCache,
+            },
+        );
+
+        const authorIds = Array.from(
+            new Set(visibleDocuments.map((document) => document.authorUserId)),
+        );
+        const [profileMap, relationshipMap] = await Promise.all([
+            loadAuthorProfiles(authorIds, options),
+            loadRelationshipMap(userId, authorIds, options),
+        ]);
+
+        return {
+            degraded: false,
+            items: visibleDocuments.flatMap((document) => {
+                const authorUserId = document.authorUserId;
+                const relationship = relationshipMap.get(authorUserId);
+                if (relationship && isBlockedRelationship(relationship)) {
+                    return [] as InboxItem[];
+                }
+
+                const profile = profileMap.get(authorUserId);
+
+                return [
+                    {
+                        authorAvatarUrl: profile?.avatarUrl,
+                        authorLabel: profile?.displayName ?? authorUserId,
+                        authorUserId,
+                        contextId: document.contextId,
+                        contextKind: document.contextKind,
+                        id: document.$id,
+                        kind: "mention",
+                        latestActivityAt: document.latestActivityAt,
+                        messageId: document.messageId,
+                        muted: false,
+                        parentMessageId: document.parentMessageId,
+                        previewText: document.previewText ?? "",
+                        serverId: document.serverId,
+                        unreadCount: 1,
+                    } satisfies InboxItem,
+                ];
+            }),
+        };
+    } catch (error) {
+        logger.error("Failed to list persisted mention items", {
+            error: error instanceof Error ? error.message : String(error),
+            userId,
+        });
+
+        return {
+            degraded: true,
+            items: [],
+        };
+    }
 }
 
 /**
@@ -1462,7 +1500,7 @@ export async function listInboxItems({
         missingAuthorProfileIds: new Set(),
         relationshipCache: new Map(),
     };
-    const itemGroups = await Promise.all([
+    const [threadItems, mentionItemsResult] = await Promise.all([
         requestedKinds.has("thread")
             ? Promise.all([
                   listUnreadChannelThreadItems(userId, {
@@ -1479,11 +1517,20 @@ export async function listInboxItems({
         requestedKinds.has("mention")
             ? listPersistedMentionItems(userId, {
                   cache: caches,
-              }).catch(() => [])
-            : Promise.resolve([]),
+              })
+            : Promise.resolve({ degraded: false, items: [] }),
     ]);
 
-    const itemsWithMuteState = await applyMuteState(userId, itemGroups.flat());
+    if (mentionItemsResult.degraded) {
+        logger.warn("Persisted mention items returned a degraded result", {
+            userId,
+        });
+    }
+
+    const itemsWithMuteState = await applyMuteState(userId, [
+        ...threadItems,
+        ...mentionItemsResult.items,
+    ]);
     const contextKindFilter =
         contextKinds && contextKinds.length > 0 ? new Set(contextKinds) : null;
     const filteredItems = contextKindFilter

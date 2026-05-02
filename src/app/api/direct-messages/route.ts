@@ -1551,9 +1551,10 @@ export async function POST(request: NextRequest) {
             typeof text === "string" &&
             text.trim().length > 0 &&
             !hasEncryptedText;
+        const hasImageContent = Boolean(imageFileId) || Boolean(imageUrl);
         const hasAnyContent =
             hasPlaintextText ||
-            Boolean(imageFileId) ||
+            hasImageContent ||
             normalizedAttachments.length > 0;
 
         if (!isGroupConversation && targetReceiverId && hasAnyContent) {

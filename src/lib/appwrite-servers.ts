@@ -172,6 +172,7 @@ export async function listServersPage(
  * @param {{ bypassFeatureCheck?: boolean | undefined; } | undefined} options - The options value, if provided.
  * @returns {Promise<Server>} The return value.
  */
+/* eslint-disable no-redeclare */
 export function createServer(
     name: string,
     options?: {
@@ -308,6 +309,7 @@ export function createServer(
         }
     });
 }
+/* eslint-enable no-redeclare */
 
 /**
  * Lists channels page.
@@ -525,8 +527,10 @@ export async function deleteServer(serverId: string) {
             channelIds.map((channelId) => deleteChannel(channelId)),
         );
 
+        let hasDeleteFailure = false;
         for (const [index, result] of deleteResults.entries()) {
             if (result.status === "rejected") {
+                hasDeleteFailure = true;
                 logger.error("Failed to delete channel while deleting server", {
                     channelId: channelIds[index],
                     error:
@@ -536,6 +540,10 @@ export async function deleteServer(serverId: string) {
                     serverId,
                 });
             }
+        }
+
+        if (hasDeleteFailure) {
+            throw new Error("Failed to delete one or more channels while deleting server");
         }
     }
 

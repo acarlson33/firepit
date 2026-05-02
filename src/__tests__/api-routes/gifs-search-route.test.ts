@@ -93,13 +93,41 @@ describe("GIF search API route", () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
-        process.env.GIF_PROVIDER = originalEnv.GIF_PROVIDER ?? "";
-        process.env.GIPHY_API_KEY = originalEnv.GIPHY_API_KEY ?? "";
-        process.env.GIPHY_LANG = originalEnv.GIPHY_LANG ?? "";
-        process.env.GIPHY_RATING = originalEnv.GIPHY_RATING ?? "";
-        process.env.TENOR_API_KEY = originalEnv.TENOR_API_KEY ?? "";
-        process.env.TENOR_CLIENT_KEY = originalEnv.TENOR_CLIENT_KEY ?? "";
-        process.env.TENOR_LOCALE = originalEnv.TENOR_LOCALE ?? "";
+        if (originalEnv.GIF_PROVIDER === undefined) {
+            delete process.env.GIF_PROVIDER;
+        } else {
+            process.env.GIF_PROVIDER = originalEnv.GIF_PROVIDER;
+        }
+        if (originalEnv.GIPHY_API_KEY === undefined) {
+            delete process.env.GIPHY_API_KEY;
+        } else {
+            process.env.GIPHY_API_KEY = originalEnv.GIPHY_API_KEY;
+        }
+        if (originalEnv.GIPHY_LANG === undefined) {
+            delete process.env.GIPHY_LANG;
+        } else {
+            process.env.GIPHY_LANG = originalEnv.GIPHY_LANG;
+        }
+        if (originalEnv.GIPHY_RATING === undefined) {
+            delete process.env.GIPHY_RATING;
+        } else {
+            process.env.GIPHY_RATING = originalEnv.GIPHY_RATING;
+        }
+        if (originalEnv.TENOR_API_KEY === undefined) {
+            delete process.env.TENOR_API_KEY;
+        } else {
+            process.env.TENOR_API_KEY = originalEnv.TENOR_API_KEY;
+        }
+        if (originalEnv.TENOR_CLIENT_KEY === undefined) {
+            delete process.env.TENOR_CLIENT_KEY;
+        } else {
+            process.env.TENOR_CLIENT_KEY = originalEnv.TENOR_CLIENT_KEY;
+        }
+        if (originalEnv.TENOR_LOCALE === undefined) {
+            delete process.env.TENOR_LOCALE;
+        } else {
+            process.env.TENOR_LOCALE = originalEnv.TENOR_LOCALE;
+        }
     });
 
     it("returns 401 when the caller is not authenticated", async () => {
@@ -152,6 +180,7 @@ describe("GIF search API route", () => {
         expect(response.headers.get("retry-after")).toBe("45");
         expect(data.error).toBe("Too many GIF searches. Please try again shortly.");
         expect(mockFetch).not.toHaveBeenCalled();
+        expect(mockTrackApiCall).not.toHaveBeenCalled();
         // `GET` returns before `mockTrackApiCall` on rate-limited requests, so analytics are intentionally skipped for this `NextRequest`.
     });
 

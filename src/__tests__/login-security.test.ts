@@ -371,10 +371,10 @@ describe("Login Security", () => {
                 url: expect.stringContaining("/api/auth/verify-email"),
             }),
         );
-        expect(deleteSession).toHaveBeenCalledWith(
-            "unverified-user-id",
-            "unverified-session-id",
-        );
+        expect(deleteSession).toHaveBeenCalledWith({
+            userId: "unverified-user-id",
+            sessionId: "unverified-session-id",
+        });
     });
 
     it("resendVerificationAction should report already verified users", async () => {
@@ -420,10 +420,10 @@ describe("Login Security", () => {
             expect(result.alreadyVerified).toBe(true);
             expect(result.message).toContain("already verified");
         }
-        expect(deleteSession).toHaveBeenCalledWith(
-            "verified-user-id",
-            "verified-session-id",
-        );
+        expect(deleteSession).toHaveBeenCalledWith({
+            userId: "verified-user-id",
+            sessionId: "verified-session-id",
+        });
     });
 
     it("registerAction should handle errors gracefully without throwing", async () => {

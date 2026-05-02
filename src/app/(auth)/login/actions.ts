@@ -1,5 +1,6 @@
 "use server";
 
+import { createHmac } from "node:crypto";
 import { Account, Client, ID, Query, Users } from "node-appwrite";
 import { cookies } from "next/headers";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -81,7 +82,7 @@ async function revokeSessionBestEffort(
     sessionId: string,
 ): Promise<void> {
     try {
-        await users.deleteSession(userId, sessionId);
+        await users.deleteSession({ userId, sessionId });
     } catch (err) {
         logger.warn("Failed to revoke session for user", {
             hasUserId: userId.length > 0,
@@ -89,6 +90,15 @@ async function revokeSessionBestEffort(
             error: err instanceof Error ? err.message : String(err),
         });
     }
+}
+
+function generateUserIdHash(userId: string): string {
+    const salt =
+        process.env.AUTH_LOG_HASH_SALT?.trim() ||
+        process.env.APPWRITE_API_KEY?.trim() ||
+        "firepit-auth-log-salt";
+
+    return createHmac("sha256", salt).update(userId).digest("hex").slice(0, 16);
 }
 
 function buildVerificationRequiredResult(options?: {
@@ -314,7 +324,7 @@ export async function loginAction(
                         verificationLinkSent = true;
                     } catch (verificationError) {
                         logger.error("Failed to send verification email during login", {
-                            userId: session.userId,
+                            userIdHash: generateUserIdHash(session.userId),
                             error: sanitizeAuthError(verificationError),
                         });
                     }

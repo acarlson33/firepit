@@ -35,7 +35,7 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Tailwind CSS** - Modern, responsive UI styling
 - **shadcn/ui** - Accessible UI primitives
 - **PWA ready** - Installable web app support for mobile and desktop browsers
-- **Comprehensive tests** - 2204 passing tests with broad API, hook, and integration coverage
+- **Comprehensive tests** - 2264 passing tests with broad API, hook, and integration coverage
 - **Production hardening** - Error boundaries, rate limiting, security validation, and observability
 
 ## 📋 Prerequisites
@@ -128,7 +128,7 @@ Firepit is production-ready with:
 
 ✅ **Testing & Quality**
 
-- 2204 passing tests
+- 2264 passing tests
 - Comprehensive test coverage
 - Automated CI/CD pipeline
 - Strict ESLint configuration
@@ -245,9 +245,9 @@ bun run test:coverage
 bun run test --watch
 ```
 
-Current test coverage: **48.1%** statements (growing)
+Current test coverage: **49.92%** lines (growing, **34740/69591**)
 
-- 2204 tests passing across 191 test suites
+- 2264 tests passing across 203 test suites
 - Comprehensive API route testing (44 new tests for invite system)
 - Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
