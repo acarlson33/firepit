@@ -60,6 +60,9 @@ function inferImageMimeType(url: string): string {
 
 function mimeTypeToExtension(mimeType: string): string {
     switch (mimeType) {
+        case "image/gif": {
+            return "gif";
+        }
         case "image/webp": {
             return "webp";
         }

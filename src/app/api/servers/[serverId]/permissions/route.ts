@@ -200,8 +200,9 @@ export async function GET(
 
         // Lightweight channel fetch to derive type/category without recomputing
         try {
+            const databaseId = env.databaseId || "main";
             const channelDoc = await databases.getDocument(
-                env.databaseId,
+                databaseId,
                 env.collections.channels,
                 channelId,
             );

@@ -28,6 +28,28 @@ function normalizeChannelType(value: unknown): Channel["type"] {
     return "text";
 }
 
+function normalizeChannel(doc: Record<string, unknown>): Channel {
+    return {
+        $id: String(doc.$id),
+        serverId: String(doc.serverId),
+        name: String(doc.name),
+        type: normalizeChannelType(doc.type),
+        topic:
+            typeof doc.topic === "string" && doc.topic.length > 0
+                ? doc.topic
+                : undefined,
+        categoryId:
+            typeof doc.categoryId === "string" && doc.categoryId.length > 0
+                ? doc.categoryId
+                : undefined,
+        position:
+            typeof doc.position === "number" ? doc.position : undefined,
+        $createdAt: String(doc.$createdAt ?? ""),
+        $updatedAt:
+            typeof doc.$updatedAt === "string" ? doc.$updatedAt : undefined,
+    };
+}
+
 function getDatabases() {
     return getServerClient().databases;
 }
@@ -111,7 +133,13 @@ export async function PATCH(
             return accessResult;
         }
 
-        const parsed = (await request.json()) as unknown;
+        let parsed: unknown;
+        try {
+            parsed = await request.json();
+        } catch {
+            return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        }
+
         if (typeof parsed !== "object" || parsed === null) {
             return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
         }
@@ -192,7 +220,7 @@ export async function PATCH(
 
         invalidateChannelsServerCaches(String(channel.serverId));
 
-        return NextResponse.json({ channel });
+        return NextResponse.json({ channel: normalizeChannel(channel) });
     } catch (error) {
         if (isDocumentNotFoundError(error)) {
             return NextResponse.json(

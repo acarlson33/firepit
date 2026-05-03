@@ -1,28 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/appwrite-admin", () => ({
-    getAdminClient: () => ({
-        databases: {
-            createDocument: mockCreateDocument,
-            listDocuments: mockListDocuments,
-            updateDocument: mockUpdateDocument,
-            getDocument: mockGetDocument,
-        },
-    }),
-}));
-
-vi.mock("@/lib/appwrite-core", () => ({
-    getEnvConfig: () => ({
-        collections: {
-            threadReads: "threadReads",
-        },
-        databaseId: "db",
-    }),
-    perms: {
-        serverOwner: mockServerOwner,
-    },
-}));
-
 const {
     mockCreateDocument,
     mockListDocuments,
@@ -35,6 +12,31 @@ const {
     mockUpdateDocument: vi.fn(),
     mockGetDocument: vi.fn(),
     mockServerOwner: vi.fn(() => ["read:user:user-1"]),
+}));
+
+vi.mock("@/lib/appwrite-admin", () => ({
+    getAdminClient: () => ({
+        databases: {
+            createDocument: mockCreateDocument,
+            listDocuments: mockListDocuments,
+            updateDocument: mockUpdateDocument,
+            getDocument: mockGetDocument,
+        },
+    }),
+    isDocumentNotFoundError: (error: unknown) =>
+        typeof error === "object" && error !== null && "code" in error && error.code === 404,
+}));
+
+vi.mock("@/lib/appwrite-core", () => ({
+    getEnvConfig: () => ({
+        collections: {
+            threadReads: "threadReads",
+        },
+        databaseId: "db",
+    }),
+    perms: {
+        serverOwner: mockServerOwner,
+    },
 }));
 
 import { upsertThreadReads } from "../lib/thread-read-store";
@@ -98,28 +100,23 @@ describe("thread-read-store upsertThreadReads", () => {
     });
 
     it("recovers from create conflict by loading and updating the concurrent record", async () => {
-        mockListDocuments
-            .mockResolvedValueOnce({
-                documents: [],
-            })
-            .mockResolvedValueOnce({
-                documents: [
-                    {
-                        $id: "concurrent-1",
-                        contextId: "channel-1",
-                        contextType: "channel",
-                        reads: JSON.stringify({
-                            "message-1": "2026-04-10T00:30:00.000Z",
-                        }),
-                        userId: "user-1",
-                    },
-                ],
-            });
+        mockListDocuments.mockResolvedValueOnce({
+            documents: [],
+        });
 
         mockCreateDocument.mockRejectedValueOnce({
             code: 409,
-            message:
-                "Document with the requested ID '69d9767f0002fd84869b' already exists.",
+            message: "Document already exists",
+        });
+
+        mockGetDocument.mockResolvedValueOnce({
+            $id: "concurrent-1",
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: JSON.stringify({
+                "message-1": "2026-04-10T00:30:00.000Z",
+            }),
+            userId: "user-1",
         });
 
         mockUpdateDocument.mockResolvedValueOnce({
@@ -142,6 +139,11 @@ describe("thread-read-store upsertThreadReads", () => {
         });
 
         expect(mockCreateDocument).toHaveBeenCalledTimes(1);
+        expect(mockGetDocument).toHaveBeenCalledWith(
+            "db",
+            "threadReads",
+            expect.any(String),
+        );
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "db",
             "threadReads",
@@ -156,5 +158,57 @@ describe("thread-read-store upsertThreadReads", () => {
         expect(result.reads).toEqual({
             "message-1": "2026-04-10T01:30:00.000Z",
         });
+    });
+
+    it("falls back to getDocument when createDocument rejects with code 409", async () => {
+        mockListDocuments.mockResolvedValueOnce({
+            documents: [],
+        });
+        mockCreateDocument.mockRejectedValueOnce({ code: 409, message: "Duplicate" });
+        mockGetDocument.mockResolvedValueOnce({
+            $id: "existing-409",
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: JSON.stringify({
+                "message-1": "2026-04-10T00:00:00.000Z",
+            }),
+            userId: "user-1",
+        });
+        mockUpdateDocument.mockResolvedValueOnce({
+            $id: "existing-409",
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: JSON.stringify({
+                "message-1": "2026-04-10T01:00:00.000Z",
+            }),
+            userId: "user-1",
+        });
+
+        const result = await upsertThreadReads({
+            contextId: "channel-1",
+            contextType: "channel",
+            reads: {
+                "message-1": "2026-04-10T01:00:00.000Z",
+            },
+            userId: "user-1",
+        });
+
+        expect(mockCreateDocument).toHaveBeenCalledTimes(1);
+        expect(mockGetDocument).toHaveBeenCalledWith(
+            "db",
+            "threadReads",
+            "channel-1_channel_user-1",
+        );
+        expect(mockUpdateDocument).toHaveBeenCalledWith(
+            "db",
+            "threadReads",
+            "existing-409",
+            {
+                reads: JSON.stringify({
+                    "message-1": "2026-04-10T01:00:00.000Z",
+                }),
+            },
+        );
+        expect(result.$id).toBe("existing-409");
     });
 });

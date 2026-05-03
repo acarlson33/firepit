@@ -899,6 +899,39 @@ async function backfillAnnouncementIdempotencyKeys(): Promise<void> {
     }
 }
 
+async function ensureNoDuplicateIdempotencyKeys(): Promise<void> {
+    const duplicateGroups = await listAllDocuments({
+        collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+        queries: [Query.notEqual("idempotencyKey", "")],
+    });
+
+    const keyCounts = new Map<string, string[]>();
+    for (const doc of duplicateGroups) {
+        const key = doc.idempotencyKey as string;
+        if (!key) continue;
+        const existing = keyCounts.get(key) ?? [];
+        existing.push(String(doc.$id));
+        keyCounts.set(key, existing);
+    }
+
+    const duplicates: Array<{ key: string; ids: string[] }> = [];
+    for (const [key, ids] of keyCounts) {
+        if (ids.length > 1) {
+            duplicates.push({ key, ids });
+        }
+    }
+
+    if (duplicates.length > 0) {
+        throw new Error(
+            `Migration aborted: found ${duplicates.length} duplicate idempotencyKey values. ` +
+            `Sample duplicates: ${duplicates.slice(0, 3).map(d => `key='${d.key}' (${d.ids.length} docs: ${d.ids.slice(0, 2).join(", ")})`).join(", ")}. ` +
+            `Remove duplicates or clean idempotencyKey before creating unique index.`,
+        );
+    }
+
+    info("[setup] no duplicate idempotencyKey values found");
+}
+
 // ---- Domain Specific Setup ----
 async function setupServers() {
     await ensureCollection("servers", "Servers");
@@ -1576,7 +1609,7 @@ async function setupConversations() {
     await ensureIndex("conversations", "idx_announcement_thread", "unique", [
         "isSystemAnnouncementThread",
         "announcementThreadKey",
-    ]);
+    ], { recreateIfMismatched: true });
 }
 
 async function setupDirectMessages() {
@@ -1675,6 +1708,9 @@ async function setupAnnouncements() {
         0,
     );
     await backfillAnnouncementIdempotencyKeys();
+
+    // Before creating unique index, check for duplicates
+    await ensureNoDuplicateIdempotencyKeys();
 
     await ensureIndex(
         ANNOUNCEMENTS_COLLECTION_ID,

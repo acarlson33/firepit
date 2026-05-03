@@ -105,7 +105,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const parsed = (await request.json()) as unknown;
+        let parsed: unknown;
+        try {
+            parsed = await request.json();
+        } catch {
+            return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+        }
+
         if (typeof parsed !== "object" || parsed === null) {
             return NextResponse.json(
                 { error: "Invalid request body" },

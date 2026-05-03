@@ -184,4 +184,46 @@ describe("GET /api/servers/[serverId]/permissions", () => {
             canSend: false,
         });
     });
+
+    it("allows send for announcement channel when user has manageChannels", async () => {
+        mockGetDocument.mockResolvedValue({
+            $id: "server-1",
+            ownerId: "user-owner",
+        });
+        mockListDocuments.mockResolvedValueOnce({
+            documents: [
+                {
+                    $id: "role-1",
+                    userId: "user-1",
+                    allow: ["readMessages", "manageChannels"],
+                    deny: [],
+                    $createdAt: "2024-01-01T00:00:00.000Z",
+                },
+            ],
+        });
+        mockGetDocument.mockResolvedValueOnce({
+            $id: "channel-1",
+            serverId: "server-1",
+            type: "announcement",
+        });
+        mockHasAccessToCategory.mockResolvedValue(true);
+        mockNormalizeChannelType.mockReturnValue("announcement");
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/servers/server-1/permissions?userId=user-1&channelId=channel-1",
+        );
+
+        const response = await GET(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            readMessages: true,
+            manageChannels: true,
+            sendMessages: false,
+            canRead: true,
+            canSend: true,
+        });
+    });
 });

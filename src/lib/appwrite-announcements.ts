@@ -689,6 +689,7 @@ async function* listAllProfileUserIds(
     const { databases } = getServerClient();
     const env = getEnvConfig();
     let cursorAfter: string | undefined;
+    const seenInPage = new Set<string>();
 
     while (true) {
         const queries = [Query.orderAsc("$id"), Query.limit(100)];
@@ -702,7 +703,6 @@ async function* listAllProfileUserIds(
             queries,
         );
 
-        const seenInPage = new Set<string>();
         for (const document of response.documents) {
             const userId =
                 typeof document.userId === "string"
@@ -828,23 +828,50 @@ async function ensureAnnouncementThreadConversation(params: {
         Permission.delete(Role.user(systemSenderUserId)),
     ];
 
-    const conversation = await databases.createDocument(
-        databaseId,
-        collections.conversations,
-        ID.unique(),
-        {
-            announcementThreadKey,
-            createdBy: systemSenderUserId,
-            isGroup: false,
-            isSystemAnnouncementThread: true,
-            lastMessageAt: new Date().toISOString(),
-            name: "System Announcements",
-            participants,
-        },
-        permissions,
-    );
+    try {
+        const conversation = await databases.createDocument(
+            databaseId,
+            collections.conversations,
+            ID.unique(),
+            {
+                announcementThreadKey,
+                createdBy: systemSenderUserId,
+                isGroup: false,
+                isSystemAnnouncementThread: true,
+                lastMessageAt: new Date().toISOString(),
+                name: "System Announcements",
+                participants,
+            },
+            permissions,
+        );
 
-    return String(conversation.$id);
+        return String(conversation.$id);
+    } catch (error) {
+        // Check if this is a duplicate key conflict
+        const isDuplicateConflict =
+            typeof error === "object" &&
+            error !== null &&
+            ("code" in error && (error as { code?: number }).code === 409 ||
+             "type" in error && (error as { type?: string }).type === "document_already_exists");
+
+        if (isDuplicateConflict) {
+            // Fetch the existing conversation
+            const existing = await databases.listDocuments(
+                databaseId,
+                collections.conversations,
+                [
+                    Query.equal("isSystemAnnouncementThread", true),
+                    Query.equal("announcementThreadKey", announcementThreadKey),
+                    Query.limit(1),
+                ],
+            );
+
+            if (existing.documents.length > 0) {
+                return String(existing.documents[0].$id);
+            }
+        }
+        throw error;
+    }
 }
 
 async function sendSystemAnnouncementMessage(params: {

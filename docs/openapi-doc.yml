@@ -799,11 +799,10 @@ paths:
         post:
             tags: [Servers]
             summary: Create a server
-            description: >-
-                Returns JoinResponse with JoinMembership when the membership
-                document is created successfully. membership may be null when
-                the memberships collection is unavailable or membership
-                creation fails.
+             description: >-
+                 Returns CreateServerResponse containing the created server object (or null on failure)
+                 and any associated metadata. The response includes the server field with the new
+                 server payload.
             security:
                 - sessionCookie: []
             requestBody:
@@ -1230,6 +1229,11 @@ paths:
                                     type: [string, "null"]
                                 position:
                                     type: integer
+                                type:
+                                    type: string
+                                    enum: [announcement, text]
+                                topic:
+                                    type: [string, "null"]
             responses:
                 "200":
                     description: Updated channel
@@ -1248,6 +1252,38 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "403":
                     description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Channels]
+            summary: Delete a channel
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "204":
+                    description: Channel deleted successfully
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
                     content:
                         application/json:
                             schema:

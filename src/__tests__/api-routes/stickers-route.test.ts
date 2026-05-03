@@ -96,6 +96,19 @@ describe("stickers API route", () => {
         );
     });
 
+    it("returns 401 when auth returns FORBIDDEN", async () => {
+        mockRequireAuth.mockRejectedValue(new MockAuthError("FORBIDDEN"));
+
+        const response = await GET(
+            new NextRequest("http://localhost/api/stickers"),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(data.error).toBe("Forbidden");
+        expect(mockGetBuiltinStickerPacks).not.toHaveBeenCalled();
+    });
+
     it("returns only the requested sticker pack", async () => {
         const response = await GET(
             new NextRequest("http://localhost/api/stickers?packId=party"),
@@ -127,6 +140,7 @@ describe("stickers API route", () => {
 
         expect(response.status).toBe(500);
         expect(data.error).toBe("Failed to list stickers");
+        expect(mockGetBuiltinStickerPacks).not.toHaveBeenCalled();
         expect(mockTrackApiCall).toHaveBeenCalledWith(
             "/api/stickers",
             "GET",

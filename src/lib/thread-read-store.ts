@@ -1,6 +1,6 @@
 import { AppwriteException, ID, Query } from "node-appwrite";
 
-import { getAdminClient } from "@/lib/appwrite-admin";
+import { getAdminClient, isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import {
     normalizeThreadReads,
@@ -387,10 +387,11 @@ export async function upsertThreadReads(params: {
     };
 
     try {
+        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
         const createdDocument = await databases.createDocument(
             env.databaseId,
             env.collections.threadReads,
-            ID.unique(),
+            docId,
             payload,
             perms.serverOwner(params.userId),
         );
@@ -403,22 +404,32 @@ export async function upsertThreadReads(params: {
             throw error;
         }
 
-        // A concurrent create won the race; merge and update the now-existing record.
-        const concurrentDocuments =
-            await listThreadReadDocumentsForContext(params);
-        if (concurrentDocuments.length === 0) {
-            throw error;
-        }
+        // A concurrent create won the race; fetch the existing record directly.
+        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
+        try {
+            const existingDocument = await databases.getDocument(
+                env.databaseId,
+                env.collections.threadReads,
+                docId,
+            );
 
-        const merged = await mergeIntoExistingThreadReadDocument({
-            ...params,
-            concurrentDocuments,
-            incomingReads,
-        });
-        if (!merged) {
-            throw error;
-        }
+            const merged = await mergeIntoExistingThreadReadDocument({
+                ...params,
+                concurrentDocuments: [
+                    mapThreadReadDocument(existingDocument as unknown as Record<string, unknown>),
+                ],
+                incomingReads,
+            });
+            if (!merged) {
+                throw error;
+            }
 
-        return merged;
+            return merged;
+        } catch (getError) {
+            if (isDocumentNotFoundError(getError)) {
+                throw error;
+            }
+            throw getError;
+        }
     }
 }

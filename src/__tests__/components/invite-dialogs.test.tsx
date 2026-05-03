@@ -531,12 +531,11 @@ describe("CreateInviteDialog Component", () => {
 
         await waitFor(() => {
             expect(toast.error).toHaveBeenCalledWith("Server not found");
+            expect(
+                screen.getByRole("button", { name: /generate invite/i }),
+            ).not.toBeDisabled();
+            expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
         });
-
-        expect(
-            screen.getByRole("button", { name: /generate invite/i }),
-        ).not.toBeDisabled();
-        expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
     });
 
     it("should handle network error during creation", async () => {
@@ -558,12 +557,11 @@ describe("CreateInviteDialog Component", () => {
 
         await waitFor(() => {
             expect(toast.error).toHaveBeenCalledWith("Network error");
+            expect(
+                screen.getByRole("button", { name: /generate invite/i }),
+            ).not.toBeDisabled();
+            expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
         });
-
-        expect(
-            screen.getByRole("button", { name: /generate invite/i }),
-        ).not.toBeDisabled();
-        expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
     });
 
     it("should copy invite link to clipboard", async () => {

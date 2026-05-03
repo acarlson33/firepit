@@ -1,14 +1,18 @@
 "use client";
 
 import { Channel, Query } from "appwrite";
-import { useEffect, useCallback, useMemo } from "react";
+import { useEffect, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
@@ -39,6 +43,7 @@ export function useConversations(userId: string | null, enabled = true) {
     const queryClient = useQueryClient();
     const isEnabled =
         enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
+    const [realtimeRetryNonce, setRealtimeRetryNonce] = useState(0);
 
     const loadConversations = useCallback(async () => {
         if (!userId || !CONVERSATIONS_COLLECTION) {
@@ -182,15 +187,36 @@ export function useConversations(userId: string | null, enabled = true) {
                     return;
                 }
 
-                logger.error(
-                    "Conversation realtime subscription failed",
-                    toError(realtimeError),
-                    {
-                        collectionId: CONVERSATIONS_COLLECTION,
-                        conversationChannelKey,
-                        databaseId: env.databaseId,
-                    },
-                );
+                const isTransient = isTransientRealtimeSubscribeError(realtimeError);
+                const retryDelayMs = isTransient ? 1200 : 4000;
+
+                if (isTransient) {
+                    logger.warn(
+                        "Conversation realtime subscription interrupted during connection setup",
+                        {
+                            collectionId: CONVERSATIONS_COLLECTION,
+                            conversationChannelKey,
+                            databaseId: env.databaseId,
+                            error: toErrorMessage(realtimeError),
+                            retryDelayMs,
+                        },
+                    );
+                } else {
+                    logger.error(
+                        "Conversation realtime subscription failed",
+                        toError(realtimeError),
+                        {
+                            collectionId: CONVERSATIONS_COLLECTION,
+                            conversationChannelKey,
+                            databaseId: env.databaseId,
+                            retryDelayMs,
+                        },
+                    );
+                }
+
+                setTimeout(() => {
+                    setRealtimeRetryNonce((current) => current + 1);
+                }, retryDelayMs);
             }
         })();
         subscriptionTask.catch((error) => {
@@ -204,7 +230,7 @@ export function useConversations(userId: string | null, enabled = true) {
             cancelled = true;
             cleanupFn?.();
         };
-    }, [isEnabled, queryClient, userId]);
+    }, [isEnabled, queryClient, userId, realtimeRetryNonce]);
 
     return {
         conversations: conversationsWithStatus,

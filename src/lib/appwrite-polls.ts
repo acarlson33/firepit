@@ -165,6 +165,7 @@ export async function enrichMessagesWithPolls(messages: Message[]): Promise<Mess
                     existingPollId: pollsByMessageId.get(poll.messageId)?.id ?? null,
                     incomingPollId: poll.$id,
                 });
+                continue; // Preserve first-seen poll
             }
 
             pollsByMessageId.set(

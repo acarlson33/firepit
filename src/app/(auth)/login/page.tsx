@@ -41,8 +41,6 @@ function LoginFormContent() {
             toast.error("Email verification link is invalid or expired.");
         }
 
-        notifiedVerificationStatusRef.current = verifiedStatus;
-
         const updatedSearchParams = new URLSearchParams(searchParams.toString());
         updatedSearchParams.delete("verified");
         const nextQuery = updatedSearchParams.toString();

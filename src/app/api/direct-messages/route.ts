@@ -1877,6 +1877,42 @@ export async function POST(request: NextRequest) {
                             ? attachmentError.message
                             : String(attachmentError),
                 });
+
+                // Roll back: delete any created attachment documents first
+                try {
+                    const { documents: attachments } = await databases.listDocuments(
+                        DATABASE_ID,
+                        MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                        [Query.equal("messageId", String(message.$id))],
+                    );
+                    for (const att of attachments) {
+                        try {
+                            await databases.deleteDocument(
+                                DATABASE_ID,
+                                MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                                String(att.$id),
+                            );
+                        } catch (attDeleteError) {
+                            logger.warn("Failed to delete attachment during rollback", {
+                                attachmentId: att.$id,
+                                error:
+                                    attDeleteError instanceof Error
+                                        ? attDeleteError.message
+                                        : String(attDeleteError),
+                            });
+                        }
+                    }
+                } catch (listError) {
+                    logger.warn("Failed to list attachments during rollback", {
+                        messageId: String(message.$id),
+                        error:
+                            listError instanceof Error
+                                ? listError.message
+                                : String(listError),
+                    });
+                }
+
+                // Delete the parent DM
                 try {
                     await databases.deleteDocument(
                         DATABASE_ID,

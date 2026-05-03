@@ -379,11 +379,25 @@ export async function POST(request: NextRequest) {
 
         // Create attachment records if provided
         if (normalizedAttachments.length > 0) {
-            await createAttachments(
-                String(res.$id),
-                "channel",
-                normalizedAttachments,
-            );
+            try {
+                await createAttachments(
+                    String(res.$id),
+                    "channel",
+                    normalizedAttachments,
+                );
+            } catch (attachmentError) {
+                // Roll back the created message if attachment write fails
+                try {
+                    await databases.deleteDocument(
+                        env.databaseId,
+                        env.collections.messages,
+                        String(res.$id),
+                    );
+                } catch (deleteError) {
+                    logger.error("Failed to roll back message after attachment error", { deleteError });
+                }
+                throw attachmentError;
+            }
         }
 
         if (hasValidMentions) {

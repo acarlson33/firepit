@@ -238,6 +238,14 @@ describe("Login Security", () => {
                 }) as never,
         );
 
+        const { Users } = await import("node-appwrite");
+        vi.mocked(Users).mockImplementationOnce(
+            () =>
+                ({
+                    deleteSession: vi.fn().mockResolvedValue({}),
+                }) as never,
+        );
+
         const { loginAction } = await import("@/app/(auth)/login/actions");
 
         const formData = new FormData();

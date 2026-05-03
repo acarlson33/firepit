@@ -149,6 +149,7 @@ export function ChatThreadContent({
     loading = false,
     error,
     currentUserId,
+    canManageMessages,
     customEmojis,
     onToggleReaction,
     onVotePoll,
@@ -169,6 +170,7 @@ export function ChatThreadContent({
             <div className="border-b pb-4">
                 <MessageCard
                     currentUserId={currentUserId}
+                    canManageMessages={canManageMessages}
                     customEmojis={customEmojis}
                     message={parentMessage}
                     onToggleReaction={onToggleReaction}
@@ -199,6 +201,7 @@ export function ChatThreadContent({
                         {replies.map((reply) => (
                             <MessageCard
                                 currentUserId={currentUserId}
+                                canManageMessages={canManageMessages ? () => canManageMessages(reply) : undefined}
                                 customEmojis={customEmojis}
                                 key={reply.id}
                                 message={reply}

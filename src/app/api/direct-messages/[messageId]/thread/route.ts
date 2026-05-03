@@ -207,7 +207,6 @@ async function createAttachments(
                     "Using legacy attachment payload fallback for DM thread attachment write",
                     {
                         attachmentFileId: attachment.fileId,
-                        attachmentFileName: attachment.fileName,
                         messageId,
                         reason:
                             error instanceof Error

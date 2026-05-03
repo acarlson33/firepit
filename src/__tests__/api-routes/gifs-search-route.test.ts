@@ -79,13 +79,13 @@ describe("GIF search API route", () => {
         mockFetch = vi.fn();
         vi.stubGlobal("fetch", mockFetch);
 
-        process.env.GIF_PROVIDER = "";
-        process.env.GIPHY_API_KEY = "";
-        process.env.GIPHY_LANG = "";
-        process.env.GIPHY_RATING = "";
-        process.env.TENOR_API_KEY = "";
-        process.env.TENOR_CLIENT_KEY = "";
-        process.env.TENOR_LOCALE = "";
+        delete process.env.GIF_PROVIDER;
+        delete process.env.GIPHY_API_KEY;
+        delete process.env.GIPHY_LANG;
+        delete process.env.GIPHY_RATING;
+        delete process.env.TENOR_API_KEY;
+        delete process.env.TENOR_CLIENT_KEY;
+        delete process.env.TENOR_LOCALE;
 
         mockRequireAuth.mockResolvedValue({ $id: "user-1" });
         mockCheckRateLimit.mockReturnValue({ allowed: true });
@@ -186,6 +186,7 @@ describe("GIF search API route", () => {
 
     it("searches Giphy and normalizes the results", async () => {
         process.env.GIPHY_API_KEY = "giphy-key";
+        process.env.GIF_PROVIDER = "giphy";
 
         mockFetch.mockResolvedValue(
             new Response(

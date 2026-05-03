@@ -1584,26 +1584,10 @@ export default function ChatPage() {
             }
         },
         onVotePoll: async (messageId, optionId) => {
-            try {
-                await votePoll(messageId, optionId);
-            } catch (error) {
-                logger.error(
-                    "Vote poll action failed",
-                    error instanceof Error ? error : String(error),
-                    { messageId, optionId },
-                );
-            }
+            await votePoll(messageId, optionId);
         },
         onClosePoll: async (messageId) => {
-            try {
-                await closePoll(messageId);
-            } catch (error) {
-                logger.error(
-                    "Close poll action failed",
-                    error instanceof Error ? error : String(error),
-                    { messageId },
-                );
-            }
+            await closePoll(messageId);
         },
     });
 

@@ -101,7 +101,7 @@ export function useStatusSubscription(userIds: string[]) {
         let cleanup: (() => void) | undefined;
         let cancelled = false;
 
-            void (async () => {
+        (async () => {
             try {
                 if (cancelled) {
                     return;
@@ -167,7 +167,12 @@ export function useStatusSubscription(userIds: string[]) {
                     error: toErrorMessage(err),
                 });
             }
-        })();
+        })().catch((err: unknown) => {
+            logger.error(
+                "Status subscription failed",
+                err instanceof Error ? err : new Error(String(err)),
+            );
+        });
 
         return () => {
             cancelled = true;

@@ -218,53 +218,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
         updates.defaultOnSignup = payload.defaultOnSignup;
         changedFields.push("defaultOnSignup");
-
-        if (payload.defaultOnSignup === true) {
-            const pageSize = 100;
-            const existingDefaultServers: Array<{ $id: string }> = [];
-
-            try {
-                const q = Query as unknown as { select?: (attrs: string[]) => unknown };
-                const baseQueries = [] as string[];
-                if (typeof q.select === "function") {
-                    baseQueries.push(q.select(["$id"]) as unknown as string);
-                }
-                baseQueries.push(Query.equal("defaultOnSignup", true));
-
-                const { documents, truncated } = await listPages({
-                    databases,
-                    databaseId: env.databaseId,
-                    collectionId: env.collections.servers,
-                    baseQueries,
-                    pageSize,
-                    warningContext: "listDefaultSignupServersPATCH",
-                });
-
-                if (truncated) {
-                    throw new Error("listDefaultSignupServersPATCH truncated");
-                }
-
-                for (const document of documents) {
-                    if (typeof document.$id === "string") {
-                        existingDefaultServers.push({ $id: document.$id });
-                    }
-                }
-            } catch (error) {
-                logger.error("Failed to list default signup servers during PATCH", {
-                    error: error instanceof Error ? error.message : String(error),
-                    serverId,
-                    userId: session.$id,
-                });
-                return NextResponse.json(
-                    { error: "Internal server error" },
-                    { status: 500 },
-                );
-            }
-
-            defaultServersToClear = existingDefaultServers.filter(
-                (defaultServer) => defaultServer.$id !== serverId,
-            );
-        }
     }
 
     if (Object.hasOwn(payload, "iconFileId")) {
