@@ -277,10 +277,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             const existingDefaultServers: Array<{ $id: string }> = [];
 
             try {
+                const baseQueries: string[] = [];
                 const q = Query as unknown as { select?: (attrs: string[]) => unknown };
-                const baseQueries = [] as string[];
                 if (typeof q.select === "function") {
-                    baseQueries.push(q.select(["$id"]) as unknown as string);
+                    baseQueries.push(q.select(["$id"]) as string);
                 }
                 baseQueries.push(Query.equal("defaultOnSignup", true));
 

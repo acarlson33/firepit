@@ -234,15 +234,15 @@ describe("Login Security", () => {
                         secret: "system-session-secret",
                         userId: "system-account-id",
                     }),
-                    deleteSession: vi.fn().mockResolvedValue({}),
                 }) as never,
         );
 
         const { Users } = await import("node-appwrite");
+        const mockDeleteSession = vi.fn().mockResolvedValue({});
         vi.mocked(Users).mockImplementationOnce(
             () =>
                 ({
-                    deleteSession: vi.fn().mockResolvedValue({}),
+                    deleteSession: mockDeleteSession,
                 }) as never,
         );
 
@@ -259,6 +259,10 @@ describe("Login Security", () => {
             expect(result.error).toContain("reserved for system announcements");
         }
         expect(mockCookieStore.set).not.toHaveBeenCalled();
+        expect(mockDeleteSession).toHaveBeenCalledWith({
+            userId: "system-account-id",
+            sessionId: "system-session-id",
+        });
     });
 
     it("loginAction should require verification when feature flag is enabled and email is unverified", async () => {

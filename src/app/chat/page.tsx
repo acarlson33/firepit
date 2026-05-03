@@ -64,7 +64,6 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { apiCache, CACHE_TTL } from "@/lib/cache-utils";
 import { listInboxWithFilters } from "@/lib/inbox-client";
 import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
-import { logger } from "@/lib/client-logger";
 import { toast } from "sonner";
 
 // Lazy load heavy components

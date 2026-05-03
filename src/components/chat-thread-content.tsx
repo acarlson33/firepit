@@ -201,7 +201,7 @@ export function ChatThreadContent({
                         {replies.map((reply) => (
                             <MessageCard
                                 currentUserId={currentUserId}
-                                canManageMessages={canManageMessages ? () => canManageMessages(reply) : undefined}
+                                canManageMessages={canManageMessages}
                                 customEmojis={customEmojis}
                                 key={reply.id}
                                 message={reply}

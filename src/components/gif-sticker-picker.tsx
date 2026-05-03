@@ -239,9 +239,9 @@ export function GifStickerPicker({
             } finally {
                 if (gifFetchControllerRef.current === controller) {
                     gifFetchControllerRef.current = null;
+                    setGifLoading(false);
+                    setGifLoadingMore(false);
                 }
-                setGifLoading(false);
-                setGifLoadingMore(false);
             }
         },
         [gifSearchQuery],

@@ -799,7 +799,7 @@ paths:
         post:
             tags: [Servers]
             summary: Create a server
-             description: >-
+            description: >-
                  Returns CreateServerResponse containing the created server object (or null on failure)
                  and any associated metadata. The response includes the server field with the new
                  server payload.
@@ -1231,7 +1231,7 @@ paths:
                                     type: integer
                                 type:
                                     type: string
-                                    enum: [announcement, text]
+                                    enum: [announcement, text, voice]
                                 topic:
                                     type: [string, "null"]
             responses:

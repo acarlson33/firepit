@@ -168,10 +168,7 @@ export function useStatusSubscription(userIds: string[]) {
                 });
             }
         })().catch((err: unknown) => {
-            logger.error(
-                "Status subscription failed",
-                err instanceof Error ? err : new Error(String(err)),
-            );
+            logger.error("Status subscription setup failed", toError(err));
         });
 
         return () => {

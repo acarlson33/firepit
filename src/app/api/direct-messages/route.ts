@@ -275,20 +275,22 @@ async function getDmEncryptionStateForPair(
 
 /**
  * Helper to create attachment records for a direct message
+ * Returns array of created attachment document IDs
  */
 async function createAttachments(
     databases: ReturnType<typeof getServerClient>["databases"],
     messageId: string,
     attachments: FileAttachment[],
-): Promise<void> {
+): Promise<string[]> {
     if (!attachments || attachments.length === 0) {
-        return;
+        return [];
     }
 
     if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
-        return;
+        return [];
     }
 
+    const createdIds: string[] = [];
     await Promise.all(
         attachments.map(async (attachment) => {
             const payload = buildAttachmentDocumentData({
@@ -298,18 +300,19 @@ async function createAttachments(
             });
 
             try {
-                await databases.createDocument(
+                const result = await databases.createDocument(
                     DATABASE_ID,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
                     ID.unique(),
                     payload,
                 );
+                createdIds.push(String(result.$id));
             } catch (error) {
                 if (!isUnknownAttachmentAttributeError(error)) {
                     throw error;
                 }
 
-                await databases.createDocument(
+                const legacyResult = await databases.createDocument(
                     DATABASE_ID,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
                     ID.unique(),
@@ -319,9 +322,11 @@ async function createAttachments(
                         messageType: "dm",
                     }),
                 );
+                createdIds.push(String(legacyResult.$id));
             }
         }),
     );
+    return createdIds;
 }
 
 // Helper to create JSON responses with CORS headers and compression hints
@@ -1862,9 +1867,10 @@ export async function POST(request: NextRequest) {
         );
 
         // Create attachment records if any
+        let createdAttachmentIds: string[] = [];
         if (normalizedAttachments.length > 0) {
             try {
-                await createAttachments(
+                createdAttachmentIds = await createAttachments(
                     databases,
                     String(message.$id),
                     normalizedAttachments,
@@ -1878,37 +1884,28 @@ export async function POST(request: NextRequest) {
                             : String(attachmentError),
                 });
 
-                // Roll back: delete any created attachment documents first
-                try {
-                    const { documents: attachments } = await databases.listDocuments(
-                        DATABASE_ID,
-                        MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                        [Query.equal("messageId", String(message.$id))],
-                    );
-                    for (const att of attachments) {
-                        try {
-                            await databases.deleteDocument(
-                                DATABASE_ID,
-                                MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                                String(att.$id),
-                            );
-                        } catch (attDeleteError) {
-                            logger.warn("Failed to delete attachment during rollback", {
-                                attachmentId: att.$id,
-                                error:
-                                    attDeleteError instanceof Error
-                                        ? attDeleteError.message
-                                        : String(attDeleteError),
-                            });
-                        }
+                // Roll back: delete any created attachment documents in parallel
+                const rollbackResults = await Promise.allSettled(
+                    createdAttachmentIds.map((attachmentDocumentId) =>
+                        databases.deleteDocument(
+                            DATABASE_ID,
+                            MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                            attachmentDocumentId,
+                        ),
+                    ),
+                );
+
+                for (const [index, rollbackResult] of rollbackResults.entries()) {
+                    if (rollbackResult.status !== "rejected") {
+                        continue;
                     }
-                } catch (listError) {
-                    logger.warn("Failed to list attachments during rollback", {
-                        messageId: String(message.$id),
-                        error:
-                            listError instanceof Error
-                                ? listError.message
-                                : String(listError),
+                    logger.warn("Failed to rollback attachment document", {
+                        attachmentDocumentId: createdAttachmentIds[index],
+                        messageId: message.$id,
+                        reason:
+                            rollbackResult.reason instanceof Error
+                                ? rollbackResult.reason.message
+                                : String(rollbackResult.reason),
                     });
                 }
 

@@ -107,6 +107,12 @@ describe("stickers API route", () => {
         expect(response.status).toBe(401);
         expect(data.error).toBe("Forbidden");
         expect(mockGetBuiltinStickerPacks).not.toHaveBeenCalled();
+        expect(mockTrackApiCall).toHaveBeenCalledWith(
+            "/api/stickers",
+            "GET",
+            401,
+            expect.any(Number),
+        );
     });
 
     it("returns only the requested sticker pack", async () => {

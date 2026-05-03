@@ -212,7 +212,7 @@ export async function GET(
             if (channelDoc.categoryId) {
                 const categoryAccess = await hasAccessToCategory(
                     databases,
-                    env,
+                    { ...env, databaseId },
                     String(channelDoc.categoryId),
                     serverAccess,
                 );

@@ -186,6 +186,29 @@ describe("GET /api/servers/[serverId]/permissions", () => {
     });
 
     it("allows send for announcement channel when user has manageChannels", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValueOnce({
+            isMember: true,
+            isServerOwner: false,
+            roleIds: ["role-1"],
+            roles: [
+                {
+                    $id: "role-1",
+                    allow: ["readMessages", "manageChannels"],
+                    deny: [],
+                },
+            ],
+            permissions: {
+                administrator: false,
+                manageChannels: true,
+                manageRoles: false,
+                manageServer: false,
+                manageMembers: false,
+                mentionEveryone: false,
+                moveMessages: false,
+                readMessages: true,
+                sendMessages: true,
+            },
+        });
         mockGetDocument.mockResolvedValue({
             $id: "server-1",
             ownerId: "user-owner",

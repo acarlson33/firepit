@@ -907,7 +907,7 @@ async function ensureNoDuplicateIdempotencyKeys(): Promise<void> {
 
     const keyCounts = new Map<string, string[]>();
     for (const doc of duplicateGroups) {
-        const key = doc.idempotencyKey as string;
+        const key = `${doc.createdBy}_${doc.idempotencyKey}` as string;
         if (!key) continue;
         const existing = keyCounts.get(key) ?? [];
         existing.push(String(doc.$id));
@@ -942,8 +942,9 @@ async function setupServers() {
     await ensureStringAttribute("servers", "bannerFileId", LEN_ID, false);
     await ensureBooleanAttribute("servers", "isPublic", false);
     await ensureBooleanAttribute("servers", "defaultOnSignup", false);
-    const migrateServersVisibilityDefault =
-        process.env.MIGRATE_LEGACY_SERVERS_IS_PUBLIC_DEFAULT?.trim() === "true";
+    const migrateServersVisibilityDefault = /^(1|true|yes)$/i.test(
+        process.env.MIGRATE_LEGACY_SERVERS_IS_PUBLIC_DEFAULT ?? "",
+    );
     await migrateLegacyServersIsPublic(migrateServersVisibilityDefault);
     await ensureIndex("servers", "idx_isPublic", "key", ["isPublic"]);
     await ensureIndex("servers", "idx_defaultOnSignup", "key", [
@@ -1725,7 +1726,7 @@ async function setupAnnouncements() {
         ANNOUNCEMENTS_COLLECTION_ID,
         "idx_idempotency",
         "unique",
-        ["idempotencyKey"],
+        ["createdBy", "idempotencyKey"],
         { recreateIfMismatched: true },
     );
 }

@@ -245,7 +245,7 @@ bun run test:coverage
 bun run test --watch
 ```
 
-Current test coverage: **49.93%** lines (growing, **34949/69983**)
+Current test coverage: **49.93%** lines (growing, **34957/70025**)
 
 - 2274 tests passing across 203 test suites
 - Comprehensive API route testing

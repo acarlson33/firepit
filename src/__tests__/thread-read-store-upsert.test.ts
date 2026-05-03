@@ -24,7 +24,10 @@ vi.mock("@/lib/appwrite-admin", () => ({
         },
     }),
     isDocumentNotFoundError: (error: unknown) =>
-        typeof error === "object" && error !== null && "code" in error && error.code === 404,
+        typeof error === "object" &&
+        error !== null &&
+        "type" in error &&
+        error.type === "document_not_found",
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
@@ -142,7 +145,7 @@ describe("thread-read-store upsertThreadReads", () => {
         expect(mockGetDocument).toHaveBeenCalledWith(
             "db",
             "threadReads",
-            expect.any(String),
+            "channel-1_channel_user-1",
         );
         expect(mockUpdateDocument).toHaveBeenCalledWith(
             "db",

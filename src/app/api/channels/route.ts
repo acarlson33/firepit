@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
@@ -315,15 +316,27 @@ export async function GET(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        const server = await dedupeChannelsRouteCache(
-            `api:channels:server:${serverId}`,
-            () =>
-                databases.getDocument(
-                    env.databaseId,
-                    env.collections.servers,
-                    serverId,
-                ),
-        );
+        let server: { ownerId: string | number } | null = null;
+        try {
+            const serverDoc = (await dedupeChannelsRouteCache(
+                `api:channels:server:${serverId}`,
+                () =>
+                    databases.getDocument(
+                        env.databaseId,
+                        env.collections.servers,
+                        serverId,
+                    ),
+            )) as unknown as { ownerId: string | number };
+            server = serverDoc;
+        } catch (error) {
+            if (isDocumentNotFoundError(error)) {
+                return NextResponse.json(
+                    { error: "Server not found" },
+                    { status: 404 },
+                );
+            }
+            throw error;
+        }
 
         const isServerOwner = String(server.ownerId) === userId;
 

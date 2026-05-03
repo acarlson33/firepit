@@ -93,40 +93,21 @@ describe("GIF search API route", () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
-        if (originalEnv.GIF_PROVIDER === undefined) {
-            delete process.env.GIF_PROVIDER;
-        } else {
-            process.env.GIF_PROVIDER = originalEnv.GIF_PROVIDER;
-        }
-        if (originalEnv.GIPHY_API_KEY === undefined) {
-            delete process.env.GIPHY_API_KEY;
-        } else {
-            process.env.GIPHY_API_KEY = originalEnv.GIPHY_API_KEY;
-        }
-        if (originalEnv.GIPHY_LANG === undefined) {
-            delete process.env.GIPHY_LANG;
-        } else {
-            process.env.GIPHY_LANG = originalEnv.GIPHY_LANG;
-        }
-        if (originalEnv.GIPHY_RATING === undefined) {
-            delete process.env.GIPHY_RATING;
-        } else {
-            process.env.GIPHY_RATING = originalEnv.GIPHY_RATING;
-        }
-        if (originalEnv.TENOR_API_KEY === undefined) {
-            delete process.env.TENOR_API_KEY;
-        } else {
-            process.env.TENOR_API_KEY = originalEnv.TENOR_API_KEY;
-        }
-        if (originalEnv.TENOR_CLIENT_KEY === undefined) {
-            delete process.env.TENOR_CLIENT_KEY;
-        } else {
-            process.env.TENOR_CLIENT_KEY = originalEnv.TENOR_CLIENT_KEY;
-        }
-        if (originalEnv.TENOR_LOCALE === undefined) {
-            delete process.env.TENOR_LOCALE;
-        } else {
-            process.env.TENOR_LOCALE = originalEnv.TENOR_LOCALE;
+        const keys = [
+            "GIF_PROVIDER",
+            "GIPHY_API_KEY",
+            "GIPHY_LANG",
+            "GIPHY_RATING",
+            "TENOR_API_KEY",
+            "TENOR_CLIENT_KEY",
+            "TENOR_LOCALE",
+        ];
+        for (const key of keys) {
+            if (originalEnv[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = originalEnv[key];
+            }
         }
     });
 
