@@ -249,6 +249,7 @@ describe("DM Thread API", () => {
 
             expect(response.status).toBe(400);
             expect(String(data.error)).toContain("attachments[0]");
+            expect(mockCreateDocument).not.toHaveBeenCalled();
         });
 
         it("creates thread reply successfully", async () => {

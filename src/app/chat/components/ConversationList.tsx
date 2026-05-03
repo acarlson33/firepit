@@ -207,7 +207,9 @@ export function ConversationList({
     const unreadConversations = useMemo(
         () =>
             filteredConversations.filter(
-                (conversation) => getConversationUnreadCount(conversation) > 0,
+                (conversation) =>
+                    conversation.isSystemAnnouncementThread ||
+                    getConversationUnreadCount(conversation) > 0,
             ),
         [filteredConversations, getConversationUnreadCount],
     );

@@ -1,6 +1,5 @@
 "use client";
 
-/* eslint-disable suggestCanonicalClasses */
 
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";

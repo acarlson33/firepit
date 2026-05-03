@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { ID, Query } from "node-appwrite";
+import { createHash } from "node:crypto";
+import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -59,6 +60,24 @@ function isConflictError(error: unknown): boolean {
     const message =
         "message" in error ? String(error.message).toLowerCase() : "";
     return message.includes("already exists") || message.includes("duplicate");
+}
+
+async function findExistingVote(params: {
+    databases: ReturnType<typeof getServerClient>["databases"];
+    databaseId: string;
+    collectionId: string;
+    pollId: string;
+    userId: string;
+}) {
+    const { databases, databaseId, collectionId, pollId, userId } = params;
+
+    const response = await databases.listDocuments(databaseId, collectionId, [
+        Query.equal("pollId", pollId),
+        Query.equal("userId", userId),
+        Query.limit(1),
+    ]);
+
+    return response.documents.at(0) ?? null;
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -154,69 +173,77 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
     }
 
-    const findExistingVote = async () => {
-        const response = await databases.listDocuments(
-            env.databaseId,
-            env.collections.pollVotes,
-            [
-                Query.equal("pollId", poll.$id),
-                Query.equal("userId", user.$id),
-                Query.limit(1),
-            ],
-        );
-        return response.documents.at(0);
-    };
-
-    const existingVote = await findExistingVote();
     const voteTimestamp = new Date().toISOString();
+    const voteId = createHash("sha256")
+        .update(`${poll.$id}:${user.$id}`)
+        .digest("hex")
+        .slice(0, 32);
+
+    const existingVote = await findExistingVote({
+        databases,
+        databaseId: env.databaseId,
+        collectionId: env.collections.pollVotes,
+        pollId: poll.$id,
+        userId: user.$id,
+    });
 
     if (existingVote) {
         await databases.updateDocument(
             env.databaseId,
             env.collections.pollVotes,
-            existingVote.$id,
+            String(existingVote.$id),
             {
                 optionId,
                 votedAt: voteTimestamp,
             },
         );
-    } else {
-        try {
-            await databases.createDocument(
-                env.databaseId,
-                env.collections.pollVotes,
-                ID.unique(),
-                {
-                    pollId: poll.$id,
-                    userId: user.$id,
-                    optionId,
-                    votedAt: voteTimestamp,
-                },
-                perms.message(user.$id, {
-                    mod: env.teams.moderatorTeamId,
-                    admin: env.teams.adminTeamId,
-                }),
-            );
-        } catch (error) {
-            if (!isConflictError(error)) {
-                throw error;
-            }
 
-            const retryVote = await findExistingVote();
-            if (!retryVote) {
-                throw error;
-            }
+        const pollState = await getPollStateForMessage(databases, env, messageId);
+        return NextResponse.json({ poll: pollState });
+    }
 
-            await databases.updateDocument(
-                env.databaseId,
-                env.collections.pollVotes,
-                retryVote.$id,
-                {
-                    optionId,
-                    votedAt: voteTimestamp,
-                },
-            );
+    try {
+        await databases.createDocument(
+            env.databaseId,
+            env.collections.pollVotes,
+            voteId,
+            {
+                pollId: poll.$id,
+                userId: user.$id,
+                optionId,
+                votedAt: voteTimestamp,
+            },
+            perms.message(user.$id, {
+                mod: env.teams.moderatorTeamId,
+                admin: env.teams.adminTeamId,
+            }),
+        );
+    } catch (error) {
+        if (!isConflictError(error)) {
+            throw error;
         }
+
+        const retryVote = await findExistingVote({
+            databases,
+            databaseId: env.databaseId,
+            collectionId: env.collections.pollVotes,
+            pollId: poll.$id,
+            userId: user.$id,
+        });
+
+        if (!retryVote) {
+            throw error;
+        }
+
+        await databases.updateDocument(
+            env.databaseId,
+            env.collections.pollVotes,
+            String(retryVote.$id),
+            {
+                optionId,
+                votedAt: voteTimestamp,
+            },
+        );
     }
 
     const pollState = await getPollStateForMessage(databases, env, messageId);

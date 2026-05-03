@@ -34,6 +34,13 @@ export type PollDocShape = {
     closedBy?: string;
 };
 
+type PollVoteDocShape = {
+    $id: string;
+    pollId: string;
+    userId: string;
+    optionId: string;
+};
+
 function parseQuotedSegments(input: string): string[] | null {
     const segments: string[] = [];
     let index = 0;
@@ -81,6 +88,59 @@ function parseQuotedSegments(input: string): string[] | null {
 
 function normalizePollStatus(value: unknown): "open" | "closed" {
     return value === "closed" ? "closed" : "open";
+}
+
+export function normalizePollDocument(raw: unknown): PollDocShape | null {
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+
+    const value = raw as Record<string, unknown>;
+    if (
+        typeof value.$id !== "string" ||
+        typeof value.messageId !== "string" ||
+        typeof value.channelId !== "string" ||
+        typeof value.question !== "string" ||
+        typeof value.options !== "string" ||
+        typeof value.createdBy !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        $id: value.$id,
+        messageId: value.messageId,
+        channelId: value.channelId,
+        question: value.question,
+        options: value.options,
+        status: normalizePollStatus(value.status),
+        createdBy: value.createdBy,
+        closedAt: typeof value.closedAt === "string" ? value.closedAt : undefined,
+        closedBy: typeof value.closedBy === "string" ? value.closedBy : undefined,
+    };
+}
+
+export function normalizePollVoteDocument(raw: unknown): PollVoteDocShape | null {
+    if (!raw || typeof raw !== "object") {
+        return null;
+    }
+
+    const value = raw as Record<string, unknown>;
+    if (
+        typeof value.$id !== "string" ||
+        typeof value.pollId !== "string" ||
+        typeof value.userId !== "string" ||
+        typeof value.optionId !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        $id: value.$id,
+        pollId: value.pollId,
+        userId: value.userId,
+        optionId: value.optionId,
+    };
 }
 
 export function isPollCommand(text: string): boolean {

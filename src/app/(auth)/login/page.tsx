@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
@@ -40,12 +41,14 @@ function LoginFormContent() {
             toast.error("Email verification link is invalid or expired.");
         }
 
+        notifiedVerificationStatusRef.current = verifiedStatus;
+
         const updatedSearchParams = new URLSearchParams(searchParams.toString());
         updatedSearchParams.delete("verified");
         const nextQuery = updatedSearchParams.toString();
         const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
-        window.history.replaceState(null, "", nextUrl);
-    }, [pathname, searchParams]);
+        router.replace(nextUrl as Route);
+    }, [pathname, router, searchParams]);
 
     const redirectPath = searchParams.get("redirect");
     const destination =
@@ -70,8 +73,7 @@ function LoginFormContent() {
                 posthog.capture("user_logged_in", undefined, {
                     send_instantly: true,
                 });
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                router.push(destination as any);
+                router.push(destination as Route);
             } else {
                 toast.error(result.message ?? result.error);
             }

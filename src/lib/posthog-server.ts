@@ -154,10 +154,10 @@ export function registerPostHogProcessHandlers() {
         });
     });
 
-    process.on("unhandledRejection", async (reason) => {
+        process.on("unhandledRejection", (reason) => {
         const error = toError(reason);
         capturedUnhandledRejectionErrors.add(error);
-        await captureUnhandledServerError({
+            void captureUnhandledServerError({
             error: reason,
             origin: "unhandled_rejection",
         });

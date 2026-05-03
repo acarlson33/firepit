@@ -500,7 +500,38 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
 
         if (normalizedAttachments.length > 0) {
-            await createAttachments(String(created.$id), normalizedAttachments);
+            try {
+                await createAttachments(String(created.$id), normalizedAttachments);
+            } catch (attachmentError) {
+                try {
+                    await databases.deleteDocument(
+                        env.databaseId,
+                        env.collections.directMessages,
+                        String(created.$id),
+                    );
+                } catch (rollbackError) {
+                    logger.warn(
+                        "Failed to roll back DM thread reply after attachment error",
+                        {
+                            replyId: String(created.$id),
+                            error:
+                                rollbackError instanceof Error
+                                    ? rollbackError.message
+                                    : String(rollbackError),
+                        },
+                    );
+                }
+
+                logger.error("Failed to create DM thread attachments", {
+                    replyId: String(created.$id),
+                    error:
+                        attachmentError instanceof Error
+                            ? attachmentError.message
+                            : String(attachmentError),
+                });
+
+                throw attachmentError;
+            }
         }
 
         const maxUpdateAttempts = 3;

@@ -15,7 +15,7 @@ const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 
-function normalizeChannelType(
+export function normalizeChannelType(
     value: unknown,
 ): "text" | "voice" | "announcement" {
     if (
@@ -445,7 +445,7 @@ export async function getServerPermissionsForUser(
  * @param {ServerAccess} serverAccess - The server access value.
  * @returns {Promise<boolean>} The return value.
  */
-async function hasAccessToCategory(
+export async function hasAccessToCategory(
     databases: Databases,
     env: EnvConfig,
     categoryId: string,

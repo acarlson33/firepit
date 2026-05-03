@@ -1573,7 +1573,7 @@ async function setupConversations() {
     await ensureIndex("conversations", "idx_participants", "key", [
         "participants",
     ]);
-    await ensureIndex("conversations", "idx_announcement_thread", "key", [
+    await ensureIndex("conversations", "idx_announcement_thread", "unique", [
         "isSystemAnnouncementThread",
         "announcementThreadKey",
     ]);

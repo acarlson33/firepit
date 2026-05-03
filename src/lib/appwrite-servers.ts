@@ -18,6 +18,7 @@ import {
     normalizeServerDescription,
     normalizeServerFileId,
 } from "./server-metadata";
+import { normalizeChannelType } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -34,18 +35,7 @@ function getMembershipsCollectionId(): string | undefined {
 const MAX_LIST_LIMIT = 500; // upper bound used for bulk listing
 const DEFAULT_SERVER_PAGE_SIZE = 25;
 const DEFAULT_CHANNEL_PAGE_SIZE = 50;
-const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
-
-function normalizeChannelType(value: unknown): Channel["type"] {
-    if (
-        typeof value === "string" &&
-        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
-    ) {
-        return value as Channel["type"];
-    }
-
-    return "text";
-}
+// reuse normalizeChannelType from shared helper
 
 function mapMembershipDocument(doc: Record<string, unknown>): Membership {
     if (typeof doc.$id !== "string" || doc.$id.trim().length === 0) {

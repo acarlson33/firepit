@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Film, Loader2, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -152,6 +153,7 @@ export function GifStickerPicker({
     const [stickerError, setStickerError] = useState<string | null>(null);
     const [stickerDisabled, setStickerDisabled] = useState(false);
     const [stickersLoaded, setStickersLoaded] = useState(false);
+    const gifFetchControllerRef = useRef<AbortController | null>(null);
 
     const normalizedQuery = query.trim();
 
@@ -165,6 +167,13 @@ export function GifStickerPicker({
             const cursor = options?.cursor;
             const searchQuery =
                 options?.query?.trim() || gifSearchQuery || DEFAULT_GIF_QUERY;
+
+            if (!append) {
+                gifFetchControllerRef.current?.abort();
+            }
+
+            const controller = new AbortController();
+            gifFetchControllerRef.current = controller;
 
             if (append) {
                 setGifLoadingMore(true);
@@ -183,7 +192,9 @@ export function GifStickerPicker({
                     params.set("cursor", cursor);
                 }
 
-                const response = await fetch(`/api/gifs/search?${params.toString()}`);
+                const response = await fetch(`/api/gifs/search?${params.toString()}`, {
+                    signal: controller.signal,
+                });
 
                 if (response.status === 404) {
                     setGifDisabled(true);
@@ -211,6 +222,10 @@ export function GifStickerPicker({
                 setGifNextCursor(payload.next);
                 setGifError(null);
             } catch (error) {
+                if (error instanceof DOMException && error.name === "AbortError") {
+                    return;
+                }
+
                 setGifError(
                     error instanceof Error ? error.message : "Failed to search GIFs",
                 );
@@ -219,12 +234,21 @@ export function GifStickerPicker({
                     setGifNextCursor(undefined);
                 }
             } finally {
+                if (gifFetchControllerRef.current === controller) {
+                    gifFetchControllerRef.current = null;
+                }
                 setGifLoading(false);
                 setGifLoadingMore(false);
             }
         },
         [gifSearchQuery],
     );
+
+    useEffect(() => {
+        return () => {
+            gifFetchControllerRef.current?.abort();
+        };
+    }, []);
 
     const submitGifSearch = useCallback(() => {
         if (mode !== "gifs") {
@@ -428,14 +452,17 @@ export function GifStickerPicker({
                                                     }}
                                                     type="button"
                                                 >
-                                                    <img
-                                                        alt={item.title || "GIF"}
-                                                        className="h-36 w-full object-cover"
-                                                        loading="lazy"
-                                                        src={
-                                                            item.previewUrl || item.gifUrl
-                                                        }
-                                                    />
+                                                    <div className="relative h-36 w-full">
+                                                        <Image
+                                                            alt={item.title || "GIF"}
+                                                            className="object-cover"
+                                                            fill
+                                                            loading="lazy"
+                                                            sizes="(min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
+                                                            src={item.previewUrl || item.gifUrl}
+                                                            unoptimized
+                                                        />
+                                                    </div>
                                                     <div className="px-2 py-1 text-xs text-muted-foreground">
                                                         {item.title || "GIF"}
                                                     </div>
@@ -518,15 +545,17 @@ export function GifStickerPicker({
                                                             title={item.name || "Sticker"}
                                                             type="button"
                                                         >
-                                                            <img
-                                                                alt={item.name || "Sticker"}
-                                                                className="aspect-square h-auto w-full object-cover"
-                                                                loading="lazy"
-                                                                src={
-                                                                    item.previewUrl ||
-                                                                    item.mediaUrl
-                                                                }
-                                                            />
+                                                            <div className="relative aspect-square w-full">
+                                                                <Image
+                                                                    alt={item.name || "Sticker"}
+                                                                    className="object-cover"
+                                                                    fill
+                                                                    loading="lazy"
+                                                                    sizes="(min-width: 768px) 16vw, (min-width: 640px) 20vw, 33vw"
+                                                                    src={item.previewUrl || item.mediaUrl}
+                                                                    unoptimized
+                                                                />
+                                                            </div>
                                                         </button>
                                                     ))}
                                                 </div>

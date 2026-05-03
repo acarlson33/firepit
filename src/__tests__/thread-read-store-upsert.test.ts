@@ -1,23 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-    mockCreateDocument,
-    mockListDocuments,
-    mockUpdateDocument,
-    mockServerOwner,
-} = vi.hoisted(() => ({
-    mockCreateDocument: vi.fn(),
-    mockListDocuments: vi.fn(),
-    mockUpdateDocument: vi.fn(),
-    mockServerOwner: vi.fn(() => ["read:user:user-1"]),
-}));
-
 vi.mock("@/lib/appwrite-admin", () => ({
     getAdminClient: () => ({
         databases: {
             createDocument: mockCreateDocument,
             listDocuments: mockListDocuments,
             updateDocument: mockUpdateDocument,
+            getDocument: mockGetDocument,
         },
     }),
 }));
@@ -32,6 +21,20 @@ vi.mock("@/lib/appwrite-core", () => ({
     perms: {
         serverOwner: mockServerOwner,
     },
+}));
+
+const {
+    mockCreateDocument,
+    mockListDocuments,
+    mockUpdateDocument,
+    mockGetDocument,
+    mockServerOwner,
+} = vi.hoisted(() => ({
+    mockCreateDocument: vi.fn(),
+    mockListDocuments: vi.fn(),
+    mockUpdateDocument: vi.fn(),
+    mockGetDocument: vi.fn(),
+    mockServerOwner: vi.fn(() => ["read:user:user-1"]),
 }));
 
 import { upsertThreadReads } from "../lib/thread-read-store";

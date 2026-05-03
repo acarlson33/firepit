@@ -37,7 +37,6 @@ const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
-const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 const CHANNELS_ROUTE_CACHE_TTL_MS = 10 * 1000;
 const QUERY_ARRAY_LIMIT = 100;
 
@@ -74,6 +73,8 @@ function chunkValues<T>(values: T[], size: number): T[][] {
     return chunks;
 }
 
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+
 function normalizeChannelType(value: unknown): Channel["type"] {
     if (
         typeof value === "string" &&
@@ -104,14 +105,23 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = (await request.json()) as {
-            name?: string;
-            serverId?: string;
-            topic?: string | null;
-            type?: "text" | "voice" | "announcement";
-        };
+        const parsed = (await request.json()) as unknown;
+        if (typeof parsed !== "object" || parsed === null) {
+            return NextResponse.json(
+                { error: "Invalid request body" },
+                { status: 400 },
+            );
+        }
 
-        const serverId = body.serverId?.trim();
+        const body = parsed as Record<string, unknown>;
+
+        if (typeof body.serverId !== "string") {
+            return NextResponse.json(
+                { error: "serverId must be a string" },
+                { status: 400 },
+            );
+        }
+        const serverId = body.serverId.trim();
         if (!serverId) {
             return NextResponse.json(
                 { error: "serverId is required" },
@@ -119,7 +129,13 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const name = body.name?.trim();
+        if (typeof body.name !== "string") {
+            return NextResponse.json(
+                { error: "name must be a string" },
+                { status: 400 },
+            );
+        }
+        const name = body.name.trim();
         if (!name) {
             return NextResponse.json(
                 { error: "name is required" },
@@ -127,15 +143,29 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const type = normalizeChannelType(body.type);
-        if (body.type !== undefined && body.type !== type) {
+        const rawType = body.type;
+        // Validate explicit type when provided
+        if (rawType !== undefined && typeof rawType !== "string") {
+            return NextResponse.json(
+                { error: "type must be a string" },
+                { status: 400 },
+            );
+        }
+        const type = normalizeChannelType(rawType);
+        if (rawType !== undefined && rawType !== type) {
             return NextResponse.json(
                 { error: "type must be text, voice, or announcement" },
                 { status: 400 },
             );
         }
 
-        const topic = body.topic?.trim() || "";
+        if (body.topic !== undefined && body.topic !== null && typeof body.topic !== "string") {
+            return NextResponse.json(
+                { error: "topic must be a string" },
+                { status: 400 },
+            );
+        }
+        const topic = (typeof body.topic === "string" ? body.topic.trim() : "") || "";
         if (topic.length > 500) {
             return NextResponse.json(
                 { error: "topic must be 500 characters or fewer" },
@@ -536,8 +566,10 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const last = channels.at(-1);
-        const nextCursor = channels.length === limit && last ? last.$id : null;
+        const lastRawDoc = channelsRes.documents.at(-1);
+        const nextCursor = channelsRes.documents.length === limit && lastRawDoc
+            ? String(lastRawDoc.$id)
+            : null;
 
         // Use compressed response for large payloads (60-70% bandwidth reduction)
         const response = compressedResponse(

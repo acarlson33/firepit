@@ -101,7 +101,7 @@ export function useStatusSubscription(userIds: string[]) {
         let cleanup: (() => void) | undefined;
         let cancelled = false;
 
-        (async () => {
+            void (async () => {
             try {
                 if (cancelled) {
                     return;

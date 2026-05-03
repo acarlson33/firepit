@@ -206,6 +206,13 @@ function getReadOnlyReason(relationship: {
     return undefined;
 }
 
+function includesSystemSenderParticipant(participants: string[]): boolean {
+    return (
+        SYSTEM_SENDER_USER_ID !== null &&
+        participants.includes(SYSTEM_SENDER_USER_ID)
+    );
+}
+
 async function getDmEncryptionStateForPair(
     userId: string,
     peerUserId: string,
@@ -790,6 +797,13 @@ export async function GET(request: NextRequest) {
                 );
             }
 
+            if (includesSystemSenderParticipant(participants)) {
+                return jsonResponse(
+                    { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
+                    { status: 403 },
+                );
+            }
+
             const targetUserId = participants.find((id) => id !== session.$id);
             if (!targetUserId) {
                 return jsonResponse(
@@ -1279,6 +1293,13 @@ export async function POST(request: NextRequest) {
                 participantIds.push(session.$id);
             }
 
+            if (includesSystemSenderParticipant(participantIds)) {
+                return jsonResponse(
+                    { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
+                    { status: 403 },
+                );
+            }
+
             if (participantIds.length < 3) {
                 return jsonResponse(
                     {
@@ -1503,8 +1524,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (
-            isSystemAnnouncementThread &&
-            (SYSTEM_SENDER_USER_ID === null || senderId !== SYSTEM_SENDER_USER_ID)
+            isSystemAnnouncementThread || includesSystemSenderParticipant(participants)
         ) {
             return jsonResponse(
                 { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
@@ -1857,7 +1877,23 @@ export async function POST(request: NextRequest) {
                             ? attachmentError.message
                             : String(attachmentError),
                 });
-                // Continue even if attachment creation fails
+                try {
+                    await databases.deleteDocument(
+                        DATABASE_ID,
+                        DIRECT_MESSAGES_COLLECTION,
+                        String(message.$id),
+                    );
+                } catch (rollbackError) {
+                    logger.warn("Failed to roll back DM after attachment error", {
+                        messageId: String(message.$id),
+                        error:
+                            rollbackError instanceof Error
+                                ? rollbackError.message
+                                : String(rollbackError),
+                    });
+                }
+
+                throw attachmentError;
             }
         }
 

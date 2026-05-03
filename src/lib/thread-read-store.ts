@@ -166,10 +166,11 @@ async function mergeIntoExistingThreadReadDocument(params: {
                     latestPrimary.$updatedAt &&
                     latestPrimary.$updatedAt !== primaryDocument.$updatedAt
                 ) {
-                    expectedReads = mergeReadsAcrossDocuments(
-                        documents,
-                        expectedReads,
-                    );
+                    // Concurrent update detected: merge the latest document's reads along with our incoming reads
+                    expectedReads = mergeThreadReadsByMax({
+                        existingReads: latestPrimary.reads,
+                        incomingReads: expectedReads,
+                    });
                     continue;
                 }
             } catch (error) {

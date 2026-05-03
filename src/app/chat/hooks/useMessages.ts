@@ -426,6 +426,9 @@ export function useMessages({
                                           attachments:
                                               profileEnriched.attachments ??
                                               message.attachments,
+                                          replyTo:
+                                              profileEnriched.replyTo ??
+                                              message.replyTo,
                                       }
                                     : message,
                             );
@@ -718,6 +721,8 @@ export function useMessages({
         threadMessages,
         threadReadByMessageId,
         threadReplySending,
+        setActiveThreadParent,
+        setThreadMessages,
         togglePin,
     } = useThreadPinState<Message>({
         buildOptimisticThreadReply: ({
@@ -977,6 +982,33 @@ export function useMessages({
         [],
     );
 
+    const replaceThreadPoll = useCallback(
+        (messageId: string, poll: MessagePoll | null) => {
+            setActiveThreadParent((currentValue) => {
+                if (!currentValue || currentValue.$id !== messageId) {
+                    return currentValue;
+                }
+
+                return {
+                    ...currentValue,
+                    ...(poll ? { poll } : {}),
+                };
+            });
+
+            setThreadMessages((currentValue) =>
+                currentValue.map((message) =>
+                    message.$id === messageId
+                        ? {
+                              ...message,
+                              ...(poll ? { poll } : {}),
+                          }
+                        : message,
+                ),
+            );
+        },
+        [setActiveThreadParent, setThreadMessages],
+    );
+
     const votePoll = useCallback(
         async (messageId: string, optionId: string) => {
             if (!userId) {
@@ -991,6 +1023,7 @@ export function useMessages({
                 return;
             }
 
+            let nextOptimisticPoll: MessagePoll | null = null;
             setMessages((prev) => {
                 const targetMessage = prev.find(
                     (message) => message.$id === messageId,
@@ -1007,12 +1040,18 @@ export function useMessages({
                     userId,
                 });
 
+                nextOptimisticPoll = optimisticPoll;
+
                 return prev.map((message) =>
                     message.$id === messageId
                         ? { ...message, poll: optimisticPoll }
                         : message,
                 );
             });
+
+            if (nextOptimisticPoll) {
+                replaceThreadPoll(messageId, nextOptimisticPoll);
+            }
 
             const rollbackPoll = previousPoll;
 
@@ -1035,6 +1074,7 @@ export function useMessages({
                 }
 
                 replaceMessagePoll(messageId, payload.poll);
+                replaceThreadPoll(messageId, payload.poll);
             } catch (err) {
                 setMessages((prev) =>
                     prev.map((message) =>
@@ -1043,12 +1083,13 @@ export function useMessages({
                             : message,
                     ),
                 );
+                replaceThreadPoll(messageId, rollbackPoll ?? null);
                 toast.error(
                     err instanceof Error ? err.message : "Failed to cast vote.",
                 );
             }
         },
-        [replaceMessagePoll, userId],
+        [replaceMessagePoll, replaceThreadPoll, userId],
     );
 
     const closePoll = useCallback(
@@ -1065,6 +1106,7 @@ export function useMessages({
                 return;
             }
 
+            let nextOptimisticPoll: MessagePoll | null = null;
             setMessages((prev) => {
                 const targetMessage = prev.find(
                     (message) => message.$id === messageId,
@@ -1080,12 +1122,18 @@ export function useMessages({
                     userId,
                 });
 
+                nextOptimisticPoll = optimisticPoll;
+
                 return prev.map((message) =>
                     message.$id === messageId
                         ? { ...message, poll: optimisticPoll }
                         : message,
                 );
             });
+
+            if (nextOptimisticPoll) {
+                replaceThreadPoll(messageId, nextOptimisticPoll);
+            }
 
             const rollbackPoll = previousPoll;
 
@@ -1106,6 +1154,7 @@ export function useMessages({
                 }
 
                 replaceMessagePoll(messageId, payload.poll);
+                replaceThreadPoll(messageId, payload.poll);
             } catch (err) {
                 setMessages((prev) =>
                     prev.map((message) =>
@@ -1114,12 +1163,13 @@ export function useMessages({
                             : message,
                     ),
                 );
+                replaceThreadPoll(messageId, rollbackPoll ?? null);
                 toast.error(
                     err instanceof Error ? err.message : "Failed to close poll.",
                 );
             }
         },
-        [replaceMessagePoll, userId],
+        [replaceMessagePoll, replaceThreadPoll, userId],
     );
 
     function sendTypingState(state: boolean) {

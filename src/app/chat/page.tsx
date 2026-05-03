@@ -1374,9 +1374,14 @@ export default function ChatPage() {
     }, []);
 
     const buildPollCommand = useCallback(() => {
-        const sanitizedQuestion = pollQuestion.replaceAll('"', "'").trim();
+        const sanitizedQuestion = pollQuestion
+            .replaceAll("|", "\\|")
+            .replaceAll('"', "'")
+            .trim();
         const sanitizedOptions = pollOptions
-            .map((option) => option.value.replaceAll('"', "'").trim())
+            .map((option) =>
+                option.value.replaceAll("|", "\\|").replaceAll('"', "'").trim(),
+            )
             .filter((option) => option.length > 0);
 
         if (!sanitizedQuestion) {

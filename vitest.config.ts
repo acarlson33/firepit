@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 const parsedMaxWorkers = Number(process.env.VITEST_MAX_WORKERS);
-const maxWorkers =
+const maxWorkerAmt =
   Number.isFinite(parsedMaxWorkers) && parsedMaxWorkers > 0
     ? Math.floor(parsedMaxWorkers)
     : Math.max(1, Math.min(10, cpus().length));
@@ -28,7 +28,7 @@ export default defineConfig({
         "**/__tests__/setup.ts",
       ],
     },
-    maxWorkers,
+    maxWorkers: maxWorkerAmt,
   },
   resolve: {
     alias: {

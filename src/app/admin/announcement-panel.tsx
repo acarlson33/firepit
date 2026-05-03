@@ -110,6 +110,8 @@ export function AnnouncementPanel({ userId }: AnnouncementPanelProps) {
                 setIsLoadingMore(true);
             } else {
                 setIsLoading(true);
+                setAnnouncements([]);
+                setNextCursor(undefined);
             }
             setError(null);
 

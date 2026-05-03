@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { requireAdmin, requireAuth, requireModerator } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
+import { normalizeChannelType } from "@/lib/server-channel-access";
 import { logger } from "@/lib/newrelic-utils";
 
 const env = getEnvConfig();
@@ -19,20 +20,7 @@ type MutationResult =
     | { success: true }
     | { success: false; error: string };
 
-const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
-
-function normalizeChannelType(
-    value: unknown,
-): "text" | "voice" | "announcement" {
-    if (
-        typeof value === "string" &&
-        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
-    ) {
-        return value as "text" | "voice" | "announcement";
-    }
-
-    return "text";
-}
+// Reuse shared normalizeChannelType from server-channel-access
 
 async function listDefaultSignupServers(): Promise<Array<{ $id: string }>> {
     const { databases } = getServerClient();
@@ -219,7 +207,8 @@ export async function createChannelAction(
  */
 export async function listServersAction() {
     try {
-        await requireAdmin();
+        // Allow moderators and admins to list servers for management UI
+        await requireModerator();
 
         const { databases } = getServerClient();
         const response = await databases.listDocuments(

@@ -8,8 +8,9 @@ import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
 import { logger } from "@/lib/newrelic-utils";
 import {
-    getChannelAccessForUser,
     getServerPermissionsForUser,
+    hasAccessToCategory,
+    normalizeChannelType,
 } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
@@ -197,18 +198,51 @@ export async function GET(
             serverAccess.isServerOwner,
         );
 
-        const channelAccess = await getChannelAccessForUser(
-            databases,
-            env,
-            channelId,
-            userId,
-        );
+        // Lightweight channel fetch to derive type/category without recomputing
+        try {
+            const channelDoc = await databases.getDocument(
+                env.databaseId,
+                env.collections.channels,
+                channelId,
+            );
+            const channelType = normalizeChannelType(channelDoc.type);
+            const isAnnouncementChannel = channelType === "announcement";
 
-        return NextResponse.json({
-            ...effectivePerms,
-            canRead: channelAccess.canRead,
-            canSend: channelAccess.canSend,
-        });
+            if (channelDoc.categoryId) {
+                const categoryAccess = await hasAccessToCategory(
+                    databases,
+                    env,
+                    String(channelDoc.categoryId),
+                    serverAccess,
+                );
+
+                if (!categoryAccess) {
+                    return NextResponse.json({
+                        ...effectivePerms,
+                        canRead: false,
+                        canSend: false,
+                    });
+                }
+            }
+
+            const canRead = effectivePerms.readMessages;
+            const canSend = isAnnouncementChannel
+                ? canRead && effectivePerms.manageChannels
+                : canRead && effectivePerms.sendMessages;
+
+            return NextResponse.json({
+                ...effectivePerms,
+                canRead,
+                canSend,
+            });
+        } catch (error) {
+            // If the channel cannot be fetched, deny access conservatively
+            return NextResponse.json({
+                ...effectivePerms,
+                canRead: false,
+                canSend: false,
+            });
+        }
     } catch (error) {
         logger.error("Failed to get permissions", {
             error: error instanceof Error ? error.message : String(error),

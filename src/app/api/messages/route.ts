@@ -199,7 +199,10 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        if (creatingPoll && (imageFileId || normalizedAttachments.length > 0)) {
+        if (
+            creatingPoll &&
+            (imageFileId || imageUrl || normalizedAttachments.length > 0)
+        ) {
             return NextResponse.json(
                 {
                     error: "Poll messages do not support image or file attachments.",
@@ -319,34 +322,53 @@ export async function POST(request: NextRequest) {
         let pollResponse: Message["poll"];
 
         if (parsedPoll) {
-            const serializedOptions = serializePollOptions(parsedPoll.options);
-            const pollDocument = await databases.createDocument(
-                env.databaseId,
-                env.collections.polls,
-                ID.unique(),
-                {
-                    messageId: String(res.$id),
-                    channelId: normalizedChannelId,
-                    question: parsedPoll.question,
-                    options: serializedOptions,
-                    status: "open",
-                    createdBy: userId,
-                },
-                permissions,
-            );
+            try {
+                const serializedOptions = serializePollOptions(
+                    parsedPoll.options,
+                );
+                const pollDocument = await databases.createDocument(
+                    env.databaseId,
+                    env.collections.polls,
+                    ID.unique(),
+                    {
+                        messageId: String(res.$id),
+                        channelId: normalizedChannelId,
+                        question: parsedPoll.question,
+                        options: serializedOptions,
+                        status: "open",
+                        createdBy: userId,
+                    },
+                    permissions,
+                );
 
-            pollResponse = buildMessagePoll({
-                poll: {
-                    $id: String(pollDocument.$id),
-                    messageId: String(res.$id),
-                    channelId: normalizedChannelId,
-                    question: parsedPoll.question,
-                    options: serializedOptions,
-                    status: "open",
-                    createdBy: userId,
-                },
-                votes: [],
-            });
+                pollResponse = buildMessagePoll({
+                    poll: {
+                        $id: String(pollDocument.$id),
+                        messageId: String(res.$id),
+                        channelId: normalizedChannelId,
+                        question: parsedPoll.question,
+                        options: serializedOptions,
+                        status: "open",
+                        createdBy: userId,
+                    },
+                    votes: [],
+                });
+            } catch (error) {
+                try {
+                    await databases.deleteDocument(
+                        env.databaseId,
+                        env.collections.messages,
+                        String(res.$id),
+                    );
+                } catch (deleteError) {
+                    logger.warn("Failed to roll back message after poll creation error", {
+                        deleteError,
+                        messageId: String(res.$id),
+                    });
+                }
+
+                throw error;
+            }
         }
 
         // Track database operation

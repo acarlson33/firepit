@@ -181,4 +181,101 @@ describe("Message Poll Votes API", () => {
         expect(firstOption?.count).toBe(1);
         expect(firstOption?.voterIds).toEqual(["user-1"]);
     });
+
+    it("updates an existing vote instead of creating a duplicate", async () => {
+        mockGetServerSession.mockResolvedValue({ $id: "user-1", name: "User" });
+        mockGetDocument.mockResolvedValue({
+            $id: "msg-1",
+            channelId: "channel-1",
+        });
+
+        mockListDocuments
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "poll-1",
+                        messageId: "msg-1",
+                        channelId: "channel-1",
+                        question: "Best food?",
+                        options: JSON.stringify([
+                            { id: "option-1", text: "Pizza" },
+                            { id: "option-2", text: "Tacos" },
+                        ]),
+                        status: "open",
+                        createdBy: "user-2",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "legacy-vote-1",
+                        pollId: "poll-1",
+                        userId: "user-1",
+                        optionId: "option-2",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "poll-1",
+                        messageId: "msg-1",
+                        channelId: "channel-1",
+                        question: "Best food?",
+                        options: JSON.stringify([
+                            { id: "option-1", text: "Pizza" },
+                            { id: "option-2", text: "Tacos" },
+                        ]),
+                        status: "open",
+                        createdBy: "user-2",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "poll-1",
+                        messageId: "msg-1",
+                        channelId: "channel-1",
+                        question: "Best food?",
+                        options: JSON.stringify([
+                            { id: "option-1", text: "Pizza" },
+                            { id: "option-2", text: "Tacos" },
+                        ]),
+                        status: "open",
+                        createdBy: "user-2",
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                documents: [
+                    {
+                        $id: "legacy-vote-1",
+                        pollId: "poll-1",
+                        userId: "user-1",
+                        optionId: "option-2",
+                    },
+                ],
+            });
+
+        mockCreateDocument.mockRejectedValue({ type: "document_already_exists" });
+
+        const response = await POST(
+            new NextRequest("http://localhost/api/messages/msg-1/poll-votes", {
+                method: "POST",
+                body: JSON.stringify({ optionId: "option-1" }),
+            }),
+            { params: Promise.resolve({ messageId: "msg-1" }) },
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockUpdateDocument).toHaveBeenCalledWith(
+            "test-db",
+            "poll-votes-collection",
+            "legacy-vote-1",
+            expect.objectContaining({ optionId: "option-1" }),
+        );
+        expect(mockCreateDocument).not.toHaveBeenCalled();
+    });
 });

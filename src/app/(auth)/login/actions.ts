@@ -29,6 +29,21 @@ type ResendVerificationResult =
           error: string;
       };
 
+type AppwriteSession = Awaited<ReturnType<Account["createEmailPasswordSession"]>>;
+type AppwriteAccountUser = Awaited<ReturnType<Users["get"]>>;
+type EmailPasswordSessionResult =
+    | {
+          success: true;
+          account: Account;
+          users: Users;
+          session: AppwriteSession;
+          accountUser: AppwriteAccountUser;
+      }
+    | {
+          success: false;
+          error: string;
+      };
+
 function getVerificationRedirectUrl(): string {
     const configuredBaseUrl =
         process.env.SERVER_URL?.trim() ||
@@ -74,22 +89,6 @@ async function sendVerificationEmailForSession(params: {
 function isSystemSenderAccount(userId: string): boolean {
     const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim();
     return Boolean(systemSenderUserId && userId === systemSenderUserId);
-}
-
-async function revokeSessionBestEffort(
-    users: Users,
-    userId: string,
-    sessionId: string,
-): Promise<void> {
-    try {
-        await users.deleteSession({ userId, sessionId });
-    } catch (err) {
-        logger.warn("Failed to revoke session for user", {
-            hasUserId: userId.length > 0,
-            hasSessionId: sessionId.length > 0,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
 }
 
 function generateUserIdHash(userId: string): string {
@@ -150,6 +149,138 @@ function sanitizeAuthError(
     }
 
     return "[non-serializable error]";
+}
+
+function createAppwriteClient(
+    endpoint: string,
+    project: string,
+    apiKey?: string,
+): Client {
+    const client = new Client().setEndpoint(endpoint).setProject(project);
+
+    if (apiKey) {
+        client.setKey(apiKey);
+    }
+
+    return client;
+}
+
+function parseAuthError(
+    error: unknown,
+    fallbackMessage: string,
+): { message: string; shouldLog: boolean } {
+    if (!(error instanceof Error)) {
+        return { message: fallbackMessage, shouldLog: true };
+    }
+
+    const message = error.message.toLowerCase();
+
+    if (message.includes("scope") || message.includes("permission")) {
+        return {
+            message:
+                "API key missing required permissions. Check API_KEY_SETUP.md for instructions.",
+            shouldLog: false,
+        };
+    }
+
+    if (
+        message.includes("invalid credentials") ||
+        message.includes("wrong password")
+    ) {
+        return { message: "Invalid email or password", shouldLog: false };
+    }
+
+    if (message.includes("user") && message.includes("not found")) {
+        return {
+            message: "Account not found. Please create an account first.",
+            shouldLog: false,
+        };
+    }
+
+    if (message.includes("rate limit") || message.includes("too many")) {
+        return {
+            message: "Too many attempts. Please try again later.",
+            shouldLog: false,
+        };
+    }
+
+    if (message.includes("network") || message.includes("fetch")) {
+        return {
+            message:
+                "Network error. Please check your connection and try again.",
+            shouldLog: false,
+        };
+    }
+
+    return { message: fallbackMessage, shouldLog: true };
+}
+
+async function deleteSessionBestEffort(
+    users: Users,
+    userId: string,
+    sessionId: string,
+): Promise<void> {
+    try {
+        await users.deleteSession({ userId, sessionId });
+    } catch (err) {
+        logger.warn("Failed to revoke session for user", {
+            hasUserId: userId.length > 0,
+            hasSessionId: sessionId.length > 0,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+async function createEmailPasswordSession(params: {
+    endpoint: string;
+    project: string;
+    apiKey: string;
+    email: string;
+    password: string;
+}): Promise<EmailPasswordSessionResult> {
+    const { endpoint, project, apiKey, email, password } = params;
+    const client = createAppwriteClient(endpoint, project, apiKey);
+    const account = new Account(client);
+    const users = new Users(client);
+
+    try {
+        const session = await account.createEmailPasswordSession({
+            email,
+            password,
+        });
+
+        if (isSystemSenderAccount(session.userId)) {
+            await deleteSessionBestEffort(users, session.userId, session.$id);
+
+            return {
+                success: false,
+                error: "This account is reserved for system announcements and cannot sign in.",
+            };
+        }
+
+        const accountUser = await users.get(session.userId);
+
+        return {
+            success: true,
+            account,
+            accountUser,
+            session,
+            users,
+        };
+    } catch (error) {
+        const parsedError = parseAuthError(
+            error,
+            "An unexpected error occurred. Please try again.",
+        );
+
+        if (parsedError.shouldLog) {
+            logger.error("Failed to create email/password session", {
+                error: sanitizeAuthError(error),
+            });
+        }
+
+        return { success: false, error: parsedError.message };
+    }
 }
 
 /**
@@ -277,40 +408,23 @@ export async function loginAction(
     }
 
     try {
-        // IMPORTANT: Must use admin client with API key for SSR authentication
-        // This is required to get session.secret in the response
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setKey(apiKey); // Admin client with API key
-
-        const account = new Account(client);
-        const users = new Users(client);
-
-        // Create email/password session on Appwrite server
-        const session = await account.createEmailPasswordSession({
+        const sessionResult = await createEmailPasswordSession({
+            apiKey,
             email,
+            endpoint,
             password,
+            project,
         });
-        let shouldRevokeTemporarySession = true;
+
+        if (!sessionResult.success) {
+            return sessionResult;
+        }
+
+        const { accountUser, session, users } = sessionResult;
+        let shouldDeleteTemporarySession = true;
+
         try {
-            if (isSystemSenderAccount(session.userId)) {
-                // Defense in depth: invalidate this session immediately and never issue app cookie.
-                await revokeSessionBestEffort(
-                    users,
-                    session.userId,
-                    session.$id,
-                );
-                shouldRevokeTemporarySession = false;
-
-                return {
-                    success: false,
-                    error: "This account is reserved for system announcements and cannot sign in.",
-                };
-            }
-
             if (await isEmailVerificationEnabled()) {
-                const accountUser = await users.get(session.userId);
                 const emailVerified = Boolean(accountUser.emailVerification);
 
                 if (!emailVerified) {
@@ -329,19 +443,17 @@ export async function loginAction(
                         });
                     }
 
-                    await revokeSessionBestEffort(
+                    await deleteSessionBestEffort(
                         users,
                         session.userId,
                         session.$id,
                     );
-                    shouldRevokeTemporarySession = false;
+                    shouldDeleteTemporarySession = false;
 
                     return buildVerificationRequiredResult({ verificationLinkSent });
                 }
             }
 
-            // CRITICAL: Use session.secret as cookie value (only available with admin client)
-            // This is documented in Appwrite SSR docs
             const sessionSecret = session.secret;
 
             if (!sessionSecret) {
@@ -351,96 +463,37 @@ export async function loginAction(
                 };
             }
 
-            // Manually set the session cookie in Next.js
             const cookieStore = await cookies();
             cookieStore.set(`a_session_${project}`, sessionSecret, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
-                maxAge: 60 * 60 * 24 * 365, // 1 year (matches Appwrite default)
+                maxAge: 60 * 60 * 24 * 365,
                 path: "/",
             });
 
-            shouldRevokeTemporarySession = false;
+            shouldDeleteTemporarySession = false;
             return { success: true, userId: session.userId };
         } finally {
-            if (shouldRevokeTemporarySession) {
-                await revokeSessionBestEffort(
-                    users,
-                    session.userId,
-                    session.$id,
-                );
+            if (shouldDeleteTemporarySession) {
+                await deleteSessionBestEffort(users, session.userId, session.$id);
             }
         }
     } catch (error) {
-        // Provide helpful error messages for common issues
-        // Enhanced error handling to prevent "unexpected response" errors
-        if (error instanceof Error) {
-            const message = error.message.toLowerCase();
+        const parsedError = parseAuthError(
+            error,
+            "An unexpected error occurred. Please try again.",
+        );
 
-            // API key permission issues
-            if (message.includes("scope") || message.includes("permission")) {
-                return {
-                    success: false,
-                    error: "API key missing required permissions. Check API_KEY_SETUP.md for instructions.",
-                };
-            }
-
-            // Invalid credentials
-            if (
-                message.includes("invalid credentials") ||
-                message.includes("wrong password")
-            ) {
-                return {
-                    success: false,
-                    error: "Invalid email or password",
-                };
-            }
-
-            // User not found
-            if (message.includes("user") && message.includes("not found")) {
-                return {
-                    success: false,
-                    error: "Account not found. Please create an account first.",
-                };
-            }
-
-            // Rate limiting
-            if (
-                message.includes("rate limit") ||
-                message.includes("too many")
-            ) {
-                return {
-                    success: false,
-                    error: "Too many login attempts. Please try again later.",
-                };
-            }
-
-            // Network errors
-            if (message.includes("network") || message.includes("fetch")) {
-                return {
-                    success: false,
-                    error: "Network error. Please check your connection and try again.",
-                };
-            }
-
+        if (parsedError.shouldLog) {
             logger.error("Login action failed", {
                 error: sanitizeAuthError(error),
             });
-
-            return {
-                success: false,
-                error: "An unexpected error occurred. Please try again.",
-            };
         }
 
-        // Handle non-Error objects
-        logger.error("Login action failed", {
-            error: sanitizeAuthError(error),
-        });
         return {
             success: false,
-            error: "Login failed. Please try again.",
+            error: parsedError.message,
         };
     }
 }
@@ -477,43 +530,29 @@ export async function resendVerificationAction(
     }
 
     try {
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setKey(apiKey);
-        const account = new Account(client);
-
-        const session = await account.createEmailPasswordSession({
+        const sessionResult = await createEmailPasswordSession({
+            apiKey,
             email,
+            endpoint,
             password,
+            project,
         });
-        const users = new Users(client);
-        let shouldRevokeTemporarySession = true;
+
+        if (!sessionResult.success) {
+            return sessionResult;
+        }
+
+        const { accountUser, session, users } = sessionResult;
+
         try {
-            if (isSystemSenderAccount(session.userId)) {
-                await revokeSessionBestEffort(
-                    users,
-                    session.userId,
-                    session.$id,
-                );
-                shouldRevokeTemporarySession = false;
-
-                return {
-                    success: false,
-                    error: "This account is reserved for system announcements and cannot sign in.",
-                };
-            }
-
-            const accountUser = await users.get(session.userId);
             const emailVerified = Boolean(accountUser.emailVerification);
 
             if (emailVerified) {
-                await revokeSessionBestEffort(
+                await deleteSessionBestEffort(
                     users,
                     session.userId,
                     session.$id,
                 );
-                shouldRevokeTemporarySession = false;
 
                 return {
                     success: true,
@@ -522,7 +561,6 @@ export async function resendVerificationAction(
                 };
             }
 
-            // Send a fresh verification link using this temporary session, then revoke it.
             await sendVerificationEmailForSession({
                 endpoint,
                 project,
@@ -534,53 +572,20 @@ export async function resendVerificationAction(
                 message: "Verification email sent. Check your inbox.",
             };
         } finally {
-            if (shouldRevokeTemporarySession) {
-                // Best-effort cleanup: do not keep the temporary session active.
-                await revokeSessionBestEffort(
-                    users,
-                    session.userId,
-                    session.$id,
-                );
-            }
+            await deleteSessionBestEffort(users, session.userId, session.$id);
         }
     } catch (error) {
-        if (error instanceof Error) {
-            const message = error.message.toLowerCase();
+        const parsedError = parseAuthError(error, "Failed to resend verification email.");
 
-            if (
-                message.includes("invalid credentials") ||
-                message.includes("wrong password")
-            ) {
-                return {
-                    success: false,
-                    error: "Invalid email or password",
-                };
-            }
-
-            if (message.includes("rate limit") || message.includes("too many")) {
-                return {
-                    success: false,
-                    error: "Too many attempts. Please try again later.",
-                };
-            }
-
+        if (parsedError.shouldLog) {
             logger.error("Resend verification failed", {
                 error: sanitizeAuthError(error),
             });
-
-            return {
-                success: false,
-                error: "An unexpected error occurred. Please try again.",
-            };
         }
-
-        logger.error("Resend verification failed", {
-            error: sanitizeAuthError(error),
-        });
 
         return {
             success: false,
-            error: "Failed to resend verification email.",
+            error: parsedError.message,
         };
     }
 }
@@ -610,7 +615,7 @@ export async function registerAction(
 
     try {
         // Create account
-        const client = new Client().setEndpoint(endpoint).setProject(project);
+        const client = createAppwriteClient(endpoint, project);
         const account = new Account(client);
 
         const userId = crypto.randomUUID();

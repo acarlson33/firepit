@@ -20,6 +20,7 @@ type ChatThreadContentProps = {
     loading?: boolean;
     error?: string | null;
     currentUserId: string | null;
+    canManageMessages?: (message: ChatSurfaceMessage) => boolean;
     customEmojis?: CustomEmoji[];
     onToggleReaction?: (
         messageId: string,
@@ -39,6 +40,7 @@ type ChatThreadContentProps = {
 function MessageCard({
     message,
     currentUserId,
+    canManageMessages,
     customEmojis,
     onToggleReaction,
     onVotePoll,
@@ -46,6 +48,7 @@ function MessageCard({
 }: {
     message: ChatSurfaceMessage;
     currentUserId: string | null;
+    canManageMessages?: (message: ChatSurfaceMessage) => boolean;
     customEmojis?: CustomEmoji[];
     onToggleReaction?: (
         messageId: string,
@@ -75,7 +78,10 @@ function MessageCard({
                 </div>
                 {message.poll ? (
                     <MessagePollBlock
-                        canClose={message.poll.createdBy === currentUserId}
+                        canClose={
+                            message.poll.createdBy === currentUserId ||
+                            canManageMessages?.(message) === true
+                        }
                         currentUserId={currentUserId}
                         messageId={message.id}
                         onClose={

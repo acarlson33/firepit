@@ -3,7 +3,12 @@ import { Query } from "appwrite";
 import { logger } from "@/lib/client-logger";
 import { listPages } from "@/lib/appwrite-pagination";
 import { getBrowserDatabases, getEnvConfig } from "@/lib/appwrite-core";
-import { buildMessagePoll, type PollDocShape } from "@/lib/polls";
+import {
+    buildMessagePoll,
+    normalizePollDocument,
+    normalizePollVoteDocument,
+    type PollDocShape,
+} from "@/lib/polls";
 import type { Message } from "@/lib/types";
 
 const POLLS_PAGE_LIMIT = 100;
@@ -17,59 +22,6 @@ type PollVoteDocShape = {
     userId: string;
     optionId: string;
 };
-
-function normalizePollDocument(raw: unknown): PollDocShape | null {
-    if (!raw || typeof raw !== "object") {
-        return null;
-    }
-
-    const value = raw as Record<string, unknown>;
-    if (
-        typeof value.$id !== "string" ||
-        typeof value.messageId !== "string" ||
-        typeof value.channelId !== "string" ||
-        typeof value.question !== "string" ||
-        typeof value.options !== "string" ||
-        typeof value.createdBy !== "string"
-    ) {
-        return null;
-    }
-
-    return {
-        $id: value.$id,
-        messageId: value.messageId,
-        channelId: value.channelId,
-        question: value.question,
-        options: value.options,
-        status: value.status === "closed" ? "closed" : "open",
-        createdBy: value.createdBy,
-        closedAt: typeof value.closedAt === "string" ? value.closedAt : undefined,
-        closedBy: typeof value.closedBy === "string" ? value.closedBy : undefined,
-    };
-}
-
-function normalizePollVoteDocument(raw: unknown): PollVoteDocShape | null {
-    if (!raw || typeof raw !== "object") {
-        return null;
-    }
-
-    const value = raw as Record<string, unknown>;
-    if (
-        typeof value.$id !== "string" ||
-        typeof value.pollId !== "string" ||
-        typeof value.userId !== "string" ||
-        typeof value.optionId !== "string"
-    ) {
-        return null;
-    }
-
-    return {
-        $id: value.$id,
-        pollId: value.pollId,
-        userId: value.userId,
-        optionId: value.optionId,
-    };
-}
 
 async function listPollDocumentsForMessages(params: {
     messageIds: string[];

@@ -70,7 +70,7 @@ function RegisterFormContent() {
                         result.message ||
                         "Verification required. Check your inbox for a verification link.";
                     toast.success(verificationMessage);
-                    router.push("/login");
+                    router.push(`/login?redirect=${encodeURIComponent(destination)}`);
                 } else {
                     toast.error(
                         result.error || "An unexpected error occurred",

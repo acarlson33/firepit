@@ -16,7 +16,17 @@ type ChannelDocument = Models.Document & Channel;
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
 const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
-type ChannelType = (typeof CHANNEL_TYPES)[number];
+
+function normalizeChannelType(value: unknown): Channel["type"] {
+    if (
+        typeof value === "string" &&
+        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
+    ) {
+        return value as Channel["type"];
+    }
+
+    return "text";
+}
 
 function getDatabases() {
     return getServerClient().databases;
@@ -101,16 +111,18 @@ export async function PATCH(
             return accessResult;
         }
 
-        const body = (await request.json()) as {
-            categoryId?: string | null;
-            position?: number;
-            name?: string;
-            type?: ChannelType;
-            topic?: string | null;
-        };
+        const parsed = (await request.json()) as unknown;
+        if (typeof parsed !== "object" || parsed === null) {
+            return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+        }
 
-        const updateData: Record<string, string | number> = {};
+        const body = parsed as Record<string, unknown>;
+
+        const updateData: Record<string, string | number | null> = {};
         if (body.name !== undefined) {
+            if (typeof body.name !== "string") {
+                return NextResponse.json({ error: "name must be a string" }, { status: 400 });
+            }
             const nextName = body.name.trim();
             if (!nextName) {
                 return NextResponse.json(
@@ -121,29 +133,39 @@ export async function PATCH(
             updateData.name = nextName;
         }
         if (body.categoryId !== undefined) {
-            updateData.categoryId = body.categoryId?.trim() || "";
+            if (body.categoryId !== null && typeof body.categoryId !== "string") {
+                return NextResponse.json({ error: "categoryId must be a string or null" }, { status: 400 });
+            }
+            updateData.categoryId = (body.categoryId === null ? "" : String(body.categoryId).trim()) || "";
         }
         if (body.position !== undefined) {
-            if (!Number.isInteger(body.position) || body.position < 0) {
+            if (!Number.isInteger(body.position as number) || (body.position as number) < 0) {
                 return NextResponse.json(
                     { error: "position must be a non-negative integer" },
                     { status: 400 },
                 );
             }
-            updateData.position = body.position;
+            updateData.position = body.position as number;
         }
         if (body.type !== undefined) {
-            if (!CHANNEL_TYPES.includes(body.type)) {
+            if (typeof body.type !== "string") {
+                return NextResponse.json({ error: "type must be a string" }, { status: 400 });
+            }
+            const normalized = normalizeChannelType(body.type);
+            if (body.type !== normalized) {
                 return NextResponse.json(
                     { error: "type must be text, voice, or announcement" },
                     { status: 400 },
                 );
             }
 
-            updateData.type = body.type;
+            updateData.type = normalized as string;
         }
         if (body.topic !== undefined) {
-            const nextTopic = body.topic?.trim() || "";
+            if (body.topic !== null && typeof body.topic !== "string") {
+                return NextResponse.json({ error: "topic must be a string or null" }, { status: 400 });
+            }
+            const nextTopic = (body.topic === null ? "" : String(body.topic).trim()) || "";
             if (nextTopic.length > 500) {
                 return NextResponse.json(
                     { error: "topic must be 500 characters or fewer" },

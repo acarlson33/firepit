@@ -191,14 +191,74 @@ describe("MessageWithMentions", () => {
 	it("should render basic markdown formatting", () => {
 		render(
 			<MessageWithMentions
-				text="**Bold** _Italic_ ~~Struck~~"
+				text="**Bold** ~~Struck~~"
 				currentUserId="user-1"
 			/>
 		);
 
 		expect(screen.getByText("Bold").closest("strong")).not.toBeNull();
-		expect(screen.getByText("Italic").closest("em")).not.toBeNull();
 		expect(screen.getByText("Struck").closest("del")).not.toBeNull();
+	});
+
+	it("should render standalone single-emphasis markdown", () => {
+		const italicText = "Italic";
+		const firstRender = render(
+			<MessageWithMentions
+				text="_Italic_"
+				currentUserId="user-1"
+			/>
+		);
+
+		expect(screen.getByText(italicText).closest("em")).not.toBeNull();
+		firstRender.unmount();
+
+		render(
+			<MessageWithMentions
+				text="*Italic*"
+				currentUserId="user-1"
+			/>
+		);
+
+		expect(screen.getByText(italicText).closest("em")).not.toBeNull();
+	});
+
+	it("should restore mention text inside code formatting", () => {
+		const users = new Map([
+			[
+				"user-2",
+				{
+					userId: "user-2",
+					displayName: "TestUser",
+					avatarUrl: "",
+					status: "online",
+					pronouns: "they/them",
+				},
+			],
+		]);
+
+		const { container } = render(
+			<MessageWithMentions
+				text="Inline `@TestUser`\n\n```txt\n@TestUser\n```"
+				currentUserId="user-1"
+				users={users}
+			/>
+		);
+
+		expect(container.textContent).not.toContain("FIREPITMENTIONTOKEN");
+		expect(container.textContent).toContain("@TestUser");
+	});
+
+	it("should render preview links as plain text when disabled", () => {
+		render(
+			<MessageWithMentions
+				text="Visit [Firepit](https://example.com/docs)"
+				currentUserId="user-1"
+				renderLinks={false}
+			/>
+		);
+
+		expect(screen.queryByRole("link", { name: "Firepit" })).toBeNull();
+		expect(screen.getByText("Firepit")).toBeInTheDocument();
 	});
 
 	it("should render safe markdown links with secure attributes", () => {
