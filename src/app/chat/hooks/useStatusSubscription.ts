@@ -1,14 +1,18 @@
 "use client";
 
 import { Channel, Query } from "appwrite";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus } from "@/lib/status-normalization";
 import type { StatusLike } from "@/lib/status-normalization";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 
 const env = getEnvConfig();
 const STATUSES_COLLECTION = env.collections.statuses;
@@ -27,9 +31,10 @@ type RealtimeSubscription = {
 /**
  * Hook to subscribe to real-time status updates for multiple users
  */
-export function useStatusSubscription(userIds: string[]) {
+export function useStatusSubscription(userIds: string[], enabled = true) {
     const [statuses, setStatuses] = useState<StatusMap>(new Map());
     const [loading, setLoading] = useState(true);
+    const enabledRef = useRef(enabled);
     const normalizedUserIds = useMemo(
         () =>
             Array.from(new Set(userIds.filter((id) => id.length > 0))).sort(
@@ -38,9 +43,21 @@ export function useStatusSubscription(userIds: string[]) {
         [userIds],
     );
 
+    useEffect(() => {
+        enabledRef.current = enabled;
+        if (!enabled) {
+            setStatuses(new Map());
+            setLoading(false);
+        }
+    }, [enabled]);
+
     // Fetch initial statuses
     const fetchStatuses = useCallback(async () => {
-        if (!STATUSES_COLLECTION || normalizedUserIds.length === 0) {
+        if (
+            !enabledRef.current ||
+            !STATUSES_COLLECTION ||
+            normalizedUserIds.length === 0
+        ) {
             setStatuses(new Map());
             setLoading(false);
             return;
@@ -92,7 +109,11 @@ export function useStatusSubscription(userIds: string[]) {
 
     // Real-time subscription to status updates
     useEffect(() => {
-        if (!STATUSES_COLLECTION || normalizedUserIds.length === 0) {
+        if (
+            !enabledRef.current ||
+            !STATUSES_COLLECTION ||
+            normalizedUserIds.length === 0
+        ) {
             return;
         }
 
@@ -163,6 +184,13 @@ export function useStatusSubscription(userIds: string[]) {
                     });
                 };
             } catch (err) {
+                if (isTransientRealtimeSubscribeError(err)) {
+                    logger.warn("Status realtime subscription interrupted during connection setup", {
+                        error: toErrorMessage(err),
+                    });
+                    return;
+                }
+
                 logger.error("Status subscription failed", toError(err), {
                     error: toErrorMessage(err),
                 });

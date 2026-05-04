@@ -40,7 +40,11 @@ function getConversationsQueryKey(userId: string | null) {
     return ["conversations", userId] as const;
 }
 
-export function useConversations(userId: string | null, enabled = true) {
+export function useConversations(
+    userId: string | null,
+    enabled = true,
+    realtimeEnabled = true,
+) {
     const queryClient = useQueryClient();
     const isEnabled =
         enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
@@ -90,7 +94,7 @@ export function useConversations(userId: string | null, enabled = true) {
     }, [conversations, isEnabled, userId]);
 
     // Subscribe to status updates for all other users
-    const { statuses } = useStatusSubscription(otherUserIds);
+    const { statuses } = useStatusSubscription(otherUserIds, realtimeEnabled);
 
     // Merge real-time status updates into conversations
     const conversationsWithStatus = useMemo(() => {
@@ -123,7 +127,12 @@ export function useConversations(userId: string | null, enabled = true) {
 
     // Real-time subscription to conversation changes
     useEffect(() => {
-        if (!isEnabled || !userId || !CONVERSATIONS_COLLECTION) {
+        if (
+            !isEnabled ||
+            !realtimeEnabled ||
+            !userId ||
+            !CONVERSATIONS_COLLECTION
+        ) {
             return;
         }
 
@@ -267,7 +276,14 @@ export function useConversations(userId: string | null, enabled = true) {
             }
             cleanupFn?.();
         };
-    }, [isEnabled, queryClient, realtimeRetryTick, subscriptionContextKey, userId]);
+    }, [
+        isEnabled,
+        queryClient,
+        realtimeEnabled,
+        realtimeRetryTick,
+        subscriptionContextKey,
+        userId,
+    ]);
 
     return {
         conversations: conversationsWithStatus,

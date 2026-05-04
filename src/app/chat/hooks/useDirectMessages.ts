@@ -50,6 +50,7 @@ import { useThreadPinState } from "./useThreadPinState";
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
+const MAX_MESSAGE_REALTIME_RETRIES = 5;
 
 type UseDirectMessagesProps = {
     conversationId: string | null;
@@ -1116,6 +1117,21 @@ export function useDirectMessages({
                     const isTransient =
                         isTransientRealtimeSubscribeError(error);
                     const retryDelayMs = isTransient ? 1200 : 4000;
+
+                    if (messageRealtimeRetryNonce >= MAX_MESSAGE_REALTIME_RETRIES) {
+                        logger.error(
+                            "Direct message realtime subscription max retries reached",
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error)),
+                            {
+                                conversationId: currentConversationIdRef.current,
+                                retryDelayMs,
+                                attempts: messageRealtimeRetryNonce,
+                            },
+                        );
+                        return;
+                    }
 
                     if (isTransient) {
                         logger.warn(

@@ -302,6 +302,7 @@ export default function ChatPage() {
         viewMode === "dms" ||
             newConversationOpen ||
             Boolean(selectedConversationId),
+        viewMode !== "dms",
     );
     const selectedConversation = useMemo(
         () =>
