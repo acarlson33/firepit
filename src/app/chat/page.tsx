@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     MessageSquare,
     Hash,
@@ -292,6 +293,31 @@ export default function ChatPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isWindowFocused, setIsWindowFocused] = useState(true);
     const loadingOlderUnreadRef = useRef(false);
+    const queryClient = useQueryClient();
+
+    const upsertConversationIntoCache = useCallback(
+        (conversation: { $id: string }) => {
+            queryClient.setQueryData(
+                ["conversations", userId],
+                (currentValue: unknown) => {
+                    if (!Array.isArray(currentValue)) {
+                        return currentValue;
+                    }
+
+                    const existingConversations = currentValue as Array<{
+                        $id: string;
+                    }>;
+                    const nextConversations = existingConversations.filter(
+                        (currentConversation) =>
+                            currentConversation.$id !== conversation.$id,
+                    );
+
+                    return [conversation, ...nextConversations];
+                },
+            );
+        },
+        [queryClient, userId],
+    );
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -2177,6 +2203,7 @@ export default function ChatPage() {
                                 setNewConversationOpen(true)
                             }
                             onConversationCreated={(conversation) => {
+                                upsertConversationIntoCache(conversation);
                                 setSelectedConversationId(conversation.$id);
                                 setViewMode("dms");
                                 setSelectedChannel(null);
@@ -2431,6 +2458,7 @@ export default function ChatPage() {
                 <NewConversationDialog
                     currentUserId={userId}
                     onConversationCreated={(conversation) => {
+                        upsertConversationIntoCache(conversation);
                         setSelectedConversationId(conversation.$id);
                         setViewMode("dms");
                         setSelectedChannel(null);
