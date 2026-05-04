@@ -907,24 +907,27 @@ async function ensureNoDuplicateIdempotencyKeys(): Promise<void> {
 
     const keyCounts = new Map<string, string[]>();
     for (const doc of duplicateGroups) {
-        const key = `${doc.createdBy}_${doc.idempotencyKey}` as string;
+        const key = JSON.stringify([doc.createdBy, doc.idempotencyKey]);
         if (!key) continue;
         const existing = keyCounts.get(key) ?? [];
         existing.push(String(doc.$id));
         keyCounts.set(key, existing);
     }
 
-    const duplicates: Array<{ key: string; ids: string[] }> = [];
+    const duplicates: Array<{ fingerprint: string; ids: string[] }> = [];
     for (const [key, ids] of keyCounts) {
         if (ids.length > 1) {
-            duplicates.push({ key, ids });
+            duplicates.push({
+                fingerprint: createHash("sha256").update(key).digest("hex").slice(0, 8),
+                ids,
+            });
         }
     }
 
     if (duplicates.length > 0) {
         throw new Error(
             `Migration aborted: found ${duplicates.length} duplicate idempotencyKey values. ` +
-            `Sample duplicates: ${duplicates.slice(0, 3).map(d => `key='${d.key}' (${d.ids.length} docs: ${d.ids.slice(0, 2).join(", ")})`).join(", ")}. ` +
+            `Sample duplicates: ${duplicates.slice(0, 3).map(d => `fingerprint='${d.fingerprint}' (${d.ids.length} docs: ${d.ids.slice(0, 2).join(", ")})`).join(", ")}. ` +
             `Remove duplicates or clean idempotencyKey before creating unique index.`,
         );
     }

@@ -162,26 +162,6 @@ async function paginateReplies(params: {
     return { replySignalsByParentId, replySignalsTruncated: Boolean(truncated) };
 }
 
-function buildRelationshipMapCacheKey(userId: string, otherUserIds: string[]) {
-    const normalizedOtherUserIds = normalizeDistinctIds(otherUserIds, userId);
-    return `dm:relationship-map:${userId}:${normalizedOtherUserIds.join(",")}`;
-}
-
-function getCachedRelationshipMap(
-    userId: string,
-    otherUserIds: string[],
-): Promise<Map<string, RelationshipStatus>> {
-    const normalizedOtherUserIds = normalizeDistinctIds(otherUserIds, userId);
-    if (normalizedOtherUserIds.length === 0) {
-        return Promise.resolve(new Map<string, RelationshipStatus>());
-    }
-
-    return dedupeDirectMessageCache(
-        buildRelationshipMapCacheKey(userId, normalizedOtherUserIds),
-        () => getRelationshipMap(userId, normalizedOtherUserIds),
-    );
-}
-
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
     blockedMe: boolean;
@@ -701,7 +681,7 @@ export async function GET(request: NextRequest) {
                 }
             }
 
-            const relationshipMap = await getCachedRelationshipMap(
+            const relationshipMap = await getRelationshipMap(
                 session.$id,
                 oneToOneOtherUserIds,
             );
@@ -1198,7 +1178,7 @@ export async function GET(request: NextRequest) {
                     ) || participants.length > 2;
 
                 if (isGroupConversation) {
-                    const relationshipMap = await getCachedRelationshipMap(
+                    const relationshipMap = await getRelationshipMap(
                         session.$id,
                         participants.filter((id) => id !== session.$id),
                     );
@@ -1893,6 +1873,24 @@ export async function POST(request: NextRequest) {
                 const createdIds = Array.isArray(attachmentErrorWithIds.createdIds)
                     ? attachmentErrorWithIds.createdIds
                     : [];
+
+                for (const createdId of createdIds) {
+                    try {
+                        await databases.deleteDocument(
+                            DATABASE_ID,
+                            MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                            createdId,
+                        );
+                    } catch (cleanupError) {
+                        logger.warn("Failed to roll back DM attachment after attachment error", {
+                            attachmentId: createdId,
+                            error:
+                                cleanupError instanceof Error
+                                    ? cleanupError.message
+                                    : String(cleanupError),
+                        });
+                    }
+                }
 
                 // Delete the parent DM
                 try {
