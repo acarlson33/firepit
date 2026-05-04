@@ -800,9 +800,9 @@ paths:
             tags: [Servers]
             summary: Create a server
             description: >-
-                 Returns CreateServerResponse containing the created server object (or null on failure)
-                 and any associated metadata. The response includes the server field with the new
-                 server payload.
+                  Returns CreateServerResponse containing the created server object and any associated
+                  metadata. The 201 response includes the required non-null server field with the new
+                  server payload; failures are represented by the non-2xx responses.
             security:
                 - sessionCookie: []
             requestBody:

@@ -291,27 +291,37 @@ async function createAttachments(
     }
 
     const createdIds: string[] = [];
-    await Promise.all(
-        attachments.map(async (attachment) => {
-            const payload = buildAttachmentDocumentData({
-                attachment,
-                messageId,
-                messageType: "dm",
-            });
+
+    const rethrowWithCreatedIds = (error: unknown): never => {
+        const attachmentError =
+            error instanceof Error ? error : new Error(String(error));
+        (attachmentError as Error & { createdIds: string[] }).createdIds = [
+            ...createdIds,
+        ];
+        throw attachmentError;
+    };
+
+    for (const attachment of attachments) {
+        const payload = buildAttachmentDocumentData({
+            attachment,
+            messageId,
+            messageType: "dm",
+        });
+
+        try {
+            const result = await databases.createDocument(
+                DATABASE_ID,
+                MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                ID.unique(),
+                payload,
+            );
+            createdIds.push(String(result.$id));
+        } catch (error) {
+            if (!isUnknownAttachmentAttributeError(error)) {
+                rethrowWithCreatedIds(error);
+            }
 
             try {
-                const result = await databases.createDocument(
-                    DATABASE_ID,
-                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
-                    payload,
-                );
-                createdIds.push(String(result.$id));
-            } catch (error) {
-                if (!isUnknownAttachmentAttributeError(error)) {
-                    throw error;
-                }
-
                 const legacyResult = await databases.createDocument(
                     DATABASE_ID,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
@@ -323,9 +333,12 @@ async function createAttachments(
                     }),
                 );
                 createdIds.push(String(legacyResult.$id));
+            } catch (legacyError) {
+                rethrowWithCreatedIds(legacyError);
             }
-        }),
-    );
+        }
+    }
+
     return createdIds;
 }
 
@@ -1437,6 +1450,7 @@ export async function POST(request: NextRequest) {
             (!text?.trim() &&
                 !hasEncryptedText &&
                 !imageFileId &&
+                !imageUrl &&
                 normalizedAttachments.length === 0)
         ) {
             return jsonResponse(
@@ -1578,9 +1592,7 @@ export async function POST(request: NextRequest) {
             !hasEncryptedText;
         const hasImageContent = Boolean(imageFileId) || Boolean(imageUrl);
         const hasAnyContent =
-            hasPlaintextText ||
-            hasImageContent ||
-            normalizedAttachments.length > 0;
+            hasPlaintextText || hasImageContent || normalizedAttachments.length > 0;
 
         if (!isGroupConversation && targetReceiverId && hasAnyContent) {
             const [senderSettings, receiverSettings, senderProfile, receiverProfile] =
@@ -1867,47 +1879,20 @@ export async function POST(request: NextRequest) {
         );
 
         // Create attachment records if any
-        let createdAttachmentIds: string[] = [];
         if (normalizedAttachments.length > 0) {
             try {
-                createdAttachmentIds = await createAttachments(
+                await createAttachments(
                     databases,
                     String(message.$id),
                     normalizedAttachments,
                 );
             } catch (attachmentError) {
-                logger.error("Failed to create attachments", {
-                    messageId: message.$id,
-                    error:
-                        attachmentError instanceof Error
-                            ? attachmentError.message
-                            : String(attachmentError),
-                });
-
-                // Roll back: delete any created attachment documents in parallel
-                const rollbackResults = await Promise.allSettled(
-                    createdAttachmentIds.map((attachmentDocumentId) =>
-                        databases.deleteDocument(
-                            DATABASE_ID,
-                            MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                            attachmentDocumentId,
-                        ),
-                    ),
-                );
-
-                for (const [index, rollbackResult] of rollbackResults.entries()) {
-                    if (rollbackResult.status !== "rejected") {
-                        continue;
-                    }
-                    logger.warn("Failed to rollback attachment document", {
-                        attachmentDocumentId: createdAttachmentIds[index],
-                        messageId: message.$id,
-                        reason:
-                            rollbackResult.reason instanceof Error
-                                ? rollbackResult.reason.message
-                                : String(rollbackResult.reason),
-                    });
-                }
+                const attachmentErrorWithIds = attachmentError as Error & {
+                    createdIds?: string[];
+                };
+                const createdIds = Array.isArray(attachmentErrorWithIds.createdIds)
+                    ? attachmentErrorWithIds.createdIds
+                    : [];
 
                 // Delete the parent DM
                 try {

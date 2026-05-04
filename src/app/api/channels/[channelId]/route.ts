@@ -107,11 +107,7 @@ async function requireManageChannelsAccess(channelId: string) {
         session.$id,
     );
 
-    if (
-        !access.isMember &&
-        !access.isServerOwner &&
-        !access.permissions.manageChannels
-    ) {
+    if (!access.isMember || (!access.isServerOwner && !access.permissions.manageChannels)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

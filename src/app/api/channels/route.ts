@@ -15,25 +15,6 @@ import { apiCache } from "@/lib/cache-utils";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 import { listPages } from "@/lib/appwrite-pagination";
 
-function sortChannels(channels: Channel[]) {
-    return [...channels].sort((left, right) => {
-        const leftCategory = left.categoryId ?? "~uncategorized";
-        const rightCategory = right.categoryId ?? "~uncategorized";
-
-        if (leftCategory !== rightCategory) {
-            return leftCategory.localeCompare(rightCategory);
-        }
-
-        const leftPosition = left.position ?? 0;
-        const rightPosition = right.position ?? 0;
-        if (leftPosition !== rightPosition) {
-            return leftPosition - rightPosition;
-        }
-
-        return left.$createdAt.localeCompare(right.$createdAt);
-    });
-}
-
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
@@ -361,6 +342,10 @@ export async function GET(request: NextRequest) {
 
         const queries: string[] = [
             Query.equal("serverId", serverId),
+            Query.orderAsc("categoryId"),
+            Query.orderAsc("position"),
+            Query.orderAsc("$createdAt"),
+            Query.orderAsc("$id"),
             Query.limit(limit),
         ];
 
@@ -400,11 +385,9 @@ export async function GET(request: NextRequest) {
             } satisfies Channel;
         });
 
-        const orderedChannels = sortChannels(allChannels);
-
-        let channels = orderedChannels;
-        if (!isServerOwner && orderedChannels.length > 0) {
-            const channelIds = orderedChannels.map((channel) => channel.$id);
+        let channels = allChannels;
+        if (!isServerOwner && allChannels.length > 0) {
+            const channelIds = allChannels.map((channel) => channel.$id);
             const [roleAssignmentRes, overridesRes] = await Promise.all([
                 dedupeChannelsRouteCache(
                     `api:channels:role-assignment:${serverId}:${userId}`,
@@ -570,7 +553,7 @@ export async function GET(request: NextRequest) {
             }
 
             const hasAnyOverrides = overridesRes.documents.length > 0;
-            channels = orderedChannels.filter((channel) => {
+            channels = allChannels.filter((channel) => {
                 const channelOverrides =
                     overridesByChannel.get(channel.$id) ?? [];
                 if (roles.length === 0 && !hasAnyOverrides) {

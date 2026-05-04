@@ -902,7 +902,7 @@ async function backfillAnnouncementIdempotencyKeys(): Promise<void> {
 async function ensureNoDuplicateIdempotencyKeys(): Promise<void> {
     const duplicateGroups = await listAllDocuments({
         collectionId: ANNOUNCEMENTS_COLLECTION_ID,
-        queries: [Query.notEqual("idempotencyKey", "")],
+        queries: [Query.notEqual("idempotencyKey", ""), Query.orderAsc("$id")],
     });
 
     const keyCounts = new Map<string, string[]>();
@@ -941,6 +941,7 @@ async function setupServers() {
     await ensureStringAttribute("servers", "iconFileId", LEN_ID, false);
     await ensureStringAttribute("servers", "bannerFileId", LEN_ID, false);
     await ensureBooleanAttribute("servers", "isPublic", false);
+    await waitForAttribute("servers", "isPublic");
     await ensureBooleanAttribute("servers", "defaultOnSignup", false);
     const migrateServersVisibilityDefault = /^(1|true|yes)$/i.test(
         process.env.MIGRATE_LEGACY_SERVERS_IS_PUBLIC_DEFAULT ?? "",
@@ -1041,6 +1042,32 @@ async function setupMessageAttachments() {
     ];
     for (const [key, size] of requiredStringFields) {
         await ensureStringAttribute("message_attachments", key, size, true);
+    }
+
+    await waitForAttribute("message_attachments", "messageType");
+    const messageTypeAttribute = (await tryVariants([
+        () => dbAny.getAttribute(DB_ID, "message_attachments", "messageType"),
+        () =>
+            dbAny.getAttribute?.({
+                databaseId: DB_ID,
+                collectionId: "message_attachments",
+                key: "messageType",
+            }),
+    ])) as {
+        size?: number | string;
+    };
+    const configuredMessageTypeSize = Number(messageTypeAttribute.size ?? 0);
+    if (
+        Number.isFinite(configuredMessageTypeSize) &&
+        configuredMessageTypeSize < 32
+    ) {
+        await updateStringAttributeSize(
+            "message_attachments",
+            "messageType",
+            32,
+            true,
+        );
+        await waitForAttribute("message_attachments", "messageType");
     }
 
     const optionalStringFields: [string, number][] = [
@@ -1708,6 +1735,7 @@ async function setupAnnouncements() {
         false,
         0,
     );
+    await waitForAttribute(ANNOUNCEMENTS_COLLECTION_ID, "idempotencyKey");
     await backfillAnnouncementIdempotencyKeys();
 
     // Before creating unique index, check for duplicates

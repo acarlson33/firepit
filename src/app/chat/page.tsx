@@ -1092,6 +1092,9 @@ export default function ChatPage() {
         const controller = new AbortController();
         const { signal } = controller;
 
+        setCanManageMessages(false);
+        setCanSendMessages(false);
+
         async function checkPermissions() {
             if (!selectedChannel || !userId || !serversApi.selectedServer) {
                 if (!signal.aborted) {
@@ -1157,6 +1160,8 @@ export default function ChatPage() {
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
+
+        setCanManageServer(false);
 
         async function checkServerManagementPermission() {
             if (!userId || !serversApi.selectedServer) {

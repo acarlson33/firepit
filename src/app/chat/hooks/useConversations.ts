@@ -1,7 +1,7 @@
 "use client";
 
 import { Channel, Query } from "appwrite";
-import { useEffect, useCallback, useMemo, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -44,7 +44,17 @@ export function useConversations(userId: string | null, enabled = true) {
     const queryClient = useQueryClient();
     const isEnabled =
         enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
-    const [realtimeRetryNonce, setRealtimeRetryNonce] = useState(0);
+    const subscriptionContextKey = useMemo(
+        () => `${userId ?? ""}:${enabled ? "1" : "0"}`,
+        [enabled, userId],
+    );
+    const realtimeRetryNonceRef = useRef(0);
+    const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
+
+    useEffect(() => {
+        realtimeRetryNonceRef.current = 0;
+        setRealtimeRetryTick(0);
+    }, [subscriptionContextKey]);
 
     const loadConversations = useCallback(async () => {
         if (!userId || !CONVERSATIONS_COLLECTION) {
@@ -171,6 +181,8 @@ export function useConversations(userId: string | null, enabled = true) {
                     return;
                 }
 
+                realtimeRetryNonceRef.current = 0;
+
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
                     untrack();
@@ -191,6 +203,7 @@ export function useConversations(userId: string | null, enabled = true) {
 
                 const isTransient = isTransientRealtimeSubscribeError(realtimeError);
                 const retryDelayMs = isTransient ? 1200 : 4000;
+                const realtimeRetryNonce = realtimeRetryNonceRef.current;
 
                 if (realtimeRetryNonce >= MAX_RETRIES) {
                     logger.error(
@@ -233,7 +246,8 @@ export function useConversations(userId: string | null, enabled = true) {
                 }
 
                 const timeoutId = setTimeout(() => {
-                    setRealtimeRetryNonce((current) => current + 1);
+                    realtimeRetryNonceRef.current += 1;
+                    setRealtimeRetryTick((current) => current + 1);
                 }, retryDelayMs);
 
                 pendingTimeouts.push(timeoutId);
@@ -253,7 +267,7 @@ export function useConversations(userId: string | null, enabled = true) {
             }
             cleanupFn?.();
         };
-    }, [isEnabled, queryClient, userId, realtimeRetryNonce]);
+    }, [isEnabled, queryClient, realtimeRetryTick, subscriptionContextKey, userId]);
 
     return {
         conversations: conversationsWithStatus,
