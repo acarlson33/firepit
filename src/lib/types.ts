@@ -138,6 +138,78 @@ export type FeatureFlag = {
     updatedBy?: string;
 };
 
+export const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
+
+export type AnnouncementPriority =
+    (typeof ANNOUNCEMENT_PRIORITY_VALUES)[number];
+
+export const ANNOUNCEMENT_STATUS_VALUES = [
+    "draft",
+    "scheduled",
+    "dispatching",
+    "sent",
+    "failed",
+    "archived",
+] as const;
+
+export type AnnouncementStatus = (typeof ANNOUNCEMENT_STATUS_VALUES)[number];
+
+export type AnnouncementUrgentBypass = {
+    quietHours: boolean;
+    globalNotifications: boolean;
+    directMessagePrivacy: boolean;
+};
+
+export type Announcement = {
+    $id: string;
+    title?: string;
+    body: string;
+    bodyFormat: "markdown";
+    status: AnnouncementStatus;
+    priority: AnnouncementPriority;
+    createdBy: string;
+    recipientScope: "all_profiles";
+    idempotencyKey?: string;
+    scheduledFor?: string;
+    publishedAt?: string;
+    lastDispatchAt?: string;
+    urgentBypass?: AnnouncementUrgentBypass;
+    deliverySummary?: {
+        attempted: number;
+        delivered: number;
+        failed: number;
+    };
+    dispatchAttempts?: number;
+    errorDetails?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
+export const ANNOUNCEMENT_DELIVERY_STATUS_VALUES = [
+    "pending",
+    "delivered",
+    "failed",
+] as const;
+
+export type AnnouncementDeliveryStatus =
+    (typeof ANNOUNCEMENT_DELIVERY_STATUS_VALUES)[number];
+
+export type AnnouncementDelivery = {
+    $id: string;
+    announcementId: string;
+    recipientUserId: string;
+    status: AnnouncementDeliveryStatus;
+    attemptCount: number;
+    conversationId?: string;
+    messageId?: string;
+    nextAttemptAt?: string;
+    deliveredAt?: string;
+    failedAt?: string;
+    failureReason?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+};
+
 export type Membership = {
     $id: string;
     serverId: string;
@@ -159,6 +231,8 @@ export type Conversation = {
     participantCount?: number; // Convenience count for UI
     readOnly?: boolean;
     readOnlyReason?: string;
+    isSystemAnnouncementThread?: boolean;
+    announcementThreadKey?: string;
     relationship?: RelationshipStatus;
     dmEncryptionSelfEnabled?: boolean;
     dmEncryptionPeerEnabled?: boolean;
@@ -260,6 +334,9 @@ export type DirectMessage = {
     encryptionVersion?: string;
     // Base64 public key of the sender used to derive the shared decryption key.
     encryptionSenderPublicKey?: string;
+    isSystemAnnouncement?: boolean;
+    announcementId?: string;
+    priorityTag?: AnnouncementPriority;
     imageFileId?: string;
     imageUrl?: string;
     attachments?: FileAttachment[]; // File attachments beyond images

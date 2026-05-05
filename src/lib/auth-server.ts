@@ -27,6 +27,7 @@ export async function getServerSession() {
     const env = getEnvConfig();
     const endpoint = env.endpoint;
     const project = env.project;
+    const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
 
     try {
         const cookieStore = await cookies();
@@ -53,6 +54,10 @@ export async function getServerSession() {
             typeof user.name !== "string" ||
             typeof user.email !== "string"
         ) {
+            return null;
+        }
+
+        if (systemSenderUserId && user.$id === systemSenderUserId) {
             return null;
         }
 

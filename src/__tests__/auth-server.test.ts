@@ -90,6 +90,7 @@ describe("auth-server", () => {
         const env = process.env as Record<string, string>;
         env.APPWRITE_ENDPOINT = "http://localhost";
         env.APPWRITE_PROJECT_ID = "test-project";
+        delete env.SYSTEM_SENDER_USER_ID;
     });
 
     describe("getServerSession", () => {
@@ -153,6 +154,25 @@ describe("auth-server", () => {
             setMockUser(null); // Will throw error
             setMockCookies({
                 "a_session_test-project": { value: "some-token" },
+            });
+
+            const { getServerSession } = await import("../lib/auth-server");
+
+            const session = await getServerSession();
+            expect(session).toBeNull();
+        });
+
+        it("should return null when session belongs to configured system sender", async () => {
+            const env = process.env as Record<string, string>;
+            env.SYSTEM_SENDER_USER_ID = "system-account";
+
+            setMockUser({
+                $id: "system-account",
+                name: "System",
+                email: "system@example.com",
+            });
+            setMockCookies({
+                "a_session_test-project": { value: "valid-session-token" },
             });
 
             const { getServerSession } = await import("../lib/auth-server");

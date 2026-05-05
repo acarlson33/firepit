@@ -191,6 +191,10 @@ export function ConversationList({
     const filteredConversations = useMemo(
         () =>
             conversations.filter((conversation) => {
+                if (conversation.isSystemAnnouncementThread) {
+                    return true;
+                }
+
                 if (conversation.isGroup) {
                     return true;
                 }
