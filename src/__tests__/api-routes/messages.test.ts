@@ -192,6 +192,28 @@ describe("Messages API Routes", () => {
             );
         });
 
+        it("should return 400 for invalid attachments payload", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+
+            const request = new NextRequest("http://localhost/api/messages", {
+                method: "POST",
+                body: JSON.stringify({
+                    channelId: "channel-1",
+                    attachments: [{ fileId: "missing-required-fields" }],
+                }),
+            });
+
+            const response = await POST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(400);
+            expect(String(data.error)).toContain("attachments[0]");
+            expect(mockCreateDocument).not.toHaveBeenCalled();
+        });
+
         it("should return 400 when message text exceeds max length", async () => {
             mockGetServerSession.mockResolvedValue({
                 $id: "user-1",

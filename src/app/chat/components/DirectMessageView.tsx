@@ -24,6 +24,7 @@ import { EmojiPicker } from "@/components/emoji-picker";
 import { ChatInput } from "@/components/chat-input";
 import { ReactionButton } from "@/components/reaction-button";
 import { ReactionPicker } from "@/components/reaction-picker";
+import { GifStickerPicker } from "@/components/gif-sticker-picker";
 import { MessageWithMentions } from "@/components/message-with-mentions";
 import { FileUploadButton, FilePreview } from "@/components/file-upload-button";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";
@@ -1255,6 +1256,15 @@ export function DirectMessageView({
                                             Boolean(editingMessageId)
                                         }
                                         onFileSelect={
+                                            handleFileAttachmentSelect
+                                        }
+                                    />
+                                    <GifStickerPicker
+                                        disabled={
+                                            composerDisabled ||
+                                            Boolean(editingMessageId)
+                                        }
+                                        onSelectAttachment={
                                             handleFileAttachmentSelect
                                         }
                                     />
