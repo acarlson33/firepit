@@ -267,7 +267,7 @@ async function createAttachments(
     }
 
     if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
-        return [];
+        throw new Error("attachment storage not configured");
     }
 
     const createdIds: string[] = [];
@@ -282,13 +282,12 @@ async function createAttachments(
     };
 
     for (const attachment of attachments) {
-        const payload = buildAttachmentDocumentData({
-            attachment,
-            messageId,
-            messageType: "dm",
-        });
-
         try {
+            const payload = buildAttachmentDocumentData({
+                attachment,
+                messageId,
+                messageType: "dm",
+            });
             const result = await databases.createDocument(
                 DATABASE_ID,
                 MESSAGE_ATTACHMENTS_COLLECTION_ID,

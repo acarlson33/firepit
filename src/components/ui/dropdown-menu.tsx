@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 const BASE_ITEM_CLASS = "relative flex cursor-default select-none items-center gap-2 rounded-sm text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
-const STATIC_ITEM_CLASS = `${BASE_ITEM_CLASS} px-2 py-1.5 data-[inset]:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:[&_svg]:text-destructive! [&_svg:not([class*='text-'])]:text-muted-foreground`;
+const STATIC_ITEM_CLASS = `${BASE_ITEM_CLASS} px-2 py-1.5 data-inset:pl-8 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:[&_svg]:text-destructive! [&_svg:not([class*='text-'])]:text-muted-foreground`;
 
 function DropdownMenu({
   ...props
@@ -147,7 +147,7 @@ function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        "px-2 py-1.5 text-sm font-medium data-[inset]:pl-8",
+        "px-2 py-1.5 text-sm font-medium data-inset:pl-8",
         className
       )}
       data-inset={inset}
@@ -203,7 +203,7 @@ function DropdownMenuSubTrigger({
   return (
     <DropdownMenuPrimitive.SubTrigger
       className={cn(
-        "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset]:pl-8",
+        "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-inset:pl-8",
         className
       )}
       data-inset={inset}

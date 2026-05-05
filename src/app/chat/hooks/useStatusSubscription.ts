@@ -94,14 +94,22 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                     }
                 }
 
+                if (!enabledRef.current) {
+                    return;
+                }
+
                 setStatuses(statusMap);
             }
         } catch (error) {
             logger.error("Failed to fetch statuses", toError(error));
         } finally {
+            if (!enabledRef.current) {
+                return;
+            }
+
             setLoading(false);
         }
-    }, [normalizedUserIds]);
+    }, [enabled, normalizedUserIds]);
 
     useEffect(() => {
         void fetchStatuses();
@@ -121,89 +129,101 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
-
-        (async () => {
-            try {
-                if (cancelled) {
-                    return;
-                }
-
-                const realtime = getSharedRealtime();
-                const channel = Channel.database(env.databaseId)
-                    .collection(STATUSES_COLLECTION)
-                    .document();
-                const channelKey = channel.toString();
-
-                const handleStatusEvent = (response: {
-                    payload?: Record<string, unknown> | null;
-                }) => {
-                    try {
-                        const payload = response.payload;
-                        if (!payload) {
-                            return;
-                        }
-                        const userId = payload.userId as string | undefined;
-
-                        // Only update if this status is for one of our tracked users
-                        if (userId && trackedUserIds.has(userId)) {
-                            const { normalized } = normalizeStatus(payload);
-
-                            setStatuses((prev) => {
-                                const next = new Map(prev);
-                                next.set(userId, normalized);
-                                return next;
-                            });
-                        }
-                    } catch (err) {
-                        logger.error(
-                            "Status subscription handler failed",
-                            toError(err),
-                            { error: toErrorMessage(err) },
-                        );
+        const timeoutId = setTimeout(() => {
+            void (async () => {
+                try {
+                    if (cancelled) {
+                        return;
                     }
-                };
 
-                // Keep a query filter so status updates are scoped to tracked users.
-                const subscription: RealtimeSubscription =
-                    await realtime.subscribe(channel, handleStatusEvent, [
-                        Query.equal("userId", normalizedUserIds),
-                    ]);
+                    const realtime = getSharedRealtime();
+                    const channel = Channel.database(env.databaseId)
+                        .collection(STATUSES_COLLECTION)
+                        .document();
+                    const channelKey = channel.toString();
 
-                if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
-                    return;
-                }
+                    const handleStatusEvent = (response: {
+                        payload?: Record<string, unknown> | null;
+                    }) => {
+                        try {
+                            const payload = response.payload;
+                            if (!payload) {
+                                return;
+                            }
+                            const userId = payload.userId as
+                                | string
+                                | undefined;
 
-                const untrack = trackSubscription(channelKey);
-                cleanup = () => {
-                    untrack();
-                    closeSubscriptionSafely(subscription).catch((error) => {
-                        logger.warn("Status subscription cleanup failed", {
-                            error: toErrorMessage(error),
-                        });
-                    });
-                };
-            } catch (err) {
-                if (isTransientRealtimeSubscribeError(err)) {
-                    logger.warn("Status realtime subscription interrupted during connection setup", {
+                            // Only update if this status is for one of our tracked users
+                            if (userId && trackedUserIds.has(userId)) {
+                                const { normalized } = normalizeStatus(payload);
+
+                                setStatuses((prev) => {
+                                    const next = new Map(prev);
+                                    next.set(userId, normalized);
+                                    return next;
+                                });
+                            }
+                        } catch (err) {
+                            logger.error(
+                                "Status subscription handler failed",
+                                toError(err),
+                                { error: toErrorMessage(err) },
+                            );
+                        }
+                    };
+
+                    // Keep a query filter so status updates are scoped to tracked users.
+                    const subscription: RealtimeSubscription =
+                        await realtime.subscribe(channel, handleStatusEvent, [
+                            Query.equal("userId", normalizedUserIds),
+                        ]);
+
+                    if (cancelled) {
+                        await closeSubscriptionSafely(subscription);
+                        return;
+                    }
+
+                    const untrack = trackSubscription(channelKey);
+                    cleanup = () => {
+                        untrack();
+                        closeSubscriptionSafely(subscription).catch(
+                            (error) => {
+                                logger.warn(
+                                    "Status subscription cleanup failed",
+                                    {
+                                        error: toErrorMessage(error),
+                                    },
+                                );
+                            },
+                        );
+                    };
+                } catch (err) {
+                    if (isTransientRealtimeSubscribeError(err)) {
+                        logger.warn(
+                            "Status realtime subscription interrupted during connection setup",
+                            {
+                                error: toErrorMessage(err),
+                            },
+                        );
+                        return;
+                    }
+
+                    logger.error("Status subscription failed", toError(err), {
                         error: toErrorMessage(err),
                     });
-                    return;
                 }
-
-                logger.error("Status subscription failed", toError(err), {
-                    error: toErrorMessage(err),
-                });
-            }
-        })().catch((err: unknown) => {
-            logger.error("Status subscription setup failed", toError(err));
-        });
+            })().catch((err: unknown) => {
+                logger.error("Status subscription setup failed", toError(err));
+            });
+        }, 300);
 
         return () => {
             cancelled = true;
+            clearTimeout(timeoutId);
             cleanup?.();
         };
-    }, [normalizedUserIds]);
+    }, [enabled, normalizedUserIds]);
 
     return {
         statuses,

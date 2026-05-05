@@ -300,6 +300,22 @@ components:
                     type: string
                     format: date-time
 
+        ChannelCreate:
+            type: object
+            required:
+                - serverId
+                - name
+            properties:
+                serverId:
+                    type: string
+                name:
+                    type: string
+                type:
+                    type: string
+                    enum: [text, voice, announcement]
+                topic:
+                    type: string
+
         ChannelCategory:
             type: object
             properties:
@@ -1189,6 +1205,18 @@ paths:
                   required: true
                   schema:
                       type: string
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: cursor
+                  in: query
+                  required: false
+                  schema:
+                      type: string
             responses:
                 "200":
                     description: Channel list
@@ -1202,7 +1230,36 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Channel"
                                     nextCursor:
-                                        type: [string, "null"]
+                                        type: string
+                                        nullable: true
+        post:
+            tags: [Channels]
+            summary: Create a channel for a server
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ChannelCreate"
+            responses:
+                "201":
+                    description: Channel created
+                    headers:
+                        Location:
+                            description: URL of the created channel
+                            schema:
+                                type: string
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - channel
+                                properties:
+                                    channel:
+                                        $ref: "#/components/schemas/Channel"
 
     /api/channels/{channelId}:
         patch:

@@ -44,6 +44,7 @@ import {
 } from "@/lib/message-navigation";
 import type {
     Channel,
+    Conversation,
     FileAttachment,
     InboxContextKind,
     InboxItem,
@@ -296,18 +297,15 @@ export default function ChatPage() {
     const queryClient = useQueryClient();
 
     const upsertConversationIntoCache = useCallback(
-        (conversation: { $id: string }) => {
-            queryClient.setQueryData(
+        (conversation: Conversation) => {
+            queryClient.setQueryData<Conversation[]>(
                 ["conversations", userId],
-                (currentValue: unknown) => {
+                (currentValue) => {
                     if (!Array.isArray(currentValue)) {
                         return currentValue;
                     }
 
-                    const existingConversations = currentValue as Array<{
-                        $id: string;
-                    }>;
-                    const nextConversations = existingConversations.filter(
+                    const nextConversations = currentValue.filter(
                         (currentConversation) =>
                             currentConversation.$id !== conversation.$id,
                     );
@@ -1094,15 +1092,15 @@ export default function ChatPage() {
             signal: AbortSignal;
             channelId?: string;
         }) => {
-            const searchParams = new URLSearchParams({
+            const queryParams = new URLSearchParams({
                 userId: params.userId,
             });
             if (params.channelId) {
-                searchParams.set("channelId", params.channelId);
+                queryParams.set("channelId", params.channelId);
             }
 
             const response = await fetch(
-                `/api/servers/${params.serverId}/permissions?${searchParams.toString()}`,
+                `/api/servers/${params.serverId}/permissions?${queryParams.toString()}`,
                 { signal: params.signal },
             );
             if (!response.ok) {

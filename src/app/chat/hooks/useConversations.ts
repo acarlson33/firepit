@@ -49,8 +49,9 @@ export function useConversations(
     const isEnabled =
         enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
     const subscriptionContextKey = useMemo(
-        () => `${userId ?? ""}:${enabled ? "1" : "0"}`,
-        [enabled, userId],
+        () =>
+            `${userId ?? ""}:${enabled ? "1" : "0"}:${realtimeEnabled ? "1" : "0"}`,
+        [enabled, realtimeEnabled, userId],
     );
     const realtimeRetryNonceRef = useRef(0);
     const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
@@ -58,7 +59,7 @@ export function useConversations(
     useEffect(() => {
         realtimeRetryNonceRef.current = 0;
         setRealtimeRetryTick(0);
-    }, [subscriptionContextKey]);
+    }, [realtimeEnabled, subscriptionContextKey]);
 
     const loadConversations = useCallback(async () => {
         if (!userId || !CONVERSATIONS_COLLECTION) {

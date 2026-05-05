@@ -679,6 +679,16 @@ async function createIndexWithRetries(
                 return;
             }
 
+            if (
+                isDuplicateConflictError(lastError) ||
+                /duplicate|already exists|conflict/i.test(errMsg)
+            ) {
+                warn(
+                    `skipping index ${collection}.${name}: ${errMsg || lastError.message}`,
+                );
+                return;
+            }
+
             throw e;
         }
     }
@@ -1739,10 +1749,48 @@ async function setupAnnouncements() {
         0,
     );
     await waitForAttribute(ANNOUNCEMENTS_COLLECTION_ID, "idempotencyKey");
-    await backfillAnnouncementIdempotencyKeys();
 
-    // Before creating unique index, check for duplicates
-    await ensureNoDuplicateIdempotencyKeys();
+    let idempotencyIndexMatches = false;
+    try {
+        const existingIdempotencyIndex = await tryVariants([
+            () =>
+                dbAny.getIndex(
+                    DB_ID,
+                    ANNOUNCEMENTS_COLLECTION_ID,
+                    "idx_idempotency",
+                ),
+            () =>
+                dbAny.getIndex?.({
+                    databaseId: DB_ID,
+                    collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+                    key: "idx_idempotency",
+                }),
+        ]);
+
+        idempotencyIndexMatches = indexDefinitionMatches({
+            actualAttributes: normalizeIndexAttributes(
+                (existingIdempotencyIndex as { attributes?: unknown }).attributes,
+            ),
+            actualType: String(
+                (existingIdempotencyIndex as { type?: unknown }).type ?? "",
+            ),
+            expectedAttributes: ["createdBy", "idempotencyKey"],
+            expectedType: "unique",
+        });
+    } catch {
+        idempotencyIndexMatches = false;
+    }
+
+    if (!idempotencyIndexMatches) {
+        await backfillAnnouncementIdempotencyKeys();
+
+        // Before creating unique index, check for duplicates
+        await ensureNoDuplicateIdempotencyKeys();
+    } else {
+        info(
+            `[setup] index ${ANNOUNCEMENTS_COLLECTION_ID}.idx_idempotency already matches expected definition; skipping backfill and duplicate scan`,
+        );
+    }
 
     await ensureIndex(
         ANNOUNCEMENTS_COLLECTION_ID,

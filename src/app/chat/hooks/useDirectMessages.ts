@@ -735,7 +735,8 @@ export function useDirectMessages({
 
     useEffect(() => {
         currentConversationIdRef.current = conversationId;
-    }, [conversationId]);
+        setMessageRealtimeRetryNonce(0);
+    }, [conversationId, userId]);
 
     useEffect(() => {
         void loadMessages();
