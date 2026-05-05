@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.7.0
+    version: 1.8.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -1230,8 +1230,7 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Channel"
                                     nextCursor:
-                                        type: string
-                                        nullable: true
+                                        type: [string, "null"]
         post:
             tags: [Channels]
             summary: Create a channel for a server

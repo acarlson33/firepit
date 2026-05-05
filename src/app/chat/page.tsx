@@ -302,7 +302,7 @@ export default function ChatPage() {
                 ["conversations", userId],
                 (currentValue) => {
                     if (!Array.isArray(currentValue)) {
-                        return currentValue;
+                        return [conversation];
                     }
 
                     const nextConversations = currentValue.filter(
@@ -2525,7 +2525,7 @@ export default function ChatPage() {
 
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <Label>Options</Label>
+                                <h3 className="text-sm font-medium">Options</h3>
                                 <Button
                                     disabled={creatingPoll || pollOptions.length >= 10}
                                     onClick={addPollOption}

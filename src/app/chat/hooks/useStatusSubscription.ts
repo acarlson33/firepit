@@ -103,11 +103,9 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
         } catch (error) {
             logger.error("Failed to fetch statuses", toError(error));
         } finally {
-            if (!enabledRef.current) {
-                return;
+            if (enabledRef.current) {
+                setLoading(false);
             }
-
-            setLoading(false);
         }
     }, [enabled, normalizedUserIds]);
 
@@ -130,7 +128,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
         let cleanup: (() => void) | undefined;
         let cancelled = false;
         const timeoutId = setTimeout(() => {
-            void (async () => {
+            (async () => {
                 try {
                     if (cancelled) {
                         return;

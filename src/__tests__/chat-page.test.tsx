@@ -10,12 +10,14 @@ vi.mock("next/dynamic", () => ({
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+    const queryClient = new actual.QueryClient();
 
     return {
         ...actual,
-        useQueryClient: () => ({
-            setQueryData: mockSetQueryData,
-        }),
+        useQueryClient: () =>
+            Object.assign(queryClient, {
+                setQueryData: mockSetQueryData,
+            }),
     };
 });
 

@@ -4,7 +4,7 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import type { FileAttachment, RelationshipStatus } from "@/lib/types";
+import type { FileAttachment } from "@/lib/types";
 import {
     getRelationshipMap,
     getRelationshipStatus,

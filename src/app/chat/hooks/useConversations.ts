@@ -139,7 +139,7 @@ export function useConversations(
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        let pendingTimeouts: NodeJS.Timeout[] = [];
+        const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
 
         const conversationChannel = Channel.database(env.databaseId)
             .collection(CONVERSATIONS_COLLECTION)

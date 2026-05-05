@@ -683,10 +683,43 @@ async function createIndexWithRetries(
                 isDuplicateConflictError(lastError) ||
                 /duplicate|already exists|conflict/i.test(errMsg)
             ) {
-                warn(
-                    `skipping index ${collection}.${name}: ${errMsg || lastError.message}`,
-                );
-                return;
+                const existingIndex = await tryVariants([
+                    () => dbAny.getIndex(DB_ID, collection, name),
+                    () =>
+                        dbAny.getIndex?.({
+                            databaseId: DB_ID,
+                            collectionId: collection,
+                            key: name,
+                        }),
+                ]).catch(() => null);
+
+                if (existingIndex) {
+                    const existingType = String(
+                        (existingIndex as { type?: unknown }).type ?? "",
+                    );
+                    const existingAttributes = normalizeIndexAttributes(
+                        (existingIndex as { attributes?: unknown }).attributes,
+                    );
+                    const definitionMatches = indexDefinitionMatches({
+                        actualAttributes: existingAttributes,
+                        actualType: existingType,
+                        expectedAttributes: attributes,
+                        expectedType: type,
+                    });
+
+                    if (definitionMatches) {
+                        warn(
+                            `skipping index ${collection}.${name}: ${errMsg || lastError.message}`,
+                        );
+                        return;
+                    }
+
+                    warn(
+                        `index ${collection}.${name} exists with a different definition (type=${existingType || "unknown"}, attributes=${existingAttributes.join(",")}); retrying`,
+                    );
+                }
+
+                continue;
             }
 
             throw e;
