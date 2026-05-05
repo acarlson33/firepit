@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -94,7 +94,9 @@ describe("ServerManagement", () => {
         render(<ServerManagement isAdmin={true} isModerator={true} />);
 
         const typeSelect = await screen.findByLabelText("Channel Type");
-        const typeOptions = Array.from(typeSelect.querySelectorAll("option"));
+        const typeOptions = within(typeSelect).getAllByRole<HTMLOptionElement>(
+            "option",
+        );
         const optionValues = typeOptions.map((option) => option.value);
 
         expect(optionValues).toContain("text");

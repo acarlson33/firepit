@@ -163,6 +163,7 @@ export function SearchResults({
                                     text={truncateText(message.text)}
                                     currentUserId=""
                                     customEmojis={customEmojis}
+                                    renderLinks={false}
                                 />
                             </div>
 

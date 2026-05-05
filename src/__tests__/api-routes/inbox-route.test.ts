@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { GET, PATCH } from "@/app/api/inbox/route";
+import { clearUnreadConsistencySnapshots } from "@/lib/unread-consistency";
 
 const {
     mockListDocuments,
@@ -50,6 +51,7 @@ vi.mock("@/lib/thread-read-store", () => ({
 describe("inbox route", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearUnreadConsistencySnapshots();
     });
 
     it("returns 401 when unauthenticated", async () => {
@@ -357,6 +359,118 @@ describe("inbox route", () => {
         expect(mockUpsertThreadReads).not.toHaveBeenCalledWith(
             expect.objectContaining({
                 contextId: "channel-2",
+            }),
+        );
+        expect(data.ok).toBe(true);
+        expect(data.updatedMentionCount).toBe(1);
+        expect(data.updatedThreadContextCount).toBe(1);
+    });
+
+    it("marks all unread items read for a context kind without requiring contextId", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockListInboxItems.mockResolvedValue({
+            contractVersion: "message_v2",
+            counts: { mention: 2, thread: 2 },
+            items: [
+                {
+                    id: "item-mention-conv-1",
+                    kind: "mention",
+                    contextKind: "conversation",
+                    contextId: "conversation-1",
+                    messageId: "message-1",
+                    latestActivityAt: "2026-03-13T00:00:00.000Z",
+                    unreadCount: 1,
+                    previewText: "dm mention",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+                {
+                    id: "thread:conversation:conversation-1:message-2",
+                    kind: "thread",
+                    contextKind: "conversation",
+                    contextId: "conversation-1",
+                    messageId: "message-2",
+                    parentMessageId: "message-2",
+                    latestActivityAt: "2026-03-13T01:00:00.000Z",
+                    unreadCount: 1,
+                    previewText: "dm thread",
+                    authorUserId: "user-2",
+                    authorLabel: "Alice",
+                    muted: false,
+                },
+                {
+                    id: "item-mention-channel-1",
+                    kind: "mention",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-3",
+                    latestActivityAt: "2026-03-13T02:00:00.000Z",
+                    unreadCount: 1,
+                    previewText: "channel mention",
+                    authorUserId: "user-3",
+                    authorLabel: "Bob",
+                    muted: false,
+                },
+                {
+                    id: "thread:channel:channel-1:message-4",
+                    kind: "thread",
+                    contextKind: "channel",
+                    contextId: "channel-1",
+                    messageId: "message-4",
+                    parentMessageId: "message-4",
+                    latestActivityAt: "2026-03-13T03:00:00.000Z",
+                    unreadCount: 1,
+                    previewText: "channel thread",
+                    authorUserId: "user-3",
+                    authorLabel: "Bob",
+                    muted: false,
+                },
+            ],
+            unreadCount: 4,
+        });
+        mockListDocuments.mockResolvedValue({
+            documents: [{ $id: "item-mention-conv-1" }],
+        });
+
+        const response = await PATCH(
+            new NextRequest("http://localhost/api/inbox", {
+                body: JSON.stringify({
+                    action: "mark-all-read",
+                    contextKind: "conversation",
+                }),
+                method: "PATCH",
+            }),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mockListInboxItems).toHaveBeenCalledWith({
+            contextKinds: ["conversation"],
+            kinds: ["mention", "thread"],
+            limit: Number.POSITIVE_INFINITY,
+            userId: "user-1",
+        });
+        expect(mockUpdateDocument).toHaveBeenCalledTimes(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledTimes(1);
+        expect(mockUpsertThreadReads).toHaveBeenCalledWith({
+            contextId: "conversation-1",
+            contextType: "conversation",
+            reads: {
+                "message-2": "2026-03-13T01:00:00.000Z",
+            },
+            userId: "user-1",
+        });
+        expect(mockUpdateDocument).not.toHaveBeenCalledWith(
+            "test-db",
+            "inbox-items-collection",
+            "item-mention-channel-1",
+            expect.anything(),
+        );
+        expect(mockUpsertThreadReads).not.toHaveBeenCalledWith(
+            expect.objectContaining({
+                contextId: "channel-1",
+                contextType: "channel",
             }),
         );
         expect(data.ok).toBe(true);

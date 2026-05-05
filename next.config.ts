@@ -214,6 +214,18 @@ const nextConfig: NextConfig = {
                 pathname:
                     "/v1/storage/buckets/avatar-frames-predefined/files/**",
             },
+            {
+                protocol: "https",
+                hostname: "cdnjs.cloudflare.com",
+            },
+            {
+                protocol: "https",
+                hostname: "api.giphy.com",
+            },
+            {
+                protocol: "https",
+                hostname: "tenor.googleapis.com",
+            },
         ],
         formats: ["image/avif", "image/webp"],
     },

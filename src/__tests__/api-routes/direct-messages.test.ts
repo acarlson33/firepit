@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { MAX_MESSAGE_LENGTH } from "@/lib/message-constraints";
+import { clearUnreadConsistencySnapshots } from "@/lib/unread-consistency";
 
 // Mock environment variables
 vi.stubEnv("APPWRITE_ENDPOINT", "http://localhost/v1");
@@ -134,9 +135,13 @@ vi.mock("node-appwrite", () => ({
             `equal(${field},${JSON.stringify(value)})`,
         contains: (field: string, value: string | string[]) =>
             `contains(${field},${JSON.stringify(Array.isArray(value) ? value : [value])})`,
+        greaterThan: (field: string, value: number) =>
+            `greaterThan(${field},${value})`,
+        isNotNull: (field: string) => `isNotNull(${field})`,
         orderAsc: (field: string) => `orderAsc(${field})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
         limit: (n: number) => `limit(${n})`,
+        cursorAfter: (documentId: string) => `cursorAfter(${documentId})`,
     },
     Permission: {
         read: (role: string) => `read("${role}")`,
@@ -156,6 +161,7 @@ describe("Direct Messages API", () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        clearUnreadConsistencySnapshots();
 
         mockGetDocument.mockRejectedValue(new Error("not found"));
         mockUpsertMentionInboxItems.mockReset();
@@ -253,6 +259,115 @@ describe("Direct Messages API", () => {
             expect(response.status).toBe(200);
             expect(data.conversations).toHaveLength(2);
             expect(data.conversations[0].$id).toBe("conv-1");
+        });
+
+        it("returns converged unread count after mark-all-read updates thread reads", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockListThreadReadsByContext.mockResolvedValue(
+                new Map([
+                    [
+                        "conv-1",
+                        {
+                            "parent-1": "2026-03-11T13:05:00.000Z",
+                        },
+                    ],
+                ]),
+            );
+            mockIsThreadUnread.mockImplementation(
+                ({
+                    lastReadAt,
+                    lastThreadReplyAt,
+                    threadMessageCount,
+                }: {
+                    lastReadAt?: string;
+                    lastThreadReplyAt?: string;
+                    threadMessageCount?: number;
+                }) => {
+                    if (!threadMessageCount || threadMessageCount < 1) {
+                        return false;
+                    }
+
+                    if (!lastThreadReplyAt) {
+                        return false;
+                    }
+
+                    if (!lastReadAt) {
+                        return true;
+                    }
+
+                    return lastReadAt.localeCompare(lastThreadReplyAt) < 0;
+                },
+            );
+            mockListDocuments.mockImplementation(
+                async (_databaseId, collectionId, queries: string[] = []) => {
+                    const queryText = queries.join("|");
+
+                    if (collectionId === "conversations-collection") {
+                        return {
+                            documents: [
+                                {
+                                    $id: "conv-1",
+                                    participants: ["user-1", "user-2"],
+                                    lastMessageAt: "2026-03-11T13:05:00.000Z",
+                                    $createdAt: "2026-03-11T12:00:00.000Z",
+                                },
+                            ],
+                        };
+                    }
+
+                    if (collectionId === "direct-messages-collection") {
+                        if (queryText.includes("greaterThan(threadMessageCount,0)")) {
+                            return {
+                                documents: [
+                                    {
+                                        $id: "parent-1",
+                                        conversationId: "conv-1",
+                                        threadMessageCount: 1,
+                                        lastThreadReplyAt: "2026-03-11T13:05:00.000Z",
+                                    },
+                                ],
+                            };
+                        }
+
+                        if (queryText.includes("isNotNull(threadId)")) {
+                            return {
+                                documents: [
+                                    {
+                                        $id: "reply-1",
+                                        $createdAt: "2026-03-11T13:05:00.000Z",
+                                        conversationId: "conv-1",
+                                        threadId: "parent-1",
+                                    },
+                                ],
+                            };
+                        }
+
+                        return { documents: [] };
+                    }
+
+                    return { documents: [] };
+                },
+            );
+
+            const response = await GET(
+                new NextRequest(
+                    "http://localhost/api/direct-messages?type=conversations",
+                ),
+            );
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(mockListThreadReadsByContext).toHaveBeenCalledWith({
+                contextIds: ["conv-1"],
+                contextType: "conversation",
+                userId: "user-1",
+            });
+            expect(data.conversations).toHaveLength(1);
+            expect(data.conversations[0]?.unreadThreadCount).toBe(0);
+            expect(data.conversations[0]?.hasUnread).toBe(false);
         });
 
         it("should list messages for a conversation", async () => {

@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -5,10 +7,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessagePollBlock } from "@/components/message-poll";
 import type { MessagePoll } from "@/lib/types";
 
-const basePoll: MessagePoll = {
+const basePoll = {
     id: "poll-1",
     messageId: "message-1",
-    channelId: "channel-1",
+    contextType: "channel",
+    contextId: "channel-1",
     question: "Pick one",
     options: [
         {
@@ -26,7 +29,7 @@ const basePoll: MessagePoll = {
     ],
     status: "open",
     createdBy: "user-2",
-};
+} satisfies MessagePoll;
 
 afterEach(() => {
     vi.unstubAllGlobals();

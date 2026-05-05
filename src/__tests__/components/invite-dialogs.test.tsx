@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -327,6 +329,10 @@ describe("InviteManagerDialog Component", () => {
                 }),
             );
         });
+
+        await waitFor(() => {
+            expect(screen.queryByText("delete123")).not.toBeInTheDocument();
+        });
     });
 
     it("should handle error when loading invites fails", async () => {
@@ -525,6 +531,10 @@ describe("CreateInviteDialog Component", () => {
 
         await waitFor(() => {
             expect(toast.error).toHaveBeenCalledWith("Server not found");
+            expect(
+                screen.getByRole("button", { name: /generate invite/i }),
+            ).not.toBeDisabled();
+            expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
         });
     });
 
@@ -547,6 +557,10 @@ describe("CreateInviteDialog Component", () => {
 
         await waitFor(() => {
             expect(toast.error).toHaveBeenCalledWith("Network error");
+            expect(
+                screen.getByRole("button", { name: /generate invite/i }),
+            ).not.toBeDisabled();
+            expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
         });
     });
 

@@ -146,7 +146,12 @@ export function CreateServerDialog({
 
 					<div className="flex items-start justify-between rounded-md border border-border/60 p-3">
 						<div className="space-y-1 pr-4">
-							<p className="text-sm font-medium">Public discovery</p>
+							<Label
+								className="text-sm font-medium"
+								htmlFor="public-discovery-switch"
+							>
+								Public discovery
+							</Label>
 							<p className="text-xs text-muted-foreground">
 								Public servers appear in discovery and allow direct joins.
 								 Private servers require an invite link.
@@ -155,6 +160,7 @@ export function CreateServerDialog({
 						<Switch
 							checked={isPublic}
 							disabled={isCreating}
+							id="public-discovery-switch"
 							onCheckedChange={setIsPublic}
 						/>
 					</div>

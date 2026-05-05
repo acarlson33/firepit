@@ -30,6 +30,9 @@ export const ATTACHMENT_SOURCE_VALUES = [
 
 export type AttachmentSource = (typeof ATTACHMENT_SOURCE_VALUES)[number];
 
+export const ATTACHMENT_PROVIDER_VALUES = ["giphy", "tenor"] as const;
+export type AttachmentProvider = (typeof ATTACHMENT_PROVIDER_VALUES)[number];
+
 export type FileAttachment = {
     fileId: string;
     fileName: string;
@@ -39,7 +42,7 @@ export type FileAttachment = {
     thumbnailUrl?: string; // For videos
     mediaKind?: AttachmentMediaKind;
     source?: AttachmentSource;
-    provider?: "giphy" | "tenor";
+    provider?: AttachmentProvider;
     providerAssetId?: string;
     packId?: string;
     itemId?: string;
@@ -73,7 +76,7 @@ export type GifSearchItem = {
     width?: number;
     height?: number;
     durationMs?: number;
-    source: "giphy" | "tenor";
+    source: AttachmentProvider;
 };
 
 export type MessagePollOption = {
@@ -83,10 +86,15 @@ export type MessagePollOption = {
     voterIds: string[];
 };
 
+const POLL_CONTEXTS = ["channel", "conversation"] as const;
+export type MessageContextType = (typeof POLL_CONTEXTS)[number];
+export type PollContext = MessageContextType;
+
 export type MessagePoll = {
     id: string;
     messageId: string;
-    channelId: string;
+    contextType: MessageContextType;
+    contextId: string;
     question: string;
     options: MessagePollOption[];
     status: "open" | "closed";
@@ -157,11 +165,14 @@ export type Server = {
     defaultOnSignup?: boolean;
 };
 
+export const CHANNEL_TYPE_VALUES = ["text", "voice", "announcement"] as const;
+export type ChannelType = (typeof CHANNEL_TYPE_VALUES)[number];
+
 export type Channel = {
     $id: string;
     serverId: string;
     name: string;
-    type?: "text" | "voice" | "announcement";
+    type?: ChannelType;
     topic?: string;
     categoryId?: string;
     position?: number;
@@ -180,12 +191,6 @@ export type ChannelCategory = {
     $updatedAt?: string;
 };
 
-export type InstanceSettings = {
-    $id: string;
-    allowUserServers: boolean;
-    updatedAt: string;
-};
-
 export type FeatureFlag = {
     $id: string;
     key: string;
@@ -195,12 +200,21 @@ export type FeatureFlag = {
     updatedBy?: string;
 };
 
-export const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
+const ANNOUNCEMENT_PRIORITY_VALUES = ["normal", "urgent"] as const;
+
+const ANNOUNCEMENT_CREATE_MODE_VALUES = [
+    "draft",
+    "schedule",
+    "send_now",
+] as const;
+
+export type AnnouncementCreateMode =
+    (typeof ANNOUNCEMENT_CREATE_MODE_VALUES)[number];
 
 export type AnnouncementPriority =
     (typeof ANNOUNCEMENT_PRIORITY_VALUES)[number];
 
-export const ANNOUNCEMENT_STATUS_VALUES = [
+const ANNOUNCEMENT_STATUS_VALUES = [
     "draft",
     "scheduled",
     "dispatching",
@@ -230,6 +244,8 @@ export type Announcement = {
     scheduledFor?: string;
     publishedAt?: string;
     lastDispatchAt?: string;
+    leaseRunId?: string;
+    leaseExpiresAt?: string;
     urgentBypass?: AnnouncementUrgentBypass;
     deliverySummary?: {
         attempted: number;
@@ -242,7 +258,7 @@ export type Announcement = {
     $updatedAt?: string;
 };
 
-export const ANNOUNCEMENT_DELIVERY_STATUS_VALUES = [
+const ANNOUNCEMENT_DELIVERY_STATUS_VALUES = [
     "pending",
     "delivered",
     "failed",
@@ -534,7 +550,7 @@ export type InviteUsage = {
     joinedAt: string;
 };
 
-export const FRIENDSHIP_STATUS_VALUES = [
+const FRIENDSHIP_STATUS_VALUES = [
     "pending",
     "accepted",
     "declined",
@@ -583,14 +599,6 @@ export type RelationshipStatus = {
     canReceiveFriendRequest: boolean;
 };
 
-export type RoleAssignment = {
-    $id: string;
-    userId: string;
-    serverId: string;
-    roleIds: string[]; // Array of role IDs assigned to this user
-    $createdAt?: string;
-};
-
 export type ChannelPermissionOverride = {
     $id: string;
     channelId: string;
@@ -601,14 +609,6 @@ export type ChannelPermissionOverride = {
     $createdAt?: string;
 };
 
-// Utility type for checking if user has specific permission
-export type PermissionCheck = {
-    userId: string;
-    serverId: string;
-    channelId?: string;
-    permission: Permission;
-};
-
 // Utility type for effective permissions after calculating hierarchy
 export type EffectivePermissions = {
     [K in Permission]: boolean;
@@ -617,7 +617,7 @@ export type EffectivePermissions = {
 export type PinnedMessage = {
     $id: string;
     messageId: string;
-    contextType: "channel" | "conversation";
+    contextType: MessageContextType;
     contextId: string;
     pinnedBy: string;
     pinnedAt: string;
@@ -711,18 +711,4 @@ export type NotificationPayload = {
         conversationId?: string;
         senderId?: string;
     };
-};
-
-/**
- * Result of checking if a user should be notified
- */
-export type NotificationCheckResult = {
-    shouldNotify: boolean;
-    reason?:
-        | "muted"
-        | "quiet_hours"
-        | "level_mismatch"
-        | "user_online"
-        | "blocked";
-    effectiveLevel: NotificationLevel;
 };

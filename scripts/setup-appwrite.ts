@@ -515,6 +515,9 @@ async function updateStringAttributeSize(
 }
 
 type IndexType = "key" | "fulltext" | "unique"; // subset used
+type EnsureIndexOptions = {
+    recreateIfMismatched?: boolean;
+};
 
 function isAttributePropagationError(message: string): boolean {
     const normalized = message.toLowerCase();
@@ -566,12 +569,234 @@ async function waitForAttribute(
     );
 }
 
+function normalizeIndexAttributes(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.map((attribute) => String(attribute));
+}
+
+function indexDefinitionMatches(params: {
+    actualAttributes: string[];
+    actualType: string;
+    expectedAttributes: string[];
+    expectedType: IndexType;
+}): boolean {
+    const { actualAttributes, actualType, expectedAttributes, expectedType } =
+        params;
+
+    if (actualType !== expectedType) {
+        return false;
+    }
+
+    if (actualAttributes.length !== expectedAttributes.length) {
+        return false;
+    }
+
+    return actualAttributes.every(
+        (attribute, index) => attribute === expectedAttributes[index],
+    );
+}
+
+async function deleteIndex(collection: string, name: string): Promise<void> {
+    await tryVariants([
+        () => dbAny.deleteIndex(DB_ID, collection, name),
+        () =>
+            dbAny.deleteIndex?.({
+                collectionId: collection,
+                databaseId: DB_ID,
+                key: name,
+            }),
+    ]);
+}
+
+async function createIndexWithRetries(
+    collection: string,
+    name: string,
+    type: IndexType,
+    attributes: string[],
+): Promise<void> {
+    // Wait for all attributes to be available before creating index.
+    for (const attr of attributes) {
+        if (attr.startsWith("$")) {
+            // System attributes are always available and are not returned by attribute APIs.
+            continue;
+        }
+        await waitForAttribute(collection, attr);
+    }
+
+    // Retry index creation with backoff if attributes aren't ready.
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        if (attempt > 0) {
+            const delay = 2000 * attempt; // Progressive delay: 2s, 4s, 6s, 8s
+            info(
+                `[setup] retrying index ${collection}.${name} after ${delay}ms delay (attempt ${attempt + 1}/5)`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        try {
+            await tryVariants([
+                () =>
+                    dbAny.createIndex(
+                        DB_ID,
+                        collection,
+                        name,
+                        type,
+                        attributes,
+                    ),
+                () =>
+                    dbAny.createIndex?.({
+                        databaseId: DB_ID,
+                        collectionId: collection,
+                        key: name,
+                        type,
+                        attributes,
+                    }),
+            ]);
+            info(`[setup] created index ${collection}.${name}`);
+            return; // Success
+        } catch (e) {
+            lastError = e as Error;
+            const errMsg = lastError.message || "";
+
+            if (isAttributePropagationError(errMsg)) {
+                for (const attr of attributes) {
+                    if (attr.startsWith("$")) {
+                        continue;
+                    }
+                    await waitForAttribute(collection, attr);
+                }
+                continue;
+            }
+
+            if (type === "fulltext") {
+                warn(
+                    `skipping fulltext index ${collection}.${name}: ${lastError.message}`,
+                );
+                return;
+            }
+
+            if (
+                isDuplicateConflictError(lastError) ||
+                /duplicate|already exists|conflict/i.test(errMsg)
+            ) {
+                const existingIndex = await tryVariants([
+                    () => dbAny.getIndex(DB_ID, collection, name),
+                    () =>
+                        dbAny.getIndex?.({
+                            databaseId: DB_ID,
+                            collectionId: collection,
+                            key: name,
+                        }),
+                ]).catch(() => null);
+
+                if (existingIndex) {
+                    const existingType = String(
+                        (existingIndex as { type?: unknown }).type ?? "",
+                    );
+                    const existingAttributes = normalizeIndexAttributes(
+                        (existingIndex as { attributes?: unknown }).attributes,
+                    );
+                    const definitionMatches = indexDefinitionMatches({
+                        actualAttributes: existingAttributes,
+                        actualType: existingType,
+                        expectedAttributes: attributes,
+                        expectedType: type,
+                    });
+
+                    if (definitionMatches) {
+                        warn(
+                            `skipping index ${collection}.${name}: ${errMsg || lastError.message}`,
+                        );
+                        return;
+                    }
+
+                    warn(
+                        `index ${collection}.${name} exists with a different definition (type=${existingType || "unknown"}, attributes=${existingAttributes.join(",")}); retrying`,
+                    );
+                }
+
+                continue;
+            }
+
+            throw e;
+        }
+    }
+
+    if (type === "fulltext") {
+        warn(
+            `skipping fulltext index ${collection}.${name}: ${lastError?.message ?? "unknown error"}`,
+        );
+    } else {
+        throw lastError ?? new Error("Failed to create index after retries");
+    }
+}
+
+async function listAllDocuments(params: {
+    collectionId: string;
+    pageLimit?: number;
+    queries?: string[];
+}) {
+    const {
+        collectionId,
+        pageLimit = 100,
+        queries = [Query.orderAsc("$id")],
+    } = params;
+    const documents: Record<string, unknown>[] = [];
+    let cursorAfter: string | null = null;
+
+    while (true) {
+        const pageQueries = [
+            ...queries,
+            Query.limit(pageLimit),
+            ...(cursorAfter ? [Query.cursorAfter(cursorAfter)] : []),
+        ];
+
+        const response = await tryVariants([
+            () => dbAny.listDocuments(DB_ID, collectionId, pageQueries),
+            () =>
+                dbAny.listDocuments?.({
+                    databaseId: DB_ID,
+                    collectionId,
+                    queries: pageQueries,
+                }),
+        ]);
+
+        const pageDocuments = Array.isArray(response.documents)
+            ? (response.documents as Record<string, unknown>[])
+            : [];
+        documents.push(...pageDocuments);
+
+        if (pageDocuments.length < pageLimit) {
+            break;
+        }
+
+        const lastDocument = pageDocuments.at(-1);
+        cursorAfter =
+            lastDocument && typeof lastDocument.$id === "string"
+                ? lastDocument.$id
+                : null;
+
+        if (!cursorAfter) {
+            break;
+        }
+    }
+
+    return documents;
+}
+
 async function ensureIndex(
     collection: string,
     name: string,
     type: IndexType,
     attributes: string[],
+    options?: EnsureIndexOptions,
 ) {
+    const recreateIfMismatched = options?.recreateIfMismatched === true;
+
     try {
         const existing = await tryVariants([
             () => dbAny.getIndex(DB_ID, collection, name),
@@ -582,87 +807,175 @@ async function ensureIndex(
                     key: name,
                 }),
         ]);
+
+        const existingType = String((existing as { type?: unknown }).type ?? "");
+        const existingAttributes = normalizeIndexAttributes(
+            (existing as { attributes?: unknown }).attributes,
+        );
+        const definitionMatches = indexDefinitionMatches({
+            actualAttributes: existingAttributes,
+            actualType: existingType,
+            expectedAttributes: attributes,
+            expectedType: type,
+        });
+
+        if (!definitionMatches) {
+            if (!recreateIfMismatched) {
+                warn(
+                    `index ${collection}.${name} exists with unexpected definition (type=${existingType || "unknown"}, attributes=${existingAttributes.join(",",
+                    )}); expected type=${type}, attributes=${attributes.join(",")}.`,
+                );
+                return;
+            }
+
+            warn(
+                `recreating index ${collection}.${name} due to definition mismatch (type=${existingType || "unknown"} -> ${type})`,
+            );
+            await deleteIndex(collection, name);
+            await createIndexWithRetries(collection, name, type, attributes);
+            return;
+        }
+
         info(
             `[setup] index ${collection}.${name} already exists (status: ${String((existing as any).status)})`,
         );
     } catch {
-        // Wait for all attributes to be available before creating index
-        for (const attr of attributes) {
-            if (attr.startsWith("$")) {
-                // System attributes are always available and are not returned by attribute APIs.
-                continue;
-            }
-            await waitForAttribute(collection, attr);
+        await createIndexWithRetries(collection, name, type, attributes);
+    }
+}
+
+async function migrateLegacyServersIsPublic(
+    defaultVisibility: boolean,
+): Promise<void> {
+    const shouldRun = /^(1|true|yes)$/i.test(
+        process.env.MIGRATE_LEGACY_SERVERS_IS_PUBLIC ?? "",
+    );
+    if (!shouldRun) {
+        return;
+    }
+
+    const missingVisibilityServers = await listAllDocuments({
+        collectionId: "servers",
+        queries: [Query.isNull("isPublic"), Query.orderAsc("$id")],
+    });
+
+    if (missingVisibilityServers.length === 0) {
+        info("[setup] no legacy servers missing isPublic found");
+        return;
+    }
+
+    let migratedCount = 0;
+    for (const document of missingVisibilityServers) {
+        const serverId = String(document.$id ?? "");
+        if (!serverId) {
+            continue;
         }
 
-        // Retry index creation with backoff if attributes aren't ready
-        let lastError: Error | null = null;
-        for (let attempt = 0; attempt < 5; attempt++) {
-            if (attempt > 0) {
-                const delay = 2000 * attempt; // Progressive delay: 2s, 4s, 6s, 8s
-                info(
-                    `[setup] retrying index ${collection}.${name} after ${delay}ms delay (attempt ${attempt + 1}/5)`,
-                );
-                await new Promise((resolve) => setTimeout(resolve, delay));
-            }
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(DB_ID, "servers", serverId, {
+                    isPublic: defaultVisibility,
+                }),
+            () =>
+                dbAny.updateDocument?.({
+                    data: { isPublic: defaultVisibility },
+                    databaseId: DB_ID,
+                    documentId: serverId,
+                    collectionId: "servers",
+                }),
+        ]);
+        migratedCount += 1;
+    }
 
-            try {
-                await tryVariants([
-                    () =>
-                        dbAny.createIndex(
-                            DB_ID,
-                            collection,
-                            name,
-                            type,
-                            attributes,
-                        ),
-                    () =>
-                        dbAny.createIndex?.({
-                            databaseId: DB_ID,
-                            collectionId: collection,
-                            key: name,
-                            type,
-                            attributes,
-                        }),
-                ]);
-                info(`[setup] created index ${collection}.${name}`);
-                return; // Success!
-            } catch (e) {
-                lastError = e as Error;
-                const errMsg = lastError.message || "";
-                // If it's an "attribute not available" error, retry
-                if (isAttributePropagationError(errMsg)) {
-                    for (const attr of attributes) {
-                        if (attr.startsWith("$")) {
-                            continue;
-                        }
-                        await waitForAttribute(collection, attr);
-                    }
-                    continue;
-                }
-                // For other errors, handle immediately
-                if (type === "fulltext") {
-                    warn(
-                        `skipping fulltext index ${collection}.${name}: ${lastError.message}`,
-                    );
-                    return;
-                }
-                // Re-throw other errors
-                throw e;
-            }
+    info(
+        `[setup] migrated ${String(migratedCount)} legacy server(s) with missing isPublic to ${String(defaultVisibility)}`,
+    );
+}
+
+async function backfillAnnouncementIdempotencyKeys(): Promise<void> {
+    const announcements = await listAllDocuments({
+        collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+    });
+
+    if (announcements.length === 0) {
+        return;
+    }
+
+    let updatedCount = 0;
+    for (const announcement of announcements) {
+        const announcementId = String(announcement.$id ?? "");
+        const idempotencyKey =
+            typeof announcement.idempotencyKey === "string"
+                ? announcement.idempotencyKey.trim()
+                : "";
+
+        if (!announcementId || idempotencyKey.length > 0) {
+            continue;
         }
 
-        // All retries failed
-        if (type === "fulltext") {
-            warn(
-                `skipping fulltext index ${collection}.${name}: ${lastError?.message ?? "unknown error"}`,
-            );
-        } else {
-            throw (
-                lastError ?? new Error("Failed to create index after retries")
-            );
+        const fallbackIdempotencyKey = `legacy:${announcementId}`.slice(0, LEN_ID);
+        await tryVariants([
+            () =>
+                dbAny.updateDocument(
+                    DB_ID,
+                    ANNOUNCEMENTS_COLLECTION_ID,
+                    announcementId,
+                    {
+                        idempotencyKey: fallbackIdempotencyKey,
+                    },
+                ),
+            () =>
+                dbAny.updateDocument?.({
+                    data: { idempotencyKey: fallbackIdempotencyKey },
+                    databaseId: DB_ID,
+                    documentId: announcementId,
+                    collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+                }),
+        ]);
+        updatedCount += 1;
+    }
+
+    if (updatedCount > 0) {
+        info(
+            `[setup] backfilled idempotencyKey for ${String(updatedCount)} announcement(s)`,
+        );
+    }
+}
+
+async function ensureNoDuplicateIdempotencyKeys(): Promise<void> {
+    const duplicateGroups = await listAllDocuments({
+        collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+        queries: [Query.notEqual("idempotencyKey", ""), Query.orderAsc("$id")],
+    });
+
+    const keyCounts = new Map<string, string[]>();
+    for (const doc of duplicateGroups) {
+        const key = JSON.stringify([doc.createdBy, doc.idempotencyKey]);
+        if (!key) continue;
+        const existing = keyCounts.get(key) ?? [];
+        existing.push(String(doc.$id));
+        keyCounts.set(key, existing);
+    }
+
+    const duplicates: Array<{ fingerprint: string; ids: string[] }> = [];
+    for (const [key, ids] of keyCounts) {
+        if (ids.length > 1) {
+            duplicates.push({
+                fingerprint: createHash("sha256").update(key).digest("hex").slice(0, 8),
+                ids,
+            });
         }
     }
+
+    if (duplicates.length > 0) {
+        throw new Error(
+            `Migration aborted: found ${duplicates.length} duplicate idempotencyKey values. ` +
+            `Sample duplicates: ${duplicates.slice(0, 3).map(d => `fingerprint='${d.fingerprint}' (${d.ids.length} docs: ${d.ids.slice(0, 2).join(", ")})`).join(", ")}. ` +
+            `Remove duplicates or clean idempotencyKey before creating unique index.`,
+        );
+    }
+
+    info("[setup] no duplicate idempotencyKey values found");
 }
 
 // ---- Domain Specific Setup ----
@@ -674,7 +987,12 @@ async function setupServers() {
     await ensureStringAttribute("servers", "iconFileId", LEN_ID, false);
     await ensureStringAttribute("servers", "bannerFileId", LEN_ID, false);
     await ensureBooleanAttribute("servers", "isPublic", false);
+    await waitForAttribute("servers", "isPublic");
     await ensureBooleanAttribute("servers", "defaultOnSignup", false);
+    const migrateServersVisibilityDefault = /^(1|true|yes)$/i.test(
+        process.env.MIGRATE_LEGACY_SERVERS_IS_PUBLIC_DEFAULT ?? "",
+    );
+    await migrateLegacyServersIsPublic(migrateServersVisibilityDefault);
     await ensureIndex("servers", "idx_isPublic", "key", ["isPublic"]);
     await ensureIndex("servers", "idx_defaultOnSignup", "key", [
         "defaultOnSignup",
@@ -762,7 +1080,7 @@ async function setupMessageAttachments() {
 
     const requiredStringFields: [string, number][] = [
         ["messageId", LEN_ID],
-        ["messageType", 16],
+        ["messageType", 32],
         ["fileId", LEN_ID],
         ["fileName", 512],
         ["fileType", 255],
@@ -770,6 +1088,32 @@ async function setupMessageAttachments() {
     ];
     for (const [key, size] of requiredStringFields) {
         await ensureStringAttribute("message_attachments", key, size, true);
+    }
+
+    await waitForAttribute("message_attachments", "messageType");
+    const messageTypeAttribute = (await tryVariants([
+        () => dbAny.getAttribute(DB_ID, "message_attachments", "messageType"),
+        () =>
+            dbAny.getAttribute?.({
+                databaseId: DB_ID,
+                collectionId: "message_attachments",
+                key: "messageType",
+            }),
+    ])) as {
+        size?: number | string;
+    };
+    const configuredMessageTypeSize = Number(messageTypeAttribute.size ?? 0);
+    if (
+        Number.isFinite(configuredMessageTypeSize) &&
+        configuredMessageTypeSize < 32
+    ) {
+        await updateStringAttributeSize(
+            "message_attachments",
+            "messageType",
+            32,
+            true,
+        );
+        await waitForAttribute("message_attachments", "messageType");
     }
 
     const optionalStringFields: [string, number][] = [
@@ -792,6 +1136,10 @@ async function setupMessageAttachments() {
         "messageId",
     ]);
     await ensureIndex("message_attachments", "idx_message_type", "key", [
+        "messageType",
+    ]);
+    await ensureIndex("message_attachments", "idx_message_messageType", "key", [
+        "messageId",
         "messageType",
     ]);
 }
@@ -1332,10 +1680,10 @@ async function setupConversations() {
     await ensureIndex("conversations", "idx_participants", "key", [
         "participants",
     ]);
-    await ensureIndex("conversations", "idx_announcement_thread", "key", [
+    await ensureIndex("conversations", "idx_announcement_thread", "unique", [
         "isSystemAnnouncementThread",
         "announcementThreadKey",
-    ]);
+    ], { recreateIfMismatched: true });
 }
 
 async function setupDirectMessages() {
@@ -1433,6 +1781,49 @@ async function setupAnnouncements() {
         false,
         0,
     );
+    await waitForAttribute(ANNOUNCEMENTS_COLLECTION_ID, "idempotencyKey");
+
+    let idempotencyIndexMatches = false;
+    try {
+        const existingIdempotencyIndex = await tryVariants([
+            () =>
+                dbAny.getIndex(
+                    DB_ID,
+                    ANNOUNCEMENTS_COLLECTION_ID,
+                    "idx_idempotency",
+                ),
+            () =>
+                dbAny.getIndex?.({
+                    databaseId: DB_ID,
+                    collectionId: ANNOUNCEMENTS_COLLECTION_ID,
+                    key: "idx_idempotency",
+                }),
+        ]);
+
+        idempotencyIndexMatches = indexDefinitionMatches({
+            actualAttributes: normalizeIndexAttributes(
+                (existingIdempotencyIndex as { attributes?: unknown }).attributes,
+            ),
+            actualType: String(
+                (existingIdempotencyIndex as { type?: unknown }).type ?? "",
+            ),
+            expectedAttributes: ["createdBy", "idempotencyKey"],
+            expectedType: "unique",
+        });
+    } catch {
+        idempotencyIndexMatches = false;
+    }
+
+    if (!idempotencyIndexMatches) {
+        await backfillAnnouncementIdempotencyKeys();
+
+        // Before creating unique index, check for duplicates
+        await ensureNoDuplicateIdempotencyKeys();
+    } else {
+        info(
+            `[setup] index ${ANNOUNCEMENTS_COLLECTION_ID}.idx_idempotency already matches expected definition; skipping backfill and duplicate scan`,
+        );
+    }
 
     await ensureIndex(
         ANNOUNCEMENTS_COLLECTION_ID,
@@ -1446,8 +1837,9 @@ async function setupAnnouncements() {
     await ensureIndex(
         ANNOUNCEMENTS_COLLECTION_ID,
         "idx_idempotency",
-        "key",
-        ["idempotencyKey"],
+        "unique",
+        ["createdBy", "idempotencyKey"],
+        { recreateIfMismatched: true },
     );
 }
 

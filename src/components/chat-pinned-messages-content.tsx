@@ -20,6 +20,7 @@ type ChatPinnedMessagesContentProps = {
     onJumpToMessage?: (messageId: string) => void;
     onUnpin?: (message: ChatSurfaceMessage) => Promise<void> | void;
     canManageMessages?: boolean;
+    currentUserId?: string;
     channelName?: string;
 };
 
@@ -30,6 +31,7 @@ export function ChatPinnedMessagesContent({
     onJumpToMessage,
     onUnpin,
     canManageMessages = false,
+    currentUserId,
     channelName,
 }: ChatPinnedMessagesContentProps) {
     const [unpinningId, setUnpinningId] = useState<string | null>(null);
@@ -129,10 +131,12 @@ export function ChatPinnedMessagesContent({
                                             </div>
                                             {message.poll ? (
                                                 <MessagePollBlock
-                                                    currentUserId={null}
+                                                    currentUserId={
+                                                        currentUserId ?? null
+                                                    }
                                                     messageId={message.id}
                                                     poll={message.poll}
-                                                    readOnly={true}
+                                                    readOnly
                                                 />
                                             ) : null}
                                             {message.imageUrl ? (

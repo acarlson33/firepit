@@ -1,7 +1,9 @@
+/// <reference lib="dom" />
+
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ModerationMessageList } from "@/app/moderation/ModerationMessageList";
+import { ModerationMessageList } from "../../app/moderation/ModerationMessageList";
 
 const mockRefresh = vi.fn();
 

@@ -4,10 +4,16 @@ import { NextRequest } from "next/server";
 const {
     mockGetServerPermissionsForUser,
     mockGetChannelAccessForUser,
+    mockGetDocument,
+    mockHasAccessToCategory,
+    mockNormalizeChannelType,
     mockListDocuments,
 } = vi.hoisted(() => ({
     mockGetServerPermissionsForUser: vi.fn(),
     mockGetChannelAccessForUser: vi.fn(),
+    mockGetDocument: vi.fn(),
+    mockHasAccessToCategory: vi.fn(),
+    mockNormalizeChannelType: vi.fn(),
     mockListDocuments: vi.fn(),
 }));
 
@@ -15,6 +21,7 @@ vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         databases: {
             listDocuments: mockListDocuments,
+            getDocument: mockGetDocument,
         },
     })),
 }));
@@ -22,6 +29,8 @@ vi.mock("@/lib/appwrite-server", () => ({
 vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
     getChannelAccessForUser: mockGetChannelAccessForUser,
+    hasAccessToCategory: mockHasAccessToCategory,
+    normalizeChannelType: mockNormalizeChannelType,
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
@@ -97,6 +106,8 @@ describe("GET /api/servers/[serverId]/permissions", () => {
             readMessages: true,
             sendMessages: true,
             manageMessages: false,
+            canRead: true,
+            canSend: true,
         });
         expect(mockListDocuments).not.toHaveBeenCalled();
     });
@@ -148,13 +159,13 @@ describe("GET /api/servers/[serverId]/permissions", () => {
                 },
             ],
         });
-        mockGetChannelAccessForUser.mockResolvedValue({
+        mockGetDocument.mockResolvedValue({
+            $id: "channel-1",
             serverId: "server-1",
-            isServerOwner: false,
-            isMember: true,
-            canRead: true,
-            canSend: false,
+            type: "text",
         });
+        mockHasAccessToCategory.mockResolvedValue(true);
+        mockNormalizeChannelType.mockReturnValue("text");
 
         const request = new NextRequest(
             "http://localhost:3000/api/servers/server-1/permissions?userId=user-1&channelId=channel-1",
@@ -169,6 +180,73 @@ describe("GET /api/servers/[serverId]/permissions", () => {
             readMessages: true,
             manageMessages: true,
             sendMessages: false,
+            canRead: true,
+            canSend: false,
+        });
+    });
+
+    it("allows send for announcement channel when user has manageChannels", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValueOnce({
+            isMember: true,
+            isServerOwner: false,
+            roleIds: ["role-1"],
+            roles: [
+                {
+                    $id: "role-1",
+                    allow: ["readMessages", "manageChannels"],
+                    deny: [],
+                },
+            ],
+            permissions: {
+                administrator: false,
+                manageChannels: true,
+                manageRoles: false,
+                manageServer: false,
+                manageMembers: false,
+                mentionEveryone: false,
+                moveMessages: false,
+                readMessages: true,
+                sendMessages: true,
+            },
+        });
+        mockGetDocument.mockResolvedValue({
+            $id: "server-1",
+            ownerId: "user-owner",
+        });
+        mockListDocuments.mockResolvedValueOnce({
+            documents: [
+                {
+                    $id: "role-1",
+                    userId: "user-1",
+                    allow: ["readMessages", "manageChannels"],
+                    deny: [],
+                    $createdAt: "2024-01-01T00:00:00.000Z",
+                },
+            ],
+        });
+        mockGetDocument.mockResolvedValueOnce({
+            $id: "channel-1",
+            serverId: "server-1",
+            type: "announcement",
+        });
+        mockHasAccessToCategory.mockResolvedValue(true);
+        mockNormalizeChannelType.mockReturnValue("announcement");
+
+        const request = new NextRequest(
+            "http://localhost:3000/api/servers/server-1/permissions?userId=user-1&channelId=channel-1",
+        );
+
+        const response = await GET(request, {
+            params: Promise.resolve({ serverId: "server-1" }),
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            readMessages: true,
+            manageChannels: true,
+            sendMessages: false,
+            canRead: true,
+            canSend: true,
         });
     });
 });

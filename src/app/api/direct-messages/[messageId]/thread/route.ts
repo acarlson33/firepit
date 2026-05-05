@@ -179,9 +179,10 @@ async function createAttachments(
 
     const env = getEnvConfig();
     const { databases } = getServerClient();
+    const createdAttachmentIds: string[] = [];
 
-    await Promise.all(
-        attachments.map(async (attachment) => {
+    try {
+        for (const attachment of attachments) {
             const payload = buildAttachmentDocumentData({
                 attachment,
                 messageId,
@@ -189,30 +190,73 @@ async function createAttachments(
             });
 
             try {
+                const documentId = ID.unique();
                 await databases.createDocument(
                     env.databaseId,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
+                    documentId,
                     payload,
                 );
+                createdAttachmentIds.push(documentId);
             } catch (error) {
                 if (!isUnknownAttachmentAttributeError(error)) {
                     throw error;
                 }
 
+                logger.info(
+                    "Using legacy attachment payload fallback for DM thread attachment write",
+                    {
+                        attachmentFileId: attachment.fileId,
+                        messageId,
+                        reason:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
+
+                const legacyDocumentId = ID.unique();
                 await databases.createDocument(
                     env.databaseId,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
+                    legacyDocumentId,
                     buildLegacyAttachmentDocumentData({
                         attachment,
                         messageId,
                         messageType: "dm",
                     }),
                 );
+                createdAttachmentIds.push(legacyDocumentId);
             }
-        }),
-    );
+        }
+    } catch (error) {
+        const rollbackResults = await Promise.allSettled(
+            createdAttachmentIds.map((attachmentDocumentId) =>
+                databases.deleteDocument(
+                    env.databaseId,
+                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                    attachmentDocumentId,
+                ),
+            ),
+        );
+
+        for (const [index, rollbackResult] of rollbackResults.entries()) {
+            if (rollbackResult.status !== "rejected") {
+                continue;
+            }
+
+            logger.warn("Failed to rollback DM thread attachment document", {
+                attachmentDocumentId: createdAttachmentIds[index],
+                messageId,
+                reason:
+                    rollbackResult.reason instanceof Error
+                        ? rollbackResult.reason.message
+                        : String(rollbackResult.reason),
+            });
+        }
+
+        throw error;
+    }
 }
 
 function parseLimit(url: string): number {
@@ -455,7 +499,38 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
 
         if (normalizedAttachments.length > 0) {
-            await createAttachments(String(created.$id), normalizedAttachments);
+            try {
+                await createAttachments(String(created.$id), normalizedAttachments);
+            } catch (attachmentError) {
+                try {
+                    await databases.deleteDocument(
+                        env.databaseId,
+                        env.collections.directMessages,
+                        String(created.$id),
+                    );
+                } catch (rollbackError) {
+                    logger.warn(
+                        "Failed to roll back DM thread reply after attachment error",
+                        {
+                            replyId: String(created.$id),
+                            error:
+                                rollbackError instanceof Error
+                                    ? rollbackError.message
+                                    : String(rollbackError),
+                        },
+                    );
+                }
+
+                logger.error("Failed to create DM thread attachments", {
+                    replyId: String(created.$id),
+                    error:
+                        attachmentError instanceof Error
+                            ? attachmentError.message
+                            : String(attachmentError),
+                });
+
+                throw attachmentError;
+            }
         }
 
         const maxUpdateAttempts = 3;

@@ -17,7 +17,6 @@ import type { FeatureFlag } from "./types";
 
 export {
     FEATURE_FLAGS,
-    getFeatureFlagDescription,
 } from "./feature-flags-definitions";
 export type { FeatureFlagKey } from "./feature-flags-definitions";
 
@@ -25,11 +24,12 @@ export type { FeatureFlagKey } from "./feature-flags-definitions";
 const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
     [FEATURE_FLAGS.ALLOW_USER_SERVERS]: false,
     [FEATURE_FLAGS.ENABLE_AUDIT_LOGGING]: true,
-    [FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS]: false,
     [FEATURE_FLAGS.ENABLE_EMAIL_VERIFICATION]: false,
-    [FEATURE_FLAGS.ENABLE_GIF_STICKER_SUPPORT]: false,
-    [FEATURE_FLAGS.ENABLE_TENOR_GIF_SEARCH]: false,
 };
+
+const KNOWN_FEATURE_FLAGS = new Set<FeatureFlagKey>(
+    Object.values(FEATURE_FLAGS) as FeatureFlagKey[],
+);
 
 // Cache for feature flags to reduce database calls
 const flagCache = new Map<string, { value: boolean; timestamp: number }>();
@@ -152,7 +152,15 @@ export async function getAllFeatureFlags(): Promise<FeatureFlag[]> {
             [Query.limit(100)],
         );
 
-        return response.documents as unknown as FeatureFlag[];
+        const knownFlags = response.documents.filter((document) => {
+            const key = (document as { key?: unknown }).key;
+            return (
+                typeof key === "string" &&
+                KNOWN_FEATURE_FLAGS.has(key as FeatureFlagKey)
+            );
+        });
+
+        return knownFlags as unknown as FeatureFlag[];
     } catch (error) {
         logger.error("Failed to get all feature flags:", {
             error,

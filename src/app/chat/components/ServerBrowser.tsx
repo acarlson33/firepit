@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	ArrowUpDown,
 	RefreshCcw,
@@ -50,6 +50,8 @@ type ServerBrowserProperties = {
 	joinedServerIds?: string[];
 };
 
+const SERVER_BROWSER_SKELETON_KEYS = ["s1", "s2", "s3", "s4"] as const;
+
 function compareByNewest(left: Server, right: Server) {
 	const leftTimestamp = Date.parse(left.$createdAt ?? "");
 	const rightTimestamp = Date.parse(right.$createdAt ?? "");
@@ -84,6 +86,25 @@ function formatMemberCount(memberCount: number | undefined) {
 	return `${value.toLocaleString()} ${value === 1 ? "member" : "members"}`;
 }
 
+function sanitizeBannerUrl(bannerUrl: string | undefined) {
+	if (!bannerUrl) {
+		return null;
+	}
+
+	try {
+		const parsedUrl = new URL(bannerUrl);
+		if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+			return null;
+		}
+
+		return parsedUrl.toString()
+			.replaceAll("\\", "\\\\")
+			.replaceAll('"', '\\"');
+	} catch {
+		return null;
+	}
+}
+
 export function ServerBrowser({
 	userId,
 	onServerJoined,
@@ -95,9 +116,13 @@ export function ServerBrowser({
 	const [query, setQuery] = useState("");
 	const [sortMode, setSortMode] = useState<SortMode>("featured");
 	const joinedServerIdsKey = joinedServerIds.join(",");
+	const joinedServerIdSet = useMemo(
+		() => new Set(joinedServerIds),
+		[joinedServerIdsKey],
+	);
 	const canLoadServers = Boolean(userId);
 
-	const loadServers = async () => {
+	const loadServers = useCallback(async () => {
 		setLoading(true);
 		try {
 			const response = await fetch("/api/servers/public", {
@@ -115,7 +140,7 @@ export function ServerBrowser({
 
 			const allServers = data.servers || [];
 			const unjoinedServers = allServers.filter(
-				(server) => !joinedServerIds.includes(server.$id),
+				(server) => !joinedServerIdSet.has(server.$id),
 			);
 			setServers(unjoinedServers);
 		} catch (error) {
@@ -125,13 +150,13 @@ export function ServerBrowser({
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [joinedServerIdSet]);
 
 	useEffect(() => {
 		if (canLoadServers) {
 			void loadServers();
 		}
-	}, [canLoadServers, userId, joinedServerIdsKey]);
+	}, [canLoadServers, loadServers]);
 
 	const visibleServers = useMemo(() => {
 		const normalizedQuery = query.trim().toLowerCase();
@@ -183,6 +208,7 @@ export function ServerBrowser({
 			});
 
 			if (response.ok) {
+				setServers((prev) => prev.filter((server) => server.$id !== serverId));
 				toast.success("Successfully joined server");
 				onServerJoined?.();
 				return;
@@ -225,7 +251,9 @@ export function ServerBrowser({
 					<div className="relative">
 						<Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
 						<Input
+							aria-label="Search servers"
 							className="pl-8"
+							id="server-browser-search"
 							value={query}
 							onChange={(event) => setQuery(event.target.value)}
 							placeholder="Search by name or description"
@@ -236,7 +264,7 @@ export function ServerBrowser({
 						value={sortMode}
 						onValueChange={(value) => setSortMode(value as SortMode)}
 					>
-						<SelectTrigger>
+						<SelectTrigger aria-label="Sort servers" id="server-browser-sort">
 							<div className="flex items-center gap-2">
 								<ArrowUpDown className="h-4 w-4 text-muted-foreground" />
 								<SelectValue />
@@ -278,10 +306,10 @@ export function ServerBrowser({
 			<CardContent>
 				{loading ? (
 					<div className="grid gap-3 sm:grid-cols-2">
-						{Array.from({ length: 4 }).map((_, index) => (
+						{SERVER_BROWSER_SKELETON_KEYS.map((key) => (
 							<div
 								className="overflow-hidden rounded-xl border border-border/60"
-								key={index}
+								key={key}
 							>
 								<Skeleton className="h-20 w-full" />
 								<div className="space-y-3 p-3">
@@ -314,7 +342,10 @@ export function ServerBrowser({
 					</div>
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2">
-						{visibleServers.map((server) => (
+						{visibleServers.map((server) => {
+							const sanitizedBannerUrl = sanitizeBannerUrl(server.bannerUrl);
+
+							return (
 							<article
 								key={server.$id}
 								className="overflow-hidden rounded-xl border border-border/60 bg-background"
@@ -322,9 +353,9 @@ export function ServerBrowser({
 								<div
 									className="h-20 w-full bg-linear-to-r from-sky-500/20 via-cyan-500/15 to-emerald-500/20"
 									style={
-										server.bannerUrl
+										sanitizedBannerUrl
 											? {
-												  backgroundImage: `linear-gradient(to top, rgba(2,6,23,0.55), rgba(2,6,23,0.1)), url(${server.bannerUrl})`,
+												  backgroundImage: `linear-gradient(to top, rgba(2,6,23,0.55), rgba(2,6,23,0.1)), url("${sanitizedBannerUrl}")`,
 												  backgroundSize: "cover",
 												  backgroundPosition: "center",
 											  }
@@ -367,10 +398,7 @@ export function ServerBrowser({
 									</div>
 
 									<p className="min-h-10 text-xs text-muted-foreground">
-										{server.description &&
-										server.description.length > 0
-											? server.description
-											: "No server description yet."}
+										{server.description || "No server description yet."}
 									</p>
 
 									<div className="flex items-center justify-between gap-2">
@@ -395,7 +423,8 @@ export function ServerBrowser({
 									</div>
 								</div>
 							</article>
-						))}
+							);
+						})}
 					</div>
 				)}
 			</CardContent>

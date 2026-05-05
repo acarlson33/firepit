@@ -716,6 +716,8 @@ export function useThreadPinState<TMessage extends ThreadableMessage>({
     return {
         activeThreadParent,
         closeThread,
+        setActiveThreadParent,
+        setThreadMessages,
         openThread,
         pins,
         refreshPins,

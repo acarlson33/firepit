@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.7.0
+    version: 1.8.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -82,6 +82,58 @@ components:
                     type: boolean
                     default: true
 
+        JoinMembership:
+            type: object
+            required:
+                - $id
+                - $createdAt
+                - userId
+                - serverId
+                - role
+            properties:
+                $id:
+                    type: string
+                $createdAt:
+                    type: string
+                    format: date-time
+                $updatedAt:
+                    type: string
+                    format: date-time
+                userId:
+                    type: string
+                serverId:
+                    type: string
+                role:
+                    type: string
+                    enum: [owner, member]
+
+        JoinResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                  properties:
+                      membership:
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
+
+        CreateServerResponse:
+            allOf:
+                - $ref: "#/components/schemas/Success"
+                - type: object
+                  required:
+                      - membership
+                      - server
+                  properties:
+                      membership:
+                          oneOf:
+                              - $ref: "#/components/schemas/JoinMembership"
+                              - type: "null"
+                      server:
+                          $ref: "#/components/schemas/Server"
+
         UserSummary:
             type: object
             properties:
@@ -152,6 +204,13 @@ components:
 
         Server:
             type: object
+            required:
+                - $id
+                - name
+                - ownerId
+                - isPublic
+                - defaultOnSignup
+                - memberCount
             properties:
                 $id:
                     type: string
@@ -160,17 +219,17 @@ components:
                 ownerId:
                     type: string
                 iconFileId:
-                    type: string
+                    type: [string, "null"]
                 iconUrl:
-                    type: string
+                    type: [string, "null"]
                     format: uri
                 bannerFileId:
-                    type: string
+                    type: [string, "null"]
                 bannerUrl:
-                    type: string
+                    type: [string, "null"]
                     format: uri
                 description:
-                    type: string
+                    type: [string, "null"]
                 isPublic:
                     type: boolean
                 defaultOnSignup:
@@ -205,6 +264,17 @@ components:
                     type: string
                     format: date-time
 
+        ServerMinimal:
+            type: object
+            required:
+                - $id
+                - name
+            properties:
+                $id:
+                    type: string
+                name:
+                    type: string
+
         Channel:
             type: object
             properties:
@@ -229,6 +299,22 @@ components:
                 $updatedAt:
                     type: string
                     format: date-time
+
+        ChannelCreate:
+            type: object
+            required:
+                - serverId
+                - name
+            properties:
+                serverId:
+                    type: string
+                name:
+                    type: string
+                type:
+                    type: string
+                    enum: [text, voice, announcement]
+                topic:
+                    type: string
 
         ChannelCategory:
             type: object
@@ -723,13 +809,16 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Server"
                                     nextCursor:
-                                        type: string
-                                        nullable: true
+                                        type: [string, "null"]
 
     /api/servers/create:
         post:
             tags: [Servers]
             summary: Create a server
+            description: >-
+                  Returns CreateServerResponse containing the created server object and any associated
+                  metadata. The 201 response includes the required non-null server field with the new
+                  server payload; failures are represented by the non-2xx responses.
             security:
                 - sessionCookie: []
             requestBody:
@@ -751,17 +840,12 @@ paths:
                                 isPublic:
                                     type: boolean
             responses:
-                "200":
-                    description: Created server
+                "201":
+                    description: Created
                     content:
                         application/json:
                             schema:
-                                type: object
-                                properties:
-                                    success:
-                                        type: boolean
-                                    server:
-                                        $ref: "#/components/schemas/Server"
+                                $ref: "#/components/schemas/CreateServerResponse"
                 "400":
                     description: Invalid request
                     content:
@@ -809,7 +893,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: "#/components/schemas/Success"
+                                $ref: "#/components/schemas/JoinResponse"
                 "403":
                     description: Server is private and requires an invite
                     content:
@@ -825,20 +909,17 @@ paths:
                 - sessionCookie: []
             responses:
                 "200":
-                    description: Current signup default server (admin only)
+                    description: Current signup default server (admin only). Returns minimal server metadata for admin selectors.
                     content:
                         application/json:
                             schema:
                                 type: object
+                                required: [server]
                                 properties:
                                     server:
-                                        nullable: true
-                                        type: object
-                                        properties:
-                                            $id:
-                                                type: string
-                                            name:
-                                                type: string
+                                        anyOf:
+                                            - $ref: "#/components/schemas/ServerMinimal"
+                                            - type: "null"
                 "401":
                     description: Unauthorized
                     content:
@@ -856,6 +937,9 @@ paths:
         patch:
             tags: [Servers]
             summary: Update server customization and visibility settings
+            x-roles:
+                - server owner or member with manageServer
+                - instance admin required when updating defaultOnSignup
             security:
                 - sessionCookie: []
             parameters:
@@ -874,18 +958,16 @@ paths:
                                 name:
                                     type: string
                                 description:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 isPublic:
                                     type: boolean
                                 defaultOnSignup:
                                     type: boolean
+                                    description: Instance-wide signup default toggle. Requires instance admin privileges and returns 403 for non-admin callers.
                                 iconFileId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 bannerFileId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
             responses:
                 "200":
                     description: Updated server settings
@@ -893,6 +975,7 @@ paths:
                         application/json:
                             schema:
                                 type: object
+                                required: [server]
                                 properties:
                                     server:
                                         $ref: "#/components/schemas/Server"
@@ -909,7 +992,7 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Error"
                 "403":
-                    description: Missing permissions
+                    description: Missing permissions. Requires server management permission; defaultOnSignup updates additionally require instance admin.
                     content:
                         application/json:
                             schema:
@@ -974,7 +1057,11 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/ServerMember"
                                     nextCursor:
-                                        type: string
+                                        type: [string, "null"]
+                                    orphanCount:
+                                        type: integer
+                                        minimum: 0
+                                        description: Count of memberships whose profile could not be resolved at read time
 
     /api/servers/{serverId}/permissions:
         get:
@@ -1118,6 +1205,18 @@ paths:
                   required: true
                   schema:
                       type: string
+                - name: limit
+                  in: query
+                  required: false
+                  schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                - name: cursor
+                  in: query
+                  required: false
+                  schema:
+                      type: string
             responses:
                 "200":
                     description: Channel list
@@ -1131,7 +1230,35 @@ paths:
                                         items:
                                             $ref: "#/components/schemas/Channel"
                                     nextCursor:
-                                        type: string
+                                        type: [string, "null"]
+        post:
+            tags: [Channels]
+            summary: Create a channel for a server
+            security:
+                - sessionCookie: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/ChannelCreate"
+            responses:
+                "201":
+                    description: Channel created
+                    headers:
+                        Location:
+                            description: URL of the created channel
+                            schema:
+                                type: string
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                required:
+                                    - channel
+                                properties:
+                                    channel:
+                                        $ref: "#/components/schemas/Channel"
 
     /api/channels/{channelId}:
         patch:
@@ -1155,10 +1282,14 @@ paths:
                                 name:
                                     type: string
                                 categoryId:
-                                    type: string
-                                    nullable: true
+                                    type: [string, "null"]
                                 position:
                                     type: integer
+                                type:
+                                    type: string
+                                    enum: [announcement, text, voice]
+                                topic:
+                                    type: [string, "null"]
             responses:
                 "200":
                     description: Updated channel
@@ -1177,6 +1308,38 @@ paths:
                                 $ref: "#/components/schemas/Error"
                 "403":
                     description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+        delete:
+            tags: [Channels]
+            summary: Delete a channel
+            security:
+                - sessionCookie: []
+            parameters:
+                - name: channelId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                "204":
+                    description: Channel deleted successfully
+                "403":
+                    description: Permission denied
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/Error"
+                "404":
+                    description: Channel not found
                     content:
                         application/json:
                             schema:
@@ -1548,7 +1711,7 @@ paths:
                                     items:
                                         $ref: "#/components/schemas/FileAttachment"
             responses:
-                "200":
+                "201":
                     description: Thread reply created
                     content:
                         application/json:
@@ -2806,7 +2969,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/Role"
             responses:
-                "200":
+                "201":
                     description: Role created
                     content:
                         application/json:
@@ -2853,6 +3016,10 @@ paths:
         get:
             tags: [Roles]
             summary: List role assignments by server, role, or user
+            description: >-
+                Requests with userId return the raw role assignment array for
+                compatibility. Server and role lookups continue to return the
+                object form with assignments and truncated.
             security:
                 - sessionCookie: []
             parameters:
@@ -2874,12 +3041,21 @@ paths:
                     content:
                         application/json:
                             schema:
-                                type: object
-                                properties:
-                                    assignments:
-                                        type: array
-                                        items:
-                                            $ref: "#/components/schemas/RoleAssignment"
+                                oneOf:
+                                    - type: array
+                                      items:
+                                          $ref: "#/components/schemas/RoleAssignment"
+                                    - type: object
+                                      properties:
+                                          assignments:
+                                              type: array
+                                              items:
+                                                  $ref: "#/components/schemas/RoleAssignment"
+                                          truncated:
+                                              type: boolean
+                                      required:
+                                          - assignments
+                                          - truncated
         post:
             tags: [Roles]
             summary: Assign a role to a user
@@ -2892,7 +3068,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/RoleAssignment"
             responses:
-                "200":
+                "201":
                     description: Role assigned
                     content:
                         application/json:
@@ -2963,7 +3139,7 @@ paths:
                         schema:
                             $ref: "#/components/schemas/ChannelPermissionOverride"
             responses:
-                "200":
+                "201":
                     description: Override created
                     content:
                         application/json:

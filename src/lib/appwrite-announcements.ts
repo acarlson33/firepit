@@ -1,11 +1,13 @@
 import { ID, Permission, Query, Role } from "node-appwrite";
+import { randomUUID } from "node:crypto";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
+import { listPages } from "@/lib/appwrite-pagination";
 import { logger } from "@/lib/newrelic-utils";
 import { getServerClient } from "@/lib/appwrite-server";
 import type {
     Announcement,
+    AnnouncementCreateMode,
     AnnouncementDelivery,
     AnnouncementPriority,
     AnnouncementStatus,
@@ -19,19 +21,24 @@ const MAX_ANNOUNCEMENT_BODY_LENGTH = 65_000;
 const MAX_ANNOUNCEMENT_TITLE_LENGTH = 255;
 const MAX_DELIVERY_ATTEMPTS = 6;
 const MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS = 10;
+const ANNOUNCEMENT_DELIVERY_CONCURRENCY = 10;
 const DELIVERY_BACKOFF_BASE_MS = 60_000;
-const DELIVERY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
+const DELIVERY_BACKOFF_MAX_MS = 30 * 60_000;
+const ANNOUNCEMENT_DISPATCH_LEASE_MS = 15 * 60_000;
 
-type DeliveryUpdatePayload = {
-    attemptCount?: number;
-    conversationId?: string;
-    deliveredAt?: string;
-    failedAt?: string;
-    failureReason?: string;
-    messageId?: string;
-    nextAttemptAt?: string;
-    status: "pending" | "delivered" | "failed";
-};
+function getAnnouncementDispatchConcurrency(): number {
+    const rawValue = process.env.DISPATCH_CONCURRENCY?.trim();
+    if (!rawValue) {
+        return ANNOUNCEMENT_DELIVERY_CONCURRENCY;
+    }
+
+    const parsedValue = Number(rawValue);
+    if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+        return ANNOUNCEMENT_DELIVERY_CONCURRENCY;
+    }
+
+    return parsedValue;
+}
 
 type DeliveryOutcome =
     | {
@@ -40,6 +47,9 @@ type DeliveryOutcome =
     | {
           outcome: "deferred_retry";
       }
+        | {
+                    outcome: "terminal_failure";
+            }
     | {
           outcome: "delivered";
       }
@@ -54,11 +64,21 @@ type DeliveryStatusRollup = {
     total: number;
 };
 
-export type AnnouncementCreateMode = "draft" | "schedule" | "send_now";
+type DeliveryUpdatePayload = {
+    attemptCount?: number;
+    conversationId?: string;
+    deliveredAt?: string;
+    failedAt?: string;
+    failureReason?: string;
+    messageId?: string;
+    nextAttemptAt?: string;
+    status: "pending" | "delivered" | "failed";
+};
 
-export type CreateAnnouncementInput = {
+type CreateAnnouncementInput = {
     actorId: string;
     body: string;
+    recipientScope?: Announcement["recipientScope"];
     title?: string;
     mode?: AnnouncementCreateMode;
     scheduledFor?: string;
@@ -66,20 +86,24 @@ export type CreateAnnouncementInput = {
     idempotencyKey?: string;
 };
 
-export type ListAnnouncementsOptions = {
+type ListAnnouncementsOptions = {
     cursorAfter?: string;
     limit?: number;
     statuses?: AnnouncementStatus[];
 };
 
-export type ListAnnouncementsResult = {
+type ListAnnouncementsResult = {
     items: Announcement[];
     nextCursor?: string;
 };
 
-export type DispatchScheduledAnnouncementsResult = {
+type DispatchScheduledAnnouncementsResult = {
     dueCount: number;
     announcementIds: string[];
+};
+
+type DispatchOneResult = {
+    dispatched: boolean;
 };
 
 function getAnnouncementsCollectionId(): string {
@@ -100,12 +124,41 @@ function getAnnouncementThreadKey(systemSenderUserId: string, recipientId: strin
     return `${systemSenderUserId}:${recipientId}`;
 }
 
+export class ClientError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "ClientError";
+
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, ClientError);
+        }
+    }
+}
+
 function toErrorMessage(error: unknown): string {
     if (error instanceof Error) {
         return error.message;
     }
 
     return String(error);
+}
+
+function isDuplicateConstraintError(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+        return false;
+    }
+
+    const candidate = error as {
+        type?: unknown;
+    };
+    if (typeof candidate.type !== "string") {
+        return false;
+    }
+
+    return (
+        candidate.type === "row_already_exists" ||
+        candidate.type === "attribute_already_exists"
+    );
 }
 
 function getNextDeliveryRetryIso(attemptCount: number): string {
@@ -171,6 +224,29 @@ function parseAnnouncementStatus(value: unknown): AnnouncementStatus {
     }
 }
 
+function parseRecipientScope(
+    value: unknown,
+    context: string,
+    options?: { strict?: boolean },
+): Announcement["recipientScope"] {
+    if (value === "all_profiles") {
+        return value;
+    }
+
+    if (value !== undefined) {
+        if (options?.strict) {
+            throw new ClientError("Invalid recipientScope");
+        }
+
+        logger.warn("Invalid announcement recipient scope; defaulting", {
+            context,
+            recipientScope: value,
+        });
+    }
+
+    return "all_profiles";
+}
+
 function normalizeTitle(value?: string): string | undefined {
     if (typeof value !== "string") {
         return undefined;
@@ -182,7 +258,7 @@ function normalizeTitle(value?: string): string | undefined {
     }
 
     if (trimmedTitle.length > MAX_ANNOUNCEMENT_TITLE_LENGTH) {
-        throw new Error(
+        throw new ClientError(
             `Announcement title must be ${MAX_ANNOUNCEMENT_TITLE_LENGTH} characters or fewer`,
         );
     }
@@ -193,11 +269,11 @@ function normalizeTitle(value?: string): string | undefined {
 function normalizeBody(value: string): string {
     const trimmedBody = value.trim();
     if (!trimmedBody) {
-        throw new Error("Announcement body is required");
+        throw new ClientError("Announcement body is required");
     }
 
     if (trimmedBody.length > MAX_ANNOUNCEMENT_BODY_LENGTH) {
-        throw new Error(
+        throw new ClientError(
             `Announcement body must be ${MAX_ANNOUNCEMENT_BODY_LENGTH} characters or fewer`,
         );
     }
@@ -216,7 +292,7 @@ function resolvePriority(priority?: AnnouncementPriority): AnnouncementPriority 
 function parseIsoTimestamp(value: string): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-        throw new Error("Invalid scheduledFor timestamp");
+        throw new ClientError("Invalid scheduledFor timestamp");
     }
 
     return parsed.toISOString();
@@ -237,7 +313,7 @@ function resolveScheduledFor(params: {
     }
 
     if (typeof scheduledFor !== "string" || !scheduledFor.trim()) {
-        throw new Error("scheduledFor is required when mode is schedule");
+        throw new ClientError("scheduledFor is required when mode is schedule");
     }
 
     return parseIsoTimestamp(scheduledFor);
@@ -263,17 +339,132 @@ function defaultUrgentBypass(
     };
 }
 
+function createAnnouncementDispatchLease(leaseRunId: string) {
+    const leaseExpiresAt = new Date(
+        Date.now() + ANNOUNCEMENT_DISPATCH_LEASE_MS,
+    ).toISOString();
+
+    return {
+        leaseExpiresAt,
+        leaseRunId,
+    };
+}
+
+function isAnnouncementLeaseActive(
+    announcement: Pick<Announcement, "leaseExpiresAt" | "leaseRunId">,
+): boolean {
+    if (!announcement.leaseRunId || !announcement.leaseExpiresAt) {
+        return false;
+    }
+
+    const expiresAt = Date.parse(announcement.leaseExpiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function canClaimAnnouncementDispatch(
+    announcement: Pick<
+        Announcement,
+        "leaseExpiresAt" | "leaseRunId" | "status"
+    >,
+    dispatchRunId: string,
+): boolean {
+    if (announcement.status !== "dispatching") {
+        return true;
+    }
+
+    if (announcement.leaseRunId === dispatchRunId) {
+        return true;
+    }
+
+    return !isAnnouncementLeaseActive(announcement);
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object";
+}
+
+function isAnnouncementUrgentBypass(
+    value: unknown,
+): value is AnnouncementUrgentBypass {
+    if (!isRecordValue(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.quietHours === "boolean" &&
+        typeof value.globalNotifications === "boolean" &&
+        typeof value.directMessagePrivacy === "boolean"
+    );
+}
+
+function isDeliverySummary(
+    value: unknown,
+): value is Announcement["deliverySummary"] {
+    if (!isRecordValue(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.attempted === "number" &&
+        Number.isFinite(value.attempted) &&
+        value.attempted >= 0 &&
+        typeof value.delivered === "number" &&
+        Number.isFinite(value.delivered) &&
+        value.delivered >= 0 &&
+        typeof value.failed === "number" &&
+        Number.isFinite(value.failed) &&
+        value.failed >= 0
+    );
+}
+
+function describeParsedValue(value: unknown): Record<string, unknown> {
+    if (Array.isArray(value)) {
+        return {
+            kind: "array",
+            length: value.length,
+        };
+    }
+
+    if (isRecordValue(value)) {
+        return {
+            kind: "object",
+            keys: Object.keys(value),
+        };
+    }
+
+    return {
+        kind: typeof value,
+        value,
+    };
+}
+
 function parseSerializedObject<T>(
     source: unknown,
     fallback: T,
-    errorContext: string,
+    params: {
+        errorContext: string;
+        validatorName: string;
+        validate: (value: unknown) => value is T;
+    },
 ): T {
+    const { errorContext, validate, validatorName } = params;
+
     if (typeof source !== "string" || !source.trim()) {
         return fallback;
     }
 
     try {
-        return JSON.parse(source) as T;
+        const parsed = JSON.parse(source) as unknown;
+        if (!validate(parsed)) {
+            logger.warn("Invalid announcement metadata shape", {
+                errorContext,
+                validatorName,
+                parsed: describeParsedValue(parsed),
+            });
+            return fallback;
+        }
+
+        return parsed;
     } catch (error) {
         logger.warn("Failed to parse announcement metadata", {
             error:
@@ -292,7 +483,11 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             globalNotifications: false,
             quietHours: false,
         },
-        "urgentBypass",
+        {
+            errorContext: "urgentBypass",
+            validate: isAnnouncementUrgentBypass,
+            validatorName: "isAnnouncementUrgentBypass",
+        },
     );
 
     const deliverySummary = parseSerializedObject<
@@ -304,7 +499,11 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             delivered: 0,
             failed: 0,
         },
-        "deliverySummary",
+        {
+            errorContext: "deliverySummary",
+            validate: isDeliverySummary,
+            validatorName: "isDeliverySummary",
+        },
     );
 
     return {
@@ -330,15 +529,23 @@ function toAnnouncement(document: Record<string, unknown>): Announcement {
             typeof document.lastDispatchAt === "string"
                 ? document.lastDispatchAt
                 : undefined,
+        leaseRunId:
+            typeof document.leaseRunId === "string"
+                ? document.leaseRunId
+                : undefined,
+        leaseExpiresAt:
+            typeof document.leaseExpiresAt === "string"
+                ? document.leaseExpiresAt
+                : undefined,
         priority: document.priority === "urgent" ? "urgent" : "normal",
         publishedAt:
             typeof document.publishedAt === "string"
                 ? document.publishedAt
                 : undefined,
-        recipientScope:
-            document.recipientScope === "all_profiles"
-                ? "all_profiles"
-                : "all_profiles",
+        recipientScope: parseRecipientScope(
+            document.recipientScope,
+            "toAnnouncement",
+        ),
         scheduledFor:
             typeof document.scheduledFor === "string"
                 ? document.scheduledFor
@@ -372,10 +579,6 @@ export function getAnnouncementRuntimeSettings() {
     };
 }
 
-export async function isInstanceAnnouncementsEnabled(): Promise<boolean> {
-    return getFeatureFlag(FEATURE_FLAGS.ENABLE_INSTANCE_ANNOUNCEMENTS);
-}
-
 export async function createAnnouncement(
     input: CreateAnnouncementInput,
 ): Promise<Announcement> {
@@ -390,47 +593,106 @@ export async function createAnnouncement(
         mode,
         scheduledFor: input.scheduledFor,
     });
+    const idempotencyKey =
+        typeof input.idempotencyKey === "string"
+            ? input.idempotencyKey.trim()
+            : "";
+    const resolvedIdempotencyKey =
+        idempotencyKey.length > 0
+            ? idempotencyKey
+            : `auto:${randomUUID()}`;
+    const recipientScope = parseRecipientScope(
+        input.recipientScope,
+        "createAnnouncement",
+        { strict: true },
+    );
     const status = resolveStatusForMode(mode);
     const now = new Date().toISOString();
 
-    const document = await databases.createDocument(
-        databaseId,
-        getAnnouncementsCollectionId(),
-        ID.unique(),
-        {
-            body,
-            bodyFormat: "markdown",
-            createdBy: input.actorId,
-            deliverySummary: JSON.stringify({
-                attempted: 0,
-                delivered: 0,
-                failed: 0,
-            }),
-            dispatchAttempts: 0,
-            idempotencyKey: input.idempotencyKey,
-            lastDispatchAt: undefined,
-            priority,
-            publishedAt: mode === "send_now" ? now : undefined,
-            recipientScope: "all_profiles",
-            scheduledFor,
-            status,
-            title,
-            urgentBypass: JSON.stringify(defaultUrgentBypass(priority)),
-        },
-    );
+    if (idempotencyKey.length > 0) {
+        const existing = await databases.listDocuments(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            [
+                Query.equal("idempotencyKey", idempotencyKey),
+                Query.equal("createdBy", input.actorId),
+                Query.limit(1),
+            ],
+        );
 
-    return toAnnouncement(document as unknown as Record<string, unknown>);
+        const existingDocument = existing.documents.at(0);
+        if (existingDocument) {
+            return toAnnouncement(
+                existingDocument as unknown as Record<string, unknown>,
+            );
+        }
+    }
+
+    try {
+        const document = await databases.createDocument(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            ID.unique(),
+            {
+                body,
+                bodyFormat: "markdown",
+                createdBy: input.actorId,
+                deliverySummary: JSON.stringify({
+                    attempted: 0,
+                    delivered: 0,
+                    failed: 0,
+                }),
+                dispatchAttempts: 0,
+                idempotencyKey: resolvedIdempotencyKey,
+                lastDispatchAt: undefined,
+                priority,
+                publishedAt: mode === "send_now" ? now : undefined,
+                recipientScope,
+                scheduledFor,
+                status,
+                title,
+                urgentBypass: JSON.stringify(defaultUrgentBypass(priority)),
+            },
+        );
+
+        return toAnnouncement(document as unknown as Record<string, unknown>);
+    } catch (error) {
+        if (
+            idempotencyKey.length > 0 &&
+            isDuplicateConstraintError(error)
+        ) {
+            const existing = await databases.listDocuments(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                [
+                    Query.equal("idempotencyKey", idempotencyKey),
+                    Query.equal("createdBy", input.actorId),
+                    Query.limit(1),
+                ],
+            );
+
+            const existingDocument = existing.documents.at(0);
+            if (existingDocument) {
+                return toAnnouncement(
+                    existingDocument as unknown as Record<string, unknown>,
+                );
+            }
+        }
+
+        throw error;
+    }
 }
 
-async function listAllProfileUserIds(excludeUserId?: string): Promise<string[]> {
+async function* listAllProfileUserIds(
+    excludeUserId?: string,
+): AsyncGenerator<string> {
     const { databases } = getServerClient();
     const env = getEnvConfig();
-    const recipientIds: string[] = [];
     let cursorAfter: string | undefined;
+    const seenInPage = new Set<string>();
 
     while (true) {
         const queries = [Query.orderAsc("$id"), Query.limit(100)];
-
         if (cursorAfter) {
             queries.push(Query.cursorAfter(cursorAfter));
         }
@@ -443,29 +705,32 @@ async function listAllProfileUserIds(excludeUserId?: string): Promise<string[]> 
 
         for (const document of response.documents) {
             const userId =
-                typeof document.userId === "string" ? document.userId.trim() : "";
-            if (!userId || userId === excludeUserId) {
+                typeof document.userId === "string"
+                    ? document.userId.trim()
+                    : "";
+            if (
+                !userId ||
+                userId === excludeUserId ||
+                seenInPage.has(userId)
+            ) {
                 continue;
             }
-            recipientIds.push(userId);
-        }
 
-        if (response.documents.length < 100) {
-            break;
+            seenInPage.add(userId);
+            yield userId;
         }
 
         const lastDocument = response.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : undefined;
-
-        if (!cursorAfter) {
-            break;
+        if (
+            !lastDocument ||
+            typeof lastDocument.$id !== "string" ||
+            response.documents.length < 100
+        ) {
+            return;
         }
-    }
 
-    return Array.from(new Set(recipientIds));
+        cursorAfter = lastDocument.$id;
+    }
 }
 
 async function getDeliveryRecord(
@@ -563,23 +828,50 @@ async function ensureAnnouncementThreadConversation(params: {
         Permission.delete(Role.user(systemSenderUserId)),
     ];
 
-    const conversation = await databases.createDocument(
-        databaseId,
-        collections.conversations,
-        ID.unique(),
-        {
-            announcementThreadKey,
-            createdBy: systemSenderUserId,
-            isGroup: false,
-            isSystemAnnouncementThread: true,
-            lastMessageAt: new Date().toISOString(),
-            name: "System Announcements",
-            participants,
-        },
-        permissions,
-    );
+    try {
+        const conversation = await databases.createDocument(
+            databaseId,
+            collections.conversations,
+            ID.unique(),
+            {
+                announcementThreadKey,
+                createdBy: systemSenderUserId,
+                isGroup: false,
+                isSystemAnnouncementThread: true,
+                lastMessageAt: new Date().toISOString(),
+                name: "System Announcements",
+                participants,
+            },
+            permissions,
+        );
 
-    return String(conversation.$id);
+        return String(conversation.$id);
+    } catch (error) {
+        // Check if this is a duplicate key conflict
+        const isDuplicateConflict =
+            typeof error === "object" &&
+            error !== null &&
+            ("code" in error && (error as { code?: number }).code === 409 ||
+             "type" in error && (error as { type?: string }).type === "document_already_exists");
+
+        if (isDuplicateConflict) {
+            // Fetch the existing conversation
+            const existing = await databases.listDocuments(
+                databaseId,
+                collections.conversations,
+                [
+                    Query.equal("isSystemAnnouncementThread", true),
+                    Query.equal("announcementThreadKey", announcementThreadKey),
+                    Query.limit(1),
+                ],
+            );
+
+            if (existing.documents.length > 0) {
+                return String(existing.documents[0].$id);
+            }
+        }
+        throw error;
+    }
 }
 
 async function sendSystemAnnouncementMessage(params: {
@@ -631,9 +923,16 @@ async function sendSystemAnnouncementMessage(params: {
 async function dispatchToRecipient(params: {
     announcement: Announcement;
     recipientUserId: string;
+    dispatchRunId: string;
     systemSenderUserId: string;
 }): Promise<DeliveryOutcome> {
-    const { announcement, recipientUserId, systemSenderUserId } = params;
+    const { announcement, recipientUserId, dispatchRunId, systemSenderUserId } =
+        params;
+
+    if (announcement.leaseRunId !== dispatchRunId) {
+        return { outcome: "deferred_retry" };
+    }
+
     const existingDelivery = await getDeliveryRecord(
         announcement.$id,
         recipientUserId,
@@ -641,6 +940,13 @@ async function dispatchToRecipient(params: {
 
     if (existingDelivery?.status === "delivered") {
         return { outcome: "already_delivered" };
+    }
+
+    if (
+        existingDelivery?.status === "failed" &&
+        !existingDelivery.nextAttemptAt
+    ) {
+        return { outcome: "terminal_failure" };
     }
 
     if (
@@ -653,35 +959,20 @@ async function dispatchToRecipient(params: {
 
     const attemptCount = (existingDelivery?.attemptCount ?? 0) + 1;
 
+    let conversationId: string;
+    let messageId: string;
+
     try {
-        const conversationId = await ensureAnnouncementThreadConversation({
+        conversationId = await ensureAnnouncementThreadConversation({
             recipientUserId,
             systemSenderUserId,
         });
-        const messageId = await sendSystemAnnouncementMessage({
+        messageId = await sendSystemAnnouncementMessage({
             announcement,
             conversationId,
             recipientUserId,
             systemSenderUserId,
         });
-
-        await upsertDeliveryRecord({
-            announcementId: announcement.$id,
-            delivery: {
-                attemptCount,
-                conversationId,
-                deliveredAt: new Date().toISOString(),
-                failureReason: undefined,
-                failedAt: undefined,
-                messageId,
-                nextAttemptAt: undefined,
-                status: "delivered",
-            },
-            existing: existingDelivery,
-            recipientUserId,
-        });
-
-        return { outcome: "delivered" };
     } catch (error) {
         const exhaustedAttempts = attemptCount >= MAX_DELIVERY_ATTEMPTS;
 
@@ -710,6 +1001,24 @@ async function dispatchToRecipient(params: {
 
         return { outcome: "failed" };
     }
+
+    await upsertDeliveryRecord({
+        announcementId: announcement.$id,
+        delivery: {
+            attemptCount,
+            conversationId,
+            deliveredAt: new Date().toISOString(),
+            failureReason: undefined,
+            failedAt: undefined,
+            messageId,
+            nextAttemptAt: undefined,
+            status: "delivered",
+        },
+        existing: existingDelivery,
+        recipientUserId,
+    });
+
+    return { outcome: "delivered" };
 }
 
 async function rollupDeliveryStatus(
@@ -721,52 +1030,23 @@ async function rollupDeliveryStatus(
     let failed = 0;
     let pending = 0;
     let total = 0;
-    let cursorAfter: string | undefined;
+    const { documents } = await listPages({
+        databases,
+        databaseId,
+        collectionId: getAnnouncementDeliveriesCollectionId(),
+        baseQueries: [Query.equal("announcementId", announcementId), Query.orderAsc("$id")],
+        pageSize: 100,
+        warningContext: "rollupDeliveryStatus",
+    });
 
-    while (true) {
-        const queries = [
-            Query.equal("announcementId", announcementId),
-            Query.orderAsc("$id"),
-            Query.limit(100),
-        ];
-
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const page = await databases.listDocuments(
-            databaseId,
-            getAnnouncementDeliveriesCollectionId(),
-            queries,
-        );
-
-        for (const document of page.documents) {
-            total += 1;
-            if (document.status === "delivered") {
-                delivered += 1;
-                continue;
-            }
-
-            if (document.status === "pending") {
-                pending += 1;
-                continue;
-            }
-
+    for (const document of documents) {
+        total += 1;
+        if (document.status === "delivered") {
+            delivered += 1;
+        } else if (document.status === "pending") {
+            pending += 1;
+        } else {
             failed += 1;
-        }
-
-        if (page.documents.length < 100) {
-            break;
-        }
-
-        const lastDocument = page.documents.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : undefined;
-
-        if (!cursorAfter) {
-            break;
         }
     }
 
@@ -788,10 +1068,7 @@ async function finalizeAnnouncementDispatch(params: {
     const { databaseId } = getEnvConfig();
 
     let status: AnnouncementStatus = "dispatching";
-    if (
-        rollup.total === 0 ||
-        (rollup.delivered === rollup.total && rollup.failed === 0)
-    ) {
+    if (rollup.total === 0 || rollup.delivered === rollup.total) {
         status = "sent";
     } else if (dispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS) {
         status = "failed";
@@ -815,6 +1092,140 @@ async function finalizeAnnouncementDispatch(params: {
         announcement.$id,
         updatePayload,
     );
+}
+
+async function dispatchOneAnnouncement(params: {
+    announcement: Announcement;
+    databases: ReturnType<typeof getServerClient>["databases"];
+    databaseId: string;
+    dispatchAttempts: number;
+    dispatchRunId: string;
+    recipientIds: AsyncIterable<string> | Iterable<string>;
+    systemSenderUserId: string;
+}): Promise<DispatchOneResult> {
+    const {
+        announcement,
+        databases,
+        databaseId,
+        dispatchAttempts,
+        dispatchRunId,
+        recipientIds,
+        systemSenderUserId,
+    } = params;
+
+    const now = new Date().toISOString();
+    const nextDispatchAttempts = dispatchAttempts + 1;
+    const lease = createAnnouncementDispatchLease(dispatchRunId);
+
+    try {
+        const claimedAnnouncementRecord = await databases.updateDocument(
+            databaseId,
+            getAnnouncementsCollectionId(),
+            announcement.$id,
+            {
+                dispatchAttempts: nextDispatchAttempts,
+                lastDispatchAt: now,
+                status: "dispatching",
+                leaseExpiresAt: lease.leaseExpiresAt,
+                leaseRunId: lease.leaseRunId,
+            },
+        );
+
+        const claimedAnnouncement = toAnnouncement(
+            claimedAnnouncementRecord as unknown as Record<string, unknown>,
+        );
+
+        if (claimedAnnouncement.leaseRunId !== dispatchRunId) {
+            return { dispatched: false };
+        }
+
+        const batchSize = getAnnouncementDispatchConcurrency();
+        const recipientBatch: string[] = [];
+
+        const dispatchRecipientBatch = async (
+            batch: string[],
+        ): Promise<void> => {
+            await Promise.all(
+                batch.map(async (recipientUserId) => {
+                    try {
+                        await dispatchToRecipient({
+                            announcement: claimedAnnouncement,
+                            dispatchRunId,
+                            recipientUserId,
+                            systemSenderUserId,
+                        });
+                    } catch (error) {
+                        logger.error("Announcement delivery worker crashed", {
+                            announcementId: claimedAnnouncement.$id,
+                            error: toErrorMessage(error),
+                            recipientUserId,
+                        });
+                    }
+                }),
+            );
+        };
+
+        for await (const recipientUserId of recipientIds) {
+            recipientBatch.push(recipientUserId);
+
+            if (recipientBatch.length >= batchSize) {
+                await dispatchRecipientBatch(recipientBatch.splice(0));
+            }
+        }
+
+        if (recipientBatch.length > 0) {
+            await dispatchRecipientBatch(recipientBatch.splice(0));
+        }
+    } catch (error) {
+        logger.error("Announcement dispatch failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(error),
+        });
+
+        try {
+            const failedStatus: AnnouncementStatus =
+                nextDispatchAttempts >= MAX_ANNOUNCEMENT_DISPATCH_ATTEMPTS
+                    ? "failed"
+                    : "dispatching";
+
+            await databases.updateDocument(
+                databaseId,
+                getAnnouncementsCollectionId(),
+                announcement.$id,
+                {
+                    dispatchAttempts: nextDispatchAttempts,
+                    lastDispatchAt: now,
+                    status: failedStatus,
+                },
+            );
+        } catch (updateError) {
+            logger.error("Failed to persist announcement failure state", {
+                announcementId: announcement.$id,
+                error: toErrorMessage(updateError),
+            });
+        }
+
+        return { dispatched: false };
+    }
+
+    // Perform post-dispatch bookkeeping separately so failures here do not
+    // consume retry budget or change dispatchAttempts/status.
+    try {
+        const rollup = await rollupDeliveryStatus(announcement.$id);
+        await finalizeAnnouncementDispatch({
+            announcement,
+            dispatchAttempts: nextDispatchAttempts,
+            rollup,
+        });
+    } catch (finalizeError) {
+        logger.error("Post-dispatch finalization failed", {
+            announcementId: announcement.$id,
+            error: toErrorMessage(finalizeError),
+        });
+        // Intentionally do not update dispatchAttempts or status here.
+    }
+
+    return { dispatched: true };
 }
 
 export async function listAnnouncements(
@@ -866,6 +1277,7 @@ export async function dispatchScheduledAnnouncements(
 
     const now = new Date().toISOString();
     const clampedLimit = Math.max(1, Math.min(limit, 100));
+    const dispatchRunId = randomUUID();
 
     const due = await databases.listDocuments(
         databaseId,
@@ -884,45 +1296,74 @@ export async function dispatchScheduledAnnouncements(
         const announcement = toAnnouncement(
             document as unknown as Record<string, unknown>,
         );
+        if (!canClaimAnnouncementDispatch(announcement, dispatchRunId)) {
+            continue;
+        }
         const dispatchAttempts =
             typeof document.dispatchAttempts === "number"
                 ? document.dispatchAttempts
                 : 0;
-        const nextDispatchAttempts = dispatchAttempts + 1;
-
-        await databases.updateDocument(
-            databaseId,
-            getAnnouncementsCollectionId(),
-            announcement.$id,
-            {
-                dispatchAttempts: nextDispatchAttempts,
-                lastDispatchAt: now,
-                status: "dispatching",
-            },
-        );
-
-        const recipientIds = await listAllProfileUserIds(systemSenderUserId);
-
-        for (const recipientUserId of recipientIds) {
-            await dispatchToRecipient({
-                announcement,
-                recipientUserId,
-                systemSenderUserId,
-            });
-        }
-
-        const rollup = await rollupDeliveryStatus(announcement.$id);
-        await finalizeAnnouncementDispatch({
+        const result = await dispatchOneAnnouncement({
             announcement,
-            dispatchAttempts: nextDispatchAttempts,
-            rollup,
+            databases,
+            databaseId,
+            dispatchAttempts,
+            dispatchRunId,
+            recipientIds: listAllProfileUserIds(systemSenderUserId),
+            systemSenderUserId,
         });
 
-        updatedIds.push(announcement.$id);
+        if (result.dispatched) {
+            updatedIds.push(announcement.$id);
+        }
     }
 
     return {
         announcementIds: updatedIds,
         dueCount: updatedIds.length,
     };
+}
+
+export async function dispatchAnnouncementById(
+    announcementId: string,
+): Promise<DispatchOneResult> {
+    const { databases } = getServerClient();
+    const { databaseId } = getEnvConfig();
+    const { systemSenderUserId } = getAnnouncementRuntimeSettings();
+
+    if (!systemSenderUserId) {
+        throw new Error("SYSTEM_SENDER_USER_ID is required to dispatch announcements");
+    }
+
+    const dispatchRunId = randomUUID();
+
+    const document = await databases.getDocument(
+        databaseId,
+        getAnnouncementsCollectionId(),
+        announcementId,
+    );
+
+    const announcementRecord = document as unknown as Record<string, unknown>;
+    const status = parseAnnouncementStatus(announcementRecord.status);
+    if (status !== "scheduled") {
+        return { dispatched: false };
+    }
+
+    const announcement = toAnnouncement(announcementRecord);
+    if (!canClaimAnnouncementDispatch(announcement, dispatchRunId)) {
+        return { dispatched: false };
+    }
+    const dispatchAttempts =
+        typeof announcementRecord.dispatchAttempts === "number"
+            ? announcementRecord.dispatchAttempts
+            : 0;
+    return dispatchOneAnnouncement({
+        announcement,
+        databases,
+        databaseId,
+        dispatchAttempts,
+        dispatchRunId,
+        recipientIds: listAllProfileUserIds(systemSenderUserId),
+        systemSenderUserId,
+    });
 }

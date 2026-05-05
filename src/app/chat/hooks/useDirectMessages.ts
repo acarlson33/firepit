@@ -50,6 +50,7 @@ import { useThreadPinState } from "./useThreadPinState";
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
 const TYPING_COLLECTION_ID = env.collections.typing || undefined;
+const MAX_MESSAGE_REALTIME_RETRIES = 5;
 
 type UseDirectMessagesProps = {
     conversationId: string | null;
@@ -734,7 +735,8 @@ export function useDirectMessages({
 
     useEffect(() => {
         currentConversationIdRef.current = conversationId;
-    }, [conversationId]);
+        setMessageRealtimeRetryNonce(0);
+    }, [conversationId, userId]);
 
     useEffect(() => {
         void loadMessages();
@@ -746,17 +748,15 @@ export function useDirectMessages({
         }
 
         const publishKey = async () => {
-            try {
-                await ensurePublishedDmEncryptionKey(userId);
-            } catch (error) {
-                logger.warn("Failed to publish DM encryption key", {
-                    error: error instanceof Error ? error.message : String(error),
-                    userId,
-                });
-            }
+            await ensurePublishedDmEncryptionKey(userId);
         };
 
-        publishKey();
+        publishKey().catch((error) => {
+            logger.warn("Failed to publish DM encryption key", {
+                error: error instanceof Error ? error.message : String(error),
+                userId,
+            });
+        });
     }, [dmEncryptionSelfEnabled, userId]);
 
     // Safety net: pull latest DM history occasionally when realtime appears stale.
@@ -984,6 +984,21 @@ export function useDirectMessages({
                                                               replyToId:
                                                                   resolvedMessage.replyToId ??
                                                                   message.replyToId,
+                                                              senderAvatarFramePreset:
+                                                                  resolvedMessage.senderAvatarFramePreset ??
+                                                                  message.senderAvatarFramePreset,
+                                                              senderAvatarFrameUrl:
+                                                                  resolvedMessage.senderAvatarFrameUrl ??
+                                                                  message.senderAvatarFrameUrl,
+                                                              senderAvatarUrl:
+                                                                  resolvedMessage.senderAvatarUrl ??
+                                                                  message.senderAvatarUrl,
+                                                              senderDisplayName:
+                                                                  resolvedMessage.senderDisplayName ??
+                                                                  message.senderDisplayName,
+                                                              senderPronouns:
+                                                                  resolvedMessage.senderPronouns ??
+                                                                  message.senderPronouns,
                                                           },
                                                           prev,
                                                           message,
@@ -1070,7 +1085,18 @@ export function useDirectMessages({
                                     },
                                 );
                             }
-                        })();
+                        })().catch((error) => {
+                            logger.error(
+                                "Unhandled direct message realtime event rejection",
+                                error instanceof Error
+                                    ? error
+                                    : new Error(String(error)),
+                                {
+                                    conversationId:
+                                        currentConversationIdRef.current,
+                                },
+                            );
+                        });
                     },
                     [Query.equal("conversationId", conversationId)],
                 );
@@ -1092,6 +1118,21 @@ export function useDirectMessages({
                     const isTransient =
                         isTransientRealtimeSubscribeError(error);
                     const retryDelayMs = isTransient ? 1200 : 4000;
+
+                    if (messageRealtimeRetryNonce >= MAX_MESSAGE_REALTIME_RETRIES) {
+                        logger.error(
+                            "Direct message realtime subscription max retries reached",
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error)),
+                            {
+                                conversationId: currentConversationIdRef.current,
+                                retryDelayMs,
+                                attempts: messageRealtimeRetryNonce,
+                            },
+                        );
+                        return;
+                    }
 
                     if (isTransient) {
                         logger.warn(
@@ -1294,26 +1335,41 @@ export function useDirectMessages({
                             (m) => m.$id === enrichedWithReplyContext.$id,
                         )
                     ) {
-                        return prev.map((message) =>
-                            message.$id === enrichedWithReplyContext.$id
+                        return prev.map((m) =>
+                            m.$id === enrichedWithReplyContext.$id
                                 ? withReplyContext(
                                       {
-                                          ...message,
+                                          ...m,
                                           ...enrichedWithReplyContext,
                                           attachments:
                                               enrichedWithReplyContext.attachments ??
-                                              message.attachments,
+                                              m.attachments,
                                           replyTo:
                                               enrichedWithReplyContext.replyTo ??
-                                              message.replyTo,
+                                              m.replyTo,
                                           replyToId:
                                               enrichedWithReplyContext.replyToId ??
-                                              message.replyToId,
+                                              m.replyToId,
+                                          senderAvatarFramePreset:
+                                              enrichedWithReplyContext.senderAvatarFramePreset ??
+                                              m.senderAvatarFramePreset,
+                                          senderAvatarFrameUrl:
+                                              enrichedWithReplyContext.senderAvatarFrameUrl ??
+                                              m.senderAvatarFrameUrl,
+                                          senderAvatarUrl:
+                                              enrichedWithReplyContext.senderAvatarUrl ??
+                                              m.senderAvatarUrl,
+                                          senderDisplayName:
+                                              enrichedWithReplyContext.senderDisplayName ??
+                                              m.senderDisplayName,
+                                          senderPronouns:
+                                              enrichedWithReplyContext.senderPronouns ??
+                                              m.senderPronouns,
                                       },
                                       prev,
-                                      message,
+                                      m,
                                   )
-                                : message,
+                                : m,
                         );
                     }
                     // Add and sort by creation time to maintain chronological order

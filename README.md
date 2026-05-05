@@ -35,14 +35,14 @@ A modern, open-source chat platform inspired by Discord, built with Next.js 16, 
 - **Tailwind CSS** - Modern, responsive UI styling
 - **shadcn/ui** - Accessible UI primitives
 - **PWA ready** - Installable web app support for mobile and desktop browsers
-- **Comprehensive tests** - 1913 passing tests with broad API, hook, and integration coverage
+- **Comprehensive tests** - 2274 passing tests with broad API, hook, and integration coverage
 - **Production hardening** - Error boundaries, rate limiting, security validation, and observability
 
 ## 📋 Prerequisites
 
 Before you begin, ensure you have:
 
-- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preffered for perf. improvements) installed
+- **Node.js 18+** or **Bun 1.2+** (Bun 1.3+ preferred for performance improvements) installed
 - An **Appwrite instance** (cloud or self-hosted):
     - Cloud: [appwrite.io](https://appwrite.io) (free tier available)
     - Self-hosted: [Installation Guide](https://appwrite.io/docs/installation)
@@ -128,7 +128,7 @@ Firepit is production-ready with:
 
 ✅ **Testing & Quality**
 
-- 1913 passing tests
+- 2274 passing tests
 - Comprehensive test coverage
 - Automated CI/CD pipeline
 - Strict ESLint configuration
@@ -197,6 +197,11 @@ The application requires several environment variables. Copy `.env.local.example
 - `APPWRITE_ENDPOINT` - Your Appwrite API endpoint
 - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
 - `APPWRITE_API_KEY` - Server-side API key with full permissions
+- `SYSTEM_SENDER_USER_ID` - Optional Appwrite user ID of the dedicated system announcement sender.
+    Used for system announcement threads in DMs.
+    Set this in production to the user's `$id` from Appwrite Console -> Auth -> Users.
+    When unset, announcement threads are read-only.
+    See DEPLOYMENT.md for details.
 
 For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
 
@@ -240,10 +245,10 @@ bun run test:coverage
 bun run test --watch
 ```
 
-Current test coverage: **40.18%** statements (growing)
+Current test coverage: **49.86%** lines (growing, **34951/70089**)
 
-- 1913 tests passing across 157 test suites
-- Comprehensive API route testing (44 new tests for invite system)
+- 2274 tests passing across 203 test suites
+- Comprehensive API route testing
 - Focus on security-critical modules (auth, roles, moderation), and modules critical for function (API routes, hooks, utility files, etc.)
 
 ## 📦 Deployment

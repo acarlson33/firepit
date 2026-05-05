@@ -1,6 +1,9 @@
 /**
  * Tests for file attachment display in messages
  */
+
+/// <reference lib="dom" />
+
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FileAttachmentDisplay } from "@/components/file-attachment-display";

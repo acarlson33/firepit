@@ -90,6 +90,30 @@ function cloneReactions(
         }));
 }
 
+function clonePoll(
+    poll: Message["poll"] | DirectMessage["poll"],
+): Message["poll"] | undefined {
+    if (!poll) {
+        return undefined;
+    }
+
+    const clonedPoll =
+        typeof globalThis.structuredClone === "function"
+            ? globalThis.structuredClone(poll)
+            : { ...poll };
+    const safeOptions = Array.isArray(clonedPoll.options)
+        ? clonedPoll.options
+        : [];
+
+    return {
+        ...clonedPoll,
+        options: safeOptions.map((option) => ({
+            ...option,
+            voterIds: Array.isArray(option.voterIds) ? [...option.voterIds] : [],
+        })),
+    };
+}
+
 /**
  * Creates channel context.
  *
@@ -196,7 +220,7 @@ export function fromChannelMessage(
         lastThreadReplyAt: message.lastThreadReplyAt,
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
-        poll: message.poll,
+        poll: clonePoll(message.poll),
         isPinned: message.isPinned,
         pinnedAt: message.pinnedAt,
         pinnedBy: message.pinnedBy,
@@ -253,7 +277,7 @@ export function fromDirectMessage(
         lastThreadReplyAt: message.lastThreadReplyAt,
         mentions: message.mentions ? [...message.mentions] : undefined,
         reactions: cloneReactions(message.reactions),
-        poll: message.poll,
+        poll: clonePoll(message.poll),
         isPinned: message.isPinned ?? false,
         pinnedAt: message.pinnedAt,
         pinnedBy: message.pinnedBy,

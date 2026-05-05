@@ -358,6 +358,35 @@ describe("Messages API Routes", () => {
             expect(data.message.poll).toBeDefined();
             expect(data.message.poll.question).toBe("Lunch plans?");
             expect(data.message.poll.options).toHaveLength(2);
+            expect(
+                data.message.poll.options.map(
+                    (option: { text: string }) => option.text,
+                ),
+            ).toEqual(["Pizza", "Tacos"]);
+
+            const createPollCall = mockCreateDocument.mock.calls.find(
+                (call) => call[1] === "polls-collection",
+            );
+            expect(createPollCall).toBeDefined();
+
+            if (!createPollCall) {
+                throw new Error(
+                    "Expected poll create call for polls-collection",
+                );
+            }
+
+            const pollCreateData = createPollCall[3] as {
+                options?: string;
+            };
+            const serializedOptions = pollCreateData.options;
+            expect(typeof serializedOptions).toBe("string");
+            const parsedOptions = JSON.parse(serializedOptions) as Array<{
+                text: string;
+            }>;
+            expect(parsedOptions.map((option) => option.text)).toEqual([
+                "Pizza",
+                "Tacos",
+            ]);
         });
     });
 
@@ -388,6 +417,29 @@ describe("Messages API Routes", () => {
             expect(data.error).toBe("You can only edit your own messages");
             expect(mockUpdateDocument).not.toHaveBeenCalled();
         });
+
+        it("should return 404 when editing a missing message", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockGetDocument.mockResolvedValue(null);
+
+            const request = new NextRequest(
+                "http://localhost/api/messages?id=missing-msg",
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({ text: "Updated" }),
+                },
+            );
+
+            const response = await PATCH(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data).toEqual({ error: "Message not found" });
+            expect(mockUpdateDocument).not.toHaveBeenCalled();
+        });
     });
 
     describe("DELETE /api/messages", () => {
@@ -414,6 +466,28 @@ describe("Messages API Routes", () => {
 
             expect(response.status).toBe(403);
             expect(data.error).toBe("You can only delete your own messages");
+            expect(mockDeleteDocument).not.toHaveBeenCalled();
+        });
+
+        it("should return 404 when deleting a missing message", async () => {
+            mockGetServerSession.mockResolvedValue({
+                $id: "user-1",
+                name: "Test User",
+            });
+            mockGetDocument.mockResolvedValue(null);
+
+            const request = new NextRequest(
+                "http://localhost/api/messages?id=missing-msg",
+                {
+                    method: "DELETE",
+                },
+            );
+
+            const response = await DELETE(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(404);
+            expect(data).toEqual({ error: "Message not found" });
             expect(mockDeleteDocument).not.toHaveBeenCalled();
         });
     });

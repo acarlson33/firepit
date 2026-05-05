@@ -20,6 +20,7 @@ type ChatThreadContentProps = {
     loading?: boolean;
     error?: string | null;
     currentUserId: string | null;
+    canManageMessages?: (message: ChatSurfaceMessage) => boolean;
     customEmojis?: CustomEmoji[];
     onToggleReaction?: (
         messageId: string,
@@ -39,6 +40,7 @@ type ChatThreadContentProps = {
 function MessageCard({
     message,
     currentUserId,
+    canManageMessages,
     customEmojis,
     onToggleReaction,
     onVotePoll,
@@ -46,6 +48,7 @@ function MessageCard({
 }: {
     message: ChatSurfaceMessage;
     currentUserId: string | null;
+    canManageMessages?: (message: ChatSurfaceMessage) => boolean;
     customEmojis?: CustomEmoji[];
     onToggleReaction?: (
         messageId: string,
@@ -75,21 +78,20 @@ function MessageCard({
                 </div>
                 {message.poll ? (
                     <MessagePollBlock
-                        canClose={message.poll.createdBy === currentUserId}
+                        canClose={
+                            message.poll.createdBy === currentUserId ||
+                            canManageMessages?.(message) === true
+                        }
                         currentUserId={currentUserId}
                         messageId={message.id}
                         onClose={
                             onClosePoll
-                                ? async () => {
-                                      await onClosePoll(message);
-                                  }
+                                ? () => onClosePoll(message)
                                 : undefined
                         }
                         onVote={
                             onVotePoll
-                                ? async (optionId) => {
-                                      await onVotePoll(message, optionId);
-                                  }
+                                ? (optionId) => onVotePoll(message, optionId)
                                 : undefined
                         }
                         poll={message.poll}
@@ -147,6 +149,7 @@ export function ChatThreadContent({
     loading = false,
     error,
     currentUserId,
+    canManageMessages,
     customEmojis,
     onToggleReaction,
     onVotePoll,
@@ -167,6 +170,7 @@ export function ChatThreadContent({
             <div className="border-b pb-4">
                 <MessageCard
                     currentUserId={currentUserId}
+                    canManageMessages={canManageMessages}
                     customEmojis={customEmojis}
                     message={parentMessage}
                     onToggleReaction={onToggleReaction}
@@ -197,6 +201,7 @@ export function ChatThreadContent({
                         {replies.map((reply) => (
                             <MessageCard
                                 currentUserId={currentUserId}
+                                canManageMessages={canManageMessages}
                                 customEmojis={customEmojis}
                                 key={reply.id}
                                 message={reply}

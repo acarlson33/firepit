@@ -32,12 +32,15 @@ import {
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { shouldCompress } from "@/lib/compression-utils";
+import { apiCache } from "@/lib/cache-utils";
 import {
     buildAttachmentDocumentData,
     buildLegacyAttachmentDocumentData,
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
+import { rememberDmUnreadThreadSnapshot } from "@/lib/unread-consistency";
+import { listPages } from "@/lib/appwrite-pagination";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -47,6 +50,117 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const SYSTEM_SENDER_USER_ID = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
 const SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON =
     "Replies are disabled for system announcements";
+const DIRECT_MESSAGES_CACHE_TTL_MS = 10 * 1000;
+
+if (SYSTEM_SENDER_USER_ID === null && process.env.NODE_ENV !== "test") {
+    logger.warn(
+        "SYSTEM_SENDER_USER_ID is not configured. System announcement threads will be read-only for all users.",
+        {
+            envVar: "SYSTEM_SENDER_USER_ID",
+            impact:
+                "Replies to system announcement threads are disabled unless this is set to the system sender user id.",
+        },
+    );
+}
+
+type ConversationThreadReplySignal = {
+    latestReplyAt?: string;
+    replyCount: number;
+};
+
+function canUseDirectMessageCache(): boolean {
+    return (
+        process.env.ENABLE_DIRECT_MESSAGE_CACHE === "true" ||
+        process.env.NODE_ENV === "production"
+    );
+}
+
+function dedupeDirectMessageCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = DIRECT_MESSAGES_CACHE_TTL_MS,
+): Promise<T> {
+    if (!canUseDirectMessageCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, ttl);
+}
+
+function clearDmConversationsCache(participantIds: string[]): void {
+    const uniqueParticipantIds = new Set(
+        participantIds
+            .map((participantId) => participantId.trim())
+            .filter((participantId) => participantId.length > 0),
+    );
+
+    for (const participantId of uniqueParticipantIds) {
+        apiCache.clearPrefix(`dm:conversations:${participantId}`);
+    }
+}
+
+function normalizeDistinctIds(ids: string[], excluding?: string): string[] {
+    return Array.from(
+        new Set(
+            ids.filter(
+                (id) =>
+                    id.length > 0 &&
+                    (excluding === undefined || id !== excluding),
+            ),
+        ),
+    ).sort();
+}
+
+function maxIsoTimestamp(left?: string, right?: string) {
+    if (left && right) {
+        return left >= right ? left : right;
+    }
+
+    return left ?? right;
+}
+
+async function paginateReplies(params: {
+    databases: ReturnType<typeof getServerClient>["databases"];
+    conversationIds: string[];
+    maxThreadParentPages: number;
+    pageSize: number;
+}) {
+    const { databases, conversationIds, maxThreadParentPages, pageSize } = params;
+
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId: DATABASE_ID,
+        collectionId: DIRECT_MESSAGES_COLLECTION,
+        baseQueries: [Query.equal("conversationId", conversationIds), Query.isNotNull("threadId")],
+        pageSize,
+        maxPages: maxThreadParentPages,
+        warningContext: "paginateReplies",
+    });
+
+    const replySignalsByParentId = new Map<string, ConversationThreadReplySignal>();
+    for (const document of documents) {
+        const reply = document as Record<string, unknown>;
+        const parentMessageId = typeof reply.threadId === "string" ? reply.threadId : null;
+        if (!parentMessageId) {
+            continue;
+        }
+
+        const createdAt = typeof reply.$createdAt === "string" ? reply.$createdAt : undefined;
+        const existingSignal = replySignalsByParentId.get(parentMessageId);
+        if (existingSignal) {
+            existingSignal.replyCount += 1;
+            existingSignal.latestReplyAt = maxIsoTimestamp(existingSignal.latestReplyAt, createdAt);
+            continue;
+        }
+
+        replySignalsByParentId.set(parentMessageId, {
+            latestReplyAt: createdAt,
+            replyCount: 1,
+        });
+    }
+
+    return { replySignalsByParentId, replySignalsTruncated: Boolean(truncated) };
+}
 
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
@@ -70,6 +184,13 @@ function getReadOnlyReason(relationship: {
     }
 
     return undefined;
+}
+
+function includesSystemSenderParticipant(participants: string[]): boolean {
+    return (
+        SYSTEM_SENDER_USER_ID !== null &&
+        participants.includes(SYSTEM_SENDER_USER_ID)
+    );
 }
 
 async function getDmEncryptionStateForPair(
@@ -134,42 +255,53 @@ async function getDmEncryptionStateForPair(
 
 /**
  * Helper to create attachment records for a direct message
+ * Returns array of created attachment document IDs
  */
 async function createAttachments(
+    databases: ReturnType<typeof getServerClient>["databases"],
     messageId: string,
     attachments: FileAttachment[],
-): Promise<void> {
+): Promise<string[]> {
     if (!attachments || attachments.length === 0) {
-        return;
+        return [];
     }
 
     if (!MESSAGE_ATTACHMENTS_COLLECTION_ID) {
-        return;
+        throw new Error("attachment storage not configured");
     }
 
-    const { databases } = getServerClient();
+    const createdIds: string[] = [];
 
-    await Promise.all(
-        attachments.map(async (attachment) => {
+    const rethrowWithCreatedIds = (error: unknown): never => {
+        const attachmentError =
+            error instanceof Error ? error : new Error(String(error));
+        (attachmentError as Error & { createdIds: string[] }).createdIds = [
+            ...createdIds,
+        ];
+        throw attachmentError;
+    };
+
+    for (const attachment of attachments) {
+        try {
             const payload = buildAttachmentDocumentData({
                 attachment,
                 messageId,
                 messageType: "dm",
             });
+            const result = await databases.createDocument(
+                DATABASE_ID,
+                MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                ID.unique(),
+                payload,
+            );
+            createdIds.push(String(result.$id));
+        } catch (error) {
+            if (!isUnknownAttachmentAttributeError(error)) {
+                rethrowWithCreatedIds(error);
+            }
 
             try {
-                await databases.createDocument(
-                    DATABASE_ID,
-                    MESSAGE_ATTACHMENTS_COLLECTION_ID,
-                    ID.unique(),
-                    payload,
-                );
-            } catch (error) {
-                if (!isUnknownAttachmentAttributeError(error)) {
-                    throw error;
-                }
-
-                await databases.createDocument(
+                const legacyResult = await databases.createDocument(
                     DATABASE_ID,
                     MESSAGE_ATTACHMENTS_COLLECTION_ID,
                     ID.unique(),
@@ -179,9 +311,14 @@ async function createAttachments(
                         messageType: "dm",
                     }),
                 );
+                createdIds.push(String(legacyResult.$id));
+            } catch (legacyError) {
+                rethrowWithCreatedIds(legacyError);
             }
-        }),
-    );
+        }
+    }
+
+    return createdIds;
 }
 
 // Helper to create JSON responses with CORS headers and compression hints
@@ -265,14 +402,15 @@ export async function GET(request: NextRequest) {
 
             const { databases } = getServerClient();
             const dbStartTime = Date.now();
-            const response = await databases.listDocuments(
-                DATABASE_ID,
-                CONVERSATIONS_COLLECTION,
-                [
-                    Query.contains("participants", session.$id),
-                    Query.orderDesc("lastMessageAt"),
-                    Query.limit(100),
-                ],
+            const response = await dedupeDirectMessageCache(
+                `dm:conversations:${session.$id}`,
+                () =>
+                    databases.listDocuments(DATABASE_ID, CONVERSATIONS_COLLECTION, [
+                        Query.contains("participants", session.$id),
+                        Query.orderDesc("lastMessageAt"),
+                        Query.limit(100),
+                    ]),
+                DIRECT_MESSAGES_CACHE_TTL_MS,
             );
 
             trackApiCall(
@@ -337,6 +475,7 @@ export async function GET(request: NextRequest) {
                 });
             } catch (error) {
                 threadReadLookupFailed = true;
+                unreadThreadCountsTruncated = true;
                 logger.warn("Thread read lookup failed for conversations", {
                     error:
                         error instanceof Error ? error.message : String(error),
@@ -348,88 +487,180 @@ export async function GET(request: NextRequest) {
                 try {
                     const pageSize = 500;
                     const maxThreadParentPages = 20;
-                    let cursorAfterId: string | null = null;
-                    let pageCount = 0;
+                    const conversationIds = conversations.map(
+                        (conversation) => conversation.$id,
+                    );
+                    const replySignalsPromise = paginateReplies({
+                        databases,
+                        conversationIds,
+                        maxThreadParentPages,
+                        pageSize,
+                    }).catch((error) => {
+                        logger.warn("Failed to paginate direct-message thread reply signals", {
+                            userId: session.$id,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                            fallbackReplySignalsTruncated: true,
+                            fallbackUnreadThreadCountsTruncated: true,
+                        });
+                        return {
+                            replySignalsByParentId: new Map<
+                                string,
+                                ConversationThreadReplySignal
+                            >(),
+                            replySignalsTruncated: true,
+                        };
+                    });
 
-                    while (pageCount < maxThreadParentPages) {
-                        pageCount += 1;
-                        const page = await databases.listDocuments(
-                            DATABASE_ID,
-                            DIRECT_MESSAGES_COLLECTION,
-                            [
-                                Query.equal(
-                                    "conversationId",
-                                    conversations.map(
-                                        (conversation) => conversation.$id,
-                                    ),
+                    const threadParentsById = new Map<
+                        string,
+                        Record<string, unknown>
+                    >();
+                    const threadParentPages = await listPages({
+                        databases,
+                        databaseId: DATABASE_ID,
+                        collectionId: DIRECT_MESSAGES_COLLECTION,
+                        baseQueries: [
+                            Query.equal("conversationId", conversationIds),
+                            Query.greaterThan("threadMessageCount", 0),
+                        ],
+                        pageSize,
+                        maxPages: maxThreadParentPages,
+                        warningContext: "direct-messages-thread-parents",
+                    });
+
+                    for (const document of threadParentPages.documents) {
+                        const threadParent = document as Record<string, unknown>;
+                        const parentMessageId =
+                            typeof threadParent.$id === "string"
+                                ? threadParent.$id
+                                : null;
+                        if (!parentMessageId) {
+                            continue;
+                        }
+
+                        threadParentsById.set(parentMessageId, threadParent);
+                    }
+
+                    const threadParentsTruncated = threadParentPages.truncated;
+                    const { replySignalsByParentId, replySignalsTruncated } =
+                        await replySignalsPromise;
+
+                    const missingParentIds = Array.from(
+                        replySignalsByParentId.keys(),
+                    ).filter(
+                        (parentMessageId) =>
+                            !threadParentsById.has(parentMessageId),
+                    );
+
+                    if (missingParentIds.length > 0) {
+                        type ListDocumentsResult = Awaited<
+                            ReturnType<typeof databases.listDocuments>
+                        >;
+                        const chunkPromises: Array<Promise<ListDocumentsResult>> = [];
+                        for (
+                            let startIndex = 0;
+                            startIndex < missingParentIds.length;
+                            startIndex += 100
+                        ) {
+                            const parentIdChunk = missingParentIds.slice(
+                                startIndex,
+                                startIndex + 100,
+                            );
+
+                            chunkPromises.push(
+                                databases.listDocuments(
+                                    DATABASE_ID,
+                                    DIRECT_MESSAGES_COLLECTION,
+                                    [
+                                        Query.equal("$id", parentIdChunk),
+                                        Query.equal("conversationId", conversationIds),
+                                        Query.limit(parentIdChunk.length),
+                                    ],
                                 ),
-                                Query.greaterThan("threadMessageCount", 0),
-                                Query.orderAsc("$id"),
-                                Query.limit(pageSize),
-                                ...(cursorAfterId
-                                    ? [Query.cursorAfter(cursorAfterId)]
-                                    : []),
-                            ],
+                            );
+                        }
+
+                        const missingParentsPages = await Promise.all(
+                            chunkPromises,
                         );
 
-                        for (const document of page.documents) {
-                            const threadParent = document as Record<
-                                string,
-                                unknown
-                            >;
-                            const conversationId = String(
-                                threadParent.conversationId,
-                            );
-                            const messageId = String(threadParent.$id);
-                            const lastThreadReplyAt =
-                                typeof threadParent.lastThreadReplyAt ===
-                                "string"
-                                    ? threadParent.lastThreadReplyAt
-                                    : undefined;
-                            const threadMessageCount =
-                                typeof threadParent.threadMessageCount ===
-                                "number"
-                                    ? threadParent.threadMessageCount
-                                    : undefined;
-                            const lastReadAt =
-                                readStatesByConversationId.get(
-                                    conversationId,
-                                )?.[messageId];
+                        for (const missingParentsPage of missingParentsPages) {
+                            for (const document of missingParentsPage.documents) {
+                                const threadParent = document as Record<string, unknown>;
+                                const parentMessageId =
+                                    typeof threadParent.$id === "string"
+                                        ? threadParent.$id
+                                        : null;
+                                if (!parentMessageId) {
+                                    continue;
+                                }
 
-                            if (
-                                isThreadUnread({
-                                    lastReadAt,
-                                    lastThreadReplyAt,
-                                    threadMessageCount,
-                                })
-                            ) {
-                                unreadThreadsByConversationId.set(
-                                    conversationId,
-                                    (unreadThreadsByConversationId.get(
-                                        conversationId,
-                                    ) ?? 0) + 1,
-                                );
+                                threadParentsById.set(parentMessageId, threadParent);
                             }
-                        }
-
-                        if (page.documents.length < pageSize) {
-                            break;
-                        }
-
-                        const lastDocument = page.documents.at(-1) as
-                            | Record<string, unknown>
-                            | undefined;
-                        cursorAfterId =
-                            lastDocument && typeof lastDocument.$id === "string"
-                                ? lastDocument.$id
-                                : null;
-
-                        if (!cursorAfterId) {
-                            break;
                         }
                     }
 
-                    if (pageCount === maxThreadParentPages && cursorAfterId) {
+                    for (const threadParent of threadParentsById.values()) {
+                        const conversationId =
+                            typeof threadParent.conversationId === "string"
+                                ? threadParent.conversationId
+                                : null;
+                        const messageId =
+                            typeof threadParent.$id === "string"
+                                ? threadParent.$id
+                                : null;
+                        if (!conversationId || !messageId) {
+                            continue;
+                        }
+
+                        const signal = replySignalsByParentId.get(messageId);
+                        const lastThreadReplyAt = maxIsoTimestamp(
+                            typeof threadParent.lastThreadReplyAt === "string"
+                                ? threadParent.lastThreadReplyAt
+                                : undefined,
+                            signal?.latestReplyAt,
+                        );
+                        const metadataThreadCount =
+                            typeof threadParent.threadMessageCount === "number"
+                                ? threadParent.threadMessageCount
+                                : 0;
+                        const signalThreadCount = signal?.replyCount ?? 0;
+                        const effectiveThreadCount = Math.max(
+                            metadataThreadCount,
+                            signalThreadCount,
+                        );
+                        let threadMessageCount: number | undefined;
+                        if (effectiveThreadCount > 0) {
+                            threadMessageCount = effectiveThreadCount;
+                        } else if (lastThreadReplyAt) {
+                            threadMessageCount = 1;
+                        }
+
+                        const lastReadAt =
+                            readStatesByConversationId.get(conversationId)?.[
+                                messageId
+                            ];
+
+                        if (
+                            isThreadUnread({
+                                lastReadAt,
+                                lastThreadReplyAt,
+                                threadMessageCount,
+                            })
+                        ) {
+                            unreadThreadsByConversationId.set(
+                                conversationId,
+                                (unreadThreadsByConversationId.get(
+                                    conversationId,
+                                ) ?? 0) + 1,
+                            );
+                        }
+                    }
+
+                    if (threadParentsTruncated || replySignalsTruncated) {
                         unreadThreadCountsTruncated = true;
                         logger.warn(
                             "Thread unread aggregation reached pagination cap",
@@ -440,8 +671,12 @@ export async function GET(request: NextRequest) {
                             },
                         );
                     }
-                } catch {
-                    // Skip unread aggregates if the supporting query fails.
+                } catch (error) {
+                    unreadThreadCountsTruncated = true;
+                    logger.error("Failed to aggregate unread thread counts", {
+                        error: error instanceof Error ? error.message : String(error),
+                        userId: session.$id,
+                    });
                 }
             }
 
@@ -516,6 +751,17 @@ export async function GET(request: NextRequest) {
                 count: enrichedConversations.length,
             });
 
+            const totalUnreadThreadCount = enrichedConversations.reduce(
+                (total, conversation) => total + conversation.unreadThreadCount,
+                0,
+            );
+            rememberDmUnreadThreadSnapshot({
+                conversationCount: enrichedConversations.length,
+                totalUnreadThreadCount,
+                truncated: unreadThreadCountsTruncated,
+                userId: session.$id,
+            });
+
             return jsonResponse({ conversations: enrichedConversations });
         }
 
@@ -544,6 +790,13 @@ export async function GET(request: NextRequest) {
             if (!participants.includes(session.$id)) {
                 return jsonResponse(
                     { error: "You can only access your own direct messages" },
+                    { status: 403 },
+                );
+            }
+
+            if (includesSystemSenderParticipant(participants)) {
+                return jsonResponse(
+                    { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
                     { status: 403 },
                 );
             }
@@ -755,6 +1008,8 @@ export async function GET(request: NextRequest) {
                 },
                 permissions,
             );
+
+            clearDmConversationsCache(participants);
 
             return jsonResponse({
                 conversation: {
@@ -1035,6 +1290,13 @@ export async function POST(request: NextRequest) {
                 participantIds.push(session.$id);
             }
 
+            if (includesSystemSenderParticipant(participantIds)) {
+                return jsonResponse(
+                    { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
+                    { status: 403 },
+                );
+            }
+
             if (participantIds.length < 3) {
                 return jsonResponse(
                     {
@@ -1094,6 +1356,8 @@ export async function POST(request: NextRequest) {
                 },
                 permissions,
             );
+
+            clearDmConversationsCache(sortedParticipants);
 
             return jsonResponse(
                 {
@@ -1165,6 +1429,7 @@ export async function POST(request: NextRequest) {
             (!text?.trim() &&
                 !hasEncryptedText &&
                 !imageFileId &&
+                !imageUrl &&
                 normalizedAttachments.length === 0)
         ) {
             return jsonResponse(
@@ -1257,8 +1522,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (
-            isSystemAnnouncementThread &&
-            (SYSTEM_SENDER_USER_ID === null || senderId !== SYSTEM_SENDER_USER_ID)
+            isSystemAnnouncementThread || includesSystemSenderParticipant(participants)
         ) {
             return jsonResponse(
                 { error: SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON },
@@ -1305,8 +1569,11 @@ export async function POST(request: NextRequest) {
             typeof text === "string" &&
             text.trim().length > 0 &&
             !hasEncryptedText;
+        const hasImageContent = Boolean(imageFileId) || Boolean(imageUrl);
+        const hasAnyContent =
+            hasPlaintextText || hasImageContent || normalizedAttachments.length > 0;
 
-        if (!isGroupConversation && targetReceiverId && hasPlaintextText) {
+        if (!isGroupConversation && targetReceiverId && hasAnyContent) {
             const [senderSettings, receiverSettings, senderProfile, receiverProfile] =
                 await Promise.all([
                     getNotificationSettings(senderId).catch((error) => {
@@ -1386,7 +1653,7 @@ export async function POST(request: NextRequest) {
                 senderProfilePublicKey.length > 0 &&
                 receiverProfilePublicKey.length > 0;
 
-            if (requiresEncryptedText) {
+            if (requiresEncryptedText && hasPlaintextText && !hasEncryptedText) {
                 return jsonResponse(
                     {
                         error:
@@ -1594,18 +1861,54 @@ export async function POST(request: NextRequest) {
         if (normalizedAttachments.length > 0) {
             try {
                 await createAttachments(
+                    databases,
                     String(message.$id),
                     normalizedAttachments,
                 );
             } catch (attachmentError) {
-                logger.error("Failed to create attachments", {
-                    messageId: message.$id,
-                    error:
-                        attachmentError instanceof Error
-                            ? attachmentError.message
-                            : String(attachmentError),
-                });
-                // Continue even if attachment creation fails
+                const attachmentErrorWithIds = attachmentError as Error & {
+                    createdIds?: string[];
+                };
+                const createdIds = Array.isArray(attachmentErrorWithIds.createdIds)
+                    ? attachmentErrorWithIds.createdIds
+                    : [];
+
+                for (const createdId of createdIds) {
+                    try {
+                        await databases.deleteDocument(
+                            DATABASE_ID,
+                            MESSAGE_ATTACHMENTS_COLLECTION_ID,
+                            createdId,
+                        );
+                    } catch (cleanupError) {
+                        logger.warn("Failed to roll back DM attachment after attachment error", {
+                            attachmentId: createdId,
+                            error:
+                                cleanupError instanceof Error
+                                    ? cleanupError.message
+                                    : String(cleanupError),
+                        });
+                    }
+                }
+
+                // Delete the parent DM
+                try {
+                    await databases.deleteDocument(
+                        DATABASE_ID,
+                        DIRECT_MESSAGES_COLLECTION,
+                        String(message.$id),
+                    );
+                } catch (rollbackError) {
+                    logger.warn("Failed to roll back DM after attachment error", {
+                        messageId: String(message.$id),
+                        error:
+                            rollbackError instanceof Error
+                                ? rollbackError.message
+                                : String(rollbackError),
+                    });
+                }
+
+                throw attachmentError;
             }
         }
 
@@ -1651,6 +1954,8 @@ export async function POST(request: NextRequest) {
             );
         } catch {
             // Don't fail if conversation update fails
+        } finally {
+            clearDmConversationsCache(participants);
         }
 
         // Track DM sent event

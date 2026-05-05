@@ -23,13 +23,15 @@ Server stats and membership endpoints support server-level dashboards, moderatio
 Current privacy/customization behavior:
 
 - `GET /api/servers` returns only servers where the authenticated user has membership.
-- `GET /api/servers/public` returns only discoverable servers (`isPublic = true`, with legacy `undefined` treated as public).
-- `POST /api/servers/join` blocks direct joins for private servers and instructs users to join via invite.
-- `PATCH /api/servers/{serverId}` lets owners and members with `manageServer` update name, description, icon, banner, and visibility.
-- `defaultOnSignup` is admin-only and instance-wide unique; setting one server as default clears it on other servers.
+- `GET /api/servers/public` returns only discoverable servers where `isPublic === true`.
+- Legacy servers with missing `isPublic` are treated as non-public (excluded from `GET /api/servers/public` and effectively private/inaccessible through discovery) until you run the migration that writes an explicit boolean. See [MIGRATIONS.md](./MIGRATIONS.md#migrate-legacy-servers-ispublic) for the `migrateLegacyServersIsPublic` helper and rollout steps.
+- `POST /api/servers/join` blocks direct joins for private servers with `403 Forbidden` and a JSON response containing at least `{ "error": "..." }`.
+- `POST /api/invites/{code}/join` is the supported private-server join path; private-server rejection shapes should be treated as `{ "error": "..." }` only. Do not rely on optional fields like `code`, `statusCode`, or `details` unless explicitly added by your deployment.
+- Example blocked direct-join response: `HTTP 403` with `{ "error": "This server is private. Join with an invite link." }`.
+- `PATCH /api/servers/{serverId}` lets owners and members with `manageServer` update name, description, `iconFileId`, `bannerFileId`, and visibility.
+- `defaultOnSignup` is admin-only and unique across the instance; setting one server as default clears it on other servers.
 - `GET /api/servers/default-signup` returns the currently configured signup default server for admin tooling.
-- Signup auto-join behavior prefers a server with `defaultOnSignup = true`; when no default is configured, fallback auto-join happens only when the instance has exactly one server.
-- The `defaultOnSignup` control is exposed in the instance admin page under server management, not in per-server admin dialogs.
+- Signup auto-join behavior prefers a server with `defaultOnSignup = true`; when `defaultOnSignup` is unset, fallback auto-join occurs only if the user does not already have access to any server and there is exactly one public server (`isPublic === true`) in the instance. In the edge case of one public and one private server, fallback still auto-joins only the single public server under those same conditions.
 
 ## Roles And Permission Overrides
 
@@ -117,6 +119,14 @@ The admin experience should be able to:
 - configure channel permission overrides
 - mute, kick, ban, and unban members
 - read and export audit history
+
+## Admin UI
+
+UI placement for server-admin controls:
+
+- `defaultOnSignup` is managed in the instance admin server-management view.
+- Per-server admin dialogs handle server-level customization (`name`, `description`, `iconFileId`, `bannerFileId`, `isPublic`) but do not expose the instance-wide `defaultOnSignup` selector.
+- Invite-based joining for private servers should be surfaced through the invite link sharing flow and the invite preview/join screen, not direct server discovery/join flows; in the frontend this maps to `CreateInviteDialog`/`InviteManagerDialog` (link creation/management) and `InvitePreviewClient` under `src/app/invite/[code]` (preview and join action).
 
 ## Relationship To Feature Flags
 

@@ -21,13 +21,13 @@ export type Report = {
     $createdAt: string;
 };
 
-export type CreateReportInput = {
+type CreateReportInput = {
     reporterId: string;
     reportedUserId: string;
     justification: string;
 };
 
-export type ListReportsOpts = {
+type ListReportsOpts = {
     limit?: number;
     cursorAfter?: string;
     status?: ReportStatus;
@@ -36,7 +36,7 @@ export type ListReportsOpts = {
 };
 
 const DEFAULT_LIST_LIMIT = 50;
-export const MAX_LIST_LIMIT = 200;
+const MAX_LIST_LIMIT = 200;
 export const DUPLICATE_REPORT_ERROR_MESSAGE =
     "You already have a pending report for this user.";
 
@@ -201,26 +201,6 @@ export async function listReports(
     };
 }
 
-export async function getReportById(reportId: string): Promise<Report> {
-    const trimmedReportId = reportId.trim();
-    if (!trimmedReportId) {
-        throw new Error("Report id is required");
-    }
-    if (!REPORTS_COLLECTION_ID) {
-        throw new Error("Reports collection is not configured");
-    }
-
-    const { databases } = getServerClient();
-
-    const doc = await databases.getDocument(
-        DATABASE_ID,
-        REPORTS_COLLECTION_ID,
-        trimmedReportId,
-    );
-
-    return parseReport(doc);
-}
-
 export async function resolveReport(
     reportId: string,
     adminId: string,
@@ -292,7 +272,7 @@ export async function getPendingReportCount(): Promise<number> {
     return res.total;
 }
 
-export async function hasExistingPendingReport(
+async function hasExistingPendingReport(
     reporterId: string,
     reportedUserId: string,
 ): Promise<boolean> {

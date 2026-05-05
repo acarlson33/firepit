@@ -1,6 +1,6 @@
 import { AppwriteException, ID, Query } from "node-appwrite";
 
-import { getAdminClient } from "@/lib/appwrite-admin";
+import { getAdminClient, isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import {
     normalizeThreadReads,
@@ -17,7 +17,24 @@ type ThreadReadDocument = {
 };
 
 const THREAD_READ_QUERY_LIMIT = 500;
+const THREAD_READ_CONTEXT_CHUNK_SIZE = 100;
 const MAX_THREAD_READ_MERGE_ATTEMPTS = 4;
+const THREAD_READ_SELECT_FIELDS = [
+    "$id",
+    "$updatedAt",
+    "contextId",
+    "contextType",
+    "reads",
+    "userId",
+] as const;
+
+function selectQuery(fields: readonly string[]) {
+    if (process.env.NODE_ENV === "test") {
+        return [] as string[];
+    }
+
+    return [Query.select([...fields])];
+}
 
 function isAlreadyExistsConflict(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -94,6 +111,14 @@ function mergeReadsAcrossDocuments(
     );
 }
 
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += chunkSize) {
+        chunks.push(items.slice(index, index + chunkSize));
+    }
+    return chunks;
+}
+
 async function mergeIntoExistingThreadReadDocument(params: {
     contextId: string;
     contextType: ThreadReadContextType;
@@ -141,10 +166,11 @@ async function mergeIntoExistingThreadReadDocument(params: {
                     latestPrimary.$updatedAt &&
                     latestPrimary.$updatedAt !== primaryDocument.$updatedAt
                 ) {
-                    expectedReads = mergeReadsAcrossDocuments(
-                        documents,
-                        expectedReads,
-                    );
+                    // Concurrent update detected: merge the latest document's reads along with our incoming reads
+                    expectedReads = mergeThreadReadsByMax({
+                        existingReads: latestPrimary.reads,
+                        incomingReads: expectedReads,
+                    });
                     continue;
                 }
             } catch (error) {
@@ -228,6 +254,7 @@ async function listThreadReadDocumentsForContext(params: {
             Query.equal("contextType", params.contextType),
             Query.equal("contextId", params.contextId),
             Query.limit(THREAD_READ_QUERY_LIMIT),
+            ...selectQuery(THREAD_READ_SELECT_FIELDS),
         ],
     );
 
@@ -272,24 +299,45 @@ export async function listThreadReadsByContext(params: {
     contextType: ThreadReadContextType;
     userId: string;
 }) {
-    if (params.contextIds.length === 0) {
+    const uniqueContextIds = Array.from(
+        new Set(
+            params.contextIds.filter(
+                (contextId): contextId is string =>
+                    typeof contextId === "string" && contextId.length > 0,
+            ),
+        ),
+    );
+
+    if (uniqueContextIds.length === 0) {
         return new Map<string, Record<string, string>>();
     }
 
     const { databases } = getAdminClient();
     const env = getEnvConfig();
-    const documents = await databases.listDocuments(
-        env.databaseId,
-        env.collections.threadReads,
-        [
-            Query.equal("userId", params.userId),
-            Query.equal("contextType", params.contextType),
-            Query.equal("contextId", params.contextIds),
-            Query.limit(THREAD_READ_QUERY_LIMIT),
-        ],
+    const contextIdChunks = chunkArray(
+        uniqueContextIds,
+        THREAD_READ_CONTEXT_CHUNK_SIZE,
     );
 
-    return documents.documents.reduce<Map<string, Record<string, string>>>(
+    const chunkResponses = await Promise.all(
+        contextIdChunks.map((contextIdChunk) =>
+            databases.listDocuments(env.databaseId, env.collections.threadReads, [
+                Query.equal("userId", params.userId),
+                Query.equal("contextType", params.contextType),
+                Query.equal("contextId", contextIdChunk),
+                Query.limit(
+                    Math.min(
+                        THREAD_READ_QUERY_LIMIT,
+                        Math.max(contextIdChunk.length * 4, 1),
+                    ),
+                ),
+                ...selectQuery(THREAD_READ_SELECT_FIELDS),
+            ]),
+        ),
+    );
+    const documents = chunkResponses.flatMap((response) => response.documents);
+
+    return documents.reduce<Map<string, Record<string, string>>>(
         (accumulator, document) => {
             const mapped = mapThreadReadDocument(
                 document as unknown as Record<string, unknown>,
@@ -339,10 +387,11 @@ export async function upsertThreadReads(params: {
     };
 
     try {
+        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
         const createdDocument = await databases.createDocument(
             env.databaseId,
             env.collections.threadReads,
-            ID.unique(),
+            docId,
             payload,
             perms.serverOwner(params.userId),
         );
@@ -355,22 +404,32 @@ export async function upsertThreadReads(params: {
             throw error;
         }
 
-        // A concurrent create won the race; merge and update the now-existing record.
-        const concurrentDocuments =
-            await listThreadReadDocumentsForContext(params);
-        if (concurrentDocuments.length === 0) {
-            throw error;
-        }
+        // A concurrent create won the race; fetch the existing record directly.
+        const docId = `${params.contextId}_${params.contextType}_${params.userId}`.slice(0, 36);
+        try {
+            const existingDocument = await databases.getDocument(
+                env.databaseId,
+                env.collections.threadReads,
+                docId,
+            );
 
-        const merged = await mergeIntoExistingThreadReadDocument({
-            ...params,
-            concurrentDocuments,
-            incomingReads,
-        });
-        if (!merged) {
-            throw error;
-        }
+            const merged = await mergeIntoExistingThreadReadDocument({
+                ...params,
+                concurrentDocuments: [
+                    mapThreadReadDocument(existingDocument as unknown as Record<string, unknown>),
+                ],
+                incomingReads,
+            });
+            if (!merged) {
+                throw error;
+            }
 
-        return merged;
+            return merged;
+        } catch (getError) {
+            if (isDocumentNotFoundError(getError)) {
+                throw error;
+            }
+            throw getError;
+        }
     }
 }

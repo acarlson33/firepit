@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -9,6 +10,8 @@ import { logger, recordEvent } from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
 import { Query, type Models } from "node-appwrite";
+import { apiCache } from "@/lib/cache-utils";
+import { compareInboxVsDmUnreadThreads } from "@/lib/unread-consistency";
 
 const VALID_KINDS: InboxItemKind[] = ["mention", "thread"];
 const VALID_CONTEXT_KINDS: InboxContextKind[] = ["channel", "conversation"];
@@ -19,6 +22,17 @@ const MAX_ITEM_UPDATES = 50;
 const UPDATE_BATCH_SIZE = 25;
 const UPDATE_BATCH_CONCURRENCY = 2;
 const env = getEnvConfig();
+const INBOX_ROUTE_CACHE_TTL_MS = 5 * 1000;
+const INBOX_CACHE_EPOCH_TTL_MS = 5 * 60 * 1000;
+const INBOX_CACHE_EPOCH_SWEEP_INTERVAL_MS = 30 * 1000;
+const MAX_INBOX_CACHE_EPOCH_ENTRIES = 2000;
+// Process-local epoch tracking: PATCH bumps only invalidate this instance.
+// Cross-instance cache coherence is bounded by INBOX_ROUTE_CACHE_TTL_MS.
+const inboxCacheEpochByUser = new Map<
+    string,
+    { epoch: number; expiresAt: number }
+>();
+let lastInboxCacheEpochSweepAt = 0;
 
 type InboxScope = (typeof VALID_SCOPE_VALUES)[number];
 
@@ -180,6 +194,178 @@ function parseLimit(value: string | null) {
     return parsed;
 }
 
+function canUseInboxRouteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function sweepExpiredInboxCacheEpochs(force = false): void {
+    const now = Date.now();
+
+    if (
+        !force &&
+        now - lastInboxCacheEpochSweepAt < INBOX_CACHE_EPOCH_SWEEP_INTERVAL_MS
+    ) {
+        return;
+    }
+    lastInboxCacheEpochSweepAt = now;
+
+    for (const [userId, entry] of inboxCacheEpochByUser.entries()) {
+        if (entry.expiresAt <= now) {
+            inboxCacheEpochByUser.delete(userId);
+        }
+    }
+}
+
+function getInboxCacheEpoch(userId: string): number {
+    sweepExpiredInboxCacheEpochs();
+
+    const entry = inboxCacheEpochByUser.get(userId);
+    if (!entry) {
+        return 0;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+        inboxCacheEpochByUser.delete(userId);
+        return 0;
+    }
+
+    // Intentionally refresh the inboxCacheEpochByUser entry for userId to the end
+    // of Map iteration order (LRU pattern). This read mutates the Map.
+    inboxCacheEpochByUser.delete(userId);
+    inboxCacheEpochByUser.set(userId, entry);
+    return entry.epoch;
+}
+
+function bumpInboxCacheEpoch(userId: string): void {
+    const nextEpoch = getInboxCacheEpoch(userId) + 1;
+    inboxCacheEpochByUser.set(userId, {
+        epoch: nextEpoch,
+        expiresAt: Date.now() + INBOX_CACHE_EPOCH_TTL_MS,
+    });
+
+    while (inboxCacheEpochByUser.size > MAX_INBOX_CACHE_EPOCH_ENTRIES) {
+        const oldestUserId = inboxCacheEpochByUser.keys().next().value;
+        if (typeof oldestUserId !== "string") {
+            break;
+        }
+
+        inboxCacheEpochByUser.delete(oldestUserId);
+    }
+}
+
+function normalizedKindsKey(kinds: InboxItemKind[]): string {
+    return [...kinds].sort().join(",");
+}
+
+function normalizedContextKindsKey(
+    contextKinds: InboxContextKind[] | undefined,
+): string {
+    if (!contextKinds || contextKinds.length === 0) {
+        return "all";
+    }
+
+    return [...contextKinds].sort().join(",");
+}
+
+function buildInboxCacheKey(params: {
+    contextId?: string;
+    contextKind?: InboxContextKind;
+    contextKinds?: InboxContextKind[];
+    kinds: InboxItemKind[];
+    limit: number;
+    scope: InboxScope;
+    userId: string;
+}) {
+    return [
+        "api:inbox",
+        params.userId,
+        `epoch=${String(getInboxCacheEpoch(params.userId))}`,
+        `scope=${params.scope}`,
+        `kinds=${normalizedKindsKey(params.kinds)}`,
+        `contexts=${normalizedContextKindsKey(params.contextKinds)}`,
+        `contextId=${params.contextId ?? ""}`,
+        `contextKind=${params.contextKind ?? ""}`,
+        `limit=${Number.isFinite(params.limit) ? String(params.limit) : "infinite"}`,
+    ].join(":");
+}
+
+function countConversationThreadUnread(
+    items: Array<{ contextKind: InboxContextKind; kind: InboxItemKind; unreadCount: number }>,
+) {
+    return items.reduce((total, item) => {
+        if (item.kind !== "thread" || item.contextKind !== "conversation") {
+            return total;
+        }
+
+        return total + item.unreadCount;
+    }, 0);
+}
+
+function observeInboxDmUnreadConsistency(params: {
+    contextKind?: InboxContextKind;
+    items: Array<{
+        contextKind: InboxContextKind;
+        kind: InboxItemKind;
+        unreadCount: number;
+    }>;
+    kinds: InboxItemKind[];
+    scope: InboxScope;
+    userId: string;
+}) {
+    const { contextKind, items, kinds, scope, userId } = params;
+    if (!kinds.includes("thread")) {
+        return;
+    }
+
+    if (scope === "server") {
+        return;
+    }
+
+    if (contextKind && contextKind !== "conversation") {
+        return;
+    }
+
+    const comparison = compareInboxVsDmUnreadThreads({
+        inboxConversationThreadUnreadCount: countConversationThreadUnread(items),
+        userId,
+    });
+
+    if (!comparison) {
+        return;
+    }
+
+    const hashedUserId = createHash("sha256")
+        .update(userId)
+        .digest("hex")
+        .slice(0, 16);
+
+    recordEvent("InboxDmUnreadConsistencyObserved", {
+        conversationCount: comparison.dmSnapshot.conversationCount,
+        delta: comparison.delta,
+        dmConversationUnreadThreadCount: comparison.dmSnapshot.totalUnreadThreadCount,
+        dmSnapshotTruncated: comparison.dmSnapshot.truncated,
+        inboxConversationThreadUnreadCount:
+            comparison.inboxConversationThreadUnreadCount,
+        mismatched: comparison.absDelta > 0,
+        snapshotAgeMs: comparison.snapshotAgeMs,
+        userId: hashedUserId,
+    });
+
+    if (comparison.absDelta > 0) {
+        logger.warn("Inbox/DM unread consistency mismatch", {
+            conversationCount: comparison.dmSnapshot.conversationCount,
+            delta: comparison.delta,
+            dmConversationUnreadThreadCount:
+                comparison.dmSnapshot.totalUnreadThreadCount,
+            dmSnapshotTruncated: comparison.dmSnapshot.truncated,
+            inboxConversationThreadUnreadCount:
+                comparison.inboxConversationThreadUnreadCount,
+            snapshotAgeMs: comparison.snapshotAgeMs,
+            userId: hashedUserId,
+        });
+    }
+}
+
 export async function GET(request: NextRequest) {
     const session = await getServerSession();
     if (!session?.$id) {
@@ -242,12 +428,30 @@ export async function GET(request: NextRequest) {
         ? [contextKind]
         : scopeToContextKinds(scope);
 
-    const inbox = await listInboxItems({
-        contextKinds,
-        kinds,
-        limit: isContextScoped ? Number.POSITIVE_INFINITY : limit,
-        userId: session.$id,
-    });
+    const inboxListLimit = isContextScoped ? Number.POSITIVE_INFINITY : limit;
+    const loadInbox = () =>
+        listInboxItems({
+            contextKinds,
+            kinds,
+            limit: inboxListLimit,
+            userId: session.$id,
+        });
+
+    const inbox = canUseInboxRouteCache()
+        ? await apiCache.dedupe(
+              buildInboxCacheKey({
+                  contextId,
+                  contextKind,
+                  contextKinds,
+                  kinds,
+                  limit: inboxListLimit,
+                  scope,
+                  userId: session.$id,
+              }),
+              loadInbox,
+              INBOX_ROUTE_CACHE_TTL_MS,
+          )
+        : await loadInbox();
 
     if (isContextScoped) {
         const items = inbox.items.filter(
@@ -255,6 +459,14 @@ export async function GET(request: NextRequest) {
                 item.contextId === contextId &&
                 item.contextKind === contextKind,
         );
+
+        observeInboxDmUnreadConsistency({
+            contextKind,
+            items,
+            kinds,
+            scope,
+            userId: session.$id,
+        });
 
         return NextResponse.json({
             contractVersion: inbox.contractVersion,
@@ -266,6 +478,13 @@ export async function GET(request: NextRequest) {
             ),
         });
     }
+
+    observeInboxDmUnreadConsistency({
+        items: inbox.items,
+        kinds,
+        scope,
+        userId: session.$id,
+    });
 
     return NextResponse.json(inbox);
 }
@@ -289,7 +508,7 @@ export async function PATCH(request: NextRequest) {
         const contextKind = body.contextKind;
         const contextId = body.contextId?.trim();
 
-        if ((contextKind && !contextId) || (!contextKind && contextId)) {
+        if (!contextKind && contextId) {
             return NextResponse.json(
                 { error: "contextKind and contextId are required together" },
                 { status: 400 },
@@ -310,13 +529,23 @@ export async function PATCH(request: NextRequest) {
             limit: Number.POSITIVE_INFINITY,
             userId: session.$id,
         });
-        const scopedItems = contextKind
-            ? inbox.items.filter(
-                  (item) =>
-                      item.contextKind === contextKind &&
-                      item.contextId === contextId,
-              )
-            : inbox.items;
+        const scopedItems = (() => {
+            if (contextKind && contextId) {
+                return inbox.items.filter(
+                    (item) =>
+                        item.contextKind === contextKind &&
+                        item.contextId === contextId,
+                );
+            }
+
+            if (contextKind) {
+                return inbox.items.filter(
+                    (item) => item.contextKind === contextKind,
+                );
+            }
+
+            return inbox.items;
+        })();
 
         const mentionItemIds = scopedItems
             .filter((item) => item.kind === "mention")
@@ -435,6 +664,7 @@ export async function PATCH(request: NextRequest) {
             updatedThreadContextCount,
             userId: session.$id,
         });
+        bumpInboxCacheEpoch(session.$id);
 
         return NextResponse.json({
             ok: true,
@@ -505,6 +735,7 @@ export async function PATCH(request: NextRequest) {
         updatedCount,
         userId: session.$id,
     });
+    bumpInboxCacheEpoch(session.$id);
 
     return NextResponse.json({
         ok: true,

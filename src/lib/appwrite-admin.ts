@@ -24,10 +24,16 @@ function getCollectionIds() {
  * @param {unknown} error - The error value.
  * @returns {boolean} The return value.
  */
-function isDocumentNotFoundError(error: unknown) {
+export function isDocumentNotFoundError(error: unknown) {
     if (error instanceof AppwriteException) {
-        return error.code === 404 || error.type === "document_not_found";
+        return error.type === "document_not_found";
     }
+
+    if (typeof error === "object" && error !== null) {
+        const candidate = error as { code?: unknown; type?: unknown };
+        return candidate.type === "document_not_found";
+    }
+
     return false;
 }
 
@@ -126,7 +132,7 @@ export async function listAllChannelsPage(
     }
 }
 
-export type GlobalMessageFilters = {
+type GlobalMessageFilters = {
     limit: number;
     cursorAfter?: string;
     includeRemoved?: boolean;
@@ -384,7 +390,7 @@ export async function getBasicStats() {
 }
 
 // Query builder utilities referenced by tests.
-export type MessageQueryOpts = {
+type MessageQueryOpts = {
     cursorAfter?: string;
     userId?: string;
     channelId?: string;

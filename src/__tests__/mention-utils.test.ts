@@ -6,7 +6,7 @@ import {
 	getMentionAtCursor,
 	replaceMentionAtCursor,
 	MENTION_REGEX,
-} from "@/lib/mention-utils";
+} from "../lib/mention-utils";
 
 describe("Mention Utils", () => {
 	describe("MENTION_REGEX", () => {

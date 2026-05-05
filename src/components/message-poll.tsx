@@ -14,8 +14,8 @@ type MessagePollProps = {
     currentUserId: string | null;
     canClose?: boolean;
     readOnly?: boolean;
-    onVote?: (optionId: string) => Promise<void>;
-    onClose?: () => Promise<void>;
+    onVote?: (optionId: string) => Promise<MessagePoll | void>;
+    onClose?: () => Promise<MessagePoll | void>;
 };
 
 export function MessagePollBlock({
@@ -32,10 +32,28 @@ export function MessagePollBlock({
     );
     const [submittingVote, setSubmittingVote] = useState<string | null>(null);
     const [closing, setClosing] = useState(false);
+    const pollStateKey = useMemo(
+        () =>
+            `${poll.id}:${poll.status}:${poll.closedAt ?? ""}:${poll.closedBy ?? ""}:${poll.options
+                .map(
+                    (option) =>
+                        `${option.id}:${option.count}:${[...option.voterIds]
+                            .sort()
+                            .join(",")}`,
+                )
+                .join("|")}`,
+        [
+            poll.closedAt,
+            poll.closedBy,
+            poll.id,
+            poll.options,
+            poll.status,
+        ],
+    );
 
     useEffect(() => {
         setLocalPollState(null);
-    }, [poll]);
+    }, [pollStateKey]);
 
     const pollState = localPollState ?? poll;
 
@@ -54,14 +72,17 @@ export function MessagePollBlock({
     const pollClosed = pollState.status === "closed";
 
     async function vote(optionId: string) {
-        if (!currentUserId || readOnly || pollClosed) {
+        if (!currentUserId || readOnly || pollClosed || submittingVote) {
             return;
         }
 
         setSubmittingVote(optionId);
         try {
             if (onVote) {
-                await onVote(optionId);
+                const updatedPoll = await onVote(optionId);
+                if (updatedPoll) {
+                    setLocalPollState(updatedPoll);
+                }
                 return;
             }
 
@@ -101,7 +122,10 @@ export function MessagePollBlock({
         setClosing(true);
         try {
             if (onClose) {
-                await onClose();
+                const updatedPoll = await onClose();
+                if (updatedPoll) {
+                    setLocalPollState(updatedPoll);
+                }
                 return;
             }
 
@@ -143,11 +167,12 @@ export function MessagePollBlock({
                 {pollState.options.map((option) => {
                     const isSelected = selectedOptionId === option.id;
                     const isLoading = submittingVote === option.id;
+                    const voteLocked = Boolean(submittingVote);
 
                     return (
                         <Button
                             className="h-auto w-full justify-between gap-3 py-2 text-left"
-                            disabled={readOnly || pollClosed || isLoading}
+                            disabled={readOnly || pollClosed || voteLocked}
                             key={option.id}
                             onClick={() => {
                                 void vote(option.id);
@@ -184,6 +209,7 @@ export function MessagePollBlock({
                     ) : null}
                     {canClose && !pollClosed ? (
                         <Button
+                            aria-label="Close poll"
                             disabled={closing}
                             onClick={() => {
                                 void closePoll();
@@ -193,7 +219,10 @@ export function MessagePollBlock({
                             variant="ghost"
                         >
                             {closing ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Closing...
+                                </>
                             ) : (
                                 "Close poll"
                             )}

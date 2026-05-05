@@ -1,6 +1,6 @@
 import { logger } from "@/lib/client-logger";
 
-export type RealtimeSubscription =
+type RealtimeSubscription =
     | {
           close: () => Promise<void> | void;
       }
@@ -14,31 +14,36 @@ type ActiveSuppression = {
     shouldSuppress: ScopedConsoleErrorPredicate;
 };
 
-let subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
+const subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
 const activeSuppressions: ActiveSuppression[] = [];
 let subscriptionMarkerCounter = 0;
 let activeSuppressionCounter = 0;
 let originalConsoleError: ConsoleErrorHandler | null = null;
 
-const shouldExposeTestingReset = process.env.NODE_ENV === "test";
+function matchWebSocketErrorMessage(message: string): boolean {
+    const normalizedMessage = message.replace(/\u2019/g, "'").toLowerCase();
 
-function resetInternalState() {
-    subscriptionMarkers = new WeakMap<RealtimeSubscription, string>();
-    activeSuppressions.length = 0;
-    subscriptionMarkerCounter = 0;
-    activeSuppressionCounter = 0;
-
-    if (originalConsoleError) {
-        // biome-ignore lint/suspicious/noConsole: Restoring captured console.error during test reset.
-        console.error = originalConsoleError;
+    if (normalizedMessage.startsWith("websocket error:")) {
+        return true;
     }
 
-    originalConsoleError = null;
-}
+    // Firefox/Appwrite can log this on intentional subscription churn during route switches.
+    if (
+        normalizedMessage.includes("was interrupted while the page was loading") &&
+        normalizedMessage.includes("/v1/realtime")
+    ) {
+        return true;
+    }
 
-export const resetForTesting = shouldExposeTestingReset
-    ? resetInternalState
-    : undefined;
+    if (
+        normalizedMessage.includes("can't establish a connection") &&
+        normalizedMessage.includes("/v1/realtime")
+    ) {
+        return true;
+    }
+
+    return false;
+}
 
 function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
     const [firstArg] = args;
@@ -47,35 +52,9 @@ function isExpectedAppwriteWebSocketError(args: unknown[]): boolean {
         return false;
     }
 
-    if (firstArg.startsWith("WebSocket error:")) {
-        // Appwrite emits WebSocket teardown noise with differing second-arg shapes
-        // across browsers (Error/Event/string). During explicit close, suppress all.
-        return true;
-    }
-
-    // Firefox/Appwrite can log this on intentional subscription churn during route switches.
-    if (
-        firstArg.includes("was interrupted while the page was loading") &&
-        firstArg.includes("/v1/realtime")
-    ) {
-        return true;
-    }
-
-    if (
-        firstArg.toLowerCase().includes("can’t establish a connection") &&
-        firstArg.includes("/v1/realtime")
-    ) {
-        return true;
-    }
-
-    if (
-        firstArg.toLowerCase().includes("can't establish a connection") &&
-        firstArg.includes("/v1/realtime")
-    ) {
-        return true;
-    }
-
-    return false;
+    // Appwrite emits WebSocket teardown noise with differing second-arg shapes
+    // across browsers (Error/Event/string). During explicit close, suppress all.
+    return matchWebSocketErrorMessage(firstArg);
 }
 
 function getSubscriptionMarker(subscription: RealtimeSubscription): string {
@@ -152,25 +131,33 @@ function defaultSuppressionPredicate(
     return isExpectedAppwriteWebSocketError(args);
 }
 
-/**
- * Suppress known noisy Appwrite websocket console errors while performing
- * intentional realtime teardown operations.
- */
-export async function withSuppressedRealtimeCloseErrors<T>(
-    operation: () => Promise<T>,
-    options?: {
-        marker?: string;
-        shouldSuppress?: ScopedConsoleErrorPredicate;
-    },
-): Promise<T> {
-    const marker = options?.marker ?? "realtime-close";
-    const shouldSuppress =
-        options?.shouldSuppress ?? defaultSuppressionPredicate;
+function isBenignThrownTeardownError(error: unknown): boolean {
+    const candidate =
+        typeof error === "object" && error !== null
+            ? (error as { message?: unknown; name?: unknown })
+            : null;
 
-    return runWithScopedConsoleErrorSuppressed(
-        operation,
-        marker,
-        shouldSuppress,
+    if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+        return true;
+    }
+
+    if (candidate && candidate.name === "AbortError") {
+        return true;
+    }
+
+    const errorMessage =
+        candidate && typeof candidate.message === "string"
+            ? candidate.message
+            : String(error);
+    const normalized = errorMessage.toLowerCase();
+
+    return (
+        matchWebSocketErrorMessage(errorMessage) ||
+        normalized.includes("closing or closed") ||
+        normalized.includes("already in closing") ||
+        normalized.includes("closed before") ||
+        normalized.includes("aborterror") ||
+        normalized.includes("domexception")
     );
 }
 
@@ -191,25 +178,27 @@ export async function closeSubscriptionSafely(
             : subscription.close.bind(subscription);
 
     try {
-        await withSuppressedRealtimeCloseErrors(
+        await runWithScopedConsoleErrorSuppressed(
             async () => {
                 await Promise.resolve(close());
             },
-            {
-                marker,
-                shouldSuppress: defaultSuppressionPredicate,
-            },
+            marker,
+            defaultSuppressionPredicate,
         );
     } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-            logger.warn("Realtime subscription close failed", {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        const isBenignTeardownError = isBenignThrownTeardownError(error);
+
+        if (isBenignTeardownError) {
+            logger.info("Realtime subscription close failed", {
                 marker,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorMessage,
             });
         } else {
-            logger.info("Realtime subscription close failed (prod)", {
+            logger.warn("Realtime subscription close failed", {
                 marker,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorMessage,
             });
         }
 

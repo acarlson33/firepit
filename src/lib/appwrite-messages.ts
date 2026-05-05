@@ -14,6 +14,51 @@ const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
 
+const MESSAGE_SELECT_FIELDS = [
+    "$id",
+    "$createdAt",
+    "userId",
+    "userName",
+    "text",
+    "channelId",
+    "serverId",
+    "editedAt",
+    "removedAt",
+    "removedBy",
+    "replyToId",
+    "threadId",
+    "threadMessageCount",
+    "threadParticipants",
+    "lastThreadReplyAt",
+    "reactions",
+    "imageFileId",
+    "imageUrl",
+    "mentions",
+] as const;
+
+const ATTACHMENT_SELECT_FIELDS = [
+    "messageId",
+    "fileId",
+    "fileName",
+    "fileSize",
+    "fileType",
+    "fileUrl",
+    "thumbnailUrl",
+    "mediaKind",
+    "source",
+    "provider",
+    "providerAssetId",
+    "packId",
+    "itemId",
+    "previewUrl",
+] as const;
+
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+function selectQuery(fields: readonly string[]) {
+    return [Query.select([...fields])];
+}
+
 /**
  * Fetch attachments for multiple messages and enrich them
  *
@@ -44,7 +89,16 @@ async function enrichMessagesWithAttachments(
             queries: [
                 Query.equal("messageId", messageIds),
                 Query.equal("messageType", messageType),
-                Query.limit(1000), // High limit to get all attachments
+                Query.limit(
+                    Math.min(
+                        1000,
+                        Math.max(
+                            50,
+                            messageIds.length * MAX_ATTACHMENTS_PER_MESSAGE,
+                        ),
+                    ),
+                ),
+                ...selectQuery(ATTACHMENT_SELECT_FIELDS),
             ],
         });
 
@@ -81,7 +135,7 @@ async function enrichMessagesWithAttachments(
     }
 }
 
-export type ListOptions = {
+type ListOptions = {
     limit?: number;
     cursorAfter?: string;
     channelId?: string;
@@ -107,7 +161,7 @@ export async function listMessages(opts: ListOptions = {}): Promise<Message[]> {
     const res = await getDatabases().listDocuments({
         databaseId: DATABASE_ID,
         collectionId: COLLECTION_ID,
-        queries,
+        queries: [...queries, ...selectQuery(MESSAGE_SELECT_FIELDS)],
     });
     const messages = mapMessageDocs(
         (res as unknown as { documents?: unknown[] }).documents || [],
@@ -322,7 +376,7 @@ export async function editMessage(messageId: string, text: string) {
  * @param {string} messageId - The message id value.
  * @returns {Promise<void>} The return value.
  */
-export async function deleteMessage(messageId: string) {
+async function deleteMessage(messageId: string) {
     await getDatabases().deleteDocument({
         databaseId: DATABASE_ID,
         collectionId: COLLECTION_ID,

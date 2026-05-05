@@ -11,13 +11,20 @@ import { EmojiRenderer } from "@/components/emoji-renderer";
 import type { UserProfileData, CustomEmoji } from "@/lib/types";
 
 const MARKDOWN_PATTERN =
-    /(\*\*|__|~~|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}(?:[-+*]|\d+\.)\s+|^\s{0,3}>\s+|^\s{0,3}#{1,6}\s+)/m;
+    /(\*\*|__|\*[^*\n]+\*|_[^_\n]+_|~~|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}(?:[-+*]|\d+\.)\s+|^\s{0,3}>\s+|^\s{0,3}#{1,6}\s+)/m;
 
 const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 type MentionToken = {
     token: string;
     element: React.ReactElement;
+    text: string;
+};
+
+type MarkdownNode = {
+	tagName?: string;
+	value?: string;
+	children?: MarkdownNode[];
 };
 
 interface MessageWithMentionsProps {
@@ -27,6 +34,7 @@ interface MessageWithMentionsProps {
     users?: Map<string, UserProfileData>;
     currentUserId?: string;
     customEmojis?: CustomEmoji[];
+    renderLinks?: boolean;
 }
 
 /**
@@ -44,6 +52,7 @@ export function MessageWithMentions({
     users = new Map(),
     currentUserId,
     customEmojis = [],
+    renderLinks = true,
 }: MessageWithMentionsProps) {
     const allMatches = findMentionSpans(text, mentions, knownNames);
     const mentionTokens = createMentionTokens({
@@ -52,7 +61,6 @@ export function MessageWithMentions({
         users,
         currentUserId,
     });
-
     const textWithTokens = injectMentionTokens(text, allMatches, mentionTokens);
 
     return (
@@ -60,6 +68,7 @@ export function MessageWithMentions({
             {renderMessageText({
                 customEmojis,
                 mentionTokens,
+                renderLinks,
                 text: textWithTokens,
             })}
         </div>
@@ -105,10 +114,12 @@ function renderMessageText({
     text,
     customEmojis,
     mentionTokens,
+    renderLinks,
 }: {
     text: string;
     customEmojis: CustomEmoji[];
     mentionTokens: MentionToken[];
+    renderLinks: boolean;
 }) {
     if (!hasMarkdownSyntax(text)) {
         return renderDecoratedText({ text, customEmojis, mentionTokens });
@@ -191,15 +202,32 @@ function renderMessageText({
                         })}
                     </blockquote>
                 ),
-                pre: ({ children }) => (
+                code: ({ children, className, node }) => (
+                    <code className={className}>
+                        {restoreMentionTokens(extractMarkdownNodeText(node),
+                            mentionTokens,
+                        ) ||
+                            restoreMentionTokensToText({
+                                children,
+                                mentionTokens,
+                            })}
+                    </code>
+                ),
+                pre: ({ children, node }) => (
                     <pre className="my-1 overflow-x-auto rounded-md border border-border/70 bg-muted/60 p-2 text-xs leading-5">
-                        {children}
+                        {restoreMentionTokens(extractMarkdownNodeText(node),
+                            mentionTokens,
+                        ) ||
+                            restoreMentionTokensToText({
+                                children,
+                                mentionTokens,
+                            })}
                     </pre>
                 ),
                 a: ({ children, href }) => {
                     const safeHref = sanitizeLinkHref(href);
 
-                    if (!safeHref) {
+                    if (!safeHref || !renderLinks) {
                         return (
                             <span>
                                 {renderMarkdownChildren({
@@ -261,14 +289,23 @@ function renderMarkdownChildren({
         }
 
         if (
-            isValidElement<{ children?: React.ReactNode }>(child) &&
+            isValidElement<{ children?: React.ReactNode; node?: MarkdownNode }>(child) &&
             child.props.children !== undefined
         ) {
+            const tagName = child.props.node?.tagName;
+
             if (
-                typeof child.type === "string" &&
-                (child.type === "code" || child.type === "pre")
+                tagName === "code" ||
+                tagName === "pre"
             ) {
-                return child;
+                return cloneElement(
+                    child,
+                    undefined,
+                    restoreMentionTokensToText({
+                        children: child.props.children,
+                        mentionTokens,
+                    }),
+                );
             }
 
             return cloneElement(
@@ -359,6 +396,69 @@ function renderDecoratedText({
     return <>{parts}</>;
 }
 
+function restoreMentionTokensToText({
+    children,
+    mentionTokens,
+}: {
+    children: React.ReactNode;
+    mentionTokens: MentionToken[];
+}): string {
+    let restoredText = "";
+
+    Children.forEach(children, (child) => {
+        if (typeof child === "string" || typeof child === "number") {
+            restoredText += restoreMentionTokens(String(child), mentionTokens);
+            return;
+        }
+
+        if (
+            isValidElement<{ children?: React.ReactNode }>(child) &&
+            child.props.children !== undefined
+        ) {
+            restoredText += restoreMentionTokensToText({
+                children: child.props.children,
+                mentionTokens,
+            });
+        }
+    });
+
+    return restoredText;
+}
+
+function extractMarkdownNodeText(node: MarkdownNode | undefined): string {
+    if (!node) {
+        return "";
+    }
+
+    if (typeof node.value === "string") {
+        return node.value;
+    }
+
+    if (!node.children || node.children.length === 0) {
+        return "";
+    }
+
+    let text = "";
+    for (const child of node.children) {
+        text += extractMarkdownNodeText(child);
+    }
+
+    return text;
+}
+
+function restoreMentionTokens(
+    text: string,
+    mentionTokens: MentionToken[],
+): string {
+    let restoredText = text;
+
+    for (const mentionToken of mentionTokens) {
+        restoredText = restoredText.split(mentionToken.token).join(mentionToken.text);
+    }
+
+    return restoredText;
+}
+
 function createMentionTokens({
     text,
     matches,
@@ -381,6 +481,7 @@ function createMentionTokens({
 
         return {
             token,
+            text: match.fullMatch,
             element: (
                 <span
                     className={`rounded px-1 font-semibold ${
@@ -426,7 +527,7 @@ function injectMentionTokens(
             parts.push(text.substring(lastIndex, match.startIndex));
         }
 
-        parts.push(mentionTokens[index]?.token || match.fullMatch);
+        parts.push(mentionTokens.at(index)?.token || match.fullMatch);
         lastIndex = match.endIndex;
     }
 

@@ -2,9 +2,24 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockSetQueryData = vi.fn();
+
 vi.mock("next/dynamic", () => ({
     default: () => () => null,
 }));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+    const queryClient = new actual.QueryClient();
+
+    return {
+        ...actual,
+        useQueryClient: () =>
+            Object.assign(queryClient, {
+                setQueryData: mockSetQueryData,
+            }),
+    };
+});
 
 const {
     mockChannels,
@@ -146,8 +161,8 @@ vi.mock("@/components/chat-surface-panel", () => ({
                 jump-unread-channel
             </button>
             <button
-                onClick={() => {
-                    void composer?.onSubmit?.();
+                onClick={async () => {
+                    await composer?.onSubmit?.();
                 }}
                 type="button"
             >
@@ -316,6 +331,7 @@ describe("ChatPage", () => {
     beforeEach(() => {
         mockPush.mockReset();
         mockReplace.mockReset();
+        mockSetQueryData.mockReset();
         mockUseMessages.mockReset();
         mockUseMessages.mockImplementation(createDefaultUseMessagesValue);
         mockUseInbox.mockReset();

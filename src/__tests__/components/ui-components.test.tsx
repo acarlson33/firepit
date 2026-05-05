@@ -4,11 +4,11 @@
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Toaster } from "@/components/ui/sonner";
-import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "../../components/ui/badge";
+import { Label } from "../../components/ui/label";
+import { Textarea } from "../../components/ui/textarea";
+import { Toaster } from "../../components/ui/sonner";
+import { Avatar } from "../../components/ui/avatar";
 
 // Mock next-themes for Toaster tests
 vi.mock("next-themes", () => ({

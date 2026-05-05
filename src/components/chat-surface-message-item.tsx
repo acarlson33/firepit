@@ -209,11 +209,12 @@ export function ChatSurfaceMessageItem({
                         />
                     </div>
                 )}
-                {!removed && message.poll ? (
+                {!removed && message.poll && (
                     <MessagePollBlock
                         canClose={
                             canManageMessages ||
-                            message.poll.createdBy === currentUserId
+                            (currentUserId !== null &&
+                                message.poll.createdBy === currentUserId)
                         }
                         currentUserId={currentUserId}
                         messageId={message.id}
@@ -234,7 +235,7 @@ export function ChatSurfaceMessageItem({
                         poll={message.poll}
                         readOnly={message.context.kind === "dm"}
                     />
-                ) : null}
+                )}
                 {removed && (
                     <div
                         className={`${
@@ -318,6 +319,7 @@ export function ChatSurfaceMessageItem({
 
                 {!removed && (
                     <div
+                        data-testid="message-action-buttons"
                         className={`flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 ${mine ? "justify-end" : ""}`}
                     >
                         <ReactionPicker

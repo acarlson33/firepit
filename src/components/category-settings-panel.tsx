@@ -769,7 +769,7 @@ export function CategorySettingsPanel({
     }
 
     return (
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4 overflow-x-hidden">
             {refreshing && (
                 <p className="px-1 text-xs text-muted-foreground">
                     Syncing category changes...
@@ -845,8 +845,9 @@ export function CategorySettingsPanel({
                 </CardHeader>
                 <CardContent className="space-y-3">
                     <Label htmlFor="category-name">New category</Label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                         <Input
+                            className="min-w-0 flex-1"
                             disabled={creatingCategory}
                             id="category-name"
                             onChange={(event) =>
@@ -856,6 +857,7 @@ export function CategorySettingsPanel({
                             value={creatingName}
                         />
                         <Button
+                            className="w-full sm:w-auto"
                             disabled={creatingCategory || !creatingName.trim()}
                             onClick={() => void createCategory()}
                             type="button"
@@ -909,11 +911,12 @@ export function CategorySettingsPanel({
                             return (
                                 <div
                                     key={category.$id}
-                                    className="space-y-3 rounded-lg border border-border/60 p-3"
+                                    className="space-y-3 rounded-lg border border-border/60 p-3 overflow-x-hidden"
                                 >
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex min-w-0 items-center gap-2">
                                         {editingCategoryId === category.$id ? (
                                             <Input
+                                                className="min-w-0 flex-1"
                                                 onChange={(event) =>
                                                     setEditingName(
                                                         event.target.value,
@@ -922,7 +925,7 @@ export function CategorySettingsPanel({
                                                 value={editingName}
                                             />
                                         ) : (
-                                            <div className="flex-1 font-medium">
+                                            <div className="min-w-0 flex-1 truncate font-medium">
                                                 {category.name}
                                             </div>
                                         )}
@@ -1018,12 +1021,12 @@ export function CategorySettingsPanel({
                                         </Button>
                                     </div>
                                     {sortedRoles.length > 0 && (
-                                        <div className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2">
+                                        <div className="flex min-w-0 items-start gap-2 rounded-md bg-muted/30 px-3 py-2">
                                             <Shield
                                                 aria-hidden="true"
                                                 className="h-4 w-4 text-muted-foreground"
                                             />
-                                            <div className="flex flex-wrap gap-1">
+                                            <div className="flex min-w-0 flex-1 flex-wrap gap-1">
                                                 {sortedRoles.map((role) => {
                                                     const isSelected =
                                                         category.allowedRoleIds?.includes(
@@ -1072,7 +1075,7 @@ export function CategorySettingsPanel({
                                                     );
                                                 })}
                                             </div>
-                                            <span className="ml-auto text-xs text-muted-foreground">
+                                            <span className="min-w-0 text-xs text-muted-foreground sm:ml-auto sm:text-right">
                                                 {visibilityLabel}
                                             </span>
                                         </div>
@@ -1083,43 +1086,45 @@ export function CategorySettingsPanel({
                                         ).map((channel) => (
                                             <div
                                                 key={channel.$id}
-                                                className="flex items-center gap-2 rounded-md bg-muted/30 px-3 py-2"
+                                                className="flex min-w-0 flex-col gap-2 rounded-md bg-muted/30 px-3 py-2 lg:flex-row lg:items-center"
                                             >
                                                 <div className="min-w-0 flex-1 truncate text-sm font-medium">
                                                     {channel.name}
                                                 </div>
-                                                <Button
-                                                    disabled={isChannelPending(
-                                                        channel.$id,
-                                                    )}
-                                                    onClick={() =>
-                                                        void moveChannel(
-                                                            channel,
-                                                            -1,
-                                                        )
-                                                    }
-                                                    size="icon"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <ArrowUp className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    disabled={isChannelPending(
-                                                        channel.$id,
-                                                    )}
-                                                    onClick={() =>
-                                                        void moveChannel(
-                                                            channel,
-                                                            1,
-                                                        )
-                                                    }
-                                                    size="icon"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    <ArrowDown className="h-4 w-4" />
-                                                </Button>
+                                                <div className="flex items-center gap-1 self-end lg:self-auto">
+                                                    <Button
+                                                        disabled={isChannelPending(
+                                                            channel.$id,
+                                                        )}
+                                                        onClick={() =>
+                                                            void moveChannel(
+                                                                channel,
+                                                                -1,
+                                                            )
+                                                        }
+                                                        size="icon"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        <ArrowUp className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        disabled={isChannelPending(
+                                                            channel.$id,
+                                                        )}
+                                                        onClick={() =>
+                                                            void moveChannel(
+                                                                channel,
+                                                                1,
+                                                            )
+                                                        }
+                                                        size="icon"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        <ArrowDown className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1145,9 +1150,9 @@ export function CategorySettingsPanel({
                         return (
                             <div
                                 key={channel.$id}
-                                className="flex items-center gap-3 rounded-lg border border-border/60 p-3"
+                                className="flex min-w-0 flex-col gap-3 overflow-x-hidden rounded-lg border border-border/60 p-3 xl:flex-row xl:flex-wrap xl:items-center"
                             >
-                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <div className="flex min-w-0 flex-1 items-center gap-2 xl:min-w-0">
                                     <div className="min-w-0 flex-1">
                                         <div className="truncate font-medium">
                                             {channel.name}
@@ -1175,7 +1180,7 @@ export function CategorySettingsPanel({
                                         channel.categoryId || "uncategorized"
                                     }
                                 >
-                                    <SelectTrigger className="w-56">
+                                    <SelectTrigger className="w-full xl:w-56 xl:max-w-full">
                                         <SelectValue placeholder="Assign category" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1192,7 +1197,7 @@ export function CategorySettingsPanel({
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <div className="flex items-center gap-1">
+                                <div className="flex flex-wrap items-center gap-1 xl:shrink-0">
                                     <Button
                                         disabled={
                                             isChannelPending(channel.$id) ||

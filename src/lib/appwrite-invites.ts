@@ -2,11 +2,13 @@ import { ID, Query } from "node-appwrite";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/newrelic-utils";
-import type { ServerInvite, InviteUsage } from "./types";
+import { listPages } from "@/lib/appwrite-pagination";
+import type { ServerInvite } from "./types";
 import { getEnvConfig } from "./appwrite-core";
 import { getServerClient } from "./appwrite-server";
 import { assignDefaultRoleServer } from "./default-role";
 import { getActualMemberCount } from "./membership-count";
+import { apiCache } from "./cache-utils";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -14,9 +16,10 @@ const INVITES_COLLECTION_ID = "invites";
 const INVITE_USAGE_COLLECTION_ID = "invite_usage";
 const MEMBERSHIPS_COLLECTION_ID = env.collections.memberships || "memberships";
 const SERVERS_COLLECTION_ID = env.collections.servers;
-export const ROLE_MEMBER = "member";
+const ROLE_MEMBER = "member";
+const INVITE_CACHE_TTL_MS = 10 * 1000;
 
-export type CreateInviteOptions = {
+type CreateInviteOptions = {
     serverId: string;
     creatorId: string;
     channelId?: string;
@@ -25,7 +28,7 @@ export type CreateInviteOptions = {
     temporary?: boolean;
 };
 
-export type ValidationResult = {
+type ValidationResult = {
     valid: boolean;
     error?: string;
     invite?: ServerInvite;
@@ -36,6 +39,34 @@ type ReconcileInviteUsageResult = {
     removed: number;
     flagged: number;
 };
+
+function canUseInviteCache(): boolean {
+    return process.env.NODE_ENV !== "test";
+}
+
+function dedupeInviteCache<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttl = INVITE_CACHE_TTL_MS,
+): Promise<T> {
+    if (!canUseInviteCache()) {
+        return fetcher();
+    }
+
+    return apiCache.dedupe(key, fetcher, ttl);
+}
+
+function inviteByCodeCacheKey(code: string): string {
+    return `invite:by-code:${code}`;
+}
+
+function serverInvitesCacheKey(serverId: string): string {
+    return `invite:server-list:${serverId}`;
+}
+
+function serverPreviewCacheKey(serverId: string): string {
+    return `invite:server-preview:${serverId}`;
+}
 
 function isConflictError(error: unknown): boolean {
     if (!error || typeof error !== "object") {
@@ -68,7 +99,7 @@ function createInviteUsageSlotDocumentId(
  * Reconcile orphaned invite usage documents that do not map to an existing membership.
  * This routine is idempotent and safe to run periodically.
  */
-export async function reconcileOrphanedInviteUsageSlots(options?: {
+async function reconcileOrphanedInviteUsageSlots(options?: {
     limit?: number;
 }): Promise<ReconcileInviteUsageResult> {
     const { databases } = getServerClient();
@@ -78,63 +109,53 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
     let scanned = 0;
     let removed = 0;
     let flagged = 0;
-    let cursorAfter: string | null = null;
 
-    while (scanned < hardLimit) {
-        const queries = [Query.orderAsc("$createdAt"), Query.limit(pageSize)];
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
+    const { documents: allDocs } = await listPages({
+        databases,
+        databaseId: DATABASE_ID,
+        collectionId: INVITE_USAGE_COLLECTION_ID,
+        baseQueries: [Query.orderAsc("$createdAt")],
+        pageSize,
+        maxDocs: hardLimit,
+        warningContext: "reconcileOrphanedInviteUsageSlots",
+    });
+
+    scanned = allDocs.length;
+
+    const validUsageEntries: Array<{
+        usageId: string;
+        userId: string;
+        serverId: string;
+    }> = [];
+    const userIdsByServerId = new Map<string, Set<string>>();
+
+    for (const usageDocument of allDocs) {
+        const userId = (usageDocument as Record<string, unknown>).userId;
+        const serverId = (usageDocument as Record<string, unknown>).serverId;
+
+        if (typeof userId !== "string" || typeof serverId !== "string") {
+            flagged += 1;
+            logger.error(
+                "Invalid invite usage document shape during reconciliation",
+                {
+                    usageId: usageDocument.$id,
+                    userId,
+                    serverId,
+                },
+            );
+            continue;
         }
 
-        const usagePage = await databases.listDocuments(
-            DATABASE_ID,
-            INVITE_USAGE_COLLECTION_ID,
-            queries,
-        );
+        validUsageEntries.push({
+            usageId: String(usageDocument.$id),
+            userId,
+            serverId,
+        });
 
-        if (usagePage.documents.length === 0) {
-            break;
-        }
-
-        const remaining = hardLimit - scanned;
-        const usageBatch = usagePage.documents.slice(0, remaining);
-        scanned += usageBatch.length;
-
-        const validUsageEntries: Array<{
-            usageId: string;
-            userId: string;
-            serverId: string;
-        }> = [];
-        const userIdsByServerId = new Map<string, Set<string>>();
-
-        for (const usageDocument of usageBatch) {
-            const userId = (usageDocument as Record<string, unknown>).userId;
-            const serverId = (usageDocument as Record<string, unknown>)
-                .serverId;
-
-            if (typeof userId !== "string" || typeof serverId !== "string") {
-                flagged += 1;
-                logger.error(
-                    "Invalid invite usage document shape during reconciliation",
-                    {
-                        usageId: usageDocument.$id,
-                        userId,
-                        serverId,
-                    },
-                );
-                continue;
-            }
-
-            validUsageEntries.push({
-                usageId: String(usageDocument.$id),
-                userId,
-                serverId,
-            });
-
-            const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
-            serverUserIds.add(userId);
-            userIdsByServerId.set(serverId, serverUserIds);
-        }
+        const serverUserIds = userIdsByServerId.get(serverId) ?? new Set();
+        serverUserIds.add(userId);
+        userIdsByServerId.set(serverId, serverUserIds);
+    }
 
         const existingMembershipKeys = new Set<string>();
         const failedMembershipKeys = new Set<string>();
@@ -230,13 +251,6 @@ export async function reconcileOrphanedInviteUsageSlots(options?: {
             });
         }
 
-        const lastDocument = usagePage.documents.at(-1);
-        cursorAfter = lastDocument ? String(lastDocument.$id) : null;
-        if (usagePage.documents.length < pageSize || !cursorAfter) {
-            break;
-        }
-    }
-
     return {
         scanned,
         removed,
@@ -307,6 +321,8 @@ export async function createInvite(
         data,
     );
 
+    apiCache.clear(serverInvitesCacheKey(options.serverId));
+
     return result as unknown as ServerInvite;
 }
 
@@ -322,10 +338,13 @@ export async function getInviteByCode(
     const { databases } = getServerClient();
 
     try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITES_COLLECTION_ID,
-            [Query.equal("code", code), Query.limit(1)],
+        const result = await dedupeInviteCache(
+            inviteByCodeCacheKey(code),
+            () =>
+                databases.listDocuments(DATABASE_ID, INVITES_COLLECTION_ID, [
+                    Query.equal("code", code),
+                    Query.limit(1),
+                ]),
         );
 
         if (result.documents.length === 0) {
@@ -603,7 +622,15 @@ export async function useInvite(
     // Unlimited invites skip read-modify-write updates; usage is tracked via invite_usage and can be reconciled periodically.
     if (reservedUseIndex !== undefined) {
         try {
-            const latestInvite = await getInviteByCode(code);
+            const latestInviteResult = await databases.listDocuments(
+                DATABASE_ID,
+                INVITES_COLLECTION_ID,
+                [Query.equal("code", code), Query.limit(1)],
+            );
+            const latestInvite =
+                latestInviteResult.documents.at(0) as
+                    | ServerInvite
+                    | undefined;
             const latestCurrentUses =
                 typeof latestInvite?.currentUses === "number"
                     ? latestInvite.currentUses
@@ -625,6 +652,10 @@ export async function useInvite(
         }
     }
 
+    apiCache.clear(inviteByCodeCacheKey(code));
+    apiCache.clear(serverInvitesCacheKey(invite.serverId));
+    apiCache.clear(serverPreviewCacheKey(invite.serverId));
+
     return { success: true, serverId: invite.serverId };
 }
 
@@ -640,14 +671,14 @@ export async function listServerInvites(
     const { databases } = getServerClient();
 
     try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITES_COLLECTION_ID,
-            [
-                Query.equal("serverId", serverId),
-                Query.orderDesc("$createdAt"),
-                Query.limit(100),
-            ],
+        const result = await dedupeInviteCache(
+            serverInvitesCacheKey(serverId),
+            () =>
+                databases.listDocuments(DATABASE_ID, INVITES_COLLECTION_ID, [
+                    Query.equal("serverId", serverId),
+                    Query.orderDesc("$createdAt"),
+                    Query.limit(100),
+                ]),
         );
 
         return result.documents as unknown as ServerInvite[];
@@ -667,42 +698,45 @@ export async function revokeInvite(inviteId: string): Promise<boolean> {
     const { databases } = getServerClient();
 
     try {
+        // Load the invite so we can evict related caches after deletion
+        let inviteDoc: Record<string, unknown> | null = null;
+        try {
+            inviteDoc = (await databases.getDocument(
+                DATABASE_ID,
+                INVITES_COLLECTION_ID,
+                inviteId,
+            )) as unknown as Record<string, unknown>;
+        } catch (error) {
+            logger.warn("Failed to preload invite before deletion; proceeding", {
+                error: error instanceof Error ? error.message : String(error),
+                inviteId,
+            });
+            // If the document cannot be loaded, continue to attempt deletion.
+        }
+
         await databases.deleteDocument(
             DATABASE_ID,
             INVITES_COLLECTION_ID,
             inviteId,
         );
+
+        // Evict related cache keys so revoked invites are not served from cache
+        const code = typeof inviteDoc?.code === "string" ? inviteDoc.code : null;
+        const serverId = typeof inviteDoc?.serverId === "string" ? inviteDoc.serverId : null;
+
+        if (code) {
+            apiCache.clear(inviteByCodeCacheKey(code));
+        }
+
+        if (serverId) {
+            apiCache.clear(serverInvitesCacheKey(serverId));
+            apiCache.clear(serverPreviewCacheKey(serverId));
+        }
+
         return true;
     } catch (error) {
         logger.error("Failed to revoke invite:", { error });
         return false;
-    }
-}
-
-/**
- * Get invite usage statistics for an invite
- *
- * @param {string} code - The code value.
- * @returns {Promise<InviteUsage[]>} The return value.
- */
-export async function getInviteUsage(code: string): Promise<InviteUsage[]> {
-    const { databases } = getServerClient();
-
-    try {
-        const result = await databases.listDocuments(
-            DATABASE_ID,
-            INVITE_USAGE_COLLECTION_ID,
-            [
-                Query.equal("inviteCode", code),
-                Query.orderDesc("joinedAt"),
-                Query.limit(100),
-            ],
-        );
-
-        return result.documents as unknown as InviteUsage[];
-    } catch (error) {
-        logger.error("Failed to get invite usage:", { error });
-        return [];
     }
 }
 
@@ -719,14 +753,24 @@ export async function getServerPreview(serverId: string): Promise<{
     const { databases } = getServerClient();
 
     try {
-        const server = await databases.getDocument(
-            DATABASE_ID,
-            SERVERS_COLLECTION_ID,
-            serverId,
-        );
+        const { actualCount, server } = await dedupeInviteCache(
+            serverPreviewCacheKey(serverId),
+            async () => {
+                const loadedServer = await databases.getDocument(
+                    DATABASE_ID,
+                    SERVERS_COLLECTION_ID,
+                    serverId,
+                );
 
-        // Get actual member count from memberships (single source of truth)
-        const actualCount = await getActualMemberCount(databases, serverId);
+                return {
+                    actualCount: await getActualMemberCount(
+                        databases,
+                        serverId,
+                    ),
+                    server: loadedServer,
+                };
+            },
+        );
 
         return {
             name: server.name as string,

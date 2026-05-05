@@ -33,6 +33,7 @@ const ORDER_DESC_PATTERN_UNQUOTED = /^orderDesc\(([A-Za-z0-9_.$-]+)\)$/;
 const CURSOR_AFTER_PATTERN_QUOTED = /^cursorAfter\("([A-Za-z0-9_.$-]+)"\)$/;
 const CURSOR_AFTER_PATTERN_UNQUOTED = /^cursorAfter\(([A-Za-z0-9_.$-]+)\)$/;
 const LIMIT_PATTERN = /^limit\((\d+)\)$/;
+const SELECT_PATTERN = /^select\((\[.*\])\)$/;
 const REGEX_SPECIAL_CHAR_PATTERN = /[.*+?^${}()|[\]\\]/g;
 
 function parseQueryValues(rawValue: string): string[] {
@@ -114,6 +115,9 @@ vi.mock("appwrite", () => {
             );
             const limitQuery = queries.find((query) =>
                 LIMIT_PATTERN.test(query),
+            );
+            const selectQuery = queries.find((query) =>
+                SELECT_PATTERN.test(query),
             );
 
             const filtered = equalQueries.reduce((currentDocs, query) => {
@@ -246,9 +250,47 @@ vi.mock("appwrite", () => {
                 return afterCursor.slice(0, parsedLimit);
             })();
 
+            const projected = (() => {
+                if (!selectQuery) {
+                    return limited;
+                }
+
+                const selectMatch = SELECT_PATTERN.exec(selectQuery);
+                if (!selectMatch) {
+                    return limited;
+                }
+
+                try {
+                    const parsedFields = JSON.parse(selectMatch[1]) as unknown;
+                    if (
+                        !Array.isArray(parsedFields) ||
+                        !parsedFields.every((field) => typeof field === "string")
+                    ) {
+                        return limited;
+                    }
+
+                    return limited.map((doc) => {
+                        const source = doc as Record<string, unknown>;
+                        const selected: Record<string, unknown> = {
+                            $id: source.$id,
+                        };
+
+                        for (const field of parsedFields) {
+                            if (field in source) {
+                                selected[field] = source[field];
+                            }
+                        }
+
+                        return selected as Models.Document;
+                    });
+                } catch {
+                    return limited;
+                }
+            })();
+
             return {
-                documents: limited,
-                total: limited.length,
+                documents: projected,
+                total: projected.length,
             };
         }
 
@@ -330,6 +372,7 @@ vi.mock("appwrite", () => {
                 `equal("${attr}","${Array.isArray(val) ? val.join(QUERY_VALUE_SEPARATOR) : val}")`,
             contains: (attr: string, val: string | string[]) =>
                 `contains("${attr}",${JSON.stringify(Array.isArray(val) ? val : [val])})`,
+            select: (attrs: string[]) => `select(${JSON.stringify(attrs)})`,
             orderDesc: (attr: string) => `orderDesc("${attr}")`,
             limit: (num: number) => `limit(${num})`,
             cursorAfter: (id: string) => `cursorAfter("${id}")`,

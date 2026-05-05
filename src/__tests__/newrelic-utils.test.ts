@@ -10,26 +10,31 @@ import {
     recordMetric,
 } from "@/lib/newrelic-utils";
 
-// Mock New Relic
-const mockNewRelic = {
-    recordCustomEvent: vi.fn(),
-    recordMetric: vi.fn(),
-    incrementMetric: vi.fn(),
-    noticeError: vi.fn(),
-    addCustomAttribute: vi.fn(),
-    addCustomAttributes: vi.fn(),
-    setTransactionName: vi.fn(),
-    getTransaction: vi.fn(),
-    startBackgroundTransaction: vi.fn(),
-    startWebTransaction: vi.fn(),
-    endTransaction: vi.fn(),
-    getBrowserTimingHeader: vi.fn(),
-    setLlmTokenCountCallback: vi.fn(),
-};
-
-const mockPostHogClient = {
-    capture: vi.fn(),
-};
+const {
+    mockCapturePostHogServerError,
+    mockNewRelic,
+    mockPostHogClient,
+} = vi.hoisted(() => ({
+    mockCapturePostHogServerError: vi.fn(),
+    mockNewRelic: {
+        recordCustomEvent: vi.fn(),
+        recordMetric: vi.fn(),
+        incrementMetric: vi.fn(),
+        noticeError: vi.fn(),
+        addCustomAttribute: vi.fn(),
+        addCustomAttributes: vi.fn(),
+        setTransactionName: vi.fn(),
+        getTransaction: vi.fn(),
+        startBackgroundTransaction: vi.fn(),
+        startWebTransaction: vi.fn(),
+        endTransaction: vi.fn(),
+        getBrowserTimingHeader: vi.fn(),
+        setLlmTokenCountCallback: vi.fn(),
+    },
+    mockPostHogClient: {
+        capture: vi.fn(),
+    },
+}));
 
 // Mock the newrelic module
 vi.mock("newrelic", () => ({
@@ -37,6 +42,7 @@ vi.mock("newrelic", () => ({
 }));
 
 vi.mock("@/lib/posthog-server", () => ({
+    capturePostHogServerError: mockCapturePostHogServerError,
     getPostHogClient: vi.fn(() => mockPostHogClient),
 }));
 
@@ -45,6 +51,7 @@ describe("newrelic-utils", () => {
         // Clear all mocks before each test
         Object.values(mockNewRelic).forEach((fn) => fn.mockClear());
         mockPostHogClient.capture.mockClear();
+        mockCapturePostHogServerError.mockClear();
         delete process.env.TELEMETRY_PROVIDER;
         delete process.env.POSTHOG_PROJECT_API_KEY;
         delete process.env.POSTHOG_HOST;
@@ -140,6 +147,19 @@ describe("newrelic-utils", () => {
         it("should handle undefined error gracefully", () => {
             recordError(undefined as never);
             expect(console.error).toHaveBeenCalled();
+        });
+
+        it("should forward errors to PostHog helper when enabled", () => {
+            process.env.TELEMETRY_PROVIDER = "posthog";
+            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
+            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
+
+            const error = new Error("forwarded error");
+            recordError(error, { route: "/api/test" });
+
+            expect(mockCapturePostHogServerError).toHaveBeenCalledWith(error, {
+                route: "/api/test",
+            });
         });
     });
 

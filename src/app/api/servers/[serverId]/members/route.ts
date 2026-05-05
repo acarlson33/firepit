@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/newrelic-utils";
+import { listPages } from "@/lib/appwrite-pagination";
+import { recordMetric } from "@/lib/monitoring";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -27,59 +29,18 @@ function chunkValues<T>(values: T[], size: number) {
 
 async function listAllServerDocuments(serverId: string, collectionId: string) {
     const { databases } = getServerClient();
-    const documents: Array<Record<string, unknown>> = [];
-    let cursorAfter: string | null = null;
 
-    if (typeof Query.orderAsc !== "function") {
-        throw new Error("Query.orderAsc is not available");
-    }
+    const { documents, truncated } = await listPages({
+        databases,
+        databaseId,
+        collectionId,
+        baseQueries: [Query.equal("serverId", serverId)],
+        pageSize: PAGE_SIZE,
+        warningContext: `listAll:${collectionId}`,
+        maxDocs: MAX_DOCS,
+    });
 
-    if (typeof Query.cursorAfter !== "function") {
-        throw new Error("Query.cursorAfter is not available");
-    }
-
-    while (true) {
-        const queries = [
-            Query.equal("serverId", serverId),
-            Query.orderAsc("$id"),
-            Query.limit(PAGE_SIZE),
-        ];
-
-        if (cursorAfter) {
-            queries.push(Query.cursorAfter(cursorAfter));
-        }
-
-        const page = await databases.listDocuments(
-            databaseId,
-            collectionId,
-            queries,
-        );
-        const pageDocuments = page.documents as Array<Record<string, unknown>>;
-
-        if (documents.length + pageDocuments.length > MAX_DOCS) {
-            throw new Error(
-                `Member pagination exceeded MAX_DOCS (${MAX_DOCS}) for collection ${collectionId}`,
-            );
-        }
-
-        documents.push(...pageDocuments);
-
-        if (pageDocuments.length < PAGE_SIZE) {
-            break;
-        }
-
-        const lastDocument = pageDocuments.at(-1);
-        cursorAfter =
-            lastDocument && typeof lastDocument.$id === "string"
-                ? lastDocument.$id
-                : null;
-
-        if (!cursorAfter) {
-            break;
-        }
-    }
-
-    return documents;
+    return { documents: documents as Array<Record<string, unknown>>, truncated };
 }
 
 type RouteContext = {
@@ -110,18 +71,20 @@ export async function GET(request: Request, context: RouteContext) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
+
         // Get all memberships for this server
-        const memberships = await listAllServerDocuments(
-            serverId,
-            membershipsCollectionId,
-        );
+        const { documents: memberships, truncated: membershipsTruncated } =
+            await listAllServerDocuments(serverId, membershipsCollectionId);
 
         const membershipUserIds = memberships.map((membership) =>
             String(membership.userId),
         );
 
         // Get role assignments for this server
-        const roleAssignments = await listAllServerDocuments(
+        const {
+            documents: roleAssignments,
+            truncated: roleAssignmentsTruncated,
+        } = await listAllServerDocuments(
             serverId,
             roleAssignmentsCollectionId,
         );
@@ -217,6 +180,7 @@ export async function GET(request: Request, context: RouteContext) {
             isBanned: boolean;
             isMuted: boolean;
         }>;
+        const orphanUserIds: string[] = [];
 
         for (const membership of memberships) {
             const userId = membership.userId as string;
@@ -224,41 +188,7 @@ export async function GET(request: Request, context: RouteContext) {
                 const profile = profilesByUserId.get(userId);
 
                 if (!profile) {
-                    // User profile is gone (likely account deleted) — remove membership and any role assignments
-                    const membershipDocumentId = String(membership.$id);
-                    await databases.deleteDocument(
-                        databaseId,
-                        membershipsCollectionId,
-                        membershipDocumentId,
-                    );
-
-                    const orphanAssignments = await databases.listDocuments(
-                        databaseId,
-                        roleAssignmentsCollectionId,
-                        [
-                            Query.equal("serverId", serverId),
-                            Query.equal("userId", userId),
-                            Query.limit(100),
-                        ],
-                    );
-
-                    await Promise.all(
-                        orphanAssignments.documents.map((assignment) =>
-                            databases.deleteDocument(
-                                databaseId,
-                                roleAssignmentsCollectionId,
-                                String(assignment.$id),
-                            ),
-                        ),
-                    );
-
-                    logger.info(
-                        "Removed orphaned membership after user deletion",
-                        {
-                            serverId,
-                            userId,
-                        },
-                    );
+                    orphanUserIds.push(userId);
                     continue;
                 }
 
@@ -281,7 +211,52 @@ export async function GET(request: Request, context: RouteContext) {
             }
         }
 
-        return NextResponse.json({ members });
+        if (orphanUserIds.length > 0) {
+            logger.warn("Detected orphan memberships during member listing", {
+                serverId,
+                sampleUserIds: orphanUserIds.slice(0, 10),
+            });
+
+            try {
+                recordMetric(
+                    "server.orphan_membership.count",
+                    orphanUserIds.length,
+                );
+            } catch (metricError) {
+                logger.warn("Failed to record orphan membership metric", {
+                    serverId,
+                    error:
+                        metricError instanceof Error
+                            ? metricError.message
+                            : String(metricError),
+                });
+            }
+        }
+
+        if (membershipsTruncated) {
+            logger.warn(
+                "Membership listing truncated; orphanCount may be incomplete",
+                {
+                    serverId,
+                    collectionId: membershipsCollectionId,
+                    pageSize: PAGE_SIZE,
+                },
+            );
+        }
+
+        if (roleAssignmentsTruncated) {
+            logger.warn("Role assignment listing truncated during member listing", {
+                serverId,
+                collectionId: roleAssignmentsCollectionId,
+                pageSize: PAGE_SIZE,
+            });
+        }
+
+        return NextResponse.json({
+            members,
+            orphanCount: orphanUserIds.length,
+            truncated: membershipsTruncated || roleAssignmentsTruncated,
+        });
     } catch (error) {
         logger.error("Failed to list server members", {
             error: error instanceof Error ? error.message : String(error),

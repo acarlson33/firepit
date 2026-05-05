@@ -25,6 +25,7 @@ vi.mock("node-appwrite", () => ({
         greaterThan: (field: string, value: unknown) =>
             `greaterThan(${field},${String(value)})`,
         isNull: (field: string) => `isNull(${field})`,
+        isNotNull: (field: string) => `isNotNull(${field})`,
         limit: (value: number) => `limit(${value})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
         cursorAfter: (documentId: string) => `cursorAfter(${documentId})`,
@@ -341,6 +342,159 @@ describe("inbox", () => {
         expect(result.counts).toEqual({ mention: 1, thread: 0 });
         expect(result.unreadCount).toBe(1);
         expect(result.contractVersion).toBe("message_v2");
+    });
+
+    it("derives unread dm thread activity from replies when parent metadata is stale", async () => {
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId, queries: string[] = []) => {
+                const queryText = queries.join("|");
+
+                if (collectionId === "conversations-collection") {
+                    return {
+                        documents: [{ $id: "conversation-1" }],
+                    };
+                }
+
+                if (collectionId === "direct-messages-collection") {
+                    if (queryText.includes("greaterThan(threadMessageCount,0)")) {
+                        return { documents: [] };
+                    }
+
+                    if (queryText.includes("isNotNull(threadId)")) {
+                        return {
+                            documents: [
+                                {
+                                    $id: "reply-1",
+                                    $createdAt: "2026-03-11T13:05:00.000Z",
+                                    conversationId: "conversation-1",
+                                    threadId: "message-parent-1",
+                                },
+                            ],
+                        };
+                    }
+
+                    if (queryText.includes("equal($id")) {
+                        return {
+                            documents: [
+                                {
+                                    $id: "message-parent-1",
+                                    $createdAt: "2026-03-11T12:00:00.000Z",
+                                    conversationId: "conversation-1",
+                                    senderId: "user-2",
+                                    text: "Thread parent",
+                                    threadMessageCount: 0,
+                                },
+                            ],
+                        };
+                    }
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                avatarFileId: "avatar-2",
+                                displayName: "Alice",
+                                userId: "user-2",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const result = await listInboxItems({
+            kinds: ["thread"],
+            limit: 10,
+            userId: "user-1",
+        });
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]?.id).toBe(
+            "thread:conversation:conversation-1:message-parent-1",
+        );
+        expect(result.items[0]?.latestActivityAt).toBe(
+            "2026-03-11T13:05:00.000Z",
+        );
+        expect(result.items[0]?.unreadCount).toBe(1);
+    });
+
+    it("derives unread channel thread activity from replies when metadata query misses", async () => {
+        mockGetChannelAccessForUser.mockResolvedValue({ canRead: true });
+        mockListDocuments.mockImplementation(
+            async (_databaseId, collectionId, queries: string[] = []) => {
+                const queryText = queries.join("|");
+
+                if (collectionId === "messages-collection") {
+                    if (queryText.includes("greaterThan(threadMessageCount,0)")) {
+                        return { documents: [] };
+                    }
+
+                    if (queryText.includes("isNotNull(threadId)")) {
+                        return {
+                            documents: [
+                                {
+                                    $id: "reply-1",
+                                    $createdAt: "2026-03-11T14:05:00.000Z",
+                                    channelId: "channel-1",
+                                    threadId: "message-parent-2",
+                                },
+                            ],
+                        };
+                    }
+
+                    if (queryText.includes("equal($id")) {
+                        return {
+                            documents: [
+                                {
+                                    $id: "message-parent-2",
+                                    $createdAt: "2026-03-11T12:00:00.000Z",
+                                    channelId: "channel-1",
+                                    serverId: "server-1",
+                                    text: "Channel thread parent",
+                                    threadMessageCount: 0,
+                                    userId: "user-2",
+                                    userName: "Alice",
+                                },
+                            ],
+                        };
+                    }
+                }
+
+                if (collectionId === "profiles-collection") {
+                    return {
+                        documents: [
+                            {
+                                avatarFileId: "avatar-2",
+                                displayName: "Alice",
+                                userId: "user-2",
+                            },
+                        ],
+                    };
+                }
+
+                return { documents: [] };
+            },
+        );
+        mockGetNotificationSettings.mockResolvedValue(null);
+
+        const result = await listInboxItems({
+            kinds: ["thread"],
+            limit: 10,
+            userId: "user-1",
+        });
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0]?.id).toBe(
+            "thread:channel:channel-1:message-parent-2",
+        );
+        expect(result.items[0]?.latestActivityAt).toBe(
+            "2026-03-11T14:05:00.000Z",
+        );
+        expect(result.items[0]?.unreadCount).toBe(1);
     });
 
     it("returns digest items ordered by newest activity first", async () => {

@@ -66,10 +66,15 @@ function RegisterFormContent() {
                 router.push(destination as any);
             } else {
                 if (result.verificationRequired) {
-                    toast.success(result.error);
-                    router.push("/login");
+                    const verificationMessage =
+                        result.message ||
+                        "Verification required. Check your inbox for a verification link.";
+                    toast.success(verificationMessage);
+                    router.push(`/login?redirect=${encodeURIComponent(destination)}`);
                 } else {
-                    toast.error(result.error);
+                    toast.error(
+                        result.error || "An unexpected error occurred",
+                    );
                 }
             }
         } catch (err) {

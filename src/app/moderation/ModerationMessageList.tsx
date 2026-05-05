@@ -449,7 +449,7 @@ export function ModerationMessageList({
                                 </div>
 
                                 {/* Message Text */}
-                                <p className="wrap-break-word text-sm leading-relaxed">
+                                <div className="wrap-break-word text-sm leading-relaxed">
                                     {m.text ? (
                                         <MessageWithMentions
                                             text={m.text}
@@ -458,7 +458,7 @@ export function ModerationMessageList({
                                             customEmojis={customEmojis}
                                         />
                                     ) : null}
-                                </p>
+                                </div>
 
                                 {m.imageUrl ? (
                                     <a

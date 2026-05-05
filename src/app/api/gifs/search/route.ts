@@ -3,11 +3,10 @@ import { NextResponse } from "next/server";
 
 import { AuthError, requireAuth } from "@/lib/auth-server";
 import {
+    GifSearchValidationError,
     getGifProvider,
     getGiphyConfig,
     getTenorConfig,
-    isGifSearchEnabled,
-    isGifStickerSupportEnabled,
     mapGiphyResults,
     mapTenorResults,
     parseGifSearchParams,
@@ -31,25 +30,30 @@ function isAbortError(error: unknown): boolean {
     );
 }
 
+function resolveErrorStatusCode(error: unknown): number {
+    if (!error || typeof error !== "object") {
+        return 500;
+    }
+
+    const statusCode =
+        "statusCode" in error ? Number(error.statusCode) : Number.NaN;
+    if (Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599) {
+        return statusCode;
+    }
+
+    const status = "status" in error ? Number(error.status) : Number.NaN;
+    if (Number.isInteger(status) && status >= 400 && status <= 599) {
+        return status;
+    }
+
+    return 500;
+}
+
 export async function GET(request: NextRequest) {
     const startTime = Date.now();
 
     try {
         setTransactionName("GET /api/gifs/search");
-
-        if (!(await isGifStickerSupportEnabled())) {
-            return jsonResponse(
-                { error: "GIF/sticker support is disabled" },
-                { status: 404 },
-            );
-        }
-
-        if (!(await isGifSearchEnabled())) {
-            return jsonResponse(
-                { error: "GIF search is disabled" },
-                { status: 404 },
-            );
-        }
 
         const user = await requireAuth();
 
@@ -113,8 +117,14 @@ export async function GET(request: NextRequest) {
                 );
             }
 
+            if (!tenorConfig.clientKey) {
+                logger.warn("TENOR_CLIENT_KEY missing while GIF search is enabled");
+            }
+
             url.searchParams.set("key", tenorConfig.apiKey);
-            url.searchParams.set("client_key", tenorConfig.clientKey);
+            if (tenorConfig.clientKey) {
+                url.searchParams.set("client_key", tenorConfig.clientKey);
+            }
             url.searchParams.set("q", params.query);
             url.searchParams.set("limit", String(params.limit));
             url.searchParams.set(
@@ -173,14 +183,32 @@ export async function GET(request: NextRequest) {
         return jsonResponse(normalized);
     } catch (error) {
         if (error instanceof AuthError) {
+            trackApiCall(
+                "/api/gifs/search",
+                "GET",
+                401,
+                Date.now() - startTime,
+            );
             return jsonResponse({ error: error.message }, { status: 401 });
         }
 
-        if (error instanceof Error && error.message.includes("q is required")) {
+        if (error instanceof GifSearchValidationError) {
+            trackApiCall(
+                "/api/gifs/search",
+                "GET",
+                400,
+                Date.now() - startTime,
+            );
             return jsonResponse({ error: error.message }, { status: 400 });
         }
 
         if (isAbortError(error)) {
+            trackApiCall(
+                "/api/gifs/search",
+                "GET",
+                504,
+                Date.now() - startTime,
+            );
             return jsonResponse(
                 { error: "GIF search timed out" },
                 { status: 504 },
@@ -191,11 +219,14 @@ export async function GET(request: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
         });
 
+        const upstreamStatus = resolveErrorStatusCode(error);
+
         trackApiCall(
             "/api/gifs/search",
             "GET",
             500,
             Date.now() - startTime,
+            { upstreamStatus },
         );
 
         return jsonResponse(

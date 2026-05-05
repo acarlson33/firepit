@@ -8,9 +8,98 @@ type CacheEntry<T> = {
     ttl: number;
 };
 
+type PrefixTokenMetadata = {
+    token: number;
+    lastUsed: number;
+};
+
+type RequestSnapshot = {
+    prefixTokens: Array<{
+        prefix: string;
+        token: number;
+    }>;
+    clearEpoch: number;
+};
+
+const PREFIX_TOKEN_MAX_ENTRIES = 1024;
+const PREFIX_TOKEN_TTL_MS = 60 * 60 * 1000;
+
 class SimpleCache {
     private cache = new Map<string, CacheEntry<unknown>>();
     private pendingRequests = new Map<string, Promise<unknown>>();
+    private prefixTokens = new Map<string, PrefixTokenMetadata>();
+    private clearEpoch = 0;
+
+    private prunePrefixTokens(now = Date.now()): void {
+        for (const [prefix, metadata] of this.prefixTokens.entries()) {
+            if (now - metadata.lastUsed > PREFIX_TOKEN_TTL_MS) {
+                this.prefixTokens.delete(prefix);
+            }
+        }
+
+        if (this.prefixTokens.size <= PREFIX_TOKEN_MAX_ENTRIES) {
+            return;
+        }
+
+        const entriesByLastUsed = Array.from(this.prefixTokens.entries()).sort(
+            (left, right) => left[1].lastUsed - right[1].lastUsed,
+        );
+
+        const overflowCount = this.prefixTokens.size - PREFIX_TOKEN_MAX_ENTRIES;
+        for (const [prefix] of entriesByLastUsed.slice(0, overflowCount)) {
+            this.prefixTokens.delete(prefix);
+        }
+    }
+
+    private capturePrefixTokensForKey(key: string): RequestSnapshot {
+        const now = Date.now();
+        this.prunePrefixTokens(now);
+
+        const prefixTokens: Array<{ prefix: string; token: number }> = [];
+        for (const [prefix, metadata] of this.prefixTokens.entries()) {
+            if (key.startsWith(prefix)) {
+                metadata.lastUsed = now;
+                prefixTokens.push({ prefix, token: metadata.token });
+            }
+        }
+
+        prefixTokens.sort((left, right) => left.prefix.localeCompare(right.prefix));
+
+        return {
+            prefixTokens,
+            clearEpoch: this.clearEpoch,
+        };
+    }
+
+    private isSnapshotCurrent(
+        requestSnapshot: RequestSnapshot,
+        latestSnapshot: RequestSnapshot,
+    ): boolean {
+        if (requestSnapshot.clearEpoch !== latestSnapshot.clearEpoch) {
+            return false;
+        }
+
+        if (
+            requestSnapshot.prefixTokens.length !==
+            latestSnapshot.prefixTokens.length
+        ) {
+            return false;
+        }
+
+        for (let index = 0; index < requestSnapshot.prefixTokens.length; index += 1) {
+            const requestToken = requestSnapshot.prefixTokens[index];
+            const latestToken = latestSnapshot.prefixTokens[index];
+
+            if (
+                requestToken.prefix !== latestToken.prefix ||
+                requestToken.token !== latestToken.token
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /**
      * Get cached data if it exists and hasn't expired
@@ -49,8 +138,35 @@ class SimpleCache {
             this.cache.delete(key);
             this.pendingRequests.delete(key);
         } else {
+            this.clearEpoch += 1;
             this.cache.clear();
             this.pendingRequests.clear();
+            this.prefixTokens.clear();
+        }
+    }
+
+    /**
+     * Clear all cache and pending request entries that start with a prefix.
+     */
+    clearPrefix(prefix: string): void {
+        const now = Date.now();
+        const previousToken = this.prefixTokens.get(prefix)?.token ?? 0;
+        this.prefixTokens.set(prefix, {
+            token: previousToken + 1,
+            lastUsed: now,
+        });
+        this.prunePrefixTokens(now);
+
+        for (const key of this.cache.keys()) {
+            if (key.startsWith(prefix)) {
+                this.cache.delete(key);
+            }
+        }
+
+        for (const key of this.pendingRequests.keys()) {
+            if (key.startsWith(prefix)) {
+                this.pendingRequests.delete(key);
+            }
         }
     }
 
@@ -76,9 +192,18 @@ class SimpleCache {
         }
 
         // Execute new request
+        const requestPrefixTokens = this.capturePrefixTokensForKey(key);
         const promise = fetcher()
             .then((data) => {
-                this.set(key, data, ttl);
+                const currentPrefixTokens = this.capturePrefixTokensForKey(key);
+                if (
+                    this.isSnapshotCurrent(
+                        requestPrefixTokens,
+                        currentPrefixTokens,
+                    )
+                ) {
+                    this.set(key, data, ttl);
+                }
                 this.pendingRequests.delete(key);
                 return data;
             })
@@ -130,10 +255,19 @@ class SimpleCache {
                     | Promise<T>
                     | undefined;
                 if (!pending) {
+                    const requestPrefixTokens = this.capturePrefixTokensForKey(key);
                     // Execute background refresh
                     const promise = fetcher()
                         .then((data) => {
-                            this.set(key, data, ttl);
+                            const currentPrefixTokens = this.capturePrefixTokensForKey(key);
+                            if (
+                                this.isSnapshotCurrent(
+                                    requestPrefixTokens,
+                                    currentPrefixTokens,
+                                )
+                            ) {
+                                this.set(key, data, ttl);
+                            }
                             this.pendingRequests.delete(key);
                             if (onUpdate) {
                                 onUpdate(data);

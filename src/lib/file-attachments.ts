@@ -13,7 +13,7 @@ const ATTACHMENT_SOURCE_SET = new Set<string>(ATTACHMENT_SOURCE_VALUES);
 
 const DEFAULT_MAX_ATTACHMENTS = 10;
 
-export type NormalizedAttachmentResult =
+type NormalizedAttachmentResult =
     | {
           ok: true;
           attachments: FileAttachment[];
@@ -50,7 +50,7 @@ function normalizeUrl(value: unknown): string | undefined {
     }
 }
 
-function normalizePositiveNumber(value: unknown): number | undefined {
+function normalizeNonNegativeNumber(value: unknown): number | undefined {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
         return undefined;
     }
@@ -84,6 +84,7 @@ function inferMediaKind(params: {
     providedMediaKind?: AttachmentMediaKind;
 }): AttachmentMediaKind {
     const { fileType, source, providedMediaKind } = params;
+    const normalizedFileType = fileType.toLowerCase();
 
     if (providedMediaKind) {
         return providedMediaKind;
@@ -96,12 +97,12 @@ function inferMediaKind(params: {
     if (
         source === "tenor" ||
         source === "giphy" ||
-        fileType.toLowerCase().includes("gif")
+        normalizedFileType.includes("gif")
     ) {
         return "gif";
     }
 
-    if (fileType.startsWith("image/")) {
+    if (normalizedFileType.startsWith("image/")) {
         return "image";
     }
 
@@ -117,7 +118,7 @@ export function normalizeFileAttachment(input: unknown): FileAttachment | null {
 
     const fileId = normalizeString(candidate.fileId);
     const fileName = normalizeString(candidate.fileName);
-    const fileSize = normalizePositiveNumber(candidate.fileSize);
+    const fileSize = normalizeNonNegativeNumber(candidate.fileSize);
     const fileType = normalizeString(candidate.fileType);
     const fileUrl = normalizeUrl(candidate.fileUrl);
 
@@ -262,6 +263,10 @@ export function isUnknownAttachmentAttributeError(error: unknown): boolean {
     }
 
     const candidate = error as { message?: unknown; type?: unknown };
+    if (candidate.type === "document_invalid_structure") {
+        return true;
+    }
+
     const message =
         typeof candidate.message === "string"
             ? candidate.message.toLowerCase()

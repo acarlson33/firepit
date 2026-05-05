@@ -21,15 +21,9 @@ export async function POST(request: Request) {
             );
         }
 
-        let payload: {
-            name?: string;
-            description?: string;
-            iconFileId?: string;
-            bannerFileId?: string;
-            isPublic?: boolean;
-        };
+        let rawPayload: unknown;
         try {
-            payload = (await request.json()) as { name?: string };
+            rawPayload = await request.json();
         } catch {
             return NextResponse.json(
                 { success: false, error: "Invalid JSON payload" },
@@ -37,17 +31,43 @@ export async function POST(request: Request) {
             );
         }
 
-        const { name, description, iconFileId, bannerFileId, isPublic } =
-            payload;
+        if (
+            typeof rawPayload !== "object" ||
+            rawPayload === null ||
+            Array.isArray(rawPayload)
+        ) {
+            return NextResponse.json(
+                { success: false, error: "Invalid JSON payload" },
+                { status: 400 },
+            );
+        }
 
-        if (!name?.trim()) {
+        const payload = rawPayload as {
+            name?: unknown;
+            description?: unknown;
+            iconFileId?: unknown;
+            bannerFileId?: unknown;
+            isPublic?: unknown;
+        };
+
+        const { name, description, iconFileId, bannerFileId, isPublic } = payload;
+
+        if (typeof name !== "string") {
             return NextResponse.json(
                 { success: false, error: "Server name is required" },
                 { status: 400 },
             );
         }
 
-        if (name.trim().length > MAX_SERVER_NAME_LENGTH) {
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+            return NextResponse.json(
+                { success: false, error: "Server name is required" },
+                { status: 400 },
+            );
+        }
+
+        if (trimmedName.length > MAX_SERVER_NAME_LENGTH) {
             return NextResponse.json(
                 {
                     success: false,
@@ -123,13 +143,21 @@ export async function POST(request: Request) {
             );
         }
 
-        const server = await createServer(name.trim(), {
+        const createdServer = await createServer(trimmedName, {
             description: normalizedDescription,
             iconFileId: normalizedIconFileId,
             bannerFileId: normalizedBannerFileId,
             isPublic,
             bypassFeatureCheck: true,
+            includeMembership: true,
         });
+
+        const hasMembership =
+            typeof createdServer === "object" &&
+            createdServer !== null &&
+            "server" in createdServer;
+        const server = hasMembership ? createdServer.server : createdServer;
+        const membership = hasMembership ? createdServer.membership : null;
 
         const telemetryTask = getPostHogClient().capture({
             distinctId: session.$id,
@@ -151,20 +179,22 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             success: true,
+            membership,
             server: {
                 $id: server.$id,
+                $createdAt: server.$createdAt,
                 name: server.name,
                 ownerId: server.ownerId,
-                memberCount: server.memberCount,
+                memberCount: server.memberCount ?? 0,
                 description: server.description,
                 iconFileId: server.iconFileId,
                 iconUrl: server.iconUrl,
                 bannerFileId: server.bannerFileId,
                 bannerUrl: server.bannerUrl,
                 isPublic: server.isPublic,
-                defaultOnSignup: server.defaultOnSignup,
+                defaultOnSignup: server.defaultOnSignup ?? false,
             },
-        });
+        }, { status: 201 });
     } catch (error) {
         logger.error("Server creation error", {
             error: error instanceof Error ? error.message : String(error),

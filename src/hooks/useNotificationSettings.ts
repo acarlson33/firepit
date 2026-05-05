@@ -72,149 +72,118 @@ export function useNotificationSettings(): UseNotificationSettingsReturn {
 		}
 	}, []);
 
+	const updateMuteStatus = useCallback(async (params: {
+		type: "channels" | "servers" | "conversations";
+		id: string;
+		muted: boolean;
+		duration?: MuteDuration;
+		level?: NotificationLevel;
+		errorMessage: string;
+	}): Promise<boolean> => {
+		const { type, id, muted, duration, level, errorMessage } = params;
+
+		try {
+			const payload: {
+				muted: boolean;
+				duration?: MuteDuration;
+				level?: NotificationLevel;
+			} = { muted };
+
+			if (muted) {
+				payload.duration = duration;
+				payload.level = level;
+			}
+
+			const response = await fetch(`/api/${type}/${id}/mute`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json() as { error?: string };
+				throw new Error(errorData.error ?? errorMessage);
+			}
+
+			await fetchSettings();
+			return true;
+		} catch (err) {
+			setError(err instanceof Error ? err.message : errorMessage);
+			return false;
+		}
+	}, [fetchSettings]);
+
 	const muteChannel = useCallback(async (
 		channelId: string,
 		duration: MuteDuration,
 		level: NotificationLevel = "nothing"
 	): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/channels/${channelId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: true, duration, level }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to mute channel");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to mute channel");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "channels",
+			id: channelId,
+			muted: true,
+			duration,
+			level,
+			errorMessage: "Failed to mute channel",
+		});
+	}, [updateMuteStatus]);
 
 	const unmuteChannel = useCallback(async (channelId: string): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/channels/${channelId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: false }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to unmute channel");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to unmute channel");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "channels",
+			id: channelId,
+			muted: false,
+			errorMessage: "Failed to unmute channel",
+		});
+	}, [updateMuteStatus]);
 
 	const muteServer = useCallback(async (
 		serverId: string,
 		duration: MuteDuration,
 		level: NotificationLevel = "nothing"
 	): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/servers/${serverId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: true, duration, level }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to mute server");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to mute server");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "servers",
+			id: serverId,
+			muted: true,
+			duration,
+			level,
+			errorMessage: "Failed to mute server",
+		});
+	}, [updateMuteStatus]);
 
 	const unmuteServer = useCallback(async (serverId: string): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/servers/${serverId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: false }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to unmute server");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to unmute server");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "servers",
+			id: serverId,
+			muted: false,
+			errorMessage: "Failed to unmute server",
+		});
+	}, [updateMuteStatus]);
 
 	const muteConversation = useCallback(async (
 		conversationId: string,
 		duration: MuteDuration,
 		level: NotificationLevel = "nothing"
 	): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/conversations/${conversationId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: true, duration, level }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to mute conversation");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to mute conversation");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "conversations",
+			id: conversationId,
+			muted: true,
+			duration,
+			level,
+			errorMessage: "Failed to mute conversation",
+		});
+	}, [updateMuteStatus]);
 
 	const unmuteConversation = useCallback(async (conversationId: string): Promise<boolean> => {
-		try {
-			const response = await fetch(`/api/conversations/${conversationId}/mute`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ muted: false }),
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json() as { error?: string };
-				throw new Error(errorData.error ?? "Failed to unmute conversation");
-			}
-
-			// Refetch settings to get updated overrides
-			await fetchSettings();
-			return true;
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to unmute conversation");
-			return false;
-		}
-	}, [fetchSettings]);
+		return updateMuteStatus({
+			type: "conversations",
+			id: conversationId,
+			muted: false,
+			errorMessage: "Failed to unmute conversation",
+		});
+	}, [updateMuteStatus]);
 
 	return {
 		settings,

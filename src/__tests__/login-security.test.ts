@@ -221,7 +221,6 @@ describe("Login Security", () => {
     });
 
     it("loginAction should block the configured system sender account", async () => {
-        vi.clearAllMocks();
         mockGetFeatureFlag.mockResolvedValue(false);
 
         process.env.SYSTEM_SENDER_USER_ID = "system-account-id";
@@ -235,7 +234,15 @@ describe("Login Security", () => {
                         secret: "system-session-secret",
                         userId: "system-account-id",
                     }),
-                    deleteSession: vi.fn().mockResolvedValue({}),
+                }) as never,
+        );
+
+        const { Users } = await import("node-appwrite");
+        const mockDeleteSession = vi.fn().mockResolvedValue({});
+        vi.mocked(Users).mockImplementationOnce(
+            () =>
+                ({
+                    deleteSession: mockDeleteSession,
                 }) as never,
         );
 
@@ -252,6 +259,10 @@ describe("Login Security", () => {
             expect(result.error).toContain("reserved for system announcements");
         }
         expect(mockCookieStore.set).not.toHaveBeenCalled();
+        expect(mockDeleteSession).toHaveBeenCalledWith({
+            userId: "system-account-id",
+            sessionId: "system-session-id",
+        });
     });
 
     it("loginAction should require verification when feature flag is enabled and email is unverified", async () => {
@@ -332,7 +343,6 @@ describe("Login Security", () => {
                 () =>
                     ({
                         createEmailPasswordSession,
-                        deleteSession,
                     }) as never,
             )
             .mockImplementationOnce(
@@ -348,6 +358,7 @@ describe("Login Security", () => {
                         $id: "unverified-user-id",
                         emailVerification: false,
                     }),
+                    deleteSession,
                 }) as never,
         );
 
@@ -373,6 +384,7 @@ describe("Login Security", () => {
             }),
         );
         expect(deleteSession).toHaveBeenCalledWith({
+            userId: "unverified-user-id",
             sessionId: "unverified-session-id",
         });
     });
@@ -392,7 +404,6 @@ describe("Login Security", () => {
                         secret: "verified-session-secret",
                     }),
                     createVerification: vi.fn().mockResolvedValue({}),
-                    deleteSession,
                 }) as never,
         );
         vi.mocked(Users).mockImplementationOnce(
@@ -402,6 +413,7 @@ describe("Login Security", () => {
                         $id: "verified-user-id",
                         emailVerification: true,
                     }),
+                    deleteSession,
                 }) as never,
         );
 
@@ -421,6 +433,7 @@ describe("Login Security", () => {
             expect(result.message).toContain("already verified");
         }
         expect(deleteSession).toHaveBeenCalledWith({
+            userId: "verified-user-id",
             sessionId: "verified-session-id",
         });
     });

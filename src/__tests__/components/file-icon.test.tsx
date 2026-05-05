@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { FileIcon, getFileCategory, formatFileSize } from "@/components/file-icon";

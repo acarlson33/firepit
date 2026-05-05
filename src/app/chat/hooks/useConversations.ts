@@ -1,19 +1,24 @@
 "use client";
 
-import { Channel } from "appwrite";
-import { useEffect, useCallback, useMemo } from "react";
+import { Channel, Query } from "appwrite";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { listConversations } from "@/lib/appwrite-dms-client";
 import { logger } from "@/lib/client-logger";
 import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
-import { getSharedRealtime, trackSubscription } from "@/lib/realtime-pool";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    trackSubscription,
+} from "@/lib/realtime-pool";
 
 import { useStatusSubscription } from "./useStatusSubscription";
 
 const env = getEnvConfig();
 const CONVERSATIONS_COLLECTION = env.collections.conversations;
+const MAX_RETRIES = 5;
 
 function toError(value: unknown) {
     return value instanceof Error ? value : new Error(String(value));
@@ -35,10 +40,26 @@ function getConversationsQueryKey(userId: string | null) {
     return ["conversations", userId] as const;
 }
 
-export function useConversations(userId: string | null, enabled = true) {
+export function useConversations(
+    userId: string | null,
+    enabled = true,
+    realtimeEnabled = true,
+) {
     const queryClient = useQueryClient();
     const isEnabled =
         enabled && Boolean(userId) && Boolean(CONVERSATIONS_COLLECTION);
+    const subscriptionContextKey = useMemo(
+        () =>
+            `${userId ?? ""}:${enabled ? "1" : "0"}:${realtimeEnabled ? "1" : "0"}`,
+        [enabled, realtimeEnabled, userId],
+    );
+    const realtimeRetryNonceRef = useRef(0);
+    const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
+
+    useEffect(() => {
+        realtimeRetryNonceRef.current = 0;
+        setRealtimeRetryTick(0);
+    }, [realtimeEnabled, subscriptionContextKey]);
 
     const loadConversations = useCallback(async () => {
         if (!userId || !CONVERSATIONS_COLLECTION) {
@@ -74,7 +95,7 @@ export function useConversations(userId: string | null, enabled = true) {
     }, [conversations, isEnabled, userId]);
 
     // Subscribe to status updates for all other users
-    const { statuses } = useStatusSubscription(otherUserIds);
+    const { statuses } = useStatusSubscription(otherUserIds, realtimeEnabled);
 
     // Merge real-time status updates into conversations
     const conversationsWithStatus = useMemo(() => {
@@ -107,12 +128,18 @@ export function useConversations(userId: string | null, enabled = true) {
 
     // Real-time subscription to conversation changes
     useEffect(() => {
-        if (!isEnabled || !userId || !CONVERSATIONS_COLLECTION) {
+        if (
+            !isEnabled ||
+            !realtimeEnabled ||
+            !userId ||
+            !CONVERSATIONS_COLLECTION
+        ) {
             return;
         }
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
 
         const conversationChannel = Channel.database(env.databaseId)
             .collection(CONVERSATIONS_COLLECTION)
@@ -156,12 +183,15 @@ export function useConversations(userId: string | null, enabled = true) {
                                 );
                             });
                     },
+                            [Query.contains("participants", userId)],
                 );
 
                 if (cancelled) {
                     await closeSubscriptionSafely(subscription);
                     return;
                 }
+
+                realtimeRetryNonceRef.current = 0;
 
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
@@ -181,15 +211,56 @@ export function useConversations(userId: string | null, enabled = true) {
                     return;
                 }
 
-                logger.error(
-                    "Conversation realtime subscription failed",
-                    toError(realtimeError),
-                    {
-                        collectionId: CONVERSATIONS_COLLECTION,
-                        conversationChannelKey,
-                        databaseId: env.databaseId,
-                    },
-                );
+                const isTransient = isTransientRealtimeSubscribeError(realtimeError);
+                const retryDelayMs = isTransient ? 1200 : 4000;
+                const realtimeRetryNonce = realtimeRetryNonceRef.current;
+
+                if (realtimeRetryNonce >= MAX_RETRIES) {
+                    logger.error(
+                        "Conversation realtime subscription max retries reached",
+                        toError(realtimeError),
+                        {
+                            collectionId: CONVERSATIONS_COLLECTION,
+                            conversationChannelKey,
+                            databaseId: env.databaseId,
+                            attempts: realtimeRetryNonce,
+                        },
+                    );
+                    return;
+                }
+
+                if (isTransient) {
+                    logger.warn(
+                        "Conversation realtime subscription interrupted during connection setup",
+                        {
+                            collectionId: CONVERSATIONS_COLLECTION,
+                            conversationChannelKey,
+                            databaseId: env.databaseId,
+                            error: toErrorMessage(realtimeError),
+                            retryDelayMs,
+                            attempts: realtimeRetryNonce,
+                        },
+                    );
+                } else {
+                    logger.error(
+                        "Conversation realtime subscription failed",
+                        toError(realtimeError),
+                        {
+                            collectionId: CONVERSATIONS_COLLECTION,
+                            conversationChannelKey,
+                            databaseId: env.databaseId,
+                            retryDelayMs,
+                            attempts: realtimeRetryNonce,
+                        },
+                    );
+                }
+
+                const timeoutId = setTimeout(() => {
+                    realtimeRetryNonceRef.current += 1;
+                    setRealtimeRetryTick((current) => current + 1);
+                }, retryDelayMs);
+
+                pendingTimeouts.push(timeoutId);
             }
         })();
         subscriptionTask.catch((error) => {
@@ -201,9 +272,19 @@ export function useConversations(userId: string | null, enabled = true) {
 
         return () => {
             cancelled = true;
+            for (const timeout of pendingTimeouts) {
+                clearTimeout(timeout);
+            }
             cleanupFn?.();
         };
-    }, [isEnabled, queryClient, userId]);
+    }, [
+        isEnabled,
+        queryClient,
+        realtimeEnabled,
+        realtimeRetryTick,
+        subscriptionContextKey,
+        userId,
+    ]);
 
     return {
         conversations: conversationsWithStatus,

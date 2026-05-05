@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ID, Query } from "node-appwrite";
+import { AppwriteException } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -14,7 +15,37 @@ import {
 	recordEvent,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
-import { normalizeServerVisibility } from "@/lib/server-metadata";
+import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
+import type { Membership } from "@/lib/types";
+
+type ServerDocument = {
+	$id: string;
+	isPublic?: boolean;
+};
+
+function isDocumentNotFoundError(error: unknown): boolean {
+	if (typeof AppwriteException === "function" && error instanceof AppwriteException) {
+		return error.code === 404 || error.type === "document_not_found";
+	}
+
+	if (typeof error !== "object" || error === null) {
+		return false;
+	}
+
+	const candidate = error as {
+		code?: unknown;
+		type?: unknown;
+		response?: {
+			status?: unknown;
+		};
+	};
+
+	return (
+		candidate.code === 404 ||
+		candidate.type === "document_not_found" ||
+		candidate.response?.status === 404
+	);
+}
 
 /**
  * POST /api/servers/join
@@ -47,15 +78,31 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const body = await request.json();
-		const { serverId } = body;
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch {
+			return NextResponse.json(
+				{ error: "Invalid JSON payload" },
+				{ status: 400 }
+			);
+		}
 
-		if (!serverId) {
+		if (typeof body !== "object" || body === null || Array.isArray(body)) {
+			return NextResponse.json(
+				{ error: "Invalid JSON payload" },
+				{ status: 400 }
+			);
+		}
+
+		const serverIdValue = (body as { serverId?: unknown }).serverId;
+		if (typeof serverIdValue !== "string" || serverIdValue.trim().length === 0) {
 			return NextResponse.json(
 				{ error: "serverId is required" },
 				{ status: 400 }
 			);
 		}
+		const serverId = serverIdValue.trim();
 
 		// Use authenticated user's ID, not from request body (security)
 		const userId = user.$id;
@@ -68,23 +115,27 @@ export async function POST(request: NextRequest) {
 		const { databases } = getServerClient();
 
 		// Check if server exists
-		let serverDocument: Record<string, unknown>;
+		let serverDocument: ServerDocument;
 		try {
-			const response = await databases.getDocument(
+			serverDocument = (await databases.getDocument(
 				env.databaseId,
 				env.collections.servers,
-				serverId
-			);
-			serverDocument = response as unknown as Record<string, unknown>;
-		} catch {
+				serverId,
+			)) as ServerDocument;
+		} catch (error) {
+			if (!isDocumentNotFoundError(error)) {
+				throw error;
+			}
+
 			logger.warn("Server not found", { serverId });
 			return NextResponse.json(
 				{ error: "Server not found" },
-				{ status: 404 }
+				{ status: 404 },
 			);
 		}
 
-		const isPublicServer = normalizeServerVisibility(serverDocument.isPublic);
+		const isPublicServer = serverDocument.isPublic === true;
+
 		if (!isPublicServer) {
 			return NextResponse.json(
 				{ error: "This server is private. Join with an invite link." },
@@ -114,7 +165,7 @@ export async function POST(request: NextRequest) {
 		// Create membership
 		const membershipPerms = perms.serverOwner(userId);
 		const dbStartTime = Date.now();
-		await databases.createDocument(
+		const membership = await databases.createDocument(
 			env.databaseId,
 			membershipCollectionId,
 			ID.unique(),
@@ -152,7 +203,23 @@ export async function POST(request: NextRequest) {
 			duration: Date.now() - startTime,
 		});
 
-		return NextResponse.json({ success: true });
+		const safeMembership: Membership = {
+			$id: String(membership.$id),
+			$createdAt: String(membership.$createdAt ?? ""),
+			userId: String(membership.userId),
+			serverId: String(membership.serverId),
+			role: "member",
+		};
+
+		invalidateChannelsUserCaches({
+			serverId,
+			userId,
+		});
+
+		return NextResponse.json({
+			success: true,
+			membership: safeMembership,
+		});
 	} catch (error) {
 		recordError(
 			error instanceof Error ? error : new Error(String(error)),

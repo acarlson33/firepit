@@ -21,6 +21,27 @@ type SearchResult = {
     message: Message | DirectMessage;
 };
 
+function getOtherIdFromDirectMessage(
+    directMessage: DirectMessage,
+    currentUserId: string,
+) {
+    if (directMessage.senderId === currentUserId) {
+        return typeof directMessage.receiverId === "string" &&
+            directMessage.receiverId.length > 0
+            ? directMessage.receiverId
+            : undefined;
+    }
+
+    if (directMessage.receiverId === currentUserId) {
+        return typeof directMessage.senderId === "string" &&
+            directMessage.senderId.length > 0
+            ? directMessage.senderId
+            : undefined;
+    }
+
+    return undefined;
+}
+
 /**
  * Parse search filters from query string
  * Supports: from:@username, in:#channel, has:image, mentions:me, before:date, after:date
@@ -185,6 +206,11 @@ export async function GET(request: NextRequest) {
                 messageQueries,
             );
 
+            logger.info("Search: fetched channel messages", {
+                userId: user.$id,
+                count: channelMessages.documents.length,
+            });
+
             trackApiCall(
                 "/api/search/messages",
                 "GET",
@@ -295,6 +321,11 @@ export async function GET(request: NextRequest) {
                     dmQueries,
                 );
 
+                logger.info("Search: fetched direct messages", {
+                    userId: user.$id,
+                    count: directMessages.documents.length,
+                });
+
                 trackApiCall(
                     "/api/search/messages",
                     "GET",
@@ -356,6 +387,7 @@ export async function GET(request: NextRequest) {
 
         // Sort all results by date (most recent first)
         const relationshipSubjects = new Set<string>();
+        const dmCounterpartyMap = new Map<string, string | undefined>();
         for (const result of results) {
             if (result.type === "channel") {
                 relationshipSubjects.add((result.message as Message).userId);
@@ -363,12 +395,20 @@ export async function GET(request: NextRequest) {
             }
 
             const directMessage = result.message as DirectMessage;
-            relationshipSubjects.add(directMessage.senderId);
+            const otherId = getOtherIdFromDirectMessage(
+                directMessage,
+                user.$id,
+            );
+            dmCounterpartyMap.set(directMessage.$id, otherId);
+            if (otherId) {
+                relationshipSubjects.add(otherId);
+            }
         }
 
+        const relationshipSubjectsList = Array.from(relationshipSubjects);
         const relationshipMap = await getRelationshipMap(
             user.$id,
-            Array.from(relationshipSubjects),
+            relationshipSubjectsList,
         );
         const visibleResults = results.filter((result) => {
             if (result.type === "channel") {
@@ -378,9 +418,20 @@ export async function GET(request: NextRequest) {
                 return !relationship?.blockedByMe && !relationship?.blockedMe;
             }
 
-            const relationship = relationshipMap.get(
-                (result.message as DirectMessage).senderId,
-            );
+            const directMessage = result.message as DirectMessage;
+            const otherId = dmCounterpartyMap.get(directMessage.$id);
+            if (!otherId) {
+                logger.warn(
+                    "Dropping malformed direct message search result with missing counterparty",
+                    {
+                        directMessageId: directMessage.$id,
+                        userId: user.$id,
+                    },
+                );
+                return false;
+            }
+
+            const relationship = relationshipMap.get(otherId);
             return !relationship?.blockedByMe && !relationship?.blockedMe;
         });
 
@@ -412,24 +463,27 @@ export async function GET(request: NextRequest) {
             { displayName?: string; avatarUrl?: string; pronouns?: string }
         >();
         try {
-            const profiles = await databases.listDocuments(
-                env.databaseId,
-                env.collections.profiles,
-                [Query.equal("userId", Array.from(userIds)), Query.limit(100)],
-            );
+            const profileIds = Array.from(userIds);
+            if (profileIds.length > 0) {
+                const profiles = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.profiles,
+                    [Query.equal("userId", profileIds), Query.limit(100)],
+                );
 
-            for (const profile of profiles.documents) {
-                profileMap.set(String(profile.userId), {
-                    displayName: profile.displayName
-                        ? String(profile.displayName)
-                        : undefined,
-                    avatarUrl: profile.avatarFileId
-                        ? getAvatarUrl(String(profile.avatarFileId))
-                        : undefined,
-                    pronouns: profile.pronouns
-                        ? String(profile.pronouns)
-                        : undefined,
-                });
+                for (const profile of profiles.documents) {
+                    profileMap.set(String(profile.userId), {
+                        displayName: profile.displayName
+                            ? String(profile.displayName)
+                            : undefined,
+                        avatarUrl: profile.avatarFileId
+                            ? getAvatarUrl(String(profile.avatarFileId))
+                            : undefined,
+                        pronouns: profile.pronouns
+                            ? String(profile.pronouns)
+                            : undefined,
+                    });
+                }
             }
         } catch (error) {
             logger.error("Failed to fetch profiles for search results", {

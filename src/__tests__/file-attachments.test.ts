@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     buildAttachmentDocumentData,
     buildLegacyAttachmentDocumentData,
+    isUnknownAttachmentAttributeError,
     normalizeFileAttachment,
     normalizeFileAttachmentsInput,
 } from "../lib/file-attachments";
@@ -130,5 +131,34 @@ describe("file-attachments", () => {
         });
         expect(legacyPayload).not.toHaveProperty("mediaKind");
         expect(legacyPayload).not.toHaveProperty("source");
+    });
+
+    it("detects unknown attachment attribute errors from Appwrite type", () => {
+        expect(
+            isUnknownAttachmentAttributeError({
+                type: "document_invalid_structure",
+                message: "Unknown attribute: previewUrl",
+            }),
+        ).toBe(true);
+    });
+
+    it("detects unknown attachment attribute errors from message text", () => {
+        expect(
+            isUnknownAttachmentAttributeError({
+                type: "general_unauthorized_scope",
+                message: "Unknown attribute: previewUrl",
+            }),
+        ).toBe(true);
+    });
+
+    it("rejects unrelated attachment errors", () => {
+        expect(
+            isUnknownAttachmentAttributeError({
+                type: "general_unauthorized_scope",
+                message: "Forbidden",
+            }),
+        ).toBe(false);
+        expect(isUnknownAttachmentAttributeError(null)).toBe(false);
+        expect(isUnknownAttachmentAttributeError("not-an-error")).toBe(false);
     });
 });

@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ReactionButton } from "../../components/reaction-button";

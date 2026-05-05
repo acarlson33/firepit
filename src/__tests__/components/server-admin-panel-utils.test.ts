@@ -1,6 +1,8 @@
+/// <reference lib="dom" />
+
 import { describe, expect, it } from "vitest";
 
-import { getAuditUserLabel } from "@/components/server-admin-panel-utils";
+import { getAuditUserLabel } from "../../components/server-admin-panel-utils";
 
 describe("getAuditUserLabel", () => {
     it("prefers the member username when the actor is still in the server", () => {

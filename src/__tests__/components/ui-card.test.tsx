@@ -2,6 +2,7 @@
  * Tests for Card UI components
  * Target coverage: Card and all its sub-components
  */
+/// <reference lib="dom" />
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,7 +13,7 @@ import {
 	CardAction,
 	CardContent,
 	CardFooter,
-} from "@/components/ui/card";
+} from "../../components/ui/card";
 
 describe("Card Components", () => {
 	describe("Card", () => {

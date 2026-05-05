@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildMessagePoll, parsePollCommand, parsePollOptions } from "@/lib/polls";
+import {
+    buildMessagePoll,
+    isPollCommand,
+    parsePollCommand,
+    parsePollOptions,
+} from "../lib/polls";
 
 describe("poll helpers", () => {
     it("parses valid poll slash command", () => {
@@ -51,6 +56,14 @@ describe("poll helpers", () => {
         expect(poll.options[0].count).toBe(0);
         expect(poll.options[1].count).toBe(2);
         expect(poll.options[1].voterIds).toEqual(["user-1", "user-2"]);
+        expect(poll.contextType).toBe("channel");
+        expect(poll.contextId).toBe("channel-1");
+    });
+
+    it("detects poll command boundaries correctly", () => {
+        expect(isPollCommand('/poll "Question" | "A" | "B"')).toBe(true);
+        expect(isPollCommand("   /poll")).toBe(true);
+        expect(isPollCommand("/pollsomething")).toBe(false);
     });
 
     it("returns empty options for invalid serialized payload", () => {

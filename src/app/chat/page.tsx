@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     MessageSquare,
     Hash,
@@ -43,6 +44,7 @@ import {
 } from "@/lib/message-navigation";
 import type {
     Channel,
+    Conversation,
     FileAttachment,
     InboxContextKind,
     InboxItem,
@@ -186,6 +188,32 @@ function getFirstUnreadItem(items: InboxItem[]) {
     })[0];
 }
 
+type PollOption = {
+    id: string;
+    value: string;
+};
+
+type ServerPermissionsResponse = {
+    administrator?: boolean;
+    manageMessages?: boolean;
+    manageServer?: boolean;
+    sendMessages?: boolean;
+    canSend?: boolean;
+};
+
+function createPollOption(value = ""): PollOption {
+    return {
+        id:
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        value,
+    };
+}
+
+const NO_OP_FORM_EVENT = {
+    preventDefault() {},
+} as React.FormEvent;
+
 export default function ChatPage() {
     const { userData, loading: _authLoading } = useAuth();
     const userId = userData?.userId ?? null;
@@ -235,7 +263,10 @@ export default function ChatPage() {
     );
     const [pollDialogOpen, setPollDialogOpen] = useState(false);
     const [pollQuestion, setPollQuestion] = useState("");
-    const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+    const [pollOptions, setPollOptions] = useState<PollOption[]>(() => [
+        createPollOption(),
+        createPollOption(),
+    ]);
     const [creatingPoll, setCreatingPoll] = useState(false);
     const messageDensity = "compact";
     const [muteDialogState, setMuteDialogState] = useState<{
@@ -263,6 +294,28 @@ export default function ChatPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isWindowFocused, setIsWindowFocused] = useState(true);
     const loadingOlderUnreadRef = useRef(false);
+    const queryClient = useQueryClient();
+
+    const upsertConversationIntoCache = useCallback(
+        (conversation: Conversation) => {
+            queryClient.setQueryData<Conversation[]>(
+                ["conversations", userId],
+                (currentValue) => {
+                    if (!Array.isArray(currentValue)) {
+                        return [conversation];
+                    }
+
+                    const nextConversations = currentValue.filter(
+                        (currentConversation) =>
+                            currentConversation.$id !== conversation.$id,
+                    );
+
+                    return [conversation, ...nextConversations];
+                },
+            );
+        },
+        [queryClient, userId],
+    );
 
     // Custom emojis
     const { customEmojis, uploadEmoji } = useCustomEmojis();
@@ -273,6 +326,7 @@ export default function ChatPage() {
         viewMode === "dms" ||
             newConversationOpen ||
             Boolean(selectedConversationId),
+        viewMode !== "dms",
     );
     const selectedConversation = useMemo(
         () =>
@@ -883,6 +937,13 @@ export default function ChatPage() {
             ) ?? null,
         [channelsApi.channels, selectedChannel],
     );
+    const selectedServerData = useMemo(
+        () =>
+            serversApi.servers.find(
+                (server) => server.$id === serversApi.selectedServer,
+            ) ?? null,
+        [serversApi.selectedServer, serversApi.servers],
+    );
 
     useEffect(() => {
         if (
@@ -1024,93 +1085,159 @@ export default function ChatPage() {
         selectedConversationId,
     ]);
 
+    const fetchServerPermissions = useCallback(
+        async (params: {
+            serverId: string;
+            userId: string;
+            signal: AbortSignal;
+            channelId?: string;
+        }) => {
+            const queryParams = new URLSearchParams({
+                userId: params.userId,
+            });
+            if (params.channelId) {
+                queryParams.set("channelId", params.channelId);
+            }
+
+            const response = await fetch(
+                `/api/servers/${params.serverId}/permissions?${queryParams.toString()}`,
+                { signal: params.signal },
+            );
+            if (!response.ok) {
+                return null;
+            }
+
+            return (await response.json()) as ServerPermissionsResponse;
+        },
+        [],
+    );
+
     // Check manageMessages permission when channel changes
     useEffect(() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+
+        setCanManageMessages(false);
+        setCanSendMessages(false);
+
         async function checkPermissions() {
             if (!selectedChannel || !userId || !serversApi.selectedServer) {
-                setCanManageMessages(false);
-                setCanSendMessages(false);
+                if (!signal.aborted) {
+                    setCanManageMessages(false);
+                    setCanSendMessages(false);
+                }
                 return;
             }
 
-            const selectedServerData = serversApi.servers.find(
-                (s) => s.$id === serversApi.selectedServer,
-            );
             if (selectedServerData?.ownerId === userId) {
-                setCanManageMessages(true);
-                setCanSendMessages(true);
+                if (!signal.aborted) {
+                    setCanManageMessages(true);
+                    setCanSendMessages(true);
+                }
                 return;
             }
 
             try {
-                const res = await fetch(
-                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}&channelId=${selectedChannel}`,
-                );
-                if (res.ok) {
-                    const data = await res.json();
-                    setCanManageMessages(data.manageMessages ?? false);
-                    setCanSendMessages(
-                        data.canSend ?? data.sendMessages ?? false,
-                    );
-                } else {
-                    setCanManageMessages(false);
-                    setCanSendMessages(false);
+                const data = await fetchServerPermissions({
+                    serverId: serversApi.selectedServer,
+                    userId,
+                    signal,
+                    channelId: selectedChannel,
+                });
+
+                if (!signal.aborted) {
+                    if (data) {
+                        setCanManageMessages(data.manageMessages ?? false);
+                        setCanSendMessages(
+                            data.canSend ?? data.sendMessages ?? false,
+                        );
+                    } else {
+                        setCanManageMessages(false);
+                        setCanSendMessages(false);
+                    }
                 }
-            } catch {
+            } catch (error) {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
+
                 setCanManageMessages(false);
                 setCanSendMessages(false);
             }
         }
 
         void checkPermissions();
+
+        return () => {
+            controller.abort();
+        };
     }, [
+        fetchServerPermissions,
+        selectedServerData?.ownerId,
         selectedChannel,
         userId,
         serversApi.selectedServer,
-        serversApi.servers,
     ]);
 
     useEffect(() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+
+        setCanManageServer(false);
+
         async function checkServerManagementPermission() {
             if (!userId || !serversApi.selectedServer) {
-                setCanManageServer(false);
+                if (!signal.aborted) {
+                    setCanManageServer(false);
+                }
                 return;
             }
 
-            const selectedServerData = serversApi.servers.find(
-                (s) => s.$id === serversApi.selectedServer,
-            );
-
             if (selectedServerData?.ownerId === userId) {
-                setCanManageServer(true);
+                if (!signal.aborted) {
+                    setCanManageServer(true);
+                }
                 return;
             }
 
             try {
-                const response = await fetch(
-                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}`,
-                );
+                const data = await fetchServerPermissions({
+                    serverId: serversApi.selectedServer,
+                    userId,
+                    signal,
+                });
 
-                if (!response.ok) {
-                    setCanManageServer(false);
+                if (!signal.aborted) {
+                    setCanManageServer(
+                        Boolean(data?.manageServer || data?.administrator),
+                    );
+                }
+            } catch (error) {
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
                     return;
                 }
 
-                const data = (await response.json()) as {
-                    manageServer?: boolean;
-                    administrator?: boolean;
-                };
-
-                setCanManageServer(
-                    Boolean(data.manageServer || data.administrator),
-                );
-            } catch {
                 setCanManageServer(false);
             }
         }
 
         void checkServerManagementPermission();
-    }, [userId, serversApi.selectedServer, serversApi.servers]);
+
+        return () => {
+            controller.abort();
+        };
+    }, [
+        fetchServerPermissions,
+        selectedServerData?.ownerId,
+        userId,
+        serversApi.selectedServer,
+    ]);
 
     // Notifications - listens for incoming messages and triggers notifications
     const { requestPermission: requestNotificationPermission } =
@@ -1238,7 +1365,7 @@ export default function ChatPage() {
 
     const resetPollDialog = useCallback(() => {
         setPollQuestion("");
-        setPollOptions(["", ""]);
+        setPollOptions([createPollOption(), createPollOption()]);
         setCreatingPoll(false);
     }, []);
 
@@ -1247,36 +1374,43 @@ export default function ChatPage() {
         resetPollDialog();
     }, [resetPollDialog]);
 
-    const updatePollOption = useCallback((index: number, value: string) => {
+    const updatePollOption = useCallback((optionId: string, value: string) => {
         setPollOptions((currentValue) =>
-            currentValue.map((option, optionIndex) =>
-                optionIndex === index ? value : option,
+            currentValue.map((option) =>
+                option.id === optionId ? { ...option, value } : option,
             ),
         );
     }, []);
 
     const addPollOption = useCallback(() => {
         setPollOptions((currentValue) =>
-            currentValue.length < 10 ? [...currentValue, ""] : currentValue,
+            currentValue.length < 10
+                ? [...currentValue, createPollOption()]
+                : currentValue,
         );
     }, []);
 
-    const removePollOption = useCallback((index: number) => {
+    const removePollOption = useCallback((optionId: string) => {
         setPollOptions((currentValue) => {
             if (currentValue.length <= 2) {
                 return currentValue;
             }
 
             return currentValue.filter(
-                (_option, optionIndex) => optionIndex !== index,
+                (option) => option.id !== optionId,
             );
         });
     }, []);
 
     const buildPollCommand = useCallback(() => {
-        const sanitizedQuestion = pollQuestion.replaceAll('"', "'").trim();
+        const sanitizedQuestion = pollQuestion
+            .replaceAll("|", "\\|")
+            .replaceAll('"', "'")
+            .trim();
         const sanitizedOptions = pollOptions
-            .map((option) => option.replaceAll('"', "'").trim())
+            .map((option) =>
+                option.value.replaceAll("|", "\\|").replaceAll('"', "'").trim(),
+            )
             .filter((option) => option.length > 0);
 
         if (!sanitizedQuestion) {
@@ -1323,13 +1457,19 @@ export default function ChatPage() {
         setCreatingPoll(true);
         try {
             await send(
-                { preventDefault() {} } as React.FormEvent,
+                NO_OP_FORM_EVENT,
                 undefined,
                 undefined,
                 undefined,
                 command,
             );
             closePollDialog();
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to create poll.",
+            );
         } finally {
             setCreatingPoll(false);
         }
@@ -1338,13 +1478,12 @@ export default function ChatPage() {
     const handleSendWithImage = useCallback(
         async (e?: React.FormEvent) => {
             e?.preventDefault();
-            const submitEvent =
-                e ?? ({ preventDefault() {} } as React.FormEvent);
+            const submitEvent = e ?? NO_OP_FORM_EVENT;
 
             if (
                 !editingMessageId &&
                 selectedChannel &&
-                text.trim() === "/poll"
+                text.trim().toLowerCase() === "/poll"
             ) {
                 if (selectedImage || fileAttachments.length > 0) {
                     toast.error("Polls cannot include image or file attachments.");
@@ -1474,18 +1613,10 @@ export default function ChatPage() {
             }
         },
         onVotePoll: async (messageId, optionId) => {
-            try {
-                await votePoll(messageId, optionId);
-            } catch {
-                // Error already surfaced by poll handler.
-            }
+            await votePoll(messageId, optionId);
         },
         onClosePoll: async (messageId) => {
-            try {
-                await closePoll(messageId);
-            } catch {
-                // Error already surfaced by poll handler.
-            }
+            await closePoll(messageId);
         },
     });
 
@@ -1496,9 +1627,6 @@ export default function ChatPage() {
     );
 
     function renderServers() {
-        const selectedServerData = serversApi.servers.find(
-            (s) => s.$id === serversApi.selectedServer,
-        );
         const isOwner = selectedServerData?.ownerId === userId;
         const canOpenServerAdminPanel = isOwner || canManageServer;
 
@@ -2073,6 +2201,7 @@ export default function ChatPage() {
                                 setNewConversationOpen(true)
                             }
                             onConversationCreated={(conversation) => {
+                                upsertConversationIntoCache(conversation);
                                 setSelectedConversationId(conversation.$id);
                                 setViewMode("dms");
                                 setSelectedChannel(null);
@@ -2327,6 +2456,7 @@ export default function ChatPage() {
                 <NewConversationDialog
                     currentUserId={userId}
                     onConversationCreated={(conversation) => {
+                        upsertConversationIntoCache(conversation);
                         setSelectedConversationId(conversation.$id);
                         setViewMode("dms");
                         setSelectedChannel(null);
@@ -2395,7 +2525,7 @@ export default function ChatPage() {
 
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <Label>Options</Label>
+                                <h3 className="text-sm font-medium">Options</h3>
                                 <Button
                                     disabled={creatingPoll || pollOptions.length >= 10}
                                     onClick={addPollOption}
@@ -2409,21 +2539,25 @@ export default function ChatPage() {
 
                             <div className="space-y-2">
                                 {pollOptions.map((option, index) => (
-                                    <div
-                                        className="flex items-center gap-2"
-                                        key={`poll-option-${index}`}
-                                    >
+                                    <div className="flex items-center gap-2" key={option.id}>
+                                        <Label
+                                            className="sr-only"
+                                            htmlFor={`poll-option-${option.id}`}
+                                        >
+                                            {`Option ${index + 1}`}
+                                        </Label>
                                         <Input
                                             disabled={creatingPoll}
+                                            id={`poll-option-${option.id}`}
                                             maxLength={120}
                                             onChange={(event) => {
                                                 updatePollOption(
-                                                    index,
+                                                    option.id,
                                                     event.target.value,
                                                 );
                                             }}
                                             placeholder={`Option ${index + 1}`}
-                                            value={option}
+                                            value={option.value}
                                         />
                                         <Button
                                             disabled={
@@ -2431,7 +2565,7 @@ export default function ChatPage() {
                                                 pollOptions.length <= 2
                                             }
                                             onClick={() => {
-                                                removePollOption(index);
+                                                removePollOption(option.id);
                                             }}
                                             size="sm"
                                             type="button"
@@ -2492,16 +2626,8 @@ export default function ChatPage() {
                     open={roleSettingsOpen}
                     onOpenChange={setRoleSettingsOpen}
                     serverId={serversApi.selectedServer}
-                    serverName={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.name || "Server"
-                    }
-                    isOwner={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.ownerId === userId
-                    }
+                    serverName={selectedServerData?.name || "Server"}
+                    isOwner={selectedServerData?.ownerId === userId}
                 />
             )}
             {selectedChannel && serversApi.selectedServer && (
@@ -2522,47 +2648,15 @@ export default function ChatPage() {
                     open={adminPanelOpen}
                     onOpenChange={setAdminPanelOpen}
                     serverId={serversApi.selectedServer}
-                    serverName={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.name || "Server"
-                    }
-                    isOwner={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.ownerId === userId
-                    }
+                    serverName={selectedServerData?.name || "Server"}
+                    isOwner={selectedServerData?.ownerId === userId}
                     canManageServer={canManageServer}
-                    serverDescription={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.description
-                    }
-                    serverIconFileId={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.iconFileId
-                    }
-                    serverIconUrl={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.iconUrl
-                    }
-                    serverBannerFileId={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.bannerFileId
-                    }
-                    serverBannerUrl={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.bannerUrl
-                    }
-                    serverIsPublic={
-                        serversApi.servers.find(
-                            (s) => s.$id === serversApi.selectedServer,
-                        )?.isPublic
-                    }
+                    serverDescription={selectedServerData?.description}
+                    serverIconFileId={selectedServerData?.iconFileId}
+                    serverIconUrl={selectedServerData?.iconUrl}
+                    serverBannerFileId={selectedServerData?.bannerFileId}
+                    serverBannerUrl={selectedServerData?.bannerUrl}
+                    serverIsPublic={selectedServerData?.isPublic}
                     onServerUpdated={() => {
                         void serversApi.refresh();
                     }}

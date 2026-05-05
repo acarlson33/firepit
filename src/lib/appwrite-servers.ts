@@ -6,23 +6,24 @@ import {
     normalizeError,
     withSession,
 } from "./appwrite-core";
-import type { Channel, ChannelCategory, Membership, Server } from "./types";
+import type { Channel, Membership, Server } from "./types";
 import { assignDefaultRoleBrowser } from "./default-role";
 import {
     getActualMemberCount,
     getActualMemberCounts,
 } from "./membership-count";
+import { logger } from "./newrelic-utils";
 import {
     mapServerDocument,
     normalizeServerDescription,
     normalizeServerFileId,
 } from "./server-metadata";
+import { normalizeChannelType } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const SERVERS_COLLECTION_ID = env.collections.servers;
 const CHANNELS_COLLECTION_ID = env.collections.channels;
-const CATEGORIES_COLLECTION_ID = env.collections.categories;
 // Read memberships collection ID at call time for testability
 /**
  * Returns memberships collection id.
@@ -34,17 +35,32 @@ function getMembershipsCollectionId(): string | undefined {
 const MAX_LIST_LIMIT = 500; // upper bound used for bulk listing
 const DEFAULT_SERVER_PAGE_SIZE = 25;
 const DEFAULT_CHANNEL_PAGE_SIZE = 50;
-const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+// reuse normalizeChannelType from shared helper
 
-function normalizeChannelType(value: unknown): Channel["type"] {
-    if (
-        typeof value === "string" &&
-        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
-    ) {
-        return value as Channel["type"];
+function mapMembershipDocument(doc: Record<string, unknown>): Membership {
+    if (typeof doc.$id !== "string" || doc.$id.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid $id");
     }
 
-    return "text";
+    if (typeof doc.serverId !== "string" || doc.serverId.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid serverId");
+    }
+
+    if (typeof doc.userId !== "string" || doc.userId.trim().length === 0) {
+        throw new Error("mapMembershipDocument requires a valid userId");
+    }
+
+    const id = doc.$id;
+    const serverId = doc.serverId;
+    const userId = doc.userId;
+
+    return {
+        $id: id,
+        $createdAt: String(doc.$createdAt ?? ""),
+        role: doc.role === "owner" ? "owner" : "member",
+        serverId,
+        userId,
+    };
 }
 // Authorization diagnostics constants
 // (Unauthorized diagnostics constants removed after refactor to normalized errors)
@@ -100,37 +116,6 @@ function getDatabases() {
 }
 
 /**
- * Lists servers.
- *
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Server[]>} The return value.
- */
-export async function listServers(limit = 25): Promise<Server[]> {
-    const databases = getDatabases();
-    const res = await databases.listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: SERVERS_COLLECTION_ID,
-        // Use system attribute $createdAt for ordering to avoid schema attribute requirement
-        queries: [
-            Query.limit(Math.min(limit, 100)),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-
-    const memberCounts = await getActualMemberCounts(
-        databases,
-        res.documents.map((doc) => String(doc.$id)),
-    );
-
-    const servers = res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return mapServerDocument(d, memberCounts.get(String(d.$id)) ?? 0);
-    });
-
-    return servers;
-}
-
-/**
  * Lists servers page.
  *
  * @param {number} limit - The limit value, if provided.
@@ -177,6 +162,7 @@ export async function listServersPage(
  * @param {{ bypassFeatureCheck?: boolean | undefined; } | undefined} options - The options value, if provided.
  * @returns {Promise<Server>} The return value.
  */
+/* eslint-disable no-redeclare */
 export function createServer(
     name: string,
     options?: {
@@ -185,8 +171,31 @@ export function createServer(
         iconFileId?: string;
         bannerFileId?: string;
         isPublic?: boolean;
+        includeMembership?: false;
     },
-): Promise<Server> {
+): Promise<Server>;
+export function createServer(
+    name: string,
+    options: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership: true;
+    },
+): Promise<{ membership: Membership | null; server: Server }>;
+export function createServer(
+    name: string,
+    options?: {
+        bypassFeatureCheck?: boolean;
+        description?: string;
+        iconFileId?: string;
+        bannerFileId?: string;
+        isPublic?: boolean;
+        includeMembership?: boolean;
+    },
+): Promise<Server | { membership: Membership | null; server: Server }> {
     return withSession(async ({ userId }) => {
         const ownerId = userId;
 
@@ -230,6 +239,7 @@ export function createServer(
                 permissions,
             });
             const s = serverDoc as unknown as Record<string, unknown>;
+            let membership: Membership | null = null;
             const membershipsCollectionId = getMembershipsCollectionId();
             if (membershipsCollectionId) {
                 try {
@@ -238,7 +248,7 @@ export function createServer(
                         Permission.update(Role.user(ownerId)),
                         Permission.delete(Role.user(ownerId)),
                     ];
-                    await getDatabases().createDocument({
+                    const membershipDoc = await getDatabases().createDocument({
                         databaseId: DATABASE_ID,
                         collectionId: membershipsCollectionId,
                         documentId: ID.unique(),
@@ -249,6 +259,10 @@ export function createServer(
                         },
                         permissions: membershipPerms,
                     });
+
+                    membership = mapMembershipDocument(
+                        membershipDoc as Record<string, unknown>,
+                    );
                 } catch {
                     // ignore membership creation failure
                 }
@@ -260,54 +274,32 @@ export function createServer(
             }
 
             // Get actual member count for return value
+            const serverRecord = {
+                ...serverData,
+                ...s,
+                ownerId,
+            };
             const actualMemberCount = await getActualMemberCount(
                 getDatabases(),
                 String(s.$id),
             );
 
-            return mapServerDocument(s, actualMemberCount);
+            const mappedServer = mapServerDocument(serverRecord, actualMemberCount);
+
+            if (options?.includeMembership) {
+                return {
+                    membership,
+                    server: mappedServer,
+                };
+            }
+
+            return mappedServer;
         } catch (e) {
             throw normalizeError(e);
         }
     });
 }
-
-/**
- * Lists channels.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<Channel[]>} The return value.
- */
-export async function listChannels(
-    serverId: string,
-    limit = 100,
-): Promise<Channel[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CHANNELS_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("$createdAt"),
-        ],
-    });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            type: normalizeChannelType(d.type),
-            topic: typeof d.topic === "string" && d.topic ? d.topic : undefined,
-            categoryId:
-                typeof d.categoryId === "string" ? d.categoryId : undefined,
-            position: typeof d.position === "number" ? d.position : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies Channel;
-    });
-}
+/* eslint-enable no-redeclare */
 
 /**
  * Lists channels page.
@@ -398,42 +390,6 @@ export async function createChannel(
     } satisfies Channel;
 }
 
-/**
- * Lists categories.
- *
- * @param {string} serverId - The server id value.
- * @param {number} limit - The limit value, if provided.
- * @returns {Promise<ChannelCategory[]>} The return value.
- */
-export async function listCategories(
-    serverId: string,
-    limit = 100,
-): Promise<ChannelCategory[]> {
-    const res = await getDatabases().listDocuments({
-        databaseId: DATABASE_ID,
-        collectionId: CATEGORIES_COLLECTION_ID,
-        queries: [
-            Query.equal("serverId", serverId),
-            Query.limit(limit),
-            Query.orderAsc("position"),
-        ],
-    });
-
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            name: String(d.name),
-            position: typeof d.position === "number" ? d.position : 0,
-            createdBy:
-                typeof d.createdBy === "string" ? d.createdBy : undefined,
-            $createdAt: String(d.$createdAt ?? ""),
-            $updatedAt: d.$updatedAt ? String(d.$updatedAt) : undefined,
-        } satisfies ChannelCategory;
-    });
-}
-
 // Membership utilities
 /**
  * Lists memberships for user.
@@ -453,16 +409,9 @@ export async function listMembershipsForUser(
         collectionId: membershipsCollectionId,
         queries: [Query.equal("userId", userId), Query.limit(MAX_LIST_LIMIT)],
     });
-    return res.documents.map((doc) => {
-        const d = doc as unknown as Record<string, unknown>;
-        return {
-            $id: String(d.$id),
-            serverId: String(d.serverId),
-            userId: String(d.userId),
-            role: d.role as "owner" | "member",
-            $createdAt: String(d.$createdAt ?? ""),
-        } satisfies Membership;
-    });
+    return res.documents.map((doc) =>
+        mapMembershipDocument(doc as Record<string, unknown>),
+    );
 }
 
 /**
@@ -492,19 +441,12 @@ export async function joinServer(
         data: { serverId, userId, role: "member" },
         permissions,
     });
-    const d = res as unknown as Record<string, unknown>;
     try {
         await assignDefaultRoleBrowser(serverId, userId);
     } catch {
         // Non-fatal: continue even if role assignment fails
     }
-    return {
-        $id: String(d.$id),
-        serverId: String(d.serverId),
-        userId: String(d.userId),
-        role: d.role as "owner" | "member",
-        $createdAt: String(d.$createdAt ?? ""),
-    } satisfies Membership;
+    return mapMembershipDocument(res as Record<string, unknown>);
 }
 
 /**
@@ -528,24 +470,77 @@ export async function deleteChannel(channelId: string) {
  * @returns {Promise<void>} The return value.
  */
 export async function deleteServer(serverId: string) {
-    // Best effort delete channels first
-    try {
-        const chans = await getDatabases().listDocuments({
-            databaseId: DATABASE_ID,
-            collectionId: CHANNELS_COLLECTION_ID,
-            queries: [
-                Query.equal("serverId", serverId),
-                Query.limit(MAX_LIST_LIMIT),
-            ],
-        });
-        for (const c of chans.documents) {
-            const id = String((c as unknown as Record<string, unknown>).$id);
+    const channelIds: string[] = [];
+    let offset = 0;
+    let paginationError: unknown = null;
 
-            await deleteChannel(id);
+    while (true) {
+        try {
+            const chans = await getDatabases().listDocuments({
+                databaseId: DATABASE_ID,
+                collectionId: CHANNELS_COLLECTION_ID,
+                queries: [
+                    Query.equal("serverId", serverId),
+                    Query.limit(MAX_LIST_LIMIT),
+                    Query.offset(offset),
+                ],
+            });
+
+            if (chans.documents.length === 0) {
+                break;
+            }
+
+            channelIds.push(
+                ...chans.documents.map((channel) =>
+                    String((channel as unknown as Record<string, unknown>).$id),
+                ),
+            );
+
+            if (chans.documents.length < MAX_LIST_LIMIT) {
+                break;
+            }
+
+            offset += MAX_LIST_LIMIT;
+        } catch (error) {
+            paginationError = error;
+            logger.error("Failed to list channels while deleting server", {
+                error: error instanceof Error ? error.message : String(error),
+                offset,
+                serverId,
+            });
+            break;
         }
-    } catch {
-        // ignore
     }
+
+    if (channelIds.length > 0) {
+        const deleteResults = await Promise.allSettled(
+            channelIds.map((channelId) => deleteChannel(channelId)),
+        );
+
+        let hasDeleteFailure = false;
+        for (const [index, result] of deleteResults.entries()) {
+            if (result.status === "rejected") {
+                hasDeleteFailure = true;
+                logger.error("Failed to delete channel while deleting server", {
+                    channelId: channelIds[index],
+                    error:
+                        result.reason instanceof Error
+                            ? result.reason.message
+                            : String(result.reason),
+                    serverId,
+                });
+            }
+        }
+
+        if (hasDeleteFailure) {
+            throw new Error("Failed to delete one or more channels while deleting server");
+        }
+    }
+
+    if (paginationError) {
+        throw paginationError;
+    }
+
     await getDatabases().deleteDocument({
         databaseId: DATABASE_ID,
         collectionId: SERVERS_COLLECTION_ID,

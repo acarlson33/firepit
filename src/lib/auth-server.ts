@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getUserRoles } from "./appwrite-roles";
 
-export type AuthErrorCode = "UNAUTHORIZED" | "FORBIDDEN";
+type AuthErrorCode = "UNAUTHORIZED" | "FORBIDDEN";
 
 export class AuthError extends Error {
     readonly code: AuthErrorCode;
@@ -57,6 +57,7 @@ export async function getServerSession() {
             return null;
         }
 
+        // Defense in depth: never treat the system sender as an interactive user.
         if (systemSenderUserId && user.$id === systemSenderUserId) {
             return null;
         }
