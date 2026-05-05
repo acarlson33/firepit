@@ -14,6 +14,8 @@ type UseChatSurfaceControllerOptions<TRawMessage extends { $id: string }> = {
         emoji: string,
         isAdding: boolean,
     ) => Promise<void>;
+    onVotePoll?: (messageId: string, optionId: string) => Promise<void>;
+    onClosePoll?: (messageId: string) => Promise<void>;
     onOpenThreadRaw?: (message: TRawMessage) => Promise<void>;
     onTogglePinRaw?: (message: TRawMessage) => Promise<void>;
 };
@@ -24,6 +26,8 @@ export function useChatSurfaceController<TRawMessage extends { $id: string }>({
     onStartReplyRaw,
     onRemove,
     onToggleReaction,
+    onVotePoll,
+    onClosePoll,
     onOpenThreadRaw,
     onTogglePinRaw,
 }: UseChatSurfaceControllerOptions<TRawMessage>) {
@@ -87,12 +91,42 @@ export function useChatSurfaceController<TRawMessage extends { $id: string }>({
         [getRawMessage, onTogglePinRaw],
     );
 
+    const onVoteMessagePoll = useCallback(
+        async (surfaceMessage: ChatSurfaceMessage, optionId: string) => {
+            if (!onVotePoll) {
+                return;
+            }
+
+            const rawMessage = getRawMessage(surfaceMessage);
+            if (rawMessage) {
+                await onVotePoll(rawMessage.$id, optionId);
+            }
+        },
+        [getRawMessage, onVotePoll],
+    );
+
+    const onCloseMessagePoll = useCallback(
+        async (surfaceMessage: ChatSurfaceMessage) => {
+            if (!onClosePoll) {
+                return;
+            }
+
+            const rawMessage = getRawMessage(surfaceMessage);
+            if (rawMessage) {
+                await onClosePoll(rawMessage.$id);
+            }
+        },
+        [getRawMessage, onClosePoll],
+    );
+
     return {
         getRawMessage,
         onStartEdit,
         onStartReply,
         onRemove,
         onToggleReaction,
+        onVotePoll: onVotePoll ? onVoteMessagePoll : undefined,
+        onClosePoll: onClosePoll ? onCloseMessagePoll : undefined,
         onOpenThread: onOpenThreadRaw ? onOpenThread : undefined,
         onTogglePin: onTogglePinRaw ? onTogglePin : undefined,
     };

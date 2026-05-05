@@ -7,10 +7,12 @@ import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 
 /**
- * Automatically joins a user to the server if there's only one server on the instance.
- * This is a QoL feature for single-server instances.
+ * Automatically joins a user to a server at signup time.
+ * Priority:
+ * 1) Server with defaultOnSignup=true
+ * 2) Single-server instance fallback
  */
-async function autoJoinSingleServer(userId: string): Promise<void> {
+async function autoJoinServerOnSignup(userId: string): Promise<void> {
     const env = getEnvConfig();
     const membershipCollectionId = env.collections.memberships;
 
@@ -22,19 +24,41 @@ async function autoJoinSingleServer(userId: string): Promise<void> {
     try {
         const { databases } = getServerClient();
 
-        // Check how many servers exist
-        const serversResponse = await databases.listDocuments(
+        let targetServerId: string | null = null;
+
+        // Prefer explicitly configured signup default server.
+        const defaultServersResponse = await databases.listDocuments(
             env.databaseId,
             env.collections.servers,
-            [Query.limit(2)], // Only need to know if there's exactly 1
+            [
+                Query.equal("defaultOnSignup", true),
+                Query.orderAsc("$createdAt"),
+                Query.limit(1),
+            ],
         );
-
-        // Only auto-join if there's exactly one server
-        if (serversResponse.documents.length !== 1) {
-            return;
+        if (defaultServersResponse.documents.length > 0) {
+            targetServerId = defaultServersResponse.documents[0].$id;
         }
 
-        const serverId = serversResponse.documents[0].$id;
+        // Fallback: auto-join if there's exactly one server on the instance.
+        if (!targetServerId) {
+            const serversResponse = await databases.listDocuments(
+                env.databaseId,
+                env.collections.servers,
+                [Query.limit(2)],
+            );
+
+            if (serversResponse.documents.length !== 1) {
+                return;
+            }
+
+            targetServerId = serversResponse.documents[0].$id;
+        }
+
+        const serverId = targetServerId;
+        if (!serverId) {
+            return;
+        }
 
         // Check if user is already a member
         const existingMembership = await databases.listDocuments(
@@ -218,7 +242,7 @@ export async function loginAction(
 
 /**
  * Server-side registration + login action.
- * Automatically joins the user to the server if there's only one.
+ * Automatically joins the user to a default server when configured.
  *
  * SECURITY: Uses FormData to prevent credentials from being exposed in network logs.
  * FormData is the recommended approach for server actions with sensitive data.
@@ -260,10 +284,10 @@ export async function registerAction(
         loginFormData.set("password", password);
         const loginResult = await loginAction(loginFormData);
 
-        // If login succeeded and memberships are enabled, auto-join single server
+        // If login succeeded and memberships are enabled, auto-join default server.
         if (loginResult.success) {
             try {
-                await autoJoinSingleServer(userId);
+                await autoJoinServerOnSignup(userId);
             } catch {
                 // Non-critical: auto-join failed, user can manually join later
             }

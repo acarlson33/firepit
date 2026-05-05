@@ -22,6 +22,12 @@ import {
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
 import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import {
+    buildMessagePoll,
+    isPollCommand,
+    parsePollCommand,
+    serializePollOptions,
+} from "@/lib/polls";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -102,7 +108,36 @@ export async function POST(request: NextRequest) {
             attachments,
         } = body;
 
-        if (text && text.length > MAX_MESSAGE_LENGTH) {
+        const normalizedText = typeof text === "string" ? text : "";
+        const creatingPoll = isPollCommand(normalizedText);
+        let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
+
+        if (creatingPoll) {
+            try {
+                parsedPoll = parsePollCommand(normalizedText);
+            } catch (error) {
+                return NextResponse.json(
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : "Invalid poll command.",
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
+        if (creatingPoll && (imageFileId || (attachments?.length ?? 0) > 0)) {
+            return NextResponse.json(
+                {
+                    error: "Poll messages do not support image or file attachments.",
+                },
+                { status: 400 },
+            );
+        }
+
+        if (normalizedText && normalizedText.length > MAX_MESSAGE_LENGTH) {
             return NextResponse.json(
                 {
                     error: MESSAGE_TOO_LONG_ERROR,
@@ -176,7 +211,7 @@ export async function POST(request: NextRequest) {
 
         const messageData: Record<string, unknown> = {
             userId,
-            text: text || "",
+            text: parsedPoll ? parsedPoll.question : normalizedText || "",
             userName,
             channelId: normalizedChannelId,
         };
@@ -197,7 +232,12 @@ export async function POST(request: NextRequest) {
             messageData.replyToId = replyToId;
         }
         // Add mentions array if provided
-        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+        if (
+            !creatingPoll &&
+            mentions &&
+            Array.isArray(mentions) &&
+            mentions.length > 0
+        ) {
             messageData.mentions = mentions;
         }
 
@@ -209,6 +249,38 @@ export async function POST(request: NextRequest) {
             messageData,
             permissions,
         );
+
+        let pollResponse: Message["poll"];
+
+        if (parsedPoll) {
+            const pollDocument = await databases.createDocument(
+                env.databaseId,
+                env.collections.polls,
+                ID.unique(),
+                {
+                    messageId: String(res.$id),
+                    channelId: normalizedChannelId,
+                    question: parsedPoll.question,
+                    options: serializePollOptions(parsedPoll.options),
+                    status: "open",
+                    createdBy: userId,
+                },
+                permissions,
+            );
+
+            pollResponse = buildMessagePoll({
+                poll: {
+                    $id: String(pollDocument.$id),
+                    messageId: String(res.$id),
+                    channelId: normalizedChannelId,
+                    question: parsedPoll.question,
+                    options: serializePollOptions(parsedPoll.options),
+                    status: "open",
+                    createdBy: userId,
+                },
+                votes: [],
+            });
+        }
 
         // Track database operation
         trackApiCall("/api/messages", "POST", 200, Date.now() - dbStartTime, {
@@ -229,7 +301,12 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (mentions && Array.isArray(mentions) && mentions.length > 0) {
+        if (
+            !creatingPoll &&
+            mentions &&
+            Array.isArray(mentions) &&
+            mentions.length > 0
+        ) {
             await upsertMentionInboxItems({
                 authorUserId: userId,
                 contextId: normalizedChannelId,
@@ -264,6 +341,7 @@ export async function POST(request: NextRequest) {
             mentions: Array.isArray(doc.mentions)
                 ? (doc.mentions as string[])
                 : undefined,
+            poll: pollResponse,
         };
 
         // Track message sent event
@@ -276,7 +354,7 @@ export async function POST(request: NextRequest) {
             hasAttachments: attachments && attachments.length > 0,
             attachmentCount: attachments?.length || 0,
             isReply: !!replyToId,
-            textLength: text?.length || 0,
+            textLength: normalizedText.length,
         });
 
         recordEvent("message_sent", {
@@ -285,6 +363,7 @@ export async function POST(request: NextRequest) {
             hasAttachments: Boolean(attachments && attachments.length > 0),
             hasImage: Boolean(imageFileId),
             isReply: Boolean(replyToId),
+            isPoll: Boolean(parsedPoll),
             messageId: message.$id,
             messageType: "channel",
             serverId: normalizedServerId,
@@ -296,6 +375,7 @@ export async function POST(request: NextRequest) {
             userId,
             channelId,
             hasAttachments: attachments && attachments.length > 0,
+            isPoll: Boolean(parsedPoll),
             duration: Date.now() - startTime,
         });
 

@@ -19,6 +19,25 @@ export type FileAttachment = {
     thumbnailUrl?: string; // For videos
 };
 
+export type MessagePollOption = {
+    id: string;
+    text: string;
+    count: number;
+    voterIds: string[];
+};
+
+export type MessagePoll = {
+    id: string;
+    messageId: string;
+    channelId: string;
+    question: string;
+    options: MessagePollOption[];
+    status: "open" | "closed";
+    createdBy: string;
+    closedAt?: string;
+    closedBy?: string;
+};
+
 export type Message = {
     $id: string;
     userId: string;
@@ -63,6 +82,7 @@ export type Message = {
     isPinned?: boolean;
     pinnedAt?: string; // ISO timestamp when pinned
     pinnedBy?: string; // User ID who pinned it
+    poll?: MessagePoll;
 };
 
 export type Server = {
@@ -71,6 +91,13 @@ export type Server = {
     $createdAt: string;
     ownerId: string;
     memberCount?: number; // Computed from memberships, not stored in DB
+    description?: string;
+    iconFileId?: string;
+    iconUrl?: string;
+    bannerFileId?: string;
+    bannerUrl?: string;
+    isPublic?: boolean;
+    defaultOnSignup?: boolean;
 };
 
 export type Channel = {
@@ -266,6 +293,7 @@ export type DirectMessage = {
     isPinned?: boolean;
     pinnedAt?: string;
     pinnedBy?: string;
+    poll?: MessagePoll;
 };
 
 export type UserStatus = {

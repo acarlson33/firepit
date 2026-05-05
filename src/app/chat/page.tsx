@@ -15,6 +15,16 @@ import {
     ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
 import { ChatSurfacePanel } from "@/components/chat-surface-panel";
@@ -57,7 +67,7 @@ import { useChatSurfaceController } from "./hooks/useChatSurfaceController";
 import { toast } from "sonner";
 
 // Lazy load heavy components
-const _ServerBrowser = dynamic(
+const ServerBrowser = dynamic(
     () =>
         import("./components/ServerBrowser").then((mod) => ({
             default: mod.ServerBrowser,
@@ -205,6 +215,7 @@ export default function ChatPage() {
     const [roleSettingsOpen, setRoleSettingsOpen] = useState(false);
     const [channelPermissionsOpen, setChannelPermissionsOpen] = useState(false);
     const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+    const [discoverServersOpen, setDiscoverServersOpen] = useState(false);
     const [allowUserServers, setAllowUserServers] = useState(false);
     const [selectedProfile, setSelectedProfile] = useState<{
         userId: string;
@@ -222,6 +233,10 @@ export default function ChatPage() {
     const [fileAttachments, setFileAttachments] = useState<FileAttachment[]>(
         [],
     );
+    const [pollDialogOpen, setPollDialogOpen] = useState(false);
+    const [pollQuestion, setPollQuestion] = useState("");
+    const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+    const [creatingPoll, setCreatingPoll] = useState(false);
     const messageDensity = "compact";
     const [muteDialogState, setMuteDialogState] = useState<{
         open: boolean;
@@ -231,6 +246,7 @@ export default function ChatPage() {
     }>({ open: false, type: "channel", id: "", name: "" });
     const [canManageMessages, setCanManageMessages] = useState(false);
     const [canSendMessages, setCanSendMessages] = useState(false);
+    const [canManageServer, setCanManageServer] = useState(false);
     const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<string[]>(
         [],
     );
@@ -913,6 +929,8 @@ export default function ChatPage() {
         openThread,
         closeThread,
         sendThreadReply: _sendThreadReply,
+        votePoll,
+        closePoll,
         setMentionedNames,
     } = messagesApi;
 
@@ -1052,6 +1070,48 @@ export default function ChatPage() {
         serversApi.servers,
     ]);
 
+    useEffect(() => {
+        async function checkServerManagementPermission() {
+            if (!userId || !serversApi.selectedServer) {
+                setCanManageServer(false);
+                return;
+            }
+
+            const selectedServerData = serversApi.servers.find(
+                (s) => s.$id === serversApi.selectedServer,
+            );
+
+            if (selectedServerData?.ownerId === userId) {
+                setCanManageServer(true);
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `/api/servers/${serversApi.selectedServer}/permissions?userId=${userId}`,
+                );
+
+                if (!response.ok) {
+                    setCanManageServer(false);
+                    return;
+                }
+
+                const data = (await response.json()) as {
+                    manageServer?: boolean;
+                    administrator?: boolean;
+                };
+
+                setCanManageServer(
+                    Boolean(data.manageServer || data.administrator),
+                );
+            } catch {
+                setCanManageServer(false);
+            }
+        }
+
+        void checkServerManagementPermission();
+    }, [userId, serversApi.selectedServer, serversApi.servers]);
+
     // Notifications - listens for incoming messages and triggers notifications
     const { requestPermission: requestNotificationPermission } =
         useNotifications({
@@ -1176,11 +1236,127 @@ export default function ChatPage() {
         }
     }, []);
 
+    const resetPollDialog = useCallback(() => {
+        setPollQuestion("");
+        setPollOptions(["", ""]);
+        setCreatingPoll(false);
+    }, []);
+
+    const closePollDialog = useCallback(() => {
+        setPollDialogOpen(false);
+        resetPollDialog();
+    }, [resetPollDialog]);
+
+    const updatePollOption = useCallback((index: number, value: string) => {
+        setPollOptions((currentValue) =>
+            currentValue.map((option, optionIndex) =>
+                optionIndex === index ? value : option,
+            ),
+        );
+    }, []);
+
+    const addPollOption = useCallback(() => {
+        setPollOptions((currentValue) =>
+            currentValue.length < 10 ? [...currentValue, ""] : currentValue,
+        );
+    }, []);
+
+    const removePollOption = useCallback((index: number) => {
+        setPollOptions((currentValue) => {
+            if (currentValue.length <= 2) {
+                return currentValue;
+            }
+
+            return currentValue.filter(
+                (_option, optionIndex) => optionIndex !== index,
+            );
+        });
+    }, []);
+
+    const buildPollCommand = useCallback(() => {
+        const sanitizedQuestion = pollQuestion.replaceAll('"', "'").trim();
+        const sanitizedOptions = pollOptions
+            .map((option) => option.replaceAll('"', "'").trim())
+            .filter((option) => option.length > 0);
+
+        if (!sanitizedQuestion) {
+            return {
+                command: null,
+                error: "Poll question is required.",
+            };
+        }
+
+        if (sanitizedOptions.length < 2) {
+            return {
+                command: null,
+                error: "At least two options are required.",
+            };
+        }
+
+        if (sanitizedOptions.length > 10) {
+            return {
+                command: null,
+                error: "Polls support up to 10 options.",
+            };
+        }
+
+        return {
+            command: `/poll "${sanitizedQuestion}" | ${sanitizedOptions
+                .map((option) => `"${option}"`)
+                .join(" | ")}`,
+            error: null,
+        };
+    }, [pollOptions, pollQuestion]);
+
+    const submitPollFromDialog = useCallback(async () => {
+        if (!selectedChannel) {
+            toast.error("Select a channel before creating a poll.");
+            return;
+        }
+
+        const { command, error } = buildPollCommand();
+        if (!command) {
+            toast.error(error || "Unable to create poll.");
+            return;
+        }
+
+        setCreatingPoll(true);
+        try {
+            await send(
+                { preventDefault() {} } as React.FormEvent,
+                undefined,
+                undefined,
+                undefined,
+                command,
+            );
+            closePollDialog();
+        } finally {
+            setCreatingPoll(false);
+        }
+    }, [buildPollCommand, closePollDialog, selectedChannel, send]);
+
     const handleSendWithImage = useCallback(
         async (e?: React.FormEvent) => {
             e?.preventDefault();
             const submitEvent =
                 e ?? ({ preventDefault() {} } as React.FormEvent);
+
+            if (
+                !editingMessageId &&
+                selectedChannel &&
+                text.trim() === "/poll"
+            ) {
+                if (selectedImage || fileAttachments.length > 0) {
+                    toast.error("Polls cannot include image or file attachments.");
+                    return;
+                }
+
+                onChangeText({
+                    target: { value: "" },
+                } as React.ChangeEvent<HTMLInputElement>);
+                setPollDialogOpen(true);
+                return;
+            }
 
             let imageFileId: string | undefined;
             let imageUrl: string | undefined;
@@ -1217,7 +1393,15 @@ export default function ChatPage() {
             // Send message with image data and file attachments
             await send(submitEvent, imageFileId, imageUrl, attachmentsToSend);
         },
-        [selectedImage, fileAttachments, send],
+        [
+            editingMessageId,
+            fileAttachments,
+            onChangeText,
+            selectedChannel,
+            selectedImage,
+            send,
+            text,
+        ],
     );
 
     const handleEmojiSelect = useCallback(
@@ -1289,6 +1473,20 @@ export default function ChatPage() {
                 // Error already logged by reaction handler.
             }
         },
+        onVotePoll: async (messageId, optionId) => {
+            try {
+                await votePoll(messageId, optionId);
+            } catch {
+                // Error already surfaced by poll handler.
+            }
+        },
+        onClosePoll: async (messageId) => {
+            try {
+                await closePoll(messageId);
+            } catch {
+                // Error already surfaced by poll handler.
+            }
+        },
     });
 
     // Derived helpers
@@ -1302,15 +1500,21 @@ export default function ChatPage() {
             (s) => s.$id === serversApi.selectedServer,
         );
         const isOwner = selectedServerData?.ownerId === userId;
+        const canOpenServerAdminPanel = isOwner || canManageServer;
 
         return (
             <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-sm font-semibold tracking-tight">
-                        Servers
-                    </h2>
-                    <div className="flex items-center gap-2">
-                        {serversApi.selectedServer && isOwner && (
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-sm font-semibold tracking-tight">
+                            Servers
+                        </h2>
+                        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                            {serversApi.servers.length} total
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {serversApi.selectedServer && canOpenServerAdminPanel && (
                             <>
                                 <Button
                                     onClick={() => setAdminPanelOpen(true)}
@@ -1324,7 +1528,7 @@ export default function ChatPage() {
                                     onClick={() => setRoleSettingsOpen(true)}
                                     size="sm"
                                     variant="ghost"
-                                    title="Server Settings"
+                                    title="Role Settings"
                                 >
                                     <Settings className="h-4 w-4" />
                                 </Button>
@@ -1349,9 +1553,6 @@ export default function ChatPage() {
                                 )}
                             </>
                         )}
-                        <span className="text-xs text-muted-foreground">
-                            {serversApi.servers.length} total
-                        </span>
                     </div>
                 </div>
                 <ul className="space-y-2">
@@ -1739,6 +1940,8 @@ export default function ChatPage() {
                 onStartReply={surfaceController.onStartReply}
                 onTogglePin={surfaceController.onTogglePin}
                 onToggleReaction={surfaceController.onToggleReaction}
+                onVotePoll={surfaceController.onVotePoll}
+                onClosePoll={surfaceController.onClosePoll}
                 onUploadCustomEmoji={uploadEmoji}
                 onCatchUpUnread={handleCatchUpCurrentContext}
                 onJumpToUnread={handleJumpToCurrentUnread}
@@ -1834,6 +2037,16 @@ export default function ChatPage() {
                         <div className="space-y-4">
                             {renderServers()}
                             {renderChannels()}
+                            {userId && (
+                                <Button
+                                    className="w-full"
+                                    onClick={() => setDiscoverServersOpen(true)}
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    Discover servers
+                                </Button>
+                            )}
                         </div>
                     ) : (
                         <ConversationList
@@ -2065,6 +2278,12 @@ export default function ChatPage() {
                                                     onToggleReaction={
                                                         surfaceController.onToggleReaction
                                                     }
+                                                    onVotePoll={
+                                                        surfaceController.onVotePoll
+                                                    }
+                                                    onClosePoll={
+                                                        surfaceController.onClosePoll
+                                                    }
                                                     parentMessage={
                                                         threadParentSurfaceMessage
                                                     }
@@ -2139,6 +2358,135 @@ export default function ChatPage() {
                     void notificationSettingsApi.refetch();
                 }}
             />
+            <Dialog
+                open={pollDialogOpen}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        closePollDialog();
+                        return;
+                    }
+
+                    setPollDialogOpen(true);
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create Poll</DialogTitle>
+                        <DialogDescription>
+                            Add a question and options, then submit to post the
+                            poll in this channel.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="poll-question">Question</Label>
+                            <Input
+                                disabled={creatingPoll}
+                                id="poll-question"
+                                maxLength={300}
+                                onChange={(event) => {
+                                    setPollQuestion(event.target.value);
+                                }}
+                                placeholder="What should we ship next?"
+                                value={pollQuestion}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <Label>Options</Label>
+                                <Button
+                                    disabled={creatingPoll || pollOptions.length >= 10}
+                                    onClick={addPollOption}
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    Add option
+                                </Button>
+                            </div>
+
+                            <div className="space-y-2">
+                                {pollOptions.map((option, index) => (
+                                    <div
+                                        className="flex items-center gap-2"
+                                        key={`poll-option-${index}`}
+                                    >
+                                        <Input
+                                            disabled={creatingPoll}
+                                            maxLength={120}
+                                            onChange={(event) => {
+                                                updatePollOption(
+                                                    index,
+                                                    event.target.value,
+                                                );
+                                            }}
+                                            placeholder={`Option ${index + 1}`}
+                                            value={option}
+                                        />
+                                        <Button
+                                            disabled={
+                                                creatingPoll ||
+                                                pollOptions.length <= 2
+                                            }
+                                            onClick={() => {
+                                                removePollOption(index);
+                                            }}
+                                            size="sm"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            Remove
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            disabled={creatingPoll}
+                            onClick={closePollDialog}
+                            type="button"
+                            variant="outline"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            disabled={creatingPoll}
+                            onClick={() => {
+                                void submitPollFromDialog();
+                            }}
+                            type="button"
+                        >
+                            {creatingPoll ? "Creating..." : "Create poll"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            <Dialog
+                open={discoverServersOpen}
+                onOpenChange={setDiscoverServersOpen}
+            >
+                <DialogContent className="sm:max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle>Discover Public Servers</DialogTitle>
+                        <DialogDescription>
+                            Browse public servers and join any server you are not already a member of.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ServerBrowser
+                        userId={userId}
+                        joinedServerIds={serversApi.servers.map((server) => server.$id)}
+                        onServerJoined={() => {
+                            void serversApi.refresh();
+                            setDiscoverServersOpen(false);
+                        }}
+                    />
+                </DialogContent>
+            </Dialog>
             {serversApi.selectedServer && (
                 <RoleSettingsDialog
                     open={roleSettingsOpen}
@@ -2184,6 +2532,40 @@ export default function ChatPage() {
                             (s) => s.$id === serversApi.selectedServer,
                         )?.ownerId === userId
                     }
+                    canManageServer={canManageServer}
+                    serverDescription={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.description
+                    }
+                    serverIconFileId={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.iconFileId
+                    }
+                    serverIconUrl={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.iconUrl
+                    }
+                    serverBannerFileId={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.bannerFileId
+                    }
+                    serverBannerUrl={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.bannerUrl
+                    }
+                    serverIsPublic={
+                        serversApi.servers.find(
+                            (s) => s.$id === serversApi.selectedServer,
+                        )?.isPublic
+                    }
+                    onServerUpdated={() => {
+                        void serversApi.refresh();
+                    }}
                 />
             )}
         </div>

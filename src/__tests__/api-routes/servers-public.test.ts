@@ -51,6 +51,7 @@ describe("GET /api/servers/public", () => {
 				$id: "server1",
 				name: "Public Server 1",
 				ownerId: "owner1",
+				isPublic: true,
 				memberCount: 50,
 				$createdAt: "2024-01-01T00:00:00.000Z",
 			},
@@ -58,6 +59,7 @@ describe("GET /api/servers/public", () => {
 				$id: "server2",
 				name: "Public Server 2",
 				ownerId: "owner2",
+				isPublic: false,
 				memberCount: 25,
 				$createdAt: "2024-01-02T00:00:00.000Z",
 			},
@@ -77,12 +79,15 @@ describe("GET /api/servers/public", () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		expect(data.servers).toHaveLength(2);
+		expect(data.servers).toHaveLength(1);
 		expect(data.servers[0]).toEqual({
+			$createdAt: "2024-01-01T00:00:00.000Z",
 			$id: "server1",
+			defaultOnSignup: false,
 			name: "Public Server 1",
 			ownerId: "owner1",
 			memberCount: 50,
+			isPublic: true,
 		});
 		expect(mockDatabases.listDocuments).toHaveBeenCalledWith(
 			"test-db",
@@ -94,7 +99,7 @@ describe("GET /api/servers/public", () => {
 		);
 	});
 
-	it("should handle servers without memberCount", async () => {
+	it("should include legacy servers with missing visibility", async () => {
 		const mockServers = [
 			{
 				$id: "server1",
@@ -111,7 +116,7 @@ describe("GET /api/servers/public", () => {
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
-		// Member count is now always a number (computed from memberships)
+		expect(data.servers[0].isPublic).toBe(true);
 		expect(data.servers[0].memberCount).toBe(0);
 	});
 

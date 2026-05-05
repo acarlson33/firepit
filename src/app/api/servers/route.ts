@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { Query } from "node-appwrite";
 
+import { getServerSession } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
 import { getActualMemberCounts } from "@/lib/membership-count";
+import { mapServerDocument } from "@/lib/server-metadata";
 
 /**
  * GET /api/servers
@@ -17,6 +19,14 @@ import { getActualMemberCounts } from "@/lib/membership-count";
  */
 export async function GET(request: NextRequest) {
     try {
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
         const searchParams = request.nextUrl.searchParams;
         const limit = Number.parseInt(searchParams.get("limit") || "25", 10);
         const cursor = searchParams.get("cursor");
@@ -24,7 +34,36 @@ export async function GET(request: NextRequest) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
+        const membershipsResponse = await databases.listDocuments(
+            env.databaseId,
+            env.collections.memberships,
+            [Query.equal("userId", session.$id), Query.limit(1000)],
+        );
+
+        const serverIds = Array.from(
+            new Set(
+                membershipsResponse.documents.map((document) =>
+                    String((document as { serverId?: unknown }).serverId ?? ""),
+                ),
+            ),
+        ).filter((id) => id.length > 0);
+
+        if (serverIds.length === 0) {
+            return compressedResponse(
+                {
+                    servers: [] as Server[],
+                    nextCursor: null,
+                },
+                {
+                    headers: {
+                        "Cache-Control": "private, no-store",
+                    },
+                },
+            );
+        }
+
         const queries: string[] = [
+            Query.equal("$id", serverIds),
             Query.limit(limit),
             Query.orderAsc("$createdAt"),
         ];
@@ -39,19 +78,18 @@ export async function GET(request: NextRequest) {
             queries,
         );
 
-        const serverIds = res.documents.map((doc) => String(doc.$id));
-        const memberCounts = await getActualMemberCounts(databases, serverIds);
+        const listedServerIds = res.documents.map((doc) => String(doc.$id));
+        const memberCounts = await getActualMemberCounts(
+            databases,
+            listedServerIds,
+        );
 
-        const servers: Server[] = res.documents.map((doc) => {
-            const d = doc as unknown as Record<string, unknown>;
-            return {
-                $id: String(d.$id),
-                name: String(d.name),
-                $createdAt: String(d.$createdAt ?? ""),
-                ownerId: String(d.ownerId),
-                memberCount: memberCounts.get(String(d.$id)) ?? 0,
-            } satisfies Server;
-        });
+        const servers: Server[] = res.documents.map((doc) =>
+            mapServerDocument(
+                doc as unknown as Record<string, unknown>,
+                memberCounts.get(String(doc.$id)) ?? 0,
+            ),
+        );
 
         const last = servers.at(-1);
         const nextCursor = servers.length === limit && last ? last.$id : null;
@@ -64,10 +102,7 @@ export async function GET(request: NextRequest) {
             },
             {
                 headers: {
-                    // Cache at edge and browser for 60 seconds, revalidate in background for 5 minutes
-                    // Reduces Appwrite API calls and improves perceived performance
-                    "Cache-Control":
-                        "public, s-maxage=60, stale-while-revalidate=300",
+                    "Cache-Control": "private, no-store",
                 },
             },
         );

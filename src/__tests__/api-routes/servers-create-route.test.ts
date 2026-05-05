@@ -77,9 +77,47 @@ describe("Servers create route", () => {
         expect(response.status).toBe(200);
         expect(data.success).toBe(true);
         expect(data.server.name).toBe("My Server");
-        expect(mockCreateServer).toHaveBeenCalledWith("My Server", {
-            bypassFeatureCheck: true,
+        expect(mockCreateServer).toHaveBeenCalledWith(
+            "My Server",
+            expect.objectContaining({
+                bypassFeatureCheck: true,
+            }),
+        );
+    });
+
+    it("passes description and visibility fields when provided", async () => {
+        mockSession.mockResolvedValue({ $id: "user-1" });
+        mockCreateServer.mockResolvedValue({
+            $id: "server-1",
+            name: "My Server",
+            ownerId: "user-1",
+            memberCount: 1,
+            isPublic: false,
+            description: "Private team space",
         });
+
+        const request = new NextRequest("http://localhost/api/servers/create", {
+            method: "POST",
+            body: JSON.stringify({
+                name: "My Server",
+                description: "Private team space",
+                isPublic: false,
+            }),
+        });
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data.success).toBe(true);
+        expect(mockCreateServer).toHaveBeenCalledWith(
+            "My Server",
+            expect.objectContaining({
+                description: "Private team space",
+                isPublic: false,
+                bypassFeatureCheck: true,
+            }),
+        );
     });
 
     it("returns 403 when server creation feature flag is disabled", async () => {

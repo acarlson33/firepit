@@ -33,6 +33,10 @@ vi.mock("../lib/enrich-messages", () => ({
 	}),
 }));
 
+vi.mock("../lib/appwrite-polls", () => ({
+	enrichMessagesWithPolls: vi.fn(async (messages: any[]) => messages),
+}));
+
 function setMockMessages(messages: any[]) {
 	(globalThis as any).__mockMessages = messages;
 }

@@ -119,6 +119,7 @@ vi.mock("@/components/chat-surface-panel", () => ({
     }: {
         composer?: {
             disabled?: boolean;
+            onSubmit?: () => Promise<void> | void;
             placeholder?: string;
             readOnly?: boolean;
             readOnlyMessage?: string;
@@ -143,6 +144,14 @@ vi.mock("@/components/chat-surface-panel", () => ({
             ) : null}
             <button onClick={() => onJumpToUnread?.()} type="button">
                 jump-unread-channel
+            </button>
+            <button
+                onClick={() => {
+                    void composer?.onSubmit?.();
+                }}
+                type="button"
+            >
+                submit-channel
             </button>
         </div>
     ),
@@ -243,6 +252,8 @@ const createDefaultUseMessagesValue = () => ({
     threadLoading: false,
     threadMessages: [],
     togglePin: vi.fn(),
+    votePoll: vi.fn(),
+    closePoll: vi.fn(),
     typingUsers: {},
     userIdSlice: 6,
 });
@@ -488,6 +499,27 @@ describe("ChatPage", () => {
         ).toBeInTheDocument();
     });
 
+    it("opens the poll dialog when /poll is submitted", async () => {
+        const user = userEvent.setup();
+        const send = vi.fn();
+
+        mockUseMessages.mockReturnValue({
+            ...createDefaultUseMessagesValue(),
+            send,
+            text: "/poll",
+        });
+
+        render(<ChatPage />);
+
+        await user.click(screen.getByRole("button", { name: /general/i }));
+        await user.click(screen.getByRole("button", { name: "submit-channel" }));
+
+        expect(
+            await screen.findByRole("heading", { name: "Create Poll" }),
+        ).toBeInTheDocument();
+        expect(send).not.toHaveBeenCalled();
+    });
+
     it("consumes channel deep links and schedules a highlighted jump", async () => {
         mockSearchParams.set("channel", "channel-1");
         mockSearchParams.set("server", "server-1");
@@ -623,6 +655,8 @@ describe("ChatPage", () => {
             threadLoading: false,
             threadMessages: [],
             togglePin: vi.fn(),
+            votePoll: vi.fn(),
+            closePoll: vi.fn(),
             typingUsers: {},
             userIdSlice: 6,
         });

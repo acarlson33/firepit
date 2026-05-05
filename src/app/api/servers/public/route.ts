@@ -4,6 +4,10 @@ import { Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getActualMemberCount } from "@/lib/membership-count";
+import {
+	mapServerDocument,
+	normalizeServerVisibility,
+} from "@/lib/server-metadata";
 
 /**
  * GET /api/servers/public
@@ -20,16 +24,21 @@ export async function GET() {
 			[Query.limit(100), Query.orderDesc("$createdAt")]
 		);
 
+		const publicServerDocuments = response.documents.filter(
+			(document) =>
+				normalizeServerVisibility(
+					(document as Record<string, unknown>).isPublic
+				),
+		);
+
 		// Enrich servers with actual member counts from memberships
 		const servers = await Promise.all(
-			response.documents.map(async (doc) => {
+			publicServerDocuments.map(async (doc) => {
 				const actualCount = await getActualMemberCount(databases, doc.$id);
-				return {
-					$id: doc.$id,
-					name: String(doc.name),
-					ownerId: String(doc.ownerId),
-					memberCount: actualCount,
-				};
+				return mapServerDocument(
+					doc as unknown as Record<string, unknown>,
+					actualCount,
+				);
 			})
 		);
 

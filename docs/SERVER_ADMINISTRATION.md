@@ -12,12 +12,24 @@ The main server APIs are:
 - `POST /api/servers/create`
 - `GET /api/servers/public`
 - `POST /api/servers/join`
+- `PATCH /api/servers/{serverId}`
 - `GET /api/servers/{serverId}/stats`
 - `GET /api/servers/{serverId}/members`
 - `GET /api/servers/{serverId}/permissions`
 - `POST /api/servers/{serverId}/mute`
 
 Server stats and membership endpoints support server-level dashboards, moderation panels, and administrative summaries.
+
+Current privacy/customization behavior:
+
+- `GET /api/servers` returns only servers where the authenticated user has membership.
+- `GET /api/servers/public` returns only discoverable servers (`isPublic = true`, with legacy `undefined` treated as public).
+- `POST /api/servers/join` blocks direct joins for private servers and instructs users to join via invite.
+- `PATCH /api/servers/{serverId}` lets owners and members with `manageServer` update name, description, icon, banner, and visibility.
+- `defaultOnSignup` is admin-only and instance-wide unique; setting one server as default clears it on other servers.
+- `GET /api/servers/default-signup` returns the currently configured signup default server for admin tooling.
+- Signup auto-join behavior prefers a server with `defaultOnSignup = true`; when no default is configured, fallback auto-join happens only when the instance has exactly one server.
+- The `defaultOnSignup` control is exposed in the instance admin page under server management, not in per-server admin dialogs.
 
 ## Roles And Permission Overrides
 
