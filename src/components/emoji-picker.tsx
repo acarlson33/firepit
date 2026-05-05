@@ -31,12 +31,14 @@ type EmojiPickerProps = {
     onEmojiSelect: (emoji: string) => void;
     customEmojis?: CustomEmoji[];
     onUploadCustomEmoji?: (file: File, name: string) => Promise<void>;
+    disabled?: boolean;
 };
 
 export function EmojiPicker({
     onEmojiSelect,
     customEmojis = [],
     onUploadCustomEmoji,
+    disabled = false,
 }: EmojiPickerProps) {
     const [open, setOpen] = useState(false);
     const [showUpload, setShowUpload] = useState(false);
@@ -122,7 +124,12 @@ export function EmojiPicker({
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setOpen(true)}
+                disabled={disabled}
+                onClick={() => {
+                    if (!disabled) {
+                        setOpen(true);
+                    }
+                }}
                 aria-label="Insert emoji"
                 title="Insert emoji"
             >

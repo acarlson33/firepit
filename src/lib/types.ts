@@ -77,6 +77,8 @@ export type Channel = {
     $id: string;
     serverId: string;
     name: string;
+    type?: "text" | "voice" | "announcement";
+    topic?: string;
     categoryId?: string;
     position?: number;
     $createdAt: string;

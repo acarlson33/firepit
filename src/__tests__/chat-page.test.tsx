@@ -7,6 +7,7 @@ vi.mock("next/dynamic", () => ({
 }));
 
 const {
+    mockChannels,
     mockConversations,
     mockContextInboxItems,
     mockInboxRefresh,
@@ -16,8 +17,16 @@ const {
     mockJumpToMessageWhenReady,
     mockReplace,
     mockSearchParams,
+    mockServers,
     mockSetSelectedServer,
 } = vi.hoisted(() => ({
+    mockChannels: [] as Array<{
+        $createdAt: string;
+        $id: string;
+        name: string;
+        serverId: string;
+        type?: "text" | "voice" | "announcement";
+    }>,
     mockConversations: [] as Array<{
         $id: string;
         participants: string[];
@@ -43,6 +52,12 @@ const {
     mockJumpToMessageWhenReady: vi.fn(() => vi.fn()),
     mockReplace: vi.fn(),
     mockSearchParams: new URLSearchParams(),
+    mockServers: [] as Array<{
+        $createdAt: string;
+        $id: string;
+        name: string;
+        ownerId: string;
+    }>,
     mockSetSelectedServer: vi.fn(),
 }));
 
@@ -97,22 +112,35 @@ vi.mock("@/hooks/useCustomEmojis", () => ({
 
 vi.mock("@/components/chat-surface-panel", () => ({
     ChatSurfacePanel: ({
+        composer,
         onJumpToUnread,
         showSurface,
         surfaceMessages,
     }: {
+        composer?: {
+            disabled?: boolean;
+            placeholder?: string;
+            readOnly?: boolean;
+            readOnlyMessage?: string;
+        };
         onJumpToUnread?: () => void;
         showSurface?: boolean;
         surfaceMessages: Array<{ text: string }>;
     }) => (
         <div>
             <div
+                data-composer-disabled={String(Boolean(composer?.disabled))}
+                data-composer-placeholder={composer?.placeholder || ""}
+                data-composer-read-only={String(Boolean(composer?.readOnly))}
                 data-message-count={surfaceMessages.length}
                 data-show-surface={String(Boolean(showSurface))}
                 data-testid="chat-surface-panel"
             >
                 {surfaceMessages.map((message) => message.text).join(",")}
             </div>
+            {composer?.readOnlyMessage ? (
+                <div>{composer.readOnlyMessage}</div>
+            ) : null}
             <button onClick={() => onJumpToUnread?.()} type="button">
                 jump-unread-channel
             </button>
@@ -149,27 +177,13 @@ vi.mock("../app/chat/hooks/useServers", () => ({
         refresh: vi.fn(),
         selectedServer: "server-1",
         setSelectedServer: mockSetSelectedServer,
-        servers: [
-            {
-                $id: "server-1",
-                $createdAt: "2026-03-10T12:00:00.000Z",
-                name: "Firepit HQ",
-                ownerId: "user-1",
-            },
-        ],
+        servers: mockServers,
     }),
 }));
 
 vi.mock("../app/chat/hooks/useChannels", () => ({
     useChannels: () => ({
-        channels: [
-            {
-                $createdAt: "2026-03-10T12:00:00.000Z",
-                $id: "channel-1",
-                name: "general",
-                serverId: "server-1",
-            },
-        ],
+        channels: mockChannels,
         cursor: null,
         loadMore: vi.fn(),
         loading: false,
@@ -306,8 +320,23 @@ describe("ChatPage", () => {
         mockSearchParams.delete("invite");
         mockSearchParams.delete("server");
         mockSearchParams.delete("unread");
+        mockChannels.splice(0, mockChannels.length);
+        mockChannels.push({
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "channel-1",
+            name: "general",
+            serverId: "server-1",
+            type: "text",
+        });
         mockConversations.splice(0, mockConversations.length);
         mockContextInboxItems.splice(0, mockContextInboxItems.length);
+        mockServers.splice(0, mockServers.length);
+        mockServers.push({
+            $id: "server-1",
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            name: "Firepit HQ",
+            ownerId: "user-1",
+        });
         mockSetSelectedServer.mockReset();
         mockUseInbox.mockReturnValue({
             contractVersion: "thread_v1",
@@ -412,6 +441,51 @@ describe("ChatPage", () => {
             "1",
         );
         expect(screen.getByText("Hello channel")).toBeInTheDocument();
+    });
+
+    it("shows announcement channels as read-only for users without send access", async () => {
+        const user = userEvent.setup();
+
+        mockChannels.splice(0, mockChannels.length);
+        mockChannels.push({
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            $id: "channel-announce",
+            name: "announcements",
+            serverId: "server-1",
+            type: "announcement",
+        });
+        mockServers.splice(0, mockServers.length);
+        mockServers.push({
+            $id: "server-1",
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            name: "Firepit HQ",
+            ownerId: "owner-2",
+        });
+
+        render(<ChatPage />);
+
+        await user.click(
+            screen.getByRole("button", { name: /announcements/i }),
+        );
+
+        expect(
+            await screen.findByRole("heading", { name: "announcements" }),
+        ).toBeInTheDocument();
+        expect(screen.getByText("Announcement")).toBeInTheDocument();
+        expect(screen.getByText("Announce")).toBeInTheDocument();
+        expect(screen.getByTestId("chat-surface-panel")).toHaveAttribute(
+            "data-composer-disabled",
+            "true",
+        );
+        expect(screen.getByTestId("chat-surface-panel")).toHaveAttribute(
+            "data-composer-read-only",
+            "true",
+        );
+        expect(
+            screen.getByText(
+                "This is an announcement channel. Only channel managers can send messages.",
+            ),
+        ).toBeInTheDocument();
     });
 
     it("consumes channel deep links and schedules a highlighted jump", async () => {

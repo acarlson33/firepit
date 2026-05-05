@@ -13,6 +13,20 @@ const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+
+function normalizeChannelType(
+    value: unknown,
+): "text" | "voice" | "announcement" {
+    if (
+        typeof value === "string" &&
+        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
+    ) {
+        return value as "text" | "voice" | "announcement";
+    }
+
+    return "text";
+}
 
 type ChannelAccess = {
     serverId: string;
@@ -317,6 +331,8 @@ export async function getChannelAccessForUser(
         env.collections.channels,
         channelId,
     );
+    const channelType = normalizeChannelType(channel.type);
+    const isAnnouncementChannel = channelType === "announcement";
 
     const serverId = String(channel.serverId);
     const serverAccess = await getServerPermissionsForUser(
@@ -404,11 +420,16 @@ export async function getChannelAccessForUser(
         false,
     );
 
+    const canRead = effective.readMessages;
+    const canSend = isAnnouncementChannel
+        ? canRead && effective.manageChannels
+        : canRead && effective.sendMessages;
+
     return {
         serverId,
         isServerOwner: false,
         isMember: true,
-        canRead: effective.readMessages,
-        canSend: effective.sendMessages,
+        canRead,
+        canSend,
     };
 }

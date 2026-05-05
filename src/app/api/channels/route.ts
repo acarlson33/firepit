@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { Query } from "node-appwrite";
+import { ID, Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
@@ -8,6 +8,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
 import { compressedResponse } from "@/lib/api-compression";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 function sortChannels(channels: Channel[]) {
     return [...channels].sort((left, right) => {
@@ -32,6 +33,169 @@ const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
 const CHANNEL_PERMISSION_OVERRIDES_COLLECTION_ID =
     "channel_permission_overrides";
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
+
+function normalizeChannelType(value: unknown): Channel["type"] {
+    if (
+        typeof value === "string" &&
+        CHANNEL_TYPES.includes(value as (typeof CHANNEL_TYPES)[number])
+    ) {
+        return value as Channel["type"];
+    }
+
+    return "text";
+}
+
+/**
+ * POST /api/channels
+ * Creates a channel for a specific server
+ * Body:
+ *   - serverId: server ID (required)
+ *   - name: channel name (required)
+ *   - type: text | voice | announcement (optional, defaults to text)
+ *   - topic: channel topic (optional, max 500 chars)
+ */
+export async function POST(request: NextRequest) {
+    try {
+        const session = await getServerSession();
+        if (!session?.$id) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
+        const body = (await request.json()) as {
+            name?: string;
+            serverId?: string;
+            topic?: string | null;
+            type?: "text" | "voice" | "announcement";
+        };
+
+        const serverId = body.serverId?.trim();
+        if (!serverId) {
+            return NextResponse.json(
+                { error: "serverId is required" },
+                { status: 400 },
+            );
+        }
+
+        const name = body.name?.trim();
+        if (!name) {
+            return NextResponse.json(
+                { error: "name is required" },
+                { status: 400 },
+            );
+        }
+
+        const type = normalizeChannelType(body.type);
+        if (body.type !== undefined && body.type !== type) {
+            return NextResponse.json(
+                { error: "type must be text, voice, or announcement" },
+                { status: 400 },
+            );
+        }
+
+        const topic = body.topic?.trim() || "";
+        if (topic.length > 500) {
+            return NextResponse.json(
+                { error: "topic must be 500 characters or fewer" },
+                { status: 400 },
+            );
+        }
+
+        const env = getEnvConfig();
+        const { databases } = getServerClient();
+        const serverAccess = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
+
+        if (!serverAccess.isMember) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        if (
+            !serverAccess.isServerOwner &&
+            !serverAccess.permissions.manageChannels
+        ) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        const highestPositionRes = await databases.listDocuments(
+            env.databaseId,
+            env.collections.channels,
+            [
+                Query.equal("serverId", serverId),
+                Query.orderDesc("position"),
+                Query.limit(1),
+            ],
+        );
+
+        const highestPosition =
+            typeof highestPositionRes.documents[0]?.position === "number"
+                ? highestPositionRes.documents[0].position
+                : -1;
+
+        const created = await databases.createDocument(
+            env.databaseId,
+            env.collections.channels,
+            ID.unique(),
+            {
+                name,
+                serverId,
+                type,
+                topic,
+                position: highestPosition + 1,
+            },
+            ['read("any")'],
+        );
+
+        const channel = created as unknown as Record<string, unknown>;
+        return NextResponse.json(
+            {
+                channel: {
+                    $id: String(channel.$id),
+                    serverId: String(channel.serverId),
+                    name: String(channel.name),
+                    type: normalizeChannelType(channel.type),
+                    topic:
+                        typeof channel.topic === "string" &&
+                        channel.topic.length > 0
+                            ? channel.topic
+                            : undefined,
+                    categoryId:
+                        typeof channel.categoryId === "string" &&
+                        channel.categoryId.length > 0
+                            ? channel.categoryId
+                            : undefined,
+                    position:
+                        typeof channel.position === "number"
+                            ? channel.position
+                            : undefined,
+                    $createdAt: String(channel.$createdAt ?? ""),
+                    $updatedAt:
+                        typeof channel.$updatedAt === "string"
+                            ? channel.$updatedAt
+                            : undefined,
+                } satisfies Channel,
+            },
+            { status: 201 },
+        );
+    } catch (error) {
+        return NextResponse.json(
+            {
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to create channel",
+            },
+            { status: 500 },
+        );
+    }
+}
 
 /**
  * GET /api/channels
@@ -121,6 +285,11 @@ export async function GET(request: NextRequest) {
                 $id: String(d.$id),
                 serverId: String(d.serverId),
                 name: String(d.name),
+                type: normalizeChannelType(d.type),
+                topic:
+                    typeof d.topic === "string" && d.topic.length > 0
+                        ? d.topic
+                        : undefined,
                 categoryId:
                     typeof d.categoryId === "string" && d.categoryId.length > 0
                         ? d.categoryId

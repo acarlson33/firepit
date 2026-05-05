@@ -2,23 +2,30 @@
  * Tests for GET /api/channels endpoint
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { GET } from "@/app/api/channels/route";
+import { GET, POST } from "@/app/api/channels/route";
 import { NextRequest } from "next/server";
 
-const { mockGetServerSession, mockListDocuments, mockGetDocument } = vi.hoisted(
-    () => ({
-        mockGetServerSession: vi.fn(),
-        mockListDocuments: vi.fn(),
-        mockGetDocument: vi.fn(),
-    }),
-);
+const {
+    mockCreateDocument,
+    mockGetDocument,
+    mockGetServerPermissionsForUser,
+    mockGetServerSession,
+    mockListDocuments,
+} = vi.hoisted(() => ({
+    mockCreateDocument: vi.fn(),
+    mockGetDocument: vi.fn(),
+    mockGetServerPermissionsForUser: vi.fn(),
+    mockGetServerSession: vi.fn(),
+    mockListDocuments: vi.fn(),
+}));
 
 // Mock dependencies
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
         databases: {
-            listDocuments: mockListDocuments,
+            createDocument: mockCreateDocument,
             getDocument: mockGetDocument,
+            listDocuments: mockListDocuments,
         },
     })),
 }));
@@ -38,6 +45,10 @@ vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
 }));
 
+vi.mock("@/lib/server-channel-access", () => ({
+    getServerPermissionsForUser: mockGetServerPermissionsForUser,
+}));
+
 describe("GET /api/channels", () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -45,9 +56,26 @@ describe("GET /api/channels", () => {
             $id: "user-1",
             name: "Test User",
         });
+        mockGetServerPermissionsForUser.mockResolvedValue({
+            isMember: true,
+            isServerOwner: false,
+            permissions: {
+                manageChannels: true,
+            },
+        });
         mockGetDocument.mockResolvedValue({
             $id: "server1",
             ownerId: "user-1",
+        });
+        mockCreateDocument.mockResolvedValue({
+            $id: "channel-created",
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            categoryId: "",
+            name: "general",
+            position: 0,
+            serverId: "server1",
+            topic: "",
+            type: "text",
         });
         mockListDocuments.mockResolvedValue({ documents: [] });
     });
@@ -368,5 +396,102 @@ describe("GET /api/channels", () => {
 
         expect(response.status).toBe(200);
         expect(data.channels[0].$createdAt).toBe("");
+    });
+
+    it("should return 401 when creating a channel unauthenticated", async () => {
+        mockGetServerSession.mockResolvedValue(null);
+
+        const request = new NextRequest("http://localhost:3000/api/channels", {
+            body: JSON.stringify({
+                name: "announcements",
+                serverId: "server1",
+                type: "announcement",
+            }),
+            headers: {
+                "Content-Type": "application/json",
+            },
+            method: "POST",
+        });
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(data.error).toBe("Authentication required");
+    });
+
+    it("should create announcement channels for users with manage permissions", async () => {
+        mockListDocuments.mockResolvedValueOnce({
+            documents: [{ position: 4 }],
+        });
+        mockCreateDocument.mockResolvedValueOnce({
+            $id: "channel-announcements",
+            $createdAt: "2026-03-10T12:00:00.000Z",
+            categoryId: "",
+            name: "announcements",
+            position: 5,
+            serverId: "server1",
+            topic: "",
+            type: "announcement",
+        });
+
+        const request = new NextRequest("http://localhost:3000/api/channels", {
+            body: JSON.stringify({
+                name: "announcements",
+                serverId: "server1",
+                type: "announcement",
+            }),
+            headers: {
+                "Content-Type": "application/json",
+            },
+            method: "POST",
+        });
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(201);
+        expect(data.channel.$id).toBe("channel-announcements");
+        expect(data.channel.type).toBe("announcement");
+        expect(mockCreateDocument).toHaveBeenCalledWith(
+            "test-db",
+            "channels-collection",
+            expect.any(String),
+            expect.objectContaining({
+                name: "announcements",
+                position: 5,
+                serverId: "server1",
+                type: "announcement",
+            }),
+            ['read("any")'],
+        );
+    });
+
+    it("should return 403 when channel creator lacks manageChannels", async () => {
+        mockGetServerPermissionsForUser.mockResolvedValueOnce({
+            isMember: true,
+            isServerOwner: false,
+            permissions: {
+                manageChannels: false,
+            },
+        });
+
+        const request = new NextRequest("http://localhost:3000/api/channels", {
+            body: JSON.stringify({
+                name: "announcements",
+                serverId: "server1",
+                type: "announcement",
+            }),
+            headers: {
+                "Content-Type": "application/json",
+            },
+            method: "POST",
+        });
+
+        const response = await POST(request);
+        const data = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(data.error).toBe("Forbidden");
     });
 });

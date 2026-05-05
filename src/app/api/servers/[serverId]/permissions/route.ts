@@ -6,7 +6,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
 import { logger } from "@/lib/newrelic-utils";
-import { getServerPermissionsForUser } from "@/lib/server-channel-access";
+import {
+    getChannelAccessForUser,
+    getServerPermissionsForUser,
+} from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
@@ -69,14 +72,22 @@ export async function GET(
         );
 
         if (!channelId || !serverAccess.isMember) {
-            return NextResponse.json(serverAccess.permissions);
+            return NextResponse.json({
+                ...serverAccess.permissions,
+                canRead: serverAccess.permissions.readMessages,
+                canSend: serverAccess.permissions.sendMessages,
+            });
         }
 
         if (
             serverAccess.isServerOwner ||
             serverAccess.permissions.administrator
         ) {
-            return NextResponse.json(serverAccess.permissions);
+            return NextResponse.json({
+                ...serverAccess.permissions,
+                canRead: true,
+                canSend: true,
+            });
         }
 
         const overridesResponse = await databases.listDocuments(
@@ -107,7 +118,18 @@ export async function GET(
             serverAccess.isServerOwner,
         );
 
-        return NextResponse.json(effectivePerms);
+        const channelAccess = await getChannelAccessForUser(
+            databases,
+            env,
+            channelId,
+            userId,
+        );
+
+        return NextResponse.json({
+            ...effectivePerms,
+            canRead: channelAccess.canRead,
+            canSend: channelAccess.canSend,
+        });
     } catch (error) {
         logger.error("Failed to get permissions", {
             error: error instanceof Error ? error.message : String(error),

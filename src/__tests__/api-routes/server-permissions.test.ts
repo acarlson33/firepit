@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockGetServerPermissionsForUser, mockListDocuments } = vi.hoisted(
-    () => ({
-        mockGetServerPermissionsForUser: vi.fn(),
-        mockListDocuments: vi.fn(),
-    }),
-);
+const {
+    mockGetServerPermissionsForUser,
+    mockGetChannelAccessForUser,
+    mockListDocuments,
+} = vi.hoisted(() => ({
+    mockGetServerPermissionsForUser: vi.fn(),
+    mockGetChannelAccessForUser: vi.fn(),
+    mockListDocuments: vi.fn(),
+}));
 
 vi.mock("@/lib/appwrite-server", () => ({
     getServerClient: vi.fn(() => ({
@@ -18,6 +21,7 @@ vi.mock("@/lib/appwrite-server", () => ({
 
 vi.mock("@/lib/server-channel-access", () => ({
     getServerPermissionsForUser: mockGetServerPermissionsForUser,
+    getChannelAccessForUser: mockGetChannelAccessForUser,
 }));
 
 vi.mock("@/lib/appwrite-core", () => ({
@@ -143,6 +147,13 @@ describe("GET /api/servers/[serverId]/permissions", () => {
                     $createdAt: "2024-01-01T00:00:00.000Z",
                 },
             ],
+        });
+        mockGetChannelAccessForUser.mockResolvedValue({
+            serverId: "server-1",
+            isServerOwner: false,
+            isMember: true,
+            canRead: true,
+            canSend: false,
         });
 
         const request = new NextRequest(

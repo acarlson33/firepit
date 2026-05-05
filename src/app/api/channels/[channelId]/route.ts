@@ -8,6 +8,7 @@ import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
 const databaseId = env.databaseId || "main";
+const CHANNEL_TYPES = ["text", "voice", "announcement"] as const;
 
 function getDatabases() {
     return getServerClient().databases;
@@ -65,6 +66,8 @@ export async function PATCH(
             categoryId?: string | null;
             position?: number;
             name?: string;
+            type?: "text" | "voice" | "announcement";
+            topic?: string | null;
         };
 
         const updateData: Record<string, string | number> = {};
@@ -89,6 +92,27 @@ export async function PATCH(
                 );
             }
             updateData.position = body.position;
+        }
+        if (body.type !== undefined) {
+            if (!CHANNEL_TYPES.includes(body.type)) {
+                return NextResponse.json(
+                    { error: "type must be text, voice, or announcement" },
+                    { status: 400 },
+                );
+            }
+
+            updateData.type = body.type;
+        }
+        if (body.topic !== undefined) {
+            const nextTopic = body.topic?.trim() || "";
+            if (nextTopic.length > 500) {
+                return NextResponse.json(
+                    { error: "topic must be 500 characters or fewer" },
+                    { status: 400 },
+                );
+            }
+
+            updateData.topic = nextTopic;
         }
 
         if (Object.keys(updateData).length === 0) {
