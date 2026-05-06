@@ -1,4 +1,4 @@
-import { AppwriteException, ID, Query } from "node-appwrite";
+import { AppwriteException, Query } from "node-appwrite";
 
 import { getAdminClient, isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
