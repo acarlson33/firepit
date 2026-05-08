@@ -227,11 +227,13 @@ export function useNotifications({
                                 shouldNotifyUser,
                                 buildNotificationPayload,
                                 extractMentionedUserIds,
+                                hasEveryoneMention,
                             } = await import("@/lib/notification-triggers");
 
                             const messageText = payload.text as string;
                             const mentionedUserIds =
                                 extractMentionedUserIds(messageText);
+                            const mentionsEveryone = hasEveryoneMention(messageText);
                             const replyToAuthorId = payload.replyToAuthorId as
                                 | string
                                 | undefined;
@@ -242,6 +244,7 @@ export function useNotifications({
                                 serverId: serverId ?? undefined,
                                 channelId,
                                 mentionedUserIds,
+                                mentionsEveryone,
                                 isReplyToRecipient: replyToAuthorId === userId,
                             });
 

@@ -105,6 +105,10 @@ type ChatSurfacePanelProps = {
     unreadSummaryLabel?: string | null;
     onCatchUpUnread?: () => void;
     onJumpToUnread?: () => void;
+    /** Server ID for role mentions in autocomplete (optional) */
+    serverId?: string;
+    /** Whether user can mention everyone (optional) */
+    canMentionEveryone?: boolean;
 };
 
 function UnreadBoundary() {
@@ -156,6 +160,8 @@ export function ChatSurfacePanel({
     unreadSummaryLabel,
     onCatchUpUnread,
     onJumpToUnread,
+    serverId,
+    canMentionEveryone,
 }: ChatSurfacePanelProps) {
     const compactMessages = messageDensity === "compact";
     const showLoadingOverlay = loading && surfaceMessages.length > 0;
@@ -671,6 +677,8 @@ export function ChatSurfacePanel({
                             onPaste={composer.onPaste}
                             placeholder={composer.placeholder}
                             value={composer.text}
+                            serverId={serverId}
+                            canMentionEveryone={canMentionEveryone}
                         />
                         <Button
                             className="shrink-0 rounded-2xl"

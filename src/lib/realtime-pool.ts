@@ -58,20 +58,19 @@ function toUnsubscribeFn(subscription: unknown): () => void {
         const close = (subscription as { close: () => unknown }).close.bind(
             subscription,
         );
-        return () => {
-            const closeResult = close();
-            if (isPromiseLike(closeResult)) {
-                void Promise.resolve(closeResult).catch((error) => {
-                    logger.warn(
-                        "Realtime subscription close failed in unsubscribe wrapper",
-                        {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
-                        },
-                    );
-                });
+        return async () => {
+            try {
+                await Promise.resolve(close());
+            } catch (error) {
+                logger.warn(
+                    "Realtime subscription close failed in unsubscribe wrapper",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                );
             }
         };
     }
@@ -173,13 +172,11 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
         );
 
         const deferredUnsubscribe = (() => {
-            void queuedUnsubscribe
-                .then((unsubscribe) => {
-                    unsubscribe();
-                })
+            return queuedUnsubscribe
+                .then((unsubscribe) => unsubscribe())
                 .catch((error) => {
                     if (isStaleRealtimeSubscribeError(error)) {
-                        return;
+                        return undefined;
                     }
 
                     logger.warn("Deferred realtime unsubscribe failed", {
@@ -188,8 +185,10 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                                 ? error.message
                                 : String(error),
                     });
+
+                    return undefined;
                 });
-        }) as (() => void) & PromiseLike<() => void>;
+        }) as (() => Promise<void>) & PromiseLike<() => Promise<void>>;
         deferredUnsubscribe.then =
             queuedUnsubscribe.then.bind(queuedUnsubscribe);
 

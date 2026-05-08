@@ -22,7 +22,10 @@ import {
 } from "@/lib/message-constraints";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
-import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import {
+    getChannelAccessForUser,
+    getServerPermissionsForUser,
+} from "@/lib/server-channel-access";
 import {
     buildMessagePoll,
     isPollCommand,
@@ -35,6 +38,7 @@ import {
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
+import { hasEveryoneMention } from "@/lib/mention-utils";
 import { normalizeMentionIds } from "@/lib/mentions";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
@@ -262,6 +266,28 @@ export async function POST(request: NextRequest) {
         );
         if (!access.isMember || !access.canSend) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        if (hasEveryoneMention(normalizedText)) {
+            const normalizedServerId = normalizeStringField(access.serverId);
+            if (!normalizedServerId) {
+                return NextResponse.json(
+                    { error: "Server context required for @all mentions" },
+                    { status: 400 },
+                );
+            }
+            const serverAccess = await getServerPermissionsForUser(
+                databases,
+                env,
+                normalizedServerId,
+                userId,
+            );
+            if (!serverAccess.permissions?.mentionEveryone) {
+                return NextResponse.json(
+                    { error: "Forbidden: missing mentionEveryone permission" },
+                    { status: 403 },
+                );
+            }
         }
 
         const normalizedChannelId = normalizeStringField(channelId);

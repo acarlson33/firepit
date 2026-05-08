@@ -1,5 +1,12 @@
 import { redirect } from "next/navigation";
-import { Filter, Hash, MessageSquare, Server, ShieldAlert } from "lucide-react";
+import {
+    Filter,
+    Hash,
+    MessageSquare,
+    SearchCheck,
+    Server,
+    ShieldAlert,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { FileAttachment } from "@/lib/types";
 import {
@@ -286,7 +293,7 @@ export default async function ModerationPage(props: {
     const nextCursor = data.messages.nextCursor || undefined;
     const badgeMap = await buildBadgeMapSimple(documents);
     return (
-        <main className="mx-auto w-full max-w-6xl space-y-8 px-6 py-10">
+        <main className="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
             <Header />
             <StatsGrid stats={data.stats} />
             <FilterForm
@@ -320,30 +327,67 @@ async function fetchModerationData(
 
 function Header() {
     return (
-        <header className="overflow-hidden rounded-3xl border border-border/60 bg-card/60 p-8 shadow-xl backdrop-blur">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-3">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-                        Live moderation tools
-                    </div>
-                    <h1 className="text-3xl font-semibold tracking-tight">
-                        Moderation panel
+        <header className="grid gap-6 overflow-hidden rounded-4xl border border-border/70 bg-card/85 p-8 shadow-2xl backdrop-blur-sm sm:p-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+            <div className="space-y-6">
+                <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                    <ShieldAlert className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                    Live moderation tools
+                </div>
+                <div className="space-y-4">
+                    <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+                        Moderation panel built for fast triage.
                     </h1>
-                    <p className="max-w-2xl text-sm text-muted-foreground">
+                    <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
                         Sweep messages across every server in seconds. Apply
                         filters, jump into context, and take action without
                         leaving this workspace.
                     </p>
                 </div>
-                <div className="rounded-3xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                    <p className="font-semibold text-foreground">
-                        Need quicker pivots?
-                    </p>
-                    <p className="mt-2 leading-relaxed">
-                        Select a server to unlock channel filtering and narrow
-                        results instantly.
-                    </p>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            Search
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                            Find the message that matters.
+                        </p>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            Scope
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                            Narrow by server, channel, or sender.
+                        </p>
+                    </div>
+                    <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            Action
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                            Remove or review without changing context.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-3 rounded-3xl border border-border/60 bg-background/70 p-5 shadow-lg">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <SearchCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+                    Triage hints
+                </div>
+                <p className="text-sm leading-6 text-muted-foreground">
+                    Select a server to unlock channel filtering, or combine text
+                    and user filters to surface a focused review queue.
+                </p>
+                <div className="grid gap-3 text-sm text-muted-foreground">
+                    <div className="rounded-2xl border border-border/50 bg-card/70 px-4 py-3">
+                        Use removed-only when reviewing completed actions.
+                    </div>
+                    <div className="rounded-2xl border border-border/50 bg-card/70 px-4 py-3">
+                        Use channel IDs when narrowing a large server.
+                    </div>
                 </div>
             </div>
         </header>
@@ -396,10 +440,12 @@ function StatBox({
     value: number;
 }) {
     return (
-        <div className="rounded-3xl border border-border/60 bg-background/70 p-5 shadow-sm">
+        <div className="rounded-4xl border border-border/60 bg-background/70 p-5 shadow-lg">
             <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <span>{label}</span>
-                {icon}
+                <span className="rounded-full border border-border/50 bg-card/70 p-2 text-foreground">
+                    {icon}
+                </span>
             </div>
             <p className="mt-4 text-3xl font-semibold text-foreground">
                 {value}
@@ -419,9 +465,9 @@ function FilterForm({
 }) {
     const multiChannels = serverChannels.length > 0;
     return (
-        <section className="rounded-3xl border border-border/60 bg-card/70 p-6 shadow-lg">
+        <section className="rounded-4xl border border-border/60 bg-card/80 p-6 shadow-2xl backdrop-blur-sm">
             <div className="flex items-center gap-2 text-sm font-semibold">
-                <Filter className="h-4 w-4" aria-hidden="true" />
+                <Filter className="h-4 w-4 text-primary" aria-hidden="true" />
                 <span>Refine results</span>
             </div>
             <form className="mt-6 space-y-6" method="get">
@@ -607,13 +653,13 @@ function FilterForm({
 
                 <div className="flex flex-wrap gap-3">
                     <button
-                        className="rounded-2xl border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40"
+                        className="rounded-full border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40"
                         type="submit"
                     >
                         Apply filters
                     </button>
                     <a
-                        className="rounded-2xl border border-border/60 bg-muted/50 px-5 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+                        className="rounded-full border border-border/60 bg-muted/50 px-5 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
                         href="/moderation"
                     >
                         Clear all
@@ -639,13 +685,13 @@ function MessagesList({
 }) {
     return (
         <section className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold">Messages</h2>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {documents.length} result{documents.length === 1 ? "" : "s"}
                 </span>
             </div>
-            <div className="rounded-3xl border border-border/60 bg-card/70 p-4 shadow-inner">
+            <div className="rounded-4xl border border-border/60 bg-card/80 p-4 shadow-2xl backdrop-blur-sm">
                 <ModerationMessageList
                     badgeMap={badgeMap}
                     initialMessages={documents}
@@ -670,7 +716,7 @@ function Pagination({
     return (
         <div className="flex justify-center pt-6">
             <form
-                className="inline-flex flex-wrap items-center justify-center gap-3 rounded-3xl border border-border/60 bg-card/70 px-6 py-4 shadow-sm"
+                className="inline-flex flex-wrap items-center justify-center gap-3 rounded-4xl border border-border/60 bg-card/75 px-6 py-4 shadow-xl backdrop-blur-sm"
                 method="get"
             >
                 <input name="cursor" type="hidden" value={nextCursor} />
@@ -721,7 +767,7 @@ function Pagination({
                     <input name="q" type="hidden" value={params.textFilter} />
                 )}
                 <button
-                    className="rounded-2xl border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40"
+                    className="rounded-full border border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground transition hover:border-foreground/40"
                     type="submit"
                 >
                     Load more messages

@@ -24,9 +24,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-    title: "firepit",
-    description: "A better chat experience",
-    // Enable modern performance features
+    title: {
+        default: "firepit",
+        template: "%s | firepit",
+    },
+    description:
+        "Real-time communities, direct messages, and moderation in one workspace.",
+    icons: {
+        icon: [
+            {
+                url: "/favicon/favicon.ico",
+                type: "image/x-icon",
+            },
+        ],
+        shortcut: "/favicon/favicon.ico",
+        apple: "/favicon/apple-touch-icon.png",
+    },
     other: {
         "color-scheme": "light dark",
     },
@@ -46,22 +59,21 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en" suppressHydrationWarning>
-            <head>
-                {/* Preconnect to Appwrite to establish connections early */}
-                <link rel="preconnect" href="https://nyc.cloud.appwrite.io" />
-                <link rel="dns-prefetch" href="https://nyc.cloud.appwrite.io" />
-            </head>
             <body
                 className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden antialiased bg-background text-foreground`}
             >
                 <ServiceWorkerRegistration />
                 <Providers>
-                    <div className="relative min-h-screen overflow-hidden">
-                        <div className="pointer-events-none fixed inset-0 -z-10">
-                            <div className="absolute -top-24 left-1/2 h-72 w-xl -translate-x-1/2 rounded-full bg-linear-to-br from-sky-200/40 via-purple-200/40 to-transparent blur-3xl dark:from-sky-500/10 dark:via-purple-500/10" />
-                            <div className="absolute bottom-0 right-[-10%] h-80 w-md rounded-full bg-linear-to-tr from-emerald-200/40 via-teal-100/30 to-transparent blur-3xl dark:from-emerald-500/10 dark:via-teal-500/10" />
+                    <div className="relative min-h-screen overflow-hidden bg-background">
+                        <div
+                            aria-hidden="true"
+                            className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+                        >
+                            <div className="absolute -top-44 left-1/2 h-[32rem] w-[52rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.24),rgba(249,115,22,0.08)_36%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(251,146,60,0.18),rgba(251,146,60,0.05)_38%,transparent_72%)]" />
+                            <div className="absolute -bottom-40 left-[-10%] h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle_at_center,rgba(45,212,191,0.18),rgba(45,212,191,0.05)_42%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.14),rgba(34,197,94,0.04)_42%,transparent_72%)]" />
+                            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
                         </div>
-                        <div className="relative z-10 grid min-h-screen grid-rows-[auto_1fr]">
+                        <div className="relative z-10 flex min-h-screen flex-col">
                             <AppLayout>{children}</AppLayout>
                         </div>
                     </div>

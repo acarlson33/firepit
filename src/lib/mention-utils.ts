@@ -9,6 +9,8 @@ export interface MentionMatch {
     endIndex: number;
 }
 
+const EVERYONE_MENTION_REGEX = /(?:^|\s)@all(?=$|\s|[.,!?;:])/i;
+
 /**
  * Regular expression to match @username patterns (simple fallback).
  * Matches @ followed by one or more non-whitespace characters.
@@ -120,6 +122,10 @@ export function extractMentionsWithKnownNames(
 export function hasMentions(text: string): boolean {
     MENTION_REGEX.lastIndex = 0;
     return MENTION_REGEX.test(text);
+}
+
+export function hasEveryoneMention(text: string): boolean {
+    return EVERYONE_MENTION_REGEX.test(text);
 }
 
 /**

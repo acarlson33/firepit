@@ -147,6 +147,28 @@ describe("Realtime Pool", () => {
 
             expect(mockRealtimeSubscribe).toHaveBeenCalledTimes(2);
         });
+
+        it("should await deferred unsubscribe close handling", async () => {
+            getSharedRealtime();
+
+            const closeSpy = vi.fn(async () => {});
+            mockRealtimeSubscribe.mockResolvedValueOnce({ close: closeSpy });
+
+            const wrappedSubscribe = (
+                getSharedRealtime() as {
+                    subscribe: (...args: unknown[]) => Promise<unknown>;
+                }
+            ).subscribe;
+
+            const unsubscribe = (await wrappedSubscribe(
+                "channel-1",
+                vi.fn(),
+            )) as () => Promise<void>;
+
+            await unsubscribe();
+
+            expect(closeSpy).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe("trackSubscription", () => {

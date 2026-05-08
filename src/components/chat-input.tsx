@@ -9,6 +9,14 @@ import {
 } from "@/lib/mention-utils";
 import type { UserProfileData } from "@/lib/types";
 
+export type MentionableRole = {
+    id: string;
+    name: string;
+    color: string;
+    mentionable: boolean;
+    memberCount: number;
+};
+
 type ChatInputProps = {
     value: string;
     onChange: (value: string) => void;
@@ -20,6 +28,10 @@ type ChatInputProps = {
     onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
     /** Called whenever the set of autocompleted mention display names changes */
     onMentionsChange?: (names: string[]) => void;
+    /** Server ID for fetching mentionable roles (optional) */
+    serverId?: string;
+    /** User's permission to mention everyone (optional) */
+    canMentionEveryone?: boolean;
 };
 
 export function ChatInput({
@@ -32,6 +44,8 @@ export function ChatInput({
     onKeyDown,
     onPaste,
     onMentionsChange,
+    serverId,
+    canMentionEveryone,
 }: ChatInputProps) {
     const [showMentionAutocomplete, setShowMentionAutocomplete] =
         useState(false);
@@ -41,14 +55,16 @@ export function ChatInput({
         left: 0,
     });
     const [availableUsers, setAvailableUsers] = useState<UserProfileData[]>([]);
+    const [mentionableRoles, setMentionableRoles] = useState<MentionableRole[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const mentionedNamesRef = useRef<string[]>([]);
 
-    // Fetch users when mention query changes
+    // Fetch users and mentionable roles when mention query changes
     useEffect(() => {
         if (!showMentionAutocomplete) {
             setAvailableUsers([]);
+            setMentionableRoles([]);
             setIsLoadingUsers(false);
             return;
         }
@@ -57,7 +73,7 @@ export function ChatInput({
         setIsLoadingUsers(true);
 
         // If query is empty, fetch all users
-        const fetchUsers = async () => {
+        const fetchUsersAndRoles = async () => {
             try {
                 const query = mentionQuery || "";
                 const response = await fetch(
@@ -69,6 +85,23 @@ export function ChatInput({
                 } else {
                     setAvailableUsers([]);
                 }
+
+                // Fetch mentionable roles if we have a serverId
+                if (serverId && (query === "" || query.toLowerCase().includes("all"))) {
+                    try {
+                        const rolesResponse = await fetch(
+                            `/api/servers/${serverId}/mentionable-roles`,
+                        );
+                        if (rolesResponse.ok) {
+                            const rolesData = await rolesResponse.json();
+                            setMentionableRoles(rolesData.roles || []);
+                        }
+                    } catch (error) {
+                        console.error("Failed to fetch mentionable roles:", error);
+                    }
+                } else {
+                    setMentionableRoles([]);
+                }
             } catch (error) {
                 console.error("Failed to fetch users:", error);
                 setAvailableUsers([]);
@@ -78,11 +111,11 @@ export function ChatInput({
         };
 
         const debounce = setTimeout(() => {
-            void fetchUsers();
+            void fetchUsersAndRoles();
         }, 150);
 
         return () => clearTimeout(debounce);
-    }, [mentionQuery, showMentionAutocomplete]);
+    }, [mentionQuery, showMentionAutocomplete, serverId]);
 
     // Update position on scroll/resize
     useEffect(() => {
@@ -148,24 +181,38 @@ export function ChatInput({
     );
 
     const handleMentionSelect = useCallback(
-        (user: UserProfileData) => {
+        (selectable: UserProfileData | MentionableRole | null) => {
             const cursorPosition = inputRef.current?.selectionStart || 0;
-            const username = user.displayName || user.userId;
+            
+            // Determine the mention text based on type
+            let mentionText: string;
+            if (selectable === null) {
+                // @all mention
+                mentionText = "all";
+            } else if ("memberCount" in selectable) {
+                // Role mention - use role name with special prefix
+                mentionText = `role:${selectable.name}`;
+            } else {
+                // User mention - use display name
+                mentionText = selectable.displayName || selectable.userId;
+            }
+            
             const result = replaceMentionAtCursor(
                 value,
                 cursorPosition,
-                username,
+                mentionText,
             );
             onChange(result.newText);
             setShowMentionAutocomplete(false);
             setMentionQuery("");
             setAvailableUsers([]);
+            setMentionableRoles([]);
 
-            // Track the selected display name for accurate mention extraction
-            if (!mentionedNamesRef.current.includes(username)) {
+            // Track the selected mention for accurate mention extraction
+            if (!mentionedNamesRef.current.includes(mentionText)) {
                 mentionedNamesRef.current = [
                     ...mentionedNamesRef.current,
-                    username,
+                    mentionText,
                 ];
                 onMentionsChange?.(mentionedNamesRef.current);
             }
@@ -236,14 +283,17 @@ export function ChatInput({
                 <MentionAutocomplete
                     query={mentionQuery}
                     users={availableUsers}
+                    roles={mentionableRoles}
                     position={autocompletePosition}
                     onSelect={handleMentionSelect}
                     onClose={() => {
                         setShowMentionAutocomplete(false);
                         setMentionQuery("");
                         setAvailableUsers([]);
+                        setMentionableRoles([]);
                     }}
                     isLoading={isLoadingUsers}
+                    canMentionEveryone={canMentionEveryone}
                 />
             )}
         </>

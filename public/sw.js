@@ -11,10 +11,10 @@
 
 // Cache version names - update these to bust caches on deploy
 // Bump cache versions to bust stale Next.js chunks when deploying new builds
-var CACHE_NAME = "firepit-v4";
-var API_CACHE_NAME = "firepit-api-v4";
-var STATIC_CACHE_NAME = "firepit-static-v4";
-var EMOJI_CACHE_NAME = "firepit-emoji-v4";
+var CACHE_NAME = "firepit-v5";
+var API_CACHE_NAME = "firepit-api-v5";
+var STATIC_CACHE_NAME = "firepit-static-v5";
+var EMOJI_CACHE_NAME = "firepit-emoji-v5";
 var EMOJI_CACHE_LIMIT = 200;
 
 // Assets to cache immediately on install

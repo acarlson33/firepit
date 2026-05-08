@@ -15,7 +15,9 @@ import {
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
+import { hasEveryoneMention } from "@/lib/mention-utils";
 import { normalizeMentionIds } from "@/lib/mentions";
+import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 type RouteContext = {
     params: Promise<{
@@ -212,6 +214,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const normalizedMentionsFromInput = mentions
             ? normalizeMentionIds(mentions)
             : [];
+
+        if (hasEveryoneMention(text || "") && parentMessage.serverId) {
+            const serverAccess = await getServerPermissionsForUser(
+                databases,
+                env,
+                String(parentMessage.serverId),
+                user.$id,
+            );
+            if (!serverAccess.permissions?.mentionEveryone) {
+                return NextResponse.json(
+                    { error: "Forbidden: missing mentionEveryone permission" },
+                    { status: 403 },
+                );
+            }
+        }
 
         // Create the thread reply message
         const messageData: Record<string, unknown> = {

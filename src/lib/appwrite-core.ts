@@ -80,6 +80,7 @@ export type EnvConfig = {
         roles: string;
         polls: string;
         pollVotes: string;
+        roleAssignments: string;
     };
     buckets: {
         avatars: string;

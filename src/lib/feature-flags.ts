@@ -98,28 +98,30 @@ function isDuplicateConflictError(error: unknown): boolean {
  * and falls back to configured defaults when the flag is not present.
  */
 export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
-    // Check cache first
-    const cached = flagCache.get(key);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        return cached.value;
-    }
-
     const { databases } = getServerClient();
     const { databaseId, collections } = getEnvConfig();
 
     try {
+        // Fetch data from database (satisfies Cache Components requirement for Date.now())
         const response = await databases.listDocuments(
             databaseId,
             collections.featureFlags,
             [Query.equal("key", key), Query.limit(1)],
         );
 
+        // Check cache TTL after async data access
+        const cached = flagCache.get(key);
+        const now = Date.now();
+        if (cached && now - cached.timestamp < CACHE_TTL) {
+            return cached.value;
+        }
+
         if (response.documents.length > 0) {
             const flag = response.documents[0] as unknown as FeatureFlag;
             const value = flag.enabled;
 
             // Update cache
-            flagCache.set(key, { value, timestamp: Date.now() });
+            flagCache.set(key, { value, timestamp: now });
 
             return value;
         }

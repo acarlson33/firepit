@@ -110,7 +110,7 @@ export function SettingsSectionNav({
             sections[0];
 
         return (
-            <div className="rounded-3xl border border-border/60 bg-card/85 p-3 shadow-lg backdrop-blur">
+            <div className="rounded-4xl border border-border/60 bg-card/85 p-4 shadow-xl backdrop-blur-sm">
                 <div className="flex items-center justify-between gap-3">
                     <div>
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -151,7 +151,7 @@ export function SettingsSectionNav({
     }
 
     return (
-        <div className="rounded-3xl border border-border/60 bg-card/75 p-5 shadow-lg backdrop-blur">
+        <div className="rounded-4xl border border-border/60 bg-card/75 p-5 shadow-xl backdrop-blur-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 On this page
             </p>
@@ -166,10 +166,10 @@ export function SettingsSectionNav({
                                     aria-current={
                                         isActive ? "location" : undefined
                                     }
-                                    className={`group block rounded-2xl border px-4 py-3 transition-colors ${
+                                        className={`group block rounded-3xl border px-4 py-3 transition-all ${
                                         isActive
-                                            ? "border-primary/40 bg-primary/10 shadow-sm"
-                                            : "border-transparent bg-background/40 hover:border-border/60 hover:bg-background/80"
+                                            ? "border-primary/25 bg-primary/10 shadow-sm shadow-primary/10"
+                                            : "border-border/40 bg-background/40 hover:border-border/60 hover:bg-background/80"
                                     }`}
                                     href={section.href}
                                     onClick={() => setActiveHref(section.href)}
