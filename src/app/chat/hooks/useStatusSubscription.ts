@@ -127,6 +127,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: RealtimeSubscription } = {};
         const timeoutId = setTimeout(() => {
             (async () => {
                 try {
@@ -172,20 +173,38 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                     };
 
                     // Keep a query filter so status updates are scoped to tracked users.
+                    // Try updating existing subscription if supported
+                    if (subscriptionRef.current) {
+                        const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                        if (typeof existing.update === "function") {
+                            try {
+                                await existing.update({
+                                    queries: [Query.equal("userId", normalizedUserIds)],
+                                });
+                                return;
+                            } catch {
+                                // fallthrough to recreate
+                            }
+                        }
+                    }
+
                     const subscription: RealtimeSubscription =
                         await realtime.subscribe(channel, handleStatusEvent, [
                             Query.equal("userId", normalizedUserIds),
                         ]);
 
+                    subscriptionRef.current = subscription;
+
                     if (cancelled) {
-                        await closeSubscriptionSafely(subscription);
+                        await closeSubscriptionSafely(subscriptionRef.current);
+                        subscriptionRef.current = undefined;
                         return;
                     }
 
                     const untrack = trackSubscription(channelKey);
                     cleanup = () => {
                         untrack();
-                        closeSubscriptionSafely(subscription).catch(
+                        closeSubscriptionSafely(subscriptionRef.current).catch(
                             (error) => {
                                 logger.warn(
                                     "Status subscription cleanup failed",
@@ -195,6 +214,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                                 );
                             },
                         );
+                        subscriptionRef.current = undefined;
                     };
                 } catch (err) {
                     if (isTransientRealtimeSubscribeError(err)) {

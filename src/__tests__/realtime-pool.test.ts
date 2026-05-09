@@ -10,6 +10,8 @@ const { mockCloseSocket, mockPublicClose, mockRealtimeSubscribe } = vi.hoisted(
         mockPublicClose: vi.fn().mockResolvedValue(undefined),
         mockRealtimeSubscribe: vi.fn(async () => ({
             close: vi.fn(async () => {}),
+            update: vi.fn().mockResolvedValue(undefined),
+            disconnect: vi.fn().mockResolvedValue(undefined),
         })),
     }),
 );
@@ -121,10 +123,18 @@ describe("Realtime Pool", () => {
                     () =>
                         new Promise((resolve) => {
                             releaseFirstSubscribe = () =>
-                                resolve({ close: vi.fn(async () => {}) });
+                                resolve({
+                                    close: vi.fn(async () => {}),
+                                    update: vi.fn().mockResolvedValue(undefined),
+                                    disconnect: vi.fn().mockResolvedValue(undefined),
+                                });
                         }),
                 )
-                .mockResolvedValueOnce({ close: vi.fn(async () => {}) });
+                .mockResolvedValueOnce({
+                    close: vi.fn(async () => {}),
+                    update: vi.fn().mockResolvedValue(undefined),
+                    disconnect: vi.fn().mockResolvedValue(undefined),
+                });
 
             const wrappedSubscribe = (
                 getSharedRealtime() as {
@@ -152,7 +162,11 @@ describe("Realtime Pool", () => {
             getSharedRealtime();
 
             const closeSpy = vi.fn(async () => {});
-            mockRealtimeSubscribe.mockResolvedValueOnce({ close: closeSpy });
+            mockRealtimeSubscribe.mockResolvedValueOnce({
+                close: closeSpy,
+                update: vi.fn().mockResolvedValue(undefined),
+                disconnect: vi.fn().mockResolvedValue(undefined),
+            });
 
             const wrappedSubscribe = (
                 getSharedRealtime() as {
@@ -341,7 +355,7 @@ describe("Realtime Pool", () => {
                 dependencies?: Record<string, string>;
             };
 
-            expect(packageJson.dependencies?.appwrite).toMatch(/^\^?24\./);
+            expect(packageJson.dependencies?.appwrite).toMatch(/^\^?25\./);
         });
     });
 });

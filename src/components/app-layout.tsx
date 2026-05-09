@@ -16,7 +16,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <>
-      <Header onSearchClick={globalSearch.open} />
+      <Suspense fallback={null}>
+        <Header onSearchClick={globalSearch.open} />
+      </Suspense>
       <main className="relative flex-1 overflow-hidden">
         <div
           aria-hidden="true"

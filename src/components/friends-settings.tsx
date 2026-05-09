@@ -18,6 +18,20 @@ import { useFriends } from "@/hooks/useFriends";
 
 type FriendEntry = ReturnType<typeof useFriends>["friends"][number];
 
+function formatFriendshipDate(
+    kind: "friends" | "incoming" | "outgoing",
+    friendship: FriendEntry["friendship"],
+): string {
+    switch (kind) {
+        case "friends":
+            return `Friends since ${new Date(friendship.respondedAt ?? friendship.createdAt).toLocaleDateString()}`;
+        case "incoming":
+            return `Requested ${new Date(friendship.createdAt).toLocaleDateString()}`;
+        case "outgoing":
+            return `Sent ${new Date(friendship.createdAt).toLocaleDateString()}`;
+    }
+}
+
 function emptyLabel(kind: "friends" | "incoming" | "outgoing") {
     if (kind === "friends") {
         return "No friends yet. Send requests from profiles or user search.";
@@ -76,12 +90,13 @@ export function FriendsSettings() {
         return entries.map((entry) => {
             const name = entry.user.displayName ?? entry.user.userId;
             const busyKeyPrefix = kind === "incoming" ? "accept" : "remove";
-            const statusLabel =
-                kind === "friends"
-                    ? "Friend"
-                    : kind === "incoming"
-                      ? "Incoming"
-                      : "Sent";
+            const STATUS_LABELS = {
+                friends: "Friend",
+                incoming: "Incoming",
+                sent: "Sent",
+                outgoing: "Sent",
+            } as const;
+            const statusLabel = STATUS_LABELS[kind as keyof typeof STATUS_LABELS] || "Sent";
 
             return (
                 <div
@@ -118,11 +133,7 @@ export function FriendsSettings() {
                             ) : null}
                             <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-xs text-muted-foreground">
-                                    {kind === "friends"
-                                        ? `Friends since ${new Date(entry.friendship.respondedAt ?? entry.friendship.createdAt).toLocaleDateString()}`
-                                        : kind === "incoming"
-                                          ? `Requested ${new Date(entry.friendship.createdAt).toLocaleDateString()}`
-                                          : `Sent ${new Date(entry.friendship.createdAt).toLocaleDateString()}`}
+                                    {formatFriendshipDate(kind, entry.friendship)}
                                 </p>
                                 <span className="rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                     {statusLabel}

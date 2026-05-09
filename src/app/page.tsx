@@ -121,7 +121,7 @@ function WorkspaceActionButton({
 }) {
     return (
         <Button asChild className="w-full justify-start rounded-2xl" size="lg" variant={variant}>
-            <Link href={href}>
+            <Link href={href as any}>
                 <Icon className="h-4 w-4" />
                 {label}
             </Link>

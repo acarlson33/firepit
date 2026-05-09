@@ -40,7 +40,11 @@ global.URL.revokeObjectURL = vi.fn();
 // Mock realtime pool
 vi.mock("@/lib/realtime-pool", () => ({
 	getSharedRealtime: vi.fn(() => ({
-		subscribe: vi.fn(async () => ({ close: vi.fn() })),
+		subscribe: vi.fn(async () => ({
+			close: vi.fn(),
+			update: vi.fn().mockResolvedValue(undefined),
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		})),
 	})),
 	trackSubscription: vi.fn(() => vi.fn()),
 }));
@@ -201,7 +205,11 @@ describe("Custom Emojis - Realtime Synchronization", () => {
 
 	it("should mock realtime client subscription", async () => {
 		const mockClient = {
-			subscribe: vi.fn(async () => ({ close: vi.fn() })),
+			subscribe: vi.fn(async () => ({
+				close: vi.fn(),
+				update: vi.fn().mockResolvedValue(undefined),
+				disconnect: vi.fn().mockResolvedValue(undefined),
+			})),
 		};
 
 		const subscription = mockClient.subscribe("test-channel", () => {});

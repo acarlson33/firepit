@@ -287,7 +287,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <nav
                         aria-label="Main navigation"
-                        className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none"
                     >
                         {links.map((link) => {
                             const active = showContent
@@ -354,14 +354,15 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                         <DropdownMenuTrigger asChild>
                                             <Button
                                                 className="group h-auto rounded-3xl border-border/60 bg-background/70 px-3 py-2 shadow-sm hover:bg-background"
+                                                type="button"
                                                 variant="outline"
                                             >
                                                 <Avatar
                                                     alt={displayName}
-                                                    avatarFramePreset={
+                                                    framePreset={
                                                         headerProfile?.avatarFramePreset
                                                     }
-                                                    avatarFrameUrl={
+                                                    frameUrl={
                                                         headerProfile?.avatarFrameUrl
                                                     }
                                                     fallback={displayName}
@@ -547,7 +548,7 @@ function ThemeToggleMenu({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button aria-label="Toggle theme" className="rounded-2xl" size="icon" variant="outline">
+                <Button aria-label="Toggle theme" className="rounded-2xl" size="icon" type="button" variant="outline">
                     <span className="relative inline-flex size-5 items-center justify-center">
                         <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                         <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />

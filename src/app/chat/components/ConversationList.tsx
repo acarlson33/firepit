@@ -583,7 +583,7 @@ export function ConversationList({
                     </div>
                 ) : null}
 
-                {loading ? null : activeConversationList.length === 0 ? (
+                {activeConversationList.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center">
                         <MessageSquare className="mb-2 size-8 text-muted-foreground" />
                         <p className="text-muted-foreground text-sm">
@@ -593,6 +593,7 @@ export function ConversationList({
                             className="mt-3"
                             onClick={onNewConversation}
                             size="sm"
+                            type="button"
                             variant="outline"
                         >
                             Start a conversation

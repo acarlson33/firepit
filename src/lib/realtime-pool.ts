@@ -118,6 +118,13 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
     const baseSubscribe = realtime.subscribe.bind(realtime);
     const wrappedSubscribe = (...args: Parameters<Realtime["subscribe"]>) => {
         const generation = realtimeWithMetadata.__firepitGeneration;
+
+        // Keep a reference to the underlying raw subscription when it resolves
+        // so we can surface new lifecycle methods (update/disconnect) when
+        // provided by newer SDK versions while preserving the queued
+        // subscribe/unsubscribe behavior.
+        let resolvedRawSubscription: unknown;
+
         const queuedUnsubscribe = queueRealtimeSubscribe(
             typeof generation === "number"
                 ? generation
@@ -140,6 +147,10 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                         const subscription = await Promise.resolve(
                             baseSubscribe(...args),
                         );
+
+                        // Capture the raw subscription for later method forwarding
+                        resolvedRawSubscription = subscription;
+
                         return toUnsubscribeFn(subscription);
                     } catch (error) {
                         attempt += 1;
@@ -171,7 +182,10 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
             },
         );
 
-        const deferredUnsubscribe = (() => {
+        // Build a callable unsubscribe function that also exposes lifecycle
+        // methods. This maintains compatibility with code that expects a
+        // function return value, while adding named methods for modern SDKs.
+        const callable = (() => {
             return queuedUnsubscribe
                 .then((unsubscribe) => unsubscribe())
                 .catch((error) => {
@@ -189,10 +203,61 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                     return undefined;
                 });
         }) as (() => Promise<void>) & PromiseLike<() => Promise<void>>;
-        deferredUnsubscribe.then =
-            queuedUnsubscribe.then.bind(queuedUnsubscribe);
 
-        return deferredUnsubscribe;
+        // Keep Promise-like then() so existing code that treats the return
+        // value as a promise continues to work.
+            callable.then = queuedUnsubscribe.then.bind(queuedUnsubscribe) as any;
+
+        // Attach normalized lifecycle methods.
+        const attachMethods = () => {
+                const c = callable as any;
+            // close/unsubscribe: prefer the queued unsubscribe promise to
+            // ensure ordering with other queued operations.
+                c.close = async () => {
+                try {
+                    await queuedUnsubscribe.then((u) => u());
+                } catch (err) {
+                    if (!isStaleRealtimeSubscribeError(err)) {
+                        logger.warn("Deferred realtime close failed", {
+                            error: err instanceof Error ? err.message : String(err),
+                        });
+                    }
+                }
+            };
+
+                c.unsubscribe = c.close;
+
+            // disconnect: forward to underlying if present; otherwise call
+            // close as a fallback.
+                c.disconnect = async () => {
+                const raw = resolvedRawSubscription as any;
+                if (raw && typeof raw.disconnect === "function") {
+                    try {
+                        return await Promise.resolve(raw.disconnect());
+                    } catch (err) {
+                        // Fall through to close fallback
+                    }
+                }
+
+                    return await c.close();
+            };
+
+            // update: forward to underlying subscription if it provides an
+            // update method; otherwise throw a clear error so callers can
+            // handle lack of support.
+                c.update = async (opts?: unknown) => {
+                const raw = resolvedRawSubscription as any;
+                if (raw && typeof raw.update === "function") {
+                    return await Promise.resolve(raw.update(opts));
+                }
+
+                throw new Error("Realtime subscription update() not supported by installed Appwrite SDK");
+            };
+        };
+
+        attachMethods();
+
+        return callable as unknown as Realtime["subscribe"] extends (...a: any) => Promise<infer R> ? R : unknown;
     };
     realtime.subscribe = wrappedSubscribe as unknown as Realtime["subscribe"];
 

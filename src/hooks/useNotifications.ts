@@ -182,6 +182,7 @@ export function useNotifications({
         let unsubscribe: (() => void) | undefined;
         let untrack: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -226,9 +227,9 @@ export function useNotifications({
                             const {
                                 shouldNotifyUser,
                                 buildNotificationPayload,
-                                extractMentionedUserIds,
-                                hasEveryoneMention,
-                            } = await import("@/lib/notification-triggers");
+                                    extractMentionedUserIds,
+                                } = await import("@/lib/notification-triggers");
+                                const { hasEveryoneMention } = await import("@/lib/mention-utils");
 
                             const messageText = payload.text as string;
                             const mentionedUserIds =
@@ -284,11 +285,35 @@ export function useNotifications({
                     })();
                 };
 
+                // If we have a running subscription, attempt to update its queries
+                if (subscriptionRef.current) {
+                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("channelId", channelId)],
+                            });
+                            untrack = trackSubscription(messageChannelKey);
+                            unsubscribe = createRealtimeCleanup({
+                                contextId: channelId,
+                                contextLabel: "channel",
+                                subscription: subscriptionRef.current,
+                                untrack,
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
                     [Query.equal("channelId", channelId)],
                 );
+
+                subscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -296,6 +321,7 @@ export function useNotifications({
                         contextLabel: "channel",
                         subscription,
                     })();
+                    subscriptionRef.current = undefined;
                     return;
                 }
 
@@ -353,6 +379,7 @@ export function useNotifications({
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -438,11 +465,35 @@ export function useNotifications({
                     })();
                 };
 
+                // Try to update existing subscription if available
+                if (subscriptionRef.current) {
+                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("conversationId", conversationId)],
+                            });
+                            const untrack = trackSubscription(messageChannelKey);
+                            cleanup = createRealtimeCleanup({
+                                contextId: conversationId,
+                                contextLabel: "DM",
+                                subscription: subscriptionRef.current,
+                                untrack,
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
                     [Query.equal("conversationId", conversationId)],
                 );
+
+                subscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -450,6 +501,7 @@ export function useNotifications({
                         contextLabel: "DM",
                         subscription,
                     })();
+                    subscriptionRef.current = undefined;
                     return;
                 }
 

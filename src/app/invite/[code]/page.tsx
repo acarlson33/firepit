@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "@/lib/auth-server";
 import { getInviteByCode, getServerPreview, validateInvite } from "@/lib/appwrite-invites";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ type InvitePageProps = {
 };
 
 export default async function InvitePage({ params }: InvitePageProps) {
+  noStore();
   const { code } = await params;
 
   // Get the invite

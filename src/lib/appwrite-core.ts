@@ -303,6 +303,12 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_POLL_VOTES_COLLECTION_ID,
                 "poll_votes",
             ) || "poll_votes",
+        roleAssignments:
+            firstDefined(
+                process.env.NEXT_PUBLIC_APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID,
+                process.env.APPWRITE_ROLE_ASSIGNMENTS_COLLECTION_ID,
+                "role_assignments",
+            ) || "role_assignments",
     };
     const buckets = {
         avatars:

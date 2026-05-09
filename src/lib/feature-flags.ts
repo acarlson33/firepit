@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Query } from "node-appwrite";
+import { unstable_cache, revalidateTag } from "next/cache";
 
 import { getEnvConfig } from "./appwrite-core";
 import {
@@ -31,9 +32,7 @@ const KNOWN_FEATURE_FLAGS = new Set<FeatureFlagKey>(
     Object.values(FEATURE_FLAGS) as FeatureFlagKey[],
 );
 
-// Cache for feature flags to reduce database calls
-const flagCache = new Map<string, { value: boolean; timestamp: number }>();
-const CACHE_TTL = 60000; // 1 minute
+const CACHE_TTL = 60; // 1 minute
 
 function createFeatureFlagDocumentId(flagKey: string): string {
     const maxPrefixLength = 18;
@@ -92,47 +91,47 @@ function isDuplicateConflictError(error: unknown): boolean {
     );
 }
 
-/**
- * Returns the effective enabled state for a feature flag.
- * Checks the in-memory cache first (1-minute TTL), then queries the database,
- * and falls back to configured defaults when the flag is not present.
- */
-export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
+async function fetchFeatureFlagFromDb(
+    key: FeatureFlagKey,
+): Promise<boolean | null> {
     const { databases } = getServerClient();
     const { databaseId, collections } = getEnvConfig();
 
-    try {
-        // Fetch data from database (satisfies Cache Components requirement for Date.now())
-        const response = await databases.listDocuments(
-            databaseId,
-            collections.featureFlags,
-            [Query.equal("key", key), Query.limit(1)],
-        );
+    const response = await databases.listDocuments(
+        databaseId,
+        collections.featureFlags,
+        [Query.equal("key", key), Query.limit(1)],
+    );
 
-        // Check cache TTL after async data access
-        const cached = flagCache.get(key);
-        const now = Date.now();
-        if (cached && now - cached.timestamp < CACHE_TTL) {
-            return cached.value;
-        }
-
-        if (response.documents.length > 0) {
-            const flag = response.documents[0] as unknown as FeatureFlag;
-            const value = flag.enabled;
-
-            // Update cache
-            flagCache.set(key, { value, timestamp: now });
-
-            return value;
-        }
-    } catch (error) {
-        logger.error(`Failed to get feature flag ${key}:`, {
-            error,
-        });
+    if (response.documents.length > 0) {
+        const flag = response.documents[0] as unknown as FeatureFlag;
+        return flag.enabled;
     }
 
-    // Return default value if not found or error
-    return DEFAULT_FLAGS[key] ?? false;
+    return null;
+}
+
+const getCachedFeatureFlag = unstable_cache(
+    async (key: FeatureFlagKey): Promise<boolean> => {
+        try {
+            const value = await fetchFeatureFlagFromDb(key);
+            if (value !== null) {
+                return value;
+            }
+        } catch (error) {
+            logger.error(`Failed to get feature flag ${key}:`, {
+                error,
+            });
+        }
+
+        return DEFAULT_FLAGS[key] ?? false;
+    },
+    ["feature-flags"],
+    { revalidate: CACHE_TTL },
+);
+
+export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
+    return getCachedFeatureFlag(key);
 }
 
 /**
@@ -220,9 +219,6 @@ export async function setFeatureFlag(
             },
         );
 
-        // Clear cache for this flag
-        flagCache.delete(key);
-
         return true;
     } catch (error) {
         logger.error("Failed to update feature flag", {
@@ -300,9 +296,6 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
     }
 }
 
-/**
- * Clear the feature flags cache
- */
 export function clearFeatureFlagsCache(): void {
-    flagCache.clear();
+    // Cache is managed by Next.js unstable_cache with TTL-based revalidation
 }

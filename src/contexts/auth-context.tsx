@@ -257,6 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+            const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         // Defer subscription setup to after initial render (5 second delay)
         // This prevents real-time connections from blocking the critical render path
@@ -282,6 +283,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         .collection(statusesCollection)
                         .document();
                     const channelKey = channel.toString();
+
+                    // If we already have a subscription, try to update it for the new user
+                    if (subscriptionRef.current) {
+                            const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                        if (typeof existing.update === "function") {
+                            try {
+                                await existing.update({
+                                    queries: [Query.equal("userId", activeUserId)],
+                                });
+                                return;
+                                } catch {
+                                // fallthrough to recreate
+                            }
+                        }
+                    }
 
                     const subscription = await realtime.subscribe(
                         channel,
@@ -317,17 +333,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         [Query.equal("userId", activeUserId)],
                     );
 
+                    subscriptionRef.current = subscription;
                     const untrack = trackSubscription(channelKey);
 
                     if (cancelled) {
                         untrack();
-                        void closeSubscriptionSafely(subscription);
+                        void closeSubscriptionSafely(subscriptionRef.current);
+                            subscriptionRef.current = undefined;
                         return;
                     }
 
                     cleanup = () => {
                         untrack();
-                        void closeSubscriptionSafely(subscription);
+                        void closeSubscriptionSafely(subscriptionRef.current);
+                            subscriptionRef.current = undefined;
                     };
                 } catch (err) {
                     if (cancelled) {

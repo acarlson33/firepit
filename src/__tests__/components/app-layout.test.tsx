@@ -10,6 +10,7 @@ const mockUseFriends = vi.hoisted(() => vi.fn());
 
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
+    usePathname: () => "/chat",
     useRouter: () => ({
         push: vi.fn(),
     }),

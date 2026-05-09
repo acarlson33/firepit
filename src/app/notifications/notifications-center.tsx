@@ -38,7 +38,7 @@ function getItemFilterLabel(item: InboxItem) {
 export function NotificationsCenter({ userId }: NotificationsCenterProps) {
     const router = useRouter();
     const inboxApi = useInbox(userId);
-    const [selectedFilter, setSelectedFilter] = useState<InboxScope | "all">(
+    const [selectedFilter, setSelectedFilter] = useState<InboxScope | "all" | "mentions">(
         "all",
     );
 
@@ -212,10 +212,23 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                     className="flex w-full items-start gap-3 rounded-3xl border border-border/60 bg-background/70 p-4 text-left transition hover:border-border hover:bg-background"
                                     key={item.id}
                                     onClick={() => {
-                                        router.push(buildChatMessageHref(
-                                            item.destination,
+                                        const destination = item.contextKind === "channel"
+                                            ? {
+                                                kind: "channel" as const,
+                                                channelId: item.contextId,
+                                                messageId: item.messageId,
+                                                serverId: item.serverId,
+                                            }
+                                            : {
+                                                kind: "dm" as const,
+                                                conversationId: item.contextId,
+                                                messageId: item.messageId,
+                                            };
+                                        const href = buildChatMessageHref(
+                                            destination,
                                             { entry: "unread" },
-                                        ));
+                                        );
+                                        router.push(href as any);
                                     }}
                                     type="button"
                                 >
@@ -231,7 +244,7 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                                 {item.authorLabel}
                                             </p>
                                             <span className="text-xs text-muted-foreground">
-                                                {new Date(item.createdAt).toLocaleDateString([], {
+                                                {new Date(item.latestActivityAt).toLocaleDateString([], {
                                                     month: "short",
                                                     day: "numeric",
                                                 })}
@@ -247,7 +260,7 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                             {item.muted ? <span>Muted</span> : null}
                                         </div>
                                         <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                            {item.text}
+                                            {item.previewText}
                                         </p>
                                     </div>
                                 </button>

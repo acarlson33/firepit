@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { AtSign, Loader2, Users, Shield } from "lucide-react";
 import type { UserProfileData } from "@/lib/types";
-
-export type MentionableRole = {
-    id: string;
-    name: string;
-    color: string;
-    mentionable: boolean;
-    memberCount: number;
-};
+import type { MentionableRole } from "@/components/chat-input";
 
 type MentionOption = 
     | { type: "user"; data: UserProfileData }
@@ -23,7 +16,7 @@ interface MentionAutocompleteProps {
 	roles?: MentionableRole[];
 	onSelect: (user: UserProfileData | MentionableRole | null) => void;
 	onClose: () => void;
-	position?: { top: number; left: number };
+	position?: { top: number; left: number; inputHeight?: number };
 	isLoading?: boolean;
 	canMentionEveryone?: boolean;
 }
@@ -40,32 +33,41 @@ export function MentionAutocomplete({
 }: MentionAutocompleteProps) {
 	const [selectedIndex, setSelectedIndex] = useState(0);
 
-	// Build list of all mentionable options
-	const options: MentionOption[] = [];
+	// Memoize options array to prevent unnecessary effect re-runs
+	const options = useMemo<MentionOption[]>(() => {
+		const result: MentionOption[] = [];
 
-	// Add @all option if query matches and user can mention everyone
-	if (canMentionEveryone && query.toLowerCase() === "all") {
-		options.push({ type: "everyone", data: null });
-	}
+		// Add @all option if query matches and user can mention everyone
+		if (canMentionEveryone && query.toLowerCase() === "all") {
+			result.push({ type: "everyone", data: null });
+		}
 
-	// Add matching roles
-	if (roles.length > 0) {
-		const filteredRoles = roles.filter(
-			(role) =>
-				role.name.toLowerCase().includes(query.toLowerCase()) ||
-				role.id.includes(query.toLowerCase()),
-		);
-		options.push(...filteredRoles.map((role) => ({ type: "role" as const, data: role })));
-	}
+		// Add matching roles
+		if (roles && roles.length > 0) {
+			const filteredRoles = roles.filter(
+				(role) =>
+					role.name.toLowerCase().includes(query.toLowerCase()) ||
+					role.id.includes(query.toLowerCase()),
+			);
+			result.push(...filteredRoles.map((role) => ({ type: "role" as const, data: role })));
+		}
 
-	// Add matching users
-	const filteredUsers = users.filter((user) => {
-		const searchTerm = query.toLowerCase();
-		const displayName = (user.displayName || "").toLowerCase();
-		const userId = (user.userId || "").toLowerCase();
-		return displayName.includes(searchTerm) || userId.includes(searchTerm);
-	});
-	options.push(...filteredUsers.map((user) => ({ type: "user" as const, data: user })));
+		// Add matching users
+		const filteredUsers = users.filter((user) => {
+			const searchTerm = query.toLowerCase();
+			const displayName = (user.displayName || "").toLowerCase();
+			const userId = (user.userId || "").toLowerCase();
+			return displayName.includes(searchTerm) || userId.includes(searchTerm);
+		});
+		result.push(...filteredUsers.map((user) => ({ type: "user" as const, data: user })));
+
+		return result;
+	}, [canMentionEveryone, query, roles, users]);
+
+	// Reset selected index when options change
+	useEffect(() => {
+		setSelectedIndex(0);
+	}, [options]);
 
 	// Clamp selected index to valid range
 	const validSelectedIndex = Math.min(selectedIndex, Math.max(0, options.length - 1));
@@ -111,11 +113,21 @@ export function MentionAutocomplete({
 			className="fixed z-50 w-80 rounded-lg border-2 border-primary/30 bg-popover shadow-xl"
 			style={
 				position
-					? { 
-						top: position.top, 
-						left: position.left,
-						transform: 'translateY(-100%)', // Position above the anchor point
-					}
+					? (() => {
+						const MENU_HEIGHT = 280; // max-h-64 + padding
+						const INPUT_GAP = 8;
+						const spaceAbove = position.top;
+						const spaceBelow = window.innerHeight - (position.top + (position.inputHeight ?? 0));
+						const positionAbove = spaceAbove > MENU_HEIGHT;
+
+						return {
+							left: position.left,
+							top: positionAbove
+								? position.top - INPUT_GAP
+								: position.top + (position.inputHeight ?? 0) + INPUT_GAP,
+							transform: positionAbove ? 'translateY(-100%)' : 'translateY(0)',
+						};
+					})()
 					: undefined
 			}
 		>
@@ -199,7 +211,10 @@ export function MentionAutocomplete({
 									>
 										<Shield
 											className="size-8 shrink-0 rounded p-1"
-											style={{ backgroundColor: role.color, opacity: 0.2 }}
+												style={{
+													backgroundColor: `${role.color}33`,
+													color: role.color,
+												}}
 										/>
 										<div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 											<span className="truncate font-semibold">

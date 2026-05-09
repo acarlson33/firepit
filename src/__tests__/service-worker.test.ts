@@ -16,10 +16,10 @@ describe("Service Worker", () => {
 
     describe("Cache Configuration", () => {
         it("should define cache names", () => {
-            expect(swCode).toContain('CACHE_NAME = "firepit-v4"');
-            expect(swCode).toContain('API_CACHE_NAME = "firepit-api-v4"');
-            expect(swCode).toContain('STATIC_CACHE_NAME = "firepit-static-v4"');
-            expect(swCode).toContain('EMOJI_CACHE_NAME = "firepit-emoji-v4"');
+            expect(swCode).toContain('CACHE_NAME = "firepit-v5"');
+            expect(swCode).toContain('API_CACHE_NAME = "firepit-api-v5"');
+            expect(swCode).toContain('STATIC_CACHE_NAME = "firepit-static-v5"');
+            expect(swCode).toContain('EMOJI_CACHE_NAME = "firepit-emoji-v5"');
         });
 
         it("should define static assets to cache", () => {

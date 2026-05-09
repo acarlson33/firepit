@@ -204,7 +204,7 @@ html.dark {
 		background-image:
 			radial-gradient(circle at top left, oklch(0.74 0.16 52 / 0.12), transparent 34%),
 			radial-gradient(circle at bottom right, oklch(0.72 0.14 180 / 0.08), transparent 32%);
-		background-attachment: fixed;
+		background-attachment: local;
 	}
 }
 

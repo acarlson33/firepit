@@ -10,6 +10,7 @@ import {
 import type { UserProfileData } from "@/lib/types";
 
 export type MentionableRole = {
+    readonly type: "role";
     id: string;
     name: string;
     color: string;
@@ -53,6 +54,7 @@ export function ChatInput({
     const [autocompletePosition, setAutocompletePosition] = useState({
         top: 0,
         left: 0,
+        inputHeight: 0,
     });
     const [availableUsers, setAvailableUsers] = useState<UserProfileData[]>([]);
     const [mentionableRoles, setMentionableRoles] = useState<MentionableRole[]>([]);
@@ -94,16 +96,20 @@ export function ChatInput({
                         );
                         if (rolesResponse.ok) {
                             const rolesData = await rolesResponse.json();
-                            setMentionableRoles(rolesData.roles || []);
+                            // Add the type discriminator to each role
+                            const typedRoles = (rolesData.roles || []).map((role: Omit<MentionableRole, 'type'>) => ({
+                                ...role,
+                                type: "role" as const,
+                            }));
+                            setMentionableRoles(typedRoles);
                         }
-                    } catch (error) {
-                        console.error("Failed to fetch mentionable roles:", error);
+                    } catch {
+                        setMentionableRoles([]);
                     }
                 } else {
                     setMentionableRoles([]);
                 }
-            } catch (error) {
-                console.error("Failed to fetch users:", error);
+            } catch {
                 setAvailableUsers([]);
             } finally {
                 setIsLoadingUsers(false);
@@ -127,8 +133,9 @@ export function ChatInput({
             if (inputRef.current) {
                 const rect = inputRef.current.getBoundingClientRect();
                 setAutocompletePosition({
-                    top: rect.top - 8,
+                    top: rect.top,
                     left: rect.left,
+                    inputHeight: rect.height,
                 });
             }
         };
@@ -163,12 +170,12 @@ export function ChatInput({
                 setShowMentionAutocomplete(true);
 
                 // Calculate position for autocomplete (fixed positioning)
-                // Position it slightly above the input
                 if (inputRef.current) {
                     const rect = inputRef.current.getBoundingClientRect();
                     setAutocompletePosition({
-                        top: rect.top - 8, // Just above the input with small gap
+                        top: rect.top,
                         left: rect.left,
+                        inputHeight: rect.height,
                     });
                 }
             } else {
@@ -189,12 +196,13 @@ export function ChatInput({
             if (selectable === null) {
                 // @all mention
                 mentionText = "all";
-            } else if ("memberCount" in selectable) {
+            } else if ("type" in selectable && selectable.type === "role") {
                 // Role mention - use role name with special prefix
                 mentionText = `role:${selectable.name}`;
             } else {
                 // User mention - use display name
-                mentionText = selectable.displayName || selectable.userId;
+                const user = selectable as UserProfileData;
+                mentionText = user.displayName || user.userId;
             }
             
             const result = replaceMentionAtCursor(

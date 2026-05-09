@@ -139,6 +139,7 @@ export function useConversations(
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
         const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
 
         const conversationChannel = Channel.database(env.databaseId)
@@ -153,6 +154,22 @@ export function useConversations(
 
             try {
                 const realtime = getSharedRealtime();
+
+                // If we have an existing subscription, attempt to update its queries
+                if (subscriptionRef.current) {
+                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.contains>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.contains("participants", userId)],
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 const subscription = await realtime.subscribe(
                     conversationChannel,
                     (response) => {
@@ -193,10 +210,11 @@ export function useConversations(
 
                 realtimeRetryNonceRef.current = 0;
 
+                subscriptionRef.current = subscription;
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    closeSubscriptionSafely(subscription).catch((error) => {
+                    closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
                         logger.warn(
                             "Conversation subscription cleanup failed",
                             {
@@ -205,6 +223,7 @@ export function useConversations(
                             },
                         );
                     });
+                    subscriptionRef.current = undefined;
                 };
             } catch (realtimeError) {
                 if (cancelled) {

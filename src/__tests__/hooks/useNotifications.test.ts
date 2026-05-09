@@ -14,7 +14,11 @@ const { mockCloseSubscriptionSafely, mockGetEnvConfig, mockSubscribe, mockTrackS
             },
             databaseId: "database-1",
         })),
-        mockSubscribe: vi.fn(async () => ({ close: vi.fn() })),
+        mockSubscribe: vi.fn(async () => ({
+            close: vi.fn(),
+            update: vi.fn().mockResolvedValue(undefined),
+            disconnect: vi.fn().mockResolvedValue(undefined),
+        })),
         mockTrackSubscription: vi.fn(() => vi.fn()),
     }));
 

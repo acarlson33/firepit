@@ -102,10 +102,23 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                 className="cursor-pointer rounded-2xl p-0"
                                 key={item.id}
                                 onSelect={() => {
-                                    router.push(buildChatMessageHref(
-                                        item.destination,
+                                    const destination = item.contextKind === "channel"
+                                        ? {
+                                            kind: "channel" as const,
+                                            channelId: item.contextId,
+                                            messageId: item.messageId,
+                                            serverId: item.serverId,
+                                        }
+                                        : {
+                                            kind: "dm" as const,
+                                            conversationId: item.contextId,
+                                            messageId: item.messageId,
+                                        };
+                                    const href = buildChatMessageHref(
+                                        destination,
                                         { entry: "unread" },
-                                    ));
+                                    );
+                                    router.push(href as any);
                                 }}
                             >
                                 <div className="flex w-full items-start gap-3 rounded-2xl px-3 py-2 text-left">
@@ -121,7 +134,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                                 {item.authorLabel}
                                             </p>
                                             <span className="text-[11px] text-muted-foreground">
-                                                {formatRelativeTime(item.createdAt)}
+                                                {formatRelativeTime(item.latestActivityAt)}
                                             </span>
                                         </div>
                                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -130,13 +143,13 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                                     ? "Mention"
                                                     : "Thread"}
                                             </span>
-                                            <span>
-                                                {getNotificationLabel(item.destination)}
-                                            </span>
+                                                <span>
+                                                    {item.contextKind === "channel" ? "Channel" : "Direct message"}
+                                                </span>
                                             {item.muted ? <span>Muted</span> : null}
                                         </div>
                                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                            {item.text}
+                                                {item.previewText}
                                         </p>
                                     </div>
                                 </div>
@@ -159,7 +172,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                         size="sm"
                         variant="outline"
                     >
-                        <Link href={"/notifications" as Route}>
+                        <Link href={"/settings/notifications" as Route}>
                             Manage notification controls
                         </Link>
                     </Button>

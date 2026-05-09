@@ -75,7 +75,11 @@ vi.mock("@/lib/thread-pin-client", () => ({
 
 vi.mock("@/lib/realtime-pool", () => ({
     getSharedRealtime: vi.fn(() => ({
-        subscribe: vi.fn(async () => ({ close: vi.fn() })),
+        subscribe: vi.fn(async () => ({
+            close: vi.fn(),
+            update: vi.fn().mockResolvedValue(undefined),
+            disconnect: vi.fn().mockResolvedValue(undefined),
+        })),
     })),
     trackSubscription: vi.fn(() => vi.fn()),
 }));
