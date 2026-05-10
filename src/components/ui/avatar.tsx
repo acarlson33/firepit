@@ -81,8 +81,6 @@ export function Avatar({
                 className="h-full w-full object-cover"
                 height={actualAvatarSize}
                 loading="lazy"
-                placeholder="blur"
-                blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
                 src={src}
                 width={actualAvatarSize}
                 onError={() => setImageError(true)}
