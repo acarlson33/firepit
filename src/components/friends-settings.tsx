@@ -16,6 +16,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFriends } from "@/hooks/useFriends";
 
+const STATUS_LABELS = {
+    friends: "Friend",
+    incoming: "Incoming",
+    outgoing: "Sent",
+} as const;
+
 type FriendEntry = ReturnType<typeof useFriends>["friends"][number];
 
 function formatFriendshipDate(
@@ -89,14 +95,8 @@ export function FriendsSettings() {
 
         return entries.map((entry) => {
             const name = entry.user.displayName ?? entry.user.userId;
-            const busyKeyPrefix = kind === "incoming" ? "accept" : "remove";
-            const STATUS_LABELS = {
-                friends: "Friend",
-                incoming: "Incoming",
-                sent: "Sent",
-                outgoing: "Sent",
-            } as const;
-            const statusLabel = STATUS_LABELS[kind as keyof typeof STATUS_LABELS] || "Sent";
+            const busyKeyPrefix = kind === "incoming" ? undefined : "remove";
+            const statusLabel = STATUS_LABELS[kind];
 
             return (
                 <div

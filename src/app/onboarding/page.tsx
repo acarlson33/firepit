@@ -216,7 +216,7 @@ export default function OnboardingPage() {
 
                 {/* Step header */}
                 <div className="mb-8 space-y-4 text-center">
-                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-linear-to-br from-primary/70 via-amber-300/50 to-transparent p-3 shadow-lg shadow-primary/15">
+                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-gradient-to-br from-primary/70 via-amber-300/50 to-transparent p-3 shadow-lg shadow-primary/15">
                         <Sparkles
                             aria-hidden="true"
                             className="size-8 text-primary"

@@ -78,7 +78,6 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
                 await refreshUser();
                 posthog.identify(result.userId, {
                     appwriteUserId: result.userId,
-                    email,
                 });
                 posthog.capture("user_logged_in", undefined, {
                     send_instantly: true,

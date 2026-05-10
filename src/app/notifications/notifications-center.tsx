@@ -38,6 +38,24 @@ function getItemFilterLabel(item: InboxItem) {
 export function NotificationsCenter({ userId }: NotificationsCenterProps) {
     const router = useRouter();
     const inboxApi = useInbox(userId);
+    const navigateToItem = (item: InboxItem) => {
+        const destination =
+            item.contextKind === "channel"
+                ? {
+                      kind: "channel" as const,
+                      channelId: item.contextId,
+                      messageId: item.messageId,
+                      serverId: item.serverId,
+                  }
+                : {
+                      kind: "dm" as const,
+                      conversationId: item.contextId,
+                      messageId: item.messageId,
+                  };
+
+        const href = buildChatMessageHref(destination, { entry: "unread" });
+        router.push(href as Route);
+    };
     const [selectedFilter, setSelectedFilter] = useState<InboxScope | "all" | "mentions">(
         "all",
     );
@@ -183,7 +201,7 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                     </div>
 
                     <div className="mt-6 space-y-3">
-                        {inboxApi.loading ? (
+                            {inboxApi.loading ? (
                             <div className="space-y-3">
                                 {["s1", "s2", "s3", "s4"].map((id) => (
                                     <div
@@ -196,7 +214,7 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                     </div>
                                 ))}
                             </div>
-                        ) : filteredItems.length === 0 ? (
+                                ) : filteredItems.length === 0 ? (
                             <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/60 bg-background/60 p-10 text-center">
                                 <Bell className="mb-3 h-8 w-8 text-muted-foreground" />
                                 <p className="text-sm font-medium text-foreground">
@@ -206,32 +224,20 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                     Try a different filter or adjust your notification settings.
                                 </p>
                             </div>
-                        ) : (
-                            filteredItems.map((item) => (
-                                <button
-                                    className="flex w-full items-start gap-3 rounded-3xl border border-border/60 bg-background/70 p-4 text-left transition hover:border-border hover:bg-background"
-                                    key={item.id}
-                                    onClick={() => {
-                                        const destination = item.contextKind === "channel"
-                                            ? {
-                                                kind: "channel" as const,
-                                                channelId: item.contextId,
-                                                messageId: item.messageId,
-                                                serverId: item.serverId,
+                            ) : (
+                                filteredItems.map((item) => (
+                                    <button
+                                        className="flex w-full items-start gap-3 rounded-3xl border border-border/60 bg-background/70 p-4 text-left transition hover:border-border hover:bg-background"
+                                        key={item.id}
+                                        onClick={() => navigateToItem(item)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                navigateToItem(item);
                                             }
-                                            : {
-                                                kind: "dm" as const,
-                                                conversationId: item.contextId,
-                                                messageId: item.messageId,
-                                            };
-                                        const href = buildChatMessageHref(
-                                            destination,
-                                            { entry: "unread" },
-                                        );
-                                        router.push(href as any);
-                                    }}
-                                    type="button"
-                                >
+                                        }}
+                                        type="button"
+                                    >
                                     <Avatar
                                         alt={item.authorLabel}
                                         fallback={item.authorLabel}
@@ -244,7 +250,7 @@ export function NotificationsCenter({ userId }: NotificationsCenterProps) {
                                                 {item.authorLabel}
                                             </p>
                                             <span className="text-xs text-muted-foreground">
-                                                {new Date(item.latestActivityAt).toLocaleDateString([], {
+                                                {new Date(item.latestActivityAt).toLocaleDateString(undefined, {
                                                     month: "short",
                                                     day: "numeric",
                                                 })}

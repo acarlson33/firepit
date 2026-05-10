@@ -151,7 +151,7 @@ describe("upload-emoji route", () => {
     expect(mockCreateFile).toHaveBeenCalledWith(
       "bucket",
       "file-unique",
-      expect.anything(),
+      expect.any(Object),
       expect.any(Array)
     );
     expect(data.fileId).toBe("file-123");

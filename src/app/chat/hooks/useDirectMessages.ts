@@ -534,6 +534,16 @@ export function useDirectMessages({
         >
     >({});
 
+    const messageSubscriptionRef = useRef<{
+        close: () => Promise<void>;
+        update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+    } | undefined>(undefined);
+
+    const typingSubscriptionRef = useRef<{
+        close: () => Promise<void>;
+        update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+    } | undefined>(undefined);
+
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
     const backgroundMessageSyncIntervalMs = 15_000;
@@ -916,15 +926,14 @@ export function useDirectMessages({
 
             let subscription: { close: () => Promise<void> } | undefined;
             let untrack: (() => void) | undefined;
-            const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
                 try {
                 const realtime = getSharedRealtime();
 
                 // If existing subscription supports update, try updating
-                if (subscriptionRef.current) {
-                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
-                    if (typeof existing.update === "function") {
+                if (messageSubscriptionRef.current) {
+                    const existing = messageSubscriptionRef.current;
+                    if (existing && typeof existing.update === "function") {
                         try {
                             await existing.update({
                                 queries: [Query.equal("conversationId", conversationId)],
@@ -1118,23 +1127,25 @@ export function useDirectMessages({
                     [Query.equal("conversationId", conversationId)],
                 );
 
-                subscriptionRef.current = subscription;
+
+                messageSubscriptionRef.current = subscription;
 
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
-                    subscriptionRef.current = undefined;
+                    await closeSubscriptionSafely(messageSubscriptionRef.current);
+                    messageSubscriptionRef.current = undefined;
                     return;
                 }
 
                 untrack = trackSubscription(messageChannelKey);
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscriptionRef.current);
-                    subscriptionRef.current = undefined;
+                    void closeSubscriptionSafely(messageSubscriptionRef.current);
+                    messageSubscriptionRef.current = undefined;
                 };
             } catch (error) {
                 untrack?.();
-                await closeSubscriptionSafely(subscription);
+                await closeSubscriptionSafely(messageSubscriptionRef.current);
+                messageSubscriptionRef.current = undefined;
                 if (!cancelled) {
                     const isTransient =
                         isTransientRealtimeSubscribeError(error);
@@ -1678,7 +1689,6 @@ export function useDirectMessages({
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
         const typingChannel = Channel.database(databaseId)
             .collection(TYPING_COLLECTION_ID)
             .document();
@@ -1696,9 +1706,9 @@ export function useDirectMessages({
                 const realtime = getSharedRealtime();
 
                 // Try to update existing subscription if supported
-                if (subscriptionRef.current) {
-                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
-                    if (typeof existing.update === "function") {
+                if (typingSubscriptionRef.current) {
+                    const existing = typingSubscriptionRef.current;
+                    if (existing && typeof existing.update === "function") {
                         try {
                             await existing.update({
                                 queries: [Query.equal("channelId", conversationId)],
@@ -1759,23 +1769,24 @@ export function useDirectMessages({
                     [Query.equal("channelId", conversationId)],
                 );
 
-                subscriptionRef.current = subscription;
+                typingSubscriptionRef.current = subscription;
 
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscriptionRef.current);
-                    subscriptionRef.current = undefined;
+                    await closeSubscriptionSafely(typingSubscriptionRef.current);
+                    typingSubscriptionRef.current = undefined;
                     return;
                 }
 
                 untrack = trackSubscription(typingChannelKey);
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscriptionRef.current);
-                    subscriptionRef.current = undefined;
+                    void closeSubscriptionSafely(typingSubscriptionRef.current);
+                    typingSubscriptionRef.current = undefined;
                 };
             } catch (error) {
                 untrack?.();
-                await closeSubscriptionSafely(subscriptionRef.current);
+                await closeSubscriptionSafely(typingSubscriptionRef.current);
+                typingSubscriptionRef.current = undefined;
                 if (!cancelled) {
                     logger.error(
                         "Direct message typing realtime subscription failed:",

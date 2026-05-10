@@ -315,6 +315,7 @@ function determineEventType(context: NotificationContext): NotificationEventType
 		return "dm";
 	}
 
+	// Messages that mention @everyone or @here
 	if (context.mentionsEveryone) {
 		return "mention";
 	}

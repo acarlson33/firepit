@@ -3,6 +3,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "@/lib/auth-server";
 import { getInviteByCode, getServerPreview, validateInvite } from "@/lib/appwrite-invites";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { InvitePreviewClient } from "./InvitePreviewClient";
 
 type InvitePageProps = {
@@ -34,7 +35,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
           <p className="mx-auto mt-3 max-w-xl text-muted-foreground">{validation.error}</p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button asChild size="lg" className="rounded-full">
-              <a href="/chat">Go to Chat</a>
+              <Link href="/chat">Go to Chat</Link>
             </Button>
           </div>
         </div>

@@ -40,6 +40,12 @@ import {
 } from "./ui/dropdown-menu";
 import { StatusIndicator } from "./status-indicator";
 
+const THEME_ICONS = {
+    light: Sun,
+    dark: Moon,
+    system: LaptopMinimal,
+} as const;
+
 type HeaderProps = {
     onSearchClick?: () => void;
 };
@@ -57,6 +63,23 @@ type HeaderProfile = {
     avatarFrameUrl?: string;
     displayName?: string;
 };
+
+function isValidHeaderProfile(data: unknown): data is HeaderProfile {
+    if (typeof data !== "object" || data === null) {
+        return false;
+    }
+
+    const record = data as Record<string, unknown>;
+    const hasNoKeys = Object.keys(record).length === 0;
+
+    return (
+        hasNoKeys ||
+        typeof record.avatarUrl === "string" ||
+        typeof record.displayName === "string" ||
+        typeof record.avatarFramePreset === "string" ||
+        typeof record.avatarFrameUrl === "string"
+    );
+}
 
 function isActiveRoute(pathname: string, route: Route) {
     if (route === "/") {
@@ -121,8 +144,12 @@ export default function Header({ onSearchClick }: HeaderProps) {
                     return;
                 }
 
-                const data = (await response.json()) as HeaderProfile;
-                setHeaderProfile(data);
+                const data = (await response.json()) as unknown;
+                if (isValidHeaderProfile(data)) {
+                    setHeaderProfile(data);
+                } else {
+                    setHeaderProfile(null);
+                }
             } catch {
                 if (!controller.signal.aborted) {
                     setHeaderProfile(null);
@@ -479,33 +506,28 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                 </p>
                                             </div>
                                             {(["light", "dark", "system"] as const).map(
-                                                (nextTheme) => (
-                                                    <DropdownMenuItem
-                                                        key={nextTheme}
-                                                        onClick={() => {
-                                                            setTheme(nextTheme);
-                                                        }}
-                                                        className="rounded-2xl px-3 py-2"
-                                                    >
-                                                        <div className="flex w-full items-center justify-between gap-3">
-                                                            <span className="inline-flex items-center gap-2">
-                                                                {nextTheme ===
-                                                                "light" ? (
-                                                                    <Sun className="h-4 w-4 text-primary" />
-                                                                ) : nextTheme ===
-                                                                  "dark" ? (
-                                                                    <Moon className="h-4 w-4 text-primary" />
-                                                                ) : (
-                                                                    <LaptopMinimal className="h-4 w-4 text-primary" />
-                                                                )}
-                                                                {nextTheme.charAt(0).toUpperCase() + nextTheme.slice(1)}
-                                                            </span>
-                                                            {menuTheme === nextTheme ? (
-                                                                <Check className="h-4 w-4 text-primary" />
-                                                            ) : null}
-                                                        </div>
-                                                    </DropdownMenuItem>
-                                                ),
+                                                (nextTheme) => {
+                                                    const Icon = THEME_ICONS[nextTheme];
+                                                    return (
+                                                        <DropdownMenuItem
+                                                            key={nextTheme}
+                                                            onClick={() => {
+                                                                setTheme(nextTheme);
+                                                            }}
+                                                            className="rounded-2xl px-3 py-2"
+                                                        >
+                                                            <div className="flex w-full items-center justify-between gap-3">
+                                                                <span className="inline-flex items-center gap-2">
+                                                                    <Icon className="h-4 w-4 text-primary" />
+                                                                    {nextTheme.charAt(0).toUpperCase() + nextTheme.slice(1)}
+                                                                </span>
+                                                                {menuTheme === nextTheme ? (
+                                                                    <Check className="h-4 w-4 text-primary" />
+                                                                ) : null}
+                                                            </div>
+                                                        </DropdownMenuItem>
+                                                    );
+                                                },
                                             )}
 
                                             <DropdownMenuSeparator />

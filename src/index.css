@@ -28,6 +28,10 @@ html.dark {
 :root {
 	--radius:
 		0.875rem;
+	--bg-gradient-top-left:
+		oklch(0.74 0.16 52 / 0.12);
+	--bg-gradient-bottom-right:
+		oklch(0.72 0.14 180 / 0.08);
 	--card:
 		oklch(1 0 0);
 	--card-foreground:
@@ -97,6 +101,10 @@ html.dark {
 		oklch(0.14 0.02 62);
 	--foreground:
 		oklch(0.985 0.01 95);
+	--bg-gradient-top-left:
+		oklch(0.75 0.16 52 / 0.15);
+	--bg-gradient-bottom-right:
+		oklch(0.72 0.16 180 / 0.1);
 	--card:
 		oklch(0.19 0.02 62);
 	--card-foreground:
@@ -202,8 +210,8 @@ html.dark {
 	body {
 		@apply bg-background text-foreground;
 		background-image:
-			radial-gradient(circle at top left, oklch(0.74 0.16 52 / 0.12), transparent 34%),
-			radial-gradient(circle at bottom right, oklch(0.72 0.14 180 / 0.08), transparent 32%);
+			radial-gradient(circle at top left, var(--bg-gradient-top-left), transparent 34%),
+			radial-gradient(circle at bottom right, var(--bg-gradient-bottom-right), transparent 32%);
 		background-attachment: local;
 	}
 }

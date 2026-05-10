@@ -25,20 +25,12 @@ function formatRelativeTime(value: string) {
         return "Recent";
     }
 
-    return date.toLocaleString([], {
+    return date.toLocaleString(undefined, {
         month: "short",
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
     });
-}
-
-function getNotificationLabel(destination: ChatMessageDestination) {
-    if (destination.kind === "channel") {
-        return "Channel";
-    }
-
-    return "Direct message";
 }
 
 type NotificationsMenuProps = {
@@ -118,7 +110,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                         destination,
                                         { entry: "unread" },
                                     );
-                                    router.push(href as any);
+                                    router.push(href as Route);
                                 }}
                             >
                                 <div className="flex w-full items-start gap-3 rounded-2xl px-3 py-2 text-left">

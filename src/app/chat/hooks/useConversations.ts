@@ -55,6 +55,10 @@ export function useConversations(
     );
     const realtimeRetryNonceRef = useRef(0);
     const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
+    const subscriptionRef = useRef<{
+        close: () => Promise<void>;
+        update?: (args: { queries: ReturnType<typeof Query.contains>[] }) => Promise<void>;
+    } | undefined>(undefined);
 
     useEffect(() => {
         realtimeRetryNonceRef.current = 0;
@@ -139,7 +143,6 @@ export function useConversations(
 
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
         const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
 
         const conversationChannel = Channel.database(env.databaseId)
@@ -157,8 +160,8 @@ export function useConversations(
 
                 // If we have an existing subscription, attempt to update its queries
                 if (subscriptionRef.current) {
-                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.contains>[] }) => Promise<void> };
-                    if (typeof existing.update === "function") {
+                    const existing = subscriptionRef.current;
+                    if (existing && typeof existing.update === "function") {
                         try {
                             await existing.update({
                                 queries: [Query.contains("participants", userId)],

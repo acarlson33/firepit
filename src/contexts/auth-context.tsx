@@ -20,13 +20,8 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import {
-    getSharedRealtime,
-    isTransientRealtimeSubscribeError,
-    resetSharedClient,
-    trackSubscription,
-} from "@/lib/realtime-pool";
-import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { getSharedRealtime, isTransientRealtimeSubscribeError, resetSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -66,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const lastIdentifiedUserId = useRef<string | null>(null);
     const realtimeUserIdRef = useRef<string | null>(null);
     const realtimeResetPromiseRef = useRef<Promise<void> | null>(null);
+    const subscriptionRef = useRef<RealtimeSubscription | null>(null);
 
     const queueRealtimeReset = useCallback(() => {
         const previousReset =
@@ -257,7 +253,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
-            const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         // Defer subscription setup to after initial render (5 second delay)
         // This prevents real-time connections from blocking the critical render path
@@ -338,15 +333,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     if (cancelled) {
                         untrack();
-                        void closeSubscriptionSafely(subscriptionRef.current);
-                            subscriptionRef.current = undefined;
+                        if (subscriptionRef.current) {
+                            closeSubscriptionSafely(subscriptionRef.current);
+                        }
+                        subscriptionRef.current = null;
                         return;
                     }
 
                     cleanup = () => {
                         untrack();
-                        void closeSubscriptionSafely(subscriptionRef.current);
-                            subscriptionRef.current = undefined;
+                        if (subscriptionRef.current) {
+                            closeSubscriptionSafely(subscriptionRef.current);
+                        }
+                        subscriptionRef.current = null;
                     };
                 } catch (err) {
                     if (cancelled) {

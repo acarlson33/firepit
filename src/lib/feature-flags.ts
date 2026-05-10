@@ -127,7 +127,7 @@ const getCachedFeatureFlag = unstable_cache(
         return DEFAULT_FLAGS[key] ?? false;
     },
     ["feature-flags"],
-    { revalidate: CACHE_TTL },
+    { revalidate: CACHE_TTL, tags: ["feature-flags"] },
 );
 
 export async function getFeatureFlag(key: FeatureFlagKey): Promise<boolean> {
@@ -297,5 +297,12 @@ export async function initializeFeatureFlags(userId: string): Promise<void> {
 }
 
 export function clearFeatureFlagsCache(): void {
-    // Cache is managed by Next.js unstable_cache with TTL-based revalidation
+    try {
+        revalidateTag("feature-flags", "max");
+    } catch (error) {
+        // This can throw in non-request test contexts without a static generation store.
+        logger.warn("Feature flags cache revalidation skipped", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
 }

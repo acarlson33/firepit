@@ -108,20 +108,24 @@ function SignalCard({ signal }: { signal: LandingSignal }) {
     );
 }
 
+import type { Route } from "next";
+
+interface WorkspaceActionButtonProps {
+    href: Route;
+    icon: LucideIcon;
+    label: string;
+    variant?: "default" | "outline" | "secondary";
+}
+
 function WorkspaceActionButton({
     href,
     icon: Icon,
     label,
     variant = "outline",
-}: {
-    href: string;
-    icon: LucideIcon;
-    label: string;
-    variant?: "default" | "outline" | "secondary";
-}) {
+}: WorkspaceActionButtonProps) {
     return (
         <Button asChild className="w-full justify-start rounded-2xl" size="lg" variant={variant}>
-            <Link href={href as any}>
+            <Link href={href}>
                 <Icon className="h-4 w-4" />
                 {label}
             </Link>
@@ -346,14 +350,23 @@ export default async function Home() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-3 text-sm">
-                            <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-                                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                    Email
-                                </p>
-                                <p className="mt-1 text-foreground">
-                                    {user.email}
-                                </p>
-                            </div>
+                            {user.email ? (
+                                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                        Email
+                                    </p>
+                                    <p className="mt-1 text-foreground">
+                                        {user.email}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                        Email
+                                    </p>
+                                    <p className="mt-1 text-muted-foreground">Not provided</p>
+                                </div>
+                            )}
                             <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
                                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                     User ID

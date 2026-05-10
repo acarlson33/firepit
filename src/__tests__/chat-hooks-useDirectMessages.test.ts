@@ -165,7 +165,7 @@ describe("useDirectMessages", () => {
                 close: vi.fn(),
                 update: vi.fn().mockResolvedValue(undefined),
                 disconnect: vi.fn().mockResolvedValue(undefined),
-            }) as { close: () => void; update?: () => Promise<void>; disconnect?: () => Promise<void> },
+            }),
         );
         mockSendDirectMessage.mockResolvedValue({
             $createdAt: "2026-03-10T12:05:00.000Z",

@@ -10,6 +10,27 @@ type MentionOption =
     | { type: "role"; data: MentionableRole }
     | { type: "everyone"; data: null };
 
+interface PopupPosition {
+	top: number;
+	left: number;
+	inputHeight?: number;
+}
+
+function computePopupPosition(position: PopupPosition) {
+	const MENU_HEIGHT = 280; // max-h-64 + padding
+	const INPUT_GAP = 8;
+	const spaceAbove = position.top;
+	const positionAbove = spaceAbove > MENU_HEIGHT;
+
+	return {
+		left: position.left,
+		top: positionAbove
+			? position.top - INPUT_GAP
+			: position.top + (position.inputHeight ?? 0) + INPUT_GAP,
+		transform: positionAbove ? 'translateY(-100%)' : 'translateY(0)',
+	};
+}
+
 interface MentionAutocompleteProps {
 	query: string;
 	users: UserProfileData[];
@@ -111,25 +132,7 @@ export function MentionAutocomplete({
 	return (
 		<div
 			className="fixed z-50 w-80 rounded-lg border-2 border-primary/30 bg-popover shadow-xl"
-			style={
-				position
-					? (() => {
-						const MENU_HEIGHT = 280; // max-h-64 + padding
-						const INPUT_GAP = 8;
-						const spaceAbove = position.top;
-						const spaceBelow = window.innerHeight - (position.top + (position.inputHeight ?? 0));
-						const positionAbove = spaceAbove > MENU_HEIGHT;
-
-						return {
-							left: position.left,
-							top: positionAbove
-								? position.top - INPUT_GAP
-								: position.top + (position.inputHeight ?? 0) + INPUT_GAP,
-							transform: positionAbove ? 'translateY(-100%)' : 'translateY(0)',
-						};
-					})()
-					: undefined
-			}
+			style={position ? computePopupPosition(position) : undefined}
 		>
 			{/* Header */}
 			<div className="flex items-center gap-2 border-b border-border bg-primary/5 px-3 py-2">

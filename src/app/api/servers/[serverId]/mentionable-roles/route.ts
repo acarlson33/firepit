@@ -7,6 +7,83 @@ import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { logger } from "@/lib/newrelic-utils";
 
+// Define explicit interfaces for Appwrite documents used in this route
+interface RoleDocument {
+	$id: string;
+	serverId: string;
+	name: string;
+	color?: string | null;
+	mentionable?: boolean;
+}
+
+interface RoleAssignmentDocument {
+	$id: string;
+	serverId: string;
+	roleId: string;
+	userId: string;
+}
+
+// Minimal shape for the Appwrite databases client methods used here.
+interface DatabasesType {
+	listDocuments(
+		databaseId: string,
+		collectionId: string,
+		queries?: string[],
+	): Promise<{ documents: Array<unknown> }>;
+	listDocuments(params: {
+		databaseId: string;
+		collectionId: string;
+		queries?: string[];
+		transactionId?: string;
+		total?: boolean;
+		ttl?: number;
+	}): Promise<{ documents: Array<unknown> }>;
+}
+
+// Minimal shape for the environment config used by this module.
+interface EnvType {
+	databaseId: string;
+	collections: {
+		roles: string;
+		roleAssignments: string;
+		[key: string]: string;
+	};
+}
+
+async function getAllDocumentsPaginated<T>(
+	databases: DatabasesType,
+	env: EnvType,
+	collectionId: string,
+	serverId: string,
+	limit = 100,
+): Promise<Array<T>> {
+	const results: Array<T> = [];
+	let offset = 0;
+	let hasMore = true;
+
+	// This loop intentionally awaits each page sequentially to avoid
+	// overwhelming the Appwrite server with parallel requests and to
+	// respect the service's pagination model.
+	// eslint-disable-next-line no-await-in-loop
+	while (hasMore) {
+		const resp = await databases.listDocuments(
+			env.databaseId,
+			collectionId,
+			[
+				Query.equal("serverId", serverId),
+				Query.limit(limit),
+				Query.offset(offset),
+			],
+		);
+
+		results.push(...(resp.documents as Array<T>));
+		hasMore = resp.documents.length === limit;
+		offset += limit;
+	}
+
+	return results;
+}
+
 
 /**
  * GET /api/servers/[serverId]/mentionable-roles
@@ -37,13 +114,6 @@ export async function GET(
 
 		const env = getEnvConfig();
 
-		if (!serverId) {
-			return NextResponse.json(
-				{ error: "Server ID required" },
-				{ status: 400 },
-			);
-		}
-
 		const { databases } = getServerClient();
 
 		// Check if user is a member of the server
@@ -58,53 +128,25 @@ export async function GET(
 			return NextResponse.json({ error: "Not a server member" }, { status: 403 });
 		}
 
-		// Fetch all roles in the server with pagination support
-		let allRoles: Array<Record<string, unknown>> = [];
-		let offset = 0;
-		const limit = 100;
-		let hasMore = true;
+		// Fetch all roles and assignments using a helper that handles pagination.
+		const allRoles = await getAllDocumentsPaginated<RoleDocument>(
+			databases,
+			env,
+			env.collections.roles,
+			serverId,
+		);
 
-		while (hasMore) {
-			const rolesResponse = await databases.listDocuments(
-				env.databaseId,
-				env.collections.roles,
-				[
-					Query.equal("serverId", serverId),
-					Query.limit(limit),
-					Query.offset(offset),
-				],
-			);
-
-			allRoles.push(...rolesResponse.documents);
-			hasMore = rolesResponse.documents.length === limit;
-			offset += limit;
-		}
-
-		// Fetch all role assignments for this server once (avoid N+1 queries)
-		let allAssignments: Array<Record<string, unknown>> = [];
-		offset = 0;
-		hasMore = true;
-
-		while (hasMore) {
-			const assignmentsResponse = await databases.listDocuments(
-				env.databaseId,
-				env.collections.roleAssignments,
-				[
-					Query.equal("serverId", serverId),
-					Query.limit(limit),
-					Query.offset(offset),
-				],
-			);
-
-			allAssignments.push(...assignmentsResponse.documents);
-			hasMore = assignmentsResponse.documents.length === limit;
-			offset += limit;
-		}
+		const allAssignments = await getAllDocumentsPaginated<RoleAssignmentDocument>(
+			databases,
+			env,
+			env.collections.roleAssignments,
+			serverId,
+		);
 
 		// Build a map of roleId -> member count for efficient lookup
 		const memberCountByRoleId = new Map<string, number>();
 		for (const assignment of allAssignments) {
-			const roleId = assignment.roleId as string;
+			const roleId = assignment.roleId;
 			memberCountByRoleId.set(
 				roleId,
 				(memberCountByRoleId.get(roleId) ?? 0) + 1,
@@ -118,7 +160,7 @@ export async function GET(
 				id: doc.$id,
 				name: doc.name,
 				color: doc.color,
-				mentionable: doc.mentionable,
+				mentionable: Boolean(doc.mentionable),
 				memberCount: memberCountByRoleId.get(String(doc.$id)) ?? 0,
 			}));
 

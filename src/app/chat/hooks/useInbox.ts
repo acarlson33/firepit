@@ -179,8 +179,18 @@ export function useInbox(userId: string | null) {
                             await existing.update({
                                 queries: [Query.equal("userId", userId)],
                             });
-                            // ensure it's tracked
+                            // ensure it's tracked and assign cleanup so we don't leak
                             untrack = trackSubscription(inboxChannelKey);
+                            cleanupFn = () => {
+                                untrack?.();
+                                closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
+                                    logger.warn(
+                                        "Failed to close inbox realtime subscription",
+                                        { error: error instanceof Error ? error.message : String(error) },
+                                    );
+                                });
+                                subscriptionRef.current = undefined;
+                            };
                             return;
                         } catch {
                             // fallthrough to recreate subscription
@@ -203,10 +213,18 @@ export function useInbox(userId: string | null) {
                             return;
                         }
 
-                        void queryClient.invalidateQueries({
-                            queryKey: getInboxQueryKey(userId),
-                            refetchType: "active",
-                        }).catch((error) => {
+                        (async () => {
+                            try {
+                                await queryClient.invalidateQueries({
+                                    queryKey: getInboxQueryKey(userId),
+                                    refetchType: "active",
+                                });
+                            } catch (error) {
+                                logger.warn("Failed to refresh inbox query", {
+                                    error: error instanceof Error ? error.message : String(error),
+                                });
+                            }
+                        })().catch((error) => {
                             logger.warn("Failed to refresh inbox query", {
                                 error: error instanceof Error ? error.message : String(error),
                             });
@@ -227,7 +245,7 @@ export function useInbox(userId: string | null) {
 
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
+                    closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
                         logger.warn(
                             "Failed to close inbox realtime subscription",
                             { error: error instanceof Error ? error.message : String(error) },

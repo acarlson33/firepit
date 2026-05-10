@@ -268,8 +268,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
+        // Normalize serverId once and reuse for @all mention validation and later logic
+        const normalizedServerId = normalizeStringField(access.serverId);
+
         if (hasEveryoneMention(normalizedText)) {
-            const normalizedServerId = normalizeStringField(access.serverId);
             if (!normalizedServerId) {
                 return NextResponse.json(
                     { error: "Server context required for @all mentions" },
@@ -297,7 +299,6 @@ export async function POST(request: NextRequest) {
                 { status: 400 },
             );
         }
-        const normalizedServerId = normalizeStringField(access.serverId);
 
         const transactionAttributes: Record<string, string | number | boolean> =
             {

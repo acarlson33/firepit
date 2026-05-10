@@ -133,11 +133,12 @@ describe("Header", () => {
 
     it("should render the sticky header shell classes", () => {
         const { container } = renderWithQueryClient(<Header />);
-        const header = container.querySelector("header");
+        const header = screen.getByRole("banner");
 
-        expect(header).toHaveClass("sticky");
-        expect(header).toHaveClass("top-0");
-        expect(header).toHaveClass("z-40");
+        expect(header).toBe(container.querySelector("header"));
+        expect(header.className).toContain("sticky");
+        expect(header.className).toContain("top-0");
+        expect(header.className).toContain("z-40");
     });
 
     it("shows the friends nav badge and add friend button for authenticated users", () => {

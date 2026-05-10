@@ -9,6 +9,20 @@ import {
 } from "@/lib/mention-utils";
 import type { UserProfileData } from "@/lib/types";
 
+function isRole(
+    selectable: UserProfileData | MentionableRole | null,
+): selectable is MentionableRole {
+    return selectable !== null && (selectable as MentionableRole).type === "role";
+}
+
+function isUser(
+    selectable: UserProfileData | MentionableRole | null,
+): selectable is UserProfileData {
+    return (
+        selectable !== null && typeof (selectable as UserProfileData).userId === "string"
+    );
+}
+
 export type MentionableRole = {
     readonly type: "role";
     id: string;
@@ -89,7 +103,8 @@ export function ChatInput({
                 }
 
                 // Fetch mentionable roles if we have a serverId
-                if (serverId && (query === "" || query.toLowerCase().includes("all"))) {
+                const queryLower = query.toLowerCase();
+                if (serverId && (query === "" || "all".startsWith(queryLower))) {
                     try {
                         const rolesResponse = await fetch(
                             `/api/servers/${serverId}/mentionable-roles`,
@@ -191,18 +206,25 @@ export function ChatInput({
         (selectable: UserProfileData | MentionableRole | null) => {
             const cursorPosition = inputRef.current?.selectionStart || 0;
             
-            // Determine the mention text based on type
+            // Determine the mention text based on the selectable's type
             let mentionText: string;
             if (selectable === null) {
                 // @all mention
                 mentionText = "all";
-            } else if ("type" in selectable && selectable.type === "role") {
+            } else if (isRole(selectable)) {
                 // Role mention - use role name with special prefix
                 mentionText = `role:${selectable.name}`;
-            } else {
+            } else if (isUser(selectable)) {
                 // User mention - use display name
-                const user = selectable as UserProfileData;
-                mentionText = user.displayName || user.userId;
+                mentionText = selectable.displayName || selectable.userId;
+            } else {
+                // Defensive: unexpected selectable shape — warn and fall back
+                // biome-ignore lint: allowed dev-time logging for unexpected runtime shape
+                console.warn("Unexpected selectable passed to handleMentionSelect", {
+                    selectable,
+                    type: typeof selectable,
+                });
+                mentionText = "all";
             }
             
             const result = replaceMentionAtCursor(

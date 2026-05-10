@@ -125,6 +125,15 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
         // subscribe/unsubscribe behavior.
         let resolvedRawSubscription: unknown;
 
+        interface RealtimeSubscriptionHandle {
+            (): Promise<() => Promise<void>>;
+            then: PromiseLike<() => Promise<void>>["then"];
+            close: () => Promise<void>;
+            unsubscribe: () => Promise<void>;
+            disconnect: () => Promise<void>;
+            update: (opts?: unknown) => Promise<void>;
+        }
+
         const queuedUnsubscribe = queueRealtimeSubscribe(
             typeof generation === "number"
                 ? generation
@@ -206,11 +215,11 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
 
         // Keep Promise-like then() so existing code that treats the return
         // value as a promise continues to work.
-            callable.then = queuedUnsubscribe.then.bind(queuedUnsubscribe) as any;
+        callable.then = queuedUnsubscribe.then.bind(queuedUnsubscribe) as unknown as PromiseLike<() => Promise<void>>["then"];
 
         // Attach normalized lifecycle methods.
         const attachMethods = () => {
-                const c = callable as any;
+                const c = callable as unknown as RealtimeSubscriptionHandle;
             // close/unsubscribe: prefer the queued unsubscribe promise to
             // ensure ordering with other queued operations.
                 c.close = async () => {
@@ -230,23 +239,25 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
             // disconnect: forward to underlying if present; otherwise call
             // close as a fallback.
                 c.disconnect = async () => {
-                const raw = resolvedRawSubscription as any;
+                const raw = resolvedRawSubscription as { disconnect?: () => Promise<void> } | undefined;
                 if (raw && typeof raw.disconnect === "function") {
                     try {
                         return await Promise.resolve(raw.disconnect());
                     } catch (err) {
-                        // Fall through to close fallback
+                        const subscriptionId = raw && typeof raw === "object" ? (raw as { $id?: string }).$id : "unknown";
+                        logger.error(`Realtime disconnect failed (${subscriptionId})`, err instanceof Error ? err : new Error(String(err)));
                     }
                 }
 
-                    return await c.close();
+                    return c.close();
             };
 
             // update: forward to underlying subscription if it provides an
             // update method; otherwise throw a clear error so callers can
             // handle lack of support.
                 c.update = async (opts?: unknown) => {
-                const raw = resolvedRawSubscription as any;
+                await queuedUnsubscribe.then();
+                const raw = resolvedRawSubscription as { update?: (opts?: unknown) => Promise<void> } | undefined;
                 if (raw && typeof raw.update === "function") {
                     return await Promise.resolve(raw.update(opts));
                 }

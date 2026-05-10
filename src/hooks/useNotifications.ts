@@ -4,29 +4,33 @@ import { Channel, Query } from "appwrite";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
-import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
 function createRealtimeCleanup(params: {
     contextId: string;
     contextLabel: string;
-    subscription: { close: () => Promise<void> };
+    subscription: RealtimeSubscription;
     untrack?: () => void;
 }) {
     return () => {
-        closeSubscriptionSafely(params.subscription).catch((closeError) => {
-            logger.warn(
-                `Failed to close ${params.contextLabel} notification realtime subscription`,
-                {
-                    contextId: params.contextId,
-                    error:
-                        closeError instanceof Error
-                            ? closeError.message
-                            : String(closeError),
-                },
-            );
-        });
+        if (typeof params.subscription === "function") {
+            params.subscription();
+        } else {
+            closeSubscriptionSafely(params.subscription).catch((closeError) => {
+                logger.warn(
+                    `Failed to close ${params.contextLabel} notification realtime subscription`,
+                    {
+                        contextId: params.contextId,
+                        error:
+                            closeError instanceof Error
+                                ? closeError.message
+                                : String(closeError),
+                    },
+                );
+            });
+        }
         params.untrack?.();
     };
 }
@@ -55,6 +59,8 @@ export function useNotifications({
     serverId,
     conversationId,
 }: NotificationOptions) {
+    const channelSubscriptionRef = useRef<RealtimeSubscription | null>(null);
+    const dmSubscriptionRef = useRef<RealtimeSubscription | null>(null);
     const notificationPermissionRef = useRef<NotificationPermission>("default");
     const [isPageVisible, setIsPageVisible] = useState(() => {
         if (typeof document === "undefined") {
@@ -286,8 +292,8 @@ export function useNotifications({
                 };
 
                 // If we have a running subscription, attempt to update its queries
-                if (subscriptionRef.current) {
-                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                if (channelSubscriptionRef.current) {
+                    const existing = channelSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
                     if (typeof existing.update === "function") {
                         try {
                             await existing.update({
@@ -297,7 +303,7 @@ export function useNotifications({
                             unsubscribe = createRealtimeCleanup({
                                 contextId: channelId,
                                 contextLabel: "channel",
-                                subscription: subscriptionRef.current,
+                                subscription: channelSubscriptionRef.current,
                                 untrack,
                             });
                             return;
@@ -313,7 +319,7 @@ export function useNotifications({
                     [Query.equal("channelId", channelId)],
                 );
 
-                subscriptionRef.current = subscription;
+                channelSubscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -321,7 +327,7 @@ export function useNotifications({
                         contextLabel: "channel",
                         subscription,
                     })();
-                    subscriptionRef.current = undefined;
+                    channelSubscriptionRef.current = null;
                     return;
                 }
 
@@ -466,8 +472,8 @@ export function useNotifications({
                 };
 
                 // Try to update existing subscription if available
-                if (subscriptionRef.current) {
-                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                if (dmSubscriptionRef.current) {
+                    const existing = dmSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
                     if (typeof existing.update === "function") {
                         try {
                             await existing.update({
@@ -477,7 +483,7 @@ export function useNotifications({
                             cleanup = createRealtimeCleanup({
                                 contextId: conversationId,
                                 contextLabel: "DM",
-                                subscription: subscriptionRef.current,
+                                subscription: dmSubscriptionRef.current,
                                 untrack,
                             });
                             return;
@@ -493,7 +499,7 @@ export function useNotifications({
                     [Query.equal("conversationId", conversationId)],
                 );
 
-                subscriptionRef.current = subscription;
+                dmSubscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -501,7 +507,7 @@ export function useNotifications({
                         contextLabel: "DM",
                         subscription,
                     })();
-                    subscriptionRef.current = undefined;
+                    dmSubscriptionRef.current = null;
                     return;
                 }
 

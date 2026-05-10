@@ -124,6 +124,12 @@ export function hasMentions(text: string): boolean {
     return MENTION_REGEX.test(text);
 }
 
+/**
+ * Check if text contains an @all mention (legacy shorthand).
+ *
+ * @param {string} text - The text value.
+ * @returns {boolean} True if the text contains an @all mention.
+ */
 export function hasEveryoneMention(text: string): boolean {
     return EVERYONE_MENTION_REGEX.test(text);
 }

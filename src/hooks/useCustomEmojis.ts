@@ -223,7 +223,9 @@ export function useCustomEmojis() {
                         const existing = subscriptionRef.current as { update?: (args: Record<string, unknown>) => Promise<void> };
                         if (typeof existing.update === "function") {
                             try {
-                                await existing.update({});
+                                await existing.update({
+                                    queries: [Channel.bucket(bucketId).file().toString()],
+                                });
                                 untrack = trackSubscription(channelKey);
                                 unsubscribe = () => {
                                     untrack?.();
