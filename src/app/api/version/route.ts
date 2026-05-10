@@ -69,6 +69,10 @@ interface VersionInfo {
 	buildTime?: string;
 	isCanary?: boolean;
 	branch?: string;
+	apiVersion: string;
+	minMobileAppVersion: string | null;
+	maxMobileAppVersion: string | null;
+	deprecationWarnings: string[];
 }
 
 /**
@@ -96,6 +100,14 @@ function isVersionOutdated(current: string, latest: string): boolean {
 	}
 
 	return false;
+}
+
+function getDeprecationWarnings(): string[] {
+	const warnings: string[] = [];
+	if (process.env.FIREPIT_DEPRECATE_LEGACY_AUTH === "true") {
+		warnings.push("Legacy cookie-based authentication is deprecated. Use Bearer tokens.");
+	}
+	return warnings;
 }
 
 /**
@@ -150,6 +162,10 @@ export async function GET() {
 			buildTime: buildMetadata.buildTime,
 			isCanary: buildMetadata.isCanary,
 			branch: buildMetadata.branch,
+			apiVersion: process.env.FIREPIT_API_VERSION ?? buildMetadata.version,
+			minMobileAppVersion: process.env.FIREPIT_MIN_MOBILE_APP_VERSION ?? null,
+			maxMobileAppVersion: process.env.FIREPIT_MAX_MOBILE_APP_VERSION ?? null,
+			deprecationWarnings: getDeprecationWarnings(),
 		};
 
 		return NextResponse.json(versionInfo);
@@ -168,6 +184,10 @@ export async function GET() {
 			buildTime: buildMetadata.buildTime,
 			isCanary: buildMetadata.isCanary,
 			branch: buildMetadata.branch,
+			apiVersion: process.env.FIREPIT_API_VERSION ?? buildMetadata.version,
+			minMobileAppVersion: process.env.FIREPIT_MIN_MOBILE_APP_VERSION ?? null,
+			maxMobileAppVersion: process.env.FIREPIT_MAX_MOBILE_APP_VERSION ?? null,
+			deprecationWarnings: getDeprecationWarnings(),
 		};
 
 		return NextResponse.json(versionInfo, { status: 200 });

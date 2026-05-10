@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
+import type { NextRequest } from "next/server";
 import type { Models } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
@@ -25,38 +26,75 @@ function isPublicServerDocument(document: Models.Document): document is ServerDo
 	);
 }
 
+interface PublicServersResponse {
+	servers: Server[];
+	nextCursor: string | null;
+	total: number;
+	failedIds: string[];
+}
+
+const MAX_LIMIT = 50;
+const DEFAULT_LIMIT = 20;
+
 /**
  * GET /api/servers/public
- * Returns a list of all public servers for browsing/joining
+ * Returns a paginated list of public servers for browsing/joining
+ * Query params:
+ *   - limit: number of servers to return (default: 20, max: 50)
+ *   - cursor: cursor for pagination (server ID)
+ *   - search: search term to filter by server name
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
 	try {
+		const searchParams = request.nextUrl.searchParams;
+		const limit = Math.min(
+			Number.parseInt(searchParams.get("limit") || String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
+			MAX_LIMIT,
+		);
+		const cursor = searchParams.get("cursor");
+		const search = searchParams.get("search")?.trim();
+
 		const env = getEnvConfig();
 		const { databases } = getServerClient();
+
+		const queries = [
+			Query.equal("isPublic", true),
+			Query.limit(limit + 1),
+			Query.orderDesc("$createdAt"),
+		];
+
+		if (cursor) {
+			queries.push(Query.cursorAfter(cursor));
+		}
 
 		const response = await databases.listDocuments(
 			env.databaseId,
 			env.collections.servers,
-			[
-				Query.equal("isPublic", true),
-				Query.limit(100),
-				Query.orderDesc("$createdAt"),
-			]
+			queries,
 		);
 
-		const publicServerDocuments = response.documents.filter(
-			isPublicServerDocument,
-		);
+		let serverDocuments = response.documents.filter(isPublicServerDocument);
+
+		if (search && serverDocuments.length > 0) {
+			const searchLower = search.toLowerCase();
+			serverDocuments = serverDocuments.filter((doc) =>
+				(doc.name || "").toLowerCase().includes(searchLower),
+			);
+		}
+
+		const hasMore = serverDocuments.length > limit;
+		if (hasMore) {
+			serverDocuments = serverDocuments.slice(0, limit);
+		}
 
 		const memberCountsByServerId = await getActualMemberCounts(
 			databases,
-			publicServerDocuments.map((doc) => String(doc.$id)),
+			serverDocuments.map((doc) => String(doc.$id)),
 		);
 
-		// Enrich servers with actual member counts from memberships
-		const servers = [] as Server[];
+		const servers: Server[] = [];
 		const failedIds: string[] = [];
-		for (const doc of publicServerDocuments) {
+		for (const doc of serverDocuments) {
 			try {
 				servers.push(
 					mapServerDocument(
@@ -73,14 +111,24 @@ export async function GET() {
 			}
 		}
 
-		return NextResponse.json({ servers, failedIds });
+		const last = servers.at(-1);
+		const nextCursor = hasMore && last ? last.$id : null;
+
+		const result: PublicServersResponse = {
+			servers,
+			nextCursor,
+			total: servers.length,
+			failedIds,
+		};
+
+		return NextResponse.json(result);
 	} catch (error) {
 		return NextResponse.json(
 			{
 				error:
 					error instanceof Error ? error.message : "Failed to fetch servers",
 			},
-			{ status: 500 }
+			{ status: 500 },
 		);
 	}
 }
