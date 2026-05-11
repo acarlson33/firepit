@@ -51,8 +51,8 @@ export function createApiError(
 	);
 }
 
-export function getRequestIdFromRequest(request: Request): string | undefined {
-	return request.headers.get("X-Request-ID") || undefined;
+export function getRequestIdFromRequest(request?: Request): string | undefined {
+	return request?.headers.get("X-Request-ID") ?? undefined;
 }
 
 export function unauthorized(

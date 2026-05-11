@@ -26,11 +26,11 @@ const {
     mockEditDirectMessage: vi.fn(),
     mockListDirectMessages: vi.fn(),
     mockListPins: vi.fn(),
-    mockRealtimeSubscribe: vi.fn(async () => ({
+    mockRealtimeSubscribe: vi.fn().mockResolvedValue({
         close: vi.fn(),
-        update: vi.fn().mockResolvedValue(undefined),
-        disconnect: vi.fn().mockResolvedValue(undefined),
-    })),
+        update: vi.fn().mockResolvedValue(),
+        disconnect: vi.fn().mockResolvedValue(),
+    }),
     mockListThreadMessages: vi.fn(),
     mockPinMessage: vi.fn(),
     mockSendDirectMessage: vi.fn(),
@@ -160,13 +160,11 @@ describe("useDirectMessages", () => {
         vi.clearAllMocks();
         vi.useRealTimers();
         mockListDirectMessages.mockResolvedValue(createListResult());
-        mockRealtimeSubscribe.mockImplementation(
-            async () => ({
-                close: vi.fn(),
-                update: vi.fn().mockResolvedValue(undefined),
-                disconnect: vi.fn().mockResolvedValue(undefined),
-            }),
-        );
+        mockRealtimeSubscribe.mockResolvedValue({
+            close: vi.fn(),
+            update: vi.fn().mockResolvedValue(),
+            disconnect: vi.fn().mockResolvedValue(),
+        });
         mockSendDirectMessage.mockResolvedValue({
             $createdAt: "2026-03-10T12:05:00.000Z",
             $id: "dm-2",
@@ -574,8 +572,8 @@ describe("useDirectMessages", () => {
             ) => void;
             return {
                 close: vi.fn(),
-                update: vi.fn().mockResolvedValue(undefined),
-                disconnect: vi.fn().mockResolvedValue(undefined),
+                update: vi.fn().mockResolvedValue(),
+                disconnect: vi.fn().mockResolvedValue(),
             };
         });
 
@@ -639,8 +637,8 @@ describe("useDirectMessages", () => {
             )
             .mockResolvedValueOnce({
                 close: vi.fn(),
-                update: vi.fn().mockResolvedValue(undefined),
-                disconnect: vi.fn().mockResolvedValue(undefined),
+                update: vi.fn().mockResolvedValue(),
+                disconnect: vi.fn().mockResolvedValue(),
             });
 
         vi.useFakeTimers();

@@ -69,6 +69,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
             if (previousUserIdsRef.current.length > 0) {
                 setStatuses(new Map());
                 setLoading(false);
+                previousUserIdsRef.current = [];
             }
             return;
         }
@@ -205,7 +206,14 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                             });
                             return;
                         } catch {
-                            // fallthrough to recreate
+                            // Close the old subscription before recreating to avoid leaks
+                            if (existing && typeof existing.close === "function") {
+                                try {
+                                    await existing.close();
+                                } catch {
+                                    // Ignore close errors
+                                }
+                            }
                         }
                     }
 

@@ -17,6 +17,7 @@ import {
     UserPlus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { NotificationsMenu } from "@/components/notifications-menu";
@@ -72,12 +73,15 @@ function isValidHeaderProfile(data: unknown): data is HeaderProfile {
     const record = data as Record<string, unknown>;
     const hasNoKeys = Object.keys(record).length === 0;
 
+    if (hasNoKeys) {
+        return true;
+    }
+
     return (
-        hasNoKeys ||
-        typeof record.avatarUrl === "string" ||
-        typeof record.displayName === "string" ||
-        typeof record.avatarFramePreset === "string" ||
-        typeof record.avatarFrameUrl === "string"
+        (record.avatarUrl === undefined || typeof record.avatarUrl === "string") &&
+        (record.displayName === undefined || typeof record.displayName === "string") &&
+        (record.avatarFramePreset === undefined || typeof record.avatarFramePreset === "string") &&
+        (record.avatarFrameUrl === undefined || typeof record.avatarFrameUrl === "string")
     );
 }
 
@@ -258,11 +262,15 @@ export default function Header({ onSearchClick }: HeaderProps) {
 
     async function handleCustomStatusSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        await updateUserStatus(
-            currentStatus,
-            customStatusMessage.trim() || undefined,
-        );
-        setAccountMenuOpen(false);
+        try {
+            await updateUserStatus(
+                currentStatus,
+                customStatusMessage.trim() || undefined,
+            );
+            setAccountMenuOpen(false);
+        } catch {
+            toast.error("Failed to update status");
+        }
     }
 
     return (

@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
@@ -64,7 +65,6 @@ async function getAllDocumentsPaginated<T>(
 	// This loop intentionally awaits each page sequentially to avoid
 	// overwhelming the Appwrite server with parallel requests and to
 	// respect the service's pagination model.
-	// eslint-disable-next-line no-await-in-loop
 	while (hasMore) {
 		const resp = await databases.listDocuments(
 			env.databaseId,
@@ -160,8 +160,8 @@ export async function GET(
 				id: doc.$id,
 				name: doc.name,
 				color: doc.color,
-				mentionable: Boolean(doc.mentionable),
-				memberCount: memberCountByRoleId.get(String(doc.$id)) ?? 0,
+				mentionable: true,
+				memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
 			}));
 
 		return NextResponse.json({ roles: mentionableRoles });

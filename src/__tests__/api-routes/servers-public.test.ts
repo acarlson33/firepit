@@ -2,6 +2,8 @@
  * Tests for GET /api/servers/public endpoint
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
+
 import { GET } from "@/app/api/servers/public/route";
 
 // Create mock databases object at module level
@@ -44,6 +46,10 @@ vi.mock("node-appwrite", () => ({
 	},
 }));
 
+function createRequest(url: string = "http://localhost/api/servers/public") {
+	return new NextRequest(url);
+}
+
 describe("GET /api/servers/public", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -78,7 +84,7 @@ describe("GET /api/servers/public", () => {
 			new Map([["server1", 50]]),
 		);
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
@@ -119,7 +125,7 @@ describe("GET /api/servers/public", () => {
 			new Map([["server1", 0]]),
 		);
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
@@ -129,7 +135,7 @@ describe("GET /api/servers/public", () => {
 	it("should return empty array when no servers exist", async () => {
 		mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
@@ -139,7 +145,7 @@ describe("GET /api/servers/public", () => {
 	it("should handle database errors", async () => {
 		mockDatabases.listDocuments.mockRejectedValue(new Error("Database connection failed"));
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(500);
@@ -149,7 +155,7 @@ describe("GET /api/servers/public", () => {
 	it("should handle non-Error exceptions", async () => {
 		mockDatabases.listDocuments.mockRejectedValue("Unknown error");
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(500);
@@ -169,7 +175,7 @@ describe("GET /api/servers/public", () => {
 
 		mockDatabases.listDocuments.mockResolvedValue({ documents: mockServers });
 
-		const response = await GET();
+		const response = await GET(createRequest());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);

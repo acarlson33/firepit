@@ -78,7 +78,7 @@ function FeatureCard({ feature }: { feature: LandingFeature }) {
         <Card className="relative overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm transition-transform hover:-translate-y-1">
             <div
                 aria-hidden="true"
-                className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-linear-to-r ${feature.accentClass}`}
+                className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${feature.accentClass}`}
             />
             <CardHeader className="space-y-4 pb-4">
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-muted/70 text-primary shadow-sm">
@@ -372,7 +372,7 @@ export default async function Home() {
                                     User ID
                                 </p>
                                 <p className="mt-1 break-all font-mono text-xs text-foreground">
-                                    {user.$id}
+                                    {isAdmin || isModerator ? user.$id : `${user.$id.slice(0, 8)}...`}
                                 </p>
                             </div>
                             <div className="rounded-2xl border border-border/50 bg-background/60 p-4">

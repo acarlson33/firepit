@@ -166,7 +166,7 @@ export function MentionAutocomplete({
 							if (option.type === "everyone") {
 								return (
 									<button
-										key="everyone"
+										key="everyone-option"
 										type="button"
 										onClick={() => onSelect(null)}
 										onMouseEnter={() => setSelectedIndex(index)}
@@ -176,7 +176,7 @@ export function MentionAutocomplete({
 												: "hover:bg-accent"
 										}`}
 									>
-										<AtSign className="size-8 shrink-0 text-primary" />
+										<AtSign className={`size-8 shrink-0 ${index === validSelectedIndex ? "text-primary-foreground" : "text-primary"}`} />
 										<div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 											<span className="truncate font-semibold">
 												Everyone
@@ -202,7 +202,7 @@ export function MentionAutocomplete({
 								const role = option.data;
 								return (
 									<button
-										key={role.id}
+										key={`role-${role.id}`}
 										type="button"
 										onClick={() => onSelect(role)}
 										onMouseEnter={() => setSelectedIndex(index)}
@@ -243,7 +243,7 @@ export function MentionAutocomplete({
 							const user = option.data;
 							return (
 								<button
-									key={user.userId}
+									key={`user:${user.userId}`}
 									type="button"
 									onClick={() => onSelect(user)}
 									onMouseEnter={() => setSelectedIndex(index)}

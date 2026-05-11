@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 
 import { NotificationsCenter } from "./notifications-center";
-import { requireAuth } from "@/lib/auth-server";
+import { AuthError, requireAuth } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
+
+const AUTH_ERROR_REGEX = /auth|unauth|authentication|not authenticated|not authorized/i;
 
 export const metadata = {
     title: "Notifications",
     description: "Recent mentions, direct messages, and notification preferences.",
-};
+} as const;
 
 export default async function NotificationsPage() {
     try {
@@ -21,7 +23,10 @@ export default async function NotificationsPage() {
 
         const message = err instanceof Error ? err.message : String(err);
         // If the error appears to be an authentication failure, redirect to login.
-        if (/auth|unauth|authentication|required/i.test(message)) {
+        if (
+            (err instanceof AuthError && err.code === "UNAUTHORIZED") ||
+            AUTH_ERROR_REGEX.test(message)
+        ) {
             redirect("/login?redirect=/notifications");
         }
 

@@ -167,8 +167,10 @@ export function useConversations(
                                 queries: [Query.contains("participants", userId)],
                             });
                             return;
-                        } catch {
-                            // fallthrough to recreate
+                        } catch (updateError) {
+                            logger.warn("Conversation subscription update failed", {
+                                error: updateError instanceof Error ? updateError.message : String(updateError),
+                            });
                         }
                     }
                 }

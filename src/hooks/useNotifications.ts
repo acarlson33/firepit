@@ -188,7 +188,6 @@ export function useNotifications({
         let unsubscribe: (() => void) | undefined;
         let untrack: (() => void) | undefined;
         let cancelled = false;
-        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -385,7 +384,6 @@ export function useNotifications({
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
-        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {

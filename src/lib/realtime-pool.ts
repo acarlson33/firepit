@@ -244,7 +244,7 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
                     try {
                         return await Promise.resolve(raw.disconnect());
                     } catch (err) {
-                        const subscriptionId = raw && typeof raw === "object" ? (raw as { $id?: string }).$id : "unknown";
+                        const subscriptionId = (raw as { $id?: string })?.$id ?? "unknown";
                         logger.error(`Realtime disconnect failed (${subscriptionId})`, err instanceof Error ? err : new Error(String(err)));
                     }
                 }
@@ -256,7 +256,7 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
             // update method; otherwise throw a clear error so callers can
             // handle lack of support.
                 c.update = async (opts?: unknown) => {
-                await queuedUnsubscribe.then();
+                await queuedUnsubscribe;
                 const raw = resolvedRawSubscription as { update?: (opts?: unknown) => Promise<void> } | undefined;
                 if (raw && typeof raw.update === "function") {
                     return await Promise.resolve(raw.update(opts));

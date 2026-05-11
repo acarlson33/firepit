@@ -20,25 +20,30 @@ const DEFAULT_API_CONFIG: RateLimitConfig = {
 	maxRequests: 60,
 };
 
+const PARSED_RATE_LIMIT_AUTH_WINDOW_MS =
+	Number.parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS || "", 10) ||
+	DEFAULT_AUTH_CONFIG.windowMs;
+const PARSED_RATE_LIMIT_AUTH_MAX =
+	Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || "", 10) ||
+	DEFAULT_AUTH_CONFIG.maxRequests;
+const PARSED_RATE_LIMIT_API_WINDOW_MS =
+	Number.parseInt(process.env.RATE_LIMIT_API_WINDOW_MS || "", 10) ||
+	DEFAULT_API_CONFIG.windowMs;
+const PARSED_RATE_LIMIT_API_MAX =
+	Number.parseInt(process.env.RATE_LIMIT_API_MAX || "", 10) ||
+	DEFAULT_API_CONFIG.maxRequests;
+
 function getAuthConfig(): RateLimitConfig {
 	return {
-		windowMs:
-			Number.parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS || "", 10) ||
-			DEFAULT_AUTH_CONFIG.windowMs,
-		maxRequests:
-			Number.parseInt(process.env.RATE_LIMIT_AUTH_MAX || "", 10) ||
-			DEFAULT_AUTH_CONFIG.maxRequests,
+		windowMs: PARSED_RATE_LIMIT_AUTH_WINDOW_MS,
+		maxRequests: PARSED_RATE_LIMIT_AUTH_MAX,
 	};
 }
 
 function getApiConfig(): RateLimitConfig {
 	return {
-		windowMs:
-			Number.parseInt(process.env.RATE_LIMIT_API_WINDOW_MS || "", 10) ||
-			DEFAULT_API_CONFIG.windowMs,
-		maxRequests:
-			Number.parseInt(process.env.RATE_LIMIT_API_MAX || "", 10) ||
-			DEFAULT_API_CONFIG.maxRequests,
+		windowMs: PARSED_RATE_LIMIT_API_WINDOW_MS,
+		maxRequests: PARSED_RATE_LIMIT_API_MAX,
 	};
 }
 
@@ -49,7 +54,11 @@ function isAuthEndpoint(pathname: string): boolean {
 function getClientIp(request: Request): string {
 	const forwardedFor = request.headers.get("x-forwarded-for");
 	if (forwardedFor) {
-		return forwardedFor.split(",")[0].trim();
+		const ips = forwardedFor.split(",").map((ip) => ip.trim());
+		const firstIp = ips[0];
+		if (firstIp) {
+			return firstIp;
+		}
 	}
 
 	const realIp = request.headers.get("x-real-ip");
@@ -69,7 +78,7 @@ function cleanExpiredEntries(): void {
 	}
 }
 
-setInterval(cleanExpiredEntries, 60 * 1000);
+const cleanupInterval = setInterval(cleanExpiredEntries, 60 * 1000);
 
 export interface RateLimitResult {
 	allowed: boolean;

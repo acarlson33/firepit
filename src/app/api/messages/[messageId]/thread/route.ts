@@ -219,7 +219,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             const serverAccess = await getServerPermissionsForUser(
                 databases,
                 env,
-                String(parentMessage.serverId),
+                parentMessage.serverId,
                 user.$id,
             );
             if (!serverAccess.permissions?.mentionEveryone) {

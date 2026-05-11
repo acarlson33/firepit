@@ -103,11 +103,10 @@ function isVersionOutdated(current: string, latest: string): boolean {
 }
 
 function getDeprecationWarnings(): string[] {
-	const warnings: string[] = [];
 	if (process.env.FIREPIT_DEPRECATE_LEGACY_AUTH === "true") {
-		warnings.push("Legacy cookie-based authentication is deprecated. Use Bearer tokens.");
+		return ["Legacy cookie-based authentication is deprecated. Use Bearer tokens."];
 	}
-	return warnings;
+	return [];
 }
 
 /**

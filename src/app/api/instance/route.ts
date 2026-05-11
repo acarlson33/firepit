@@ -34,6 +34,8 @@ async function getInstanceFeatures(): Promise<InstanceInfo["features"]> {
 	};
 }
 
+const TRAILING_SLASH = /\/$/;
+
 export async function GET(): Promise<NextResponse<InstanceInfo>> {
 	const env = getEnvConfig();
 
@@ -43,7 +45,7 @@ export async function GET(): Promise<NextResponse<InstanceInfo>> {
 		(process.env.SERVER_URL?.trim() ||
 			process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
 			"")
-			.replace(/\/$/, "");
+			.replace(TRAILING_SLASH, "");
 
 	const features = await getInstanceFeatures();
 
@@ -58,9 +60,9 @@ export async function GET(): Promise<NextResponse<InstanceInfo>> {
 			url: process.env.FIREPIT_SUPPORT_URL?.trim() || null,
 		},
 		meta: {
-			version: process.env.FIREPIT_API_VERSION || "1.0.0",
-			buildTime: process.env.BUILD_TIME || new Date().toISOString(),
-			environment: process.env.NODE_ENV || "development",
+			version: process.env.FIREPIT_API_VERSION?.trim() || "1.0.0",
+			buildTime: process.env.BUILD_TIME?.trim() || new Date().toISOString(),
+			environment: process.env.NODE_ENV?.trim() || "development",
 		},
 	};
 

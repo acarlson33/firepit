@@ -29,7 +29,7 @@ function isPublicServerDocument(document: Models.Document): document is ServerDo
 interface PublicServersResponse {
 	servers: Server[];
 	nextCursor: string | null;
-	total: number;
+	count: number;
 	failedIds: string[];
 }
 
@@ -47,8 +47,10 @@ const DEFAULT_LIMIT = 20;
 export async function GET(request: NextRequest) {
 	try {
 		const searchParams = request.nextUrl.searchParams;
+		const rawLimit = searchParams.get("limit");
+		const parsedLimit = Number.parseInt(rawLimit ?? "", 10);
 		const limit = Math.min(
-			Number.parseInt(searchParams.get("limit") || String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
+			Number.isNaN(parsedLimit) ? DEFAULT_LIMIT : parsedLimit,
 			MAX_LIMIT,
 		);
 		const cursor = searchParams.get("cursor");
@@ -117,7 +119,7 @@ export async function GET(request: NextRequest) {
 		const result: PublicServersResponse = {
 			servers,
 			nextCursor,
-			total: servers.length,
+			count: servers.length,
 			failedIds,
 		};
 

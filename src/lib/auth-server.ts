@@ -18,7 +18,7 @@ export class AuthError extends Error {
     }
 }
 
-type SessionUser = {
+export type SessionUser = {
     $id: string;
     name: string;
     email: string;
@@ -28,6 +28,7 @@ type SessionUser = {
 async function getSessionFromHeader(
     endpoint: string,
     project: string,
+    systemSenderUserId: string | null,
 ): Promise<SessionUser | null> {
     try {
         const headerStore = await headers();
@@ -58,6 +59,10 @@ async function getSessionFromHeader(
             typeof user.name !== "string" ||
             typeof user.email !== "string"
         ) {
+            return null;
+        }
+
+        if (systemSenderUserId && user.$id === systemSenderUserId) {
             return null;
         }
 
@@ -138,7 +143,7 @@ export async function getServerSession(): Promise<SessionUser | null> {
     const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
 
     // Try Authorization header first (supports mobile Bearer tokens)
-    const headerSession = await getSessionFromHeader(endpoint, project);
+    const headerSession = await getSessionFromHeader(endpoint, project, systemSenderUserId);
     if (headerSession) {
         return headerSession;
     }

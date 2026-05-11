@@ -47,6 +47,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button
+                    type="button"
                     aria-label="Open notifications"
                     className="relative rounded-2xl"
                     size="icon"

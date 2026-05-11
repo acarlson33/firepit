@@ -166,7 +166,7 @@ export function SettingsSectionNav({
                                     aria-current={
                                         isActive ? "location" : undefined
                                     }
-                                        className={`group block rounded-3xl border px-4 py-3 transition-all ${
+                                        className={`group block rounded-3xl border px-4 py-3 transition-colors ${
                                         isActive
                                             ? "border-primary/25 bg-primary/10 shadow-sm shadow-primary/10"
                                             : "border-border/40 bg-background/40 hover:border-border/60 hover:bg-background/80"
