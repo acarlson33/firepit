@@ -55,10 +55,15 @@ export function useConversations(
     );
     const realtimeRetryNonceRef = useRef(0);
     const [realtimeRetryTick, setRealtimeRetryTick] = useState(0);
-    const subscriptionRef = useRef<{
-        close: () => Promise<void>;
-        update?: (args: { queries: ReturnType<typeof Query.contains>[] }) => Promise<void>;
-    } | undefined>(undefined);
+    const subscriptionRef = useRef<
+        | {
+              close: () => Promise<void>;
+              update?: (args: {
+                  queries: ReturnType<typeof Query.contains>[];
+              }) => Promise<void>;
+          }
+        | undefined
+    >(undefined);
 
     useEffect(() => {
         realtimeRetryNonceRef.current = 0;
@@ -164,13 +169,18 @@ export function useConversations(
                     if (existing && typeof existing.update === "function") {
                         try {
                             await existing.update({
-                                queries: [Query.contains("participants", userId)],
+                                queries: [
+                                    Query.contains("participants", userId),
+                                ],
                             });
                             return;
                         } catch (updateError) {
-                            logger.warn("Conversation subscription update failed", {
-                                error: updateError instanceof Error ? updateError.message : String(updateError),
-                            });
+                            logger.warn(
+                                "Conversation subscription update failed",
+                                {
+                                    error: toErrorMessage(updateError),
+                                },
+                            );
                         }
                     }
                 }
@@ -205,7 +215,7 @@ export function useConversations(
                                 );
                             });
                     },
-                            [Query.contains("participants", userId)],
+                    [Query.contains("participants", userId)],
                 );
 
                 if (cancelled) {
@@ -219,15 +229,17 @@ export function useConversations(
                 const untrack = trackSubscription(conversationChannelKey);
                 cleanupFn = () => {
                     untrack();
-                    closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
-                        logger.warn(
-                            "Conversation subscription cleanup failed",
-                            {
-                                conversationChannelKey,
-                                error: toErrorMessage(error),
-                            },
-                        );
-                    });
+                    closeSubscriptionSafely(subscriptionRef.current).catch(
+                        (error) => {
+                            logger.warn(
+                                "Conversation subscription cleanup failed",
+                                {
+                                    conversationChannelKey,
+                                    error: toErrorMessage(error),
+                                },
+                            );
+                        },
+                    );
                     subscriptionRef.current = undefined;
                 };
             } catch (realtimeError) {
@@ -235,7 +247,8 @@ export function useConversations(
                     return;
                 }
 
-                const isTransient = isTransientRealtimeSubscribeError(realtimeError);
+                const isTransient =
+                    isTransientRealtimeSubscribeError(realtimeError);
                 const retryDelayMs = isTransient ? 1200 : 4000;
                 const realtimeRetryNonce = realtimeRetryNonceRef.current;
 

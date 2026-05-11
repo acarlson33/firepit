@@ -4,11 +4,13 @@ import { NotificationsCenter } from "./notifications-center";
 import { AuthError, requireAuth } from "@/lib/auth-server";
 import { logger } from "@/lib/newrelic-utils";
 
-const AUTH_ERROR_REGEX = /auth|unauth|authentication|not authenticated|not authorized/i;
+const AUTH_ERROR_REGEX =
+    /\b(?:not authenticated|not authorized|unauthenticated|authentication|auth)\b/i;
 
 export const metadata = {
     title: "Notifications",
-    description: "Recent mentions, direct messages, and notification preferences.",
+    description:
+        "Recent mentions, direct messages, and notification preferences.",
 } as const;
 
 export default async function NotificationsPage() {

@@ -2,6 +2,7 @@ import { logger } from "@/lib/client-logger";
 
 export type RealtimeSubscription =
     | {
+          unsubscribe?: () => Promise<void> | void;
           close: () => Promise<void> | void;
       }
     | (() => void);
@@ -29,7 +30,9 @@ function matchWebSocketErrorMessage(message: string): boolean {
 
     // Firefox/Appwrite can log this on intentional subscription churn during route switches.
     if (
-        normalizedMessage.includes("was interrupted while the page was loading") &&
+        normalizedMessage.includes(
+            "was interrupted while the page was loading",
+        ) &&
         normalizedMessage.includes("/v1/realtime")
     ) {
         return true;
@@ -172,15 +175,17 @@ export async function closeSubscriptionSafely(
     }
 
     const marker = getSubscriptionMarker(subscription);
-    const close =
+    const teardown =
         typeof subscription === "function"
             ? subscription
-            : subscription.close.bind(subscription);
+            : typeof subscription.unsubscribe === "function"
+              ? subscription.unsubscribe.bind(subscription)
+              : subscription.close.bind(subscription);
 
     try {
         await runWithScopedConsoleErrorSuppressed(
             async () => {
-                await Promise.resolve(close());
+                await Promise.resolve(teardown());
             },
             marker,
             defaultSuppressionPredicate,

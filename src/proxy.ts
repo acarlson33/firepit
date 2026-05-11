@@ -29,7 +29,10 @@ function getCorsOrigins(): string[] {
     return configured.split(",").map((o) => o.trim());
 }
 
-function isValidOrigin(origin: string | null, allowedOrigins: string[]): boolean {
+function isValidOrigin(
+    origin: string | null,
+    allowedOrigins: string[],
+): boolean {
     if (!origin) {
         return false;
     }
@@ -59,9 +62,17 @@ export async function proxy(request: NextRequest) {
                     {
                         status: 429,
                         headers: {
-                            "Retry-After": String(rateLimitResult.retryAfter ?? Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)),
+                            "Retry-After": String(
+                                rateLimitResult.retryAfter ??
+                                    Math.ceil(
+                                        (rateLimitResult.resetAt - Date.now()) /
+                                            1000,
+                                    ),
+                            ),
                             "X-RateLimit-Remaining": "0",
-                            "X-RateLimit-Reset": String(rateLimitResult.resetAt),
+                            "X-RateLimit-Reset": String(
+                                rateLimitResult.resetAt,
+                            ),
                         },
                     },
                 );
@@ -93,8 +104,14 @@ export async function proxy(request: NextRequest) {
             corsHeaders.set("Vary", "Origin");
         }
 
-        corsHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-        corsHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID");
+        corsHeaders.set(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+        );
+        corsHeaders.set(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, X-Request-ID",
+        );
         if (responseOrigin !== "*") {
             corsHeaders.set("Access-Control-Allow-Credentials", "true");
         }
@@ -107,7 +124,8 @@ export async function proxy(request: NextRequest) {
             });
         }
 
-        const requestId = request.headers.get("X-Request-ID") || crypto.randomUUID();
+        const requestId =
+            request.headers.get("X-Request-ID") || crypto.randomUUID();
         corsHeaders.set("X-Request-ID", requestId);
 
         const response = NextResponse.next({
@@ -125,8 +143,6 @@ export async function proxy(request: NextRequest) {
                 response.headers.set(key, value);
             }
         }
-
-        response.headers.set("X-Request-ID", requestId);
 
         return response;
     }

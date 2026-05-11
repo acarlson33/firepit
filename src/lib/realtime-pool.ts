@@ -53,17 +53,23 @@ function toUnsubscribeFn(subscription: unknown): () => void {
     if (
         subscription &&
         typeof subscription === "object" &&
-        typeof (subscription as { close?: unknown }).close === "function"
+        (typeof (subscription as { unsubscribe?: unknown }).unsubscribe ===
+            "function" ||
+            typeof (subscription as { close?: unknown }).close === "function")
     ) {
-        const close = (subscription as { close: () => unknown }).close.bind(
-            subscription,
-        );
-        return async () => {
-            try {
-                await Promise.resolve(close());
-            } catch (error) {
+        const unsubscribe =
+            typeof (subscription as { unsubscribe?: unknown }).unsubscribe ===
+            "function"
+                ? (
+                      subscription as { unsubscribe: () => unknown }
+                  ).unsubscribe.bind(subscription)
+                : (subscription as { close: () => unknown }).close.bind(
+                      subscription,
+                  );
+        return () => {
+            void Promise.resolve(unsubscribe()).catch((error) => {
                 logger.warn(
-                    "Realtime subscription close failed in unsubscribe wrapper",
+                    "Realtime subscription unsubscribe failed in wrapper",
                     {
                         error:
                             error instanceof Error
@@ -71,7 +77,7 @@ function toUnsubscribeFn(subscription: unknown): () => void {
                                 : String(error),
                     },
                 );
-            }
+            });
         };
     }
 
@@ -215,60 +221,81 @@ function patchRealtimeSubscribe(realtime: Realtime): Realtime {
 
         // Keep Promise-like then() so existing code that treats the return
         // value as a promise continues to work.
-        callable.then = queuedUnsubscribe.then.bind(queuedUnsubscribe) as unknown as PromiseLike<() => Promise<void>>["then"];
+        callable.then = queuedUnsubscribe.then.bind(
+            queuedUnsubscribe,
+        ) as unknown as PromiseLike<() => Promise<void>>["then"];
 
         // Attach normalized lifecycle methods.
         const attachMethods = () => {
-                const c = callable as unknown as RealtimeSubscriptionHandle;
-            // close/unsubscribe: prefer the queued unsubscribe promise to
+            const c = callable as unknown as RealtimeSubscriptionHandle;
+            // unsubscribe/close: prefer the queued unsubscribe promise to
             // ensure ordering with other queued operations.
-                c.close = async () => {
+            c.unsubscribe = async () => {
                 try {
                     await queuedUnsubscribe.then((u) => u());
                 } catch (err) {
                     if (!isStaleRealtimeSubscribeError(err)) {
-                        logger.warn("Deferred realtime close failed", {
-                            error: err instanceof Error ? err.message : String(err),
+                        logger.warn("Deferred realtime unsubscribe failed", {
+                            error:
+                                err instanceof Error
+                                    ? err.message
+                                    : String(err),
                         });
                     }
                 }
             };
 
-                c.unsubscribe = c.close;
+            c.close = async () => {
+                await c.unsubscribe();
+            };
 
             // disconnect: forward to underlying if present; otherwise call
             // close as a fallback.
-                c.disconnect = async () => {
-                const raw = resolvedRawSubscription as { disconnect?: () => Promise<void> } | undefined;
+            c.disconnect = async () => {
+                const raw = resolvedRawSubscription as
+                    | { disconnect?: () => Promise<void> }
+                    | undefined;
                 if (raw && typeof raw.disconnect === "function") {
                     try {
                         return await Promise.resolve(raw.disconnect());
                     } catch (err) {
-                        const subscriptionId = (raw as { $id?: string })?.$id ?? "unknown";
-                        logger.error(`Realtime disconnect failed (${subscriptionId})`, err instanceof Error ? err : new Error(String(err)));
+                        const subscriptionId =
+                            (raw as { $id?: string })?.$id ?? "unknown";
+                        logger.error(
+                            `Realtime disconnect failed (${subscriptionId})`,
+                            err instanceof Error ? err : new Error(String(err)),
+                        );
                     }
                 }
 
-                    return c.close();
+                return c.close();
             };
 
             // update: forward to underlying subscription if it provides an
             // update method; otherwise throw a clear error so callers can
             // handle lack of support.
-                c.update = async (opts?: unknown) => {
+            c.update = async (opts?: unknown) => {
                 await queuedUnsubscribe;
-                const raw = resolvedRawSubscription as { update?: (opts?: unknown) => Promise<void> } | undefined;
+                const raw = resolvedRawSubscription as
+                    | { update?: (opts?: unknown) => Promise<void> }
+                    | undefined;
                 if (raw && typeof raw.update === "function") {
-                    return await Promise.resolve(raw.update(opts));
+                    return Promise.resolve(raw.update(opts));
                 }
 
-                throw new Error("Realtime subscription update() not supported by installed Appwrite SDK");
+                throw new Error(
+                    "Realtime subscription update() not supported by installed Appwrite SDK",
+                );
             };
         };
 
         attachMethods();
 
-        return callable as unknown as Realtime["subscribe"] extends (...a: any) => Promise<infer R> ? R : unknown;
+        return callable as unknown as Realtime["subscribe"] extends (
+            ...a: infer _Args
+        ) => Promise<infer R>
+            ? R
+            : unknown;
     };
     realtime.subscribe = wrappedSubscribe as unknown as Realtime["subscribe"];
 

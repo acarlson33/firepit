@@ -11,26 +11,28 @@ import { logger } from "@/lib/newrelic-utils";
 import type { Server } from "@/lib/types";
 
 type ServerDocument = Models.Document & {
-	description?: string | null;
-	isPublic?: boolean;
-	name: string;
-	ownerId: string;
+    description?: string | null;
+    isPublic?: boolean;
+    name: string;
+    ownerId: string;
 };
 
-function isPublicServerDocument(document: Models.Document): document is ServerDocument {
-	const candidate = document as Record<string, unknown>;
-	return (
-		candidate.isPublic === true &&
-		typeof candidate.name === "string" &&
-		typeof candidate.ownerId === "string"
-	);
+function isPublicServerDocument(
+    document: Models.Document,
+): document is ServerDocument {
+    const candidate = document as Record<string, unknown>;
+    return (
+        candidate.isPublic === true &&
+        typeof candidate.name === "string" &&
+        typeof candidate.ownerId === "string"
+    );
 }
 
 interface PublicServersResponse {
-	servers: Server[];
-	nextCursor: string | null;
-	count: number;
-	failedIds: string[];
+    servers: Server[];
+    nextCursor: string | null;
+    count: number;
+    failedIds: string[];
 }
 
 const MAX_LIMIT = 50;
@@ -45,92 +47,96 @@ const DEFAULT_LIMIT = 20;
  *   - search: search term to filter by server name
  */
 export async function GET(request: NextRequest) {
-	try {
-		const searchParams = request.nextUrl.searchParams;
-		const rawLimit = searchParams.get("limit");
-		const parsedLimit = Number.parseInt(rawLimit ?? "", 10);
-		const limit = Math.min(
-			Number.isNaN(parsedLimit) ? DEFAULT_LIMIT : parsedLimit,
-			MAX_LIMIT,
-		);
-		const cursor = searchParams.get("cursor");
-		const search = searchParams.get("search")?.trim();
+    try {
+        const searchParams = request.nextUrl.searchParams;
+        const rawLimit = searchParams.get("limit");
+        const parsedLimit = Number.parseInt(rawLimit ?? "", 10);
+        const parsedLimitValid =
+            !Number.isNaN(parsedLimit) && parsedLimit > 0
+                ? parsedLimit
+                : DEFAULT_LIMIT;
+        const limit = Math.min(parsedLimitValid, MAX_LIMIT);
+        const cursor = searchParams.get("cursor");
+        const search = searchParams.get("search")?.trim();
 
-		const env = getEnvConfig();
-		const { databases } = getServerClient();
+        const env = getEnvConfig();
+        const { databases } = getServerClient();
 
-		const queries = [
-			Query.equal("isPublic", true),
-			Query.limit(limit + 1),
-			Query.orderDesc("$createdAt"),
-		];
+        const queries = [
+            Query.equal("isPublic", true),
+            Query.limit(limit + 1),
+            Query.orderDesc("$createdAt"),
+        ];
 
-		if (cursor) {
-			queries.push(Query.cursorAfter(cursor));
-		}
+        if (cursor) {
+            queries.push(Query.cursorAfter(cursor));
+        }
 
-		const response = await databases.listDocuments(
-			env.databaseId,
-			env.collections.servers,
-			queries,
-		);
+        const response = await databases.listDocuments(
+            env.databaseId,
+            env.collections.servers,
+            queries,
+        );
 
-		let serverDocuments = response.documents.filter(isPublicServerDocument);
+        let serverDocuments = response.documents.filter(isPublicServerDocument);
 
-		if (search && serverDocuments.length > 0) {
-			const searchLower = search.toLowerCase();
-			serverDocuments = serverDocuments.filter((doc) =>
-				(doc.name || "").toLowerCase().includes(searchLower),
-			);
-		}
+        if (search && serverDocuments.length > 0) {
+            const searchLower = search.toLowerCase();
+            serverDocuments = serverDocuments.filter((doc) =>
+                (doc.name || "").toLowerCase().includes(searchLower),
+            );
+        }
 
-		const hasMore = serverDocuments.length > limit;
-		if (hasMore) {
-			serverDocuments = serverDocuments.slice(0, limit);
-		}
+        const hasMore = serverDocuments.length > limit;
+        if (hasMore) {
+            serverDocuments = serverDocuments.slice(0, limit);
+        }
 
-		const memberCountsByServerId = await getActualMemberCounts(
-			databases,
-			serverDocuments.map((doc) => String(doc.$id)),
-		);
+        const memberCountsByServerId = await getActualMemberCounts(
+            databases,
+            serverDocuments.map((doc) => String(doc.$id)),
+        );
 
-		const servers: Server[] = [];
-		const failedIds: string[] = [];
-		for (const doc of serverDocuments) {
-			try {
-				servers.push(
-					mapServerDocument(
-						doc,
-						memberCountsByServerId.get(String(doc.$id)) ?? 0,
-					),
-				);
-			} catch (error) {
-				failedIds.push(String(doc.$id));
-				logger.error("Failed to map public server document", {
-					serverId: String(doc.$id),
-					error: error instanceof Error ? error.message : String(error),
-				});
-			}
-		}
+        const servers: Server[] = [];
+        const failedIds: string[] = [];
+        for (const doc of serverDocuments) {
+            try {
+                servers.push(
+                    mapServerDocument(
+                        doc,
+                        memberCountsByServerId.get(String(doc.$id)) ?? 0,
+                    ),
+                );
+            } catch (error) {
+                failedIds.push(String(doc.$id));
+                logger.error("Failed to map public server document", {
+                    serverId: String(doc.$id),
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
 
-		const last = servers.at(-1);
-		const nextCursor = hasMore && last ? last.$id : null;
+        const last = servers.at(-1);
+        const nextCursor = hasMore && last ? last.$id : null;
 
-		const result: PublicServersResponse = {
-			servers,
-			nextCursor,
-			count: servers.length,
-			failedIds,
-		};
+        const result: PublicServersResponse = {
+            servers,
+            nextCursor,
+            count: servers.length,
+            failedIds,
+        };
 
-		return NextResponse.json(result);
-	} catch (error) {
-		return NextResponse.json(
-			{
-				error:
-					error instanceof Error ? error.message : "Failed to fetch servers",
-			},
-			{ status: 500 },
-		);
-	}
+        return NextResponse.json(result);
+    } catch (error) {
+        return NextResponse.json(
+            {
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to fetch servers",
+            },
+            { status: 500 },
+        );
+    }
 }
