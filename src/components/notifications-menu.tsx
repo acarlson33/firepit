@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,7 +52,6 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                     type="button"
                     aria-label="Open notifications"
                     className="relative rounded-2xl"
-                    size="icon"
                     variant="outline"
                 >
                     <Bell className="h-5 w-5" />
@@ -114,7 +114,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                         destination,
                                         { entry: "unread" },
                                     );
-                                    router.push(href);
+                                    router.push(href as Route);
                                 }}
                             >
                                 <div className="flex w-full items-start gap-3 rounded-2xl px-3 py-2 text-left">
@@ -174,7 +174,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                         size="sm"
                         variant="outline"
                     >
-                        <Link href="/settings/notifications">
+                        <Link href={"/settings/notifications" as Route}>
                             Manage notification controls
                         </Link>
                     </Button>

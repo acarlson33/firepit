@@ -81,6 +81,9 @@ export function ChatInput({
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const mentionedNamesRef = useRef<string[]>([]);
+    const mentionableRolesCacheRef = useRef<Record<string, MentionableRole[]>>(
+        {},
+    );
 
     // Fetch users and mentionable roles when mention query changes
     useEffect(() => {
@@ -111,27 +114,34 @@ export function ChatInput({
                 const queryLower = query.toLowerCase();
                 if (serverId) {
                     try {
-                        const rolesResponse = await fetch(
-                            `/api/servers/${serverId}/mentionable-roles`,
-                        );
-                        if (rolesResponse.ok) {
-                            const rolesData = await rolesResponse.json();
-                            const typedRoles = (rolesData.roles || [])
-                                .map((role: Omit<MentionableRole, "type">) => ({
-                                    ...role,
-                                    type: "role" as const,
-                                }))
-                                .filter(
-                                    (role: MentionableRole) =>
-                                        role.name
-                                            .toLowerCase()
-                                            .includes(queryLower) ||
-                                        role.id.includes(queryLower),
+                        let cachedRoles =
+                            mentionableRolesCacheRef.current[serverId];
+
+                        if (!cachedRoles) {
+                            const rolesResponse = await fetch(
+                                `/api/servers/${serverId}/mentionable-roles`,
+                            );
+                            if (rolesResponse.ok) {
+                                const rolesData = await rolesResponse.json();
+                                cachedRoles = (rolesData.roles || []).map(
+                                    (role: Omit<MentionableRole, "type">) => ({
+                                        ...role,
+                                        type: "role" as const,
+                                    }),
                                 );
-                            setMentionableRoles(typedRoles);
-                        } else {
-                            setMentionableRoles([]);
+                                mentionableRolesCacheRef.current[serverId] =
+                                    cachedRoles;
+                            } else {
+                                cachedRoles = [];
+                            }
                         }
+
+                        const typedRoles = cachedRoles.filter(
+                            (role: MentionableRole) =>
+                                role.name.toLowerCase().includes(queryLower) ||
+                                role.id.toLowerCase().includes(queryLower),
+                        );
+                        setMentionableRoles(typedRoles);
                     } catch {
                         setMentionableRoles([]);
                     }
@@ -236,8 +246,12 @@ export function ChatInput({
                 logger.warn(
                     "Unexpected selectable passed to handleMentionSelect",
                     {
-                        selectable,
                         type: typeof selectable,
+                        isArray: Array.isArray(selectable),
+                        hasId:
+                            typeof selectable === "object" &&
+                            selectable !== null &&
+                            "id" in selectable,
                     },
                 );
                 mentionText = "all";

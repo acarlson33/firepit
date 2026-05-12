@@ -15,6 +15,7 @@ let inFlightDispose: Promise<void> | null = null;
 let subscribeQueueTail: Promise<void> = Promise.resolve();
 let sharedRealtimeGeneration = 0;
 let idleTeardownListenersInstalled = false;
+let activeSubscriptionCount = 0;
 
 function installIdleTeardownListeners() {
     if (idleTeardownListenersInstalled || typeof window === "undefined") {
@@ -23,15 +24,16 @@ function installIdleTeardownListeners() {
 
     idleTeardownListenersInstalled = true;
 
-    const teardown = () => {
-        void disposeSharedRealtime();
+    const teardownIfIdle = () => {
+        if (activeSubscriptionCount === 0) {
+            void disposeSharedRealtime();
+        }
     };
 
-    window.addEventListener("blur", teardown);
-    window.addEventListener("pagehide", teardown);
+    window.addEventListener("pagehide", teardownIfIdle);
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
-            teardown();
+            teardownIfIdle();
         }
     });
 }
@@ -566,10 +568,12 @@ export function getSharedRealtime(): Realtime {
  * @returns {() => void} The return value.
  */
 export function trackSubscription(channel: string): () => void {
+    activeSubscriptionCount += 1;
     const count = subscriptionRefs.get(channel) ?? 0;
     subscriptionRefs.set(channel, count + 1);
 
     return () => {
+        activeSubscriptionCount = Math.max(0, activeSubscriptionCount - 1);
         const newCount = (subscriptionRefs.get(channel) ?? 1) - 1;
         if (newCount <= 0) {
             subscriptionRefs.delete(channel);
@@ -606,6 +610,7 @@ export async function disposeSharedRealtime(): Promise<void> {
 
         if (!sharedRealtime) {
             subscriptionRefs.clear();
+            activeSubscriptionCount = 0;
             subscribeQueueTail = Promise.resolve();
             return;
         }
@@ -621,6 +626,7 @@ export async function disposeSharedRealtime(): Promise<void> {
             ) {
                 sharedRealtime = null;
                 subscriptionRefs.clear();
+                activeSubscriptionCount = 0;
                 subscribeQueueTail = Promise.resolve();
             }
         }

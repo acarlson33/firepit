@@ -54,7 +54,7 @@ type AuthContextType = {
         status: "online" | "away" | "busy" | "offline",
         customMessage?: string,
         expiresAt?: string,
-    ) => Promise<void>;
+    ) => Promise<{ success: boolean; error?: string }>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -304,6 +304,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 });
                                 return;
                             } catch {
+                                const currentSubscription =
+                                    subscriptionRef.current;
+                                if (currentSubscription) {
+                                    await closeSubscriptionSafely(
+                                        currentSubscription,
+                                    );
+                                }
+                                subscriptionRef.current = null;
                                 // fallthrough to recreate
                             }
                         }
@@ -362,16 +370,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         if (realtimeUserIdRef.current !== subscribedUserId) {
                             return;
                         }
-                        void closeSubscriptionSafely(
-                            subscriptionRef.current,
-                        ).catch((error) => {
-                            logger.warn("Status subscription cleanup failed", {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
+                        if (subscriptionRef.current) {
+                            void closeSubscriptionSafely(
+                                subscriptionRef.current,
+                            ).catch((error) => {
+                                logger.warn(
+                                    "Status subscription cleanup failed",
+                                    {
+                                        error:
+                                            error instanceof Error
+                                                ? error.message
+                                                : String(error),
+                                    },
+                                );
                             });
-                        });
+                        }
                         subscriptionRef.current = null;
                     };
                 } catch (err) {
@@ -415,9 +428,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             status: "online" | "away" | "busy" | "offline",
             customMessage?: string,
             expiresAt?: string,
-        ) => {
+        ): Promise<{ success: boolean; error?: string }> => {
             if (!userData?.userId) {
-                return;
+                return { success: false, error: "User is not signed in" };
             }
 
             try {
@@ -433,6 +446,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (newStatus) {
                     setUserStatusState(newStatus);
                 }
+                return { success: true };
             } catch (err) {
                 if (process.env.NODE_ENV === "development") {
                     logger.error(
@@ -444,6 +458,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         error: err instanceof Error ? err.message : String(err),
                     });
                 }
+                return {
+                    success: false,
+                    error:
+                        err instanceof Error
+                            ? err.message
+                            : "Failed to change status",
+                };
             }
         },
         [userData?.userId],

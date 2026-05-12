@@ -170,7 +170,7 @@ export async function GET(
             id: doc.$id,
             name: doc.name,
             color: doc.color ?? "",
-            mentionable: doc.mentionable,
+            mentionable: Boolean(doc.mentionable),
             memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
         }));
 

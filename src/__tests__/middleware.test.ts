@@ -222,15 +222,17 @@ describe("Middleware", () => {
             const nextSpy = vi.spyOn(NextResponse, "next");
             const request = createMockRequest("/api/test");
 
-            const response = await middleware(request);
-            const forwardedHeaders =
-                nextSpy.mock.calls[0]?.[0]?.request?.headers;
+            try {
+                const response = await middleware(request);
+                const forwardedHeaders =
+                    nextSpy.mock.calls[0]?.[0]?.request?.headers;
 
-            expect(forwardedHeaders?.get("X-Request-ID")).toBe(
-                response.headers.get("x-request-id"),
-            );
-
-            nextSpy.mockRestore();
+                expect(forwardedHeaders?.get("X-Request-ID")).toBe(
+                    response.headers.get("x-request-id"),
+                );
+            } finally {
+                nextSpy.mockRestore();
+            }
         });
     });
 

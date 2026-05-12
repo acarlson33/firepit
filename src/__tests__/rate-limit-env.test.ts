@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+let originalEnv: NodeJS.ProcessEnv;
 
 async function importFreshRateLimitModule() {
     vi.resetModules();
@@ -6,6 +8,28 @@ async function importFreshRateLimitModule() {
 }
 
 describe("rate-limit env parsing", () => {
+    beforeEach(() => {
+        originalEnv = { ...process.env };
+    });
+
+    afterEach(() => {
+        for (const key of Object.keys(process.env)) {
+            if (!(key in originalEnv)) {
+                delete process.env[key];
+            }
+        }
+
+        for (const [key, value] of Object.entries(originalEnv)) {
+            if (typeof value === "undefined") {
+                delete process.env[key];
+            } else {
+                process.env[key] = value;
+            }
+        }
+
+        vi.resetModules();
+    });
+
     it("falls back to auth defaults for invalid env values", async () => {
         process.env.RATE_LIMIT_AUTH_WINDOW_MS = "-1";
         process.env.RATE_LIMIT_AUTH_MAX = "0";

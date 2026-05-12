@@ -227,18 +227,20 @@ export default async function Home() {
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-3 text-sm text-muted-foreground">
-                                <p>
-                                    • Branded surfaces with warmer, calmer color
-                                    treatment.
-                                </p>
-                                <p>
-                                    • Clearer primary navigation for chat, docs,
-                                    settings, and admin.
-                                </p>
-                                <p>
-                                    • Better first-run flow from login through
-                                    onboarding and join paths.
-                                </p>
+                                <ul className="list-disc space-y-3 pl-5">
+                                    <li>
+                                        Branded surfaces with warmer, calmer
+                                        color treatment.
+                                    </li>
+                                    <li>
+                                        Clearer primary navigation for chat,
+                                        docs, settings, and admin.
+                                    </li>
+                                    <li>
+                                        Better first-run flow from login through
+                                        onboarding and join paths.
+                                    </li>
+                                </ul>
                             </CardContent>
                         </Card>
                     </section>

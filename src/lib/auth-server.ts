@@ -66,12 +66,8 @@ async function getSessionFromHeader(
         const headerStore = await headers();
         const authHeader = headerStore.get("Authorization");
 
-        if (!authHeader?.startsWith("Bearer ")) {
-            return null;
-        }
-
-        const token = authHeader.slice(7);
-        if (!token) {
+        const [scheme, token] = authHeader?.trim().split(/\s+/, 2) ?? [];
+        if (scheme?.toLowerCase() !== "bearer" || !token) {
             return null;
         }
 

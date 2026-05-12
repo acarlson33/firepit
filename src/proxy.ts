@@ -44,9 +44,48 @@ function isValidOrigin(
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
+    const isApiRoute = pathname === "/api" || pathname.startsWith("/api/");
 
     // Handle API routes: rate limiting and CORS
-    if (pathname.startsWith("/api")) {
+    if (isApiRoute) {
+        const origin = request.headers.get("origin");
+        const allowedOrigins = getCorsOrigins();
+        let responseOrigin: string;
+        if (isValidOrigin(origin, allowedOrigins)) {
+            responseOrigin = origin ?? "";
+        } else if (allowedOrigins.includes("*")) {
+            responseOrigin = "*";
+        } else {
+            responseOrigin = allowedOrigins[0] ?? "";
+        }
+
+        const corsHeaders = new Headers();
+
+        if (responseOrigin) {
+            corsHeaders.set("Access-Control-Allow-Origin", responseOrigin);
+            corsHeaders.set("Vary", "Origin");
+        }
+
+        corsHeaders.set(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+        );
+        corsHeaders.set(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, X-Request-ID",
+        );
+        if (responseOrigin !== "*") {
+            corsHeaders.set("Access-Control-Allow-Credentials", "true");
+        }
+        corsHeaders.set("Access-Control-Max-Age", String(CORS_MAX_AGE));
+
+        if (request.method === "OPTIONS") {
+            return new NextResponse(null, {
+                status: 204,
+                headers: corsHeaders,
+            });
+        }
+
         const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED !== "false";
         let rateLimitHeaders: Headers | undefined;
         if (rateLimitEnabled) {
@@ -83,44 +122,6 @@ export async function proxy(request: NextRequest) {
             rateLimitHeaders = new Headers({
                 "X-RateLimit-Remaining": String(rateLimitResult.remaining),
                 "X-RateLimit-Reset": String(rateLimitResult.resetAt),
-            });
-        }
-
-        const origin = request.headers.get("origin");
-        const allowedOrigins = getCorsOrigins();
-        let responseOrigin: string;
-        if (isValidOrigin(origin, allowedOrigins)) {
-            responseOrigin = origin ?? "";
-        } else if (allowedOrigins.includes("*")) {
-            responseOrigin = "*";
-        } else {
-            responseOrigin = allowedOrigins[0] ?? "";
-        }
-
-        const corsHeaders = new Headers();
-
-        if (responseOrigin) {
-            corsHeaders.set("Access-Control-Allow-Origin", responseOrigin);
-            corsHeaders.set("Vary", "Origin");
-        }
-
-        corsHeaders.set(
-            "Access-Control-Allow-Methods",
-            "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-        );
-        corsHeaders.set(
-            "Access-Control-Allow-Headers",
-            "Content-Type, Authorization, X-Request-ID",
-        );
-        if (responseOrigin !== "*") {
-            corsHeaders.set("Access-Control-Allow-Credentials", "true");
-        }
-        corsHeaders.set("Access-Control-Max-Age", String(CORS_MAX_AGE));
-
-        if (request.method === "OPTIONS") {
-            return new NextResponse(null, {
-                status: 204,
-                headers: corsHeaders,
             });
         }
 

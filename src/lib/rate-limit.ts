@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 interface RateLimitEntry {
     count: number;
     resetAt: number;
@@ -67,19 +69,106 @@ function isAuthEndpoint(pathname: string): boolean {
     return pathname.startsWith("/api/auth") || pathname === "/api/login";
 }
 
-function getClientIp(request: Request): string {
-    const forwardedFor = request.headers.get("x-forwarded-for");
-    if (forwardedFor) {
-        const ips = forwardedFor.split(",").map((ip) => ip.trim());
-        const firstIp = ips[0];
-        if (firstIp) {
-            return firstIp;
+function parseTrustedProxies(): Set<string> {
+    const configured = process.env.TRUSTED_PROXIES?.trim();
+    if (!configured) {
+        return new Set();
+    }
+
+    return new Set(
+        configured
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => isIP(value) > 0),
+    );
+}
+
+const TRUSTED_PROXIES = parseTrustedProxies();
+
+function normalizeIp(value: string): string {
+    const trimmed = value.trim();
+    if (trimmed.toLowerCase().startsWith("::ffff:")) {
+        return trimmed.slice(7);
+    }
+
+    return trimmed;
+}
+
+function isPrivateOrLoopbackIp(value: string): boolean {
+    const ip = normalizeIp(value);
+    if (isIP(ip) === 4) {
+        const octets = ip.split(".").map((part) => Number(part));
+        if (octets.some((part) => Number.isNaN(part))) {
+            return true;
+        }
+
+        const [first, second] = octets;
+        return (
+            first === 10 ||
+            first === 127 ||
+            (first === 169 && second === 254) ||
+            (first === 172 && second >= 16 && second <= 31) ||
+            (first === 192 && second === 168) ||
+            (first === 100 && second >= 64 && second <= 127)
+        );
+    }
+
+    const lower = ip.toLowerCase();
+    return (
+        lower === "::1" ||
+        lower.startsWith("fe80:") ||
+        lower.startsWith("fc") ||
+        lower.startsWith("fd")
+    );
+}
+
+function isPublicIp(value: string): boolean {
+    return isIP(value) > 0 && !isPrivateOrLoopbackIp(value);
+}
+
+function firstValidPublicIp(values: string[]): string | null {
+    for (const value of values) {
+        if (isPublicIp(value)) {
+            return normalizeIp(value);
         }
     }
 
+    return null;
+}
+
+function getClientIp(request: Request): string {
+    const cfConnectingIp = request.headers.get("cf-connecting-ip");
+    if (cfConnectingIp && isPublicIp(cfConnectingIp)) {
+        return normalizeIp(cfConnectingIp);
+    }
+
+    const trueClientIp = request.headers.get("true-client-ip");
+    if (trueClientIp && isPublicIp(trueClientIp)) {
+        return normalizeIp(trueClientIp);
+    }
+
+    const forwardedFor = request.headers.get("x-forwarded-for");
+
     const realIp = request.headers.get("x-real-ip");
-    if (realIp) {
-        return realIp;
+    if (realIp && isPublicIp(realIp)) {
+        return normalizeIp(realIp);
+    }
+
+    if (forwardedFor) {
+        const ips = forwardedFor
+            .split(",")
+            .map((ip) => ip.trim())
+            .filter(Boolean);
+
+        if (ips.length > 0) {
+            const proxyIp = ips.at(-1);
+            if (proxyIp && TRUSTED_PROXIES.has(normalizeIp(proxyIp))) {
+                const clientIp = firstValidPublicIp(ips);
+                if (clientIp) {
+                    return clientIp;
+                }
+            }
+        }
     }
 
     return "unknown";
@@ -110,9 +199,10 @@ export interface RateLimitResult {
 export function checkRateLimit(
     identifier: string,
     config: RateLimitConfig,
+    scope: string = "default",
 ): RateLimitResult {
     const now = Date.now();
-    const key = `rate_limit:${identifier}`;
+    const key = `rate_limit:${scope}:${identifier}`;
 
     let entry = rateLimitStore.get(key);
 
@@ -147,6 +237,7 @@ export function rateLimitRequest(
     const isAuth = isAuthEndpoint(pathname);
     const config = isAuth ? getAuthConfig() : getApiConfig();
     const clientIp = getClientIp(request);
+    const scope = isAuth ? "auth" : "api";
 
-    return checkRateLimit(clientIp, config);
+    return checkRateLimit(clientIp, config, scope);
 }

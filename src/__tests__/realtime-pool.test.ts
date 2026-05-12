@@ -191,7 +191,11 @@ describe("Realtime Pool", () => {
         it("should await unsubscribe functions returned directly by the SDK", async () => {
             getSharedRealtime();
 
-            const unsubscribeSpy = vi.fn(async () => {});
+            let resolveDeferred: () => void = () => {};
+            const unsubscribeDeferred = new Promise<void>((resolve) => {
+                resolveDeferred = resolve;
+            });
+            const unsubscribeSpy = vi.fn(() => unsubscribeDeferred);
             mockRealtimeSubscribe.mockResolvedValueOnce(unsubscribeSpy);
 
             const wrappedSubscribe = (
@@ -205,7 +209,19 @@ describe("Realtime Pool", () => {
                 vi.fn(),
             )) as () => Promise<void>;
 
-            await unsubscribe();
+            const unsubscribePromise = unsubscribe();
+            expect(unsubscribeSpy).toHaveBeenCalledTimes(1);
+
+            let settled = false;
+            void unsubscribePromise.then(() => {
+                settled = true;
+            });
+
+            await Promise.resolve();
+            expect(settled).toBe(false);
+            resolveDeferred();
+            await unsubscribePromise;
+            expect(settled).toBe(true);
 
             expect(unsubscribeSpy).toHaveBeenCalledTimes(1);
         });

@@ -42,6 +42,7 @@ vi.mock("node-appwrite", () => ({
             `equal(${field},${String(value)})`,
         limit: (n: number) => `limit(${n})`,
         orderDesc: (field: string) => `orderDesc(${field})`,
+        cursorAfter: (value: string) => `cursorAfter(${value})`,
     },
 }));
 
@@ -110,6 +111,160 @@ describe("GET /api/servers/public", () => {
         expect(mockGetActualMemberCounts).toHaveBeenCalledWith(mockDatabases, [
             "server1",
         ]);
+    });
+
+    it("should paginate public servers with cursor", async () => {
+        const pageOneServers = [
+            {
+                $id: "server3",
+                name: "Public Server 3",
+                ownerId: "owner3",
+                isPublic: true,
+                memberCount: 30,
+                $createdAt: "2024-01-03T00:00:00.000Z",
+            },
+            {
+                $id: "server2",
+                name: "Public Server 2",
+                ownerId: "owner2",
+                isPublic: true,
+                memberCount: 20,
+                $createdAt: "2024-01-02T00:00:00.000Z",
+            },
+            {
+                $id: "server1",
+                name: "Public Server 1",
+                ownerId: "owner1",
+                isPublic: true,
+                memberCount: 10,
+                $createdAt: "2024-01-01T00:00:00.000Z",
+            },
+        ];
+
+        mockDatabases.listDocuments
+            .mockResolvedValueOnce({ documents: pageOneServers, total: 3 })
+            .mockResolvedValueOnce({
+                documents: [pageOneServers[2]],
+                total: 1,
+            });
+
+        mockGetActualMemberCounts
+            .mockResolvedValueOnce(
+                new Map([
+                    ["server3", 30],
+                    ["server2", 20],
+                ]),
+            )
+            .mockResolvedValueOnce(new Map([["server1", 10]]));
+
+        const firstResponse = await GET(
+            createRequest("http://localhost/api/servers/public?limit=2"),
+        );
+        const firstData = await firstResponse.json();
+
+        expect(firstResponse.status).toBe(200);
+        expect(firstData).toMatchObject({
+            nextCursor: "server2",
+            count: 2,
+        });
+        expect(
+            firstData.servers.map((server: { $id: string }) => server.$id),
+        ).toEqual(["server3", "server2"]);
+
+        const secondResponse = await GET(
+            createRequest(
+                `http://localhost/api/servers/public?limit=2&cursor=${String(firstData.nextCursor)}`,
+            ),
+        );
+        const secondData = await secondResponse.json();
+
+        expect(secondResponse.status).toBe(200);
+        expect(secondData).toMatchObject({
+            nextCursor: null,
+            count: 1,
+        });
+        expect(
+            secondData.servers.map((server: { $id: string }) => server.$id),
+        ).toEqual(["server1"]);
+        expect(mockDatabases.listDocuments).toHaveBeenNthCalledWith(
+            2,
+            "test-db",
+            "servers-collection",
+            expect.arrayContaining([
+                expect.stringContaining("cursorAfter(server2)"),
+            ]),
+        );
+    });
+
+    it("should paginate search results after the cursor boundary", async () => {
+        const searchServers = [
+            {
+                $id: "server4",
+                name: "Alpha Server",
+                ownerId: "owner4",
+                isPublic: true,
+                memberCount: 40,
+                $createdAt: "2024-01-04T00:00:00.000Z",
+            },
+            {
+                $id: "server3",
+                name: "Beta Server 3",
+                ownerId: "owner3",
+                isPublic: true,
+                memberCount: 30,
+                $createdAt: "2024-01-03T00:00:00.000Z",
+            },
+            {
+                $id: "server2",
+                name: "Beta Server 2",
+                ownerId: "owner2",
+                isPublic: true,
+                memberCount: 20,
+                $createdAt: "2024-01-02T00:00:00.000Z",
+            },
+            {
+                $id: "server1",
+                name: "Beta Server 1",
+                ownerId: "owner1",
+                isPublic: true,
+                memberCount: 10,
+                $createdAt: "2024-01-01T00:00:00.000Z",
+            },
+        ];
+
+        mockDatabases.listDocuments.mockResolvedValueOnce({
+            documents: searchServers,
+            total: 4,
+        });
+        mockGetActualMemberCounts.mockResolvedValueOnce(
+            new Map([
+                ["server3", 30],
+                ["server2", 20],
+            ]),
+        );
+
+        const response = await GET(
+            createRequest(
+                "http://localhost/api/servers/public?search=beta&cursor=server4&limit=2",
+            ),
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(data).toMatchObject({
+            nextCursor: "server2",
+            count: 2,
+        });
+        expect(
+            data.servers.map((server: { $id: string }) => server.$id),
+        ).toEqual(["server3", "server2"]);
+        expect(mockDatabases.listDocuments).toHaveBeenCalledWith(
+            "test-db",
+            "servers-collection",
+            expect.arrayContaining([
+                expect.stringContaining("cursorAfter(server4)"),
+            ]),
+        );
     });
 
     it("should exclude legacy servers with missing visibility", async () => {

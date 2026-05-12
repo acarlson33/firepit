@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useCallback, useRef } from "react";
 import Link from "next/link";
 import { Loader2, Users } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -29,17 +30,11 @@ export function InvitePreviewClient({
     isAuthenticated,
 }: InvitePreviewClientProps) {
     const [joining, setJoining] = useState(false);
+    const hasAutoJoinedRef = useRef(false);
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    useEffect(() => {
-        const autoJoin = searchParams.get("auto");
-        if (autoJoin === "true" && isAuthenticated && !joining) {
-            void handleJoin();
-        }
-    }, [searchParams, isAuthenticated]);
-
-    const handleJoin = async () => {
+    const handleJoin = useCallback(async () => {
         if (!isAuthenticated) {
             const returnUrl = `/invite/${code}?auto=true`;
             router.push(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
@@ -68,7 +63,20 @@ export function InvitePreviewClient({
             );
             setJoining(false);
         }
-    };
+    }, [code, isAuthenticated, router, serverName]);
+
+    useEffect(() => {
+        const autoJoin = searchParams.get("auto");
+        if (
+            autoJoin === "true" &&
+            isAuthenticated &&
+            !joining &&
+            !hasAutoJoinedRef.current
+        ) {
+            hasAutoJoinedRef.current = true;
+            void handleJoin();
+        }
+    }, [searchParams, isAuthenticated, joining, handleJoin]);
 
     return (
         <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center px-4 py-8 sm:px-6 lg:px-8">
@@ -153,18 +161,20 @@ export function InvitePreviewClient({
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4 text-sm text-muted-foreground">
-                        <p>
-                            • If you are not signed in, the join button routes
-                            you to login first.
-                        </p>
-                        <p>
-                            • The invite code is preserved for a return join
-                            flow.
-                        </p>
-                        <p>
-                            • Server membership and permissions still resolve
-                            server-side.
-                        </p>
+                        <ul className="list-disc space-y-2 pl-5">
+                            <li>
+                                If you are not signed in, the join button routes
+                                you to login first.
+                            </li>
+                            <li>
+                                The invite code is preserved for a return join
+                                flow.
+                            </li>
+                            <li>
+                                Server membership and permissions still resolve
+                                server-side.
+                            </li>
+                        </ul>
                     </CardContent>
                 </Card>
             </div>

@@ -117,8 +117,8 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        const last = servers.at(-1);
-        const nextCursor = hasMore && last ? last.$id : null;
+        const lastDoc = serverDocuments.at(-1);
+        const nextCursor = hasMore && lastDoc ? String(lastDoc.$id) : null;
 
         const result: PublicServersResponse = {
             servers,

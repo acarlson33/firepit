@@ -71,25 +71,14 @@ function isValidHeaderProfile(data: unknown): data is HeaderProfile {
     }
 
     const record = data as Record<string, unknown>;
-    const hasNoKeys = Object.keys(record).length === 0;
-
-    if (hasNoKeys) {
-        return true;
-    }
-
-    const allowedKeys = new Set([
+    for (const key of [
         "avatarUrl",
         "displayName",
         "avatarFramePreset",
         "avatarFrameUrl",
-    ]);
-
-    for (const [key, value] of Object.entries(record)) {
-        if (!allowedKeys.has(key)) {
-            return false;
-        }
-
-        if (typeof value !== "string" && typeof value !== "undefined") {
+    ] as const) {
+        const value = record[key];
+        if (typeof value !== "undefined" && typeof value !== "string") {
             return false;
         }
     }
@@ -277,15 +266,17 @@ export default function Header({ onSearchClick }: HeaderProps) {
 
     async function handleCustomStatusSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        try {
-            await updateUserStatus(
-                currentStatus,
-                customStatusMessage.trim() || undefined,
-            );
+        const result = await updateUserStatus(
+            currentStatus,
+            customStatusMessage.trim() || undefined,
+        );
+
+        if (result.success) {
             setAccountMenuOpen(false);
-        } catch {
-            toast.error("Failed to update status");
+            return;
         }
+
+        toast.error(result.error || "Failed to update status");
     }
 
     return (
