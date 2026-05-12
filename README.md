@@ -81,6 +81,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 - `bun build` - Production build with Turbopack
 - `bun build:webpack` - Production build with Webpack (fallback)
 
+Dependency updates follow caret ranges in `package.json`. Use `bun run update:force` to refresh `next`, `appwrite`, and `node-appwrite` to the latest compatible releases, `bun run update:pin` to intentionally pin exact versions, and `bun run update:check` to review available updates. The old `update:exact` name was renamed to `update:pin` to make the policy clearer.
+
 ## 📚 Documentation
 
 See the `/docs` folder for detailed guides:
@@ -176,17 +178,20 @@ firepit/
 
 ## 🛠️ Available Scripts
 
-| Command                 | Description                                  |
-| ----------------------- | -------------------------------------------- |
-| `bun dev`               | Start development server (with Turbopack)    |
-| `bun build`             | Build for production                         |
-| `bun start`             | Start production server                      |
-| `bun run test`          | Run all tests with Vitest                    |
-| `bun run test:coverage` | Run tests with coverage report               |
-| `bun lint`              | Check code with ESLint                       |
-| `bun lint:fix`          | Fix auto-fixable linting issues              |
-| `bun validate-env`      | Validate environment configuration           |
-| `bun setup`             | Initialize Appwrite database and collections |
+| Command                 | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `bun dev`               | Start development server (with Turbopack)       |
+| `bun build`             | Build for production                            |
+| `bun start`             | Start production server                         |
+| `bun run test`          | Run all tests with Vitest                       |
+| `bun run test:coverage` | Run tests with coverage report                  |
+| `bun lint`              | Check code with ESLint                          |
+| `bun lint:fix`          | Fix auto-fixable linting issues                 |
+| `bun validate-env`      | Validate environment configuration              |
+| `bun setup`             | Initialize Appwrite database and collections    |
+| `bun run update:force`  | Refresh core package versions with caret ranges |
+| `bun run update:pin`    | Pin core package versions exactly               |
+| `bun run update:check`  | Check for available updates                     |
 
 ## 🔧 Configuration
 
@@ -198,10 +203,10 @@ The application requires several environment variables. Copy `.env.local.example
 - `APPWRITE_PROJECT_ID` - Your Appwrite project ID
 - `APPWRITE_API_KEY` - Server-side API key with full permissions
 - `SYSTEM_SENDER_USER_ID` - Optional Appwrite user ID of the dedicated system announcement sender.
-    Used for system announcement threads in DMs.
-    Set this in production to the user's `$id` from Appwrite Console -> Auth -> Users.
-    When unset, announcement threads are read-only.
-    See DEPLOYMENT.md for details.
+  Used for system announcement threads in DMs.
+  Set this in production to the user's `$id` from Appwrite Console -> Auth -> Users.
+  When unset, announcement threads are read-only.
+  See DEPLOYMENT.md for details.
 
 For a complete list and detailed explanations, see [DEPLOYMENT.md](./DEPLOYMENT.md#2-environment-configuration).
 

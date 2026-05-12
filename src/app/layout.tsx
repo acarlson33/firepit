@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "../index.css";
 import Providers from "@/components/providers";
 import { AppLayout } from "@/components/app-layout";
+import { ResourceHints } from "@/components/resource-hints";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 
 const geistSans = Geist({
@@ -62,6 +63,7 @@ export default function RootLayout({
             <body
                 className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden antialiased bg-background text-foreground`}
             >
+                <ResourceHints />
                 <ServiceWorkerRegistration />
                 <Providers>
                     <div className="relative min-h-screen overflow-hidden bg-background">

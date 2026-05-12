@@ -30,7 +30,9 @@ type RealtimeSubscription = {
 
 // Subscription shape that may support an `update` method for changing query filters
 type IStatusSubscription = RealtimeSubscription & {
-    update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+    update?: (args: {
+        queries: ReturnType<typeof Query.equal>[];
+    }) => Promise<void>;
 };
 
 /**
@@ -123,6 +125,16 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
 
     // Fetch statuses when normalized user IDs change
     useEffect(() => {
+        if (normalizedUserIds.length === 0) {
+            if (previousUserIdsRef.current.length > 0) {
+                setStatuses(new Map());
+                setLoading(false);
+                previousUserIdsRef.current = [];
+            }
+
+            return;
+        }
+
         // Only fetch if the user IDs actually changed
         if (
             previousUserIdsRef.current.length !== normalizedUserIds.length ||
@@ -173,9 +185,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                             if (!payload) {
                                 return;
                             }
-                            const userId = payload.userId as
-                                | string
-                                | undefined;
+                            const userId = payload.userId as string | undefined;
 
                             // Only update if this status is for one of our tracked users
                             if (userId && trackedUserIds.has(userId)) {
@@ -202,12 +212,17 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                     if (typeof existing?.update === "function") {
                         try {
                             await existing.update({
-                                queries: [Query.equal("userId", normalizedUserIds)],
+                                queries: [
+                                    Query.equal("userId", normalizedUserIds),
+                                ],
                             });
                             return;
                         } catch {
                             // Close the old subscription before recreating to avoid leaks
-                            if (existing && typeof existing.close === "function") {
+                            if (
+                                existing &&
+                                typeof existing.close === "function"
+                            ) {
                                 try {
                                     await existing.close();
                                 } catch {

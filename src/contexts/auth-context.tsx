@@ -20,8 +20,16 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import { getSharedRealtime, isTransientRealtimeSubscribeError, resetSharedClient, trackSubscription } from "@/lib/realtime-pool";
-import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    resetSharedClient,
+    trackSubscription,
+} from "@/lib/realtime-pool";
+import {
+    closeSubscriptionSafely,
+    type RealtimeSubscription,
+} from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -253,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+        const subscribedUserId = userData.userId;
 
         // Defer subscription setup to after initial render (5 second delay)
         // This prevents real-time connections from blocking the critical render path
@@ -281,14 +290,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     // If we already have a subscription, try to update it for the new user
                     if (subscriptionRef.current) {
-                            const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                        const existing = subscriptionRef.current as {
+                            update?: (args: {
+                                queries: ReturnType<typeof Query.equal>[];
+                            }) => Promise<void>;
+                        };
                         if (typeof existing.update === "function") {
                             try {
                                 await existing.update({
-                                    queries: [Query.equal("userId", activeUserId)],
+                                    queries: [
+                                        Query.equal("userId", activeUserId),
+                                    ],
                                 });
                                 return;
-                                } catch {
+                            } catch {
                                 // fallthrough to recreate
                             }
                         }
@@ -334,7 +349,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     if (cancelled) {
                         untrack();
                         if (subscriptionRef.current) {
-                            closeSubscriptionSafely(subscriptionRef.current);
+                            await closeSubscriptionSafely(
+                                subscriptionRef.current,
+                            );
                         }
                         subscriptionRef.current = null;
                         return;
@@ -342,9 +359,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     cleanup = () => {
                         untrack();
-                        if (subscriptionRef.current) {
-                            closeSubscriptionSafely(subscriptionRef.current);
+                        if (realtimeUserIdRef.current !== subscribedUserId) {
+                            return;
                         }
+                        void closeSubscriptionSafely(
+                            subscriptionRef.current,
+                        ).catch((error) => {
+                            logger.warn("Status subscription cleanup failed", {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error),
+                            });
+                        });
                         subscriptionRef.current = null;
                     };
                 } catch (err) {
@@ -377,7 +404,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => {
             cancelled = true;
             clearTimeout(timeoutId);
-            cleanup?.();
+            if (cleanup && realtimeUserIdRef.current === subscribedUserId) {
+                cleanup();
+            }
         };
     }, [userData?.userId, waitForRealtimeReset]);
 

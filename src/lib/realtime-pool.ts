@@ -14,6 +14,27 @@ let warnedAboutFallbackTeardown = false;
 let inFlightDispose: Promise<void> | null = null;
 let subscribeQueueTail: Promise<void> = Promise.resolve();
 let sharedRealtimeGeneration = 0;
+let idleTeardownListenersInstalled = false;
+
+function installIdleTeardownListeners() {
+    if (idleTeardownListenersInstalled || typeof window === "undefined") {
+        return;
+    }
+
+    idleTeardownListenersInstalled = true;
+
+    const teardown = () => {
+        void disposeSharedRealtime();
+    };
+
+    window.addEventListener("blur", teardown);
+    window.addEventListener("pagehide", teardown);
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+            teardown();
+        }
+    });
+}
 
 function queueRealtimeOperation<T>(operation: () => Promise<T>): Promise<T> {
     const nextOperation = subscribeQueueTail
@@ -45,9 +66,11 @@ function queueRealtimeSubscribe<T>(
     });
 }
 
-function toUnsubscribeFn(subscription: unknown): () => void {
+function toUnsubscribeFn(subscription: unknown): () => Promise<void> {
     if (typeof subscription === "function") {
-        return subscription as () => void;
+        return async () => {
+            await Promise.resolve((subscription as () => unknown)());
+        };
     }
 
     if (
@@ -66,8 +89,10 @@ function toUnsubscribeFn(subscription: unknown): () => void {
                 : (subscription as { close: () => unknown }).close.bind(
                       subscription,
                   );
-        return () => {
-            void Promise.resolve(unsubscribe()).catch((error) => {
+        return async () => {
+            try {
+                await unsubscribe();
+            } catch (error) {
                 logger.warn(
                     "Realtime subscription unsubscribe failed in wrapper",
                     {
@@ -77,7 +102,9 @@ function toUnsubscribeFn(subscription: unknown): () => void {
                                 : String(error),
                     },
                 );
-            });
+
+                throw error;
+            }
         };
     }
 
@@ -526,6 +553,8 @@ export function getSharedRealtime(): Realtime {
         realtime.__firepitGeneration = sharedRealtimeGeneration;
         sharedRealtime = patchRealtimeSubscribe(realtime);
     }
+
+    installIdleTeardownListeners();
 
     return sharedRealtime;
 }

@@ -129,12 +129,13 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(result);
     } catch (error) {
+        logger.error("Failed to fetch public servers", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+
         return NextResponse.json(
             {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch servers",
+                error: "Failed to fetch servers",
             },
             { status: 500 },
         );

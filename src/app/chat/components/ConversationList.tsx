@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { Route } from "next";
-import { useRouter } from "next/navigation";
 import {
     BellOff,
     Check,
@@ -21,10 +19,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/status-indicator";
 import { useFriends } from "@/hooks/useFriends";
 import { getOrCreateConversation } from "@/lib/appwrite-dms-client";
-import {
-    buildChatMessageHref,
-    type ChatMessageDestination,
-} from "@/lib/message-navigation";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -67,7 +61,6 @@ export function ConversationList({
     inboxContractVersion = "thread_v1",
     conversationUnreadStateById = {},
 }: ConversationListProps) {
-    const router = useRouter();
     const {
         friends,
         incoming,
@@ -168,6 +161,8 @@ export function ConversationList({
             ? conversation.readOnlyReason || "Read only"
             : conversation.lastMessage?.text || subtitle;
         const unreadState = conversationUnreadStateById[conversation.$id];
+        const unreadCount =
+            unreadState?.count ?? getConversationUnreadCount(conversation);
         const secondaryLineClassName = conversation.readOnly
             ? "truncate text-amber-700 dark:text-amber-300 text-xs"
             : "truncate text-muted-foreground text-xs";
@@ -219,10 +214,7 @@ export function ConversationList({
                                     {displayName}
                                 </p>
                                 {renderUnreadBadge(
-                                    unreadState?.count ??
-                                        getConversationUnreadCount(
-                                            conversation,
-                                        ),
+                                    unreadCount,
                                     unreadState?.muted ?? false,
                                 )}
                             </div>

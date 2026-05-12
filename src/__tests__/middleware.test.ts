@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 // Setup environment before any imports
 const env = process.env as Record<string, string>;
@@ -24,6 +25,7 @@ function createMockRequest(
     return {
         nextUrl: url,
         url: url.toString(),
+        headers: new Headers(),
         cookies: {
             get: (name: string) => mockCookies[name] || null,
         },
@@ -211,6 +213,24 @@ describe("Middleware", () => {
             const response = await middleware(request);
 
             expect(response.headers.get("location")).toBeNull();
+        });
+    });
+
+    describe("API request forwarding", () => {
+        it("should forward the request ID to downstream handlers", async () => {
+            setMockSession(false);
+            const nextSpy = vi.spyOn(NextResponse, "next");
+            const request = createMockRequest("/api/test");
+
+            const response = await middleware(request);
+            const forwardedHeaders =
+                nextSpy.mock.calls[0]?.[0]?.request?.headers;
+
+            expect(forwardedHeaders?.get("X-Request-ID")).toBe(
+                response.headers.get("x-request-id"),
+            );
+
+            nextSpy.mockRestore();
         });
     });
 

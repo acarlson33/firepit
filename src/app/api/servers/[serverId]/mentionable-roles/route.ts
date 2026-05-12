@@ -56,6 +56,7 @@ async function getAllDocumentsPaginated<T>(
     env: EnvType,
     collectionId: string,
     serverId: string,
+    queries: string[] = [],
     limit = 100,
 ): Promise<Array<T>> {
     const results: Array<T> = [];
@@ -71,6 +72,7 @@ async function getAllDocumentsPaginated<T>(
             collectionId,
             [
                 Query.equal("serverId", serverId),
+                ...queries,
                 Query.limit(limit),
                 Query.offset(offset),
             ],
@@ -130,25 +132,32 @@ export async function GET(
             );
         }
 
-        // Fetch all roles and assignments using a helper that handles pagination.
-        const allRoles = await getAllDocumentsPaginated<RoleDocument>(
-            databases,
-            env,
-            env.collections.roles,
-            serverId,
-        );
-
-        const allAssignments =
-            await getAllDocumentsPaginated<RoleAssignmentDocument>(
+        // Fetch only mentionable roles, then count assignments for those role IDs.
+        const mentionableRoleDocs =
+            await getAllDocumentsPaginated<RoleDocument>(
                 databases,
                 env,
-                env.collections.roleAssignments,
+                env.collections.roles,
                 serverId,
+                [Query.equal("mentionable", true)],
             );
+
+        const mentionableRoleIds = mentionableRoleDocs.map((doc) => doc.$id);
+
+        const mentionableAssignments =
+            mentionableRoleIds.length > 0
+                ? await getAllDocumentsPaginated<RoleAssignmentDocument>(
+                      databases,
+                      env,
+                      env.collections.roleAssignments,
+                      serverId,
+                      [Query.equal("roleId", mentionableRoleIds)],
+                  )
+                : [];
 
         // Build a map of roleId -> member count for efficient lookup
         const memberCountByRoleId = new Map<string, number>();
-        for (const assignment of allAssignments) {
+        for (const assignment of mentionableAssignments) {
             const roleId = assignment.roleId;
             memberCountByRoleId.set(
                 roleId,
@@ -157,18 +166,13 @@ export async function GET(
         }
 
         // Filter to mentionable roles and build response
-        const mentionableRoles = allRoles
-            .filter(
-                (doc): doc is RoleDocument & { mentionable: true } =>
-                    doc.mentionable === true,
-            )
-            .map((doc) => ({
-                id: doc.$id,
-                name: doc.name,
-                color: doc.color,
-                mentionable: doc.mentionable,
-                memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
-            }));
+        const mentionableRoles = mentionableRoleDocs.map((doc) => ({
+            id: doc.$id,
+            name: doc.name,
+            color: doc.color ?? "",
+            mentionable: doc.mentionable,
+            memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
+        }));
 
         return NextResponse.json({ roles: mentionableRoles });
     } catch (error) {

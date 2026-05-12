@@ -128,9 +128,12 @@ export async function proxy(request: NextRequest) {
             request.headers.get("X-Request-ID") || crypto.randomUUID();
         corsHeaders.set("X-Request-ID", requestId);
 
+        const forwardedHeaders = new Headers(request.headers);
+        forwardedHeaders.set("X-Request-ID", requestId);
+
         const response = NextResponse.next({
             request: {
-                headers: new Headers(request.headers),
+                headers: forwardedHeaders,
             },
         });
 

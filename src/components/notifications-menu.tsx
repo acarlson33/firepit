@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useInbox } from "@/app/chat/hooks/useInbox";
@@ -16,7 +15,6 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { buildChatMessageHref } from "@/lib/message-navigation";
-import type { ChatMessageDestination } from "@/lib/message-navigation";
 import { Bell, Inbox } from "lucide-react";
 
 function formatRelativeTime(value: string) {
@@ -40,7 +38,10 @@ type NotificationsMenuProps = {
 export function NotificationsMenu({ userId }: NotificationsMenuProps) {
     const router = useRouter();
     const inboxApi = useInbox(userId);
-    const recentItems = useMemo(() => inboxApi.items.slice(0, 5), [inboxApi.items]);
+    const recentItems = useMemo(
+        () => inboxApi.items.slice(0, 5),
+        [inboxApi.items],
+    );
     const unreadCount = inboxApi.unreadCount;
 
     return (
@@ -95,23 +96,25 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                 className="cursor-pointer rounded-2xl p-0"
                                 key={item.id}
                                 onSelect={() => {
-                                    const destination = item.contextKind === "channel"
-                                        ? {
-                                            kind: "channel" as const,
-                                            channelId: item.contextId,
-                                            messageId: item.messageId,
-                                            serverId: item.serverId,
-                                        }
-                                        : {
-                                            kind: "dm" as const,
-                                            conversationId: item.contextId,
-                                            messageId: item.messageId,
-                                        };
+                                    const destination =
+                                        item.contextKind === "channel"
+                                            ? {
+                                                  kind: "channel" as const,
+                                                  channelId: item.contextId,
+                                                  messageId: item.messageId,
+                                                  serverId: item.serverId,
+                                              }
+                                            : {
+                                                  kind: "dm" as const,
+                                                  conversationId:
+                                                      item.contextId,
+                                                  messageId: item.messageId,
+                                              };
                                     const href = buildChatMessageHref(
                                         destination,
                                         { entry: "unread" },
                                     );
-                                    router.push(href as Route);
+                                    router.push(href);
                                 }}
                             >
                                 <div className="flex w-full items-start gap-3 rounded-2xl px-3 py-2 text-left">
@@ -127,7 +130,9 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                                 {item.authorLabel}
                                             </p>
                                             <span className="text-[11px] text-muted-foreground">
-                                                {formatRelativeTime(item.latestActivityAt)}
+                                                {formatRelativeTime(
+                                                    item.latestActivityAt,
+                                                )}
                                             </span>
                                         </div>
                                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -136,13 +141,17 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                                                     ? "Mention"
                                                     : "Thread"}
                                             </span>
-                                                <span>
-                                                    {item.contextKind === "channel" ? "Channel" : "Direct message"}
-                                                </span>
-                                            {item.muted ? <span>Muted</span> : null}
+                                            <span>
+                                                {item.contextKind === "channel"
+                                                    ? "Channel"
+                                                    : "Direct message"}
+                                            </span>
+                                            {item.muted ? (
+                                                <span>Muted</span>
+                                            ) : null}
                                         </div>
                                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                                {item.previewText}
+                                            {item.previewText}
                                         </p>
                                     </div>
                                 </div>
@@ -155,7 +164,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
 
                 <div className="grid gap-2 px-3 py-2">
                     <Button asChild className="w-full rounded-2xl" size="sm">
-                        <Link href={"/notifications" as Route}>
+                        <Link href="/notifications">
                             Open notification center
                         </Link>
                     </Button>
@@ -165,7 +174,7 @@ export function NotificationsMenu({ userId }: NotificationsMenuProps) {
                         size="sm"
                         variant="outline"
                     >
-                        <Link href={"/settings/notifications" as Route}>
+                        <Link href="/settings/notifications">
                             Manage notification controls
                         </Link>
                     </Button>

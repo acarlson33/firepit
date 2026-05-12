@@ -1,7 +1,13 @@
 /// <reference lib="dom" />
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+    within,
+} from "@testing-library/react";
 
 import { ConversationList } from "@/app/chat/components/ConversationList";
 import type { Conversation } from "@/lib/types";
@@ -25,7 +31,6 @@ vi.mock("@/lib/appwrite-dms-client", () => ({
     getOrCreateConversation: (...args: unknown[]) =>
         mockGetOrCreateConversation(...args),
 }));
-
 
 vi.mock("next/navigation", () => ({
     useRouter: () => ({
@@ -216,7 +221,7 @@ describe("ConversationList", () => {
             name: /legacy friend/i,
         });
 
-        expect(conversationButton).not.toHaveTextContent("5");
+        expect(within(conversationButton).queryByText("5")).toBeNull();
     });
 
     it("uses conversation unread state over legacy unreadThreadCount in message_v2", async () => {
@@ -246,12 +251,12 @@ describe("ConversationList", () => {
             />,
         );
 
-        expect(screen.getByRole("button", { name: /mention author/i })).toHaveTextContent(
-            "3",
-        );
-        expect(screen.getByRole("button", { name: /mention author/i })).not.toHaveTextContent(
-            "99",
-        );
+        expect(
+            screen.getByRole("button", { name: /mention author/i }),
+        ).toHaveTextContent("3");
+        expect(
+            screen.getByRole("button", { name: /mention author/i }),
+        ).not.toHaveTextContent("99");
     });
 
     it("selects a conversation when a row is clicked", async () => {

@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { AtSign } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { MentionAutocomplete } from "@/components/mention-autocomplete";
+import { logger } from "@/lib/client-logger";
 import {
     getMentionAtCursor,
     replaceMentionAtCursor,
@@ -12,14 +13,17 @@ import type { UserProfileData } from "@/lib/types";
 function isRole(
     selectable: UserProfileData | MentionableRole | null,
 ): selectable is MentionableRole {
-    return selectable !== null && (selectable as MentionableRole).type === "role";
+    return (
+        selectable !== null && (selectable as MentionableRole).type === "role"
+    );
 }
 
 function isUser(
     selectable: UserProfileData | MentionableRole | null,
 ): selectable is UserProfileData {
     return (
-        selectable !== null && typeof (selectable as UserProfileData).userId === "string"
+        selectable !== null &&
+        typeof (selectable as UserProfileData).userId === "string"
     );
 }
 
@@ -71,7 +75,9 @@ export function ChatInput({
         inputHeight: 0,
     });
     const [availableUsers, setAvailableUsers] = useState<UserProfileData[]>([]);
-    const [mentionableRoles, setMentionableRoles] = useState<MentionableRole[]>([]);
+    const [mentionableRoles, setMentionableRoles] = useState<MentionableRole[]>(
+        [],
+    );
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const mentionedNamesRef = useRef<string[]>([]);
@@ -102,21 +108,29 @@ export function ChatInput({
                     setAvailableUsers([]);
                 }
 
-                // Fetch mentionable roles if we have a serverId
                 const queryLower = query.toLowerCase();
-                if (serverId && (query === "" || "all".startsWith(queryLower))) {
+                if (serverId) {
                     try {
                         const rolesResponse = await fetch(
                             `/api/servers/${serverId}/mentionable-roles`,
                         );
                         if (rolesResponse.ok) {
                             const rolesData = await rolesResponse.json();
-                            // Add the type discriminator to each role
-                            const typedRoles = (rolesData.roles || []).map((role: Omit<MentionableRole, 'type'>) => ({
-                                ...role,
-                                type: "role" as const,
-                            }));
+                            const typedRoles = (rolesData.roles || [])
+                                .map((role: Omit<MentionableRole, "type">) => ({
+                                    ...role,
+                                    type: "role" as const,
+                                }))
+                                .filter(
+                                    (role: MentionableRole) =>
+                                        role.name
+                                            .toLowerCase()
+                                            .includes(queryLower) ||
+                                        role.id.includes(queryLower),
+                                );
                             setMentionableRoles(typedRoles);
+                        } else {
+                            setMentionableRoles([]);
                         }
                     } catch {
                         setMentionableRoles([]);
@@ -205,7 +219,7 @@ export function ChatInput({
     const handleMentionSelect = useCallback(
         (selectable: UserProfileData | MentionableRole | null) => {
             const cursorPosition = inputRef.current?.selectionStart || 0;
-            
+
             // Determine the mention text based on the selectable's type
             let mentionText: string;
             if (selectable === null) {
@@ -219,14 +233,16 @@ export function ChatInput({
                 mentionText = selectable.displayName || selectable.userId;
             } else {
                 // Defensive: unexpected selectable shape — warn and fall back
-                // biome-ignore lint: allowed dev-time logging for unexpected runtime shape
-                console.warn("Unexpected selectable passed to handleMentionSelect", {
-                    selectable,
-                    type: typeof selectable,
-                });
+                logger.warn(
+                    "Unexpected selectable passed to handleMentionSelect",
+                    {
+                        selectable,
+                        type: typeof selectable,
+                    },
+                );
                 mentionText = "all";
             }
-            
+
             const result = replaceMentionAtCursor(
                 value,
                 cursorPosition,

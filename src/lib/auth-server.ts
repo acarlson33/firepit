@@ -25,6 +25,38 @@ export type SessionUser = {
     $createdAt?: string;
 };
 
+function validateAndTransformUser(
+    user: unknown,
+    systemSenderUserId: string | null,
+): SessionUser | null {
+    if (!user || typeof user !== "object") {
+        return null;
+    }
+
+    const candidate = user as Record<string, unknown>;
+    if (
+        typeof candidate.$id !== "string" ||
+        typeof candidate.name !== "string" ||
+        typeof candidate.email !== "string"
+    ) {
+        return null;
+    }
+
+    if (systemSenderUserId && candidate.$id === systemSenderUserId) {
+        return null;
+    }
+
+    return {
+        $id: candidate.$id,
+        name: candidate.name,
+        email: candidate.email,
+        $createdAt:
+            typeof candidate.$createdAt === "string"
+                ? candidate.$createdAt
+                : undefined,
+    };
+}
+
 async function getSessionFromHeader(
     endpoint: string,
     project: string,
@@ -51,30 +83,7 @@ async function getSessionFromHeader(
         const account = new Account(client);
         const user = await account.get().catch(() => null);
 
-        if (
-            !user ||
-            typeof user !== "object" ||
-            !("$id" in user) ||
-            typeof user.$id !== "string" ||
-            typeof user.name !== "string" ||
-            typeof user.email !== "string"
-        ) {
-            return null;
-        }
-
-        if (systemSenderUserId && user.$id === systemSenderUserId) {
-            return null;
-        }
-
-        return {
-            $id: user.$id,
-            name: user.name,
-            email: user.email,
-            $createdAt:
-                "$createdAt" in user && typeof user.$createdAt === "string"
-                    ? user.$createdAt
-                    : undefined,
-        };
+        return validateAndTransformUser(user, systemSenderUserId);
     } catch {
         return null;
     }
@@ -101,30 +110,7 @@ async function getSessionFromCookie(
         const account = new Account(client);
         const user = await account.get().catch(() => null);
 
-        if (
-            !user ||
-            typeof user !== "object" ||
-            !("$id" in user) ||
-            typeof user.$id !== "string" ||
-            typeof user.name !== "string" ||
-            typeof user.email !== "string"
-        ) {
-            return null;
-        }
-
-        if (systemSenderUserId && user.$id === systemSenderUserId) {
-            return null;
-        }
-
-        return {
-            $id: user.$id,
-            name: user.name,
-            email: user.email,
-            $createdAt:
-                "$createdAt" in user && typeof user.$createdAt === "string"
-                    ? user.$createdAt
-                    : undefined,
-        };
+        return validateAndTransformUser(user, systemSenderUserId);
     } catch {
         return null;
     }
@@ -140,10 +126,15 @@ export async function getServerSession(): Promise<SessionUser | null> {
     const env = getEnvConfig();
     const endpoint = env.endpoint;
     const project = env.project;
-    const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
+    const systemSenderUserId =
+        process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
 
     // Try Authorization header first (supports mobile Bearer tokens)
-    const headerSession = await getSessionFromHeader(endpoint, project, systemSenderUserId);
+    const headerSession = await getSessionFromHeader(
+        endpoint,
+        project,
+        systemSenderUserId,
+    );
     if (headerSession) {
         return headerSession;
     }

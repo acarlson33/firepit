@@ -22,7 +22,7 @@
         "cleanup-orphan-memberships": "bun run scripts/cleanup-orphan-memberships.ts",
         "knip": "knip",
         "update:force": "bun i next@latest appwrite@latest node-appwrite@latest",
-        "update:exact": "bun i next@latest appwrite@latest node-appwrite@latest --save-exact",
+        "update:pin": "bun i next@latest appwrite@latest node-appwrite@latest --save-exact",
         "update:check": "bun outdated next appwrite node-appwrite"
     },
     "dependencies": {
