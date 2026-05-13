@@ -50,13 +50,11 @@ export async function proxy(request: NextRequest) {
     if (isApiRoute) {
         const origin = request.headers.get("origin");
         const allowedOrigins = getCorsOrigins();
-        let responseOrigin: string;
+        let responseOrigin: string | null = null;
         if (isValidOrigin(origin, allowedOrigins)) {
-            responseOrigin = origin ?? "";
+            responseOrigin = origin;
         } else if (allowedOrigins.includes("*")) {
             responseOrigin = "*";
-        } else {
-            responseOrigin = allowedOrigins[0] ?? "";
         }
 
         const corsHeaders = new Headers();
@@ -74,7 +72,7 @@ export async function proxy(request: NextRequest) {
             "Access-Control-Allow-Headers",
             "Content-Type, Authorization, X-Request-ID",
         );
-        if (responseOrigin !== "*") {
+        if (responseOrigin && responseOrigin !== "*") {
             corsHeaders.set("Access-Control-Allow-Credentials", "true");
         }
         corsHeaders.set("Access-Control-Max-Age", String(CORS_MAX_AGE));
@@ -92,6 +90,22 @@ export async function proxy(request: NextRequest) {
             const rateLimitResult = rateLimitRequest(request, pathname);
 
             if (!rateLimitResult.allowed) {
+                const headers = new Headers(corsHeaders);
+                headers.set(
+                    "Retry-After",
+                    String(
+                        rateLimitResult.retryAfter ??
+                            Math.ceil(
+                                (rateLimitResult.resetAt - Date.now()) / 1000,
+                            ),
+                    ),
+                );
+                headers.set("X-RateLimit-Remaining", "0");
+                headers.set(
+                    "X-RateLimit-Reset",
+                    String(rateLimitResult.resetAt),
+                );
+
                 const response = NextResponse.json(
                     {
                         error: "RATE_LIMIT_EXCEEDED",
@@ -100,19 +114,7 @@ export async function proxy(request: NextRequest) {
                     },
                     {
                         status: 429,
-                        headers: {
-                            "Retry-After": String(
-                                rateLimitResult.retryAfter ??
-                                    Math.ceil(
-                                        (rateLimitResult.resetAt - Date.now()) /
-                                            1000,
-                                    ),
-                            ),
-                            "X-RateLimit-Remaining": "0",
-                            "X-RateLimit-Reset": String(
-                                rateLimitResult.resetAt,
-                            ),
-                        },
+                        headers,
                     },
                 );
 

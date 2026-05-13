@@ -59,4 +59,28 @@ describe("rate-limit env parsing", () => {
 
         expect(rateLimitRequest(request, "/api/messages").allowed).toBe(false);
     });
+
+    it("uses the bearer token when no public client ip is available", async () => {
+        process.env.RATE_LIMIT_API_MAX = "1";
+
+        const { rateLimitRequest } = await importFreshRateLimitModule();
+        const requestA = new Request("http://localhost/api/messages", {
+            headers: {
+                Authorization: "Bearer token-a",
+                "User-Agent": "test-agent",
+                "Accept-Language": "en-US",
+            },
+        });
+        const requestB = new Request("http://localhost/api/messages", {
+            headers: {
+                Authorization: "Bearer token-b",
+                "User-Agent": "test-agent",
+                "Accept-Language": "en-US",
+            },
+        });
+
+        expect(rateLimitRequest(requestA, "/api/messages").allowed).toBe(true);
+        expect(rateLimitRequest(requestA, "/api/messages").allowed).toBe(false);
+        expect(rateLimitRequest(requestB, "/api/messages").allowed).toBe(true);
+    });
 });

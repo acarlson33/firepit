@@ -20,7 +20,7 @@ interface RoleDocument {
 interface RoleAssignmentDocument {
     $id: string;
     serverId: string;
-    roleId: string;
+    roleIds: string[];
     userId: string;
 }
 
@@ -132,17 +132,22 @@ export async function GET(
             );
         }
 
-        // Fetch only mentionable roles, then count assignments for those role IDs.
+        // Fetch roles and assignments for the server, then filter in-memory so
+        // we do not depend on unsupported Appwrite filters or missing indexes.
         const mentionableRoleDocs =
             await getAllDocumentsPaginated<RoleDocument>(
                 databases,
                 env,
                 env.collections.roles,
                 serverId,
-                [Query.equal("mentionable", true)],
             );
 
-        const mentionableRoleIds = mentionableRoleDocs.map((doc) => doc.$id);
+        const mentionableRoles = mentionableRoleDocs.filter((doc) =>
+            Boolean(doc.mentionable),
+        );
+
+        const mentionableRoleIds = mentionableRoles.map((doc) => doc.$id);
+        const mentionableRoleIdSet = new Set(mentionableRoleIds);
 
         const mentionableAssignments =
             mentionableRoleIds.length > 0
@@ -151,22 +156,26 @@ export async function GET(
                       env,
                       env.collections.roleAssignments,
                       serverId,
-                      [Query.equal("roleId", mentionableRoleIds)],
                   )
                 : [];
 
         // Build a map of roleId -> member count for efficient lookup
         const memberCountByRoleId = new Map<string, number>();
         for (const assignment of mentionableAssignments) {
-            const roleId = assignment.roleId;
-            memberCountByRoleId.set(
-                roleId,
-                (memberCountByRoleId.get(roleId) ?? 0) + 1,
-            );
+            for (const roleId of assignment.roleIds || []) {
+                if (!mentionableRoleIdSet.has(roleId)) {
+                    continue;
+                }
+
+                memberCountByRoleId.set(
+                    roleId,
+                    (memberCountByRoleId.get(roleId) ?? 0) + 1,
+                );
+            }
         }
 
         // Filter to mentionable roles and build response
-        const mentionableRoles = mentionableRoleDocs.map((doc) => ({
+        const responseRoles = mentionableRoles.map((doc) => ({
             id: doc.$id,
             name: doc.name,
             color: doc.color ?? "",
@@ -174,7 +183,7 @@ export async function GET(
             memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
         }));
 
-        return NextResponse.json({ roles: mentionableRoles });
+        return NextResponse.json({ roles: responseRoles });
     } catch (error) {
         logger.error("Failed to fetch mentionable roles", { error, serverId });
         return NextResponse.json(

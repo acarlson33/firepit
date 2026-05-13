@@ -84,10 +84,13 @@ export function ChatInput({
     const mentionableRolesCacheRef = useRef<Record<string, MentionableRole[]>>(
         {},
     );
+    const mentionQueryRequestRef = useRef<AbortController | null>(null);
 
     // Fetch users and mentionable roles when mention query changes
     useEffect(() => {
         if (!showMentionAutocomplete) {
+            mentionQueryRequestRef.current?.abort();
+            mentionQueryRequestRef.current = null;
             setAvailableUsers([]);
             setMentionableRoles([]);
             setIsLoadingUsers(false);
@@ -99,16 +102,29 @@ export function ChatInput({
 
         // If query is empty, fetch all users
         const fetchUsersAndRoles = async () => {
+            const controller = new AbortController();
+            mentionQueryRequestRef.current?.abort();
+            mentionQueryRequestRef.current = controller;
+
             try {
                 const query = mentionQuery || "";
                 const response = await fetch(
                     `/api/users/search?q=${encodeURIComponent(query)}&limit=10`,
+                    { signal: controller.signal },
                 );
+                if (controller.signal.aborted) {
+                    return;
+                }
+
                 if (response.ok) {
                     const data = await response.json();
-                    setAvailableUsers(data.users || []);
+                    if (!controller.signal.aborted) {
+                        setAvailableUsers(data.users || []);
+                    }
                 } else {
-                    setAvailableUsers([]);
+                    if (!controller.signal.aborted) {
+                        setAvailableUsers([]);
+                    }
                 }
 
                 const queryLower = query.toLowerCase();
@@ -120,7 +136,12 @@ export function ChatInput({
                         if (!cachedRoles) {
                             const rolesResponse = await fetch(
                                 `/api/servers/${serverId}/mentionable-roles`,
+                                { signal: controller.signal },
                             );
+                            if (controller.signal.aborted) {
+                                return;
+                            }
+
                             if (rolesResponse.ok) {
                                 const rolesData = await rolesResponse.json();
                                 cachedRoles = (rolesData.roles || []).map(
@@ -141,17 +162,41 @@ export function ChatInput({
                                 role.name.toLowerCase().includes(queryLower) ||
                                 role.id.toLowerCase().includes(queryLower),
                         );
-                        setMentionableRoles(typedRoles);
-                    } catch {
-                        setMentionableRoles([]);
+                        if (!controller.signal.aborted) {
+                            setMentionableRoles(typedRoles);
+                        }
+                    } catch (error) {
+                        if (!controller.signal.aborted) {
+                            setMentionableRoles([]);
+                        }
+
+                        if (
+                            error instanceof DOMException &&
+                            error.name === "AbortError"
+                        ) {
+                            return;
+                        }
                     }
                 } else {
-                    setMentionableRoles([]);
+                    if (!controller.signal.aborted) {
+                        setMentionableRoles([]);
+                    }
                 }
-            } catch {
-                setAvailableUsers([]);
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    setAvailableUsers([]);
+                }
+
+                if (
+                    error instanceof DOMException &&
+                    error.name === "AbortError"
+                ) {
+                    return;
+                }
             } finally {
-                setIsLoadingUsers(false);
+                if (!controller.signal.aborted) {
+                    setIsLoadingUsers(false);
+                }
             }
         };
 
@@ -159,7 +204,10 @@ export function ChatInput({
             void fetchUsersAndRoles();
         }, 150);
 
-        return () => clearTimeout(debounce);
+        return () => {
+            clearTimeout(debounce);
+            mentionQueryRequestRef.current?.abort();
+        };
     }, [mentionQuery, showMentionAutocomplete, serverId]);
 
     // Update position on scroll/resize

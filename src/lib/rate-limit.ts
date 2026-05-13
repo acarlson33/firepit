@@ -1,10 +1,15 @@
 import { isIP } from "node:net";
 
+import { logger } from "./newrelic-utils";
+
 interface RateLimitEntry {
     count: number;
     resetAt: number;
 }
 
+// This store is intentionally process-local. It is acceptable for a single
+// Node process or local development, but it will not coordinate limits across
+// multiple instances, serverless workers, or edge replicas.
 const rateLimitStore = new Map<string, RateLimitEntry>();
 
 export type RateLimitConfig = {
@@ -21,6 +26,8 @@ const DEFAULT_API_CONFIG: RateLimitConfig = {
     windowMs: 60 * 1000,
     maxRequests: 60,
 };
+
+const TRUSTED_PLATFORM = process.env.TRUSTED_PLATFORM?.trim().toLowerCase();
 
 function parsePositiveIntegerEnv(
     value: string | undefined,
@@ -85,6 +92,19 @@ function parseTrustedProxies(): Set<string> {
 
 const TRUSTED_PROXIES = parseTrustedProxies();
 
+if (
+    process.env.NODE_ENV !== "test" &&
+    TRUSTED_PROXIES.size === 0 &&
+    TRUSTED_PLATFORM !== "cloudflare"
+) {
+    logger.warn(
+        "Rate limiting is running without trusted proxy configuration; forwarded IP headers will be ignored.",
+        {
+            trustedPlatform: TRUSTED_PLATFORM ?? "none",
+        },
+    );
+}
+
 function normalizeIp(value: string): string {
     const trimmed = value.trim();
     if (trimmed.toLowerCase().startsWith("::ffff:")) {
@@ -116,7 +136,7 @@ function isPrivateOrLoopbackIp(value: string): boolean {
     const lower = ip.toLowerCase();
     return (
         lower === "::1" ||
-        lower.startsWith("fe80:") ||
+        /^fe[89ab][0-9a-f]:/i.test(lower) ||
         lower.startsWith("fc") ||
         lower.startsWith("fd")
     );
@@ -136,33 +156,68 @@ function firstValidPublicIp(values: string[]): string | null {
     return null;
 }
 
-function getClientIp(request: Request): string {
-    const cfConnectingIp = request.headers.get("cf-connecting-ip");
-    if (cfConnectingIp && isPublicIp(cfConnectingIp)) {
-        return normalizeIp(cfConnectingIp);
-    }
-
-    const trueClientIp = request.headers.get("true-client-ip");
-    if (trueClientIp && isPublicIp(trueClientIp)) {
-        return normalizeIp(trueClientIp);
+function getImmediatePeerIp(request: Request): string | null {
+    const requestWithIp = request as Request & { ip?: string | null };
+    const requestIp = requestWithIp.ip;
+    if (typeof requestIp === "string" && requestIp.trim().length > 0) {
+        return normalizeIp(requestIp);
     }
 
     const forwardedFor = request.headers.get("x-forwarded-for");
-
-    const realIp = request.headers.get("x-real-ip");
-    if (realIp && isPublicIp(realIp)) {
-        return normalizeIp(realIp);
+    if (!forwardedFor) {
+        return null;
     }
 
-    if (forwardedFor) {
-        const ips = forwardedFor
-            .split(",")
-            .map((ip) => ip.trim())
-            .filter(Boolean);
+    const ips = forwardedFor
+        .split(",")
+        .map((ip) => ip.trim())
+        .filter(Boolean);
 
-        if (ips.length > 0) {
-            const proxyIp = ips.at(-1);
-            if (proxyIp && TRUSTED_PROXIES.has(normalizeIp(proxyIp))) {
+    const proxyIp = ips.at(-1);
+    if (!proxyIp) {
+        return null;
+    }
+
+    return normalizeIp(proxyIp);
+}
+
+function isTrustedProxyRequest(request: Request): boolean {
+    if (TRUSTED_PLATFORM === "cloudflare") {
+        return true;
+    }
+
+    const peerIp = getImmediatePeerIp(request);
+    return peerIp ? TRUSTED_PROXIES.has(peerIp) : false;
+}
+
+function getClientIp(request: Request): string | null {
+    const trustedProxy = isTrustedProxyRequest(request);
+
+    if (trustedProxy) {
+        const cfConnectingIp = request.headers.get("cf-connecting-ip");
+        if (cfConnectingIp && isPublicIp(cfConnectingIp)) {
+            return normalizeIp(cfConnectingIp);
+        }
+
+        const trueClientIp = request.headers.get("true-client-ip");
+        if (trueClientIp && isPublicIp(trueClientIp)) {
+            return normalizeIp(trueClientIp);
+        }
+
+        const realIp = request.headers.get("x-real-ip");
+        if (realIp && isPublicIp(realIp)) {
+            return normalizeIp(realIp);
+        }
+
+        const forwardedFor = request.headers.get("x-forwarded-for");
+
+        if (forwardedFor) {
+            const ips = forwardedFor
+                .split(",")
+                .map((ip) => ip.trim())
+                .filter(Boolean);
+
+            if (ips.length > 0) {
                 const clientIp = firstValidPublicIp(ips);
                 if (clientIp) {
                     return clientIp;
@@ -171,7 +226,7 @@ function getClientIp(request: Request): string {
         }
     }
 
-    return "unknown";
+    return null;
 }
 
 function cleanExpiredEntries(): void {
@@ -238,6 +293,70 @@ export function rateLimitRequest(
     const config = isAuth ? getAuthConfig() : getApiConfig();
     const clientIp = getClientIp(request);
     const scope = isAuth ? "auth" : "api";
+    const identifier = clientIp ?? resolveFallbackIdentifier(request, scope);
 
-    return checkRateLimit(clientIp, config, scope);
+    return checkRateLimit(identifier, config, scope);
+}
+
+function normalizeHeaderValue(value: string | null): string {
+    return value?.trim() ?? "";
+}
+
+function hashIdentifier(value: string): string {
+    let hash = 5381;
+
+    for (const char of value) {
+        const codePoint = char.codePointAt(0) ?? 0;
+        hash = hash * 33 + codePoint;
+    }
+
+    return Math.abs(hash).toString(36);
+}
+
+function readCookieValue(cookieHeader: string | null, name: string): string {
+    if (!cookieHeader) {
+        return "";
+    }
+
+    const prefix = `${name}=`;
+    for (const part of cookieHeader.split(";")) {
+        const trimmed = part.trim();
+        if (trimmed.startsWith(prefix)) {
+            return trimmed.slice(prefix.length);
+        }
+    }
+
+    return "";
+}
+
+function resolveFallbackIdentifier(request: Request, scope: string): string {
+    const authorization = normalizeHeaderValue(
+        request.headers.get("authorization"),
+    );
+
+    if (authorization.toLowerCase().startsWith("bearer ")) {
+        return `bearer:${hashIdentifier(authorization.slice(7))}`;
+    }
+
+    const projectId = process.env.APPWRITE_PROJECT_ID?.trim();
+    if (projectId) {
+        const cookieName = `a_session_${projectId}`;
+        const cookieValue = readCookieValue(
+            request.headers.get("cookie"),
+            cookieName,
+        );
+
+        if (cookieValue) {
+            return `session:${hashIdentifier(cookieValue)}`;
+        }
+    }
+
+    const fingerprint = [
+        scope,
+        normalizeHeaderValue(request.headers.get("user-agent")),
+        normalizeHeaderValue(request.headers.get("accept-language")),
+        normalizeHeaderValue(request.headers.get("accept-encoding")),
+    ].join("|");
+
+    return `fingerprint:${hashIdentifier(fingerprint)}`;
 }

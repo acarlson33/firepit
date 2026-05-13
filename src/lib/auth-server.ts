@@ -25,6 +25,27 @@ export type SessionUser = {
     $createdAt?: string;
 };
 
+async function getSessionForToken(
+    endpoint: string,
+    project: string,
+    token: string,
+    systemSenderUserId: string | null,
+): Promise<SessionUser | null> {
+    try {
+        const client = new Client()
+            .setEndpoint(endpoint)
+            .setProject(project)
+            .setSession(token);
+
+        const account = new Account(client);
+        const user = await account.get().catch(() => null);
+
+        return validateAndTransformUser(user, systemSenderUserId);
+    } catch {
+        return null;
+    }
+}
+
 function validateAndTransformUser(
     user: unknown,
     systemSenderUserId: string | null,
@@ -71,15 +92,7 @@ async function getSessionFromHeader(
             return null;
         }
 
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setSession(token);
-
-        const account = new Account(client);
-        const user = await account.get().catch(() => null);
-
-        return validateAndTransformUser(user, systemSenderUserId);
+        return getSessionForToken(endpoint, project, token, systemSenderUserId);
     } catch {
         return null;
     }
@@ -98,15 +111,12 @@ async function getSessionFromCookie(
             return null;
         }
 
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setSession(sessionCookie.value);
-
-        const account = new Account(client);
-        const user = await account.get().catch(() => null);
-
-        return validateAndTransformUser(user, systemSenderUserId);
+        return getSessionForToken(
+            endpoint,
+            project,
+            sessionCookie.value,
+            systemSenderUserId,
+        );
     } catch {
         return null;
     }
