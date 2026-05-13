@@ -188,7 +188,8 @@ export async function proxy(request: NextRequest) {
     if (isAuthRoute && hasSession) {
         // Logged-in user trying to access auth pages
         const redirect = request.nextUrl.searchParams.get("redirect");
-        const destination = redirect?.startsWith("/") ? redirect : "/";
+        const destination =
+            redirect && /^\/(?!\/)/.test(redirect) ? redirect : "/";
         return NextResponse.redirect(new URL(destination, request.url));
     }
 

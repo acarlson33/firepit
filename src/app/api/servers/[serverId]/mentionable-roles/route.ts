@@ -15,13 +15,7 @@ interface RoleDocument {
     name: string;
     color?: string | null;
     mentionable?: boolean;
-}
-
-interface RoleAssignmentDocument {
-    $id: string;
-    serverId: string;
-    roleIds: string[];
-    userId: string;
+    memberCount?: number;
 }
 
 // Minimal shape for the Appwrite databases client methods used here.
@@ -132,8 +126,8 @@ export async function GET(
             );
         }
 
-        // Fetch roles and assignments for the server, then filter in-memory so
-        // we do not depend on unsupported Appwrite filters or missing indexes.
+        // Fetch roles for the server, then filter in-memory so we do not
+        // depend on unsupported Appwrite filters or missing indexes.
         const mentionableRoleDocs =
             await getAllDocumentsPaginated<RoleDocument>(
                 databases,
@@ -146,41 +140,13 @@ export async function GET(
             Boolean(doc.mentionable),
         );
 
-        const mentionableRoleIds = mentionableRoles.map((doc) => doc.$id);
-        const mentionableRoleIdSet = new Set(mentionableRoleIds);
-
-        const mentionableAssignments =
-            mentionableRoleIds.length > 0
-                ? await getAllDocumentsPaginated<RoleAssignmentDocument>(
-                      databases,
-                      env,
-                      env.collections.roleAssignments,
-                      serverId,
-                  )
-                : [];
-
-        // Build a map of roleId -> member count for efficient lookup
-        const memberCountByRoleId = new Map<string, number>();
-        for (const assignment of mentionableAssignments) {
-            for (const roleId of assignment.roleIds || []) {
-                if (!mentionableRoleIdSet.has(roleId)) {
-                    continue;
-                }
-
-                memberCountByRoleId.set(
-                    roleId,
-                    (memberCountByRoleId.get(roleId) ?? 0) + 1,
-                );
-            }
-        }
-
         // Filter to mentionable roles and build response
         const responseRoles = mentionableRoles.map((doc) => ({
             id: doc.$id,
             name: doc.name,
             color: doc.color ?? "",
             mentionable: Boolean(doc.mentionable),
-            memberCount: memberCountByRoleId.get(doc.$id) ?? 0,
+            memberCount: doc.memberCount ?? 0,
         }));
 
         return NextResponse.json({ roles: responseRoles });

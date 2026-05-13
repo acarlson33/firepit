@@ -156,29 +156,14 @@ function firstValidPublicIp(values: string[]): string | null {
     return null;
 }
 
-function getImmediatePeerIp(request: Request): string | null {
+function getRequestIp(request: Request): string | null {
     const requestWithIp = request as Request & { ip?: string | null };
     const requestIp = requestWithIp.ip;
     if (typeof requestIp === "string" && requestIp.trim().length > 0) {
         return normalizeIp(requestIp);
     }
 
-    const forwardedFor = request.headers.get("x-forwarded-for");
-    if (!forwardedFor) {
-        return null;
-    }
-
-    const ips = forwardedFor
-        .split(",")
-        .map((ip) => ip.trim())
-        .filter(Boolean);
-
-    const proxyIp = ips.at(-1);
-    if (!proxyIp) {
-        return null;
-    }
-
-    return normalizeIp(proxyIp);
+    return null;
 }
 
 function isTrustedProxyRequest(request: Request): boolean {
@@ -186,7 +171,7 @@ function isTrustedProxyRequest(request: Request): boolean {
         return true;
     }
 
-    const peerIp = getImmediatePeerIp(request);
+    const peerIp = getRequestIp(request);
     return peerIp ? TRUSTED_PROXIES.has(peerIp) : false;
 }
 
