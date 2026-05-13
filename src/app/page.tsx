@@ -1,274 +1,392 @@
 import Link from "next/link";
-import { type LucideIcon, ArrowRight, MessageSquare, ShieldCheck, Users, Sparkles, RadioTower } from "lucide-react";
+import {
+    type LucideIcon,
+    ArrowRight,
+    Flame,
+    MessageSquare,
+    RadioTower,
+    Settings,
+    ShieldCheck,
+    Sparkles,
+    Users,
+} from "lucide-react";
 
-import { getServerSession } from "@/lib/auth-server";
 import { getUserRoleTags } from "@/lib/appwrite-roles";
+import { getServerSession } from "@/lib/auth-server";
 import { Button } from "@/components/ui/button";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardFooter,
-	CardHeader,
-	CardTitle,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
 } from "@/components/ui/card";
 
-const marketingFeatures: Array<{
-	title: string;
-	description: string;
-	detail: string;
-	icon: LucideIcon;
-	accentClass: string;
-}> = [
-	{
-		title: "Real-time Chat",
-		description: "Send messages instantly with resilient, real-time infrastructure.",
-		detail: "Live presence indicators, read receipts, and typing states keep every conversation feeling alive.",
-		icon: MessageSquare,
-		accentClass: "from-sky-400/60 via-sky-300/40 to-transparent",
-	},
-	{
-		title: "Server Communities",
-		description: "Spin up servers, curate channels, and unlock rich collaboration.",
-		detail: "Fine-grained roles make it effortless to welcome people while keeping the chaos at bay.",
-		icon: Users,
-		accentClass: "from-emerald-400/60 via-emerald-300/40 to-transparent",
-	},
-	{
-		title: "Built-in Safeguards",
-		description: "Moderation flows help keep every space safe and welcoming.",
-		detail: "Message auditing, escalation tools, and activity insights ship right out of the box.",
-		icon: ShieldCheck,
-		accentClass: "from-purple-400/60 via-purple-300/40 to-transparent",
-	},
-];
+type LandingFeature = {
+    accentClass: string;
+    description: string;
+    icon: LucideIcon;
+    title: string;
+};
 
-const communityStats = [
-	{ label: "Teams exploring firepit", value: "120+" },
-	{ label: "Messages processed per day", value: "2.4M" },
-	{ label: "Latency to deliver", value: "<150ms" },
-];
+type LandingSignal = {
+    label: string;
+    value: string;
+};
+
+const publicFeatures: LandingFeature[] = [
+    {
+        accentClass: "from-primary/80 via-orange-300/60 to-transparent",
+        description:
+            "Channels, direct messages, threads, pins, and search now sit inside one calmer workspace.",
+        icon: MessageSquare,
+        title: "Conversation first",
+    },
+    {
+        accentClass: "from-emerald-400/80 via-teal-300/60 to-transparent",
+        description:
+            "Servers, channels, categories, and invite flows stay easy to scan and quick to join.",
+        icon: Users,
+        title: "Community structure",
+    },
+    {
+        accentClass: "from-amber-400/80 via-orange-200/60 to-transparent",
+        description:
+            "Moderation, reports, and role-aware controls remain visible without crowding the everyday chat flow.",
+        icon: ShieldCheck,
+        title: "Safer defaults",
+    },
+] as const;
+
+const publicSignals: LandingSignal[] = [
+    {
+        label: "Activation",
+        value: "Sign in, complete your profile, and join a space.",
+    },
+    {
+        label: "Messaging",
+        value: "Servers, DMs, threads, pins, and search share one model.",
+    },
+    {
+        label: "Operations",
+        value: "Roles, moderation, and audit visibility stay close at hand.",
+    },
+] as const;
+
+function FeatureCard({ feature }: { feature: LandingFeature }) {
+    return (
+        <Card className="relative overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm transition-transform hover:-translate-y-1">
+            <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-linear-to-r ${feature.accentClass}`}
+            />
+            <CardHeader className="space-y-4 pb-4">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-muted/70 text-primary shadow-sm">
+                    <feature.icon className="h-5 w-5" />
+                </span>
+                <CardTitle className="text-xl font-semibold tracking-tight">
+                    {feature.title}
+                </CardTitle>
+                <CardDescription className="leading-6">
+                    {feature.description}
+                </CardDescription>
+            </CardHeader>
+        </Card>
+    );
+}
+
+function SignalCard({ signal }: { signal: LandingSignal }) {
+    return (
+        <div className="rounded-2xl border border-border/50 bg-background/60 p-4 shadow-sm backdrop-blur-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                {signal.label}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-foreground">
+                {signal.value}
+            </p>
+        </div>
+    );
+}
+
+import type { Route } from "next";
+
+interface WorkspaceActionButtonProps {
+    href: Route;
+    icon: LucideIcon;
+    label: string;
+    variant?: "default" | "outline" | "secondary";
+}
+
+function WorkspaceActionButton({
+    href,
+    icon: Icon,
+    label,
+    variant = "outline",
+}: WorkspaceActionButtonProps) {
+    return (
+        <Button asChild className="w-full justify-start rounded-2xl" size="lg" variant={variant}>
+            <Link href={href}>
+                <Icon className="h-4 w-4" />
+                {label}
+            </Link>
+        </Button>
+    );
+}
 
 export default async function Home() {
-	const user = await getServerSession();
-	const roles = user ? await getUserRoleTags(user.$id) : null;
+    const user = await getServerSession();
+    const roles = user ? await getUserRoleTags(user.$id) : null;
 
-	// Non-authenticated state
-	if (!user) {
-		return (
-			<div className="mx-auto w-full max-w-6xl px-6 py-12">
-				<div className="grid gap-12">
-					<section className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur-sm">
-						<div className="absolute -right-10 top-10 hidden h-40 w-40 rounded-full bg-gradient-to-br from-sky-200/70 via-purple-200/60 to-transparent blur-3xl dark:from-sky-500/20 dark:via-purple-500/20 lg:block" aria-hidden="true" />
-						<div className="space-y-6 text-center lg:text-left">
-							<span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-								<Sparkles className="h-3.5 w-3.5 text-sky-500" />
-								Designed for communities that thrive
-							</span>
-							<h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-								Welcome to Firepit — where conversations stay alive
-							</h1>
-							<p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-								Build vibrant communities with channels, direct messages, and thoughtful moderation tools that feel elegant from day one.
-							</p>
-							<div className="flex flex-col items-center gap-3 pt-2 sm:flex-row sm:justify-center lg:justify-start">
-								<Button asChild size="lg" className="group">
-									<Link href="/login">
-										Get started
-										<ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-									</Link>
-								</Button>
-								<Button asChild size="lg" variant="outline" className="border-border/70 bg-background/60 backdrop-blur">
-									<Link href="/chat">Preview the chat</Link>
-								</Button>
-							</div>
-							<dl className="grid gap-4 pt-6 sm:grid-cols-3">
-								{communityStats.map((stat) => (
-									<div key={stat.label} className="rounded-2xl border border-border/50 bg-background/60 px-4 py-5 text-center shadow-sm">
-										<dt className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-											{stat.label}
-										</dt>
-										<dd className="mt-2 text-2xl font-semibold">{stat.value}</dd>
-									</div>
-								))}
-							</dl>
-						</div>
-					</section>
+    if (!user) {
+        return (
+            <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+                <div className="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                    <section className="relative overflow-hidden rounded-4xl border border-border/70 bg-card/85 p-8 shadow-2xl backdrop-blur-sm sm:p-10">
+                        <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.16),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(45,212,191,0.12),transparent_28%)]"
+                        />
 
-					<section className="grid gap-6 md:grid-cols-3">
-						{marketingFeatures.map((feature) => (
-							<Card
-								key={feature.title}
-								className="relative overflow-hidden border border-border/60 bg-card/70 shadow-lg backdrop-blur-sm transition-transform hover:-translate-y-1"
-							>
-								<div className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${feature.accentClass}`} aria-hidden="true" />
-								<CardHeader className="space-y-4">
-									<span className="inline-flex items-center justify-center rounded-xl bg-muted/70 p-3 text-primary">
-										<feature.icon className="h-5 w-5" />
-									</span>
-									<CardTitle className="text-xl font-semibold tracking-tight">
-										{feature.title}
-									</CardTitle>
-									<CardDescription>{feature.description}</CardDescription>
-								</CardHeader>
-								<CardContent>
-									<p className="text-sm text-muted-foreground leading-relaxed">
-										{feature.detail}
-									</p>
-								</CardContent>
-							</Card>
-						))}
-					</section>
-				</div>
-			</div>
-		);
-	}
+                        <div className="relative space-y-8">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                Firepit redesign
+                            </div>
 
-	// Authenticated state
-	const isAdmin = roles?.isAdmin ?? false;
-	const isModerator = roles?.isModerator ?? false;
+                            <div className="space-y-5">
+                                <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+                                    A cleaner home for real-time communities.
+                                </h1>
+                                <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+                                    Firepit brings servers, direct messages, onboarding, moderation, and docs into one cohesive web workspace. The new visual direction favors calmer surfaces, clearer hierarchy, and faster daily navigation.
+                                </p>
+                            </div>
 
-	return (
-		<div className="mx-auto w-full max-w-6xl px-6 py-12">
-			<div className="grid gap-10">
-				<section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-					<div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-						<div className="space-y-4">
-							<span className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-4 py-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-								<RadioTower className="h-4 w-4 text-emerald-500" />
-								Welcome back
-							</span>
-							<h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-								Great to see you, {user.name || "there"}
-							</h1>
-							<p className="max-w-xl text-base text-muted-foreground">
-								Your conversations, servers, and community tools are ready when you are. Jump back in or explore something new.
-							</p>
-							<div className="flex flex-wrap gap-3">
-								<span className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									Role: {isAdmin ? "Administrator" : isModerator ? "Moderator" : "Member"}
-								</span>
-								{user.email && (
-									<span className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
-										<MessageSquare className="h-3.5 w-3.5" />
-										{user.email}
-									</span>
-								)}
-							</div>
-						</div>
-						<div className="grid gap-3 text-sm text-muted-foreground lg:text-right">
-							<p className="font-medium text-foreground">Currently active permissions</p>
-							<p className="rounded-2xl border border-border/60 bg-background/60 px-4 py-3 font-mono text-base tracking-tight text-foreground shadow-sm">
-								{isAdmin ? "Instance wide control" : isModerator ? "Space Moderation" : "Chatting"}
-							</p>
-							<p className="text-xs">
-								Need a status change? Reach out to an instance admin.
-							</p>
-						</div>
-					</div>
-				</section>
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                                <Button asChild size="lg" className="group shadow-lg shadow-primary/15">
+                                    <Link href="/login">
+                                        Get started
+                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                    </Link>
+                                </Button>
+                                <Button
+                                    asChild
+                                    size="lg"
+                                    variant="outline"
+                                    className="rounded-full border-border/70 bg-background/70 backdrop-blur"
+                                >
+                                    <Link href="/chat">Preview the chat</Link>
+                                </Button>
+                            </div>
 
-				<section className="grid gap-6 md:grid-cols-2">
-					<Card className="border border-border/60 bg-card/70 shadow-md transition-transform hover:-translate-y-1">
-						<CardHeader>
-							<CardTitle>Chat workspace</CardTitle>
-							<CardDescription>
-								Continue recent threads, or start a fresh conversation.
-							</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<p className="text-sm leading-relaxed text-muted-foreground">
-								Browse servers, discover channels, and collaborate with your community in real-time.
-							</p>
-						</CardContent>
-						<CardFooter>
-							<Button asChild className="w-full">
-								<Link href="/chat" className="group inline-flex w-full items-center justify-center">
-									Open chat
-									<ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-								</Link>
-							</Button>
-						</CardFooter>
-					</Card>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                {publicSignals.map((signal) => (
+                                    <SignalCard key={signal.label} signal={signal} />
+                                ))}
+                            </div>
+                        </div>
+                    </section>
 
-					{(isModerator || isAdmin) && (
-						<Card className="border border-border/60 bg-card/70 shadow-md transition-transform hover:-translate-y-1">
-							<CardHeader>
-								<CardTitle>Moderation tools</CardTitle>
-								<CardDescription>
-									Keep conversations constructive with built-in review flows.
-								</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<p className="text-sm leading-relaxed text-muted-foreground">
-									Review flagged content, act on reports, and keep the space healthy without leaving your flow.
-								</p>
-							</CardContent>
-							<CardFooter>
-								<Button asChild className="w-full" variant="secondary">
-									<Link href="/moderation" className="group inline-flex w-full items-center justify-center">
-										Open panel
-										<ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-									</Link>
-								</Button>
-							</CardFooter>
-						</Card>
-					)}
+                    <section className="grid gap-4">
+                        {publicFeatures.map((feature) => (
+                            <FeatureCard feature={feature} key={feature.title} />
+                        ))}
 
-					{isAdmin && (
-						<Card className="border border-border/60 bg-card/70 shadow-md transition-transform hover:-translate-y-1">
-							<CardHeader>
-								<CardTitle>Admin oversight</CardTitle>
-								<CardDescription>
-									Access system metrics, manage users, and configure instances.
-							</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<p className="text-sm leading-relaxed text-muted-foreground">
-									Monitor server health, provision access, and fine-tune the experience across every space you run.
-								</p>
-							</CardContent>
-							<CardFooter>
-								<Button asChild className="w-full" variant="outline">
-									<Link href="/admin" className="group inline-flex w-full items-center justify-center">
-										Admin panel
-										<ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-									</Link>
-								</Button>
-							</CardFooter>
-						</Card>
-					)}
-				</section>
+                        <Card className="rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm">
+                            <CardHeader className="space-y-2">
+                                <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                    <Flame className="h-3.5 w-3.5 text-primary" />
+                                    What changes here
+                                </div>
+                                <CardTitle className="text-xl font-semibold tracking-tight">
+                                    One shell, fewer seams
+                                </CardTitle>
+                                <CardDescription className="leading-6">
+                                    The redesign starts with the top-level shell and the landing path, then expands into chat, onboarding, settings, docs, and admin.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3 text-sm text-muted-foreground">
+                                <p>• Branded surfaces with warmer, calmer color treatment.</p>
+                                <p>• Clearer primary navigation for chat, docs, settings, and admin.</p>
+                                <p>• Better first-run flow from login through onboarding and join paths.</p>
+                            </CardContent>
+                        </Card>
+                    </section>
+                </div>
+            </div>
+        );
+    }
 
-				<Card className="border border-border/60 bg-card/70 shadow-lg">
-					<CardHeader>
-						<CardTitle>Your account at a glance</CardTitle>
-						<CardDescription>Quick reference for personal details and audit IDs.</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4 text-sm">
-						<div className="grid gap-3 sm:grid-cols-2">
-							<div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-								<p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-									Email
-								</p>
-								<p className="mt-1 text-sm text-foreground">{user.email}</p>
-							</div>
-							<div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-								<p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-									User ID
-								</p>
-								<p className="mt-1 font-mono text-xs text-foreground break-all">{user.$id}</p>
-							</div>
-						</div>
-						<div className="rounded-2xl border border-border/50 bg-background/60 p-4">
-							<p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current role</p>
-							<p className="mt-1 text-sm text-foreground">
-								{isAdmin ? "Administrator" : isModerator ? "Moderator" : "Member"}
-							</p>
-						</div>
-					</CardContent>
-				</Card>
-			</div>
-		</div>
-	);
+    const isAdmin = roles?.isAdmin ?? false;
+    const isModerator = roles?.isModerator ?? false;
+    const displayName = user.name?.trim() || "there";
+    const roleLabel = isAdmin
+        ? "Administrator"
+        : isModerator
+          ? "Moderator"
+          : "Member";
+
+    return (
+        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <div className="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                <section className="relative overflow-hidden rounded-4xl border border-border/70 bg-card/85 p-8 shadow-2xl backdrop-blur-sm sm:p-10">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.16),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(45,212,191,0.12),transparent_28%)]"
+                    />
+
+                    <div className="relative space-y-6">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                            <RadioTower className="h-3.5 w-3.5 text-primary" />
+                            Welcome back
+                        </div>
+
+                        <div className="space-y-4">
+                            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+                                Ready when you are, {displayName}.
+                            </h1>
+                            <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+                                Jump back into chat, review requests, or head straight to moderation and settings. The workspace is built to keep the important surfaces close together.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            <span className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                Role: {roleLabel}
+                            </span>
+                            {user.email ? (
+                                <span className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    {user.email}
+                                </span>
+                            ) : null}
+                            <span className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
+                                <Users className="h-3.5 w-3.5" />
+                                User ID {user.$id.slice(0, 8)}...
+                            </span>
+                        </div>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                            <Button asChild size="lg" className="group shadow-lg shadow-primary/15">
+                                <Link href="/chat">
+                                    Open chat
+                                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                </Link>
+                            </Button>
+                            <Button
+                                asChild
+                                size="lg"
+                                variant="outline"
+                                className="rounded-full border-border/70 bg-background/70 backdrop-blur"
+                            >
+                                <Link href="/settings">Settings</Link>
+                            </Button>
+                            {isModerator || isAdmin ? (
+                                <Button asChild size="lg" variant="secondary" className="rounded-full">
+                                    <Link href="/moderation">Moderation</Link>
+                                </Button>
+                            ) : null}
+                        </div>
+                    </div>
+                </section>
+
+                <section className="grid gap-4">
+                    <Card className="rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm">
+                        <CardHeader className="space-y-2">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                                Workspace shortcuts
+                            </div>
+                            <CardTitle className="text-xl font-semibold tracking-tight">
+                                Jump back in
+                            </CardTitle>
+                            <CardDescription className="leading-6">
+                                The redesigned shell keeps the most common actions within a single glance.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <WorkspaceActionButton
+                                href="/chat"
+                                icon={MessageSquare}
+                                label="Open chat"
+                                variant="default"
+                            />
+                            <WorkspaceActionButton
+                                href="/settings"
+                                icon={Settings}
+                                label="Open settings"
+                                variant="outline"
+                            />
+                            {isModerator || isAdmin ? (
+                                <WorkspaceActionButton
+                                    href="/moderation"
+                                    icon={ShieldCheck}
+                                    label="Open moderation"
+                                    variant="secondary"
+                                />
+                            ) : null}
+                            {isAdmin ? (
+                                <WorkspaceActionButton
+                                    href="/admin"
+                                    icon={RadioTower}
+                                    label="Open admin"
+                                    variant="outline"
+                                />
+                            ) : null}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm">
+                        <CardHeader className="space-y-2">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                <Flame className="h-3.5 w-3.5 text-primary" />
+                                Account at a glance
+                            </div>
+                            <CardTitle className="text-xl font-semibold tracking-tight">
+                                Identity and access
+                            </CardTitle>
+                            <CardDescription className="leading-6">
+                                Quick reference for the account details that shape how Firepit personalizes the workspace.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 text-sm">
+                            {user.email ? (
+                                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                        Email
+                                    </p>
+                                    <p className="mt-1 text-foreground">
+                                        {user.email}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                        Email
+                                    </p>
+                                    <p className="mt-1 text-muted-foreground">Not provided</p>
+                                </div>
+                            )}
+                            <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                    User ID
+                                </p>
+                                <p className="mt-1 break-all font-mono text-xs text-foreground">
+                                    {user.$id}
+                                </p>
+                            </div>
+                            <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Current role
+                                </p>
+                                <p className="mt-1 text-foreground">
+                                    {roleLabel}
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </section>
+            </div>
+        </div>
+    );
 }

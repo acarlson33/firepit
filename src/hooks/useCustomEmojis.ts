@@ -184,6 +184,7 @@ export function useCustomEmojis() {
 
         let cancelled = false;
         let unsubscribe: (() => void) | undefined;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         // Dynamically import realtime pool to avoid SSR issues
         import("@/lib/realtime-pool")
@@ -217,6 +218,26 @@ export function useCustomEmojis() {
                 };
 
                 try {
+                    // Try updating existing subscription if available
+                    if (subscriptionRef.current) {
+                        const existing = subscriptionRef.current as { update?: (args: Record<string, unknown>) => Promise<void> };
+                        if (typeof existing.update === "function") {
+                            try {
+                                await existing.update({
+                                    queries: [Channel.bucket(bucketId).file().toString()],
+                                });
+                                untrack = trackSubscription(channelKey);
+                                unsubscribe = () => {
+                                    untrack?.();
+                                    void closeSubscriptionSafely(subscriptionRef.current);
+                                };
+                                return;
+                            } catch {
+                                // fallthrough to recreate
+                            }
+                        }
+                    }
+
                     const subscription = await realtime.subscribe(
                         channel,
                         handleStorageEvent,
@@ -226,11 +247,14 @@ export function useCustomEmojis() {
                         return;
                     }
 
+                    subscriptionRef.current = subscription;
+
                     untrack = trackSubscription(channelKey);
 
                     unsubscribe = () => {
                         untrack?.();
-                        void closeSubscriptionSafely(subscription);
+                        void closeSubscriptionSafely(subscriptionRef.current);
+                        subscriptionRef.current = undefined;
                     };
                 } catch (error) {
                     if (!cancelled) {

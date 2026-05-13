@@ -534,6 +534,16 @@ export function useDirectMessages({
         >
     >({});
 
+    const messageSubscriptionRef = useRef<{
+        close: () => Promise<void>;
+        update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+    } | undefined>(undefined);
+
+    const typingSubscriptionRef = useRef<{
+        close: () => Promise<void>;
+        update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+    } | undefined>(undefined);
+
     const typingIdleMs = 2500;
     const typingStartDebounceMs = 400;
     const backgroundMessageSyncIntervalMs = 15_000;
@@ -917,8 +927,24 @@ export function useDirectMessages({
             let subscription: { close: () => Promise<void> } | undefined;
             let untrack: (() => void) | undefined;
 
-            try {
+                try {
                 const realtime = getSharedRealtime();
+
+                // If existing subscription supports update, try updating
+                if (messageSubscriptionRef.current) {
+                    const existing = messageSubscriptionRef.current;
+                    if (existing && typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("conversationId", conversationId)],
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 subscription = await realtime.subscribe(
                     messageChannel,
                     (response) => {
@@ -1101,19 +1127,25 @@ export function useDirectMessages({
                     [Query.equal("conversationId", conversationId)],
                 );
 
+
+                messageSubscriptionRef.current = subscription;
+
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
+                    await closeSubscriptionSafely(messageSubscriptionRef.current);
+                    messageSubscriptionRef.current = undefined;
                     return;
                 }
 
                 untrack = trackSubscription(messageChannelKey);
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscription);
+                    void closeSubscriptionSafely(messageSubscriptionRef.current);
+                    messageSubscriptionRef.current = undefined;
                 };
             } catch (error) {
                 untrack?.();
-                await closeSubscriptionSafely(subscription);
+                await closeSubscriptionSafely(messageSubscriptionRef.current);
+                messageSubscriptionRef.current = undefined;
                 if (!cancelled) {
                     const isTransient =
                         isTransientRealtimeSubscribeError(error);
@@ -1673,6 +1705,21 @@ export function useDirectMessages({
             try {
                 const realtime = getSharedRealtime();
 
+                // Try to update existing subscription if supported
+                if (typingSubscriptionRef.current) {
+                    const existing = typingSubscriptionRef.current;
+                    if (existing && typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("channelId", conversationId)],
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 subscription = await realtime.subscribe(
                     typingChannel,
                     (response) => {
@@ -1722,19 +1769,24 @@ export function useDirectMessages({
                     [Query.equal("channelId", conversationId)],
                 );
 
+                typingSubscriptionRef.current = subscription;
+
                 if (cancelled) {
-                    await closeSubscriptionSafely(subscription);
+                    await closeSubscriptionSafely(typingSubscriptionRef.current);
+                    typingSubscriptionRef.current = undefined;
                     return;
                 }
 
                 untrack = trackSubscription(typingChannelKey);
                 cleanupFn = () => {
                     untrack?.();
-                    void closeSubscriptionSafely(subscription);
+                    void closeSubscriptionSafely(typingSubscriptionRef.current);
+                    typingSubscriptionRef.current = undefined;
                 };
             } catch (error) {
                 untrack?.();
-                await closeSubscriptionSafely(subscription);
+                await closeSubscriptionSafely(typingSubscriptionRef.current);
+                typingSubscriptionRef.current = undefined;
                 if (!cancelled) {
                     logger.error(
                         "Direct message typing realtime subscription failed:",

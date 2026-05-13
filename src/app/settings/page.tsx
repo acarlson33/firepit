@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth-server";
 import {
@@ -97,36 +98,99 @@ export default async function SettingsPage() {
     ] as const;
 
     return (
-        <div className="mx-auto w-full max-w-7xl px-6 py-10">
+        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
             <div className="grid gap-8">
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
-                    <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                        <div className="space-y-3">
-                            <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-                                Personalize your firepit profile
+                <section className="grid gap-6 overflow-hidden rounded-4xl border border-border/70 bg-card/85 p-8 shadow-2xl backdrop-blur-sm sm:p-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+                    <div className="space-y-6">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                            Account control
+                        </div>
+                        <div className="space-y-4">
+                            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+                                Personalize your Firepit profile.
                             </h1>
-                            <p className="max-w-xl text-muted-foreground">
+                            <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
                                 Manage how others see you, keep details current,
                                 and carry your community presence across every
                                 server.
                             </p>
-                            <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                Account ID
-                                <span className="font-mono text-[11px] text-foreground">
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            <Button asChild className="rounded-full shadow-lg shadow-primary/15">
+                                <Link href="#connections">View connections</Link>
+                            </Button>
+                            <Button
+                                asChild
+                                className="rounded-full border-border/70 bg-background/70 backdrop-blur"
+                                variant="outline"
+                            >
+                                <Link href="#privacy-blocking">Privacy controls</Link>
+                            </Button>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                    Account ID
+                                </p>
+                                <p className="mt-2 font-mono text-sm text-foreground">
                                     {user.$id.slice(0, 8)}...
-                                </span>
+                                </p>
+                            </div>
+                            <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                    Email
+                                </p>
+                                <p className="mt-2 break-all text-sm text-foreground">
+                                    {user.email}
+                                </p>
+                            </div>
+                            <div className="rounded-3xl border border-border/60 bg-background/70 p-4 shadow-sm">
+                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                    Sections
+                                </p>
+                                <p className="mt-2 text-sm text-foreground">
+                                    Profile, privacy, and interface controls
+                                </p>
                             </div>
                         </div>
-                        <div className="rounded-3xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
-                            <p className="font-semibold text-foreground">
-                                Current email
-                            </p>
-                            <p className="mt-1 break-all">{user.email}</p>
+                    </div>
+
+                    <div className="space-y-3 rounded-3xl border border-border/60 bg-background/70 p-5 shadow-lg">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            Profile snapshot
+                        </p>
+                        <div className="space-y-3 text-sm text-muted-foreground">
+                            <div className="rounded-2xl border border-border/50 bg-card/70 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                    Current email
+                                </p>
+                                <p className="mt-1 break-all text-foreground">
+                                    {user.email}
+                                </p>
+                            </div>
+                            <div className="rounded-2xl border border-border/50 bg-card/70 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                    Profile status
+                                </p>
+                                <p className="mt-1 text-foreground">
+                                    Personal details, avatar, and connections
+                                </p>
+                            </div>
+                            <div className="rounded-2xl border border-border/50 bg-card/70 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                    Fast links
+                                </p>
+                                <p className="mt-1 text-foreground">
+                                    Jump to the section navigator on the right.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </section>
 
-                <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
+                        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
                     <div className="grid gap-8">
                         <div className="sticky top-24 z-20 xl:hidden">
                             <SettingsSectionNav
@@ -136,7 +200,7 @@ export default async function SettingsPage() {
                         </div>
 
                         <section className="scroll-mt-24" id="profile-picture">
-                            <Card className="overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                            <Card className="overflow-hidden rounded-4xl border border-border/60 bg-card/75 shadow-xl backdrop-blur-sm">
                                 <CardHeader className="space-y-1">
                                     <CardTitle>Profile picture</CardTitle>
                                     <CardDescription>
@@ -166,7 +230,7 @@ export default async function SettingsPage() {
                                 action={updateProfileAction}
                                 className="space-y-4"
                             >
-                                <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                                <Card className="rounded-4xl border border-border/60 bg-card/75 shadow-xl backdrop-blur-sm">
                                     <CardHeader className="space-y-1">
                                         <CardTitle>
                                             Profile information
@@ -278,7 +342,7 @@ export default async function SettingsPage() {
                             className="scroll-mt-24"
                             id="profile-appearance"
                         >
-                            <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                            <Card className="rounded-4xl border border-border/60 bg-card/75 shadow-xl backdrop-blur-sm">
                                 <CardHeader className="space-y-1">
                                     <CardTitle>Profile Appearance</CardTitle>
                                     <CardDescription>
@@ -335,7 +399,7 @@ export default async function SettingsPage() {
                             className="scroll-mt-24"
                             id="account-information"
                         >
-                            <Card className="rounded-3xl border border-border/60 bg-card/70 shadow-lg">
+                            <Card className="rounded-4xl border border-border/60 bg-card/75 shadow-xl backdrop-blur-sm">
                                 <CardHeader className="space-y-1">
                                     <CardTitle>Account information</CardTitle>
                                     <CardDescription>
@@ -373,12 +437,12 @@ export default async function SettingsPage() {
                         </section>
 
                         <section
-                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            className="scroll-mt-24 overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10"
                             id="notification-preferences"
                         >
-                            <div className="space-y-3 mb-6">
+                            <div className="mb-6 space-y-3">
                                 <h2 className="text-2xl font-semibold tracking-tight">
-                                    Notification Preferences
+                                    Notification preferences
                                 </h2>
                                 <p className="text-muted-foreground">
                                     Manage how and when you receive
@@ -389,7 +453,7 @@ export default async function SettingsPage() {
                         </section>
 
                         <section
-                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            className="scroll-mt-24 overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10"
                             id="connections"
                         >
                             <div className="mb-6 space-y-3">
@@ -408,7 +472,7 @@ export default async function SettingsPage() {
                         </section>
 
                         <section
-                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            className="scroll-mt-24 overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10"
                             id="privacy-blocking"
                         >
                             <div className="mb-6 space-y-3">
@@ -428,7 +492,7 @@ export default async function SettingsPage() {
                         </section>
 
                         <section
-                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            className="scroll-mt-24 overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10"
                             id="interface"
                         >
                             <div className="mb-6 space-y-3">
@@ -445,10 +509,10 @@ export default async function SettingsPage() {
                         </section>
 
                         <section
-                            className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur"
+                            className="scroll-mt-24 overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10"
                             id="troubleshooting"
                         >
-                            <div className="space-y-3 mb-6">
+                            <div className="mb-6 space-y-3">
                                 <h2 className="text-2xl font-semibold tracking-tight">
                                     Troubleshooting
                                 </h2>

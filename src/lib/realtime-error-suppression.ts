@@ -1,6 +1,6 @@
 import { logger } from "@/lib/client-logger";
 
-type RealtimeSubscription =
+export type RealtimeSubscription =
     | {
           close: () => Promise<void> | void;
       }

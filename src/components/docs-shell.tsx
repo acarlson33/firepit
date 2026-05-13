@@ -20,10 +20,10 @@ export function DocsShell({
     aside,
 }: DocsShellProps) {
     return (
-        <div className="mx-auto w-full max-w-7xl px-6 py-10">
-            <div className="grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <div className="grid gap-8 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)]">
                 <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
-                    <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur-sm">
+                    <div className="overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-5 shadow-xl backdrop-blur-sm">
                         <div className="flex items-center gap-3">
                             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                                 <BookOpenText className="h-5 w-5" />
@@ -39,7 +39,7 @@ export function DocsShell({
                         </div>
                     </div>
 
-                    <nav className="rounded-3xl border border-border/60 bg-card/70 p-3 shadow-sm backdrop-blur-sm">
+                    <nav className="rounded-4xl border border-border/60 bg-card/75 p-3 shadow-xl backdrop-blur-sm">
                         <div className="mb-2 px-3 pt-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                             Guides
                         </div>
@@ -70,7 +70,7 @@ export function DocsShell({
                         </div>
                     </nav>
 
-                    <div className="rounded-3xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur-sm">
+                    <div className="rounded-4xl border border-border/60 bg-card/75 p-4 shadow-xl backdrop-blur-sm">
                         <Link
                             className="flex items-center gap-3 rounded-2xl px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
                             href={"/docs/api" as Route}
@@ -93,7 +93,7 @@ export function DocsShell({
                 </aside>
 
                 <div className="space-y-6">
-                    <section className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur-sm">
+                    <section className="overflow-hidden rounded-4xl border border-border/60 bg-card/80 p-8 shadow-2xl backdrop-blur-sm sm:p-10">
                         <div className="max-w-3xl space-y-3">
                             <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                 <BookOpenText className="h-3.5 w-3.5" />

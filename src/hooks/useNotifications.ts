@@ -4,29 +4,33 @@ import { Channel, Query } from "appwrite";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { logger } from "@/lib/client-logger";
-import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
 function createRealtimeCleanup(params: {
     contextId: string;
     contextLabel: string;
-    subscription: { close: () => Promise<void> };
+    subscription: RealtimeSubscription;
     untrack?: () => void;
 }) {
     return () => {
-        closeSubscriptionSafely(params.subscription).catch((closeError) => {
-            logger.warn(
-                `Failed to close ${params.contextLabel} notification realtime subscription`,
-                {
-                    contextId: params.contextId,
-                    error:
-                        closeError instanceof Error
-                            ? closeError.message
-                            : String(closeError),
-                },
-            );
-        });
+        if (typeof params.subscription === "function") {
+            params.subscription();
+        } else {
+            closeSubscriptionSafely(params.subscription).catch((closeError) => {
+                logger.warn(
+                    `Failed to close ${params.contextLabel} notification realtime subscription`,
+                    {
+                        contextId: params.contextId,
+                        error:
+                            closeError instanceof Error
+                                ? closeError.message
+                                : String(closeError),
+                    },
+                );
+            });
+        }
         params.untrack?.();
     };
 }
@@ -55,6 +59,8 @@ export function useNotifications({
     serverId,
     conversationId,
 }: NotificationOptions) {
+    const channelSubscriptionRef = useRef<RealtimeSubscription | null>(null);
+    const dmSubscriptionRef = useRef<RealtimeSubscription | null>(null);
     const notificationPermissionRef = useRef<NotificationPermission>("default");
     const [isPageVisible, setIsPageVisible] = useState(() => {
         if (typeof document === "undefined") {
@@ -182,6 +188,7 @@ export function useNotifications({
         let unsubscribe: (() => void) | undefined;
         let untrack: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -226,12 +233,14 @@ export function useNotifications({
                             const {
                                 shouldNotifyUser,
                                 buildNotificationPayload,
-                                extractMentionedUserIds,
-                            } = await import("@/lib/notification-triggers");
+                                    extractMentionedUserIds,
+                                } = await import("@/lib/notification-triggers");
+                                const { hasEveryoneMention } = await import("@/lib/mention-utils");
 
                             const messageText = payload.text as string;
                             const mentionedUserIds =
                                 extractMentionedUserIds(messageText);
+                            const mentionsEveryone = hasEveryoneMention(messageText);
                             const replyToAuthorId = payload.replyToAuthorId as
                                 | string
                                 | undefined;
@@ -242,6 +251,7 @@ export function useNotifications({
                                 serverId: serverId ?? undefined,
                                 channelId,
                                 mentionedUserIds,
+                                mentionsEveryone,
                                 isReplyToRecipient: replyToAuthorId === userId,
                             });
 
@@ -281,11 +291,35 @@ export function useNotifications({
                     })();
                 };
 
+                // If we have a running subscription, attempt to update its queries
+                if (channelSubscriptionRef.current) {
+                    const existing = channelSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("channelId", channelId)],
+                            });
+                            untrack = trackSubscription(messageChannelKey);
+                            unsubscribe = createRealtimeCleanup({
+                                contextId: channelId,
+                                contextLabel: "channel",
+                                subscription: channelSubscriptionRef.current,
+                                untrack,
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
                     [Query.equal("channelId", channelId)],
                 );
+
+                channelSubscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -293,6 +327,7 @@ export function useNotifications({
                         contextLabel: "channel",
                         subscription,
                     })();
+                    channelSubscriptionRef.current = null;
                     return;
                 }
 
@@ -350,6 +385,7 @@ export function useNotifications({
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
 
         import("@/lib/realtime-pool")
             .then(async ({ getSharedRealtime, trackSubscription }) => {
@@ -435,11 +471,35 @@ export function useNotifications({
                     })();
                 };
 
+                // Try to update existing subscription if available
+                if (dmSubscriptionRef.current) {
+                    const existing = dmSubscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("conversationId", conversationId)],
+                            });
+                            const untrack = trackSubscription(messageChannelKey);
+                            cleanup = createRealtimeCleanup({
+                                contextId: conversationId,
+                                contextLabel: "DM",
+                                subscription: dmSubscriptionRef.current,
+                                untrack,
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+                }
+
                 const subscription = await realtime.subscribe(
                     messageChannel,
                     handleMessage,
                     [Query.equal("conversationId", conversationId)],
                 );
+
+                dmSubscriptionRef.current = subscription;
 
                 if (cancelled) {
                     createRealtimeCleanup({
@@ -447,6 +507,7 @@ export function useNotifications({
                         contextLabel: "DM",
                         subscription,
                     })();
+                    dmSubscriptionRef.current = null;
                     return;
                 }
 

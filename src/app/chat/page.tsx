@@ -37,6 +37,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Loader from "@/components/loader";
+import { Avatar } from "@/components/ui/avatar";
 import { adaptChannelMessages, fromChannelMessage } from "@/lib/chat-surface";
 import {
     jumpToMessage,
@@ -199,6 +200,7 @@ type ServerPermissionsResponse = {
     manageServer?: boolean;
     sendMessages?: boolean;
     canSend?: boolean;
+    mentionEveryone?: boolean;
 };
 
 function createPollOption(value = ""): PollOption {
@@ -277,6 +279,7 @@ export default function ChatPage() {
     }>({ open: false, type: "channel", id: "", name: "" });
     const [canManageMessages, setCanManageMessages] = useState(false);
     const [canSendMessages, setCanSendMessages] = useState(false);
+    const [canMentionEveryone, setCanMentionEveryone] = useState(false);
     const [canManageServer, setCanManageServer] = useState(false);
     const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<string[]>(
         [],
@@ -1119,12 +1122,14 @@ export default function ChatPage() {
 
         setCanManageMessages(false);
         setCanSendMessages(false);
+        setCanMentionEveryone(false);
 
         async function checkPermissions() {
             if (!selectedChannel || !userId || !serversApi.selectedServer) {
                 if (!signal.aborted) {
                     setCanManageMessages(false);
                     setCanSendMessages(false);
+                    setCanMentionEveryone(false);
                 }
                 return;
             }
@@ -1133,6 +1138,7 @@ export default function ChatPage() {
                 if (!signal.aborted) {
                     setCanManageMessages(true);
                     setCanSendMessages(true);
+                    setCanMentionEveryone(true);
                 }
                 return;
             }
@@ -1151,9 +1157,11 @@ export default function ChatPage() {
                         setCanSendMessages(
                             data.canSend ?? data.sendMessages ?? false,
                         );
+                        setCanMentionEveryone(data.mentionEveryone ?? false);
                     } else {
                         setCanManageMessages(false);
                         setCanSendMessages(false);
+                        setCanMentionEveryone(false);
                     }
                 }
             } catch (error) {
@@ -1166,6 +1174,7 @@ export default function ChatPage() {
 
                 setCanManageMessages(false);
                 setCanSendMessages(false);
+                setCanMentionEveryone(false);
             }
         }
 
@@ -1686,36 +1695,47 @@ export default function ChatPage() {
                 <ul className="space-y-2">
                     {serversApi.servers.map((s) => {
                         const active = s.$id === serversApi.selectedServer;
+                        const memberCountLabel =
+                            s.memberCount !== undefined
+                                ? `${s.memberCount} ${
+                                      s.memberCount === 1
+                                          ? "member"
+                                          : "members"
+                                  }`
+                                : "Server";
                         return (
                             <li key={s.$id} className="group relative">
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-start gap-2">
                                     <Button
                                         aria-pressed={active}
-                                        className={`flex-1 justify-between rounded-xl transition-colors min-w-0 overflow-hidden ${
+                                        className={`min-w-0 flex-1 justify-start gap-3 overflow-hidden rounded-[1.25rem] border px-4 py-3 text-left shadow-sm transition-all ${
                                             active
-                                                ? ""
-                                                : "border border-border/60 bg-background"
+                                                ? "border-primary/25 bg-primary/10 text-foreground shadow-primary/10"
+                                                : "border-border/60 bg-background/70 hover:border-border hover:bg-background"
                                         }`}
                                         onClick={() => {
                                             serversApi.setSelectedServer(s.$id);
                                             setSelectedChannel(null);
                                         }}
                                         type="button"
-                                        variant={active ? "default" : "outline"}
+                                        variant="ghost"
                                     >
-                                        <span className="truncate text-left font-medium">
-                                            {s.name}
+                                        <Avatar
+                                            alt={s.name}
+                                            fallback={s.name}
+                                            size="md"
+                                            src={s.iconUrl ?? null}
+                                        />
+
+                                        <span className="min-w-0 flex-1 text-left">
+                                            <span className="block truncate font-medium">
+                                                {s.name}
+                                            </span>
+                                            <span className="block text-xs text-muted-foreground">
+                                                {memberCountLabel}
+                                            </span>
                                         </span>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {s.memberCount !== undefined && (
-                                                <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                                                    {s.memberCount}{" "}
-                                                    {s.memberCount === 1
-                                                        ? "member"
-                                                        : "members"}
-                                                </span>
-                                            )}
-                                        </div>
+
                                     </Button>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
@@ -1833,50 +1853,63 @@ export default function ChatPage() {
             const active = channel.$id === selectedChannel;
             const unreadState = channelUnreadStateById[channel.$id];
             const isAnnouncementChannel = channel.type === "announcement";
+            const channelKindLabel = isAnnouncementChannel
+                ? "Announcement channel"
+                : "Text channel";
 
             return (
                 <li key={channel.$id} className="group relative">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-start gap-2">
                         <Button
                             aria-pressed={active}
-                            className={`min-w-0 flex-1 justify-between overflow-hidden rounded-xl transition-colors ${
+                            className={`min-w-0 flex-1 justify-start gap-3 rounded-[1.15rem] border px-4 py-3.5 text-left shadow-sm transition-all ${
                                 active
-                                    ? ""
-                                    : "border border-border/60 bg-background"
+                                    ? "border-primary/25 bg-primary/10 text-foreground shadow-primary/10"
+                                    : "border-border/60 bg-background/70 hover:border-border hover:bg-background"
                             }`}
                             onClick={() => selectChannel(channel)}
                             type="button"
-                            variant={active ? "default" : "outline"}
+                            variant="ghost"
                         >
-                            <span className="min-w-0 truncate text-left font-medium inline-flex items-center gap-2">
+                            <span
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border ${
+                                    active
+                                        ? "border-primary/20 bg-primary text-primary-foreground"
+                                        : "border-border/60 bg-muted/50 text-muted-foreground"
+                                }`}
+                            >
                                 {isAnnouncementChannel ? (
                                     <Megaphone
                                         aria-hidden="true"
-                                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                        className="size-3"
                                     />
-                                ) : null}
-                                <span className="truncate">{channel.name}</span>
+                                ) : (
+                                    <Hash aria-hidden="true" className="size-3" />
+                                )}
                             </span>
+
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">
+                                    {channel.name}
+                                </span>
+                                    <span className="block text-[10px] leading-none text-muted-foreground">
+                                    {channelKindLabel}
+                                </span>
+                            </span>
+
                             <span className="flex shrink-0 items-center gap-2">
-                                {isAnnouncementChannel ? (
-                                    <span className="rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                        Announce
-                                    </span>
-                                ) : null}
                                 {unreadState?.count ? (
                                     <span
-                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                        className={`inline-flex h-5 min-w-5 items-center justify-center rounded-md border px-1.5 text-[10px] font-semibold ${
                                             unreadState.muted
-                                                ? "bg-muted text-muted-foreground"
-                                                : "bg-primary text-primary-foreground"
+                                                ? "border-border/60 bg-muted/40 text-muted-foreground"
+                                                : "border-primary/20 bg-primary/10 text-primary"
                                         }`}
                                     >
                                         {unreadState.count}
                                     </span>
                                 ) : null}
-                                <span className="text-xs text-muted-foreground">
-                                    #{channel.$id.slice(0, 4)}
-                                </span>
+
                             </span>
                         </Button>
                         <DropdownMenu>
@@ -2096,6 +2129,8 @@ export default function ChatPage() {
                         : null
                 }
                 userIdSlice={userIdSlice}
+                serverId={selectedChannelData?.serverId}
+                canMentionEveryone={canMentionEveryone}
             />
         );
     }
@@ -2103,17 +2138,17 @@ export default function ChatPage() {
     // Show loader during initial load
     if (serversApi.initialLoading) {
         return (
-            <div className="flex h-screen w-full items-center justify-center">
+            <div className="flex min-h-[calc(100vh-5rem)] w-full items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
                 <Loader />
             </div>
         );
     }
 
     return (
-        <div className="mx-auto w-full max-w-7xl py-8 pl-6 pr-8 sm:px-6">
-            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <aside className="space-y-6 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-lg">
-                    <div className="rounded-2xl bg-muted/40 p-1">
+        <div className="mx-auto w-full max-w-376 px-4 py-6 sm:px-6 lg:px-8">
+            <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+                <aside className="space-y-6 rounded-4xl border border-border/60 bg-card/75 p-5 shadow-2xl backdrop-blur-sm sm:p-6">
+                    <div className="rounded-3xl bg-muted/40 p-1">
                         <div className="grid grid-cols-2 gap-1">
                             <Button
                                 aria-pressed={viewMode === "channels"}
@@ -2182,10 +2217,6 @@ export default function ChatPage() {
                             currentUserId={userId ?? undefined}
                             inboxContractVersion={inboxApi.contractVersion}
                             loading={conversationsApi.loading}
-                            inboxItems={inboxApi.items}
-                            inboxLoading={inboxApi.loading}
-                            inboxBulkLoading={inboxApi.bulkLoading}
-                            onMarkInboxScopeRead={inboxApi.markScopeRead}
                             onMuteConversation={(
                                 conversationId,
                                 conversationName,
@@ -2215,7 +2246,7 @@ export default function ChatPage() {
                     )}
                 </aside>
 
-                <div className="min-w-0 space-y-4 rounded-3xl border border-border/60 bg-background/70 p-6 shadow-xl">
+                <div className="min-w-0 space-y-4 rounded-4xl border border-border/60 bg-card/75 p-5 shadow-2xl backdrop-blur-sm sm:p-6">
                     {viewMode === "dms" && selectedConversation && userId ? (
                         <DirectMessageView
                             conversation={selectedConversation}

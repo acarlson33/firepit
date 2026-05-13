@@ -499,7 +499,6 @@ describe("ChatPage", () => {
             await screen.findByRole("heading", { name: "announcements" }),
         ).toBeInTheDocument();
         expect(screen.getByText("Announcement")).toBeInTheDocument();
-        expect(screen.getByText("Announce")).toBeInTheDocument();
         expect(screen.getByTestId("chat-surface-panel")).toHaveAttribute(
             "data-composer-disabled",
             "true",

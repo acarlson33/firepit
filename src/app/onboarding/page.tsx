@@ -166,8 +166,8 @@ export default function OnboardingPage() {
     }
 
     return (
-        <div className="container mx-auto max-w-2xl px-4 py-12">
-            <div className="overflow-hidden rounded-3xl border border-border/60 bg-card/80 p-10 shadow-xl backdrop-blur">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+            <div className="overflow-hidden rounded-4xl border border-border/70 bg-card/85 p-6 shadow-2xl backdrop-blur-sm sm:p-8 lg:p-10">
                 {/* Progress indicator */}
                 <ul
                     aria-label="Onboarding progress"
@@ -216,7 +216,7 @@ export default function OnboardingPage() {
 
                 {/* Step header */}
                 <div className="mb-8 space-y-4 text-center">
-                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-linear-to-br from-sky-400/60 via-purple-400/60 to-transparent p-3 shadow-lg">
+                    <div className="mx-auto inline-flex size-16 items-center justify-center rounded-full bg-gradient-to-br from-primary/70 via-amber-300/50 to-transparent p-3 shadow-lg shadow-primary/15">
                         <Sparkles
                             aria-hidden="true"
                             className="size-8 text-primary"
@@ -396,7 +396,7 @@ export default function OnboardingPage() {
                                 </Select>
                             </div>
 
-                            <div className="flex items-center justify-between rounded-lg border border-border/60 p-4">
+                            <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-4">
                                 <div className="space-y-1">
                                     <Label
                                         className="text-base"
@@ -421,7 +421,7 @@ export default function OnboardingPage() {
                     {/* Step 3: Telemetry */}
                     {currentStep === "telemetry" && (
                         <div className="space-y-4">
-                            <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                            <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
                                 <p className="text-sm text-muted-foreground">
                                     When enabled, Firepit collects anonymous
                                     usage data to help us understand how people
@@ -440,7 +440,7 @@ export default function OnboardingPage() {
                                 </p>
                             </div>
 
-                            <div className="flex items-center justify-between rounded-lg border border-border/60 p-4">
+                            <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-background/70 p-4">
                                 <div className="space-y-1">
                                     <Label
                                         className="text-base"
@@ -500,7 +500,7 @@ export default function OnboardingPage() {
                         You can always update these settings later in Settings.
                     </p>
                     <Button
-                        className="text-xs"
+                        className="rounded-full text-xs"
                         disabled={loading}
                         onClick={handleSkip}
                         type="button"

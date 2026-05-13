@@ -93,13 +93,18 @@ if (process.env.VITEST || process.env.VITEST_WORKER_ID) {
                 toString: () => "files",
             }),
         },
-        Realtime: vi.fn().mockImplementation(() => ({
+            Realtime: vi.fn().mockImplementation(() => ({
             activeSubscriptions: new Map(),
             closeSocket: vi.fn().mockResolvedValue(undefined),
             reconnect: false,
-            subscribe: vi.fn().mockImplementation(async () => ({
-                close: vi.fn().mockResolvedValue(undefined),
-            })),
+            subscribe: vi.fn().mockImplementation(() =>
+                Promise.resolve({
+                    close: vi.fn().mockResolvedValue(undefined),
+                    // Support newer subscription lifecycle methods used by refactor
+                    update: vi.fn().mockResolvedValue(undefined),
+                    disconnect: vi.fn().mockResolvedValue(undefined),
+                })
+            ),
             close: vi.fn().mockResolvedValue(undefined),
             unsubscribe: vi.fn().mockResolvedValue(undefined),
         })),

@@ -20,13 +20,8 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import {
-    getSharedRealtime,
-    isTransientRealtimeSubscribeError,
-    resetSharedClient,
-    trackSubscription,
-} from "@/lib/realtime-pool";
-import { closeSubscriptionSafely } from "@/lib/realtime-error-suppression";
+import { getSharedRealtime, isTransientRealtimeSubscribeError, resetSharedClient, trackSubscription } from "@/lib/realtime-pool";
+import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -66,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const lastIdentifiedUserId = useRef<string | null>(null);
     const realtimeUserIdRef = useRef<string | null>(null);
     const realtimeResetPromiseRef = useRef<Promise<void> | null>(null);
+    const subscriptionRef = useRef<RealtimeSubscription | null>(null);
 
     const queueRealtimeReset = useCallback(() => {
         const previousReset =
@@ -283,6 +279,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         .document();
                     const channelKey = channel.toString();
 
+                    // If we already have a subscription, try to update it for the new user
+                    if (subscriptionRef.current) {
+                            const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                        if (typeof existing.update === "function") {
+                            try {
+                                await existing.update({
+                                    queries: [Query.equal("userId", activeUserId)],
+                                });
+                                return;
+                                } catch {
+                                // fallthrough to recreate
+                            }
+                        }
+                    }
+
                     const subscription = await realtime.subscribe(
                         channel,
                         (response) => {
@@ -317,17 +328,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         [Query.equal("userId", activeUserId)],
                     );
 
+                    subscriptionRef.current = subscription;
                     const untrack = trackSubscription(channelKey);
 
                     if (cancelled) {
                         untrack();
-                        void closeSubscriptionSafely(subscription);
+                        if (subscriptionRef.current) {
+                            closeSubscriptionSafely(subscriptionRef.current);
+                        }
+                        subscriptionRef.current = null;
                         return;
                     }
 
                     cleanup = () => {
                         untrack();
-                        void closeSubscriptionSafely(subscription);
+                        if (subscriptionRef.current) {
+                            closeSubscriptionSafely(subscriptionRef.current);
+                        }
+                        subscriptionRef.current = null;
                     };
                 } catch (err) {
                     if (cancelled) {

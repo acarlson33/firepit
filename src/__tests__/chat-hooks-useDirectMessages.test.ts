@@ -26,7 +26,11 @@ const {
     mockEditDirectMessage: vi.fn(),
     mockListDirectMessages: vi.fn(),
     mockListPins: vi.fn(),
-    mockRealtimeSubscribe: vi.fn(async () => ({ close: vi.fn() })),
+    mockRealtimeSubscribe: vi.fn(async () => ({
+        close: vi.fn(),
+        update: vi.fn().mockResolvedValue(undefined),
+        disconnect: vi.fn().mockResolvedValue(undefined),
+    })),
     mockListThreadMessages: vi.fn(),
     mockPinMessage: vi.fn(),
     mockSendDirectMessage: vi.fn(),
@@ -157,7 +161,11 @@ describe("useDirectMessages", () => {
         vi.useRealTimers();
         mockListDirectMessages.mockResolvedValue(createListResult());
         mockRealtimeSubscribe.mockImplementation(
-            async () => ({ close: vi.fn() }) as { close: () => void },
+            async () => ({
+                close: vi.fn(),
+                update: vi.fn().mockResolvedValue(undefined),
+                disconnect: vi.fn().mockResolvedValue(undefined),
+            }),
         );
         mockSendDirectMessage.mockResolvedValue({
             $createdAt: "2026-03-10T12:05:00.000Z",
@@ -564,7 +572,11 @@ describe("useDirectMessages", () => {
             realtimeCallback = callback as (
                 response: { events: string[]; payload: Record<string, unknown> },
             ) => void;
-            return { close: vi.fn() };
+            return {
+                close: vi.fn(),
+                update: vi.fn().mockResolvedValue(undefined),
+                disconnect: vi.fn().mockResolvedValue(undefined),
+            };
         });
 
         const { result } = renderHook(() =>
@@ -625,7 +637,11 @@ describe("useDirectMessages", () => {
             .mockRejectedValueOnce(
                 new Error("Can't establish a connection to the server"),
             )
-            .mockResolvedValueOnce({ close: vi.fn() });
+            .mockResolvedValueOnce({
+                close: vi.fn(),
+                update: vi.fn().mockResolvedValue(undefined),
+                disconnect: vi.fn().mockResolvedValue(undefined),
+            });
 
         vi.useFakeTimers();
 

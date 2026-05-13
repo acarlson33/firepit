@@ -28,6 +28,11 @@ type RealtimeSubscription = {
     close: () => Promise<void>;
 };
 
+// Subscription shape that may support an `update` method for changing query filters
+type IStatusSubscription = RealtimeSubscription & {
+    update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
+};
+
 /**
  * Hook to subscribe to real-time status updates for multiple users
  */
@@ -35,6 +40,8 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
     const [statuses, setStatuses] = useState<StatusMap>(new Map());
     const [loading, setLoading] = useState(true);
     const enabledRef = useRef(enabled);
+    const subscriptionRef = useRef<IStatusSubscription | undefined>(undefined);
+    const previousUserIdsRef = useRef<string[]>([]);
     const normalizedUserIds = useMemo(
         () =>
             Array.from(new Set(userIds.filter((id) => id.length > 0))).sort(
@@ -58,8 +65,11 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
             !STATUSES_COLLECTION ||
             normalizedUserIds.length === 0
         ) {
-            setStatuses(new Map());
-            setLoading(false);
+            // Only reset state if we actually had users before
+            if (previousUserIdsRef.current.length > 0) {
+                setStatuses(new Map());
+                setLoading(false);
+            }
             return;
         }
 
@@ -98,6 +108,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                     return;
                 }
 
+                previousUserIdsRef.current = normalizedUserIds;
                 setStatuses(statusMap);
             }
         } catch (error) {
@@ -107,11 +118,24 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                 setLoading(false);
             }
         }
-    }, [enabled, normalizedUserIds]);
+    }, [normalizedUserIds]);
 
+    // Fetch statuses when normalized user IDs change
     useEffect(() => {
-        void fetchStatuses();
-    }, [fetchStatuses]);
+        // Only fetch if the user IDs actually changed
+        if (
+            previousUserIdsRef.current.length !== normalizedUserIds.length ||
+            !previousUserIdsRef.current.every(
+                (id, idx) => id === normalizedUserIds[idx],
+            )
+        ) {
+            fetchStatuses().catch((error) => {
+                logger.warn("Failed to fetch statuses", {
+                    error: toErrorMessage(error),
+                });
+            });
+        }
+    }, [normalizedUserIds, fetchStatuses]);
 
     // Real-time subscription to status updates
     useEffect(() => {
@@ -172,20 +196,36 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                     };
 
                     // Keep a query filter so status updates are scoped to tracked users.
+                    // Try updating existing subscription if supported
+                    const existing = subscriptionRef.current;
+                    if (typeof existing?.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("userId", normalizedUserIds)],
+                            });
+                            return;
+                        } catch {
+                            // fallthrough to recreate
+                        }
+                    }
+
                     const subscription: RealtimeSubscription =
                         await realtime.subscribe(channel, handleStatusEvent, [
                             Query.equal("userId", normalizedUserIds),
                         ]);
 
+                    subscriptionRef.current = subscription;
+
                     if (cancelled) {
-                        await closeSubscriptionSafely(subscription);
+                        await closeSubscriptionSafely(subscriptionRef.current);
+                        subscriptionRef.current = undefined;
                         return;
                     }
 
                     const untrack = trackSubscription(channelKey);
                     cleanup = () => {
                         untrack();
-                        closeSubscriptionSafely(subscription).catch(
+                        closeSubscriptionSafely(subscriptionRef.current).catch(
                             (error) => {
                                 logger.warn(
                                     "Status subscription cleanup failed",
@@ -195,6 +235,7 @@ export function useStatusSubscription(userIds: string[], enabled = true) {
                                 );
                             },
                         );
+                        subscriptionRef.current = undefined;
                     };
                 } catch (err) {
                     if (isTransientRealtimeSubscribeError(err)) {

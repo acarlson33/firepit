@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "@/lib/auth-server";
 import { getInviteByCode, getServerPreview, validateInvite } from "@/lib/appwrite-invites";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { InvitePreviewClient } from "./InvitePreviewClient";
 
 type InvitePageProps = {
@@ -10,6 +13,7 @@ type InvitePageProps = {
 };
 
 export default async function InvitePage({ params }: InvitePageProps) {
+  noStore();
   const { code } = await params;
 
   // Get the invite
@@ -22,16 +26,18 @@ export default async function InvitePage({ params }: InvitePageProps) {
   const validation = await validateInvite(code);
   if (!validation.valid) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="max-w-md w-full text-center">
-          <h1 className="text-2xl font-bold mb-2">Invalid Invite</h1>
-          <p className="text-muted-foreground mb-6">{validation.error}</p>
-          <a
-            href="/chat"
-            className="inline-block px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-          >
-            Go to Chat
-          </a>
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-3xl items-center px-4 py-8 sm:px-6 lg:px-8">
+        <div className="w-full rounded-4xl border border-border/70 bg-card/85 p-8 text-center shadow-2xl backdrop-blur-sm sm:p-10">
+          <div className="mx-auto mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+            <span className="text-2xl font-semibold">!</span>
+          </div>
+          <h1 className="text-3xl font-semibold tracking-tight">Invalid Invite</h1>
+          <p className="mx-auto mt-3 max-w-xl text-muted-foreground">{validation.error}</p>
+          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <Button asChild size="lg" className="rounded-full">
+              <Link href="/chat">Go to Chat</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );

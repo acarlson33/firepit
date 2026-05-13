@@ -24,6 +24,8 @@ interface NotificationContext {
 	recipientId: string;
 	/** IDs of users mentioned in the message */
 	mentionedUserIds?: string[];
+	/** Whether the message mentions everyone in the channel */
+	mentionsEveryone?: boolean;
 	/** Whether this is a reply to a message from the recipient */
 	isReplyToRecipient?: boolean;
 }
@@ -311,6 +313,11 @@ function determineEventType(context: NotificationContext): NotificationEventType
 	// Direct messages
 	if (context.conversationId) {
 		return "dm";
+	}
+
+	// Messages that mention @everyone or @here
+	if (context.mentionsEveryone) {
+		return "mention";
 	}
 
 	// Check if recipient was mentioned

@@ -16,10 +16,19 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <>
-      <Header onSearchClick={globalSearch.open} />
-      <main className="relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background" aria-hidden="true" />
-        <div className="relative h-full">
+      <Suspense fallback={null}>
+        <Header onSearchClick={globalSearch.open} />
+      </Suspense>
+      <main className="relative flex-1 overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-primary/10 via-background/40 to-transparent"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background via-background/70 to-transparent"
+        />
+        <div className="relative min-h-full">
           {children}
         </div>
       </main>

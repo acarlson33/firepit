@@ -158,6 +158,8 @@ export function useInbox(userId: string | null) {
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
 
+        const subscriptionRef: { current?: { close: () => Promise<void> } } = {};
+
         const subscriptionTask = (async () => {
             if (cancelled) {
                 return;
@@ -168,6 +170,34 @@ export function useInbox(userId: string | null) {
 
             try {
                 const realtime = getSharedRealtime();
+
+                // Attempt to update an existing subscription when possible
+                if (subscriptionRef.current) {
+                    const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                    if (typeof existing.update === "function") {
+                        try {
+                            await existing.update({
+                                queries: [Query.equal("userId", userId)],
+                            });
+                            // ensure it's tracked and assign cleanup so we don't leak
+                            untrack = trackSubscription(inboxChannelKey);
+                            cleanupFn = () => {
+                                untrack?.();
+                                closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
+                                    logger.warn(
+                                        "Failed to close inbox realtime subscription",
+                                        { error: error instanceof Error ? error.message : String(error) },
+                                    );
+                                });
+                                subscriptionRef.current = undefined;
+                            };
+                            return;
+                        } catch {
+                            // fallthrough to recreate subscription
+                        }
+                    }
+                }
+
                 subscription = await realtime.subscribe(
                     inboxChannel,
                     (response) => {
@@ -183,19 +213,22 @@ export function useInbox(userId: string | null) {
                             return;
                         }
 
-                        queryClient
-                            .invalidateQueries({
-                                queryKey: getInboxQueryKey(userId),
-                                refetchType: "active",
-                            })
-                            .catch((error) => {
-                                logger.warn("Failed to refresh inbox query", {
-                                    error:
-                                        error instanceof Error
-                                            ? error.message
-                                            : String(error),
+                        (async () => {
+                            try {
+                                await queryClient.invalidateQueries({
+                                    queryKey: getInboxQueryKey(userId),
+                                    refetchType: "active",
                                 });
+                            } catch (error) {
+                                logger.warn("Failed to refresh inbox query", {
+                                    error: error instanceof Error ? error.message : String(error),
+                                });
+                            }
+                        })().catch((error) => {
+                            logger.warn("Failed to refresh inbox query", {
+                                error: error instanceof Error ? error.message : String(error),
                             });
+                        });
                     },
                     [Query.equal("userId", userId)],
                 );
@@ -207,20 +240,34 @@ export function useInbox(userId: string | null) {
                     return;
                 }
 
+                subscriptionRef.current = subscription;
                 untrack = trackSubscription(inboxChannelKey);
+
+                cleanupFn = () => {
+                    untrack?.();
+                    closeSubscriptionSafely(subscriptionRef.current).catch((error) => {
+                        logger.warn(
+                            "Failed to close inbox realtime subscription",
+                            { error: error instanceof Error ? error.message : String(error) },
+                        );
+                    });
+                    subscriptionRef.current = undefined;
+                };
             } catch (error) {
-                if (cancelled) {
-                    return;
+                if (subscription) {
+                    await closeSubscriptionSafely(subscription).catch((closeError) => {
+                        logger.warn(
+                            "Failed to close inbox realtime subscription after subscribe error",
+                            { error: closeError instanceof Error ? closeError.message : String(closeError) },
+                        );
+                    });
                 }
 
                 if (isTransientRealtimeSubscribeError(error)) {
                     logger.warn(
                         "Inbox realtime subscription interrupted during connection setup",
                         {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
+                            error: error instanceof Error ? error.message : String(error),
                             inboxChannelKey,
                             userId,
                         },
@@ -236,25 +283,9 @@ export function useInbox(userId: string | null) {
                         userId,
                     },
                 );
-            } finally {
-                cleanupFn = () => {
-                    untrack?.();
-                    if (subscription) {
-                        closeSubscriptionSafely(subscription).catch((error) => {
-                            logger.warn(
-                                "Failed to close inbox realtime subscription",
-                                {
-                                    error:
-                                        error instanceof Error
-                                            ? error.message
-                                            : String(error),
-                                },
-                            );
-                        });
-                    }
-                };
             }
         })();
+
         subscriptionTask.catch((error) => {
             logger.warn("Inbox subscription task failed", {
                 error: error instanceof Error ? error.message : String(error),
@@ -275,16 +306,13 @@ export function useInbox(userId: string | null) {
     ]);
 
     const contextSummaries = useMemo(() => {
-        const grouped = data.items.reduce<Map<string, InboxItem[]>>(
-            (accumulator, item) => {
-                const key = createContextKey(item);
-                const currentItems = accumulator.get(key) ?? [];
-                currentItems.push(item);
-                accumulator.set(key, currentItems);
-                return accumulator;
-            },
-            new Map(),
-        );
+        const grouped = data.items.reduce((acc: Map<string, InboxItem[]>, item) => {
+            const key = createContextKey(item);
+            const existing = acc.get(key) ?? [];
+            existing.push(item);
+            acc.set(key, existing);
+            return acc;
+        }, new Map<string, InboxItem[]>());
 
         return Array.from(grouped.values()).map((items) => {
             const sortedAscending = sortByActivityAsc(items);

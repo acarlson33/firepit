@@ -32,6 +32,7 @@ const defaultNavigationPreferences = {
 
 // Mock Next.js router
 vi.mock("next/navigation", () => ({
+    usePathname: () => "/chat",
     useRouter: () => ({
         push: vi.fn(),
     }),
@@ -130,14 +131,14 @@ describe("Header", () => {
         );
     });
 
-    it("should have consistent min-height classes to prevent CLS", () => {
-        // Render header in non-loading state
+    it("should render the sticky header shell classes", () => {
         const { container } = renderWithQueryClient(<Header />);
-        const header = container.querySelector("header");
+        const header = screen.getByRole("banner");
 
-        // Check that header has min-height classes
-        expect(header).toHaveClass("min-h-18.25");
-        expect(header).toHaveClass("sm:min-h-20.25");
+        expect(header).toBe(container.querySelector("header"));
+        expect(header.className).toContain("sticky");
+        expect(header.className).toContain("top-0");
+        expect(header.className).toContain("z-40");
     });
 
     it("shows the friends nav badge and add friend button for authenticated users", () => {
