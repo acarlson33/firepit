@@ -36,8 +36,8 @@ vi.mock("@/app/chat/hooks/useStatusSubscription", () => ({
 
 const mockSubscribe = vi.hoisted(() => vi.fn(async () => ({
     close: vi.fn(),
-    update: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
+    update: vi.fn().mockResolvedValue(),
+    disconnect: vi.fn().mockResolvedValue(),
 })));
 const mockTrackSubscription = vi.hoisted(() => vi.fn(() => vi.fn()));
 
@@ -99,8 +99,8 @@ describe("useConversations", () => {
         vi.clearAllMocks();
         mockSubscribe.mockResolvedValue({
             close: vi.fn(),
-            update: vi.fn().mockResolvedValue(undefined),
-            disconnect: vi.fn().mockResolvedValue(undefined),
+            update: vi.fn().mockResolvedValue(),
+            disconnect: vi.fn().mockResolvedValue(),
         });
         mockTrackSubscription.mockReturnValue(vi.fn());
     });

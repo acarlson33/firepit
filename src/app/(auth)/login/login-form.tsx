@@ -63,7 +63,7 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
 
     const redirectPath = searchParams.get("redirect");
     const destination =
-        redirectPath?.startsWith("/") === true ? redirectPath : "/chat";
+        redirectPath?.startsWith("/") ? redirectPath : "/chat";
 
     const onLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -141,7 +141,7 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
 
                     <div className="relative space-y-8">
                         <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                            <Flame className="h-3.5 w-3.5 text-primary" />
+                            <Flame className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                             Firepit login
                         </div>
 
@@ -174,7 +174,7 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
                 <Card className="rounded-4xl border border-border/70 bg-card/85 shadow-2xl backdrop-blur-sm">
                     <CardHeader className="space-y-2">
                         <div className="inline-flex items-center gap-2 rounded-full bg-muted/50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                            <Shield className="h-3.5 w-3.5 text-primary" />
+                            <Shield className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                             Secure access
                         </div>
                         <CardTitle className="text-2xl font-semibold tracking-tight">Sign in to Firepit</CardTitle>
@@ -211,9 +211,9 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
                             </div>
                             <Button disabled={loading} type="submit" className="rounded-full">
                                 {loading ? "Signing in..." : "Sign in"}
-                                {!loading ? <ArrowRight className="ml-2 h-4 w-4" /> : null}
+                                {!loading && <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />}
                             </Button>
-                            {showResendVerification ? (
+                            {showResendVerification && (
                                 <Button
                                     disabled={loading || resendingVerification}
                                     onClick={onResendVerification}
@@ -225,7 +225,7 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
                                         ? "Resending..."
                                         : "Resend verification email"}
                                 </Button>
-                            ) : null}
+                            )}
                         </form>
                         <p className="mt-6 text-sm text-muted-foreground">
                             Need an account?{" "}

@@ -125,8 +125,12 @@ describe("Realtime Pool", () => {
                             releaseFirstSubscribe = () =>
                                 resolve({
                                     close: vi.fn(async () => {}),
-                                    update: vi.fn().mockResolvedValue(undefined),
-                                    disconnect: vi.fn().mockResolvedValue(undefined),
+                                    update: vi
+                                        .fn()
+                                        .mockResolvedValue(undefined),
+                                    disconnect: vi
+                                        .fn()
+                                        .mockResolvedValue(undefined),
                                 });
                         }),
                 )
@@ -182,6 +186,44 @@ describe("Realtime Pool", () => {
             await unsubscribe();
 
             expect(closeSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("should await unsubscribe functions returned directly by the SDK", async () => {
+            getSharedRealtime();
+
+            let resolveDeferred: () => void = () => {};
+            const unsubscribeDeferred = new Promise<void>((resolve) => {
+                resolveDeferred = resolve;
+            });
+            const unsubscribeSpy = vi.fn(() => unsubscribeDeferred);
+            mockRealtimeSubscribe.mockResolvedValueOnce(unsubscribeSpy);
+
+            const wrappedSubscribe = (
+                getSharedRealtime() as {
+                    subscribe: (...args: unknown[]) => Promise<unknown>;
+                }
+            ).subscribe;
+
+            const unsubscribe = (await wrappedSubscribe(
+                "channel-1",
+                vi.fn(),
+            )) as () => Promise<void>;
+
+            const unsubscribePromise = unsubscribe();
+            expect(unsubscribeSpy).toHaveBeenCalledTimes(1);
+
+            let settled = false;
+            void unsubscribePromise.then(() => {
+                settled = true;
+            });
+
+            await Promise.resolve();
+            expect(settled).toBe(false);
+            resolveDeferred();
+            await unsubscribePromise;
+            expect(settled).toBe(true);
+
+            expect(unsubscribeSpy).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -346,7 +388,7 @@ describe("Realtime Pool", () => {
 
     describe("sdk compatibility", () => {
         // realtime-pool teardown still relies on SDK-specific internals
-        // (reflection and fallback cleanup assumptions). Guarding major 24.x
+        // (reflection and fallback cleanup assumptions). Guarding major 25.x
         // prevents silent breakage from upstream major changes.
         it("should keep appwrite on the expected major for realtime cleanup assumptions", () => {
             const packageJson = JSON.parse(

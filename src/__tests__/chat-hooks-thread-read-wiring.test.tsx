@@ -77,8 +77,8 @@ vi.mock("@/lib/realtime-pool", () => ({
     getSharedRealtime: vi.fn(() => ({
         subscribe: vi.fn(async () => ({
             close: vi.fn(),
-            update: vi.fn().mockResolvedValue(undefined),
-            disconnect: vi.fn().mockResolvedValue(undefined),
+            update: vi.fn().mockResolvedValue(),
+            disconnect: vi.fn().mockResolvedValue(),
         })),
     })),
     trackSubscription: vi.fn(() => vi.fn()),

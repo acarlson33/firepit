@@ -28,6 +28,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatPinnedMessagesContent } from "@/components/chat-pinned-messages-content";
+
+function formatMemberCount(count: number | undefined): string {
+	if (count === undefined) {
+		return "Server";
+	}
+	return `${count} ${count === 1 ? "member" : "members"}`;
+}
 import { ChatSurfacePanel } from "@/components/chat-surface-panel";
 import { ChatThreadContent } from "@/components/chat-thread-content";
 import {
@@ -1695,14 +1702,7 @@ export default function ChatPage() {
                 <ul className="space-y-2">
                     {serversApi.servers.map((s) => {
                         const active = s.$id === serversApi.selectedServer;
-                        const memberCountLabel =
-                            s.memberCount !== undefined
-                                ? `${s.memberCount} ${
-                                      s.memberCount === 1
-                                          ? "member"
-                                          : "members"
-                                  }`
-                                : "Server";
+                        const memberCountLabel = formatMemberCount(s.memberCount);
                         return (
                             <li key={s.$id} className="group relative">
                                 <div className="flex items-start gap-2">

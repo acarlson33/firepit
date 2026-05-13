@@ -65,3 +65,6 @@ src/summaries/**
 
 # Generated files
 src/generated/**
+
+# Temp files
+tmp/**

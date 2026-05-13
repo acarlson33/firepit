@@ -20,8 +20,16 @@ import {
     setUserStatus as setUserStatusAPI,
 } from "@/lib/appwrite-status";
 import { normalizeStatus } from "@/lib/status-normalization";
-import { getSharedRealtime, isTransientRealtimeSubscribeError, resetSharedClient, trackSubscription } from "@/lib/realtime-pool";
-import { closeSubscriptionSafely, type RealtimeSubscription } from "@/lib/realtime-error-suppression";
+import {
+    getSharedRealtime,
+    isTransientRealtimeSubscribeError,
+    resetSharedClient,
+    trackSubscription,
+} from "@/lib/realtime-pool";
+import {
+    closeSubscriptionSafely,
+    type RealtimeSubscription,
+} from "@/lib/realtime-error-suppression";
 
 const env = getEnvConfig();
 
@@ -46,7 +54,7 @@ type AuthContextType = {
         status: "online" | "away" | "busy" | "offline",
         customMessage?: string,
         expiresAt?: string,
-    ) => Promise<void>;
+    ) => Promise<{ success: boolean; error?: string }>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -253,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
+        const subscribedUserId = userData.userId;
 
         // Defer subscription setup to after initial render (5 second delay)
         // This prevents real-time connections from blocking the critical render path
@@ -281,14 +290,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     // If we already have a subscription, try to update it for the new user
                     if (subscriptionRef.current) {
-                            const existing = subscriptionRef.current as { update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void> };
+                        const existing = subscriptionRef.current as {
+                            update?: (args: {
+                                queries: ReturnType<typeof Query.equal>[];
+                            }) => Promise<void>;
+                        };
                         if (typeof existing.update === "function") {
                             try {
                                 await existing.update({
-                                    queries: [Query.equal("userId", activeUserId)],
+                                    queries: [
+                                        Query.equal("userId", activeUserId),
+                                    ],
                                 });
                                 return;
-                                } catch {
+                            } catch {
+                                const currentSubscription =
+                                    subscriptionRef.current;
+                                if (currentSubscription) {
+                                    await closeSubscriptionSafely(
+                                        currentSubscription,
+                                    );
+                                }
+                                subscriptionRef.current = null;
                                 // fallthrough to recreate
                             }
                         }
@@ -334,7 +357,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     if (cancelled) {
                         untrack();
                         if (subscriptionRef.current) {
-                            closeSubscriptionSafely(subscriptionRef.current);
+                            await closeSubscriptionSafely(
+                                subscriptionRef.current,
+                            );
                         }
                         subscriptionRef.current = null;
                         return;
@@ -342,8 +367,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                     cleanup = () => {
                         untrack();
+                        if (realtimeUserIdRef.current !== subscribedUserId) {
+                            return;
+                        }
                         if (subscriptionRef.current) {
-                            closeSubscriptionSafely(subscriptionRef.current);
+                            void closeSubscriptionSafely(
+                                subscriptionRef.current,
+                            ).catch((error) => {
+                                logger.warn(
+                                    "Status subscription cleanup failed",
+                                    {
+                                        error:
+                                            error instanceof Error
+                                                ? error.message
+                                                : String(error),
+                                    },
+                                );
+                            });
                         }
                         subscriptionRef.current = null;
                     };
@@ -377,7 +417,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => {
             cancelled = true;
             clearTimeout(timeoutId);
-            cleanup?.();
+            if (cleanup && realtimeUserIdRef.current === subscribedUserId) {
+                cleanup();
+            }
         };
     }, [userData?.userId, waitForRealtimeReset]);
 
@@ -386,9 +428,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             status: "online" | "away" | "busy" | "offline",
             customMessage?: string,
             expiresAt?: string,
-        ) => {
+        ): Promise<{ success: boolean; error?: string }> => {
             if (!userData?.userId) {
-                return;
+                return { success: false, error: "User is not signed in" };
             }
 
             try {
@@ -404,6 +446,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (newStatus) {
                     setUserStatusState(newStatus);
                 }
+                return { success: true };
             } catch (err) {
                 if (process.env.NODE_ENV === "development") {
                     logger.error(
@@ -415,6 +458,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         error: err instanceof Error ? err.message : String(err),
                     });
                 }
+                return {
+                    success: false,
+                    error:
+                        err instanceof Error
+                            ? err.message
+                            : "Failed to change status",
+                };
             }
         },
         [userData?.userId],

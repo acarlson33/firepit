@@ -212,7 +212,7 @@ html.dark {
 		background-image:
 			radial-gradient(circle at top left, var(--bg-gradient-top-left), transparent 34%),
 			radial-gradient(circle at bottom right, var(--bg-gradient-bottom-right), transparent 32%);
-		background-attachment: local;
+		background-attachment: scroll;
 	}
 }
 

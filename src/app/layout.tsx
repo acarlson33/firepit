@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "../index.css";
 import Providers from "@/components/providers";
 import { AppLayout } from "@/components/app-layout";
+import { ResourceHints } from "@/components/resource-hints";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 
 const geistSans = Geist({
@@ -62,6 +63,7 @@ export default function RootLayout({
             <body
                 className={`${geistSans.variable} ${geistMono.variable} overflow-x-hidden antialiased bg-background text-foreground`}
             >
+                <ResourceHints />
                 <ServiceWorkerRegistration />
                 <Providers>
                     <div className="relative min-h-screen overflow-hidden bg-background">
@@ -69,9 +71,9 @@ export default function RootLayout({
                             aria-hidden="true"
                             className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
                         >
-                            <div className="absolute -top-44 left-1/2 h-[32rem] w-[52rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.24),rgba(249,115,22,0.08)_36%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(251,146,60,0.18),rgba(251,146,60,0.05)_38%,transparent_72%)]" />
-                            <div className="absolute -bottom-40 left-[-10%] h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle_at_center,rgba(45,212,191,0.18),rgba(45,212,191,0.05)_42%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.14),rgba(34,197,94,0.04)_42%,transparent_72%)]" />
-                            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+                            <div className="absolute -top-44 left-1/2 h-128 w-208 -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.24),rgba(249,115,22,0.08)_36%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(251,146,60,0.18),rgba(251,146,60,0.05)_38%,transparent_72%)]" />
+                            <div className="absolute -bottom-40 left-[-10%] h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(45,212,191,0.18),rgba(45,212,191,0.05)_42%,transparent_72%)] blur-3xl dark:bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.14),rgba(34,197,94,0.04)_42%,transparent_72%)]" />
+                            <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/25 to-transparent" />
                         </div>
                         <div className="relative z-10 flex min-h-screen flex-col">
                             <AppLayout>{children}</AppLayout>

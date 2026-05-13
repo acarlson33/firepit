@@ -124,7 +124,12 @@ function WorkspaceActionButton({
     variant = "outline",
 }: WorkspaceActionButtonProps) {
     return (
-        <Button asChild className="w-full justify-start rounded-2xl" size="lg" variant={variant}>
+        <Button
+            asChild
+            className="w-full justify-start rounded-2xl"
+            size="lg"
+            variant={variant}
+        >
             <Link href={href}>
                 <Icon className="h-4 w-4" />
                 {label}
@@ -158,12 +163,20 @@ export default async function Home() {
                                     A cleaner home for real-time communities.
                                 </h1>
                                 <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-                                    Firepit brings servers, direct messages, onboarding, moderation, and docs into one cohesive web workspace. The new visual direction favors calmer surfaces, clearer hierarchy, and faster daily navigation.
+                                    Firepit brings servers, direct messages,
+                                    onboarding, moderation, and docs into one
+                                    cohesive web workspace. The new visual
+                                    direction favors calmer surfaces, clearer
+                                    hierarchy, and faster daily navigation.
                                 </p>
                             </div>
 
                             <div className="flex flex-col gap-3 sm:flex-row">
-                                <Button asChild size="lg" className="group shadow-lg shadow-primary/15">
+                                <Button
+                                    asChild
+                                    size="lg"
+                                    className="group shadow-lg shadow-primary/15"
+                                >
                                     <Link href="/login">
                                         Get started
                                         <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -181,7 +194,10 @@ export default async function Home() {
 
                             <div className="grid gap-3 sm:grid-cols-3">
                                 {publicSignals.map((signal) => (
-                                    <SignalCard key={signal.label} signal={signal} />
+                                    <SignalCard
+                                        key={signal.label}
+                                        signal={signal}
+                                    />
                                 ))}
                             </div>
                         </div>
@@ -189,7 +205,10 @@ export default async function Home() {
 
                     <section className="grid gap-4">
                         {publicFeatures.map((feature) => (
-                            <FeatureCard feature={feature} key={feature.title} />
+                            <FeatureCard
+                                feature={feature}
+                                key={feature.title}
+                            />
                         ))}
 
                         <Card className="rounded-[1.75rem] border border-border/70 bg-card/75 shadow-lg backdrop-blur-sm">
@@ -202,13 +221,26 @@ export default async function Home() {
                                     One shell, fewer seams
                                 </CardTitle>
                                 <CardDescription className="leading-6">
-                                    The redesign starts with the top-level shell and the landing path, then expands into chat, onboarding, settings, docs, and admin.
+                                    The redesign starts with the top-level shell
+                                    and the landing path, then expands into
+                                    chat, onboarding, settings, docs, and admin.
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-3 text-sm text-muted-foreground">
-                                <p>• Branded surfaces with warmer, calmer color treatment.</p>
-                                <p>• Clearer primary navigation for chat, docs, settings, and admin.</p>
-                                <p>• Better first-run flow from login through onboarding and join paths.</p>
+                                <ul className="list-disc space-y-3 pl-5">
+                                    <li>
+                                        Branded surfaces with warmer, calmer
+                                        color treatment.
+                                    </li>
+                                    <li>
+                                        Clearer primary navigation for chat,
+                                        docs, settings, and admin.
+                                    </li>
+                                    <li>
+                                        Better first-run flow from login through
+                                        onboarding and join paths.
+                                    </li>
+                                </ul>
                             </CardContent>
                         </Card>
                     </section>
@@ -246,7 +278,10 @@ export default async function Home() {
                                 Ready when you are, {displayName}.
                             </h1>
                             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-                                Jump back into chat, review requests, or head straight to moderation and settings. The workspace is built to keep the important surfaces close together.
+                                Jump back into chat, review requests, or head
+                                straight to moderation and settings. The
+                                workspace is built to keep the important
+                                surfaces close together.
                             </p>
                         </div>
 
@@ -267,7 +302,11 @@ export default async function Home() {
                         </div>
 
                         <div className="flex flex-col gap-3 sm:flex-row">
-                            <Button asChild size="lg" className="group shadow-lg shadow-primary/15">
+                            <Button
+                                asChild
+                                size="lg"
+                                className="group shadow-lg shadow-primary/15"
+                            >
                                 <Link href="/chat">
                                     Open chat
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -282,7 +321,12 @@ export default async function Home() {
                                 <Link href="/settings">Settings</Link>
                             </Button>
                             {isModerator || isAdmin ? (
-                                <Button asChild size="lg" variant="secondary" className="rounded-full">
+                                <Button
+                                    asChild
+                                    size="lg"
+                                    variant="secondary"
+                                    className="rounded-full"
+                                >
                                     <Link href="/moderation">Moderation</Link>
                                 </Button>
                             ) : null}
@@ -301,7 +345,8 @@ export default async function Home() {
                                 Jump back in
                             </CardTitle>
                             <CardDescription className="leading-6">
-                                The redesigned shell keeps the most common actions within a single glance.
+                                The redesigned shell keeps the most common
+                                actions within a single glance.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -346,7 +391,8 @@ export default async function Home() {
                                 Identity and access
                             </CardTitle>
                             <CardDescription className="leading-6">
-                                Quick reference for the account details that shape how Firepit personalizes the workspace.
+                                Quick reference for the account details that
+                                shape how Firepit personalizes the workspace.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-3 text-sm">
@@ -364,7 +410,9 @@ export default async function Home() {
                                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                         Email
                                     </p>
-                                    <p className="mt-1 text-muted-foreground">Not provided</p>
+                                    <p className="mt-1 text-muted-foreground">
+                                        Not provided
+                                    </p>
                                 </div>
                             )}
                             <div className="rounded-2xl border border-border/50 bg-background/60 p-4">
@@ -372,7 +420,9 @@ export default async function Home() {
                                     User ID
                                 </p>
                                 <p className="mt-1 break-all font-mono text-xs text-foreground">
-                                    {user.$id}
+                                    {isAdmin || isModerator
+                                        ? user.$id
+                                        : `${user.$id.slice(0, 8)}...`}
                                 </p>
                             </div>
                             <div className="rounded-2xl border border-border/50 bg-background/60 p-4">

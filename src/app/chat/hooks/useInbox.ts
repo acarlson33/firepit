@@ -213,7 +213,7 @@ export function useInbox(userId: string | null) {
                             return;
                         }
 
-                        (async () => {
+                        void (async () => {
                             try {
                                 await queryClient.invalidateQueries({
                                     queryKey: getInboxQueryKey(userId),
@@ -224,11 +224,7 @@ export function useInbox(userId: string | null) {
                                     error: error instanceof Error ? error.message : String(error),
                                 });
                             }
-                        })().catch((error) => {
-                            logger.warn("Failed to refresh inbox query", {
-                                error: error instanceof Error ? error.message : String(error),
-                            });
-                        });
+                        })();
                     },
                     [Query.equal("userId", userId)],
                 );

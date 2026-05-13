@@ -97,14 +97,12 @@ if (process.env.VITEST || process.env.VITEST_WORKER_ID) {
             activeSubscriptions: new Map(),
             closeSocket: vi.fn().mockResolvedValue(undefined),
             reconnect: false,
-            subscribe: vi.fn().mockImplementation(() =>
-                Promise.resolve({
-                    close: vi.fn().mockResolvedValue(undefined),
-                    // Support newer subscription lifecycle methods used by refactor
-                    update: vi.fn().mockResolvedValue(undefined),
-                    disconnect: vi.fn().mockResolvedValue(undefined),
-                })
-            ),
+            subscribe: vi.fn().mockResolvedValue({
+                close: vi.fn().mockResolvedValue(undefined),
+                // Support newer subscription lifecycle methods used by refactor
+                update: vi.fn().mockResolvedValue(undefined),
+                disconnect: vi.fn().mockResolvedValue(undefined),
+            }),
             close: vi.fn().mockResolvedValue(undefined),
             unsubscribe: vi.fn().mockResolvedValue(undefined),
         })),

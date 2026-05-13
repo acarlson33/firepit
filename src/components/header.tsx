@@ -17,6 +17,7 @@ import {
     UserPlus,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 
 import { logoutAction } from "@/app/(auth)/login/actions";
 import { NotificationsMenu } from "@/components/notifications-menu";
@@ -70,15 +71,19 @@ function isValidHeaderProfile(data: unknown): data is HeaderProfile {
     }
 
     const record = data as Record<string, unknown>;
-    const hasNoKeys = Object.keys(record).length === 0;
+    for (const key of [
+        "avatarUrl",
+        "displayName",
+        "avatarFramePreset",
+        "avatarFrameUrl",
+    ] as const) {
+        const value = record[key];
+        if (typeof value !== "undefined" && typeof value !== "string") {
+            return false;
+        }
+    }
 
-    return (
-        hasNoKeys ||
-        typeof record.avatarUrl === "string" ||
-        typeof record.displayName === "string" ||
-        typeof record.avatarFramePreset === "string" ||
-        typeof record.avatarFrameUrl === "string"
-    );
+    return true;
 }
 
 function isActiveRoute(pathname: string, route: Route) {
@@ -174,10 +179,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
         headerProfile?.displayName?.trim() || userData?.name || "Account";
     const currentStatus = userStatus?.status || "offline";
 
-    const optionalLinks: Record<
-        NavigationItemPreferenceId,
-        NavigationLink
-    > = {
+    const optionalLinks: Record<NavigationItemPreferenceId, NavigationLink> = {
         docs: {
             label: "Docs",
             to: "/docs",
@@ -211,7 +213,13 @@ export default function Header({ onSearchClick }: HeaderProps) {
             return link?.visible ? [link] : [];
         }),
         ...(roles?.isModerator
-            ? [{ to: "/moderation" as Route, label: "Moderation", visible: true }]
+            ? [
+                  {
+                      to: "/moderation" as Route,
+                      label: "Moderation",
+                      visible: true,
+                  },
+              ]
             : []),
         ...(roles?.isAdmin
             ? [{ to: "/admin" as Route, label: "Admin", visible: true }]
@@ -258,11 +266,17 @@ export default function Header({ onSearchClick }: HeaderProps) {
 
     async function handleCustomStatusSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        await updateUserStatus(
+        const result = await updateUserStatus(
             currentStatus,
             customStatusMessage.trim() || undefined,
         );
-        setAccountMenuOpen(false);
+
+        if (result.success) {
+            setAccountMenuOpen(false);
+            return;
+        }
+
+        toast.error(result.error || "Failed to update status");
     }
 
     return (
@@ -305,9 +319,16 @@ export default function Header({ onSearchClick }: HeaderProps) {
                             </Button>
                         )}
                         {isAuthenticated ? (
-                            <NotificationsMenu userId={userData?.userId ?? null} />
+                            <NotificationsMenu
+                                userId={userData?.userId ?? null}
+                            />
                         ) : null}
-                        {!isAuthenticated ? <ThemeToggleMenu theme={menuTheme} setTheme={setTheme} /> : null}
+                        {!isAuthenticated ? (
+                            <ThemeToggleMenu
+                                theme={menuTheme}
+                                setTheme={setTheme}
+                            />
+                        ) : null}
                     </div>
                 </div>
 
@@ -338,7 +359,9 @@ export default function Header({ onSearchClick }: HeaderProps) {
                             return (
                                 <Link
                                     aria-current={active ? "page" : undefined}
-                                    className={getNavigationLinkClassName(active)}
+                                    className={getNavigationLinkClassName(
+                                        active,
+                                    )}
                                     href={link.to}
                                     key={link.to}
                                 >
@@ -346,7 +369,9 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                     {link.count ? (
                                         <Badge
                                             className="h-5 min-w-5 rounded-full px-1.5 text-[10px] leading-none"
-                                            variant={active ? "default" : "secondary"}
+                                            variant={
+                                                active ? "default" : "secondary"
+                                            }
                                         >
                                             {link.count}
                                         </Badge>
@@ -361,7 +386,11 @@ export default function Header({ onSearchClick }: HeaderProps) {
                             isAuthenticated && userData ? (
                                 <>
                                     {navigationPreferences.showAddFriendInHeader ? (
-                                        <Button asChild size="sm" variant="secondary">
+                                        <Button
+                                            asChild
+                                            size="sm"
+                                            variant="secondary"
+                                        >
                                             <Link href="/chat?compose=1">
                                                 <UserPlus className="h-4 w-4" />
                                                 <span className="hidden sm:inline">
@@ -405,7 +434,9 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                                                         <StatusIndicator
                                                             size="sm"
-                                                            status={currentStatus}
+                                                            status={
+                                                                currentStatus
+                                                            }
                                                         />
                                                         Click for options
                                                     </span>
@@ -434,35 +465,39 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                     Status
                                                 </p>
                                             </div>
-                                            {(["online", "away", "busy", "offline"] as const).map(
-                                                (status) => (
-                                                    <DropdownMenuItem
-                                                        disabled={
-                                                            currentStatus ===
-                                                            status
-                                                        }
-                                                        key={status}
-                                                        onClick={() => {
-                                                            void updateUserStatus(
-                                                                status,
-                                                            );
-                                                        }}
-                                                        className="rounded-2xl px-3 py-2"
-                                                    >
-                                                        <div className="flex w-full items-center justify-between gap-3">
-                                                            <StatusIndicator
-                                                                showLabel
-                                                                size="sm"
-                                                                status={status}
-                                                            />
-                                                            {currentStatus ===
-                                                            status ? (
-                                                                <Check className="h-4 w-4 text-primary" />
-                                                            ) : null}
-                                                        </div>
-                                                    </DropdownMenuItem>
-                                                ),
-                                            )}
+                                            {(
+                                                [
+                                                    "online",
+                                                    "away",
+                                                    "busy",
+                                                    "offline",
+                                                ] as const
+                                            ).map((status) => (
+                                                <DropdownMenuItem
+                                                    disabled={
+                                                        currentStatus === status
+                                                    }
+                                                    key={status}
+                                                    onClick={() => {
+                                                        void updateUserStatus(
+                                                            status,
+                                                        );
+                                                    }}
+                                                    className="rounded-2xl px-3 py-2"
+                                                >
+                                                    <div className="flex w-full items-center justify-between gap-3">
+                                                        <StatusIndicator
+                                                            showLabel
+                                                            size="sm"
+                                                            status={status}
+                                                        />
+                                                        {currentStatus ===
+                                                        status ? (
+                                                            <Check className="h-4 w-4 text-primary" />
+                                                        ) : null}
+                                                    </div>
+                                                </DropdownMenuItem>
+                                            ))}
 
                                             <div className="space-y-3 px-3 py-2">
                                                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -481,11 +516,14 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                         className="rounded-2xl"
                                                         onChange={(event) =>
                                                             setCustomStatusMessage(
-                                                                event.target.value,
+                                                                event.target
+                                                                    .value,
                                                             )
                                                         }
                                                         placeholder="What's your status?"
-                                                        value={customStatusMessage}
+                                                        value={
+                                                            customStatusMessage
+                                                        }
                                                     />
                                                     <Button
                                                         className="w-full rounded-2xl"
@@ -505,30 +543,41 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                     Theme
                                                 </p>
                                             </div>
-                                            {(["light", "dark", "system"] as const).map(
-                                                (nextTheme) => {
-                                                    const Icon = THEME_ICONS[nextTheme];
-                                                    return (
-                                                        <DropdownMenuItem
-                                                            key={nextTheme}
-                                                            onClick={() => {
-                                                                setTheme(nextTheme);
-                                                            }}
-                                                            className="rounded-2xl px-3 py-2"
-                                                        >
-                                                            <div className="flex w-full items-center justify-between gap-3">
-                                                                <span className="inline-flex items-center gap-2">
-                                                                    <Icon className="h-4 w-4 text-primary" />
-                                                                    {nextTheme.charAt(0).toUpperCase() + nextTheme.slice(1)}
-                                                                </span>
-                                                                {menuTheme === nextTheme ? (
-                                                                    <Check className="h-4 w-4 text-primary" />
-                                                                ) : null}
-                                                            </div>
-                                                        </DropdownMenuItem>
-                                                    );
-                                                },
-                                            )}
+                                            {(
+                                                [
+                                                    "light",
+                                                    "dark",
+                                                    "system",
+                                                ] as const
+                                            ).map((nextTheme) => {
+                                                const Icon =
+                                                    THEME_ICONS[nextTheme];
+                                                return (
+                                                    <DropdownMenuItem
+                                                        key={nextTheme}
+                                                        onClick={() => {
+                                                            setTheme(nextTheme);
+                                                        }}
+                                                        className="rounded-2xl px-3 py-2"
+                                                    >
+                                                        <div className="flex w-full items-center justify-between gap-3">
+                                                            <span className="inline-flex items-center gap-2">
+                                                                <Icon className="h-4 w-4 text-primary" />
+                                                                {nextTheme
+                                                                    .charAt(0)
+                                                                    .toUpperCase() +
+                                                                    nextTheme.slice(
+                                                                        1,
+                                                                    )}
+                                                            </span>
+                                                            {menuTheme ===
+                                                            nextTheme ? (
+                                                                <Check className="h-4 w-4 text-primary" />
+                                                            ) : null}
+                                                        </div>
+                                                    </DropdownMenuItem>
+                                                );
+                                            })}
 
                                             <DropdownMenuSeparator />
 
@@ -540,13 +589,19 @@ export default function Header({ onSearchClick }: HeaderProps) {
                                                 }}
                                             >
                                                 <LogOut className="mr-2 h-4 w-4" />
-                                                {loggingOut ? "Logging out..." : "Logout"}
+                                                {loggingOut
+                                                    ? "Logging out..."
+                                                    : "Logout"}
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </>
                             ) : (
-                                <Button asChild className="rounded-full" variant="outline">
+                                <Button
+                                    asChild
+                                    className="rounded-full"
+                                    variant="outline"
+                                >
                                     <Link href="/login">Login</Link>
                                 </Button>
                             )
@@ -570,14 +625,23 @@ function ThemeToggleMenu({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button aria-label="Toggle theme" className="rounded-2xl" size="icon" type="button" variant="outline">
+                <Button
+                    aria-label="Toggle theme"
+                    className="rounded-2xl"
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                >
                     <span className="relative inline-flex size-5 items-center justify-center">
                         <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                         <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                     </span>
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40 rounded-3xl border border-border/60 bg-card/95 p-2 shadow-2xl backdrop-blur-sm">
+            <DropdownMenuContent
+                align="end"
+                className="w-40 rounded-3xl border border-border/60 bg-card/95 p-2 shadow-2xl backdrop-blur-sm"
+            >
                 {(["light", "dark", "system"] as const).map((nextTheme) => (
                     <DropdownMenuItem
                         key={nextTheme}
@@ -585,7 +649,10 @@ function ThemeToggleMenu({
                         className="rounded-2xl px-3 py-2"
                     >
                         <div className="flex w-full items-center justify-between gap-3">
-                            <span>{nextTheme.charAt(0).toUpperCase() + nextTheme.slice(1)}</span>
+                            <span>
+                                {nextTheme.charAt(0).toUpperCase() +
+                                    nextTheme.slice(1)}
+                            </span>
                             {theme === nextTheme ? (
                                 <Check className="h-4 w-4 text-primary" />
                             ) : null}

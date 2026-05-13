@@ -1,5 +1,5 @@
 import { Account, Client } from "node-appwrite";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getUserRoles } from "./appwrite-roles";
@@ -18,17 +18,91 @@ export class AuthError extends Error {
     }
 }
 
-/**
- * Server-side auth helper for RSC and server actions.
- * Returns null if no valid session exists.
- * @returns {Promise<{ $id: string; name: string; email: string; $createdAt?: string; } | null>} The return value.
- */
-export async function getServerSession() {
-    const env = getEnvConfig();
-    const endpoint = env.endpoint;
-    const project = env.project;
-    const systemSenderUserId = process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
+export type SessionUser = {
+    $id: string;
+    name: string;
+    email: string;
+    $createdAt?: string;
+};
 
+async function getSessionForToken(
+    endpoint: string,
+    project: string,
+    token: string,
+    systemSenderUserId: string | null,
+): Promise<SessionUser | null> {
+    try {
+        const client = new Client()
+            .setEndpoint(endpoint)
+            .setProject(project)
+            .setSession(token);
+
+        const account = new Account(client);
+        const user = await account.get().catch(() => null);
+
+        return validateAndTransformUser(user, systemSenderUserId);
+    } catch {
+        return null;
+    }
+}
+
+function validateAndTransformUser(
+    user: unknown,
+    systemSenderUserId: string | null,
+): SessionUser | null {
+    if (!user || typeof user !== "object") {
+        return null;
+    }
+
+    const candidate = user as Record<string, unknown>;
+    if (
+        typeof candidate.$id !== "string" ||
+        typeof candidate.name !== "string" ||
+        typeof candidate.email !== "string"
+    ) {
+        return null;
+    }
+
+    if (systemSenderUserId && candidate.$id === systemSenderUserId) {
+        return null;
+    }
+
+    return {
+        $id: candidate.$id,
+        name: candidate.name,
+        email: candidate.email,
+        $createdAt:
+            typeof candidate.$createdAt === "string"
+                ? candidate.$createdAt
+                : undefined,
+    };
+}
+
+async function getSessionFromHeader(
+    endpoint: string,
+    project: string,
+    systemSenderUserId: string | null,
+): Promise<SessionUser | null> {
+    try {
+        const headerStore = await headers();
+        const authHeader = headerStore.get("Authorization");
+
+        const [scheme, token] = authHeader?.trim().split(/\s+/, 2) ?? [];
+        if (scheme?.toLowerCase() !== "bearer" || !token) {
+            return null;
+        }
+
+        return getSessionForToken(endpoint, project, token, systemSenderUserId);
+    } catch {
+        return null;
+    }
+}
+
+async function getSessionFromCookie(
+    endpoint: string,
+    project: string,
+    systemSenderUserId: string | null,
+): Promise<SessionUser | null> {
     try {
         const cookieStore = await cookies();
         const sessionCookie = cookieStore.get(`a_session_${project}`);
@@ -37,43 +111,42 @@ export async function getServerSession() {
             return null;
         }
 
-        // Set the session on the client so Appwrite knows which user to retrieve
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setSession(sessionCookie.value);
-
-        const account = new Account(client);
-        const user = await account.get().catch(() => null);
-
-        if (
-            !user ||
-            typeof user !== "object" ||
-            !("$id" in user) ||
-            typeof user.$id !== "string" ||
-            typeof user.name !== "string" ||
-            typeof user.email !== "string"
-        ) {
-            return null;
-        }
-
-        // Defense in depth: never treat the system sender as an interactive user.
-        if (systemSenderUserId && user.$id === systemSenderUserId) {
-            return null;
-        }
-
-        return {
-            $id: user.$id,
-            name: user.name,
-            email: user.email,
-            $createdAt:
-                "$createdAt" in user && typeof user.$createdAt === "string"
-                    ? user.$createdAt
-                    : undefined,
-        };
+        return getSessionForToken(
+            endpoint,
+            project,
+            sessionCookie.value,
+            systemSenderUserId,
+        );
     } catch {
         return null;
     }
+}
+
+/**
+ * Server-side auth helper for RSC and server actions.
+ * Checks Authorization header first (Bearer token for mobile), then falls back to session cookie.
+ * Returns null if no valid session exists.
+ * @returns {Promise<SessionUser | null>} The return value.
+ */
+export async function getServerSession(): Promise<SessionUser | null> {
+    const env = getEnvConfig();
+    const endpoint = env.endpoint;
+    const project = env.project;
+    const systemSenderUserId =
+        process.env.SYSTEM_SENDER_USER_ID?.trim() || null;
+
+    // Try Authorization header first (supports mobile Bearer tokens)
+    const headerSession = await getSessionFromHeader(
+        endpoint,
+        project,
+        systemSenderUserId,
+    );
+    if (headerSession) {
+        return headerSession;
+    }
+
+    // Fall back to session cookie (web browser flow)
+    return getSessionFromCookie(endpoint, project, systemSenderUserId);
 }
 
 /**
