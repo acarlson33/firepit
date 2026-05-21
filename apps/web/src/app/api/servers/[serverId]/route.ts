@@ -52,6 +52,65 @@ type RouteContext = {
     params: Promise<{ serverId: string }>;
 };
 
+export async function GET(_request: NextRequest, context: RouteContext) {
+    const session = await getServerSession();
+    if (!session?.$id) {
+        return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+        );
+    }
+
+    const { databases } = getServerClient();
+    const env = getEnvConfig();
+    const { serverId } = await context.params;
+
+    let serverDocument: Record<string, unknown>;
+    try {
+        const response = await databases.getDocument(
+            env.databaseId,
+            env.collections.servers,
+            serverId,
+        );
+        serverDocument = response as unknown as Record<string, unknown>;
+    } catch (error) {
+        if (isDocumentNotFoundError(error)) {
+            return NextResponse.json(
+                { error: "Server not found" },
+                { status: 404 },
+            );
+        }
+
+        logger.error("Failed to load server during GET", {
+            error: error instanceof Error ? error.message : String(error),
+            serverId,
+            userId: session.$id,
+        });
+        return NextResponse.json(
+            { error: "Internal server error" },
+            { status: 500 },
+        );
+    }
+
+    if (serverDocument.isPublic !== true) {
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
+
+        if (!access.isMember) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+    }
+
+    const memberCount = await getActualMemberCount(databases, serverId);
+    return NextResponse.json({
+        server: mapServerDocument(serverDocument, memberCount),
+    });
+}
+
 type PatchPayload = {
     name?: unknown;
     description?: unknown;
@@ -278,7 +337,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
             try {
                 const baseQueries: string[] = [];
-                const q = Query as unknown as { select?: (attrs: string[]) => unknown };
+                const q = Query as unknown as {
+                    select?: (attrs: string[]) => unknown;
+                };
                 if (typeof q.select === "function") {
                     baseQueries.push(q.select(["$id"]) as string);
                 }
@@ -303,11 +364,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                     }
                 }
             } catch (error) {
-                logger.error("Failed to list default signup servers during PATCH", {
-                    error: error instanceof Error ? error.message : String(error),
-                    serverId,
-                    userId: session.$id,
-                });
+                logger.error(
+                    "Failed to list default signup servers during PATCH",
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        serverId,
+                        userId: session.$id,
+                    },
+                );
                 return NextResponse.json(
                     { error: "Internal server error" },
                     { status: 500 },
@@ -328,7 +395,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             } catch (error) {
                 logger.error("Failed to update server document", {
                     collectionId: env.collections.servers,
-                    error: error instanceof Error ? error.message : String(error),
+                    error:
+                        error instanceof Error ? error.message : String(error),
                     serverId,
                     userId: session.$id,
                 });
@@ -357,15 +425,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
                 for (const [index, result] of resetResults.entries()) {
                     if (result.status === "rejected") {
-                        logger.error("Failed to unset previous default signup server", {
-                            defaultServerId: defaultServersToClear[index]?.$id,
-                            error:
-                                result.reason instanceof Error
-                                    ? result.reason.message
-                                    : String(result.reason),
-                            serverId,
-                            userId: session.$id,
-                        });
+                        logger.error(
+                            "Failed to unset previous default signup server",
+                            {
+                                defaultServerId:
+                                    defaultServersToClear[index]?.$id,
+                                error:
+                                    result.reason instanceof Error
+                                        ? result.reason.message
+                                        : String(result.reason),
+                                serverId,
+                                userId: session.$id,
+                            },
+                        );
                     }
                 }
 
@@ -378,34 +450,40 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                             { defaultOnSignup: previousDefaultOnSignup },
                         );
                     } catch (rollbackError) {
-                        logger.error("Failed to rollback current server defaultOnSignup", {
-                            serverId,
-                            userId: session.$id,
-                            error:
-                                rollbackError instanceof Error
-                                    ? rollbackError.message
-                                    : String(rollbackError),
-                        });
+                        logger.error(
+                            "Failed to rollback current server defaultOnSignup",
+                            {
+                                serverId,
+                                userId: session.$id,
+                                error:
+                                    rollbackError instanceof Error
+                                        ? rollbackError.message
+                                        : String(rollbackError),
+                            },
+                        );
                     }
 
-                    const restoreItems = resetResults.flatMap((result, index) => {
-                        if (result.status !== "fulfilled") {
-                            return [];
-                        }
+                    const restoreItems = resetResults.flatMap(
+                        (result, index) => {
+                            if (result.status !== "fulfilled") {
+                                return [];
+                            }
 
-                        const restoredServerId = defaultServersToClear[index].$id;
-                        return [
-                            {
-                                serverId: restoredServerId,
-                                promise: databases.updateDocument(
-                                    env.databaseId,
-                                    env.collections.servers,
-                                    restoredServerId,
-                                    { defaultOnSignup: true },
-                                ),
-                            },
-                        ];
-                    });
+                            const restoredServerId =
+                                defaultServersToClear[index].$id;
+                            return [
+                                {
+                                    serverId: restoredServerId,
+                                    promise: databases.updateDocument(
+                                        env.databaseId,
+                                        env.collections.servers,
+                                        restoredServerId,
+                                        { defaultOnSignup: true },
+                                    ),
+                                },
+                            ];
+                        },
+                    );
 
                     const restoreResults = await Promise.allSettled(
                         restoreItems.map((item) => item.promise),
@@ -430,7 +508,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
                     }
 
                     return NextResponse.json(
-                        { error: "Failed to clear existing default signup server" },
+                        {
+                            error: "Failed to clear existing default signup server",
+                        },
                         { status: 500 },
                     );
                 }
@@ -549,7 +629,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 export async function DELETE(_request: NextRequest, context: RouteContext) {
     const session = await getServerSession();
     if (!session?.$id) {
-        return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+        return NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+        );
     }
 
     const { databases } = getServerClient();
@@ -559,10 +642,17 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     // Verify server exists
     let serverDocument: Record<string, unknown>;
     try {
-        serverDocument = (await databases.getDocument(env.databaseId, env.collections.servers, serverId)) as unknown as Record<string, unknown>;
+        serverDocument = (await databases.getDocument(
+            env.databaseId,
+            env.collections.servers,
+            serverId,
+        )) as unknown as Record<string, unknown>;
     } catch (error) {
         if (isDocumentNotFoundError(error)) {
-            return NextResponse.json({ error: "Server not found" }, { status: 404 });
+            return NextResponse.json(
+                { error: "Server not found" },
+                { status: 404 },
+            );
         }
 
         logger.error("Failed to load server during DELETE", {
@@ -578,7 +668,12 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
     const isOwner = String(serverDocument.ownerId) === session.$id;
     if (!isOwner) {
-        const access = await getServerPermissionsForUser(databases, env, serverId, session.$id);
+        const access = await getServerPermissionsForUser(
+            databases,
+            env,
+            serverId,
+            session.$id,
+        );
         if (!access.isMember || !access.permissions.manageServer) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }

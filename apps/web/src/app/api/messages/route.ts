@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { ID } from "node-appwrite";
+import { Query } from "node-appwrite";
 
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
@@ -45,6 +46,38 @@ const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
     "message_attachments";
 
+type ListMessagesResponse = {
+    messages: Message[];
+    nextCursor: string | null;
+};
+
+function normalizeStringField(value: unknown): string | undefined {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeLimit(value: string | null, fallback: number): number {
+    if (!value) {
+        return fallback;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+
+    const bounded = Math.trunc(parsed);
+    if (bounded < 1) {
+        return fallback;
+    }
+
+    return Math.min(bounded, 100);
+}
+
 async function getMessageDocument(
     messageId: string,
 ): Promise<Record<string, unknown> | null> {
@@ -66,13 +99,126 @@ async function getMessageDocument(
     }
 }
 
-function normalizeStringField(value: unknown): string | undefined {
-    if (typeof value !== "string") {
-        return undefined;
-    }
+function mapMessageDocument(doc: Record<string, unknown>): Message {
+    return {
+        $id: String(doc.$id),
+        userId: String(doc.userId),
+        userName: doc.userName as string | undefined,
+        text: String(doc.text ?? ""),
+        $createdAt: String(doc.$createdAt ?? ""),
+        channelId: normalizeStringField(doc.channelId),
+        serverId: normalizeStringField(doc.serverId),
+        editedAt: normalizeStringField(doc.editedAt),
+        removedAt: normalizeStringField(doc.removedAt),
+        removedBy: normalizeStringField(doc.removedBy),
+        imageFileId: normalizeStringField(doc.imageFileId),
+        imageUrl: normalizeStringField(doc.imageUrl),
+        replyToId: normalizeStringField(doc.replyToId),
+        mentions: Array.isArray(doc.mentions)
+            ? (doc.mentions as string[])
+            : undefined,
+        reactions: Array.isArray(doc.reactions)
+            ? (doc.reactions as Array<{
+                  emoji: string;
+                  userIds: string[];
+                  count: number;
+                  reactedByMe?: boolean;
+              }>)
+            : undefined,
+    };
+}
 
-    const normalized = value.trim();
-    return normalized.length > 0 ? normalized : undefined;
+/**
+ * GET /api/messages?channelId=CHANNEL_ID
+ * Lists messages for a channel.
+ */
+export async function GET(request: NextRequest) {
+    try {
+        setTransactionName("GET /api/messages");
+
+        const user = await getServerSession();
+        if (!user) {
+            return NextResponse.json(
+                { error: "Authentication required" },
+                { status: 401 },
+            );
+        }
+
+        const { searchParams } = new URL(request.url);
+        const channelId = searchParams.get("channelId");
+        const cursorAfter = searchParams.get("cursorAfter");
+        const limit = normalizeLimit(searchParams.get("limit"), 50);
+
+        if (!channelId) {
+            return NextResponse.json(
+                { error: "channelId is required" },
+                { status: 400 },
+            );
+        }
+
+        const env = getEnvConfig();
+        const { databases } = getServerClient();
+        const access = await getChannelAccessForUser(
+            databases,
+            env,
+            channelId,
+            user.$id,
+        );
+
+        if (!access.canRead) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        const queries = [
+            Query.equal("channelId", channelId),
+            Query.orderAsc("$createdAt"),
+            Query.limit(limit),
+        ];
+
+        if (cursorAfter) {
+            queries.splice(1, 0, Query.cursorAfter(cursorAfter));
+        }
+
+        const dbStartTime = Date.now();
+        const response = await databases.listDocuments(
+            env.databaseId,
+            env.collections.messages,
+            queries,
+        );
+
+        trackApiCall("/api/messages", "GET", 200, Date.now() - dbStartTime, {
+            operation: "listDocuments",
+            collection: "messages",
+        });
+
+        const messages = (response.documents ?? []).map((doc) =>
+            mapMessageDocument(doc as Record<string, unknown>),
+        );
+
+        return NextResponse.json<ListMessagesResponse>({
+            messages,
+            nextCursor: null,
+        });
+    } catch (error) {
+        recordError(error instanceof Error ? error : new Error(String(error)), {
+            context: "GET /api/messages",
+            endpoint: "/api/messages",
+        });
+
+        logger.error("Failed to list messages", {
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        return NextResponse.json(
+            {
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to list messages",
+            },
+            { status: 500 },
+        );
+    }
 }
 
 // Helper function to create attachment records
@@ -170,9 +316,8 @@ export async function POST(request: NextRequest) {
             attachments,
         } = body;
 
-        const normalizedAttachmentsResult = normalizeFileAttachmentsInput(
-            attachments,
-        );
+        const normalizedAttachmentsResult =
+            normalizeFileAttachmentsInput(attachments);
         if (!normalizedAttachmentsResult.ok) {
             return NextResponse.json(
                 { error: normalizedAttachmentsResult.error },
@@ -183,7 +328,9 @@ export async function POST(request: NextRequest) {
 
         const normalizedText = typeof text === "string" ? text : "";
         const creatingPoll = isPollCommand(normalizedText);
-        const validMentions = !creatingPoll ? normalizeMentionIds(mentions) : [];
+        const validMentions = !creatingPoll
+            ? normalizeMentionIds(mentions)
+            : [];
         const hasValidMentions = validMentions.length > 0;
         let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
 
@@ -226,9 +373,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (
-            (!text &&
-                !imageFileId &&
-                normalizedAttachments.length === 0) ||
+            (!text && !imageFileId && normalizedAttachments.length === 0) ||
             !channelId
         ) {
             return NextResponse.json(
@@ -388,10 +533,13 @@ export async function POST(request: NextRequest) {
                         String(res.$id),
                     );
                 } catch (deleteError) {
-                    logger.warn("Failed to roll back message after poll creation error", {
-                        deleteError,
-                        messageId: String(res.$id),
-                    });
+                    logger.warn(
+                        "Failed to roll back message after poll creation error",
+                        {
+                            deleteError,
+                            messageId: String(res.$id),
+                        },
+                    );
                 }
 
                 throw error;
@@ -421,7 +569,10 @@ export async function POST(request: NextRequest) {
                         String(res.$id),
                     );
                 } catch (deleteError) {
-                    logger.error("Failed to roll back message after attachment error", { deleteError });
+                    logger.error(
+                        "Failed to roll back message after attachment error",
+                        { deleteError },
+                    );
                 }
                 throw attachmentError;
             }
