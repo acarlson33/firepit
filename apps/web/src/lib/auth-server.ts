@@ -30,15 +30,19 @@ async function getSessionForToken(
     project: string,
     token: string,
     systemSenderUserId: string | null,
+    authMode: "jwt" | "session",
 ): Promise<SessionUser | null> {
     try {
-        const client = new Client()
-            .setEndpoint(endpoint)
-            .setProject(project)
-            .setSession(token);
+        const client = new Client().setEndpoint(endpoint).setProject(project);
+
+        if (authMode === "jwt") {
+            client.setJWT(token);
+        } else {
+            client.setSession(token);
+        }
 
         const account = new Account(client);
-        const user = await account.get().catch(() => null);
+        const user = await account.get();
 
         return validateAndTransformUser(user, systemSenderUserId);
     } catch {
@@ -92,7 +96,13 @@ async function getSessionFromHeader(
             return null;
         }
 
-        return getSessionForToken(endpoint, project, token, systemSenderUserId);
+        return getSessionForToken(
+            endpoint,
+            project,
+            token,
+            systemSenderUserId,
+            "jwt",
+        );
     } catch {
         return null;
     }
@@ -116,6 +126,7 @@ async function getSessionFromCookie(
             project,
             sessionCookie.value,
             systemSenderUserId,
+            "session",
         );
     } catch {
         return null;
