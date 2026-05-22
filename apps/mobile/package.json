@@ -21,6 +21,7 @@
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.5",
     "expo-system-ui": "~56.0.5",
+    "expo-updates": "~56.0.15",
     "expo-web-browser": "~56.0.5",
     "node-emoji": "^2.2.0",
     "react": "19.2.3",
