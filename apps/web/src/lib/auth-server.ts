@@ -50,6 +50,13 @@ async function getSessionForToken(
     }
 }
 
+function isLikelyJwt(token: string) {
+    const segments = token.split(".");
+    return (
+        segments.length === 3 && segments.every((segment) => segment.length > 0)
+    );
+}
+
 function validateAndTransformUser(
     user: unknown,
     systemSenderUserId: string | null,
@@ -96,24 +103,12 @@ async function getSessionFromHeader(
             return null;
         }
 
-        const jwtSession = await getSessionForToken(
-            endpoint,
-            project,
-            token,
-            systemSenderUserId,
-            "jwt",
-        );
-
-        if (jwtSession) {
-            return jwtSession;
-        }
-
         return getSessionForToken(
             endpoint,
             project,
             token,
             systemSenderUserId,
-            "session",
+            isLikelyJwt(token) ? "jwt" : "session",
         );
     } catch {
         return null;

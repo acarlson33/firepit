@@ -35,6 +35,7 @@ export default function TabLayout() {
                 <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="index" />
                     <Stack.Screen name="login" />
+                    <Stack.Screen name="(tabs)" />
                     <Stack.Screen name="explore" />
                     <Stack.Screen name="server/[serverId]" />
                     <Stack.Screen name="server/messages/[serverId]/[channelId]" />

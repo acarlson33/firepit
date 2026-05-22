@@ -14,6 +14,9 @@ vi.mock("node-appwrite", () => ({
         setProject() {
             return this;
         }
+        setJWT() {
+            return this;
+        }
         setSession() {
             return this;
         }
@@ -31,6 +34,13 @@ vi.mock("node-appwrite", () => ({
 
 // Mock next/headers
 vi.mock("next/headers", () => ({
+    headers: async () => {
+        const mockHeaders = (globalThis as any).__mockHeaders || {};
+        return {
+            get: (name: string) =>
+                mockHeaders[name] || mockHeaders[name.toLowerCase()] || null,
+        };
+    },
     cookies: async () => {
         const mockCookies = (globalThis as any).__mockCookies || {};
         return {
@@ -69,6 +79,10 @@ function setMockCookies(cookies: Record<string, { value: string }>) {
     (globalThis as any).__mockCookies = cookies;
 }
 
+function setMockHeaders(headers: Record<string, string>) {
+    (globalThis as any).__mockHeaders = headers;
+}
+
 function setMockUserRoles(
     userId: string,
     roles: { isAdmin: boolean; isModerator: boolean },
@@ -80,6 +94,7 @@ function setMockUserRoles(
 function clearMocks() {
     (globalThis as any).__mockAuthUser = undefined;
     (globalThis as any).__mockCookies = {};
+    (globalThis as any).__mockHeaders = {};
     (globalThis as any).__mockUserRoles = {};
 }
 
@@ -123,6 +138,38 @@ describe("auth-server", () => {
 
             const session = await getServerSession();
             expect(session).toBeNull();
+        });
+
+        it("should return user when bearer session token exists", async () => {
+            const mockUser = {
+                $id: "user123",
+                name: "Test User",
+                email: "test@example.com",
+            };
+
+            setMockUser(mockUser);
+            setMockHeaders({ Authorization: "Bearer session-token-123" });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
+        });
+
+        it("should return user when bearer jwt token exists", async () => {
+            const mockUser = {
+                $id: "user456",
+                name: "JWT User",
+                email: "jwt@example.com",
+            };
+
+            setMockUser(mockUser);
+            setMockHeaders({
+                Authorization: "Bearer header.payload.signature",
+            });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
         });
 
         it("should return user when valid session exists", async () => {
