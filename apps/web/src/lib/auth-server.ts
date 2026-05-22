@@ -97,7 +97,9 @@ async function getSessionFromHeader(
     try {
         const headerStore = await headers();
         // Header name may be in any case; try both
-        const authHeader = headerStore.get("Authorization") ?? headerStore.get("authorization");
+        const authHeader =
+            headerStore.get("Authorization") ??
+            headerStore.get("authorization");
 
         // Extract token: if header starts with Bearer, use the second part; otherwise use the whole header
         let token: string | undefined;
@@ -113,13 +115,35 @@ async function getSessionFromHeader(
             return null;
         }
 
-        return getSessionForToken(
+        const chosen = isLikelyJwt(token) ? "jwt" : "session";
+
+        if (process.env.FIREPIT_DEBUG_AUTH === "true") {
+            const masked =
+                token.length > 8
+                    ? `${token.slice(0, 4)}...${token.slice(-4)}`
+                    : token;
+            // eslint-disable-next-line no-console
+            console.log(
+                `[auth-debug] header token present, chosen=${chosen}, token="${masked}", endpoint=${endpoint}, project=${project}`,
+            );
+        }
+
+        const session = await getSessionForToken(
             endpoint,
             project,
             token,
             systemSenderUserId,
-            "session", // Mobile Bearer tokens are treated as session tokens
+            chosen,
         );
+
+        if (process.env.FIREPIT_DEBUG_AUTH === "true") {
+            // eslint-disable-next-line no-console
+            console.log(
+                `[auth-debug] header auth result: ${session ? `userId=${session.$id}` : "no session"}`,
+            );
+        }
+
+        return session;
     } catch {
         return null;
     }
@@ -138,13 +162,32 @@ async function getSessionFromCookie(
             return null;
         }
 
-        return getSessionForToken(
+        if (process.env.FIREPIT_DEBUG_AUTH === "true") {
+            const val = sessionCookie.value;
+            const masked =
+                val.length > 8 ? `${val.slice(0, 4)}...${val.slice(-4)}` : val;
+            // eslint-disable-next-line no-console
+            console.log(
+                `[auth-debug] cookie token present: ${masked}, project=${project}`,
+            );
+        }
+
+        const session = await getSessionForToken(
             endpoint,
             project,
             sessionCookie.value,
             systemSenderUserId,
             "session",
         );
+
+        if (process.env.FIREPIT_DEBUG_AUTH === "true") {
+            // eslint-disable-next-line no-console
+            console.log(
+                `[auth-debug] cookie auth result: ${session ? `userId=${session.$id}` : "no session"}`,
+            );
+        }
+
+        return session;
     } catch {
         return null;
     }
