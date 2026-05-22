@@ -118,7 +118,7 @@ async function getSessionFromHeader(
             project,
             token,
             systemSenderUserId,
-            isLikelyJwt(token) ? "jwt" : "session",
+            "session", // Mobile Bearer tokens are treated as session tokens
         );
     } catch {
         return null;
