@@ -1,34 +1,34 @@
 {
-  "cli": {
-    "version": ">= 19.0.5",
-    "appVersionSource": "remote"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "android": {
-        "env": {
-          "TMPDIR": "./build-tmp/"
-        }
-      },
-      "ios": {
-        "env": {
-          "TMPDIR": "./build-tmp/"
-        }
-      },
-      "channel": "development"
+    "cli": {
+        "version": ">= 19.0.5",
+        "appVersionSource": "remote"
     },
-    "preview": {
-      "distribution": "internal",
-      "channel": "preview"
+    "build": {
+        "development": {
+            "developmentClient": true,
+            "distribution": "internal",
+            "android": {
+                "env": {
+                    "TMPDIR": "/home/august/eas-build-tmp/"
+                }
+            },
+            "ios": {
+                "env": {
+                    "TMPDIR": "./build-tmp/"
+                }
+            },
+            "channel": "development"
+        },
+        "preview": {
+            "distribution": "internal",
+            "channel": "preview"
+        },
+        "production": {
+            "autoIncrement": true,
+            "channel": "production"
+        }
     },
-    "production": {
-      "autoIncrement": true,
-      "channel": "production"
+    "submit": {
+        "production": {}
     }
-  },
-  "submit": {
-    "production": {}
-  }
 }

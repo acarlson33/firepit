@@ -123,22 +123,54 @@ function createAppwriteClient(config: AppwriteConfig) {
         .setPlatform("com.acarlson33.firepit");
 }
 
+function parseSessionSecret(cookieFallback: string | null, project: string) {
+    if (!cookieFallback) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(cookieFallback) as Record<string, unknown>;
+        const sessionKey = `a_session_${project}`;
+        const value = parsed[sessionKey];
+        if (typeof value === "string" && value.length > 0) {
+            return value;
+        }
+    } catch {
+        return null;
+    }
+
+    return null;
+}
+
 function normalizeCurrentUser(user: unknown): CurrentUser | null {
     if (!user || typeof user !== "object") {
         return null;
     }
 
     const candidate = user as Record<string, unknown>;
+    const userId =
+        typeof candidate.$id === "string"
+            ? candidate.$id
+            : typeof candidate.userId === "string"
+              ? candidate.userId
+              : undefined;
+    const name =
+        typeof candidate.name === "string" ? candidate.name : undefined;
+    const displayName =
+        typeof candidate.displayName === "string"
+            ? candidate.displayName
+            : name;
+    const userName =
+        typeof candidate.userName === "string" ? candidate.userName : name;
 
     return {
-        $id: typeof candidate.$id === "string" ? candidate.$id : undefined,
-        name: typeof candidate.name === "string" ? candidate.name : undefined,
+        $id: userId,
+        userId,
+        name,
         email:
             typeof candidate.email === "string" ? candidate.email : undefined,
-        displayName:
-            typeof candidate.name === "string" ? candidate.name : undefined,
-        userName:
-            typeof candidate.name === "string" ? candidate.name : undefined,
+        displayName,
+        userName,
         avatarUrl:
             typeof candidate.avatarUrl === "string"
                 ? candidate.avatarUrl
@@ -287,16 +319,26 @@ export async function fetchCurrentUser(baseUrl: string, token: string) {
         "token length:",
         token?.length ?? 0,
     );
-    return firepitRequest<CurrentUser>({ baseUrl, path: "/api/me", token });
+    const payload = await firepitRequest<unknown>({
+        baseUrl,
+        path: "/api/me",
+        token,
+    });
+    const currentUser = normalizeCurrentUser(payload);
+    if (!currentUser) {
+        throw new Error("Unable to parse current user response.");
+    }
+
+    return currentUser;
 }
 
 async function fetchCurrentUserFromAppwrite(
     config: AppwriteConfig,
     token: string,
 ) {
-    const client = createAppwriteClient(config).setJWT(token);
-    const account = new Account(client);
-    return normalizeCurrentUser(await account.get());
+    const sessionClient = createAppwriteClient(config).setSession(token);
+    const sessionAccount = new Account(sessionClient);
+    return normalizeCurrentUser(await sessionAccount.get());
 }
 
 export async function resolveCurrentUser(
@@ -329,48 +371,29 @@ export async function authenticateWithPassword(
 
     const client = createAppwriteClient(config);
     const account = new Account(client);
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    let cookieFallback: string | null = null;
+
+    globalThis.fetch = async (input, init) => {
+        const response = await originalFetch(input, init);
+        const nextCookieFallback = response.headers.get("X-Fallback-Cookies");
+        if (nextCookieFallback) {
+            cookieFallback = nextCookieFallback;
+        }
+        return response;
+    };
 
     let session;
     try {
-        console.log(
-            "[bootstrap] authenticateWithPassword - creating session for:",
-            email,
-        );
         session = await account.createEmailPasswordSession({ email, password });
-        console.log("[bootstrap] authenticateWithPassword - session created");
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // Appwrite may reject session creation when a session is already active for
-        // the current client context. Attempt to clear the current session and
-        // retry once.
-        if (
-            message.toLowerCase().includes("session is active") ||
-            message
-                .toLowerCase()
-                .includes("prohibited when a session is active")
-        ) {
-            try {
-                // best-effort: delete the current session then retry
-                // ignore any error from deleteSession and re-attempt login once
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                console.log(
-                    "[bootstrap] authenticateWithPassword - session active, clearing",
-                );
-                await (account as any).deleteSession({ sessionId: "current" });
-            } catch (_deleteErr) {
-                // swallow deletion errors and continue to retry
-            }
-
-            session = await account.createEmailPasswordSession({
-                email,
-                password,
-            });
-        } else {
-            throw err;
-        }
+    } finally {
+        globalThis.fetch = originalFetch;
     }
 
-    const sessionSecret = session.secret;
+    const sessionSecret =
+        (typeof session?.secret === "string" && session.secret.length > 0
+            ? session.secret
+            : null) ?? parseSessionSecret(cookieFallback, config.project);
     console.log(
         "[bootstrap] authenticateWithPassword - session secret length:",
         sessionSecret?.length ?? 0,

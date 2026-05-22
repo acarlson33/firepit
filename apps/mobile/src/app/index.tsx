@@ -88,7 +88,7 @@ export default function HomeScreen() {
 
     useEffect(() => {
         if (signedIn) {
-            router.replace("/explore");
+            router.replace("/home");
         }
         if (instanceUrl && state === "needs-auth") {
             router.replace("/login");
@@ -197,15 +197,14 @@ export default function HomeScreen() {
                             Firepit mobile instance setup
                         </ThemedText>
                         <ThemedText type="title" style={styles.title}>
-                            Connect the app to a Firepit instance.
+                            Start by connecting to your instance.
                         </ThemedText>
                         <ThemedText
                             themeColor="mutedForeground"
                             style={styles.description}
                         >
-                            After the instance is accepted, you will move to the
-                            login route and sign in there before opening the
-                            chat workspace.
+                            Type the instance URL first, then sign in with that
+                            instance, and you will land in the home tabs.
                         </ThemedText>
                     </ThemedView>
 
@@ -222,9 +221,9 @@ export default function HomeScreen() {
                                 themeColor="mutedForeground"
                                 style={styles.panelDescription}
                             >
-                                Enter the Firepit base URL. The client will
-                                normalize the URL, validate compatibility, and
-                                cache it locally.
+                                Enter the Firepit base URL. The app will
+                                normalize it, validate compatibility, and cache
+                                it locally.
                             </ThemedText>
 
                             <TextInput
@@ -246,7 +245,7 @@ export default function HomeScreen() {
                             />
 
                             <FirepitButton
-                                label="Continue"
+                                label="Continue to login"
                                 disabled={!canCheckInstance}
                                 onPress={handleInstanceSubmit}
                             />
