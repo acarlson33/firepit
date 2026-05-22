@@ -59,6 +59,15 @@
       }
     },
     "owner": "firepit",
-    "platforms": ["android", "ios"]
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/78d141eb-a639-4ba4-bef0-636154bf80c8"
+    }
   }
 }

@@ -96,12 +96,24 @@ async function getSessionFromHeader(
             return null;
         }
 
-        return getSessionForToken(
+        const jwtSession = await getSessionForToken(
             endpoint,
             project,
             token,
             systemSenderUserId,
             "jwt",
+        );
+
+        if (jwtSession) {
+            return jwtSession;
+        }
+
+        return getSessionForToken(
+            endpoint,
+            project,
+            token,
+            systemSenderUserId,
+            "session",
         );
     } catch {
         return null;
