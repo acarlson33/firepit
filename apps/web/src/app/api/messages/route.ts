@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
 
         const queries = [
             Query.equal("channelId", channelId),
-            Query.orderAsc("$createdAt"),
+            Query.orderDesc("$createdAt"),
             Query.limit(limit),
         ];
 
