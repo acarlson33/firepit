@@ -7,7 +7,10 @@ import {
     getServerPreview,
 } from "@/lib/appwrite-invites";
 import { getServerClient } from "@/lib/appwrite-server";
-import { logger, recordError } from "@/lib/newrelic-utils";
+import { logger, recordError,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 const { databases } = getServerClient();
 const env = await import("@/lib/appwrite-core").then((m) => m.getEnvConfig());

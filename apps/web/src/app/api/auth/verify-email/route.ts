@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 function buildLoginRedirect(requestUrl: string): {
     loginRedirectUrl: URL;

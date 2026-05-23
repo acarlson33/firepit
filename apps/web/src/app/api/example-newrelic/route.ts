@@ -8,6 +8,8 @@ import {
     recordError,
     setTransactionName,
     trackApiCall,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 const ENDPOINT = "/api/example";

@@ -12,6 +12,7 @@ import {
     getPollStateForMessage,
 } from "@/lib/polls-server";
 import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
 
 type RouteContext = {
     params: Promise<{
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const access = await getChannelAccessForUser(databases, env, channelId, user.$id);
     if (!access.isMember || !access.canSend) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     const poll = await getPollDocumentByMessageId(databases, env, messageId);

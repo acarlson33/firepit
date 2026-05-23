@@ -5,7 +5,10 @@ import { InputFile } from "node-appwrite/file";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 // Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit) {
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
     try {
         const session = await getServerSession();
         if (!session?.$id) {
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const env = getEnvConfig();
@@ -131,7 +134,7 @@ export async function DELETE(request: NextRequest) {
     try {
         const session = await getServerSession();
         if (!session?.$id) {
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const env = getEnvConfig();

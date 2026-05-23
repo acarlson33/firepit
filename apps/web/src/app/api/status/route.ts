@@ -12,6 +12,8 @@ import {
     trackApiCall,
     addTransactionAttributes,
     recordEvent,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { normalizeStatus } from "@/lib/status-normalization";
 import { apiCache } from "@/lib/cache-utils";

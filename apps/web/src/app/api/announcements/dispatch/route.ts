@@ -5,7 +5,10 @@ import {
     dispatchScheduledAnnouncements,
     getAnnouncementRuntimeSettings,
 } from "@/lib/appwrite-announcements";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 function parseLimit(rawLimit: string | null): number {
     if (!rawLimit) {

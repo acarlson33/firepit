@@ -5,7 +5,10 @@ import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { listPages } from "@/lib/appwrite-pagination";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
 
@@ -47,7 +50,7 @@ async function requireManageRolesAccess(serverId: string) {
     );
 
     if (!access.isMember || !access.permissions.manageRoles) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     return null;

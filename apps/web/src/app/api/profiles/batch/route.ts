@@ -15,6 +15,8 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
 import { getEnvConfig } from "@/lib/appwrite-core";

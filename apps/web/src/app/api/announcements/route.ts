@@ -10,7 +10,10 @@ import type {
     AnnouncementStatus,
 } from "@/lib/types";
 import { AuthError, requireAdmin } from "@/lib/auth-server";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 const ALLOWED_PRIORITIES: ReadonlySet<AnnouncementPriority> = new Set([
     "normal",

@@ -14,6 +14,7 @@ import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { apiCache } from "@/lib/cache-utils";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 import { listPages } from "@/lib/appwrite-pagination";
+import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
 
 const ROLE_ASSIGNMENTS_COLLECTION_ID = "role_assignments";
 const ROLES_COLLECTION_ID = "roles";
@@ -171,14 +172,14 @@ export async function POST(request: NextRequest) {
         );
 
         if (!serverAccess.isMember) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         if (
             !serverAccess.isServerOwner &&
             !serverAccess.permissions.manageChannels
         ) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const highestPositionRes = await databases.listDocuments(

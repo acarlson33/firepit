@@ -5,6 +5,7 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { buildPinsResponse } from "@/lib/pin-response";
+import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
 import type { DirectMessage, PinnedMessage } from "@/lib/types";
 
 type RouteContext = {
@@ -42,7 +43,7 @@ export async function GET(_request: Request, context: RouteContext) {
             : [];
 
         if (!participants.includes(user.$id)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const pinDocs = await databases.listDocuments(

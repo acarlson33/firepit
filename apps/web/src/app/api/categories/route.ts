@@ -4,7 +4,11 @@ import { ID, Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
-import { logger } from "@/lib/newrelic-utils";
+import {
+    logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
@@ -35,10 +39,7 @@ async function requireServerMembership(serverId: string) {
     const session = await getServerSession();
     if (!session?.$id) {
         return {
-            response: NextResponse.json(
-                { error: "Authentication required" },
-                { status: 401 },
-            ),
+            response: returnUnauthorized(),
         };
     }
 
@@ -51,10 +52,7 @@ async function requireServerMembership(serverId: string) {
 
     if (!access.isMember) {
         return {
-            response: NextResponse.json(
-                { error: "Forbidden" },
-                { status: 403 },
-            ),
+            response: returnForbidden(),
         };
     }
 
@@ -69,10 +67,7 @@ async function requireManageChannelsAccess(serverId: string) {
 
     if (!result.access.permissions.manageChannels) {
         return {
-            response: NextResponse.json(
-                { error: "Forbidden" },
-                { status: 403 },
-            ),
+            response: returnForbidden(),
         };
     }
 

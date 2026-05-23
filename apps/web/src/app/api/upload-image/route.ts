@@ -13,6 +13,8 @@ import {
     trackApiCall,
     addTransactionAttributes,
     recordEvent,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")

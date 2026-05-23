@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { listPages } from "@/lib/appwrite-pagination";
 import { recordMetric } from "@/lib/monitoring";
 import { getServerSession } from "@/lib/auth-server";
@@ -68,7 +71,7 @@ export async function GET(request: Request, context: RouteContext) {
         );
 
         if (!access.isMember || !access.permissions.manageRoles) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
 

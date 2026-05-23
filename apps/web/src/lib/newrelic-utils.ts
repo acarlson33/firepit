@@ -5,6 +5,7 @@
  * with New Relic APM.
  */
 
+import { NextResponse } from "next/server";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import {
     capturePostHogServerError,
@@ -712,4 +713,47 @@ function getBrowserTimingHeader(): string {
         return nr.getBrowserTimingHeader();
     }
     return "";
+}
+
+/**
+ * Return a 401 Unauthorized response with logging
+ * Use this instead of direct NextResponse.json() for auth failures
+ *
+ * @param {Record<string, unknown> | undefined} attributes - Additional attributes to log
+ * @returns {NextResponse} The return value.
+ */
+export function returnUnauthorized(attributes?: Record<string, unknown>) {
+    logger.warn("Unauthorized request", attributes);
+    return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 },
+    );
+}
+
+/**
+ * Return a 403 Forbidden response with logging
+ * Use this instead of direct NextResponse.json() for permission failures
+ *
+ * @param {Record<string, unknown> | undefined} attributes - Additional attributes to log
+ * @returns {NextResponse} The return value.
+ */
+export function returnForbidden(attributes?: Record<string, unknown>) {
+    logger.warn("Forbidden request", attributes);
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
+
+/**
+ * Return a 400 Bad Request response with logging
+ * Use this instead of direct NextResponse.json() for invalid requests
+ *
+ * @param {string} message - The error message
+ * @param {Record<string, unknown> | undefined} attributes - Additional attributes to log
+ * @returns {NextResponse} The return value.
+ */
+export function returnBadRequest(
+    message: string,
+    attributes?: Record<string, unknown>,
+) {
+    logger.warn("Bad request", { message, ...attributes });
+    return NextResponse.json({ error: message }, { status: 400 });
 }

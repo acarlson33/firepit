@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getOrCreateUserProfile, updateUserProfile } from "@/lib/appwrite-profiles";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 type PatchBody = {
     dmEncryptionPublicKey: string;
@@ -46,7 +49,7 @@ export async function GET() {
     try {
         const user = await getServerSession();
         if (!user?.$id) {
-            return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const profile = await getOrCreateUserProfile(user.$id, user.name);
@@ -70,7 +73,7 @@ export async function PATCH(request: Request) {
     try {
         const user = await getServerSession();
         if (!user?.$id) {
-            return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         let body: unknown;

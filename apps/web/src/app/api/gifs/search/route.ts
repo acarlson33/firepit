@@ -13,7 +13,10 @@ import {
     type GiphySearchResponse,
     type TenorSearchResponse,
 } from "@/lib/gif-sticker";
-import { logger, setTransactionName, trackApiCall } from "@/lib/newrelic-utils";
+import { logger, setTransactionName, trackApiCall,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { checkRateLimit } from "@/lib/rate-limiter";
 
 const GIPHY_BASE_URL = "https://api.giphy.com/v1/gifs/search";

@@ -6,7 +6,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
 import {
     MAX_MESSAGE_LENGTH,
@@ -331,7 +334,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             parent.conversationId,
         );
         if (!participants.includes(user.$id)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const docs = await databases.listDocuments(
@@ -458,7 +461,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             parent.conversationId,
         );
         if (!participants.includes(user.$id)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const permissions = [
