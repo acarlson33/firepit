@@ -1,8 +1,10 @@
+export { flushPostHogLogs, loggerProvider } from "./src/lib/posthog-logs";
+
 /**
  * Next.js Instrumentation Hook
  *
  * This file is automatically loaded by Next.js on both server and edge runtimes.
- * It initializes New Relic APM for server-side monitoring.
+ * It initializes server telemetry hooks for Node.js runtime only.
  *
  * Documentation: https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  */
@@ -24,12 +26,14 @@ const instrumentationLogger = {
 };
 
 export async function register() {
-    // Only initialize New Relic on the Node.js runtime (not Edge runtime)
     if (process.env.NEXT_RUNTIME === "nodejs") {
         try {
-            const { registerPostHogProcessHandlers } = await import(
-                "./src/lib/posthog-server"
-            );
+            const { registerPostHogLoggerProvider } =
+                await import("./src/lib/posthog-logs");
+            registerPostHogLoggerProvider();
+
+            const { registerPostHogProcessHandlers } =
+                await import("./src/lib/posthog-server");
             registerPostHogProcessHandlers();
         } catch (error) {
             // PostHog runtime hooks are optional and should not block startup.

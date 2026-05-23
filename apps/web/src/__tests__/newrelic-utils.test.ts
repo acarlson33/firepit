@@ -12,10 +12,14 @@ import {
 
 const {
     mockCapturePostHogServerError,
+    mockEmitPostHogLog,
+    mockSchedulePostHogLogFlush,
     mockNewRelic,
     mockPostHogClient,
 } = vi.hoisted(() => ({
     mockCapturePostHogServerError: vi.fn(),
+    mockEmitPostHogLog: vi.fn(),
+    mockSchedulePostHogLogFlush: vi.fn(),
     mockNewRelic: {
         recordCustomEvent: vi.fn(),
         recordMetric: vi.fn(),
@@ -46,12 +50,19 @@ vi.mock("@/lib/posthog-server", () => ({
     getPostHogClient: vi.fn(() => mockPostHogClient),
 }));
 
+vi.mock("@/lib/posthog-logs", () => ({
+    emitPostHogLog: mockEmitPostHogLog,
+    schedulePostHogLogFlush: mockSchedulePostHogLogFlush,
+}));
+
 describe("newrelic-utils", () => {
     beforeEach(() => {
         // Clear all mocks before each test
         Object.values(mockNewRelic).forEach((fn) => fn.mockClear());
         mockPostHogClient.capture.mockClear();
         mockCapturePostHogServerError.mockClear();
+        mockEmitPostHogLog.mockClear();
+        mockSchedulePostHogLogFlush.mockClear();
         delete process.env.TELEMETRY_PROVIDER;
         delete process.env.POSTHOG_PROJECT_API_KEY;
         delete process.env.POSTHOG_HOST;
@@ -74,41 +85,93 @@ describe("newrelic-utils", () => {
         it("should log info messages", () => {
             logger.info("Test info message");
             expect(console.log).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test info message",
+                    severityNumber: expect.any(Number),
+                }),
+            );
         });
 
         it("should log info messages with attributes", () => {
             logger.info("Test info", { userId: "123" });
             expect(console.log).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test info",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({ userId: "123" }),
+                }),
+            );
         });
 
         it("should log error messages", () => {
             logger.error("Test error message");
             expect(console.error).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test error message",
+                    severityNumber: expect.any(Number),
+                }),
+            );
         });
 
         it("should log error messages with attributes", () => {
             logger.error("Test error", { code: 500 });
             expect(console.error).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test error",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({ code: 500 }),
+                }),
+            );
         });
 
         it("should log warn messages", () => {
             logger.warn("Test warning message");
             expect(console.warn).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test warning message",
+                    severityNumber: expect.any(Number),
+                }),
+            );
         });
 
         it("should log warn messages with attributes", () => {
             logger.warn("Test warning", { threshold: 100 });
             expect(console.warn).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test warning",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({ threshold: 100 }),
+                }),
+            );
         });
 
         it("should log debug messages", () => {
             logger.debug("Test debug message");
             expect(console.log).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test debug message",
+                    severityNumber: expect.any(Number),
+                }),
+            );
         });
 
         it("should log debug messages with attributes", () => {
             logger.debug("Test debug", { step: 1 });
             expect(console.log).toHaveBeenCalled();
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test debug",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({ step: 1 }),
+                }),
+            );
         });
     });
 
@@ -117,6 +180,16 @@ describe("newrelic-utils", () => {
             const error = new Error("Test error");
             recordError(error);
             expect(console.error).toHaveBeenCalledWith("[ERROR]", error, "");
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "Test error",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({
+                        errorMessage: "Test error",
+                        errorName: "Error",
+                    }),
+                }),
+            );
         });
 
         it("should record an Error with custom attributes", () => {
@@ -131,6 +204,16 @@ describe("newrelic-utils", () => {
                 "[ERROR]",
                 "String error message",
                 "",
+            );
+            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    body: "String error message",
+                    severityNumber: expect.any(Number),
+                    attributes: expect.objectContaining({
+                        errorMessage: "String error message",
+                        errorName: "Error",
+                    }),
+                }),
             );
         });
 
