@@ -5,17 +5,29 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
     BatchLogRecordProcessor,
     LoggerProvider,
+    SimpleLogRecordProcessor,
 } from "@opentelemetry/sdk-logs";
 
 const posthogLogsToken =
     process.env.POSTHOG_PROJECT_API_KEY ??
     process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
     "";
+
+// Keep server OTLP traffic on explicit server hosts so browser rewrite hosts
+// do not accidentally intercept or drop /i/v1/logs payloads.
 const posthogLogsHost =
+    process.env.POSTHOG_LOGS_HOST ??
     process.env.POSTHOG_HOST ??
-    process.env.NEXT_PUBLIC_POSTHOG_HOST ??
     "https://us.i.posthog.com";
 const posthogLogsUrl = `${posthogLogsHost.replace(/\/$/, "")}/i/v1/logs`;
+
+const otlpLogExporter = new OTLPLogExporter({
+    url: posthogLogsUrl,
+    headers: {
+        Authorization: `Bearer ${posthogLogsToken}`,
+        "Content-Type": "application/json",
+    },
+});
 
 export const loggerProvider = new LoggerProvider({
     resource: resourceFromAttributes({
@@ -23,15 +35,11 @@ export const loggerProvider = new LoggerProvider({
     }),
     processors: posthogLogsToken
         ? [
-              new BatchLogRecordProcessor(
-                  new OTLPLogExporter({
-                      url: posthogLogsUrl,
-                      headers: {
-                          Authorization: `Bearer ${posthogLogsToken}`,
-                          "Content-Type": "application/json",
-                      },
-                  }),
-              ),
+              process.env.NODE_ENV === "production"
+                  ? new BatchLogRecordProcessor(otlpLogExporter, {
+                        scheduledDelayMillis: 1_000,
+                    })
+                  : new SimpleLogRecordProcessor(otlpLogExporter),
           ]
         : [],
 });
@@ -92,6 +100,12 @@ export function emitPostHogLog(params: {
     severityNumber: SeverityNumber;
     attributes?: Record<string, unknown>;
 }) {
+    if (!posthogLogsToken) {
+        return;
+    }
+
+    registerPostHogLoggerProvider();
+
     serverLogger.emit({
         body: params.body,
         severityNumber: params.severityNumber,
@@ -109,6 +123,9 @@ export function schedulePostHogLogFlush() {
             await flushPostHogLogs();
         });
     } catch {
-        // Not running inside a Next.js request context.
+        // Fallback for contexts where Next.js request hooks are unavailable.
+        void flushPostHogLogs().catch(() => {
+            // Ignore telemetry delivery errors.
+        });
     }
 }

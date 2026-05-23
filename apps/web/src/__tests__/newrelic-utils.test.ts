@@ -173,6 +173,28 @@ describe("newrelic-utils", () => {
                 }),
             );
         });
+
+        it("should emit application_log event to PostHog when enabled", () => {
+            process.env.TELEMETRY_PROVIDER = "posthog";
+            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
+            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
+
+            logger.warn("Unauthorized request", {
+                route: "/api/messages",
+                statusCode: 401,
+            });
+
+            expect(mockPostHogClient.capture).toHaveBeenCalledWith({
+                distinctId: "server",
+                event: "application_log",
+                properties: expect.objectContaining({
+                    level: "warn",
+                    message: "Unauthorized request",
+                    route: "/api/messages",
+                    statusCode: 401,
+                }),
+            });
+        });
     });
 
     describe("recordError", () => {
