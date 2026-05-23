@@ -6,7 +6,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { listPages } from "@/lib/appwrite-pagination";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { ChannelPermissionOverride } from "@/lib/types";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import {
     getServerPermissionsForUser,
     hasAccessToCategory,

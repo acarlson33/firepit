@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
@@ -41,7 +44,7 @@ export async function GET(
         );
 
         if (!access.isMember || !access.permissions.manageServer) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const { searchParams } = new URL(request.url);

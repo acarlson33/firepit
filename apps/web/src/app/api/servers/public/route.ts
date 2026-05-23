@@ -7,7 +7,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import type { Server } from "@/lib/types";
 
 type ServerDocument = Models.Document & {

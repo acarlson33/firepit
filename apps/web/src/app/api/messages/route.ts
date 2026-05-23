@@ -16,6 +16,8 @@ import {
     trackApiCall,
     trackMessage,
     addTransactionAttributes,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import {
     MAX_MESSAGE_LENGTH,
@@ -166,7 +168,7 @@ export async function GET(request: NextRequest) {
         );
 
         if (!access.canRead) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const queries = [
@@ -410,7 +412,7 @@ export async function POST(request: NextRequest) {
             userId,
         );
         if (!access.isMember || !access.canSend) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         // Normalize serverId once and reuse for @all mention validation and later logic

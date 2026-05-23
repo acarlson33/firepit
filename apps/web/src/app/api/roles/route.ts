@@ -5,7 +5,11 @@ import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { enforceSingleDefaultRole } from "@/lib/default-role";
 import { getServerSession } from "@/lib/auth-server";
-import { logger } from "@/lib/newrelic-utils";
+import {
+    logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 const env = getEnvConfig();
@@ -20,10 +24,7 @@ async function requireManageRolesAccess(serverId: string) {
     const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
-        return NextResponse.json(
-            { error: "Authentication required" },
-            { status: 401 },
-        );
+        return returnUnauthorized();
     }
 
     const access = await getServerPermissionsForUser(
@@ -34,7 +35,7 @@ async function requireManageRolesAccess(serverId: string) {
     );
 
     if (!access.isMember || !access.permissions.manageRoles) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     return null;

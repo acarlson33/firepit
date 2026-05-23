@@ -13,6 +13,8 @@ import {
     recordError,
     setTransactionName,
     trackApiCall,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { compressedResponse } from "@/lib/api-compression";
 

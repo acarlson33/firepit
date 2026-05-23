@@ -6,7 +6,10 @@ import {
     getAvatarFrameUrlForProfile,
 } from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 export async function GET(
     _request: Request,

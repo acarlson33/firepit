@@ -6,7 +6,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 // Define explicit interfaces for Appwrite documents used in this route
 interface RoleDocument {

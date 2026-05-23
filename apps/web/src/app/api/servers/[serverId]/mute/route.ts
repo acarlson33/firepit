@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { muteServer, unmuteServer } from "@/lib/notification-settings";
 import { invalidateNotificationSettingsCache } from "@/lib/notification-triggers";
+import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
 import type { MuteDuration, NotificationLevel } from "@/lib/types";
 
 interface MuteRequestBody {
@@ -25,10 +26,7 @@ export async function POST(
 	try {
 		const user = await getServerSession();
 		if (!user) {
-			return NextResponse.json(
-				{ error: "Authentication required" },
-				{ status: 401 }
-			);
+			return returnUnauthorized();
 		}
 
 		const { serverId } = await params;

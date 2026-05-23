@@ -4,7 +4,10 @@ import { Query, ID } from "node-appwrite";
 import { recordAudit } from "@/lib/appwrite-audit";
 import { getServerSession } from "@/lib/auth-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 

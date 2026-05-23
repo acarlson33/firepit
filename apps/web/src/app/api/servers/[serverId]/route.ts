@@ -17,7 +17,10 @@ import {
     normalizeServerFileId,
 } from "@/lib/server-metadata";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 const MAX_SERVER_NAME_LENGTH = 100;
 const MAX_SERVER_DESCRIPTION_LENGTH = 500;
@@ -101,7 +104,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         );
 
         if (!access.isMember) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
     }
 
@@ -179,7 +182,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
 
         if (!access.isMember || !access.permissions.manageServer) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
     }
 
@@ -675,7 +678,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
             session.$id,
         );
         if (!access.isMember || !access.permissions.manageServer) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
     }
 

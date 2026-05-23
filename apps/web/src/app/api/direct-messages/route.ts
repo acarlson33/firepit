@@ -24,6 +24,8 @@ import {
     trackApiCall,
     trackMessage,
     addTransactionAttributes,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import {
     MAX_MESSAGE_LENGTH,
@@ -380,7 +382,7 @@ export async function GET(request: NextRequest) {
         const session = await getServerSession();
         if (!session?.$id) {
             logger.warn("Unauthorized DM access attempt");
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const { searchParams } = new URL(request.url);
@@ -1249,7 +1251,7 @@ export async function POST(request: NextRequest) {
         const session = await getServerSession();
         if (!session?.$id) {
             logger.warn("Unauthorized DM send attempt");
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const body = (await request.json()) as {
@@ -2053,7 +2055,7 @@ export async function PATCH(request: NextRequest) {
     try {
         const session = await getServerSession();
         if (!session?.$id) {
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const { searchParams } = new URL(request.url);
@@ -2172,7 +2174,7 @@ export async function DELETE(request: NextRequest) {
     try {
         const session = await getServerSession();
         if (!session?.$id) {
-            return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+            return returnUnauthorized();
         }
 
         const { searchParams } = new URL(request.url);

@@ -12,6 +12,8 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";

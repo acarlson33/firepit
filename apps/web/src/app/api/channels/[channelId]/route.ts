@@ -6,7 +6,10 @@ import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
 import { deleteChannel } from "@/lib/appwrite-servers";
 import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 import type { Channel } from "@/lib/types";
@@ -108,7 +111,7 @@ async function requireManageChannelsAccess(channelId: string) {
     );
 
     if (!access.isMember || (!access.isServerOwner && !access.permissions.manageChannels)) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     return { channel };

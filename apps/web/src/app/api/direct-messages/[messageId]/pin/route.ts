@@ -5,6 +5,7 @@ import { ID, Query } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
+import { returnUnauthorized, returnForbidden } from "@/lib/newrelic-utils";
 import type { DirectMessage, PinnedMessage } from "@/lib/types";
 
 const PIN_LIMIT = 50;
@@ -65,7 +66,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
         const participants = await getParticipants(message.conversationId);
         if (!participants.includes(user.$id)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const existing = await databases.listDocuments(
@@ -162,7 +163,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
         const participants = await getParticipants(message.conversationId);
         if (!participants.includes(user.$id)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return returnForbidden();
         }
 
         const existing = await databases.listDocuments(

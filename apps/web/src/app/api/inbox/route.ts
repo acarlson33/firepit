@@ -6,7 +6,10 @@ import { getAdminClient } from "@/lib/appwrite-admin";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
 import { listInboxItems } from "@/lib/inbox";
-import { logger, recordEvent } from "@/lib/newrelic-utils";
+import { logger, recordEvent,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { upsertThreadReads } from "@/lib/thread-read-store";
 import type { InboxContextKind, InboxItemKind } from "@/lib/types";
 import { Query, type Models } from "node-appwrite";

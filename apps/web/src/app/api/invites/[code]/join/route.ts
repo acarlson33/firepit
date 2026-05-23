@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { useInvite } from "@/lib/appwrite-invites";
-import { logger, recordError } from "@/lib/newrelic-utils";
+import { logger, recordError,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
 
@@ -18,7 +21,7 @@ export async function POST(
     // Authenticate user
     const user = await getServerSession();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return returnUnauthorized();
     }
 
     const { code } = await params;

@@ -8,6 +8,8 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import type { UserStatus } from "@/lib/types";
 import { normalizeStatus } from "@/lib/status-normalization";

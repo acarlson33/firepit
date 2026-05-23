@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { createServer } from "@/lib/appwrite-servers";
 import { getServerSession } from "@/lib/auth-server";
 import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { normalizeServerFileId } from "@/lib/server-metadata";
 

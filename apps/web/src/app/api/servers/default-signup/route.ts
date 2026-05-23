@@ -5,7 +5,10 @@ import { getServerSession } from "@/lib/auth-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getUserRoles } from "@/lib/appwrite-roles";
-import { logger } from "@/lib/newrelic-utils";
+import { logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 
 type DefaultSignupServerDocument = {
     $id: string;
@@ -23,7 +26,7 @@ export async function GET() {
 
     const roles = await getUserRoles(session.$id);
     if (!roles.isAdmin) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     const env = getEnvConfig();

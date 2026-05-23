@@ -13,6 +13,8 @@ import {
 	trackApiCall,
 	addTransactionAttributes,
 	recordEvent,
+    returnUnauthorized,
+    returnForbidden,
 } from "@/lib/newrelic-utils";
 import { assignDefaultRoleServer } from "@/lib/default-role";
 import { invalidateChannelsUserCaches } from "@/lib/channels-route-cache";
@@ -62,10 +64,7 @@ export async function POST(request: NextRequest) {
 		const user = await getServerSession();
 		if (!user) {
 			logger.warn("Unauthenticated join attempt");
-			return NextResponse.json(
-				{ error: "Authentication required" },
-				{ status: 401 }
-			);
+			return returnUnauthorized();
 		}
 
 		const env = getEnvConfig();

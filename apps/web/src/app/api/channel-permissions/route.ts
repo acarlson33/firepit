@@ -4,7 +4,11 @@ import type { Permission } from "@/lib/types";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getServerSession } from "@/lib/auth-server";
-import { logger } from "@/lib/newrelic-utils";
+import {
+    logger,
+    returnUnauthorized,
+    returnForbidden,
+} from "@/lib/newrelic-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
 
@@ -20,10 +24,7 @@ async function requireManageChannelsAccessByServerId(serverId: string) {
     const databases = getDatabases();
     const session = await getServerSession();
     if (!session?.$id) {
-        return NextResponse.json(
-            { error: "Authentication required" },
-            { status: 401 },
-        );
+        return returnUnauthorized();
     }
 
     const access = await getServerPermissionsForUser(
@@ -34,7 +35,7 @@ async function requireManageChannelsAccessByServerId(serverId: string) {
     );
 
     if (!access.isMember || !access.permissions.manageChannels) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnForbidden();
     }
 
     return null;
@@ -70,9 +71,8 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const authResult = await requireManageChannelsAccessByChannelId(
-            channelId,
-        );
+        const authResult =
+            await requireManageChannelsAccessByChannelId(channelId);
         if (authResult instanceof NextResponse) {
             return authResult;
         }
@@ -109,9 +109,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const authResult = await requireManageChannelsAccessByChannelId(
-            channelId,
-        );
+        const authResult =
+            await requireManageChannelsAccessByChannelId(channelId);
         if (authResult instanceof NextResponse) {
             return authResult;
         }
