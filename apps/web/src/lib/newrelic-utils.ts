@@ -313,6 +313,13 @@ function log(
             ...attributes,
         });
     }
+
+    capturePostHogEvent("application_log", {
+        level,
+        message,
+        timestamp: new Date().toISOString(),
+        ...attributes,
+    });
 }
 
 /**
