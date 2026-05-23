@@ -5,10 +5,12 @@
  * with New Relic APM.
  */
 
+import { SeverityNumber } from "@opentelemetry/api-logs";
 import {
     capturePostHogServerError,
     getPostHogClient,
 } from "@/lib/posthog-server";
+import { emitPostHogLog, schedulePostHogLogFlush } from "@/lib/posthog-logs";
 
 type NewRelicAgent = {
     recordCustomEvent: (
@@ -281,6 +283,25 @@ function log(
         );
     }
 
+    emitPostHogLog({
+        body: message,
+        severityNumber:
+            level === LogLevel.ERROR
+                ? SeverityNumber.ERROR
+                : level === LogLevel.WARN
+                  ? SeverityNumber.WARN
+                  : level === LogLevel.DEBUG
+                    ? SeverityNumber.DEBUG
+                    : SeverityNumber.INFO,
+        attributes: {
+            level,
+            message,
+            timestamp: new Date().toISOString(),
+            ...attributes,
+        },
+    });
+    schedulePostHogLogFlush();
+
     // New Relic custom event
     const nr = getNewRelicForDispatch();
     if (shouldSendToNewRelic() && nr) {
@@ -291,13 +312,6 @@ function log(
             ...attributes,
         });
     }
-
-    capturePostHogEvent("application_log", {
-        level,
-        message,
-        timestamp: new Date().toISOString(),
-        ...attributes,
-    });
 }
 
 /**
@@ -333,6 +347,18 @@ export function recordError(
 
     const errorObject =
         error instanceof Error ? error : new Error(String(error));
+
+    emitPostHogLog({
+        body: errorObject.message,
+        severityNumber: SeverityNumber.ERROR,
+        attributes: {
+            errorMessage: errorObject.message,
+            errorName: errorObject.name,
+            errorStack: errorObject.stack,
+            ...customAttributes,
+        },
+    });
+    schedulePostHogLogFlush();
 
     const nr = getNewRelicForDispatch();
     if (shouldSendToNewRelic() && nr) {
