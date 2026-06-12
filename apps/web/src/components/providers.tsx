@@ -1,10 +1,11 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ThemeProvider } from "./theme-provider";
 import { Toaster } from "./ui/sonner";
+import { initRealtimeAuth } from "@/lib/realtime-auth-init";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
     // Create a QueryClient instance per component mount to avoid sharing state between requests
@@ -26,6 +27,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
                 },
             }),
     );
+
+    // Initialize realtime WebSocket authentication from session cookie
+    useEffect(() => {
+        void initRealtimeAuth();
+    }, []);
 
     return (
         <QueryClientProvider client={queryClient}>

@@ -762,6 +762,7 @@ describe("useDirectMessages", () => {
     });
 
     it("sends typing updates for the active conversation", async () => {
+        vi.useFakeTimers();
         const fetchMock = vi.mocked(fetch);
         const { result } = renderHook(() =>
             useDirectMessages({
@@ -771,35 +772,55 @@ describe("useDirectMessages", () => {
             }),
         );
 
-        await waitFor(() => {
-            expect(result.current.loading).toBe(false);
+        // Flush initial load timers - advance in small steps to avoid infinite loop
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(100);
         });
 
+        expect(result.current.loading).toBe(false);
+
+        // Trigger typing start
         act(() => {
             result.current.handleTypingChange("typing");
         });
 
-        await waitFor(() => {
-            expect(fetchMock).toHaveBeenCalledWith("/api/typing", {
-                body: JSON.stringify({
-                    conversationId: "conversation-1",
-                    userName: "User One",
-                }),
-                headers: { "Content-Type": "application/json" },
-                method: "POST",
-            });
+        // Flush the debounce timer (typingStartDebounceMs = 0ms, fires immediately)
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
         });
 
+        // Verify typing POST was called
+        const typingPostCalls = fetchMock.mock.calls.filter(
+            (call) => String(call[0]) === "/api/typing" && call[1]?.method === "POST",
+        );
+        expect(typingPostCalls.length).toBeGreaterThan(0);
+        const postBody = JSON.parse(typingPostCalls[0][1]?.body as string);
+        expect(postBody).toEqual({
+            presenceId: "user-1",
+            channelId: "conversation-1",
+            userName: "User One",
+            expiresAt: expect.any(String),
+        });
+
+        // Trigger typing stop
         act(() => {
             result.current.handleTypingChange("");
         });
 
-        await waitFor(() => {
-            expect(fetchMock).toHaveBeenCalledWith(
-                "/api/typing?conversationId=conversation-1",
-                { method: "DELETE" },
-            );
+        // Verify typing DELETE was called
+        const typingDeleteCalls = fetchMock.mock.calls.filter(
+            (call) => String(call[0]) === "/api/typing" && call[1]?.method === "DELETE",
+        );
+        expect(typingDeleteCalls.length).toBeGreaterThan(0);
+        expect(typingDeleteCalls[0][1]).toMatchObject({
+            body: JSON.stringify({
+                presenceId: "user-1",
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "DELETE",
         });
+
+        vi.useRealTimers();
     });
 
     it("removes a deleted DM from local state immediately", async () => {

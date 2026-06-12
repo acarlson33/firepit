@@ -65,7 +65,9 @@ export async function firepitRequest<T>({
 }: FirepitRequestOptions): Promise<T> {
   const url = buildUrl(baseUrl, path, query);
   const requestHeaders = new Headers({ Accept: "application/json" });
-  if (body !== undefined) {
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isFormData) {
     requestHeaders.set("Content-Type", "application/json");
   }
   if (token) {
@@ -76,19 +78,15 @@ export async function firepitRequest<T>({
       requestHeaders.set(key, value);
     });
   }
-  console.log(
-    "[http] firepitRequest",
-    method,
-    path,
-    "- token present:",
-    !!token,
-    "- auth header set:",
-    requestHeaders.has("Authorization"),
-  );
   const response = await fetch(url, {
     method,
     headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : isFormData
+          ? (body as FormData)
+          : JSON.stringify(body),
     credentials: "omit",
   });
 

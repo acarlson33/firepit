@@ -411,33 +411,6 @@ describe("Setup Appwrite Script", () => {
         });
     });
 
-    describe("Collection Setup - Typing Indicators", () => {
-        it("should have typing collection with required attributes", () => {
-            const requiredAttributes = [
-                "userId",
-                "contextId",
-                "contextType",
-                "lastTypingAt",
-            ];
-
-            requiredAttributes.forEach((attr) => {
-                expect(attr).toBeTruthy();
-            });
-        });
-
-        it("should have typing collection with proper indexes", () => {
-            const expectedIndexes = [
-                "idx_contextId",
-                "idx_userId",
-                "idx_lastTypingAt",
-            ];
-
-            expectedIndexes.forEach((index) => {
-                expect(index).toBeTruthy();
-            });
-        });
-    });
-
     describe("Storage Bucket Setup", () => {
         it("should create storage bucket for attachments", () => {
             const bucketConfig = {

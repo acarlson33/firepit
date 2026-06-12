@@ -3,5 +3,3 @@ node_modules/
 .env*.local
 *.log
 .turbo/
-
-google-services.json

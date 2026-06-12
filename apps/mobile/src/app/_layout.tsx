@@ -15,9 +15,7 @@ export default function TabLayout() {
             ...(themeName === "dark" ? DarkTheme : DefaultTheme),
             dark: themeName === "dark",
             colors: {
-                ...(themeName === "dark"
-                    ? DarkTheme.colors
-                    : DefaultTheme.colors),
+                ...(themeName === "dark" ? DarkTheme.colors : DefaultTheme.colors),
                 background: palette.background,
                 card: palette.card,
                 text: palette.foreground,
@@ -37,8 +35,13 @@ export default function TabLayout() {
                     <Stack.Screen name="login" />
                     <Stack.Screen name="(tabs)" />
                     <Stack.Screen name="explore" />
+                    <Stack.Screen name="search" />
+                    <Stack.Screen name="create-server" />
+                    <Stack.Screen name="invite/[inviteCode]" />
                     <Stack.Screen name="server/[serverId]" />
                     <Stack.Screen name="server/messages/[serverId]/[channelId]" />
+                    <Stack.Screen name="thread/[serverId]/[channelId]/[messageId]" />
+                    <Stack.Screen name="dm/[conversationId]" />
                 </Stack>
             </FirepitProvider>
         </ThemeProvider>

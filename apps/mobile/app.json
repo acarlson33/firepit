@@ -19,7 +19,8 @@
                 "monochromeImage": "./assets/images/android-icon-monochrome.png"
             },
             "predictiveBackGestureEnabled": false,
-            "package": "com.acarlson33.firepit"
+            "package": "com.acarlson33.firepit",
+            "googleServicesFile": "./google-services.json"
         },
         "web": {
             "output": "static",

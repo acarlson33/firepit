@@ -1,231 +1,89 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { Permission, Role } from "node-appwrite";
+import { Account, Client, Permission, Presences, Role } from "node-appwrite";
+import { cookies } from "next/headers";
 
-import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { getServerSession } from "@/lib/auth-server";
-import {
-    logger,
-    recordError,
-    setTransactionName,
-    trackApiCall,
-    addTransactionAttributes,
-    recordEvent,
-    returnUnauthorized,
-    returnForbidden,
-} from "@/lib/newrelic-utils";
-import { getChannelAccessForUser } from "@/lib/server-channel-access";
+import { getServerClient } from "@/lib/appwrite-server";
+import { logger } from "@/lib/newrelic-utils";
 
-// Helper function to create a deterministic, short document ID for typing status
-// Works for both channels and DM conversations by accepting any context ID
-function hashTypingKey(userId: string, contextId: string): string {
-    // Use Node.js crypto to create a consistent hash that's exactly 36 characters
-    // This ensures the document ID stays within Appwrite's limit
-    const input = `${userId}_${contextId}`;
+async function getUserIdFromSession(): Promise<string | null> {
+    const env = getEnvConfig();
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get(`a_session_${env.project}`);
+    if (!sessionCookie?.value) return null;
 
-    // Simple hash function that works in both Node and browser
-    // Using a djb2-like hash algorithm for deterministic results
-    let hash = 5381;
-    for (let i = 0; i < input.length; i++) {
-        const char = input.charCodeAt(i);
-        hash = (hash << 5) + hash + char; // hash * 33 + char
+    const client = new Client()
+        .setEndpoint(env.endpoint)
+        .setProject(env.project)
+        .setSession(sessionCookie.value);
+
+    const account = new Account(client);
+    try {
+        const user = await account.get();
+        return user.$id;
+    } catch {
+        return null;
     }
-
-    // Convert to positive number and then to hex
-    const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
-
-    // Create a deterministic 36-character ID using parts of the input and the hash
-    // Format: typing_<userPrefix>_<contextPrefix>_<hash>
-    const userPrefix = userId.substring(0, 8).replace(/[^a-zA-Z0-9]/g, "");
-    const contextPrefix = contextId
-        .substring(0, 8)
-        .replace(/[^a-zA-Z0-9]/g, "");
-    const combined = `typ_${userPrefix}_${contextPrefix}_${hashHex}`;
-
-    // Ensure it's exactly 36 characters or less
-    return combined.padEnd(36, "0").substring(0, 36);
 }
 
 /**
  * POST /api/typing
- * Creates or updates typing status for a user in a channel or DM conversation
+ *
+ * Upsert a typing presence record. Resolves the userId from the session
+ * cookie, then uses the admin API key client to call presences.upsert
+ * with an explicit userId and permissions readable by any authenticated user.
  */
-export async function POST(request: NextRequest) {
-    const startTime = Date.now();
-
+export async function POST(request: Request) {
     try {
-        setTransactionName("POST /api/typing");
+        const { presenceId, channelId, userName, expiresAt } =
+            (await request.json()) as {
+                presenceId?: string;
+                channelId?: string;
+                userName?: string;
+                expiresAt?: string;
+            };
 
-        // Verify user is authenticated
-        const user = await getServerSession();
-        if (!user) {
-            logger.warn("Unauthenticated typing status attempt");
-            return returnUnauthorized();
-        }
-
-        const env = getEnvConfig();
-        const typingCollectionId = env.collections.typing;
-
-        if (!typingCollectionId) {
-            logger.error("Typing collection not configured");
+        if (!presenceId || !channelId) {
             return NextResponse.json(
-                { error: "Typing collection not configured" },
-                { status: 503 },
-            );
-        }
-
-        const body = await request.json();
-        const { channelId, conversationId, userName } = body;
-
-        // Accept either channelId (for channels) or conversationId (for DMs)
-        const contextId = channelId || conversationId;
-
-        if (!contextId) {
-            logger.warn("No context provided for typing status");
-            return NextResponse.json(
-                { error: "channelId or conversationId is required" },
+                { error: "presenceId and channelId are required" },
                 { status: 400 },
             );
         }
 
-        const userId = user.$id;
-        const { databases } = getServerClient();
-
-        if (channelId) {
-            const access = await getChannelAccessForUser(
-                databases,
-                env,
-                String(channelId),
-                userId,
+        const userId = await getUserIdFromSession();
+        if (!userId) {
+            return NextResponse.json(
+                { error: "No session found" },
+                { status: 401 },
             );
-            if (!access.isMember || !access.canSend) {
-                return NextResponse.json(
-                    { error: "Forbidden" },
-                    { status: 403 },
-                );
-            }
         }
 
-        const key = hashTypingKey(userId, contextId);
-
-        addTransactionAttributes({
+        const { client } = getServerClient();
+        const presences = new Presences(client);
+        const result = await presences.upsert({
+            presenceId,
             userId,
-            contextType: channelId ? "channel" : "conversation",
-            contextId,
+            status: "typing",
+            expiresAt:
+                expiresAt ?? new Date(Date.now() + 8000).toISOString(),
+            metadata: {
+                channelId,
+                userName: userName || undefined,
+            },
+            permissions: [
+                Permission.read(Role.any()),
+            ],
         });
 
-        const payload = {
-            userId,
-            userName: userName || user.name,
-            channelId: contextId, // Store as channelId for backward compatibility
-        };
-
-        // Permissions: anyone can read (to see typing indicators), only creator can update/delete
-        const permissions = [
-            Permission.read(Role.any()),
-            Permission.update(Role.user(userId)),
-            Permission.delete(Role.user(userId)),
-        ];
-
-        // Emulate upsert: try update, fallback create.
-        const dbStartTime = Date.now();
-        try {
-            const result = await databases.updateDocument(
-                env.databaseId,
-                typingCollectionId,
-                key,
-                payload,
-                permissions,
-            );
-
-            trackApiCall("/api/typing", "POST", 200, Date.now() - dbStartTime, {
-                operation: "updateDocument",
-                action: "upsert",
-            });
-
-            recordEvent("TypingStatus", {
-                userId,
-                contextId,
-                contextType: channelId ? "channel" : "conversation",
-                action: "updated",
-            });
-
-            logger.info("Typing status updated", { userId, contextId });
-
-            return NextResponse.json({ success: true, document: result });
-        } catch {
-            try {
-                // Document doesn't exist, create it
-                const result = await databases.createDocument(
-                    env.databaseId,
-                    typingCollectionId,
-                    key,
-                    payload,
-                    permissions,
-                );
-
-                trackApiCall(
-                    "/api/typing",
-                    "POST",
-                    200,
-                    Date.now() - dbStartTime,
-                    { operation: "createDocument", action: "upsert" },
-                );
-
-                recordEvent("TypingStatus", {
-                    userId,
-                    contextId,
-                    contextType: channelId ? "channel" : "conversation",
-                    action: "created",
-                });
-
-                logger.info("Typing status created", { userId, contextId });
-
-                return NextResponse.json({ success: true, document: result });
-            } catch (error) {
-                recordError(
-                    error instanceof Error ? error : new Error(String(error)),
-                    {
-                        context: "POST /api/typing - create fallback",
-                        userId,
-                        contextId,
-                    },
-                );
-
-                logger.error("Failed to create typing status", {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
-
-                return NextResponse.json(
-                    {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : "Failed to create typing status",
-                    },
-                    { status: 500 },
-                );
-            }
-        }
+        return NextResponse.json({ success: true, presence: result });
     } catch (error) {
-        recordError(error instanceof Error ? error : new Error(String(error)), {
-            context: "POST /api/typing",
-            endpoint: "/api/typing",
-        });
-
-        logger.error("Failed to set typing status", {
+        logger.error("Failed to upsert typing presence", {
             error: error instanceof Error ? error.message : String(error),
-            duration: Date.now() - startTime,
         });
-
         return NextResponse.json(
             {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to set typing status",
+                error: "Failed to set typing presence",
+                details: error instanceof Error ? error.message : String(error),
             },
             { status: 500 },
         );
@@ -233,83 +91,44 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * DELETE /api/typing?channelId=CHANNEL_ID or /api/typing?conversationId=CONVERSATION_ID
- * Deletes typing status for the authenticated user in a channel or DM conversation
+ * DELETE /api/typing
+ *
+ * Delete a typing presence record.
  */
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: Request) {
     try {
-        // Verify user is authenticated
-        const user = await getServerSession();
-        if (!user) {
+        const { presenceId } = (await request.json()) as {
+            presenceId?: string;
+        };
+
+        if (!presenceId) {
             return NextResponse.json(
-                { error: "Authentication required" },
-                { status: 401 },
-            );
-        }
-
-        const env = getEnvConfig();
-        const typingCollectionId = env.collections.typing;
-
-        if (!typingCollectionId) {
-            return NextResponse.json(
-                { error: "Typing collection not configured" },
-                { status: 503 },
-            );
-        }
-
-        const { searchParams } = new URL(request.url);
-        const channelId = searchParams.get("channelId");
-        const conversationId = searchParams.get("conversationId");
-
-        // Accept either channelId (for channels) or conversationId (for DMs)
-        const contextId = channelId || conversationId;
-
-        if (!contextId) {
-            return NextResponse.json(
-                { error: "channelId or conversationId is required" },
+                { error: "presenceId is required" },
                 { status: 400 },
             );
         }
 
-        const userId = user.$id;
-        const { databases } = getServerClient();
-
-        if (channelId) {
-            const access = await getChannelAccessForUser(
-                databases,
-                env,
-                String(channelId),
-                userId,
+        const userId = await getUserIdFromSession();
+        if (!userId) {
+            return NextResponse.json(
+                { error: "No session found" },
+                { status: 401 },
             );
-            if (!access.isMember || !access.canSend) {
-                return NextResponse.json(
-                    { error: "Forbidden" },
-                    { status: 403 },
-                );
-            }
         }
 
-        const key = hashTypingKey(userId, contextId);
+        const { client } = getServerClient();
+        const presences = new Presences(client);
+        await presences.delete({ presenceId });
 
-        try {
-            await databases.deleteDocument(
-                env.databaseId,
-                typingCollectionId,
-                key,
-            );
-
-            return NextResponse.json({ success: true });
-        } catch {
-            // Document might not exist, which is fine
-            return NextResponse.json({ success: true });
-        }
+        return NextResponse.json({ success: true });
     } catch (error) {
+        logger.error("Failed to delete typing presence", {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return NextResponse.json(
             {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to delete typing status",
+                error: "Failed to delete typing presence",
+                details: error instanceof Error ? error.message : String(error),
             },
             { status: 500 },
         );

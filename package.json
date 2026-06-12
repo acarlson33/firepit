@@ -1,35 +1,35 @@
 {
-  "name": "firepit",
-  "version": "1.9.0",
-  "private": true,
-  "type": "module",
-  "packageManager": "bun@1.3.14",
-  "workspaces": [
-    "apps/web",
-    "apps/mobile"
-  ],
-  "scripts": {
-    "dev": "bun run web",
-    "build": "bunx turbo run build",
-    "start": "cd firepit-web && bun run start",
-    "test": "bunx turbo run test",
-    "lint": "bunx turbo run lint",
-    "typecheck": "bunx turbo run typecheck",
-    "web": "cd apps/web && bun run dev",
-    "web:build": "cd apps/web && bun run build",
-    "web:build:webpack": "cd apps/web && bun run build:webpack",
-    "web:test": "cd apps/web && bun run test",
-    "web:lint": "cd apps/web && bun run lint",
-    "mobile": "cd apps/mobile && bun run start",
-    "mobile:android": "cd apps/mobile && bun run android",
-    "mobile:ios": "cd apps/mobile && bun run ios",
-    "mobile:web": "cd apps/mobile && bun run web",
-    "mobile:lint": "cd apps/mobile && bun run lint"
-  },
-  "devDependencies": {
-    "turbo": "^2.9.14"
-  },
-  "dependencies": {
-    "@types/node": "^25.9.1"
-  }
+    "name": "firepit",
+    "version": "1.9.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "bun@1.3.14",
+    "workspaces": [
+        "apps/web",
+        "apps/mobile"
+    ],
+    "scripts": {
+        "dev": "bun run web",
+        "build": "bunx turbo run build",
+        "start": "cd firepit-web && bun run start",
+        "test": "bunx turbo run test",
+        "lint": "bunx turbo run lint",
+        "typecheck": "bunx turbo run typecheck",
+        "web": "cd apps/web && bun run dev",
+        "web:build": "cd apps/web && bun run build",
+        "web:build:webpack": "cd apps/web && bun run build:webpack",
+        "web:test": "cd apps/web && bun run test",
+        "web:lint": "cd apps/web && bun run lint",
+        "mobile": "cd apps/mobile && bun run start",
+        "mobile:android": "cd apps/mobile && bun run android",
+        "mobile:ios": "cd apps/mobile && bun run ios",
+        "mobile:web": "cd apps/mobile && bun run web",
+        "mobile:lint": "cd apps/mobile && bun run lint"
+    },
+    "devDependencies": {
+        "turbo": "^2.9.18"
+    },
+    "dependencies": {
+        "@types/node": "^25.9.3"
+    }
 }

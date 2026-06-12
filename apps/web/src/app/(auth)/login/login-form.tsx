@@ -20,7 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/auth-context";
 
-import { loginAction, resendVerificationAction } from "./actions";
+import { resendVerificationAction } from "./actions";
+import { getEnvConfig } from "@/lib/appwrite-core";
 
 type LoginFormProps = {
     showResendVerification: boolean;
@@ -69,23 +70,63 @@ const LoginFormContent: React.FC<LoginFormProps> = ({ showResendVerification }) 
         e.preventDefault();
         setLoading(true);
         try {
-            const formData = new FormData();
-            formData.set("email", email);
-            formData.set("password", password);
-            const result = await loginAction(formData);
-            if (result.success) {
-                toast.success("Logged in");
-                await refreshUser();
-                posthog.identify(result.userId, {
-                    appwriteUserId: result.userId,
-                });
-                posthog.capture("user_logged_in", undefined, {
-                    send_instantly: true,
-                });
-                router.push(destination as Route);
-            } else {
-                toast.error(result.message ?? result.error);
+            const env = getEnvConfig();
+
+            // Create session via our same-origin proxy API route.
+            // The route calls Appwrite without an API key so the session
+            // inherits the user's full scopes (not guest scopes).
+            const sessionResponse = await fetch("/api/auth/session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+
+            if (!sessionResponse.ok) {
+                const errorData = await sessionResponse.json().catch(() => ({}));
+                toast.error(
+                    (errorData as { error?: string }).error ??
+                        "Authentication failed",
+                );
+                return;
             }
+
+            const sessionData = (await sessionResponse.json()) as {
+                session?: string;
+                userId?: string;
+            };
+
+            // Populate localStorage.cookieFallback so the SDK can use it
+            // for realtime WebSocket authentication and REST API calls.
+            if (sessionData.session) {
+                window.localStorage.setItem(
+                    "cookieFallback",
+                    JSON.stringify({
+                        [`a_session_${env.project}`]: sessionData.session,
+                    }),
+                );
+            }
+
+            // Set the httpOnly cookie for SSR compatibility.
+            if (sessionData.session) {
+                await fetch("/api/session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        session: sessionData.session,
+                        project: env.project,
+                    }),
+                });
+            }
+
+            toast.success("Logged in");
+            await refreshUser();
+            posthog.identify(sessionData.userId ?? "", {
+                appwriteUserId: sessionData.userId ?? "",
+            });
+            posthog.capture("user_logged_in", undefined, {
+                send_instantly: true,
+            });
+            router.push(destination as Route);
         } catch (err) {
             const message =
                 err instanceof Error

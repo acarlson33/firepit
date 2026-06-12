@@ -60,7 +60,6 @@ export type EnvConfig = {
         categories: string;
         messages: string;
         audit: string;
-        typing: string;
         memberships: string;
         bannedUsers: string;
         mutedUsers: string;
@@ -181,12 +180,6 @@ export function getEnvConfig(): EnvConfig {
                 process.env.APPWRITE_AUDIT_COLLECTION_ID,
                 "audit",
             ) || "audit",
-        typing:
-            firstDefined(
-                process.env.NEXT_PUBLIC_APPWRITE_TYPING_COLLECTION_ID,
-                process.env.APPWRITE_TYPING_COLLECTION_ID,
-                "typing",
-            ) || "typing",
         memberships:
             firstDefined(
                 process.env.NEXT_PUBLIC_APPWRITE_MEMBERSHIPS_COLLECTION_ID,
