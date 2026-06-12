@@ -1,18 +1,22 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   View,
+  Text,
   TextInput,
   NativeSyntheticEvent,
   TextInputSelectionChangeEventData,
   Keyboard,
+  Pressable,
+  Alert,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import { Input } from "@/components/ui/input";
 import MentionAutocomplete from "@/components/mention-autocomplete";
 import {
   getMentionAtCursor,
   replaceMentionAtCursor,
 } from "@/lib/mention-utils";
-import { useTheme } from "@/hooks/use-theme";
 
 type MentionableRole = {
   readonly type: "role";
@@ -23,6 +27,18 @@ type MentionableRole = {
   memberCount: number;
 };
 
+export type ComposerAttachment = {
+  uri: string;
+  name?: string;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
+export type ComposerAttachmentState = {
+  image: ComposerAttachment | null;
+  files: ComposerAttachment[];
+};
+
 type ChatInputProps = {
   value: string;
   onChange: (value: string) => void;
@@ -31,7 +47,20 @@ type ChatInputProps = {
   onMentionsChange?: (names: string[]) => void;
   serverId?: string;
   canMentionEveryone?: boolean;
+  attachments: ComposerAttachmentState;
+  onAttachmentsChange: (attachments: ComposerAttachmentState) => void;
 };
+
+function cloneAttachments(attachments: ComposerAttachmentState) {
+  return {
+    image: attachments.image ? { ...attachments.image } : null,
+    files: attachments.files.map((file) => ({ ...file })),
+  };
+}
+
+function attachmentLabel(attachment: ComposerAttachment, fallback: string) {
+  return attachment.name?.trim() || fallback;
+}
 
 export function ChatInput({
   value,
@@ -41,6 +70,8 @@ export function ChatInput({
   onMentionsChange,
   serverId,
   canMentionEveryone,
+  attachments,
+  onAttachmentsChange,
 }: ChatInputProps) {
   const [showMentionAutocomplete, setShowMentionAutocomplete] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -148,7 +179,6 @@ export function ChatInput({
     };
   }, [mentionQuery, showMentionAutocomplete, serverId]);
 
-  // Keyboard handling for positioning autocomplete above the keyboard
   useEffect(() => {
     const onShow = (e: any) => {
       setKeyboardHeight(e.endCoordinates?.height || 0);
@@ -219,7 +249,6 @@ export function ChatInput({
         onMentionsChange?.(mentionedNamesRef.current);
       }
 
-      // Return focus to input and set selection
       setTimeout(() => {
         inputRef.current?.focus();
         setSelection({
@@ -231,11 +260,94 @@ export function ChatInput({
     [value, onChange, onMentionsChange, selection],
   );
 
+  const addSelectedImage = useCallback(
+    async () => {
+      if (disabled) {
+        return;
+      }
+
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "Allow photo access to attach an image.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+        allowsEditing: false,
+      });
+
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      onAttachmentsChange({
+        image: {
+          uri: asset.uri,
+          name: asset.fileName ?? "image.jpg",
+          mimeType: asset.mimeType ?? "image/jpeg",
+          size: asset.fileSize ?? null,
+        },
+        files: cloneAttachments(attachments).files,
+      });
+    },
+    [attachments, disabled, onAttachmentsChange],
+  );
+
+  const addSelectedFile = useCallback(
+    async () => {
+      if (disabled) {
+        return;
+      }
+
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      onAttachmentsChange({
+        image: attachments.image ? { ...attachments.image } : null,
+        files: [
+          ...attachments.files.map((file) => ({ ...file })),
+          {
+            uri: asset.uri,
+            name: asset.name,
+            mimeType: asset.mimeType ?? null,
+            size: asset.size ?? null,
+          },
+        ],
+      });
+    },
+    [attachments, disabled, onAttachmentsChange],
+  );
+
+  const removeImage = useCallback(() => {
+    onAttachmentsChange({
+      image: null,
+      files: attachments.files.map((file) => ({ ...file })),
+    });
+  }, [attachments.files, onAttachmentsChange]);
+
+  const removeFile = useCallback(
+    (index: number) => {
+      onAttachmentsChange({
+        image: attachments.image ? { ...attachments.image } : null,
+        files: attachments.files.filter((_, currentIndex) => currentIndex !== index),
+      });
+    },
+    [attachments, onAttachmentsChange],
+  );
+
   const enhancedPlaceholder = `${placeholder} (type @ to mention)`;
-  const colors = useTheme();
 
   return (
-    <View style={{ position: "relative", flex: 1 }}>
+    <View style={{ position: "relative", flex: 1, gap: 8 }}>
       <Input
         ref={inputRef}
         editable={!disabled}
@@ -244,6 +356,82 @@ export function ChatInput({
         placeholder={enhancedPlaceholder}
         onSelectionChange={handleSelectionChange}
       />
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Pressable
+          disabled={disabled}
+          onPress={() => void addSelectedImage()}
+          style={({ pressed }) => ({
+            paddingVertical: 8,
+            paddingHorizontal: 10,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: "#999",
+            opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          })}
+        >
+          <Text>Attach image</Text>
+        </Pressable>
+        <Pressable
+          disabled={disabled}
+          onPress={() => void addSelectedFile()}
+          style={({ pressed }) => ({
+            paddingVertical: 8,
+            paddingHorizontal: 10,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: "#999",
+            opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          })}
+        >
+          <Text>Attach file</Text>
+        </Pressable>
+      </View>
+
+      {attachments.image || attachments.files.length > 0 ? (
+        <View style={{ gap: 8 }}>
+          <Text style={{ fontSize: 12, opacity: 0.7 }}>Attachments</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {attachments.image ? (
+              <Pressable
+                disabled={disabled}
+                onPress={removeImage}
+                style={{
+                  flexDirection: "row",
+                  gap: 6,
+                  alignItems: "center",
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: "rgba(0,0,0,0.08)",
+                }}
+              >
+                <Text>{attachmentLabel(attachments.image, "Selected image")}</Text>
+                <Text>×</Text>
+              </Pressable>
+            ) : null}
+            {attachments.files.map((file, index) => (
+              <Pressable
+                key={`${file.uri}-${index}`}
+                disabled={disabled}
+                onPress={() => removeFile(index)}
+                style={{
+                  flexDirection: "row",
+                  gap: 6,
+                  alignItems: "center",
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: "rgba(0,0,0,0.08)",
+                }}
+              >
+                <Text>{attachmentLabel(file, `File ${index + 1}`)}</Text>
+                <Text>×</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {showMentionAutocomplete && (
         <MentionAutocomplete

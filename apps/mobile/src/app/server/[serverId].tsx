@@ -30,6 +30,7 @@ export default function ServerBrowserScreen() {
 
     const normalizedServerId = Array.isArray(serverId) ? serverId[0] : serverId;
     const signedIn = Boolean(state === "ready" && accessToken && currentUser);
+    const canManageServer = signedIn && currentUser?.roles != null && Object.keys(currentUser.roles).length > 0;
 
     const shellStatus = useMemo(() => {
         if (state === "ready") {
@@ -200,17 +201,45 @@ export default function ServerBrowserScreen() {
                                 Open the server browser again if you want to
                                 switch instances or pick another server.
                             </ThemedText>
-                            <ThemedView
-                                type="secondary"
-                                style={styles.backLink}
-                            >
-                                <ThemedText
-                                    type="smallBold"
-                                    onPress={() => router.push("/explore")}
+                            <View style={styles.navButtonRow}>
+                                <ThemedView
+                                    type="secondary"
+                                    style={styles.backLink}
                                 >
-                                    Back to server browser
-                                </ThemedText>
-                            </ThemedView>
+                                    <ThemedText
+                                        type="smallBold"
+                                        onPress={() => router.push("/home")}
+                                    >
+                                        Back to server browser
+                                    </ThemedText>
+                                </ThemedView>
+                                {canManageServer ? (
+                                    <>
+                                        <ActionButton
+                                            label="Manage channels"
+                                            tone="secondary"
+                                            onPress={() => {
+                                                if (normalizedServerId) {
+                                                    router.push(
+                                                        `/server/${normalizedServerId}/channels` as never,
+                                                    );
+                                                }
+                                            }}
+                                        />
+                                        <ActionButton
+                                            label="Manage roles"
+                                            tone="ghost"
+                                            onPress={() => {
+                                                if (normalizedServerId) {
+                                                    router.push(
+                                                        `/server/${normalizedServerId}/roles` as never,
+                                                    );
+                                                }
+                                            }}
+                                        />
+                                    </>
+                                ) : null}
+                            </View>
                         </ThemedView>
 
                         <ThemedView
@@ -286,7 +315,7 @@ export default function ServerBrowserScreen() {
                             >
                                 <ThemedText
                                     type="smallBold"
-                                    onPress={() => router.push("/explore")}
+                                    onPress={() => router.push("/home")}
                                 >
                                     Back to server browser
                                 </ThemedText>
@@ -423,6 +452,12 @@ function ChannelCard({
             )}
 
             <View style={styles.channelMetaRow}>
+                {typeof channel.unreadCount === "number" && channel.unreadCount > 0 ? (
+                    <StatusPill
+                        label={`${channel.unreadCount} unread`}
+                        tone="warning"
+                    />
+                ) : null}
                 {channel.memberCount != null ? (
                     <StatusPill
                         label={`${channel.memberCount} members`}
@@ -555,5 +590,11 @@ const styles = StyleSheet.create({
         borderRadius: 999,
         paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
+    },
+    navButtonRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: Spacing.two,
+        alignItems: "center",
     },
 });

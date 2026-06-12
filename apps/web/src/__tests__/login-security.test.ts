@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cookies } from "next/headers";
 
-const { mockDatabases, mockGetFeatureFlag } = vi.hoisted(() => ({
-    mockDatabases: {
-        listDocuments: vi.fn(),
-        createDocument: vi.fn(),
-    },
-    mockGetFeatureFlag: vi.fn().mockResolvedValue(false),
-}));
+const mockDatabases = {
+    listDocuments: vi.fn(),
+    createDocument: vi.fn(),
+};
+const mockGetFeatureFlag = vi.fn().mockResolvedValue(false);
 
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
@@ -71,6 +69,7 @@ vi.mock("@/lib/appwrite-core", () => ({
             memberships: "memberships-id",
         },
     }),
+    getBrowserDatabases: vi.fn(),
     perms: {
         serverOwner: vi.fn().mockReturnValue([]),
     },
@@ -92,7 +91,7 @@ describe("Login Security", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(cookies).mockResolvedValue(mockCookieStore as never);
+        (cookies as unknown as { mockResolvedValue: (value: never) => void }).mockResolvedValue(mockCookieStore as never);
         mockDatabases.listDocuments.mockResolvedValue({ documents: [] });
         mockDatabases.createDocument.mockResolvedValue({});
         mockGetFeatureFlag.mockResolvedValue(false);
@@ -196,7 +195,7 @@ describe("Login Security", () => {
         vi.clearAllMocks();
 
         const { Account } = await import("node-appwrite");
-        vi.mocked(Account).mockImplementationOnce(
+        (Account as any).mockImplementationOnce(
             () =>
                 ({
                     createEmailPasswordSession: vi
@@ -226,7 +225,7 @@ describe("Login Security", () => {
         process.env.SYSTEM_SENDER_USER_ID = "system-account-id";
 
         const { Account } = await import("node-appwrite");
-        vi.mocked(Account).mockImplementationOnce(
+        (Account as any).mockImplementationOnce(
             () =>
                 ({
                     createEmailPasswordSession: vi.fn().mockResolvedValue({
@@ -239,7 +238,7 @@ describe("Login Security", () => {
 
         const { Users } = await import("node-appwrite");
         const mockDeleteSession = vi.fn().mockResolvedValue({});
-        vi.mocked(Users).mockImplementationOnce(
+        (Users as any).mockImplementationOnce(
             () =>
                 ({
                     deleteSession: mockDeleteSession,
@@ -269,7 +268,7 @@ describe("Login Security", () => {
         mockGetFeatureFlag.mockResolvedValue(true);
 
         const { Account, Users } = await import("node-appwrite");
-        vi.mocked(Account).mockImplementationOnce(
+        (Account as any).mockImplementationOnce(
             () =>
                 ({
                     createEmailPasswordSession: vi.fn().mockResolvedValue({
@@ -281,7 +280,7 @@ describe("Login Security", () => {
                     deleteSession: vi.fn().mockResolvedValue({}),
                 }) as never,
         );
-        vi.mocked(Users).mockImplementationOnce(
+        (Users as any).mockImplementationOnce(
             () =>
                 ({
                     get: vi.fn().mockResolvedValue({
@@ -338,7 +337,7 @@ describe("Login Security", () => {
         });
 
         const { Account, Users } = await import("node-appwrite");
-        vi.mocked(Account)
+        (Account as any)
             .mockImplementationOnce(
                 () =>
                     ({
@@ -351,7 +350,7 @@ describe("Login Security", () => {
                         createVerification,
                     }) as never,
             );
-        vi.mocked(Users).mockImplementationOnce(
+        (Users as any).mockImplementationOnce(
             () =>
                 ({
                     get: vi.fn().mockResolvedValue({
@@ -395,7 +394,7 @@ describe("Login Security", () => {
         const deleteSession = vi.fn().mockResolvedValue({});
 
         const { Account, Users } = await import("node-appwrite");
-        vi.mocked(Account).mockImplementationOnce(
+        (Account as any).mockImplementationOnce(
             () =>
                 ({
                     createEmailPasswordSession: vi.fn().mockResolvedValue({
@@ -406,7 +405,7 @@ describe("Login Security", () => {
                     createVerification: vi.fn().mockResolvedValue({}),
                 }) as never,
         );
-        vi.mocked(Users).mockImplementationOnce(
+        (Users as any).mockImplementationOnce(
             () =>
                 ({
                     get: vi.fn().mockResolvedValue({
@@ -443,7 +442,7 @@ describe("Login Security", () => {
         vi.clearAllMocks();
 
         const { Account } = await import("node-appwrite");
-        vi.mocked(Account).mockImplementationOnce(
+        (Account as any).mockImplementationOnce(
             () =>
                 ({
                     create: vi

@@ -123,25 +123,6 @@ function createAppwriteClient(config: AppwriteConfig) {
         .setPlatform("com.acarlson33.firepit");
 }
 
-function parseSessionSecret(cookieFallback: string | null, project: string) {
-    if (!cookieFallback) {
-        return null;
-    }
-
-    try {
-        const parsed = JSON.parse(cookieFallback) as Record<string, unknown>;
-        const sessionKey = `a_session_${project}`;
-        const value = parsed[sessionKey];
-        if (typeof value === "string" && value.length > 0) {
-            return value;
-        }
-    } catch {
-        return null;
-    }
-
-    return null;
-}
-
 function normalizeCurrentUser(user: unknown): CurrentUser | null {
     if (!user || typeof user !== "object") {
         return null;
@@ -313,32 +294,24 @@ export async function fetchAllowUserServers(baseUrl: string) {
 }
 
 export async function fetchCurrentUser(baseUrl: string, token: string) {
-    console.log(
-        "[bootstrap] fetchCurrentUser - token present:",
-        !!token,
-        "token length:",
-        token?.length ?? 0,
-    );
-    const payload = await firepitRequest<unknown>({
-        baseUrl,
-        path: "/api/me",
-        token,
-    });
-    const currentUser = normalizeCurrentUser(payload);
-    if (!currentUser) {
-        throw new Error("Unable to parse current user response.");
-    }
-
-    return currentUser;
+    return firepitRequest<CurrentUser>({ baseUrl, path: "/api/me", token });
 }
 
 async function fetchCurrentUserFromAppwrite(
     config: AppwriteConfig,
     token: string,
 ) {
-    const sessionClient = createAppwriteClient(config).setSession(token);
-    const sessionAccount = new Account(sessionClient);
-    return normalizeCurrentUser(await sessionAccount.get());
+    // Try as session secret first (new auth flow), then fall back to JWT
+    try {
+        const sessionClient = createAppwriteClient(config).setSession(token);
+        const sessionAccount = new Account(sessionClient);
+        return normalizeCurrentUser(await sessionAccount.get());
+    } catch {
+        // Fallback: try as JWT token
+        const jwtClient = createAppwriteClient(config).setJWT(token);
+        const jwtAccount = new Account(jwtClient);
+        return normalizeCurrentUser(await jwtAccount.get());
+    }
 }
 
 export async function resolveCurrentUser(
@@ -353,9 +326,6 @@ export async function resolveCurrentUser(
             throw error;
         }
 
-        console.log(
-            "[bootstrap] resolveCurrentUser - falling back to Appwrite account.get()",
-        );
         return fetchCurrentUserFromAppwrite(config, token);
     }
 }
@@ -371,39 +341,46 @@ export async function authenticateWithPassword(
 
     const client = createAppwriteClient(config);
     const account = new Account(client);
-    const originalFetch = globalThis.fetch.bind(globalThis);
-    let cookieFallback: string | null = null;
-
-    globalThis.fetch = async (input, init) => {
-        const response = await originalFetch(input, init);
-        const nextCookieFallback = response.headers.get("X-Fallback-Cookies");
-        if (nextCookieFallback) {
-            cookieFallback = nextCookieFallback;
-        }
-        return response;
-    };
 
     let session;
     try {
         session = await account.createEmailPasswordSession({ email, password });
-    } finally {
-        globalThis.fetch = originalFetch;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Appwrite may reject session creation when a session is already active for
+        // the current client context. Attempt to clear the current session and
+        // retry once.
+        if (
+            message.toLowerCase().includes("session is active") ||
+            message
+                .toLowerCase()
+                .includes("prohibited when a session is active")
+        ) {
+            try {
+                // best-effort: delete the current session then retry
+                // ignore any error from deleteSession and re-attempt login once
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await (account as any).deleteSession({ sessionId: "current" });
+            } catch (_deleteErr) {
+                // swallow deletion errors and continue to retry
+            }
+
+            session = await account.createEmailPasswordSession({
+                email,
+                password,
+            });
+        } else {
+            throw err;
+        }
     }
 
-    const sessionSecret =
-        (typeof session?.secret === "string" && session.secret.length > 0
-            ? session.secret
-            : null) ?? parseSessionSecret(cookieFallback, config.project);
-    console.log(
-        "[bootstrap] authenticateWithPassword - session secret length:",
-        sessionSecret?.length ?? 0,
-    );
-
-    if (sessionSecret) {
-        return sessionSecret;
+    // Create a JWT from the authenticated session.
+    // The client has an active session from createEmailPasswordSession above,
+    // so createJWT() will work even for users without the "account" scope.
+    const jwt = await account.createJWT();
+    if (jwt.jwt) {
+        return jwt.jwt;
     }
 
-    throw new Error(
-        "Authentication response did not include a session secret.",
-    );
+    throw new Error("Authentication response did not include a JWT token.");
 }

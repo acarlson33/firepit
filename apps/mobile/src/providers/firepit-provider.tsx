@@ -1,11 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
 
 import {
   authenticateWithPassword,
@@ -22,10 +17,14 @@ import {
   clearFirepitPersistence,
   loadBearerToken,
   loadBootstrapSnapshot,
+  loadNotificationPreferences,
+  loadNotificationToken,
   loadStoredAppwriteConfig,
   loadStoredInstanceUrl,
   saveBearerToken,
   saveBootstrapSnapshot,
+  saveNotificationPreferences,
+  saveNotificationToken,
   saveStoredAppwriteConfig,
   saveStoredInstanceUrl,
 } from "@/lib/firepit/persistence";
@@ -38,6 +37,7 @@ import type {
   InstanceMetadata,
   VersionInfo,
 } from "@/lib/firepit/types";
+import type { NotificationPreferences } from "@/lib/firepit/persistence";
 import type { AppwriteConfig } from "@/lib/firepit/bootstrap";
 type FirepitBootstrapContextValue = {
   instanceUrl: string | null;
@@ -50,6 +50,8 @@ type FirepitBootstrapContextValue = {
   bearerTokenPresent: boolean;
   accessToken: string | null;
   error: string | null;
+  notificationPreferences: NotificationPreferences | null;
+  saveNotificationPreferences: (prefs: NotificationPreferences) => Promise<void>;
   bootstrapInstance: (
     instanceUrl: string,
   ) => Promise<CompatibilityEvaluation | null>;
@@ -106,6 +108,8 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
   const [appwriteConfig, setAppwriteConfig] = useState<AppwriteConfig | null>(
     null,
   );
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences | null>(null);
 
   const clearRuntimeState = useCallback(() => {
     setState("needs-instance");
@@ -246,7 +250,6 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
     async function hydrate() {
       try {
-        console.log("[provider] Starting hydration...");
         const [
           storedInstanceUrl,
           storedSnapshot,
@@ -275,15 +278,7 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        console.log("[provider] Hydration data loaded:", {
-          hasInstanceUrl: !!storedInstanceUrl,
-          hasSnapshot: !!storedSnapshot,
-          hasToken: !!storedToken,
-          hasConfig: !!storedAppwriteConfig,
-        });
-
         if (storedSnapshot && storedInstanceUrl) {
-          console.log("[provider] Restoring from snapshot...");
           setInstanceUrl(storedInstanceUrl);
           setVersion(storedSnapshot.version);
           setInstance(storedSnapshot.instance);
@@ -309,12 +304,10 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (storedInstanceUrl) {
-          console.log("[provider] Refreshing from instance URL...");
           await refresh(storedInstanceUrl);
           return;
         }
 
-        console.log("[provider] No stored data, showing instance URL input...");
         setState("needs-instance");
       } catch (hydrateError) {
         console.error("[provider] Hydration failed:", hydrateError);
@@ -332,6 +325,59 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refresh]);
 
+  // Register for push notifications after successful auth
+  useEffect(() => {
+    let cancelled = false;
+
+    async function registerForNotifications() {
+      if (state !== "ready" || !accessToken) {
+        return;
+      }
+
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+
+        if (existingStatus !== "granted") {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (finalStatus !== "granted") {
+          console.log("[notifications] Permission not granted");
+          return;
+        }
+
+        if (!Device.isDevice) {
+          console.log("[notifications] Not a physical device, skipping token registration");
+          return;
+        }
+
+        const tokenData = await Notifications.getExpoPushTokenAsync();
+        const token = tokenData.data;
+
+        if (!cancelled) {
+          await saveNotificationToken(token);
+          console.log("[notifications] Registered push token:", token.slice(0, 12) + "...");
+        }
+
+        // Load persisted preferences if not already loaded
+        const stored = await loadNotificationPreferences();
+        if (!cancelled && stored) {
+          setNotificationPreferences(stored);
+        }
+      } catch (error) {
+        console.error("[notifications] Registration failed:", error);
+      }
+    }
+
+    void registerForNotifications();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state, accessToken]);
+
   const bootstrapInstance = useCallback(
     async (nextInstanceUrl: string) => {
       const normalized = normalizeInstanceUrl(nextInstanceUrl);
@@ -346,10 +392,6 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
   const setSessionToken = useCallback(
     async (token: string) => {
-      console.log(
-        "[provider] setSessionToken called - token length:",
-        token?.length ?? 0,
-      );
       if (!instanceUrl) {
         throw new Error("Set an instance URL first.");
       }
@@ -381,10 +423,6 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
           );
         }
       } catch (authError) {
-        console.log(
-          "[provider] setSessionToken - fetchCurrentUser failed:",
-          authError instanceof Error ? authError.message : String(authError),
-        );
         await clearBearerToken();
         setAccessToken(null);
         setBearerTokenPresent(false);
@@ -404,13 +442,8 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
   const authenticate = useCallback(
     async (email: string, password: string) => {
-      console.log("[provider] authenticate called for:", email);
       const config = await resolveAppwriteConfig();
       const token = await authenticateWithPassword(email, password, config);
-      console.log(
-        "[provider] authenticate - received token length:",
-        token?.length ?? 0,
-      );
       await setSessionToken(token);
     },
     [resolveAppwriteConfig, setSessionToken],
@@ -438,6 +471,14 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
     }
   }, [compatibility, featureFlags, instance, instanceUrl, version]);
 
+  const saveNotifPrefs = useCallback(
+    async (prefs: NotificationPreferences) => {
+      await saveNotificationPreferences(prefs);
+      setNotificationPreferences(prefs);
+    },
+    [],
+  );
+
   const value = useMemo<FirepitBootstrapContextValue>(
     () => ({
       state,
@@ -450,6 +491,8 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       bearerTokenPresent,
       accessToken,
       error,
+      notificationPreferences,
+      saveNotificationPreferences: saveNotifPrefs,
       bootstrapInstance,
       authenticate,
       setSessionToken,
@@ -468,8 +511,10 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       accessToken,
       instance,
       instanceUrl,
+      notificationPreferences,
       refresh,
       resetConnection,
+      saveNotifPrefs,
       setSessionToken,
       signOut,
       state,

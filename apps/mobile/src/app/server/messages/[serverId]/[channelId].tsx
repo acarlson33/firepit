@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
-import ChatInput from "@/components/chat-input";
+import ChatInput, { type ComposerAttachmentState } from "@/components/chat-input";
 import { ImageViewer } from "@/components/image-viewer";
 import MessageWithMentions from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
@@ -26,6 +26,8 @@ import {
     fetchChannels,
     fetchServer,
 } from "@/lib/firepit";
+import { uploadFile, uploadImage } from "@/lib/firepit/uploads";
+import { parseMentions } from "@/lib/mention-utils";
 import { toggleReaction } from "@/lib/reactions-client";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
@@ -56,6 +58,8 @@ export default function ServerMessageScreen() {
     const [messageSendState, setMessageSendState] = useState<LoadState>("idle");
     const [messageError, setMessageError] = useState<string | null>(null);
     const [viewerImageUrl, setViewerImageUrl] = useState<string | null>(null);
+    const [composerAttachments, setComposerAttachments] =
+        useState<ComposerAttachmentState>({ image: null, files: [] });
 
     const normalizedServerId = Array.isArray(serverId) ? serverId[0] : serverId;
     const normalizedChannelId = Array.isArray(channelId)
@@ -182,26 +186,53 @@ export default function ServerMessageScreen() {
             !instanceUrl ||
             !accessToken ||
             !selectedChannel?.$id ||
-            !normalizedServerId
+            !normalizedServerId ||
+            messageSendState === "loading"
         ) {
             return;
         }
 
         const text = messageDraft.trim();
-        if (!text) {
+        const hasImage = Boolean(composerAttachments.image);
+        const hasFiles = composerAttachments.files.length > 0;
+        if (!text && !hasImage && !hasFiles) {
             return;
         }
+
+        const mentions = parseMentions(text)
+            .map((match) => match.username)
+            .filter((username, index, list) => list.indexOf(username) === index);
 
         setMessageSendState("loading");
         setMessageError(null);
 
         try {
+            const [imageUpload, fileUploads] = await Promise.all([
+                composerAttachments.image
+                    ? uploadImage(
+                          instanceUrl,
+                          accessToken,
+                          composerAttachments.image,
+                      )
+                    : Promise.resolve(null),
+                Promise.all(
+                    composerAttachments.files.map((file) =>
+                        uploadFile(instanceUrl, accessToken, file),
+                    ),
+                ),
+            ]);
+
             await createChannelMessage(instanceUrl, accessToken, {
                 channelId: selectedChannel.$id,
                 serverId: normalizedServerId,
-                text,
+                text: text || undefined,
+                mentions,
+                imageFileId: imageUpload?.fileId,
+                imageUrl: imageUpload?.fileUrl,
+                attachments: fileUploads,
             });
             setMessageDraft("");
+            setComposerAttachments({ image: null, files: [] });
             setMessageSendState("ready");
             await loadMessages(selectedChannel.$id);
         } catch (error) {
@@ -214,9 +245,12 @@ export default function ServerMessageScreen() {
         }
     }, [
         accessToken,
+        composerAttachments.files,
+        composerAttachments.image,
         instanceUrl,
         loadMessages,
         messageDraft,
+        messageSendState,
         normalizedServerId,
         selectedChannel,
     ]);
@@ -490,6 +524,10 @@ export default function ServerMessageScreen() {
                                                 normalizedServerId ?? undefined
                                             }
                                             canMentionEveryone={false}
+                                            attachments={composerAttachments}
+                                            onAttachmentsChange={
+                                                setComposerAttachments
+                                            }
                                         />
                                         <View style={styles.composerActions}>
                                             <ActionButton
@@ -815,6 +853,11 @@ const styles = StyleSheet.create({
     },
     selectedPanel: {
         gap: Spacing.two,
+    },
+    backLink: {
+        borderRadius: 999,
+        paddingHorizontal: Spacing.three,
+        paddingVertical: Spacing.two,
     },
     actionButton: {
         borderRadius: 999,

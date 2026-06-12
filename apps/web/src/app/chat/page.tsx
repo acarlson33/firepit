@@ -949,7 +949,7 @@ export default function ChatPage() {
     );
     const selectedServerData = useMemo(
         () =>
-            serversApi.servers.find(
+            serversApi.servers?.find(
                 (server) => server.$id === serversApi.selectedServer,
             ) ?? null,
         [serversApi.selectedServer, serversApi.servers],

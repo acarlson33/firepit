@@ -34,8 +34,56 @@ function installIdleTeardownListeners() {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
             teardownIfIdle();
+        } else if (document.visibilityState === "visible") {
+            // After sleep/wake, the WebSocket reconnect loop often fails
+            // because the session is stale. Force a fresh connection by
+            // disposing and immediately recreating the realtime instance.
+            void forceReconnectRealtime();
         }
     });
+}
+
+/**
+ * Force the shared realtime instance to reconnect with a fresh WebSocket.
+ * Preserves the subscription ref count and the Realtime instance's
+ * activeSubscriptions map. Uses Reflect to access private members
+ * since the SDK doesn't expose a public reconnect method.
+ */
+async function forceReconnectRealtime(): Promise<void> {
+    if (!sharedRealtime) return;
+
+    // Use Reflect to access private members for forced reconnect
+    const r = sharedRealtime as any;
+
+    // Cancel any in-flight reconnect attempts
+    r.reconnect = false;
+
+    // Close the existing WebSocket connection
+    try {
+        await safeCleanupRealtime(sharedRealtime);
+    } catch {
+        // Ignore cleanup errors
+    }
+
+    // Reset state for a fresh connection
+    r.reconnect = true;
+    r.appConnected = false;
+    r.reconnectAttempts = 0;
+    r.socket = undefined;
+
+    // Re-enqueue all active subscriptions so they're sent on the new connection
+    const activeSubs = r.activeSubscriptions as Map<string, unknown>;
+    const enqueuePending = r.enqueuePendingSubscribe as (id: string) => void;
+    for (const subscriptionId of activeSubs.keys()) {
+        enqueuePending(subscriptionId);
+    }
+
+    // Trigger a new WebSocket connection
+    try {
+        await r.createSocket();
+    } catch {
+        // The SDK's reconnect loop will retry if this fails
+    }
 }
 
 function queueRealtimeOperation<T>(operation: () => Promise<T>): Promise<T> {

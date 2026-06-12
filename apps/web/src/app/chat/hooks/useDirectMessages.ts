@@ -1,6 +1,7 @@
 "use client";
 
 import { Channel, Query } from "appwrite";
+import type { RealtimeResponseEvent } from "appwrite";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { adaptDirectMessages } from "@/lib/chat-surface";
@@ -20,7 +21,6 @@ import type {
 import { parseReactions } from "@/lib/reactions-utils";
 import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
-import { useDebouncedBatchUpdate } from "@/hooks/useDebounce";
 import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
@@ -49,7 +49,6 @@ import { useThreadPinState } from "./useThreadPinState";
 
 const env = getEnvConfig();
 const DIRECT_MESSAGES_COLLECTION = env.collections.directMessages;
-const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 const MAX_MESSAGE_REALTIME_RETRIES = 5;
 
 type UseDirectMessagesProps = {
@@ -515,7 +514,6 @@ export function useDirectMessages({
     >({});
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const typingDebounceRef = useRef<NodeJS.Timeout | null>(null);
-    const lastTypingSentState = useRef<boolean>(false);
     const lastTypingSentAt = useRef<number>(0);
     const currentConversationIdRef = useRef<string | null>(conversationId);
     const loadRequestIdRef = useRef(0);
@@ -539,13 +537,8 @@ export function useDirectMessages({
         update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
     } | undefined>(undefined);
 
-    const typingSubscriptionRef = useRef<{
-        close: () => Promise<void>;
-        update?: (args: { queries: ReturnType<typeof Query.equal>[] }) => Promise<void>;
-    } | undefined>(undefined);
-
-    const typingIdleMs = 2500;
-    const typingStartDebounceMs = 400;
+    const typingIdleMs = 1500;
+    const typingStartDebounceMs = 0;
     const backgroundMessageSyncIntervalMs = 15_000;
     const backgroundMessageSyncGraceMs = 25_000;
     const initialPageSize = 50;
@@ -593,40 +586,6 @@ export function useDirectMessages({
             }),
         [],
     );
-
-    // Debounced batch update for typing state changes (reduces re-renders by 70-80%)
-    const batchUpdateTypingUsers = useDebouncedBatchUpdate<{
-        userId: string;
-        userName?: string;
-        updatedAt: string;
-        conversationId: string;
-        action: "add" | "remove";
-    }>((updates) => {
-        const activeConversationId = currentConversationIdRef.current;
-
-        setTypingUsers((prev) => {
-            const updated = { ...prev };
-            for (const update of updates) {
-                if (
-                    !activeConversationId ||
-                    update.conversationId !== activeConversationId
-                ) {
-                    continue;
-                }
-
-                if (update.action === "remove") {
-                    delete updated[update.userId];
-                } else {
-                    updated[update.userId] = {
-                        userId: update.userId,
-                        userName: update.userName,
-                        updatedAt: update.updatedAt,
-                    };
-                }
-            }
-            return updated;
-        });
-    }, 150);
 
     const loadMessages = useCallback(async () => {
         const requestId = ++loadRequestIdRef.current;
@@ -1546,103 +1505,84 @@ export function useDirectMessages({
         [messages, userId],
     );
 
-    // Typing indicator management
-    const sendTypingState = useCallback(
-        (state: boolean) => {
-            if (!userId || !conversationId) {
-                return;
-            }
-            const now = Date.now();
-            if (
-                state === lastTypingSentState.current &&
-                now - lastTypingSentAt.current < typingStartDebounceMs
-            ) {
-                return;
-            }
-            lastTypingSentState.current = state;
-            lastTypingSentAt.current = now;
+    // Presence-based typing via Appwrite Presences API.
+    // Upsert on start, delete on stop, re-upsert at most every 2s.
+    const typingPresenceIdRef = useRef<string | null>(null);
+    const typingPresenceCreatedRef = useRef<boolean>(false);
+    const TYPING_COOLDOWN_MS = 2000;
 
-            // Use conversationId for DM typing status
+    async function updateTypingPresence(state: boolean) {
+        if (!userId || !conversationId) {
+            return;
+        }
+        if (state && !typingPresenceIdRef.current) {
+            typingPresenceIdRef.current = userId;
+        }
+
+        // Throttle: skip re-upsert if we're already typing and the
+        // cooldown hasn't elapsed. The 4s expiresAt keeps the presence
+        // alive; we only need to refresh it periodically.
+        if (state && typingPresenceCreatedRef.current) {
+            const elapsed = Date.now() - lastTypingSentAt.current;
+            if (elapsed < TYPING_COOLDOWN_MS) {
+                return;
+            }
+        }
+
+        lastTypingSentAt.current = Date.now();
+
+        if (!state && !typingPresenceCreatedRef.current) {
+            return;
+        }
+
+        try {
             if (state) {
-                fetch("/api/typing", {
+                const response = await fetch("/api/typing", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        conversationId,
+                        presenceId: typingPresenceIdRef.current,
+                        channelId: conversationId,
                         userName: userName || undefined,
+                        expiresAt: new Date(Date.now() + 4000).toISOString(),
                     }),
-                })
-                    .then((response) => {
-                        if (
-                            !response.ok &&
-                            process.env.NODE_ENV === "development"
-                        ) {
-                            // biome-ignore lint: development debugging
-                            console.warn(
-                                "[typing] Failed to set typing status:",
-                                response.status,
-                            );
-                        }
-                    })
-                    .catch((error) => {
-                        if (process.env.NODE_ENV === "development") {
-                            // biome-ignore lint: development debugging
-                            console.warn(
-                                "[typing] Error updating typing status:",
-                                error,
-                            );
-                        }
-                    });
+                });
+                if (response.ok) {
+                    typingPresenceCreatedRef.current = true;
+                }
             } else {
-                fetch(
-                    `/api/typing?conversationId=${encodeURIComponent(conversationId)}`,
-                    {
-                        method: "DELETE",
-                    },
-                )
-                    .then((response) => {
-                        if (
-                            !response.ok &&
-                            process.env.NODE_ENV === "development"
-                        ) {
-                            // biome-ignore lint: development debugging
-                            console.warn(
-                                "[typing] Failed to clear typing status:",
-                                response.status,
-                            );
-                        }
-                    })
-                    .catch((error) => {
-                        if (process.env.NODE_ENV === "development") {
-                            // biome-ignore lint: development debugging
-                            console.warn(
-                                "[typing] Error updating typing status:",
-                                error,
-                            );
-                        }
-                    });
+                await fetch("/api/typing", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        presenceId: typingPresenceIdRef.current,
+                    }),
+                });
+                typingPresenceCreatedRef.current = false;
+                typingPresenceIdRef.current = null;
             }
-        },
-        [userId, conversationId, userName, typingStartDebounceMs],
-    );
-
-    const scheduleTypingStop = useCallback(() => {
-        if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
+        } catch {
+            // ignore
         }
-        typingTimeoutRef.current = setTimeout(() => {
-            sendTypingState(false);
-        }, typingIdleMs);
-    }, [sendTypingState, typingIdleMs]);
+    }
 
     const scheduleTypingStart = useCallback(() => {
         if (typingDebounceRef.current) {
             clearTimeout(typingDebounceRef.current);
         }
         typingDebounceRef.current = setTimeout(() => {
-            sendTypingState(true);
+            void updateTypingPresence(true);
         }, typingStartDebounceMs);
-    }, [sendTypingState, typingStartDebounceMs]);
+    }, [typingStartDebounceMs]);
+
+    const scheduleTypingStop = useCallback(() => {
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => {
+            void updateTypingPresence(false);
+        }, typingIdleMs);
+    }, [typingIdleMs]);
 
     const handleTypingChange = useCallback(
         (text: string) => {
@@ -1660,7 +1600,7 @@ export function useDirectMessages({
                 if (typingDebounceRef.current) {
                     clearTimeout(typingDebounceRef.current);
                 }
-                sendTypingState(false);
+                void updateTypingPresence(false);
                 if (typingTimeoutRef.current) {
                     clearTimeout(typingTimeoutRef.current);
                 }
@@ -1671,141 +1611,117 @@ export function useDirectMessages({
             conversationId,
             scheduleTypingStart,
             scheduleTypingStop,
-            sendTypingState,
         ],
     );
 
-    // Realtime subscription for typing indicators
+    // Presence indicator subscription via Appwrite Presences API.
     useEffect(() => {
         setTypingUsers({});
     }, [conversationId]);
 
     useEffect(() => {
-        if (!conversationId || !userId || !TYPING_COLLECTION_ID) {
+        setTypingUsers({});
+
+        if (!conversationId || !userId) {
             return;
         }
 
-        const databaseId = env.databaseId;
-
         let cleanupFn: (() => void) | undefined;
         let cancelled = false;
-        const typingChannel = Channel.database(databaseId)
-            .collection(TYPING_COLLECTION_ID)
-            .document();
-        const typingChannelKey = typingChannel.toString();
 
-        void (async () => {
-            if (cancelled) {
-                return;
-            }
-
-            let subscription: { close: () => Promise<void> } | undefined;
-            let untrack: (() => void) | undefined;
-
-            try {
-                const realtime = getSharedRealtime();
-
-                // Try to update existing subscription if supported
-                if (typingSubscriptionRef.current) {
-                    const existing = typingSubscriptionRef.current;
-                    if (existing && typeof existing.update === "function") {
-                        try {
-                            await existing.update({
-                                queries: [Query.equal("channelId", conversationId)],
-                            });
-                            return;
-                        } catch {
-                            // fallthrough to recreate
-                        }
-                    }
+        import("@/lib/realtime-pool")
+            .then(async ({ getSharedRealtime, trackSubscription }) => {
+                if (cancelled) {
+                    return;
                 }
+                const realtime = getSharedRealtime();
+                const presenceChannel = Channel.presences();
+                const presenceChannelKey = presenceChannel.toString();
 
-                subscription = await realtime.subscribe(
-                    typingChannel,
-                    (response) => {
-                        const events = normalizeRealtimeEvents(response.events);
-                        const typing = parseTypingPayload(response.payload);
+                const subscription = await realtime.subscribe(
+                    presenceChannel,
+                    async (
+                        event: RealtimeResponseEvent<Record<string, unknown>>,
+                    ) => {
+                        if (cancelled) {
+                            return;
+                        }
+                        const payload = event.payload as Record<string, unknown>;
+                        const metadata = payload.metadata as Record<string, unknown> | undefined;
+                        const eventChannelId = String(
+                            metadata?.channelId ?? "",
+                        );
+                        const eventUserId = String(payload.userId ?? "");
+                        const eventUserName = String(
+                            metadata?.userName ?? "",
+                        );
+                        const eventUpdatedAt = String(
+                            payload.$updatedAt ?? payload.updatedAt ?? "",
+                        );
 
-                        if (!typing) {
+                        // Only process events for the current conversation
+                        if (eventChannelId !== conversationId) {
+                            return;
+                        }
+                        // Skip own user's presence events
+                        if (eventUserId === userId || eventUserId === "") {
                             return;
                         }
 
-                        if (
-                            typing.channelId !==
-                            currentConversationIdRef.current
-                        ) {
-                            // Shared typing subscription receives all DM typing events; guard against stale conversation switches.
-                            return;
-                        }
+                        const isDelete = event.events.some((e) =>
+                            e.endsWith(".delete"),
+                        );
+                        const isUpsert = event.events.some(
+                            (e) =>
+                                e.endsWith(".upsert") ||
+                                e.endsWith(".update"),
+                        );
 
-                        if (typing.userId === userId) {
-                            return;
-                        }
-
-                        if (events.some((e) => e.endsWith(".delete"))) {
-                            batchUpdateTypingUsers({
-                                userId: typing.userId,
-                                userName: typing.userName,
-                                updatedAt: typing.updatedAt,
-                                conversationId: typing.channelId,
-                                action: "remove",
-                            });
-                        } else if (
-                            events.some(
-                                (e) =>
-                                    e.endsWith(".create") ||
-                                    e.endsWith(".update"),
-                            )
-                        ) {
-                            batchUpdateTypingUsers({
-                                userId: typing.userId,
-                                userName: typing.userName,
-                                updatedAt: typing.updatedAt,
-                                conversationId: typing.channelId,
-                                action: "add",
-                            });
-                        }
+                        setTypingUsers((prev) => {
+                            const next = { ...prev };
+                            if (isDelete) {
+                                delete next[eventUserId];
+                            } else if (isUpsert) {
+                                next[eventUserId] = {
+                                    userId: eventUserId,
+                                    userName: eventUserName || undefined,
+                                    updatedAt: eventUpdatedAt,
+                                };
+                            }
+                            return next;
+                        });
                     },
-                    [Query.equal("channelId", conversationId)],
                 );
 
-                typingSubscriptionRef.current = subscription;
-
                 if (cancelled) {
-                    await closeSubscriptionSafely(typingSubscriptionRef.current);
-                    typingSubscriptionRef.current = undefined;
+                    await closeSubscriptionSafely(subscription);
                     return;
                 }
 
-                untrack = trackSubscription(typingChannelKey);
+                const untrack = trackSubscription(presenceChannelKey);
                 cleanupFn = () => {
-                    untrack?.();
-                    void closeSubscriptionSafely(typingSubscriptionRef.current);
-                    typingSubscriptionRef.current = undefined;
+                    untrack();
+                    void closeSubscriptionSafely(subscription);
                 };
-            } catch (error) {
-                untrack?.();
-                await closeSubscriptionSafely(typingSubscriptionRef.current);
-                typingSubscriptionRef.current = undefined;
-                if (!cancelled) {
-                    logger.error(
-                        "Direct message typing realtime subscription failed:",
-                        error instanceof Error ? error : String(error),
-                        {
-                            conversationId: currentConversationIdRef.current,
-                        },
-                    );
-                }
-            }
-        })();
+            })
+            .catch(() => {
+                // Silent — realtime subscription failed
+            });
 
         return () => {
             cancelled = true;
             cleanupFn?.();
+            // Immediately stop typing presence when leaving the conversation
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+            if (typingPresenceCreatedRef.current) {
+                void updateTypingPresence(false);
+            }
         };
     }, [conversationId, userId]);
 
-    // Cleanup stale typing indicators
+    // Cleanup stale typing indicators (safety net for missed delete events)
     useEffect(() => {
         const interval = setInterval(() => {
             const now = Date.now();
@@ -1839,9 +1755,9 @@ export function useDirectMessages({
             if (typingDebounceRef.current) {
                 clearTimeout(typingDebounceRef.current);
             }
-            sendTypingState(false);
+            void updateTypingPresence(false);
         };
-    }, [sendTypingState]);
+    }, []);
 
     const surfaceMessages = useMemo(() => {
         const messagesById = new Map(

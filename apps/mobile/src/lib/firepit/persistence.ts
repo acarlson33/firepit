@@ -16,6 +16,8 @@ const keys = {
   bootstrapSnapshot: "firepit.bootstrap-snapshot",
   bearerToken: "firepit.bearer-token",
   appwriteConfig: "firepit.appwrite-config",
+  notificationToken: "firepit.notification-token",
+  notificationPreferences: "firepit.notification-preferences",
 } as const;
 
 export async function loadStoredInstanceUrl() {
@@ -61,15 +63,11 @@ export async function clearStoredAppwriteConfig() {
 
 export async function loadBearerToken() {
   const token = await getSecureItem(keys.bearerToken);
-  console.log("[persistence] loadBearerToken - token present:", !!token, "token length:", token?.length ?? 0, "stored key:", keys.bearerToken);
   return token;
 }
 
 export async function saveBearerToken(token: string) {
-  console.log("[persistence] saveBearerToken - saving token length:", token?.length ?? 0, "stored key:", keys.bearerToken);
   await setSecureItem(keys.bearerToken, token);
-  const verify = await getSecureItem(keys.bearerToken);
-  console.log("[persistence] saveBearerToken - verify after save - token present:", !!verify, "length:", verify?.length ?? 0);
 }
 
 export async function clearBearerToken() {
@@ -84,4 +82,40 @@ export async function clearFirepitPersistence() {
     clearBearerToken(),
   ]);
   await clearJsonStorage();
+}
+
+// Notification helpers
+
+export type NotificationPreferences = {
+  enabled: boolean;
+  dmNotifications: boolean;
+  mentionNotifications: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string; // HH:mm format
+  quietHoursEnd: string;
+};
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  enabled: true,
+  dmNotifications: true,
+  mentionNotifications: true,
+  quietHoursEnabled: false,
+  quietHoursStart: "22:00",
+  quietHoursEnd: "08:00",
+};
+
+export async function loadNotificationToken() {
+  return getSecureItem(keys.notificationToken);
+}
+
+export async function saveNotificationToken(token: string) {
+  await setSecureItem(keys.notificationToken, token);
+}
+
+export async function loadNotificationPreferences() {
+  return getJsonValue<NotificationPreferences>(keys.notificationPreferences);
+}
+
+export async function saveNotificationPreferences(prefs: NotificationPreferences) {
+  await setJsonValue(keys.notificationPreferences, prefs);
 }

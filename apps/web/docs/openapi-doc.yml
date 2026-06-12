@@ -2046,55 +2046,6 @@ paths:
                             schema:
                                 $ref: "#/components/schemas/Success"
 
-    /api/typing:
-        post:
-            tags: [Presence]
-            summary: Create or update typing state for a channel or conversation
-            security:
-                - sessionCookie: []
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            type: object
-                            properties:
-                                channelId:
-                                    type: string
-                                conversationId:
-                                    type: string
-                                userName:
-                                    type: string
-            responses:
-                "200":
-                    description: Typing state written
-                    content:
-                        application/json:
-                            schema:
-                                type: object
-                                additionalProperties: true
-        delete:
-            tags: [Presence]
-            summary: Clear typing state for the current user
-            security:
-                - sessionCookie: []
-            parameters:
-                - name: channelId
-                  in: query
-                  schema:
-                      type: string
-                - name: conversationId
-                  in: query
-                  schema:
-                      type: string
-            responses:
-                "200":
-                    description: Typing state cleared
-                    content:
-                        application/json:
-                            schema:
-                                $ref: "#/components/schemas/Success"
-
     /api/status:
         get:
             tags: [Presence]

@@ -1195,20 +1195,6 @@ async function setupReports() {
     ]);
 }
 
-async function setupTyping() {
-    await ensureCollection("typing", "Typing");
-    const fields: [string, number, boolean][] = [
-        ["userId", LEN_ID, true],
-        ["userName", LEN_ID, false],
-        ["channelId", LEN_ID, true],
-    ];
-    for (const [k, size, req] of fields) {
-        await ensureStringAttribute("typing", k, size, req);
-    }
-    await ensureIndex("typing", "idx_channel", "key", ["channelId"]);
-    await ensureIndex("typing", "idx_updated", "key", ["$updatedAt"]);
-}
-
 async function setupMemberships() {
     await ensureCollection("memberships", "Memberships");
     const fields: [string, number, boolean][] = [
@@ -2331,13 +2317,6 @@ async function run() {
     await setupAudit();
     info("[setup] Setting up reports...");
     await setupReports();
-    info("[setup] Setting up typing...");
-    try {
-        await setupTyping();
-    } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        err(`[setup] Failed to setup typing (non-fatal): ${message}`);
-    }
     info("[setup] Setting up memberships...");
     await setupMemberships();
     info("[setup] Setting up friendships...");

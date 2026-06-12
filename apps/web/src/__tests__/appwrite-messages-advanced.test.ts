@@ -26,11 +26,6 @@ type ListDocumentsOpts = {
     queries?: string[];
 };
 
-type FetchCall = {
-    options?: RequestInit;
-    url: string;
-};
-
 // Utility to set minimal env each test and reset module cache
 function baseEnv() {
     const env = process.env as Record<string, string>;
@@ -245,68 +240,6 @@ describe("appwrite-messages advanced flows", () => {
         const { listRecentMessages } = await import("../lib/appwrite-messages");
         const out = await listRecentMessages(RECENT_LIMIT_THREE);
         expect(out.map((m) => m.$id)).toEqual(["m1", "m2", "m3"]);
-    });
-
-    it("setTyping calls the API route to set typing status", async () => {
-        const fetchCalls: FetchCall[] = [];
-        const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
-            fetchCalls.push({ url, options });
-            return {
-                ok: true,
-                json: async () => ({ success: true }),
-            };
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const { setTyping } = await import("../lib/appwrite-messages");
-        await setTyping("u1", "c1", "Alice", true);
-
-        expect(fetchCalls.length).toBe(1);
-        expect(fetchCalls[0].url).toBe("/api/typing");
-        expect(fetchCalls[0].options.method).toBe("POST");
-
-        // Disable typing triggers DELETE
-        await setTyping("u1", "c1", "Alice", false);
-        expect(fetchCalls.length).toBe(2);
-        expect(fetchCalls[1].url).toContain("/api/typing?channelId=");
-        expect(fetchCalls[1].options.method).toBe("DELETE");
-    });
-
-    it("setTyping swallows errors (outer try-catch) for ephemeral operations", async () => {
-        const mockFetch = vi.fn(async () => {
-            throw new Error("Network error");
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const { setTyping } = await import("../lib/appwrite-messages");
-        // Should not throw even though fetch fails
-        await setTyping("u1", "c1", "Alice", true);
-        expect(mockFetch).toHaveBeenCalled();
-    });
-
-    it("setTyping uses encoded channel ID in delete route", async () => {
-        const fetchCalls: FetchCall[] = [];
-        const mockFetch = vi.fn(async (url: string, options?: RequestInit) => {
-            fetchCalls.push({ url, options });
-            return {
-                ok: true,
-                json: async () => ({ success: true }),
-            };
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const { setTyping } = await import("../lib/appwrite-messages");
-
-        // Test with channel ID that needs encoding
-        const channelId = "channel-id-with-special-chars!@#$%";
-
-        await setTyping("user-123", channelId, "Alice", false);
-
-        expect(fetchCalls.length).toBe(1);
-        expect(fetchCalls[0].url).toContain(
-            `/api/typing?channelId=${encodeURIComponent(channelId)}`,
-        );
-        expect(fetchCalls[0].options.method).toBe("DELETE");
     });
 
     it("canSend enforces flood window and limit", async () => {

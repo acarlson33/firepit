@@ -10,7 +10,6 @@ import { normalizeFileAttachment } from "./file-attachments";
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const COLLECTION_ID = env.collections.messages;
-const TYPING_COLLECTION_ID = env.collections.typing || undefined;
 const MESSAGE_ATTACHMENTS_COLLECTION_ID = env.collections.messageAttachments;
 const migratedReactionDocuments = new Set<string>();
 
@@ -420,52 +419,6 @@ export async function restoreMessage(messageId: string) {
         data: { removedAt: null, removedBy: null },
     });
     return res as unknown as Message;
-}
-
-// Typing indicator: create/update ephemeral doc per user+channel via API route
-// This now uses the server-side API to avoid permission issues
-/**
- * Handles set typing.
- *
- * @param {string} userId - The user id value.
- * @param {string} channelId - The channel id value.
- * @param {string | undefined} userName - The user name value.
- * @param {boolean} isTyping - The is typing value.
- * @returns {Promise<void>} The return value.
- */
-export async function setTyping(
-    userId: string,
-    channelId: string,
-    userName: string | undefined,
-    isTyping: boolean,
-) {
-    if (!TYPING_COLLECTION_ID) {
-        return;
-    }
-
-    try {
-        if (isTyping) {
-            // Call the API route to create or update typing status
-            await fetch("/api/typing", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    channelId,
-                    userName,
-                }),
-            });
-        } else {
-            // Call the API route to delete typing status
-            await fetch(
-                `/api/typing?channelId=${encodeURIComponent(channelId)}`,
-                {
-                    method: "DELETE",
-                },
-            );
-        }
-    } catch {
-        // swallow; ephemeral
-    }
 }
 
 // Basic flood protection heuristic client-side

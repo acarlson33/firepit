@@ -224,11 +224,10 @@ describe("DM Typing Indicators", () => {
 
 	describe("Typing timeout and debouncing", () => {
 		it("should have appropriate timeout values", () => {
-			const typingIdleMs = 2500;
-			const typingStartDebounceMs = 400;
+			const typingIdleMs = 1500;
+			const typingStartDebounceMs = 0;
 
 			expect(typingIdleMs).toBeGreaterThan(0);
-			expect(typingStartDebounceMs).toBeGreaterThan(0);
 			expect(typingIdleMs).toBeGreaterThan(typingStartDebounceMs);
 		});
 
@@ -249,35 +248,35 @@ describe("DM Typing Indicators", () => {
 
 	describe("Stale typing indicator cleanup for DMs", () => {
 		it("should identify stale typing indicators in DMs", () => {
-			const now = Date.now();
-			const staleThreshold = 5000;
+				const now = Date.now();
+				const staleThreshold = 1500;
 
-			const typingUser = {
-				userId: "user-456",
-				userName: "Bob",
-				updatedAt: new Date(now - 6000).toISOString(),
-			};
+				const typingUser = {
+					userId: "user-456",
+					userName: "Bob",
+					updatedAt: new Date(now - 2000).toISOString(),
+				};
 
-			const updatedTime = new Date(typingUser.updatedAt).getTime();
-			const isStale = now - updatedTime > staleThreshold;
+				const updatedTime = new Date(typingUser.updatedAt).getTime();
+				const isStale = now - updatedTime > staleThreshold;
 
-			expect(isStale).toBe(true);
-		});
+				expect(isStale).toBe(true);
+			});
 
-		it("should keep fresh typing indicators in DMs", () => {
-			const now = Date.now();
-			const staleThreshold = 5000;
+			it("should keep fresh typing indicators in DMs", () => {
+				const now = Date.now();
+				const staleThreshold = 1500;
 
-			const typingUser = {
-				userId: "user-456",
-				userName: "Bob",
-				updatedAt: new Date(now - 2000).toISOString(),
-			};
+				const typingUser = {
+					userId: "user-456",
+					userName: "Bob",
+					updatedAt: new Date(now - 500).toISOString(),
+				};
 
-			const updatedTime = new Date(typingUser.updatedAt).getTime();
-			const isStale = now - updatedTime > staleThreshold;
+				const updatedTime = new Date(typingUser.updatedAt).getTime();
+				const isStale = now - updatedTime > staleThreshold;
 
-			expect(isStale).toBe(false);
-		});
+				expect(isStale).toBe(false);
+			});
 	});
 });

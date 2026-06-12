@@ -45,9 +45,45 @@ async function getSessionForToken(
         const user = await account.get();
 
         return validateAndTransformUser(user, systemSenderUserId);
-    } catch {
+    } catch (error) {
+        if (process.env.FIREPIT_DEBUG_AUTH === "true") {
+            const masked =
+                token.length > 8
+                    ? `${token.slice(0, 4)}...${token.slice(-4)}`
+                    : token;
+            // eslint-disable-next-line no-console
+            console.log(
+                `[auth-debug] ${authMode} auth failed: token="${masked}", endpoint=${endpoint}, project=${project}, error=${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
         return null;
     }
+}
+
+async function getSessionForAnyToken(
+    endpoint: string,
+    project: string,
+    token: string,
+    systemSenderUserId: string | null,
+): Promise<SessionUser | null> {
+    const candidateModes: Array<"jwt" | "session"> = isLikelyJwt(token)
+        ? ["jwt", "session"]
+        : ["session", "jwt"];
+
+    for (const mode of candidateModes) {
+        const session = await getSessionForToken(
+            endpoint,
+            project,
+            token,
+            systemSenderUserId,
+            mode,
+        );
+        if (session) {
+            return session;
+        }
+    }
+
+    return null;
 }
 
 function isLikelyJwt(token: string) {
@@ -128,12 +164,11 @@ async function getSessionFromHeader(
             );
         }
 
-        const session = await getSessionForToken(
+        const session = await getSessionForAnyToken(
             endpoint,
             project,
             token,
             systemSenderUserId,
-            chosen,
         );
 
         if (process.env.FIREPIT_DEBUG_AUTH === "true") {
