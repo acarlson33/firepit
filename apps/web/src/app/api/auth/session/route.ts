@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { Client, Users } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
 /**
  * POST /api/auth/session
  *
- * Creates an Appwrite session with full user scopes.
+ * Creates an Appwrite session by validating the email/password via the
+ * public Account API. The returned session secret is the same type of
+ * token the web app uses (the one stored in the a_session_<project>
+ * cookie), so it can be validated server-side with client.setSession().
  *
- * First validates the email/password by creating a session via the public
- * Account API endpoint (no API key), then creates a user-scoped session via
- * Users.createSession() with the admin API key. The admin-created session
- * is associated with the user's role (not guest), so it has full scopes
- * including presences.write.
+ * Note: we intentionally do NOT use Users.createSession() here. That admin
+ * endpoint returns a malformed secret on Appwrite servers < 1.6.x
+ * (see appwrite/appwrite#9019), and the public session secret is proven
+ * to work by the web app's login flow.
  */
 export async function POST(request: Request) {
     try {
@@ -28,17 +29,9 @@ export async function POST(request: Request) {
         }
 
         const env = getEnvConfig();
-        const apiKey = process.env.APPWRITE_API_KEY;
 
-        if (!apiKey) {
-            return NextResponse.json(
-                { error: "Server API key not configured" },
-                { status: 500 },
-            );
-        }
-
-        // Step 1: Validate credentials via the public Account API.
-        // This confirms the email/password are correct and gives us the userId.
+        // Validate credentials via the public Account API. This confirms the
+        // email/password are correct and gives us the session secret.
         const authResponse = await fetch(
             `${env.endpoint}/account/sessions/email`,
             {
@@ -65,6 +58,7 @@ export async function POST(request: Request) {
 
         const authData = (await authResponse.json()) as {
             userId?: string;
+            secret?: string;
         };
 
         if (!authData.userId) {
@@ -74,23 +68,9 @@ export async function POST(request: Request) {
             );
         }
 
-        // Step 2: Create a user-scoped session using the admin SDK.
-        // This session is owned by the user (not guest), so it has full scopes.
-        const adminClient = new Client()
-            .setEndpoint(env.endpoint)
-            .setProject(env.project)
-            .setKey(apiKey);
-
-        const users = new Users(adminClient);
-        const userSession = await users.createSession(authData.userId);
-
-        // The Session object from admin SDK includes the secret field
-        // because the request was made with an API key.
-        const sessionSecret = (userSession as unknown as { secret: string }).secret;
-
         return NextResponse.json({
             success: true,
-            session: sessionSecret ?? null,
+            session: authData.secret ?? null,
             userId: authData.userId,
         });
     } catch (error) {

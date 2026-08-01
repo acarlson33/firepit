@@ -376,10 +376,9 @@ export async function authenticateWithPassword(
 
     // POST to the server's /api/auth/session endpoint instead of using the
     // client SDK directly.  The server endpoint validates credentials via the
-    // public Account API then creates a user-scoped session with the admin SDK
-    // (full scopes).  The returned session secret is a real Appwrite session
-    // that the server can validate with client.setSession() — avoiding the
-    // JWT scope problems that occur when the client SDK generates its own JWT.
+    // public Account API and returns the session secret.  This is the same
+    // type of token the web app stores in its session cookie, so the server
+    // can validate it with client.setSession().
     const response = await fetch(`${instanceUrl.replace(/\/$/, "")}/api/auth/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
