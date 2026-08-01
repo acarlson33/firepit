@@ -6,3 +6,5 @@ node_modules/
 
 # Unfinished beta specification files, to be moved to a separate repo
 docs/specs
+
+*.apk
