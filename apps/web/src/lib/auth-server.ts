@@ -10,16 +10,8 @@ type AuthErrorCode = "UNAUTHORIZED" | "FORBIDDEN";
 const SESSION_CACHE_TTL_MS = 30_000;
 const sessionCache = new Map<string, { data: SessionUser | null; ts: number }>();
 
-function cacheKey(
-    endpoint: string,
-    project: string,
-    token: string,
-    authMode: "jwt" | "session",
-): string {
-    return createHash("sha256")
-        .update(`${endpoint}:${project}:${authMode}:${token}`)
-        .digest("hex")
-        .slice(0, 32);
+function cacheKey(endpoint: string, project: string, token: string): string {
+    return createHash("sha256").update(`${endpoint}:${project}:${token}`).digest("hex").slice(0, 32);
 }
 
 function getCachedSession(key: string): SessionUser | null | undefined {
@@ -67,7 +59,7 @@ async function getSessionForToken(
     systemSenderUserId: string | null,
     authMode: "jwt" | "session",
 ): Promise<SessionUser | null> {
-    const key = cacheKey(endpoint, project, token, authMode);
+    const key = cacheKey(endpoint, project, token);
     const cached = getCachedSession(key);
     if (cached !== undefined) return cached;
 

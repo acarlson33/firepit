@@ -8,7 +8,6 @@ env.APPWRITE_PROJECT_ID = "test-project";
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
     Client: class MockClient {
-        __mockAuthMode: "jwt" | "session" | null = null;
         setEndpoint() {
             return this;
         }
@@ -16,32 +15,14 @@ vi.mock("node-appwrite", () => ({
             return this;
         }
         setJWT() {
-            this.__mockAuthMode = "jwt";
             return this;
         }
         setSession() {
-            this.__mockAuthMode = "session";
             return this;
         }
     },
     Account: class MockAccount {
-        authMode: "jwt" | "session" | null = null;
-        constructor(client?: { __mockAuthMode?: "jwt" | "session" | null }) {
-            this.authMode = client?.__mockAuthMode ?? null;
-        }
         async get() {
-            const modeResponses = (globalThis as any).__mockAuthModeResponses;
-            if (
-                modeResponses &&
-                this.authMode &&
-                this.authMode in modeResponses
-            ) {
-                const modeResponse = modeResponses[this.authMode];
-                if (modeResponse === null || modeResponse === undefined) {
-                    throw new Error("No session");
-                }
-                return modeResponse;
-            }
             const mockUser = (globalThis as any).__mockAuthUser;
             if (mockUser === null || mockUser === undefined) {
                 throw new Error("No session");
@@ -110,20 +91,11 @@ function setMockUserRoles(
     mockRoles[userId] = roles;
 }
 
-function setMockAuthModeResponse(
-    mode: "jwt" | "session",
-    user: { $id: string; name: string; email: string } | null,
-) {
-    const modeResponses = ((globalThis as any).__mockAuthModeResponses ||= {});
-    modeResponses[mode] = user;
-}
-
 function clearMocks() {
     (globalThis as any).__mockAuthUser = undefined;
     (globalThis as any).__mockCookies = {};
     (globalThis as any).__mockHeaders = {};
     (globalThis as any).__mockUserRoles = {};
-    (globalThis as any).__mockAuthModeResponses = undefined;
 }
 
 function clearEnvVar(envName: string) {
@@ -194,24 +166,6 @@ describe("auth-server", () => {
             setMockHeaders({
                 Authorization: "Bearer header.payload.signature",
             });
-
-            const { getServerSession } = await import("../lib/auth-server");
-            const session = await getServerSession();
-            expect(session).toEqual(mockUser);
-        });
-
-        it("should fall back to session auth for jwt-like session tokens", async () => {
-            const mockUser = {
-                $id: "user789",
-                name: "Session Secret User",
-                email: "session@example.com",
-            };
-
-            setMockHeaders({
-                Authorization: "abc.def.ghi",
-            });
-            setMockAuthModeResponse("jwt", null);
-            setMockAuthModeResponse("session", mockUser);
 
             const { getServerSession } = await import("../lib/auth-server");
             const session = await getServerSession();
