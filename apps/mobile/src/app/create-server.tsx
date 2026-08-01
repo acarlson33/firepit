@@ -16,6 +16,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { createServer } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { ArrowLeft } from "lucide-react-native";
 
 function ActionButton({
     label,

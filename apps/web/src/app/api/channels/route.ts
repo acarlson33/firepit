@@ -9,7 +9,6 @@ import { isDocumentNotFoundError } from "@/lib/appwrite-admin";
 import { getServerSession } from "@/lib/auth-server";
 import { getEffectivePermissions } from "@/lib/permissions";
 import type { Channel, ChannelPermissionOverride, Role } from "@/lib/types";
-import { compressedResponse } from "@/lib/api-compression";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { apiCache } from "@/lib/cache-utils";
 import { invalidateChannelsServerCaches } from "@/lib/channels-route-cache";
@@ -575,7 +574,7 @@ export async function GET(request: NextRequest) {
             : null;
 
         // Use compressed response for large payloads (60-70% bandwidth reduction)
-        const response = compressedResponse(
+        const response = NextResponse.json(
             {
                 channels,
                 nextCursor,

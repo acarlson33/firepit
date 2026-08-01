@@ -4,16 +4,17 @@ import { ID, Query, Permission, Role } from "node-appwrite";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerSession } from "@/lib/auth-server";
-import type { FileAttachment } from "@/lib/types";
+import type { FileAttachment, RelationshipStatus } from "@/lib/types";
 import {
     getRelationshipMap,
     getRelationshipStatus,
+    getFriendshipByPair,
+    getBlockStatus,
 } from "@/lib/appwrite-friendships";
 import {
     getNotificationSettings,
-    getOrCreateNotificationSettings,
 } from "@/lib/notification-settings";
-import { getUserProfile } from "@/lib/appwrite-profiles";
+import { getAvatarUrl, getUserProfile, getUserProfilesBatch } from "@/lib/appwrite-profiles";
 import { listThreadReadsByContext } from "@/lib/thread-read-store";
 import { isThreadUnread } from "@/lib/thread-read-states";
 import {
@@ -31,9 +32,8 @@ import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
 } from "@/lib/message-constraints";
-import { upsertMentionInboxItems } from "@/lib/inbox-items";
+import { upsertMentionInboxItems, upsertMessageInboxItems } from "@/lib/inbox-items";
 import { resolveMessageImageUrl } from "@/lib/message-image-url";
-import { shouldCompress } from "@/lib/compression-utils";
 import { apiCache } from "@/lib/cache-utils";
 import {
     buildAttachmentDocumentData,
@@ -43,6 +43,15 @@ import {
 } from "@/lib/file-attachments";
 import { rememberDmUnreadThreadSnapshot } from "@/lib/unread-consistency";
 import { listPages } from "@/lib/appwrite-pagination";
+import { dispatchPushNotification } from "@/lib/push-notifications";
+import { parseReactions } from "@/lib/reactions-utils";
+import {
+    buildMessagePoll,
+    isPollCommand,
+    parsePollCommand,
+    parsePollOptions,
+    serializePollOptions,
+} from "@/lib/polls";
 
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
@@ -64,11 +73,6 @@ if (SYSTEM_SENDER_USER_ID === null && process.env.NODE_ENV !== "test") {
         },
     );
 }
-
-type ConversationThreadReplySignal = {
-    latestReplyAt?: string;
-    replyCount: number;
-};
 
 function canUseDirectMessageCache(): boolean {
     return (
@@ -113,56 +117,7 @@ function normalizeDistinctIds(ids: string[], excluding?: string): string[] {
     ).sort();
 }
 
-function maxIsoTimestamp(left?: string, right?: string) {
-    if (left && right) {
-        return left >= right ? left : right;
-    }
 
-    return left ?? right;
-}
-
-async function paginateReplies(params: {
-    databases: ReturnType<typeof getServerClient>["databases"];
-    conversationIds: string[];
-    maxThreadParentPages: number;
-    pageSize: number;
-}) {
-    const { databases, conversationIds, maxThreadParentPages, pageSize } = params;
-
-    const { documents, truncated } = await listPages({
-        databases,
-        databaseId: DATABASE_ID,
-        collectionId: DIRECT_MESSAGES_COLLECTION,
-        baseQueries: [Query.equal("conversationId", conversationIds), Query.isNotNull("threadId")],
-        pageSize,
-        maxPages: maxThreadParentPages,
-        warningContext: "paginateReplies",
-    });
-
-    const replySignalsByParentId = new Map<string, ConversationThreadReplySignal>();
-    for (const document of documents) {
-        const reply = document as Record<string, unknown>;
-        const parentMessageId = typeof reply.threadId === "string" ? reply.threadId : null;
-        if (!parentMessageId) {
-            continue;
-        }
-
-        const createdAt = typeof reply.$createdAt === "string" ? reply.$createdAt : undefined;
-        const existingSignal = replySignalsByParentId.get(parentMessageId);
-        if (existingSignal) {
-            existingSignal.replyCount += 1;
-            existingSignal.latestReplyAt = maxIsoTimestamp(existingSignal.latestReplyAt, createdAt);
-            continue;
-        }
-
-        replySignalsByParentId.set(parentMessageId, {
-            latestReplyAt: createdAt,
-            replyCount: 1,
-        });
-    }
-
-    return { replySignalsByParentId, replySignalsTruncated: Boolean(truncated) };
-}
 
 function getReadOnlyReason(relationship: {
     blockedByMe: boolean;
@@ -205,14 +160,16 @@ async function getDmEncryptionStateForPair(
     dmEncryptionSelfEnabled: boolean;
 }> {
     const [selfSettings, peerSettings, peerProfile] = await Promise.all([
-        getOrCreateNotificationSettings(userId).catch((error) => {
-            logger.warn("Failed to load self notification settings for DM encryption", {
-                error: error instanceof Error ? error.message : String(error),
-                userId,
-                peerUserId,
-            });
-            return { dmEncryptionEnabled: false };
-        }),
+        getNotificationSettings(userId)
+            .then((settings) => settings ?? { dmEncryptionEnabled: false })
+            .catch((error) => {
+                logger.warn("Failed to load self notification settings for DM encryption", {
+                    error: error instanceof Error ? error.message : String(error),
+                    userId,
+                    peerUserId,
+                });
+                return { dmEncryptionEnabled: false };
+            }),
         getNotificationSettings(peerUserId)
             .then((settings) => settings ?? { dmEncryptionEnabled: false })
             .catch((error) => {
@@ -323,7 +280,7 @@ async function createAttachments(
     return createdIds;
 }
 
-// Helper to create JSON responses with CORS headers and compression hints
+// Helper to create JSON responses with CORS headers
 function jsonResponse(data: unknown, init?: ResponseInit) {
     const headers = new Headers(init?.headers);
     headers.set("Access-Control-Allow-Origin", "*");
@@ -332,29 +289,6 @@ function jsonResponse(data: unknown, init?: ResponseInit) {
         "GET, POST, PATCH, DELETE, OPTIONS",
     );
     headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-    // Add compression headers for large responses
-    const jsonString = JSON.stringify(data);
-    const bodySize = new Blob([jsonString]).size;
-
-    if (shouldCompress("application/json", bodySize)) {
-        headers.set("X-Compressible", "true");
-        const existingVary = headers.get("Vary");
-        headers.set(
-            "Vary",
-            existingVary
-                ? `${existingVary}, Accept-Encoding`
-                : "Accept-Encoding",
-        );
-
-        // Log compression opportunity in development
-        if (process.env.NODE_ENV === "development") {
-            logger.info("Direct messages response compressed", {
-                bodySize,
-                endpoint: "direct-messages",
-            });
-        }
-    }
 
     return NextResponse.json(data, {
         ...init,
@@ -466,72 +400,71 @@ export async function GET(request: NextRequest) {
                 string,
                 Record<string, string>
             >();
-            let threadReadLookupFailed = false;
-            try {
-                readStatesByConversationId = await listThreadReadsByContext({
-                    contextIds: conversations.map(
-                        (conversation) => conversation.$id,
-                    ),
-                    contextType: "conversation",
-                    userId: session.$id,
-                });
-            } catch (error) {
-                threadReadLookupFailed = true;
+
+            const conversationIds = conversations.map(
+                (conversation) => conversation.$id,
+            );
+            const pageSize = 500;
+            const maxThreadParentPages = 20;
+
+            const [readStatesResult, threadParentsResult, relationshipResult, profilesResult] =
+                await Promise.allSettled([
+                    listThreadReadsByContext({
+                        contextIds: conversationIds,
+                        contextType: "conversation",
+                        userId: session.$id,
+                    }),
+                    conversations.length > 0
+                        ? listPages({
+                              databases,
+                              databaseId: DATABASE_ID,
+                              collectionId: DIRECT_MESSAGES_COLLECTION,
+                              baseQueries: [
+                                  Query.equal("conversationId", conversationIds),
+                                  Query.greaterThan("threadMessageCount", 0),
+                              ],
+                              pageSize,
+                              maxPages: maxThreadParentPages,
+                              warningContext: "direct-messages-thread-parents",
+                          })
+                        : Promise.resolve({ documents: [] as Array<Record<string, unknown>>, truncated: false }),
+                    getRelationshipMap(session.$id, oneToOneOtherUserIds),
+                    getUserProfilesBatch(oneToOneOtherUserIds),
+                ]);
+
+            if (readStatesResult.status === "fulfilled") {
+                readStatesByConversationId = readStatesResult.value;
+            } else {
                 unreadThreadCountsTruncated = true;
                 logger.warn("Thread read lookup failed for conversations", {
                     error:
-                        error instanceof Error ? error.message : String(error),
+                        readStatesResult.reason instanceof Error
+                            ? readStatesResult.reason.message
+                            : String(readStatesResult.reason),
                     userId: session.$id,
                 });
             }
 
-            if (conversations.length > 0 && !threadReadLookupFailed) {
+            if (conversations.length > 0 && readStatesResult.status === "fulfilled") {
                 try {
-                    const pageSize = 500;
-                    const maxThreadParentPages = 20;
-                    const conversationIds = conversations.map(
-                        (conversation) => conversation.$id,
-                    );
-                    const replySignalsPromise = paginateReplies({
-                        databases,
-                        conversationIds,
-                        maxThreadParentPages,
-                        pageSize,
-                    }).catch((error) => {
-                        logger.warn("Failed to paginate direct-message thread reply signals", {
-                            userId: session.$id,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error),
-                            fallbackReplySignalsTruncated: true,
-                            fallbackUnreadThreadCountsTruncated: true,
-                        });
-                        return {
-                            replySignalsByParentId: new Map<
-                                string,
-                                ConversationThreadReplySignal
-                            >(),
-                            replySignalsTruncated: true,
-                        };
-                    });
-
                     const threadParentsById = new Map<
                         string,
                         Record<string, unknown>
                     >();
-                    const threadParentPages = await listPages({
-                        databases,
-                        databaseId: DATABASE_ID,
-                        collectionId: DIRECT_MESSAGES_COLLECTION,
-                        baseQueries: [
-                            Query.equal("conversationId", conversationIds),
-                            Query.greaterThan("threadMessageCount", 0),
-                        ],
-                        pageSize,
-                        maxPages: maxThreadParentPages,
-                        warningContext: "direct-messages-thread-parents",
-                    });
+                    let threadParentPages: { documents: Array<Record<string, unknown>>; truncated: boolean };
+                    if (threadParentsResult.status === "fulfilled") {
+                        threadParentPages = threadParentsResult.value;
+                    } else {
+                        unreadThreadCountsTruncated = true;
+                        logger.warn("Failed to load thread parents", {
+                            error:
+                                threadParentsResult.reason instanceof Error
+                                    ? threadParentsResult.reason.message
+                                    : String(threadParentsResult.reason),
+                            userId: session.$id,
+                        });
+                        threadParentPages = { documents: [], truncated: false };
+                    }
 
                     for (const document of threadParentPages.documents) {
                         const threadParent = document as Record<string, unknown>;
@@ -547,63 +480,6 @@ export async function GET(request: NextRequest) {
                     }
 
                     const threadParentsTruncated = threadParentPages.truncated;
-                    const { replySignalsByParentId, replySignalsTruncated } =
-                        await replySignalsPromise;
-
-                    const missingParentIds = Array.from(
-                        replySignalsByParentId.keys(),
-                    ).filter(
-                        (parentMessageId) =>
-                            !threadParentsById.has(parentMessageId),
-                    );
-
-                    if (missingParentIds.length > 0) {
-                        type ListDocumentsResult = Awaited<
-                            ReturnType<typeof databases.listDocuments>
-                        >;
-                        const chunkPromises: Array<Promise<ListDocumentsResult>> = [];
-                        for (
-                            let startIndex = 0;
-                            startIndex < missingParentIds.length;
-                            startIndex += 100
-                        ) {
-                            const parentIdChunk = missingParentIds.slice(
-                                startIndex,
-                                startIndex + 100,
-                            );
-
-                            chunkPromises.push(
-                                databases.listDocuments(
-                                    DATABASE_ID,
-                                    DIRECT_MESSAGES_COLLECTION,
-                                    [
-                                        Query.equal("$id", parentIdChunk),
-                                        Query.equal("conversationId", conversationIds),
-                                        Query.limit(parentIdChunk.length),
-                                    ],
-                                ),
-                            );
-                        }
-
-                        const missingParentsPages = await Promise.all(
-                            chunkPromises,
-                        );
-
-                        for (const missingParentsPage of missingParentsPages) {
-                            for (const document of missingParentsPage.documents) {
-                                const threadParent = document as Record<string, unknown>;
-                                const parentMessageId =
-                                    typeof threadParent.$id === "string"
-                                        ? threadParent.$id
-                                        : null;
-                                if (!parentMessageId) {
-                                    continue;
-                                }
-
-                                threadParentsById.set(parentMessageId, threadParent);
-                            }
-                        }
-                    }
 
                     for (const threadParent of threadParentsById.values()) {
                         const conversationId =
@@ -618,28 +494,14 @@ export async function GET(request: NextRequest) {
                             continue;
                         }
 
-                        const signal = replySignalsByParentId.get(messageId);
-                        const lastThreadReplyAt = maxIsoTimestamp(
+                        const lastThreadReplyAt =
                             typeof threadParent.lastThreadReplyAt === "string"
                                 ? threadParent.lastThreadReplyAt
-                                : undefined,
-                            signal?.latestReplyAt,
-                        );
-                        const metadataThreadCount =
+                                : undefined;
+                        const threadMessageCount =
                             typeof threadParent.threadMessageCount === "number"
                                 ? threadParent.threadMessageCount
-                                : 0;
-                        const signalThreadCount = signal?.replyCount ?? 0;
-                        const effectiveThreadCount = Math.max(
-                            metadataThreadCount,
-                            signalThreadCount,
-                        );
-                        let threadMessageCount: number | undefined;
-                        if (effectiveThreadCount > 0) {
-                            threadMessageCount = effectiveThreadCount;
-                        } else if (lastThreadReplyAt) {
-                            threadMessageCount = 1;
-                        }
+                                : undefined;
 
                         const lastReadAt =
                             readStatesByConversationId.get(conversationId)?.[
@@ -662,7 +524,7 @@ export async function GET(request: NextRequest) {
                         }
                     }
 
-                    if (threadParentsTruncated || replySignalsTruncated) {
+                    if (threadParentsTruncated) {
                         unreadThreadCountsTruncated = true;
                         logger.warn(
                             "Thread unread aggregation reached pagination cap",
@@ -682,10 +544,31 @@ export async function GET(request: NextRequest) {
                 }
             }
 
-            const relationshipMap = await getRelationshipMap(
-                session.$id,
-                oneToOneOtherUserIds,
-            );
+            const relationshipMap =
+                relationshipResult.status === "fulfilled"
+                    ? relationshipResult.value
+                    : new Map();
+            const profilesBatch =
+                profilesResult.status === "fulfilled"
+                    ? profilesResult.value
+                    : new Map();
+
+            const profileMap = new Map<string, {
+                userId: string;
+                displayName?: string;
+                avatarUrl?: string;
+                pronouns?: string;
+            }>();
+            for (const [uid, profile] of profilesBatch) {
+                profileMap.set(uid, {
+                    userId: uid,
+                    displayName: profile.displayName,
+                    avatarUrl: profile.avatarFileId
+                        ? getAvatarUrl(profile.avatarFileId)
+                        : undefined,
+                    pronouns: profile.pronouns,
+                });
+            }
 
             const enrichedConversations = conversations.map((conversation) => {
                 const unreadThreadCount =
@@ -734,6 +617,9 @@ export async function GET(request: NextRequest) {
                 const readOnly = relationship
                     ? !relationship.canSendDirectMessage
                     : false;
+                const otherUser = otherUserId
+                    ? profileMap.get(otherUserId) ?? { userId: otherUserId }
+                    : undefined;
 
                 return {
                     ...conversation,
@@ -743,6 +629,7 @@ export async function GET(request: NextRequest) {
                         ? getReadOnlyReason(relationship)
                         : undefined,
                     relationship,
+                    otherUser,
                     unreadThreadCount,
                     unreadThreadCountTruncated: unreadThreadCountsTruncated,
                 };
@@ -898,14 +785,22 @@ export async function GET(request: NextRequest) {
                 }
 
                 if (oneToOne) {
-                    const relationship = await getRelationshipStatus(
-                        session.$id,
-                        targetUserId,
-                    );
-                    const encryptionState = await getDmEncryptionStateForPair(
-                        session.$id,
-                        targetUserId,
-                    );
+                    const [relationship, encryptionState, existingProfile] = await Promise.all([
+                        getRelationshipStatus(session.$id, targetUserId),
+                        getDmEncryptionStateForPair(session.$id, targetUserId),
+                        getUserProfile(targetUserId).catch(() => null),
+                    ]);
+                    let otherUserProfile: { userId: string; displayName?: string; avatarUrl?: string; pronouns?: string } | undefined;
+                    if (existingProfile) {
+                        otherUserProfile = {
+                            userId: targetUserId,
+                            displayName: existingProfile.displayName,
+                            avatarUrl: existingProfile.avatarFileId
+                                ? getAvatarUrl(existingProfile.avatarFileId)
+                                : undefined,
+                            pronouns: existingProfile.pronouns,
+                        };
+                    }
                     return jsonResponse({
                         conversation: {
                             $id: oneToOne.$id,
@@ -930,6 +825,7 @@ export async function GET(request: NextRequest) {
                             readOnly: !relationship.canSendDirectMessage,
                             readOnlyReason: getReadOnlyReason(relationship),
                             relationship,
+                            otherUser: otherUserProfile,
                             dmEncryptionSelfEnabled:
                                 encryptionState.dmEncryptionSelfEnabled,
                             dmEncryptionPeerEnabled:
@@ -970,14 +866,10 @@ export async function GET(request: NextRequest) {
                 );
             }
 
-            const relationship = await getRelationshipStatus(
-                session.$id,
-                targetUserId,
-            );
-            const encryptionState = await getDmEncryptionStateForPair(
-                session.$id,
-                targetUserId,
-            );
+            const [relationship, encryptionState] = await Promise.all([
+                getRelationshipStatus(session.$id, targetUserId),
+                getDmEncryptionStateForPair(session.$id, targetUserId),
+            ]);
             if (!relationship.canSendDirectMessage) {
                 return jsonResponse(
                     {
@@ -1013,6 +905,27 @@ export async function GET(request: NextRequest) {
 
             clearDmConversationsCache(participants);
 
+            // Populate otherUser for the newly created 1:1 conversation
+            const otherUserId = participants.find((id) => id !== session.$id);
+            let otherUser: { userId: string; displayName?: string; avatarUrl?: string; pronouns?: string } | undefined;
+            if (otherUserId) {
+                try {
+                    const profile = await getUserProfile(otherUserId);
+                    if (profile) {
+                        otherUser = {
+                            userId: otherUserId,
+                            displayName: profile.displayName,
+                            avatarUrl: profile.avatarFileId
+                                ? getAvatarUrl(profile.avatarFileId)
+                                : undefined,
+                            pronouns: profile.pronouns,
+                        };
+                    }
+                } catch {
+                    // ignore profile fetch failure
+                }
+            }
+
             return jsonResponse({
                 conversation: {
                     $id: newConv.$id,
@@ -1023,6 +936,7 @@ export async function GET(request: NextRequest) {
                     participantCount: participants.length,
                     readOnly: false,
                     relationship,
+                    otherUser,
                     dmEncryptionSelfEnabled:
                         encryptionState.dmEncryptionSelfEnabled,
                     dmEncryptionPeerEnabled:
@@ -1031,6 +945,120 @@ export async function GET(request: NextRequest) {
                         encryptionState.dmEncryptionMutualEnabled,
                     dmEncryptionPeerPublicKey:
                         encryptionState.dmEncryptionPeerPublicKey,
+                },
+            });
+        }
+
+        // Fetch a single conversation by ID with otherUser populated
+        if (type === "conversationById") {
+            const conversationId = searchParams.get("conversationId");
+
+            if (!conversationId) {
+                return jsonResponse(
+                    { error: "conversationId is required" },
+                    { status: 400 },
+                );
+            }
+
+            const { databases } = getServerClient();
+            const conversation = await databases
+                .getDocument(
+                    DATABASE_ID,
+                    CONVERSATIONS_COLLECTION,
+                    conversationId,
+                )
+                .catch(() => null);
+
+            if (!conversation) {
+                return jsonResponse(
+                    { error: "Conversation not found" },
+                    { status: 404 },
+                );
+            }
+
+            const participants = Array.isArray(conversation.participants)
+                ? (conversation.participants as string[])
+                : [];
+
+            if (!participants.includes(session.$id)) {
+                return jsonResponse(
+                    { error: "Forbidden" },
+                    { status: 403 },
+                );
+            }
+
+            const isGroupConversation =
+                Boolean(
+                    (conversation as Record<string, unknown>).isGroup,
+                ) || participants.length > 2;
+
+            const isSystemAnnouncementThread = Boolean(
+                (conversation as Record<string, unknown>).isSystemAnnouncementThread,
+            );
+
+            let readOnly = false;
+            let readOnlyReason: string | undefined;
+
+            if (isSystemAnnouncementThread) {
+                const isSystemSender =
+                    SYSTEM_SENDER_USER_ID !== null &&
+                    session.$id === SYSTEM_SENDER_USER_ID;
+                readOnly = !isSystemSender;
+                if (readOnly) {
+                    readOnlyReason = SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON;
+                }
+            } else if (!isGroupConversation) {
+                const otherUserId = participants.find(
+                    (id) => id !== session.$id,
+                );
+                if (otherUserId) {
+                    const relationshipMap = await getRelationshipMap(
+                        session.$id,
+                        [otherUserId],
+                    );
+                    const relationship = relationshipMap.get(otherUserId);
+                    if (relationship) {
+                        readOnly = !relationship.canSendDirectMessage;
+                        if (readOnly) {
+                            readOnlyReason = getReadOnlyReason(relationship);
+                        }
+                    }
+                }
+            }
+
+            let otherUser: { userId: string; displayName?: string; avatarUrl?: string; pronouns?: string } | undefined;
+
+            if (!isGroupConversation) {
+                const otherUserId = participants.find(
+                    (id) => id !== session.$id,
+                );
+                if (otherUserId) {
+                    try {
+                        const profile = await getUserProfile(otherUserId);
+                        if (profile) {
+                            otherUser = {
+                                userId: otherUserId,
+                                displayName: profile.displayName,
+                                avatarUrl: profile.avatarFileId
+                                    ? getAvatarUrl(profile.avatarFileId)
+                                    : undefined,
+                                pronouns: profile.pronouns,
+                            };
+                        }
+                    } catch {
+                        // ignore profile fetch failure
+                    }
+                }
+            }
+
+            return jsonResponse({
+                conversation: {
+                    ...conversation,
+                    isGroup: isGroupConversation,
+                    participantCount: participants.length,
+                    otherUser,
+                    readOnly,
+                    readOnlyReason,
                 },
             });
         }
@@ -1053,78 +1081,6 @@ export async function GET(request: NextRequest) {
             }
 
             const { databases } = getServerClient();
-            const conversation = await databases
-                .getDocument(
-                    DATABASE_ID,
-                    CONVERSATIONS_COLLECTION,
-                    conversationId,
-                )
-                .catch(() => null);
-
-            let readOnly = false;
-            let readOnlyReason: string | undefined;
-            let relationship;
-            let dmEncryptionSelfEnabled = false;
-            let dmEncryptionPeerEnabled = false;
-            let dmEncryptionMutualEnabled = false;
-            let dmEncryptionPeerPublicKey: string | undefined;
-
-            if (conversation) {
-                const isSystemAnnouncementThread = Boolean(
-                    (conversation as Record<string, unknown>)
-                        .isSystemAnnouncementThread,
-                );
-                if (
-                    isSystemAnnouncementThread &&
-                    (SYSTEM_SENDER_USER_ID === null ||
-                        session.$id !== SYSTEM_SENDER_USER_ID)
-                ) {
-                    readOnly = true;
-                    readOnlyReason = SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON;
-                }
-
-                const participants = Array.isArray(conversation.participants)
-                    ? (conversation.participants as string[])
-                    : [];
-                if (!participants.includes(session.$id)) {
-                    return jsonResponse(
-                        { error: "Forbidden" },
-                        { status: 403 },
-                    );
-                }
-
-                const isGroupConversation =
-                    Boolean(
-                        (conversation as Record<string, unknown>).isGroup,
-                    ) || participants.length > 2;
-
-                if (!isGroupConversation) {
-                    const otherUserId = participants.find(
-                        (id) => id !== session.$id,
-                    );
-                    if (otherUserId && !isSystemAnnouncementThread) {
-                        relationship = await getRelationshipStatus(
-                            session.$id,
-                            otherUserId,
-                        );
-                        readOnly = !relationship.canSendDirectMessage;
-                        readOnlyReason = getReadOnlyReason(relationship);
-                        const encryptionState =
-                            await getDmEncryptionStateForPair(
-                                session.$id,
-                                otherUserId,
-                            );
-                        dmEncryptionSelfEnabled =
-                            encryptionState.dmEncryptionSelfEnabled;
-                        dmEncryptionPeerEnabled =
-                            encryptionState.dmEncryptionPeerEnabled;
-                        dmEncryptionMutualEnabled =
-                            encryptionState.dmEncryptionMutualEnabled;
-                        dmEncryptionPeerPublicKey =
-                            encryptionState.dmEncryptionPeerPublicKey;
-                    }
-                }
-            }
 
             const queries = [
                 Query.equal("conversationId", conversationId),
@@ -1164,34 +1120,134 @@ export async function GET(request: NextRequest) {
                 removedAt: doc.removedAt as string | undefined,
                 removedBy: doc.removedBy as string | undefined,
                 replyToId: doc.replyToId as string | undefined,
+                threadId: doc.threadId as string | undefined,
+                threadMessageCount: doc.threadMessageCount as number | undefined,
                 mentions: Array.isArray(doc.mentions)
                     ? (doc.mentions as string[])
                     : undefined,
+                reactions: parseReactions(doc.reactions),
             }));
 
-            if (conversation) {
-                const participants = Array.isArray(conversation.participants)
-                    ? (conversation.participants as string[])
-                    : [];
-                const isGroupConversation =
-                    Boolean(
-                        (conversation as Record<string, unknown>).isGroup,
-                    ) || participants.length > 2;
+            let readOnly = false;
+            let readOnlyReason: string | undefined;
+            let relationship: RelationshipStatus | undefined;
+            let dmEncryptionSelfEnabled = false;
+            let dmEncryptionPeerEnabled = false;
+            let dmEncryptionMutualEnabled = false;
+            let dmEncryptionPeerPublicKey: string | undefined;
 
-                if (isGroupConversation) {
-                    const relationshipMap = await getRelationshipMap(
-                        session.$id,
-                        participants.filter((id) => id !== session.$id),
+            if (!cursor) {
+                const conversation = await databases
+                    .getDocument(
+                        DATABASE_ID,
+                        CONVERSATIONS_COLLECTION,
+                        conversationId,
+                    )
+                    .catch(() => null);
+
+                if (conversation) {
+                    const isSystemAnnouncementThread = Boolean(
+                        (conversation as Record<string, unknown>)
+                            .isSystemAnnouncementThread,
                     );
-                    items = items.filter((item) => {
-                        const messageRelationship = relationshipMap.get(
-                            item.senderId,
+                    if (
+                        isSystemAnnouncementThread &&
+                        (SYSTEM_SENDER_USER_ID === null ||
+                            session.$id !== SYSTEM_SENDER_USER_ID)
+                    ) {
+                        readOnly = true;
+                        readOnlyReason = SYSTEM_ANNOUNCEMENT_READ_ONLY_REASON;
+                    }
+
+                    const participants = Array.isArray(conversation.participants)
+                        ? (conversation.participants as string[])
+                        : [];
+                    if (!participants.includes(session.$id)) {
+                        return jsonResponse(
+                            { error: "Forbidden" },
+                            { status: 403 },
                         );
-                        return (
-                            !messageRelationship?.blockedByMe &&
-                            !messageRelationship?.blockedMe
+                    }
+
+                    const isGroupConversation =
+                        Boolean(
+                            (conversation as Record<string, unknown>).isGroup,
+                        ) || participants.length > 2;
+
+                    if (!isGroupConversation) {
+                        const otherUserId = participants.find(
+                            (id) => id !== session.$id,
                         );
-                    });
+                        if (otherUserId && !isSystemAnnouncementThread) {
+                            const [
+                                friendship,
+                                blockStatus,
+                                peerNotificationSettings,
+                                selfNotificationSettings,
+                                peerProfile,
+                            ] = await Promise.all([
+                                getFriendshipByPair(session.$id, otherUserId),
+                                getBlockStatus(session.$id, otherUserId),
+                                getNotificationSettings(otherUserId),
+                                getNotificationSettings(session.$id),
+                                getUserProfile(otherUserId).catch(() => null),
+                            ]);
+
+                            const isFriend = friendship?.status === "accepted";
+                            const outgoingRequest =
+                                friendship?.status === "pending" && friendship.requesterId === session.$id;
+                            const incomingRequest =
+                                friendship?.status === "pending" && friendship.recipientId === session.$id;
+                            const directMessagePrivacy = peerNotificationSettings?.directMessagePrivacy ?? "everyone";
+                            const canSendDirectMessage =
+                                !blockStatus.blockedByMe &&
+                                !blockStatus.blockedMe &&
+                                (directMessagePrivacy === "everyone" || isFriend);
+
+                            relationship = {
+                                userId: otherUserId,
+                                friendshipStatus: friendship?.status,
+                                isFriend,
+                                outgoingRequest,
+                                incomingRequest,
+                                blockedByMe: Boolean(blockStatus.blockedByMe),
+                                blockedMe: Boolean(blockStatus.blockedMe),
+                                directMessagePrivacy,
+                                canSendDirectMessage,
+                                canReceiveFriendRequest:
+                                    !isFriend && !outgoingRequest && !incomingRequest &&
+                                    !blockStatus.blockedByMe && !blockStatus.blockedMe,
+                            };
+
+                            dmEncryptionSelfEnabled = Boolean(selfNotificationSettings?.dmEncryptionEnabled);
+                            dmEncryptionPeerEnabled = Boolean(peerNotificationSettings?.dmEncryptionEnabled);
+                            dmEncryptionPeerPublicKey =
+                                typeof peerProfile?.dmEncryptionPublicKey === "string"
+                                    ? peerProfile.dmEncryptionPublicKey
+                                    : undefined;
+                            dmEncryptionMutualEnabled =
+                                dmEncryptionSelfEnabled && dmEncryptionPeerEnabled;
+
+                            readOnly = !relationship.canSendDirectMessage;
+                            readOnlyReason = getReadOnlyReason(relationship);
+                        }
+                    }
+
+                    if (isGroupConversation) {
+                        const relationshipMap = await getRelationshipMap(
+                            session.$id,
+                            participants.filter((id) => id !== session.$id),
+                        );
+                        items = items.filter((item) => {
+                            const messageRelationship = relationshipMap.get(
+                                item.senderId,
+                            );
+                            return (
+                                !messageRelationship?.blockedByMe &&
+                                !messageRelationship?.blockedMe
+                            );
+                        });
+                    }
                 }
             }
 
@@ -1411,6 +1467,38 @@ export async function POST(request: NextRequest) {
         }
         const normalizedAttachments = normalizedAttachmentsResult.attachments;
 
+        const normalizedText = typeof text === "string" ? text : "";
+        const creatingPoll = isPollCommand(normalizedText);
+        let parsedPoll: ReturnType<typeof parsePollCommand> | null = null;
+
+        if (creatingPoll) {
+            try {
+                parsedPoll = parsePollCommand(normalizedText);
+            } catch (error) {
+                return NextResponse.json(
+                    {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : "Invalid poll command.",
+                    },
+                    { status: 400 },
+                );
+            }
+        }
+
+        if (
+            creatingPoll &&
+            (imageFileId || imageUrl || normalizedAttachments.length > 0)
+        ) {
+            return NextResponse.json(
+                {
+                    error: "Poll messages do not support image or file attachments.",
+                },
+                { status: 400 },
+            );
+        }
+
         const hasEncryptedText =
             typeof encryptedText === "string" && encryptedText.length > 0;
 
@@ -1471,7 +1559,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Validate sender is the authenticated user
+        // Validate sender is the authenticated user — never trust client-provided senderId downstream
         if (senderId !== session.$id) {
             return jsonResponse(
                 { error: "Cannot send message as another user" },
@@ -1575,8 +1663,16 @@ export async function POST(request: NextRequest) {
         const hasAnyContent =
             hasPlaintextText || hasImageContent || normalizedAttachments.length > 0;
 
-        if (!isGroupConversation && targetReceiverId && hasAnyContent) {
-            const [senderSettings, receiverSettings, senderProfile, receiverProfile] =
+        // Hoist shared fetches: both the plaintext-guard (hasAnyContent) and the
+        // encrypted-text validation need these four values.  Run them once when
+        // either path is possible.
+        let senderSettings = null;
+        let receiverSettings = null;
+        let senderProfile: Awaited<ReturnType<typeof getUserProfile>> = null;
+        let receiverProfile: Awaited<ReturnType<typeof getUserProfile>> = null;
+
+        if (!isGroupConversation && targetReceiverId && (hasAnyContent || hasEncryptedText)) {
+            [senderSettings, receiverSettings, senderProfile, receiverProfile] =
                 await Promise.all([
                     getNotificationSettings(senderId).catch((error) => {
                         logger.warn(
@@ -1639,6 +1735,9 @@ export async function POST(request: NextRequest) {
                         return null;
                     }),
                 ]);
+        }
+
+        if (!isGroupConversation && targetReceiverId && hasAnyContent) {
 
             const senderProfilePublicKey =
                 typeof senderProfile?.dmEncryptionPublicKey === "string"
@@ -1676,75 +1775,6 @@ export async function POST(request: NextRequest) {
                     { status: 400 },
                 );
             }
-
-            const [
-                senderSettings,
-                receiverSettings,
-                senderProfile,
-                receiverProfile,
-            ] =
-                await Promise.all([
-                    getNotificationSettings(senderId).catch((error) => {
-                        logger.warn(
-                            "Failed to load sender notification settings for DM encryption",
-                            {
-                                conversationId,
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
-                                senderId,
-                                targetReceiverId,
-                            },
-                        );
-                        return null;
-                    }),
-                    getNotificationSettings(targetReceiverId).catch((error) => {
-                        logger.warn(
-                            "Failed to load receiver notification settings for DM encryption",
-                            {
-                                conversationId,
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
-                                senderId,
-                                targetReceiverId,
-                            },
-                        );
-                        return null;
-                    }),
-                    getUserProfile(senderId).catch((error) => {
-                        logger.warn(
-                            "Failed to load sender profile for DM encryption",
-                            {
-                                conversationId,
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
-                                senderId,
-                                targetReceiverId,
-                            },
-                        );
-                        return null;
-                    }),
-                    getUserProfile(targetReceiverId).catch((error) => {
-                        logger.warn(
-                            "Failed to load receiver profile for DM encryption",
-                            {
-                                conversationId,
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error),
-                                senderId,
-                                targetReceiverId,
-                            },
-                        );
-                        return null;
-                    }),
-                ]);
 
             if (
                 !senderSettings?.dmEncryptionEnabled ||
@@ -1802,7 +1832,7 @@ export async function POST(request: NextRequest) {
         const messageData: Record<string, unknown> = {
             conversationId,
             senderId,
-            text: hasEncryptedText ? "" : (text || ""),
+            text: parsedPoll ? "" : hasEncryptedText ? "" : (text || ""),
         };
 
         if (hasEncryptedText) {
@@ -1850,6 +1880,67 @@ export async function POST(request: NextRequest) {
             messageData,
             permissions,
         );
+
+        let pollResponse: Record<string, unknown> | undefined;
+
+        if (parsedPoll) {
+            try {
+                const serializedOptions = serializePollOptions(
+                    parsedPoll.options,
+                );
+                const pollDocument = await databases.createDocument(
+                    DATABASE_ID,
+                    env.collections.polls,
+                    ID.unique(),
+                    {
+                        messageId: String(message.$id),
+                        channelId: conversationId ?? "",
+                        question: parsedPoll.question,
+                        options: serializedOptions,
+                        status: "open",
+                        createdBy: senderId,
+                    },
+                    permissions,
+                );
+
+                const optionTemplate = parsePollOptions(serializedOptions);
+                pollResponse = {
+                    id: String(pollDocument.$id),
+                    messageId: String(message.$id),
+                    contextType: "conversation",
+                    contextId: conversationId ?? "",
+                    question: parsedPoll.question,
+                    options: optionTemplate.map(
+                        (option: { id: string; text: string }) => ({
+                            id: option.id,
+                            text: option.text,
+                            count: 0,
+                            voterIds: [],
+                        }),
+                    ),
+                    status: "open",
+                    createdBy: senderId,
+                };
+            } catch (error) {
+                try {
+                    await databases.deleteDocument(
+                        DATABASE_ID,
+                        DIRECT_MESSAGES_COLLECTION,
+                        String(message.$id),
+                    );
+                } catch (deleteError) {
+                    logger.warn(
+                        "Failed to roll back message after poll creation error",
+                        {
+                            deleteError,
+                            messageId: String(message.$id),
+                        },
+                    );
+                }
+
+                throw error;
+            }
+        }
 
         trackApiCall(
             "/api/direct-messages",
@@ -1944,6 +2035,33 @@ export async function POST(request: NextRequest) {
                 });
             }
         }
+
+        if (participants.length > 1) {
+            try {
+                await upsertMessageInboxItems({
+                    authorUserId: senderId,
+                    contextId: conversationId,
+                    contextKind: "conversation",
+                    latestActivityAt: String(
+                        message.$createdAt ?? new Date().toISOString(),
+                    ),
+                    messageId: String(message.$id),
+                    participantUserIds: participants,
+                    previewText: text || "",
+                });
+            } catch (messageInboxError) {
+                logger.warn("Failed to upsert DM message inbox items", {
+                    conversationId,
+                    messageId: String(message.$id),
+                    senderId,
+                    error:
+                        messageInboxError instanceof Error
+                            ? messageInboxError.message
+                            : String(messageInboxError),
+                });
+            }
+        }
+
         // Update conversation's lastMessageAt
         try {
             await databases.updateDocument(
@@ -1958,6 +2076,22 @@ export async function POST(request: NextRequest) {
             // Don't fail if conversation update fails
         } finally {
             clearDmConversationsCache(participants);
+        }
+
+        // Send push notification to recipient (non-blocking)
+        // For one-on-one DMs, the recipient is the participant who isn't the sender
+        const pushTargetId = isGroupConversation
+            ? undefined
+            : (body.receiverId ?? participants.find((id) => id !== senderId) ?? receiverId);
+        if (pushTargetId && pushTargetId !== senderId) {
+            // Fetch sender display name for the notification title
+            const senderProfile = await getUserProfile(senderId).catch(() => null);
+            const senderName = senderProfile?.displayName || "New message";
+            void dispatchPushNotification(pushTargetId, senderName, text || "Sent you a message", {
+                type: "dm",
+                conversationId,
+                messageId: String(message.$id),
+            }).catch((err) => logger.warn("Push dispatch failed:", err));
         }
 
         // Track DM sent event
@@ -2012,6 +2146,7 @@ export async function POST(request: NextRequest) {
             }),
             $createdAt: message.$createdAt,
             replyToId: message.replyToId,
+            poll: pollResponse,
         };
 
         // Include attachments in response if any

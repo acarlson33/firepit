@@ -9,7 +9,6 @@ import {
     adminSoftDeleteMessage,
 } from "../../lib/appwrite-admin";
 import { requireModerator } from "../../lib/auth-server";
-import { recordMetric, recordTiming } from "../../lib/monitoring";
 
 // Simple in-memory rate limiting (best effort, per runtime instance)
 const ACTION_WINDOW_MS = 5000;
@@ -86,7 +85,6 @@ function buildMessageAuditMeta(
 export async function actionSoftDelete(messageId: string) {
     const { userId } = await assertModerator();
     checkRate(userId, "soft_delete", messageId);
-    const start = Date.now();
     const message = await getAdminMessageAuditContext(messageId);
     await adminSoftDeleteMessage(messageId, userId);
     await recordAudit(
@@ -97,14 +95,11 @@ export async function actionSoftDelete(messageId: string) {
             removedAt: new Date().toISOString(),
         }),
     );
-    recordMetric("moderation.soft_delete.count");
-    recordTiming("moderation.soft_delete.ms", start, { userId });
 }
 
 export async function actionRestore(messageId: string) {
     const { userId } = await assertModerator();
     checkRate(userId, "restore", messageId);
-    const start = Date.now();
     const message = await getAdminMessageAuditContext(messageId);
     await adminRestoreMessage(messageId);
     await recordAudit(
@@ -115,8 +110,6 @@ export async function actionRestore(messageId: string) {
             restoredAt: new Date().toISOString(),
         }),
     );
-    recordMetric("moderation.restore.count");
-    recordTiming("moderation.restore.ms", start, { userId });
 }
 
 export async function actionHardDelete(messageId: string) {
@@ -128,7 +121,6 @@ export async function actionHardDelete(messageId: string) {
     }
     const userId = user.$id;
     checkRate(userId, "hard_delete", messageId);
-    const start = Date.now();
     const message = await getAdminMessageAuditContext(messageId);
     await adminDeleteMessage(messageId);
     await recordAudit(
@@ -139,8 +131,6 @@ export async function actionHardDelete(messageId: string) {
             deletedAt: new Date().toISOString(),
         }),
     );
-    recordMetric("moderation.hard_delete.count");
-    recordTiming("moderation.hard_delete.ms", start, { userId });
 }
 
 // Wrapper actions for form binding

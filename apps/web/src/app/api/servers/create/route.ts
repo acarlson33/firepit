@@ -6,8 +6,8 @@ import { FEATURE_FLAGS, getFeatureFlag } from "@/lib/feature-flags";
 import { logger,
     returnUnauthorized,
     returnForbidden,
+    getPostHogClient,
 } from "@/lib/newrelic-utils";
-import { getPostHogClient } from "@/lib/posthog-server";
 import { normalizeServerFileId } from "@/lib/server-metadata";
 
 const MAX_SERVER_NAME_LENGTH = 100;

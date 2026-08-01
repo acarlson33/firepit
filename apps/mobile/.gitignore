@@ -6,9 +6,11 @@ node_modules/
 # Expo
 .expo/
 dist/
-web-build/
 expo-env.d.ts
+
+# EAS Secrets (ENV Vars)
 .eas/
+credentials.json
 
 # Native
 .kotlin/
@@ -41,11 +43,11 @@ yarn-error.*
 /ios
 /android
 
-# Google services file
-google-services.json
-
 # Build files
 build-tmp/**
 !build-tmp/.gitkeep
 
 **.apk
+.env.local
+
+credentials/

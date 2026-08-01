@@ -96,10 +96,6 @@ vi.mock("@/lib/newrelic-utils", () => ({
     addTransactionAttributes: vi.fn(),
 }));
 
-vi.mock("@/lib/compression-utils", () => ({
-    shouldCompress: vi.fn(() => false),
-}));
-
 vi.mock("@/lib/appwrite-friendships", () => ({
     getRelationshipMap: mockGetRelationshipMap,
     getRelationshipStatus: mockGetRelationshipStatus,

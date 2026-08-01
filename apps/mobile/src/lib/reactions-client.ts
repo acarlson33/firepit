@@ -1,6 +1,4 @@
-/**
- * Client-side API functions for message reactions (React Native)
- */
+import { firepitRequest } from "./firepit/http";
 
 type Reaction = {
   emoji: string;
@@ -8,58 +6,35 @@ type Reaction = {
   count: number;
 };
 
-export async function addReaction(
-  messageId: string,
-  emoji: string,
-  isDM = false,
-): Promise<{ success: boolean; reactions?: Reaction[] }> {
-  const endpoint = isDM
+function path(messageId: string, isDM: boolean) {
+  return isDM
     ? `/api/direct-messages/${messageId}/reactions`
     : `/api/messages/${messageId}/reactions`;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ emoji }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to add reaction");
-  }
-
-  return response.json();
-}
-
-export async function removeReaction(
-  messageId: string,
-  emoji: string,
-  isDM = false,
-): Promise<{ success: boolean; reactions?: Reaction[] }> {
-  const endpoint = isDM
-    ? `/api/direct-messages/${messageId}/reactions`
-    : `/api/messages/${messageId}/reactions`;
-
-  const response = await fetch(`${endpoint}?emoji=${encodeURIComponent(emoji)}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to remove reaction");
-  }
-
-  return response.json();
 }
 
 export async function toggleReaction(
   messageId: string,
   emoji: string,
   isAdding: boolean,
-  isDM = false,
+  isDM: boolean,
+  instanceUrl: string,
+  token: string,
 ): Promise<{ success: boolean; reactions?: Reaction[] }> {
-  if (isAdding) return addReaction(messageId, emoji, isDM);
-  return removeReaction(messageId, emoji, isDM);
+  if (isAdding) {
+    return firepitRequest({
+      baseUrl: instanceUrl,
+      path: path(messageId, isDM),
+      method: "POST",
+      token,
+      body: { emoji },
+    });
+  }
+
+  return firepitRequest({
+    baseUrl: instanceUrl,
+    path: path(messageId, isDM),
+    method: "DELETE",
+    token,
+    query: { emoji },
+  });
 }

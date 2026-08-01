@@ -28,7 +28,7 @@ vi.mock("@/lib/auth-server", () => ({
     getServerSession: mockGetServerSession,
 }));
 
-vi.mock("@/lib/rate-limiter", () => ({
+vi.mock("@/lib/rate-limit", () => ({
     checkRateLimit: mockCheckRateLimit,
 }));
 

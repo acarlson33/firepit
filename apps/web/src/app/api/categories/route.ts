@@ -103,20 +103,22 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const auth = await requireServerMembership(serverId);
+        const [auth, categories] = await Promise.all([
+            requireServerMembership(serverId),
+            databases.listDocuments(
+                databaseId,
+                categoriesCollectionId,
+                [
+                    Query.equal("serverId", serverId),
+                    Query.orderAsc("position"),
+                    Query.limit(100),
+                ],
+            ),
+        ]);
+
         if ("response" in auth) {
             return auth.response;
         }
-
-        const categories = await databases.listDocuments(
-            databaseId,
-            categoriesCollectionId,
-            [
-                Query.equal("serverId", serverId),
-                Query.orderAsc("position"),
-                Query.limit(100),
-            ],
-        );
 
         const userRoleIds = auth.access.roleIds ?? [];
         const isOwner = auth.access.isServerOwner;

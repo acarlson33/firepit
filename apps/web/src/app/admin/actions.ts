@@ -3,9 +3,8 @@ import { createHash } from "node:crypto";
 import { Query, type Models } from "node-appwrite";
 
 import { getAdminClient } from "@/lib/appwrite-admin";
-import { getAppwriteIds } from "@/lib/appwrite-config";
+import { getEnvConfig } from "@/lib/appwrite-core";
 import { getUserRoles } from "@/lib/appwrite-roles";
-import { recordMetric, recordTiming } from "@/lib/monitoring";
 import { logger } from "@/lib/newrelic-utils";
 import {
     getAllFeatureFlags,
@@ -28,10 +27,10 @@ import type {
 } from "@/lib/types";
 
 // Server actions run on the server; use server-side env variables first.
-const ids = getAppwriteIds();
-const databaseId = ids.databaseId;
-const messagesCollection = ids.messages;
-const channelsCollection = ids.channels;
+const env = getEnvConfig();
+const databaseId = env.databaseId;
+const messagesCollection = env.collections.messages;
+const channelsCollection = env.collections.channels;
 const DEFAULT_DISPATCH_LIMIT = 25;
 const MAX_DISPATCH_LIMIT = 100;
 
@@ -237,7 +236,6 @@ async function updateMessageServerIds(
 export async function backfillServerIds(
     userId: string,
 ): Promise<BackfillResult> {
-    const start = Date.now();
     const roles = await getUserRoles(userId);
     if (!roles.isAdmin) {
         throw new Error("Forbidden");
@@ -258,8 +256,6 @@ export async function backfillServerIds(
     const updated = await updateMessageServerIds(docs, channelMap);
     const hasMore = docs.length === limit;
     const skipped = Math.max(0, docs.length - updated);
-    recordMetric("admin.backfill_server_ids.count", updated);
-    recordTiming("admin.backfill_server_ids.ms", start, { updated });
     return { updated, scanned: docs.length, hasMore, skipped };
 }
 
@@ -338,7 +334,6 @@ export async function updateFeatureFlagAction(
         const success = await setFeatureFlag(key, enabled, userId);
 
         if (success) {
-            recordMetric("admin.feature_flag.updated", 1, { key, enabled });
             return { success: true };
         }
 

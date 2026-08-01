@@ -1511,12 +1511,18 @@ export function useDirectMessages({
     const typingPresenceCreatedRef = useRef<boolean>(false);
     const TYPING_COOLDOWN_MS = 2000;
 
+    // Use refs for values needed in stale closures (scheduleTypingStart/Stop)
+    const userIdRef = useRef(userId);
+    const conversationIdRef = useRef(conversationId);
+    userIdRef.current = userId;
+    conversationIdRef.current = conversationId;
+
     async function updateTypingPresence(state: boolean) {
-        if (!userId || !conversationId) {
+        if (!userIdRef.current || !conversationIdRef.current) {
             return;
         }
         if (state && !typingPresenceIdRef.current) {
-            typingPresenceIdRef.current = userId;
+            typingPresenceIdRef.current = userIdRef.current;
         }
 
         // Throttle: skip re-upsert if we're already typing and the
@@ -1542,7 +1548,7 @@ export function useDirectMessages({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         presenceId: typingPresenceIdRef.current,
-                        channelId: conversationId,
+                        channelId: conversationIdRef.current,
                         userName: userName || undefined,
                         expiresAt: new Date(Date.now() + 4000).toISOString(),
                     }),
@@ -1640,7 +1646,7 @@ export function useDirectMessages({
 
                 const subscription = await realtime.subscribe(
                     presenceChannel,
-                    async (
+                    (
                         event: RealtimeResponseEvent<Record<string, unknown>>,
                     ) => {
                         if (cancelled) {

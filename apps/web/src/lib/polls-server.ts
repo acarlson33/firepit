@@ -129,3 +129,62 @@ export async function getPollStateForMessage(
     const votes = await listVotesForPoll(databases, env, poll.$id);
     return buildMessagePoll({ poll, votes });
 }
+
+export async function getPollStatesForMessages(
+    databases: Databases,
+    env: EnvConfig,
+    messageIds: string[],
+): Promise<Map<string, MessagePoll>> {
+    const result = new Map<string, MessagePoll>();
+    if (messageIds.length === 0) return result;
+
+    // Batch fetch all poll documents for these messages in a single query
+    const pollResponse = await databases.listDocuments(
+        env.databaseId,
+        env.collections.polls,
+        [
+            Query.equal("messageId", messageIds),
+            Query.limit(100),
+        ],
+    );
+
+    const polls = pollResponse.documents
+        .map((doc) => normalizePollDocument(doc))
+        .filter((p): p is PollDocShape => p !== null);
+
+    if (polls.length === 0) return result;
+
+    // Batch fetch all votes for these polls in a single query
+    const pollIds = polls.map((p) => p.$id);
+    const votesResponse = await databases.listDocuments(
+        env.databaseId,
+        env.collections.pollVotes,
+        [
+            Query.equal("pollId", pollIds),
+            Query.limit(pollIds.length * 200),
+        ],
+    );
+
+    const votes = votesResponse.documents
+        .map((raw) => normalizePollVoteDocument(raw))
+        .filter((v): v is PollVoteDocShape => v !== null);
+
+    // Group votes by pollId for efficient lookup
+    const votesByPollId = new Map<string, PollVoteDocShape[]>();
+    for (const vote of votes) {
+        const existing = votesByPollId.get(vote.pollId);
+        if (existing) {
+            existing.push(vote);
+        } else {
+            votesByPollId.set(vote.pollId, [vote]);
+        }
+    }
+
+    // Build each poll state
+    for (const poll of polls) {
+        const pollVotes = votesByPollId.get(poll.$id) ?? [];
+        result.set(poll.messageId, buildMessagePoll({ poll, votes: pollVotes }));
+    }
+
+    return result;
+}

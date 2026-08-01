@@ -16,7 +16,8 @@ import { AuthRouteGuard } from "@/components/auth-route-guard";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import type { Server, ServerPreview } from "@/lib/firepit";
-import { fetchMyServers, fetchPublicServers, joinServer } from "@/lib/firepit";
+import { fetchPublicServers, joinServer } from "@/lib/firepit";
+import { getServers } from "@/lib/server-cache";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -137,12 +138,12 @@ export default function SessionScreen() {
             const [nextPublicServers, nextMyServers] = await Promise.all([
                 fetchPublicServers(instanceUrl),
                 signedIn && accessToken
-                    ? fetchMyServers(instanceUrl, accessToken)
-                    : Promise.resolve({ servers: [] as Server[] }),
+                    ? getServers(instanceUrl, accessToken)
+                    : Promise.resolve([] as Server[]),
             ]);
 
             setPublicServers(nextPublicServers.servers ?? []);
-            setMyServers(nextMyServers.servers ?? []);
+            setMyServers(nextMyServers);
             setServerLoadState("ready");
         } catch (loadError) {
             setServerLoadState("error");
@@ -177,37 +178,25 @@ export default function SessionScreen() {
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
+                        { backgroundColor: "rgba(217, 121, 43, 0.08)" },
                     ]}
                 />
                 <View
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
+                        { backgroundColor: "rgba(78, 138, 134, 0.06)" },
                     ]}
                 />
                 <SafeAreaView style={styles.safeArea}>
-                    <ThemedView style={styles.shell}>
-                        <ThemedView
-                            type="card"
-                            style={[
-                                styles.heroCard,
-                                { borderColor: theme.border },
-                            ]}
-                        >
+                    <View style={styles.shell}>
+                        {/* Simple header replacing hero card */}
+                        <View style={styles.header}>
                             <ThemedText type="code" themeColor="accent">
-                                Firepit server browser
+                                Firepit
                             </ThemedText>
                             <ThemedText type="subtitle">
                                 Open an instance, then pick a server.
-                            </ThemedText>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Firepit-style warm neutrals and compact cards
-                                keep the browser aligned with the web app.
                             </ThemedText>
                             <View style={styles.pillRow}>
                                 <StatusPill
@@ -231,24 +220,13 @@ export default function SessionScreen() {
                                     tone="neutral"
                                 />
                             </View>
-                        </ThemedView>
+                        </View>
 
+                        {/* Compact sign-in section */}
                         {!signedIn ? (
-                            <ThemedView
-                                type="card"
-                                style={[
-                                    styles.card,
-                                    { borderColor: theme.border },
-                                ]}
-                            >
+                            <View style={styles.signInSection}>
                                 <ThemedText type="smallBold">
                                     Sign in
-                                </ThemedText>
-                                <ThemedText
-                                    themeColor="mutedForeground"
-                                    style={styles.copy}
-                                >
-                                    Use your Firepit account email and password.
                                 </ThemedText>
                                 <TextInput
                                     autoCapitalize="none"
@@ -316,13 +294,11 @@ export default function SessionScreen() {
                                         {authError}
                                     </ThemedText>
                                 ) : null}
-                            </ThemedView>
+                            </View>
                         ) : null}
 
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
+                        {/* Your servers — flat list */}
+                        <View style={styles.section}>
                             <View style={styles.sectionHeaderRow}>
                                 <ThemedText type="smallBold">
                                     Your servers
@@ -388,12 +364,10 @@ export default function SessionScreen() {
                                     Sign in to load your personal server list.
                                 </ThemedText>
                             )}
-                        </ThemedView>
+                        </View>
 
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
+                        {/* Public discovery — flat list */}
+                        <View style={styles.section}>
                             <ThemedText type="smallBold">
                                 Public discovery
                             </ThemedText>
@@ -469,23 +443,8 @@ export default function SessionScreen() {
                                     </ThemedText>
                                 )}
                             </View>
-                        </ThemedView>
-
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
-                            <ThemedText type="smallBold">Next slice</ThemedText>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                The workspace shell is intentionally narrow so
-                                the future channel and message timeline can slot
-                                in without a redesign.
-                            </ThemedText>
-                        </ThemedView>
-                    </ThemedView>
+                        </View>
+                    </View>
                 </SafeAreaView>
             </ScrollView>
         </AuthRouteGuard>
@@ -508,10 +467,7 @@ function ServerCard({
     const theme = useTheme();
 
     return (
-        <ThemedView
-            type="card"
-            style={[styles.serverCard, { borderColor: theme.border }]}
-        >
+        <View style={styles.serverCard}>
             <View style={styles.serverCardHeader}>
                 <View style={styles.serverTextBlock}>
                     <ThemedText type="smallBold">
@@ -559,7 +515,7 @@ function ServerCard({
                     />
                 ) : null}
             </View>
-        </ThemedView>
+        </View>
     );
 }
 
@@ -616,44 +572,45 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
         alignItems: "center",
-        paddingHorizontal: Spacing.three,
-        paddingBottom: BottomTabInset + Spacing.four,
+        paddingHorizontal: Spacing.two,
+        paddingBottom: BottomTabInset + Spacing.two,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
-        gap: Spacing.three,
-        paddingTop: Spacing.four,
+        gap: Spacing.two,
+        paddingTop: Spacing.two,
     },
-    heroCard: {
-        borderRadius: 28,
-        padding: Spacing.four,
-        gap: Spacing.three,
-        borderWidth: 1,
+    header: {
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.two,
+        gap: Spacing.one,
     },
     copy: {
         fontSize: 14,
         lineHeight: 20,
     },
-    card: {
-        borderRadius: 22,
-        padding: Spacing.three,
-        gap: Spacing.two,
-        borderWidth: 1,
+    signInSection: {
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.two,
+        gap: Spacing.one,
+    },
+    section: {
+        gap: Spacing.one,
     },
     input: {
-        borderRadius: 16,
+        borderRadius: 12,
         borderWidth: 1,
-        paddingHorizontal: Spacing.three,
+        paddingHorizontal: Spacing.two,
         paddingVertical: Spacing.two,
         fontSize: 16,
     },
     actionButton: {
-        minHeight: 44,
+        minHeight: 40,
         borderRadius: 999,
         alignItems: "center",
         justifyContent: "center",
-        paddingHorizontal: Spacing.four,
+        paddingHorizontal: Spacing.three,
         borderWidth: 1,
         shadowColor: "#d9792b",
         shadowOpacity: 0.1,
@@ -672,11 +629,11 @@ const styles = StyleSheet.create({
     pillRow: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: Spacing.one,
+        gap: Spacing.half,
     },
     statusPill: {
         paddingHorizontal: Spacing.two,
-        paddingVertical: 6,
+        paddingVertical: 4,
         borderRadius: 999,
     },
     sectionHeaderRow: {
@@ -684,20 +641,22 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
         gap: Spacing.two,
+        paddingHorizontal: Spacing.two,
     },
     headerActions: {
         flexDirection: "row",
         alignItems: "center",
-        gap: Spacing.one,
+        gap: Spacing.half,
     },
     list: {
-        gap: Spacing.two,
+        gap: Spacing.one,
     },
     serverCard: {
-        borderRadius: 18,
-        padding: Spacing.three,
-        gap: Spacing.two,
-        borderWidth: 1,
+        paddingVertical: Spacing.two,
+        paddingHorizontal: Spacing.two,
+        gap: Spacing.half,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "rgba(255,255,255,0.08)",
     },
     serverCardHeader: {
         flexDirection: "row",
@@ -721,6 +680,6 @@ const styles = StyleSheet.create({
     cardActions: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: Spacing.two,
+        gap: Spacing.one,
     },
 });

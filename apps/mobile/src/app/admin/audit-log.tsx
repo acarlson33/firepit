@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
@@ -100,21 +101,22 @@ function formatTimestamp(timestamp?: string) {
 
 export default function AuditLogScreen() {
     const theme = useTheme();
-    const { instanceUrl, accessToken, state } = useFirepitBootstrap();
+    const { serverId } = useLocalSearchParams<{ serverId?: string }>();
+    const { instanceUrl, accessToken } = useFirepitBootstrap();
 
     const [entries, setEntries] = useState<ServerAuditLogEntry[]>([]);
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const loadLogs = useCallback(async () => {
-        if (!instanceUrl || !accessToken) return;
+        if (!instanceUrl || !accessToken || !serverId) return;
         setLoadState("loading");
         setLoadError(null);
         try {
             const res = await fetchServerAuditLogs(
                 instanceUrl,
                 accessToken,
-                "current",
+                serverId,
                 50,
             );
             setEntries(res.items ?? []);
@@ -127,29 +129,53 @@ export default function AuditLogScreen() {
                     : "Unable to load audit logs",
             );
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, instanceUrl, serverId]);
 
     useEffect(() => {
         void loadLogs();
     }, [loadLogs]);
 
+    if (!serverId) {
+        return (
+            <AuthRouteGuard>
+                <View style={[styles.root, { backgroundColor: theme.background }]}>
+                    <SafeAreaView style={styles.safeArea}>
+                        <ThemedView style={styles.shell}>
+                            <ThemedView type="card" style={[styles.card, { borderColor: theme.border }]}>
+                                <ThemedText type="title">No server selected</ThemedText>
+                                <ThemedText themeColor="mutedForeground" style={{ fontSize: 14, lineHeight: 20, marginTop: Spacing.one }}>
+                                    Select a server from the admin dashboard to view its audit logs.
+                                </ThemedText>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() => router.back()}
+                                    style={({ pressed }) => [
+                                        {
+                                            borderRadius: 999,
+                                            paddingHorizontal: Spacing.three,
+                                            paddingVertical: Spacing.two,
+                                            backgroundColor: theme.primary,
+                                            marginTop: Spacing.three,
+                                            alignItems: "center",
+                                            opacity: pressed ? 0.85 : 1,
+                                        },
+                                    ]}
+                                >
+                                    <ThemedText type="smallBold" themeColor="primaryForeground">
+                                        Go back
+                                    </ThemedText>
+                                </Pressable>
+                            </ThemedView>
+                        </ThemedView>
+                    </SafeAreaView>
+                </View>
+            </AuthRouteGuard>
+        );
+    }
+
     return (
         <AuthRouteGuard>
             <View style={[styles.root, { backgroundColor: theme.background }]}>
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
-                    ]}
-                />
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
-                    ]}
-                />
                 <SafeAreaView style={styles.safeArea}>
                     <ThemedView style={styles.shell}>
                         <ThemedView
@@ -193,12 +219,16 @@ export default function AuditLogScreen() {
                                     <ActionButton
                                         label="Dashboard"
                                         tone="ghost"
-                                        onPress={() => {}}
+                                        onPress={() =>
+                                            router.push(`/admin?serverId=${serverId}` as never)
+                                        }
                                     />
                                     <ActionButton
                                         label="Moderation"
                                         tone="ghost"
-                                        onPress={() => {}}
+                                        onPress={() =>
+                                            router.push(`/admin/reports?serverId=${serverId}` as never)
+                                        }
                                     />
                                     <ActionButton
                                         label="Refresh"
@@ -214,45 +244,45 @@ export default function AuditLogScreen() {
                             ) : null}
                         </ThemedView>
                     </ThemedView>
+
+                    {loadState === "loading" ? (
+                        <View style={styles.loadingRow}>
+                            <ActivityIndicator color={theme.primary} />
+                            <ThemedText themeColor="mutedForeground">
+                                Loading audit logs…
+                            </ThemedText>
+                        </View>
+                    ) : null}
+
+                    <FlatList
+                        data={entries}
+                        keyExtractor={(item, index) =>
+                            item.$id ?? `${item.timestamp}-${index}`
+                        }
+                        contentContainerStyle={styles.listContent}
+                        initialNumToRender={10}
+                        maxToRenderPerBatch={10}
+                        windowSize={5}
+                        removeClippedSubviews
+                        ListEmptyComponent={
+                            loadState === "ready" ? (
+                                <ThemedView
+                                    type="card"
+                                    style={[
+                                        styles.card,
+                                        styles.emptyCard,
+                                        { borderColor: theme.border },
+                                    ]}
+                                >
+                                    <ThemedText themeColor="mutedForeground">
+                                        No audit log entries found.
+                                    </ThemedText>
+                                </ThemedView>
+                            ) : null
+                        }
+                        renderItem={({ item }) => <AuditEntryCard entry={item} />}
+                    />
                 </SafeAreaView>
-
-                {loadState === "loading" ? (
-                    <View style={styles.loadingRow}>
-                        <ActivityIndicator color={theme.primary} />
-                        <ThemedText themeColor="mutedForeground">
-                            Loading audit logs…
-                        </ThemedText>
-                    </View>
-                ) : null}
-
-                <FlatList
-                    data={entries}
-                    keyExtractor={(item, index) =>
-                        item.$id ?? `${item.timestamp}-${index}`
-                    }
-                    contentContainerStyle={styles.listContent}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={10}
-                    windowSize={5}
-                    removeClippedSubviews
-                    ListEmptyComponent={
-                        loadState === "ready" ? (
-                            <ThemedView
-                                type="card"
-                                style={[
-                                    styles.card,
-                                    styles.emptyCard,
-                                    { borderColor: theme.border },
-                                ]}
-                            >
-                                <ThemedText themeColor="mutedForeground">
-                                    No audit log entries found.
-                                </ThemedText>
-                            </ThemedView>
-                        ) : null
-                    }
-                    renderItem={({ item }) => <AuditEntryCard entry={item} />}
-                />
             </View>
         </AuthRouteGuard>
     );
@@ -309,9 +339,9 @@ function AuditEntryCard({ entry }: { entry: ServerAuditLogEntry }) {
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1 },
+    root: { flex: 1, overflow: "hidden" },
     safeArea: {
-        flex: 0,
+        flex: 1,
         alignItems: "center",
         paddingHorizontal: Spacing.three,
     },
@@ -351,6 +381,7 @@ const styles = StyleSheet.create({
     },
     actionRow: {
         flexDirection: "row",
+        flexWrap: "wrap",
         gap: Spacing.two,
     },
     loadingRow: {
@@ -396,21 +427,5 @@ const styles = StyleSheet.create({
     entryReason: {
         fontSize: 13,
         lineHeight: 18,
-    },
-    backdropOrbTop: {
-        position: "absolute",
-        width: 260,
-        height: 260,
-        borderRadius: 260,
-        top: -100,
-        left: -80,
-    },
-    backdropOrbBottom: {
-        position: "absolute",
-        width: 320,
-        height: 320,
-        borderRadius: 320,
-        right: -140,
-        bottom: 20,
     },
 });

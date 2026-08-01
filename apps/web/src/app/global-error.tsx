@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RefreshCcw } from "lucide-react";
-import { recordClientError } from "@/lib/client-telemetry";
+import { recordClientError } from "@/lib/client-logger";
 
 export default function GlobalError({
     error,

@@ -1,6 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   authenticateWithPassword,
@@ -18,16 +16,25 @@ import {
   loadBearerToken,
   loadBootstrapSnapshot,
   loadNotificationPreferences,
-  loadNotificationToken,
   loadStoredAppwriteConfig,
   loadStoredInstanceUrl,
   saveBearerToken,
   saveBootstrapSnapshot,
   saveNotificationPreferences,
-  saveNotificationToken,
   saveStoredAppwriteConfig,
   saveStoredInstanceUrl,
 } from "@/lib/firepit/persistence";
+import { FirepitHttpError } from "@/lib/firepit/http";
+import {
+  clearCredentials,
+  loadCredentials,
+  storeCredentials,
+} from "@/lib/credential-store";
+import {
+  fetchCustomEmojis,
+  listInboxDigest,
+  markInboxContextRead,
+} from "@/lib/firepit/messages";
 import type {
   BootstrapSnapshot,
   CompatibilityEvaluation,
@@ -38,7 +45,12 @@ import type {
   VersionInfo,
 } from "@/lib/firepit/types";
 import type { NotificationPreferences } from "@/lib/firepit/persistence";
+import { DEFAULT_NOTIFICATION_PREFERENCES } from "@/lib/firepit/persistence";
 import type { AppwriteConfig } from "@/lib/firepit/bootstrap";
+
+import type { CustomEmoji } from "@/components/emoji-renderer";
+import { registerPushToken, usePushNotificationHandler } from "@/hooks/use-push-notifications";
+
 type FirepitBootstrapContextValue = {
   instanceUrl: string | null;
   version: VersionInfo | null;
@@ -50,12 +62,15 @@ type FirepitBootstrapContextValue = {
   bearerTokenPresent: boolean;
   accessToken: string | null;
   error: string | null;
+  appwriteConfig: AppwriteConfig | null;
   notificationPreferences: NotificationPreferences | null;
+  customEmojis: CustomEmoji[];
   saveNotificationPreferences: (prefs: NotificationPreferences) => Promise<void>;
   bootstrapInstance: (
     instanceUrl: string,
   ) => Promise<CompatibilityEvaluation | null>;
   authenticate: (email: string, password: string) => Promise<void>;
+  authenticateWithStoredCredentials: () => Promise<boolean>;
   setSessionToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<CompatibilityEvaluation | null>;
@@ -66,10 +81,20 @@ const FirepitBootstrapContext =
   createContext<FirepitBootstrapContextValue | null>(null);
 
 function toErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
+  if (error instanceof Error) return error.message;
   return "Unexpected Firepit error";
+}
+
+function isJwtExpired(token: string, bufferSeconds = 300): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    if (typeof payload.exp === "number") {
+      return payload.exp * 1000 < Date.now() + bufferSeconds * 1000;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function snapshotFromState(
@@ -96,20 +121,57 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
   const [instanceUrl, setInstanceUrl] = useState<string | null>(null);
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [instance, setInstance] = useState<InstanceMetadata | null>(null);
-  const [featureFlags, setFeatureFlags] = useState<FeatureFlagState | null>(
-    null,
-  );
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlagState | null>(null);
   const [compatibility, setCompatibility] =
     useState<CompatibilityEvaluation | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [bearerTokenPresent, setBearerTokenPresent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [appwriteConfig, setAppwriteConfig] = useState<AppwriteConfig | null>(
-    null,
-  );
+  const [appwriteConfig, setAppwriteConfig] = useState<AppwriteConfig | null>(null);
   const [notificationPreferences, setNotificationPreferences] =
     useState<NotificationPreferences | null>(null);
+  const [customEmojis, setCustomEmojis] = useState<CustomEmoji[]>([]);
+
+  // Handle push notification taps — navigates to the relevant message
+  usePushNotificationHandler();
+
+  // Fetch custom emojis when instanceUrl and accessToken are available
+  const fetchCustomEmojisCallback = useCallback(async () => {
+    if (!instanceUrl || !accessToken) return;
+    try {
+      const emojis = await fetchCustomEmojis(instanceUrl, accessToken);
+      setCustomEmojis(emojis);
+    } catch {
+      // Silently fail — custom emojis are non-critical
+    }
+  }, [instanceUrl, accessToken]);
+
+  // Refs that mirror state so callbacks always read the latest value
+  // without needing the state in their dependency arrays.
+  const instanceUrlRef = useRef(instanceUrl);
+  useEffect(() => {
+    instanceUrlRef.current = instanceUrl;
+  }, [instanceUrl]);
+
+  const appwriteConfigRef = useRef(appwriteConfig);
+  useEffect(() => {
+    appwriteConfigRef.current = appwriteConfig;
+  }, [appwriteConfig]);
+
+  // Guard against setState after unmount (e.g. timer fires during navigation)
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Fetch custom emojis when instance is available
+  useEffect(() => {
+    if (state === "ready") {
+      void fetchCustomEmojisCallback();
+    }
+  }, [state, fetchCustomEmojisCallback]);
 
   const clearRuntimeState = useCallback(() => {
     setState("needs-instance");
@@ -131,14 +193,11 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
   }, [clearRuntimeState]);
 
   const persistAppwriteConfig = useCallback(
-    async (instance: InstanceMetadata) => {
-      const nextConfig = extractAppwriteConfig(instance);
+    async (inst: InstanceMetadata) => {
+      const nextConfig = extractAppwriteConfig(inst);
       if (!nextConfig) {
-        throw new Error(
-          "Instance metadata did not include Appwrite connection details.",
-        );
+        throw new Error("Instance metadata did not include Appwrite connection details.");
       }
-
       await saveStoredAppwriteConfig(nextConfig);
       setAppwriteConfig(nextConfig);
       return nextConfig;
@@ -146,44 +205,111 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // resolveAppwriteConfig reads instanceUrl from ref so it never needs to be recreated
   const resolveAppwriteConfig = useCallback(async () => {
-    if (appwriteConfig) {
-      return appwriteConfig;
-    }
-
-    if (!instanceUrl) {
-      throw new Error("Set an instance URL first.");
-    }
-
-    const sourceInstance = instance ?? (await fetchInstance(instanceUrl));
+    if (appwriteConfigRef.current) return appwriteConfigRef.current;
+    const url = instanceUrlRef.current;
+    if (!url) throw new Error("Set an instance URL first.");
+    const sourceInstance = instance ?? (await fetchInstance(url));
     return persistAppwriteConfig(sourceInstance);
-  }, [appwriteConfig, instance, instanceUrl, persistAppwriteConfig]);
+  }, [instance, persistAppwriteConfig]);
 
-  const refresh = useCallback(
-    async (targetInstanceUrl?: string) => {
-      const nextInstanceUrl = targetInstanceUrl ?? instanceUrl;
-      if (!nextInstanceUrl) {
-        setState("needs-instance");
-        return null;
-      }
+  // Silent re-auth: reads instanceUrl from ref, calls setSessionToken
+  const authenticateWithStoredCredentials = useCallback(async (): Promise<boolean> => {
+    try {
+      const stored = await loadCredentials();
+      if (!stored) return false;
 
+      const url = instanceUrlRef.current;
+      if (!url) return false;
+      const config = await resolveAppwriteConfig();
+      const token = await authenticateWithPassword(stored.email, stored.password, url, config);
+
+      // setSessionToken reads instanceUrl from ref internally
+      if (!url) throw new Error("Set an instance URL first.");
+      await saveBearerToken(token);
+      setAccessToken(token);
+      setBearerTokenPresent(true);
       setState("loading");
       setError(null);
 
       try {
-        const [nextVersion, nextInstance, nextFlags, nextToken] =
-          await Promise.all([
-            fetchVersion(nextInstanceUrl),
-            fetchInstance(nextInstanceUrl),
-            fetchAllowUserServers(nextInstanceUrl),
-            loadBearerToken(),
-          ]);
+        const nextUser = await resolveCurrentUser(url, token, config);
+        setCurrentUser(nextUser);
+        setState("ready");
+        if (version && instance && featureFlags && compatibility) {
+          await saveBootstrapSnapshot(
+            snapshotFromState(url, version, instance, featureFlags, compatibility, nextUser),
+          );
+        }
+      } catch (authError) {
+        await clearBearerToken();
+        setAccessToken(null);
+        setBearerTokenPresent(false);
+        setCurrentUser(null);
+        setState("needs-auth");
+        setError("Session expired. Sign in again.");
+        throw authError;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("[provider] Silent re-authentication failed:", err);
+      return false;
+    }
+  }, [resolveAppwriteConfig, version, instance, featureFlags, compatibility]);
+
+  // refresh: reads instanceUrl from ref, no state deps -> stable identity
+  const refresh = useCallback(
+    async (targetInstanceUrl?: string, background?: boolean) => {
+      const nextInstanceUrl = targetInstanceUrl ?? instanceUrlRef.current;
+      if (!nextInstanceUrl) {
+        if (mountedRef.current && !background) setState("needs-instance");
+        return null;
+      }
+
+      if (!mountedRef.current) return null;
+      if (!background) {
+        setState("loading");
+        setError(null);
+      }
+
+      try {
+        const results = await Promise.allSettled([
+          fetchVersion(nextInstanceUrl).catch(e => { console.error("[provider] fetchVersion failed:", e); throw e; }),
+          fetchInstance(nextInstanceUrl).catch(e => { console.error("[provider] fetchInstance failed:", e); throw e; }),
+          fetchAllowUserServers(nextInstanceUrl).catch(e => { console.error("[provider] fetchAllowUserServers failed:", e); throw e; }),
+          loadBearerToken().catch(e => { console.error("[provider] loadBearerToken failed:", e); throw e; }),
+        ]);
+
+        const failed = results.filter(r => r.status === "rejected");
+        if (failed.length > 0) {
+          const firstReason = (failed[0] as PromiseRejectedResult).reason;
+          // Classify instance-level HTTP errors from startup queries
+          if (firstReason instanceof FirepitHttpError) {
+            if (firstReason.status === 404) {
+              setState("instance-unreachable");
+              setError("This instance does not appear to be a Firepit server.");
+              return null;
+            }
+            if (firstReason.status >= 500) {
+              setState("instance-error");
+              setError("This instance is currently unavailable. Please try again later.");
+              return null;
+            }
+          }
+          throw firstReason;
+        }
+
+        const [nextVersion, nextInstance, nextFlags, nextToken] = results.map(r => (r as PromiseFulfilledResult<any>).value);
+
+        if (!mountedRef.current) return null;
+
         const nextAppwriteConfig = await persistAppwriteConfig(nextInstance);
 
-        const nextCompatibility = evaluateCompatibility(
-          nextVersion,
-          nextInstance,
-        );
+        if (!mountedRef.current) return null;
+
+        const nextCompatibility = evaluateCompatibility(nextVersion, nextInstance);
         let nextCurrentUser: CurrentUser | null = null;
         let nextState: ConnectionState = nextCompatibility.compatible
           ? "needs-auth"
@@ -191,30 +317,71 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
         if (nextCompatibility.compatible && nextToken) {
           try {
+            // Skip the /api/me round-trip if the JWT is already expired
+            if (isJwtExpired(nextToken)) {
+              throw new Error("Token expired");
+            }
+
             nextCurrentUser = await resolveCurrentUser(
               nextInstanceUrl,
               nextToken,
               nextAppwriteConfig,
             );
+
+            if (!mountedRef.current) return null;
+
             setAccessToken(nextToken);
             setBearerTokenPresent(true);
             nextState = "ready";
           } catch (authError) {
-            await clearBearerToken();
-            setAccessToken(null);
-            setBearerTokenPresent(false);
-            nextState = "needs-auth";
-            setError(
-              authError instanceof Error &&
-                authError.message.toLowerCase().includes("not authenticated")
-                ? "Session expired. Sign in again."
-                : toErrorMessage(authError),
-            );
+            // Token expired. Try silent re-auth with stored credentials.
+            try {
+              const stored = await loadCredentials();
+              if (stored) {
+                const token = await authenticateWithPassword(
+                  stored.email,
+                  stored.password,
+                  nextInstanceUrl,
+                  nextAppwriteConfig,
+                );
+
+                if (!mountedRef.current) return null;
+
+                await saveBearerToken(token);
+                setAccessToken(token);
+                setBearerTokenPresent(true);
+
+                const freshUser = await resolveCurrentUser(
+                  nextInstanceUrl,
+                  token,
+                  nextAppwriteConfig,
+                );
+
+                if (!mountedRef.current) return null;
+
+                nextCurrentUser = freshUser;
+                nextState = "ready";
+              }
+            } catch (reauthError) {
+              console.error("[provider] Silent re-auth failed:", reauthError);
+            }
+
+            if (nextState !== "ready") {
+              await clearBearerToken();
+              if (!mountedRef.current) return null;
+              setAccessToken(null);
+              setBearerTokenPresent(false);
+              nextState = "needs-auth";
+              setError("Session expired. Sign in again...");
+            }
           }
         } else {
+          if (!mountedRef.current) return null;
           setAccessToken(null);
           setBearerTokenPresent(false);
         }
+
+        if (!mountedRef.current) return null;
 
         setInstanceUrl(nextInstanceUrl);
         setVersion(nextVersion);
@@ -225,26 +392,37 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
         setAppwriteConfig(nextAppwriteConfig);
         setState(nextState);
 
-        await saveBootstrapSnapshot(
-          snapshotFromState(
-            nextInstanceUrl,
-            nextVersion,
-            nextInstance,
-            nextFlags,
-            nextCompatibility,
-            nextCurrentUser,
-          ),
-        );
+        try {
+            await saveBootstrapSnapshot(
+                snapshotFromState(
+                    nextInstanceUrl,
+                    nextVersion,
+                    nextInstance,
+                    nextFlags,
+                    nextCompatibility,
+                    nextCurrentUser,
+                ),
+            );
+        } catch (snapshotError) {
+            console.error("[provider] saveBootstrapSnapshot failed:", snapshotError);
+            // Non-fatal: auth state is already set, snapshot failure shouldn't log the user out
+        }
         return nextCompatibility;
       } catch (bootstrapError) {
+        if (!mountedRef.current) return null;
+        if (background) {
+          console.warn("[provider] background refresh failed:", bootstrapError);
+          return null;
+        }
         setState("error");
         setError(toErrorMessage(bootstrapError));
         return null;
       }
     },
-    [instanceUrl, persistAppwriteConfig],
+    [persistAppwriteConfig],
   );
 
+  // hydrate runs once on mount. refresh is stable (only depends on persistAppwriteConfig).
   useEffect(() => {
     let cancelled = false;
 
@@ -274,9 +452,7 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
           }),
         ]);
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         if (storedSnapshot && storedInstanceUrl) {
           setInstanceUrl(storedInstanceUrl);
@@ -299,7 +475,67 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
                 : "needs-auth"
               : "incompatible",
           );
-          void refresh(storedInstanceUrl);
+
+          // Fast path: validate session from cached state without full metadata refresh
+          if (storedToken) {
+            const tokenExpired = isJwtExpired(storedToken);
+            const config = storedAppwriteConfig
+              ? { endpoint: storedAppwriteConfig.endpoint, project: storedAppwriteConfig.project }
+              : null;
+
+            if (!tokenExpired && config) {
+              try {
+                const user = await resolveCurrentUser(
+                  storedInstanceUrl,
+                  storedToken,
+                  config,
+                );
+                if (!cancelled) {
+                  setCurrentUser(user);
+                  setState("ready");
+                  // Background refresh to update metadata without blocking the UI
+                  void refresh(storedInstanceUrl, true);
+                }
+                return;
+              } catch {
+                // Token invalid, fall through to silent re-auth below
+              }
+            }
+          }
+
+          // Token missing, expired, or invalid — try silent re-auth
+          if (!cancelled) {
+            const creds = await loadCredentials();
+            if (creds) {
+              try {
+                const config = storedAppwriteConfig
+                  ? { endpoint: storedAppwriteConfig.endpoint, project: storedAppwriteConfig.project }
+                  : null;
+                if (config) {
+                    const token = await authenticateWithPassword(
+                      creds.email,
+                      creds.password,
+                      storedInstanceUrl,
+                      config,
+                    );
+                    await saveBearerToken(token);
+                    setAccessToken(token);
+                    setBearerTokenPresent(true);
+                    const user = await resolveCurrentUser(
+                      storedInstanceUrl,
+                      token,
+                      config,
+                    );
+                    setCurrentUser(user);
+                    setState("ready");
+                    void refresh(storedInstanceUrl, true);
+                }
+              } catch {
+                if (!cancelled) setError("Session expired. Sign in again.");
+              }
+            }
+          }
+
           return;
         }
 
@@ -323,67 +559,56 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [refresh]);
+    // refresh is stable (only persistAppwriteConfig dep). This effect runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Register for push notifications after successful auth
+  // Token refresh timer: Appwrite sessions expire, so periodically refresh
+  // to keep the session alive. Only runs when state is "ready" (authed).
+  useEffect(() => {
+    if (state !== "ready") return;
+
+    const REFRESH_INTERVAL = 50 * 60 * 1000; // 50 minutes
+    const timer = setInterval(() => {
+      void refresh();
+    }, REFRESH_INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [refresh, state]);
+
+  // Register for push notifications after successful auth (deferred 2s to not block startup)
   useEffect(() => {
     let cancelled = false;
 
-    async function registerForNotifications() {
-      if (state !== "ready" || !accessToken) {
-        return;
+    const timer = setTimeout(async () => {
+      let pushGranted = false;
+      if (state === "ready" && accessToken && instanceUrl && !cancelled) {
+        const token = await registerPushToken(instanceUrl, accessToken);
+        pushGranted = token !== null;
       }
 
-      try {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-
-        if (existingStatus !== "granted") {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-
-        if (finalStatus !== "granted") {
-          console.log("[notifications] Permission not granted");
-          return;
-        }
-
-        if (!Device.isDevice) {
-          console.log("[notifications] Not a physical device, skipping token registration");
-          return;
-        }
-
-        const tokenData = await Notifications.getExpoPushTokenAsync();
-        const token = tokenData.data;
-
-        if (!cancelled) {
-          await saveNotificationToken(token);
-          console.log("[notifications] Registered push token:", token.slice(0, 12) + "...");
-        }
-
-        // Load persisted preferences if not already loaded
+      if (!cancelled) {
         const stored = await loadNotificationPreferences();
-        if (!cancelled && stored) {
+        if (stored) {
           setNotificationPreferences(stored);
+        } else if (pushGranted) {
+          // Auto-enable push notifications when permission is granted on first launch
+          await saveNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
+          setNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
         }
-      } catch (error) {
-        console.error("[notifications] Registration failed:", error);
       }
-    }
-
-    void registerForNotifications();
+    }, 2000);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [state, accessToken]);
+  }, [state, accessToken, instanceUrl]);
 
   const bootstrapInstance = useCallback(
     async (nextInstanceUrl: string) => {
       const normalized = normalizeInstanceUrl(nextInstanceUrl);
-      if (!normalized) {
-        throw new Error("Enter an instance URL to continue.");
-      }
+      if (!normalized) throw new Error("Enter an instance URL to continue.");
       await saveStoredInstanceUrl(normalized);
       return refresh(normalized);
     },
@@ -392,9 +617,8 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
   const setSessionToken = useCallback(
     async (token: string) => {
-      if (!instanceUrl) {
-        throw new Error("Set an instance URL first.");
-      }
+      const url = instanceUrlRef.current;
+      if (!url) throw new Error("Set an instance URL first.");
       await saveBearerToken(token);
       setAccessToken(token);
       setBearerTokenPresent(true);
@@ -402,24 +626,14 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       try {
-        const nextUser = await resolveCurrentUser(
-          instanceUrl,
-          token,
-          appwriteConfig ?? (await resolveAppwriteConfig()),
-        );
+        const config = appwriteConfigRef.current ?? (await resolveAppwriteConfig());
+        const nextUser = await resolveCurrentUser(url, token, config);
         setCurrentUser(nextUser);
         setState("ready");
 
         if (version && instance && featureFlags && compatibility) {
           await saveBootstrapSnapshot(
-            snapshotFromState(
-              instanceUrl,
-              version,
-              instance,
-              featureFlags,
-              compatibility,
-              nextUser,
-            ),
+            snapshotFromState(url, version, instance, featureFlags, compatibility, nextUser),
           );
         }
       } catch (authError) {
@@ -437,39 +651,42 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
         throw authError;
       }
     },
-    [compatibility, featureFlags, instance, instanceUrl, version],
+    [resolveAppwriteConfig, version, instance, featureFlags, compatibility],
   );
 
   const authenticate = useCallback(
     async (email: string, password: string) => {
+      const url = instanceUrlRef.current;
+      if (!url) throw new Error("Set an instance URL first.");
       const config = await resolveAppwriteConfig();
-      const token = await authenticateWithPassword(email, password, config);
+      const token = await authenticateWithPassword(email, password, url, config);
       await setSessionToken(token);
+      // Store credentials for silent re-auth
+      try {
+        await storeCredentials({ email, password });
+      } catch (storeErr) {
+        console.error("[provider] Failed to store credentials:", storeErr);
+      }
     },
     [resolveAppwriteConfig, setSessionToken],
   );
 
   const signOut = useCallback(async () => {
     await clearBearerToken();
+    await clearCredentials();
     setAccessToken(null);
     setBearerTokenPresent(false);
     setCurrentUser(null);
     setError(null);
-    setState(instanceUrl ? "needs-auth" : "needs-instance");
+    setState(instanceUrlRef.current ? "needs-auth" : "needs-instance");
 
-    if (instanceUrl && version && instance && featureFlags && compatibility) {
+    const url = instanceUrlRef.current;
+    if (url && version && instance && featureFlags && compatibility) {
       await saveBootstrapSnapshot(
-        snapshotFromState(
-          instanceUrl,
-          version,
-          instance,
-          featureFlags,
-          compatibility,
-          null,
-        ),
+        snapshotFromState(url, version, instance, featureFlags, compatibility, null),
       );
     }
-  }, [compatibility, featureFlags, instance, instanceUrl, version]);
+  }, [version, instance, featureFlags, compatibility]);
 
   const saveNotifPrefs = useCallback(
     async (prefs: NotificationPreferences) => {
@@ -491,14 +708,17 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       bearerTokenPresent,
       accessToken,
       error,
+      appwriteConfig,
       notificationPreferences,
+      customEmojis,
       saveNotificationPreferences: saveNotifPrefs,
       bootstrapInstance,
       authenticate,
+      authenticateWithStoredCredentials,
       setSessionToken,
       signOut,
       resetConnection,
-      refresh: async () => refresh(instanceUrl ?? undefined),
+      refresh: async () => refresh(instanceUrlRef.current ?? undefined),
     }),
     [
       authenticate,
@@ -506,6 +726,8 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       bootstrapInstance,
       compatibility,
       currentUser,
+      appwriteConfig,
+      customEmojis,
       error,
       featureFlags,
       accessToken,

@@ -84,7 +84,7 @@ const NO_PERMISSIONS: EffectivePermissions = {
     administrator: false,
 };
 
-const ACCESS_CACHE_TTL_MS = 5 * 1000;
+const ACCESS_CACHE_TTL_MS = 60 * 1000;
 const MAX_ACCESS_CACHE_SIZE = 1000;
 
 type CachedAccessEntry<T> = {

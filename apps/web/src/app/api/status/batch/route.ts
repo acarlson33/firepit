@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { Query } from "node-appwrite";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
+import { apiCache } from "@/lib/cache-utils";
 import {
     logger,
     setTransactionName,
@@ -17,6 +19,17 @@ import { normalizeStatus } from "@/lib/status-normalization";
 const env = getEnvConfig();
 const DATABASE_ID = env.databaseId;
 const STATUSES_COLLECTION = env.collections.statuses;
+
+const STATUS_BATCH_CACHE_TTL_MS = 30_000;
+
+function statusBatchCacheKey(userIds: string[]): string {
+    const sorted = [...new Set(userIds.filter(Boolean))].sort();
+    const digest = createHash("sha256")
+        .update(sorted.join("|"))
+        .digest("hex")
+        .slice(0, 16);
+    return `api:status:batch:${digest}`;
+}
 
 /**
  * Batch fetch user statuses
@@ -49,37 +62,42 @@ export async function POST(request: Request) {
             );
         }
 
-        const { databases } = getServerClient();
+        const cacheKey = statusBatchCacheKey(userIds);
+        const allStatuses = await apiCache.dedupe(
+            cacheKey,
+            async () => {
+                const { databases } = getServerClient();
+                const batchSize = 100;
+                const result: Record<string, UserStatus> = {};
 
-        // Fetch statuses for all requested users
-        // Appwrite limits to 100 items in Query.equal array, so we need to batch if needed
-        const batchSize = 100;
-        const allStatuses: Record<string, UserStatus> = {};
+                for (let i = 0; i < userIds.length; i += batchSize) {
+                    const batch = userIds.slice(i, i + batchSize);
+                    const dbStartTime = Date.now();
 
-        for (let i = 0; i < userIds.length; i += batchSize) {
-            const batch = userIds.slice(i, i + batchSize);
-            const dbStartTime = Date.now();
+                    const response = await databases.listDocuments(
+                        DATABASE_ID,
+                        STATUSES_COLLECTION,
+                        [Query.equal("userId", batch)],
+                    );
 
-            const response = await databases.listDocuments(
-                DATABASE_ID,
-                STATUSES_COLLECTION,
-                [Query.equal("userId", batch)],
-            );
+                    trackApiCall(
+                        "/api/status/batch",
+                        "GET",
+                        200,
+                        Date.now() - dbStartTime,
+                        { operation: "listDocuments", batchSize: batch.length },
+                    );
 
-            trackApiCall(
-                "/api/status/batch",
-                "GET",
-                200,
-                Date.now() - dbStartTime,
-                { operation: "listDocuments", batchSize: batch.length },
-            );
+                    for (const doc of response.documents) {
+                        const { normalized } = normalizeStatus(doc);
+                        result[normalized.userId] = normalized;
+                    }
+                }
 
-            // Map documents to status objects
-            for (const doc of response.documents) {
-                const { normalized } = normalizeStatus(doc);
-                allStatuses[normalized.userId] = normalized;
-            }
-        }
+                return result;
+            },
+            STATUS_BATCH_CACHE_TTL_MS,
+        );
 
         logger.info("Batch status fetch completed", {
             requestedCount: userIds.length,

@@ -694,6 +694,7 @@ export default function ChatPage() {
         serverId: serversApi.selectedServer,
         userId,
         userName,
+        contextId: viewMode === "dms" ? selectedConversationId : null,
     });
 
     const dmApi = useDirectMessages({

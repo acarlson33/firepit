@@ -6,7 +6,6 @@ import { logger,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 import { listPages } from "@/lib/appwrite-pagination";
-import { recordMetric } from "@/lib/monitoring";
 import { getServerSession } from "@/lib/auth-server";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 import { getServerClient } from "@/lib/appwrite-server";
@@ -75,21 +74,17 @@ export async function GET(request: Request, context: RouteContext) {
         }
 
 
-        // Get all memberships for this server
-        const { documents: memberships, truncated: membershipsTruncated } =
-            await listAllServerDocuments(serverId, membershipsCollectionId);
+        // Get all memberships and role assignments in parallel
+        const [
+            { documents: memberships, truncated: membershipsTruncated },
+            { documents: roleAssignments, truncated: roleAssignmentsTruncated },
+        ] = await Promise.all([
+            listAllServerDocuments(serverId, membershipsCollectionId),
+            listAllServerDocuments(serverId, roleAssignmentsCollectionId),
+        ]);
 
         const membershipUserIds = memberships.map((membership) =>
             String(membership.userId),
-        );
-
-        // Get role assignments for this server
-        const {
-            documents: roleAssignments,
-            truncated: roleAssignmentsTruncated,
-        } = await listAllServerDocuments(
-            serverId,
-            roleAssignmentsCollectionId,
         );
 
         // Get banned/muted status for this server
@@ -219,21 +214,6 @@ export async function GET(request: Request, context: RouteContext) {
                 serverId,
                 sampleUserIds: orphanUserIds.slice(0, 10),
             });
-
-            try {
-                recordMetric(
-                    "server.orphan_membership.count",
-                    orphanUserIds.length,
-                );
-            } catch (metricError) {
-                logger.warn("Failed to record orphan membership metric", {
-                    serverId,
-                    error:
-                        metricError instanceof Error
-                            ? metricError.message
-                            : String(metricError),
-                });
-            }
         }
 
         if (membershipsTruncated) {

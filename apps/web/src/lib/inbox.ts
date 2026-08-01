@@ -238,7 +238,7 @@ function toCountMap(items: InboxItem[]): Record<InboxItemKind, number> {
             accumulator[item.kind] += item.unreadCount;
             return accumulator;
         },
-        { mention: 0, thread: 0 },
+        { message: 0, mention: 0, thread: 0 },
     );
 }
 
@@ -1182,9 +1182,13 @@ async function listUnreadChannelThreadItems(
     },
 ): Promise<InboxItem[]> {
     const env = getEnvConfig();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const threadParentResponse = await listAllDocuments({
         collectionId: env.collections.messages,
-        queries: [Query.greaterThan("threadMessageCount", 0)],
+        queries: [
+            Query.greaterThan("threadMessageCount", 0),
+            Query.greaterThan("$createdAt", sevenDaysAgo),
+        ],
         selectFields: INBOX_CHANNEL_THREAD_PARENT_SELECT_FIELDS,
     });
 
@@ -1476,6 +1480,95 @@ async function listPersistedMentionItems(
     }
 }
 
+async function listPersistedMessageItems(
+    userId: string,
+    options?: {
+        cache?: InboxRequestCaches;
+    },
+): Promise<{ degraded: boolean; items: InboxItem[] }> {
+    try {
+        const env = getEnvConfig();
+        const documentResponse = await listAllDocuments({
+            collectionId: env.collections.inboxItems,
+            queries: [
+                Query.equal("userId", userId),
+                Query.equal("kind", "message"),
+                Query.isNull("readAt"),
+                Query.orderDesc("latestActivityAt"),
+            ],
+            selectFields: INBOX_PERSISTED_MENTION_SELECT_FIELDS,
+        });
+
+        if (documentResponse.truncated) {
+            logger.warn("Persisted message inbox scan truncated", {
+                userId,
+            });
+        }
+
+        const documents = documentResponse.documents;
+
+        const visibleDocuments = await filterReadableChannelContexts(
+            userId,
+            documents as InboxItemDocument[],
+            (document) =>
+                document.contextKind === "channel" ? document.contextId : null,
+            {
+                channelAccessCache: options?.cache?.channelAccessCache,
+            },
+        );
+
+        const authorIds = Array.from(
+            new Set(visibleDocuments.map((document) => document.authorUserId)),
+        );
+        const [profileMap, relationshipMap] = await Promise.all([
+            loadAuthorProfiles(authorIds, options),
+            loadRelationshipMap(userId, authorIds, options),
+        ]);
+
+        return {
+            degraded: false,
+            items: visibleDocuments.flatMap((document) => {
+                const authorUserId = document.authorUserId;
+                const relationship = relationshipMap.get(authorUserId);
+                if (relationship && isBlockedRelationship(relationship)) {
+                    return [] as InboxItem[];
+                }
+
+                const profile = profileMap.get(authorUserId);
+
+                return [
+                    {
+                        authorAvatarUrl: profile?.avatarUrl,
+                        authorLabel: profile?.displayName ?? authorUserId,
+                        authorUserId,
+                        contextId: document.contextId,
+                        contextKind: document.contextKind,
+                        id: document.$id,
+                        kind: "message",
+                        latestActivityAt: document.latestActivityAt,
+                        messageId: document.messageId,
+                        muted: false,
+                        parentMessageId: document.parentMessageId,
+                        previewText: document.previewText ?? "",
+                        serverId: document.serverId,
+                        unreadCount: 1,
+                    } satisfies InboxItem,
+                ];
+            }),
+        };
+    } catch (error) {
+        logger.error("Failed to list persisted message items", {
+            error: error instanceof Error ? error.message : String(error),
+            userId,
+        });
+
+        return {
+            degraded: true,
+            items: [],
+        };
+    }
+}
+
 /**
  * Lists inbox items.
  *
@@ -1500,26 +1593,32 @@ export async function listInboxItems({
         missingAuthorProfileIds: new Set(),
         relationshipCache: new Map(),
     };
-    const [threadItems, mentionItemsResult] = await Promise.all([
-        requestedKinds.has("thread")
-            ? Promise.all([
-                  listUnreadChannelThreadItems(userId, {
+    const [threadItems, mentionItemsResult, messageItemsResult] =
+        await Promise.all([
+            requestedKinds.has("thread")
+                ? Promise.all([
+                      listUnreadChannelThreadItems(userId, {
+                          cache: caches,
+                      }),
+                      listUnreadConversationThreadItems(userId, {
+                          cache: caches,
+                      }),
+                  ]).then(([channelItems, conversationItems]) => [
+                      ...channelItems,
+                      ...conversationItems,
+                  ])
+                : Promise.resolve([]),
+            requestedKinds.has("mention")
+                ? listPersistedMentionItems(userId, {
                       cache: caches,
-                  }),
-                  listUnreadConversationThreadItems(userId, {
+                  })
+                : Promise.resolve({ degraded: false, items: [] }),
+            requestedKinds.has("message")
+                ? listPersistedMessageItems(userId, {
                       cache: caches,
-                  }),
-              ]).then(([channelItems, conversationItems]) => [
-                  ...channelItems,
-                  ...conversationItems,
-              ])
-            : Promise.resolve([]),
-        requestedKinds.has("mention")
-            ? listPersistedMentionItems(userId, {
-                  cache: caches,
-              })
-            : Promise.resolve({ degraded: false, items: [] }),
-    ]);
+                  })
+                : Promise.resolve({ degraded: false, items: [] }),
+        ]);
 
     if (mentionItemsResult.degraded) {
         logger.warn("Persisted mention items returned a degraded result", {
@@ -1527,9 +1626,24 @@ export async function listInboxItems({
         });
     }
 
+    if (messageItemsResult.degraded) {
+        logger.warn("Persisted message items returned a degraded result", {
+            userId,
+        });
+    }
+
+    // Dedup: if a message and mention item exist for the same messageId, keep the mention.
+    const mentionMessageIds = new Set(
+        mentionItemsResult.items.map((item) => item.messageId),
+    );
+    const dedupedMessageItems = messageItemsResult.items.filter(
+        (item) => !mentionMessageIds.has(item.messageId),
+    );
+
     const itemsWithMuteState = await applyMuteState(userId, [
         ...threadItems,
         ...mentionItemsResult.items,
+        ...dedupedMessageItems,
     ]);
     const contextKindFilter =
         contextKinds && contextKinds.length > 0 ? new Set(contextKinds) : null;
@@ -1571,7 +1685,7 @@ export async function listInboxDigest(params: {
         ? Number.POSITIVE_INFINITY
         : Math.max(1, limit);
     const inbox = await listInboxItems({
-        kinds: ["mention", "thread"],
+        kinds: ["message", "mention", "thread"],
         limit: upstreamLimit,
         userId,
     });

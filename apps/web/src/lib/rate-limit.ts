@@ -239,7 +239,7 @@ export interface RateLimitResult {
 export function checkRateLimit(
     identifier: string,
     config: RateLimitConfig,
-    scope: string = "default",
+    scope = "default",
 ): RateLimitResult {
     const now = Date.now();
     const key = `rate_limit:${scope}:${identifier}`;

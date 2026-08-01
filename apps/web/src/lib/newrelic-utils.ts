@@ -6,12 +6,294 @@
  */
 
 import { NextResponse } from "next/server";
-import { SeverityNumber } from "@opentelemetry/api-logs";
+import { SeverityNumber, logs } from "@opentelemetry/api-logs";
+import { after } from "next/server";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
-    capturePostHogServerError,
-    getPostHogClient,
-} from "@/lib/posthog-server";
-import { emitPostHogLog, schedulePostHogLogFlush } from "@/lib/posthog-logs";
+    BatchLogRecordProcessor,
+    LoggerProvider,
+    SimpleLogRecordProcessor,
+} from "@opentelemetry/sdk-logs";
+
+import { PostHog } from "posthog-node";
+
+// Inlined from posthog-logs.ts — OTLP log pipeline to PostHog.
+const posthogLogsToken =
+    process.env.POSTHOG_PROJECT_API_KEY ??
+    process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
+    "";
+
+const posthogLogsHost =
+    process.env.POSTHOG_LOGS_HOST ??
+    process.env.POSTHOG_HOST ??
+    "https://us.i.posthog.com";
+const posthogLogsUrl = `${posthogLogsHost.replace(/\/$/, "")}/i/v1/logs`;
+
+const otlpLogExporter = new OTLPLogExporter({
+    url: posthogLogsUrl,
+    headers: {
+        Authorization: `Bearer ${posthogLogsToken}`,
+        "Content-Type": "application/json",
+    },
+});
+
+export const loggerProvider = new LoggerProvider({
+    resource: resourceFromAttributes({
+        "service.name": "firepit-web",
+    }),
+    processors: posthogLogsToken
+        ? [
+              process.env.NODE_ENV === "production"
+                  ? new BatchLogRecordProcessor({
+                        exporter: otlpLogExporter,
+                        scheduledDelayMillis: 1_000,
+                    })
+                  : new SimpleLogRecordProcessor({ exporter: otlpLogExporter }),
+          ]
+        : [],
+});
+
+const serverLogger = loggerProvider.getLogger("firepit-web");
+
+type LogAttributeValue = string | number | boolean | null | undefined;
+
+function normalizeLogAttributes(
+    attributes?: Record<string, unknown>,
+): Record<string, LogAttributeValue> | undefined {
+    if (!attributes) {
+        return undefined;
+    }
+
+    const normalizedAttributes: Record<string, LogAttributeValue> = {};
+
+    for (const [key, value] of Object.entries(attributes)) {
+        if (
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean" ||
+            value === null ||
+            value === undefined
+        ) {
+            normalizedAttributes[key] = value;
+            continue;
+        }
+
+        if (typeof value === "bigint") {
+            normalizedAttributes[key] = value.toString();
+            continue;
+        }
+
+        try {
+            normalizedAttributes[key] = JSON.stringify(value);
+        } catch {
+            normalizedAttributes[key] = String(value);
+        }
+    }
+
+    return normalizedAttributes;
+}
+
+let loggerProviderRegistered = false;
+
+export function registerPostHogLoggerProvider() {
+    if (loggerProviderRegistered || process.env.NODE_ENV === "test") {
+        return;
+    }
+
+    loggerProviderRegistered = true;
+    logs.setGlobalLoggerProvider(loggerProvider);
+}
+
+function emitPostHogLog(params: {
+    body: string;
+    severityNumber: SeverityNumber;
+    attributes?: Record<string, unknown>;
+}) {
+    if (!posthogLogsToken) {
+        return;
+    }
+
+    registerPostHogLoggerProvider();
+
+    serverLogger.emit({
+        body: params.body,
+        severityNumber: params.severityNumber,
+        attributes: normalizeLogAttributes(params.attributes),
+    });
+}
+
+export function flushPostHogLogs() {
+    return loggerProvider.forceFlush();
+}
+
+function schedulePostHogLogFlush() {
+    try {
+        after(async () => {
+            await flushPostHogLogs();
+        });
+    } catch {
+        void flushPostHogLogs().catch(() => {});
+    }
+}
+
+// Inlined from posthog-server.ts — PostHog Node client singleton.
+
+type PostHogShim = {
+    capture: (...args: Parameters<PostHog["capture"]>) => void;
+    captureException: (
+        ...args: Parameters<PostHog["captureException"]>
+    ) => void;
+    flush: () => Promise<void>;
+    shutdown: () => Promise<void>;
+};
+
+function createNoOpShim(): PostHogShim {
+    return {
+        capture() {},
+        captureException() {},
+        async flush() {},
+        async shutdown() {},
+    };
+}
+
+let posthogClient: PostHog | PostHogShim | null = null;
+
+function toError(value: unknown): Error {
+    if (value instanceof Error) {
+        return value;
+    }
+    return new Error(typeof value === "string" ? value : String(value));
+}
+
+function toErrorMetadata(value: unknown) {
+    if (value instanceof Error) {
+        return {
+            errorMessage: value.message,
+            errorName: value.name,
+            errorStack: value.stack,
+        };
+    }
+    return {
+        errorMessage: typeof value === "string" ? value : String(value),
+    };
+}
+
+export function getPostHogClient() {
+    const projectApiKey =
+        process.env.POSTHOG_PROJECT_API_KEY ??
+        process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ??
+        "";
+    const host =
+        process.env.POSTHOG_HOST ??
+        process.env.NEXT_PUBLIC_POSTHOG_HOST ??
+        "https://us.i.posthog.com";
+
+    if (!posthogClient) {
+        if (!projectApiKey) {
+            posthogClient = createNoOpShim();
+        } else {
+            posthogClient = new PostHog(projectApiKey, {
+                host,
+                flushAt: 1,
+                flushInterval: 0,
+            });
+        }
+    }
+    return posthogClient;
+}
+
+function capturePostHogServerError(
+    error: unknown,
+    properties?: Record<string, unknown>,
+) {
+    const errorObject = toError(error);
+
+    try {
+        getPostHogClient().captureException(errorObject, "server", {
+            errorMessage: errorObject.message,
+            errorName: errorObject.name,
+            errorStack: errorObject.stack,
+            ...properties,
+        });
+    } catch {
+        // Telemetry forwarding should never impact request handling.
+    }
+}
+
+let posthogProcessHandlersRegistered = false;
+const capturedUnhandledRejectionErrors = new WeakSet<Error>();
+
+// ponytail: test-only reset for the PostHog singleton. No-op in production.
+export function __resetPostHogClient() {
+    posthogClient = null;
+}
+
+export function registerPostHogProcessHandlers() {
+    if (posthogProcessHandlersRegistered || process.env.NODE_ENV === "test") {
+        return;
+    }
+
+    posthogProcessHandlersRegistered = true;
+
+    process.on("uncaughtExceptionMonitor", (error, origin) => {
+        if (error instanceof Error && capturedUnhandledRejectionErrors.has(error)) {
+            return;
+        }
+
+        const errorObj = toError(error);
+        try {
+            getPostHogClient().captureException(errorObj, "server", {
+                origin: `uncaught_exception:${origin}`,
+                ...toErrorMetadata(error),
+            });
+        } catch {
+            // Telemetry forwarding should never impact process-level handlers.
+        }
+    });
+
+    process.on("unhandledRejection", (reason) => {
+        const error = toError(reason);
+        capturedUnhandledRejectionErrors.add(error);
+        try {
+            getPostHogClient().captureException(error, "server", {
+                origin: "unhandled_rejection",
+            });
+        } catch {
+            // Telemetry forwarding should never impact process-level handlers.
+        }
+        setImmediate(() => {
+            throw error;
+        });
+    });
+
+    process.once("beforeExit", () => {
+        const client = posthogClient;
+        if (client) {
+            void client.flush().catch(() => {});
+        }
+    });
+
+    process.once("SIGINT", () => {
+        const client = posthogClient;
+        void (async () => {
+            if (client) {
+                await client.flush().catch(() => {});
+            }
+            process.exit(130);
+        })();
+    });
+
+    process.once("SIGTERM", () => {
+        const client = posthogClient;
+        void (async () => {
+            if (client) {
+                await client.flush().catch(() => {});
+            }
+            process.exit(143);
+        })();
+    });
+}
 
 type NewRelicAgent = {
     recordCustomEvent: (
@@ -500,78 +782,6 @@ export function trackApiCall(
 }
 
 /**
- * Track database query performance
- *
- * @param {string} operation - The operation value.
- * @param {string} collection - The collection value.
- * @param {number} duration - The duration value.
- * @param {number | undefined} recordCount - The record count value, if provided.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {void} The return value.
- */
-export function trackDatabaseQuery(
-    operation: string,
-    collection: string,
-    duration: number,
-    recordCount?: number,
-    attributes?: Record<string, unknown>,
-) {
-    recordEvent("DatabaseQuery", {
-        operation,
-        collection,
-        duration,
-        recordCount,
-        ...attributes,
-    });
-
-    recordMetric(`Custom/Database/${collection}/${operation}`, duration);
-}
-
-/**
- * Track authentication events
- *
- * @param {'login' | 'logout' | 'signup' | 'failed'} action - The action value.
- * @param {string | undefined} userId - The user id value, if provided.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {void} The return value.
- */
-function trackAuth(
-    action: "login" | "logout" | "signup" | "failed",
-    userId?: string,
-    attributes?: Record<string, unknown>,
-) {
-    recordEvent("Authentication", {
-        action,
-        userId,
-        ...attributes,
-    });
-
-    incrementMetric(`Custom/Auth/${action}`);
-}
-
-/**
- * Track user actions
- *
- * @param {string} action - The action value.
- * @param {string} userId - The user id value.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {void} The return value.
- */
-function trackUserAction(
-    action: string,
-    userId: string,
-    attributes?: Record<string, unknown>,
-) {
-    recordEvent("UserAction", {
-        action,
-        userId,
-        ...attributes,
-    });
-
-    incrementMetric(`Custom/UserAction/${action}`);
-}
-
-/**
  * Track message events
  *
  * @param {'sent' | 'edited' | 'deleted'} type - The type value.
@@ -591,135 +801,6 @@ export function trackMessage(
     });
 
     incrementMetric(`Custom/Message/${type}/${channelType}`);
-}
-
-/**
- * Track performance timing
- *
- * @param {string} name - The name value.
- * @param {number} duration - The duration value.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {void} The return value.
- */
-function trackTiming(
-    name: string,
-    duration: number,
-    attributes?: Record<string, unknown>,
-) {
-    recordEvent("Timing", {
-        name,
-        duration,
-        ...attributes,
-    });
-
-    recordMetric(`Custom/Timing/${name}`, duration);
-}
-
-/**
- * Measure and track execution time of an async function
- *
- * @param {string} name - The name value.
- * @param {() => Promise<T>} fn - The fn value.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {Promise<T>} The return value.
- */
-export async function measureAsync<T>(
-    name: string,
-    fn: () => Promise<T>,
-    attributes?: Record<string, unknown>,
-): Promise<T> {
-    const start = Date.now();
-    try {
-        const result = await fn();
-        const duration = Date.now() - start;
-        trackTiming(name, duration, { success: true, ...attributes });
-        return result;
-    } catch (error) {
-        const duration = Date.now() - start;
-        trackTiming(name, duration, { success: false, ...attributes });
-        recordError(error instanceof Error ? error : String(error), {
-            operation: name,
-            ...attributes,
-        });
-        throw error;
-    }
-}
-
-/**
- * Measure and track execution time of a sync function
- *
- * @param {string} name - The name value.
- * @param {() => T} fn - The fn value.
- * @param {Record<string, unknown> | undefined} attributes - The attributes value, if provided.
- * @returns {T} The return value.
- */
-function measureSync<T>(
-    name: string,
-    fn: () => T,
-    attributes?: Record<string, unknown>,
-): T {
-    const start = Date.now();
-    try {
-        const result = fn();
-        const duration = Date.now() - start;
-        trackTiming(name, duration, { success: true, ...attributes });
-        return result;
-    } catch (error) {
-        const duration = Date.now() - start;
-        trackTiming(name, duration, { success: false, ...attributes });
-        recordError(error instanceof Error ? error : String(error), {
-            operation: name,
-            ...attributes,
-        });
-        throw error;
-    }
-}
-
-/**
- * Create a background transaction for async work
- *
- * @param {string} name - The name value.
- * @param {string} group - The group value.
- * @param {() => Promise<T>} fn - The fn value.
- * @returns {Promise<T>} The return value.
- */
-async function backgroundTransaction<T>(
-    name: string,
-    group: string,
-    fn: () => Promise<T>,
-): Promise<T> {
-    const nr = getNewRelicForDispatch();
-    if (!shouldSendToNewRelic() || !nr) {
-        return fn();
-    }
-
-    return new Promise((resolve, reject) => {
-        nr.startBackgroundTransaction(name, group, () => {
-            void (async () => {
-                try {
-                    const result = await fn();
-                    nr.endTransaction();
-                    resolve(result);
-                } catch (error) {
-                    nr.endTransaction();
-                    reject(error);
-                }
-            })();
-        });
-    });
-}
-
-/**
- * Get browser timing header for Real User Monitoring (RUM)
- * Insert this in your HTML <head> for browser monitoring
- * @returns {string} The return value.
- */
-function getBrowserTimingHeader(): string {
-    const nr = getNewRelicForDispatch();
-    if (shouldSendToNewRelic() && nr) {
-        return nr.getBrowserTimingHeader();
-    }
-    return "";
 }
 
 /**
@@ -749,18 +830,4 @@ export function returnForbidden(attributes?: Record<string, unknown>) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
-/**
- * Return a 400 Bad Request response with logging
- * Use this instead of direct NextResponse.json() for invalid requests
- *
- * @param {string} message - The error message
- * @param {Record<string, unknown> | undefined} attributes - Additional attributes to log
- * @returns {NextResponse} The return value.
- */
-export function returnBadRequest(
-    message: string,
-    attributes?: Record<string, unknown>,
-) {
-    logger.warn("Bad request", { message, ...attributes });
-    return NextResponse.json({ error: message }, { status: 400 });
-}
+

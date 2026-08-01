@@ -84,7 +84,7 @@ export function useInboxDigest(params: {
                         (accumulator[item.kind] ?? 0) + item.unreadCount;
                     return accumulator;
                 },
-                { mention: 0, thread: 0 },
+                { message: 0, mention: 0, thread: 0 },
             ),
         [data.items],
     );

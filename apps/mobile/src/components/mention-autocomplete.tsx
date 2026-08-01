@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
@@ -25,7 +25,8 @@ type MentionAutocompleteProps = {
   onClose?: () => void;
   isLoading?: boolean;
   canMentionEveryone?: boolean;
-  keyboardHeight?: number;
+  selectedIndex?: number;
+  onSelectedIndexChange?: (index: number) => void;
 };
 
 export function MentionAutocomplete({
@@ -36,7 +37,8 @@ export function MentionAutocomplete({
   onClose,
   isLoading,
   canMentionEveryone,
-  keyboardHeight,
+  selectedIndex,
+  onSelectedIndexChange,
 }: MentionAutocompleteProps) {
   const colors = useTheme();
 
@@ -49,17 +51,13 @@ export function MentionAutocomplete({
   return (
     <View
       style={{
-        position: "absolute",
-        left: 8,
-        right: 8,
-        bottom: (keyboardHeight ?? 48) + 8,
         backgroundColor: colors.popover,
         borderWidth: 1,
         borderColor: colors.border,
         maxHeight: 220,
-        zIndex: 50,
         borderRadius: 10,
         overflow: "hidden",
+        marginBottom: 8,
       }}
     >
       {isLoading ? (
@@ -70,12 +68,17 @@ export function MentionAutocomplete({
         <FlatList
           data={items}
           keyExtractor={(it, idx) => (it.id ? String(it.id) : `s-${idx}`)}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
+            const isSelected = index === selectedIndex;
+
             if ((item as any).special === "all") {
               return (
                 <Pressable
                   onPress={() => onSelect(null)}
-                  style={{ padding: 12 }}
+                  style={{
+                    padding: 12,
+                    backgroundColor: isSelected ? colors.muted : "transparent",
+                  }}
                 >
                   <Text style={{ color: colors.text }}>@all</Text>
                 </Pressable>
@@ -86,7 +89,10 @@ export function MentionAutocomplete({
               return (
                 <Pressable
                   onPress={() => onSelect(item)}
-                  style={{ padding: 12 }}
+                  style={{
+                    padding: 12,
+                    backgroundColor: isSelected ? colors.muted : "transparent",
+                  }}
                 >
                   <Text style={{ color: colors.text }}>@{item.name}</Text>
                 </Pressable>
@@ -94,7 +100,13 @@ export function MentionAutocomplete({
             }
 
             return (
-              <Pressable onPress={() => onSelect(item)} style={{ padding: 12 }}>
+              <Pressable
+                onPress={() => onSelect(item)}
+                style={{
+                  padding: 12,
+                  backgroundColor: isSelected ? colors.muted : "transparent",
+                }}
+              >
                 <Text style={{ color: colors.text }}>
                   {item.displayName || item.userId}
                 </Text>

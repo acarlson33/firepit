@@ -15,6 +15,15 @@ export type TablesDBWithTransactions = Pick<
     TablesDB,
     "createTransaction" | "getRow" | "updateRow" | "updateTransaction"
 >;
+
+let cachedServerClient: {
+    client: Client;
+    databases: Databases;
+    tablesDB: TablesDBWithTransactions;
+    teams: Teams;
+    storage: Storage;
+} | null = null;
+
 export function getServerClient(): {
     client: Client;
     databases: Databases;
@@ -22,6 +31,8 @@ export function getServerClient(): {
     teams: Teams;
     storage: Storage;
 } {
+    if (cachedServerClient) return cachedServerClient;
+
     const env = getEnvConfig();
     const apiKey = process.env.APPWRITE_API_KEY?.trim();
 
@@ -42,11 +53,13 @@ export function getServerClient(): {
         .setProject(env.project)
         .setKey(apiKey);
 
-    return {
+    cachedServerClient = {
         client,
         databases: new Databases(client),
         tablesDB: new TablesDB(client),
         teams: new Teams(client),
         storage: new Storage(client),
     };
+
+    return cachedServerClient;
 }

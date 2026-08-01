@@ -63,10 +63,6 @@ vi.mock("@/lib/appwrite-friendships", () => ({
     getRelationshipMap: mockGetRelationshipMap,
 }));
 
-vi.mock("@/lib/api-compression", () => ({
-    compressedResponse: vi.fn((data: unknown) => Response.json(data)),
-}));
-
 vi.mock("@/lib/newrelic-utils", () => ({
     logger: {
         warn: vi.fn(),

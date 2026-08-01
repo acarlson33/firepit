@@ -328,7 +328,7 @@ export type Conversation = {
     };
 };
 
-export type InboxItemKind = "mention" | "thread";
+export type InboxItemKind = "message" | "mention" | "thread";
 
 export type InboxContextKind = "channel" | "conversation";
 

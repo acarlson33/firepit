@@ -18,7 +18,6 @@ import {
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
-import { compressedResponse } from "@/lib/api-compression";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
 import { normalizeStatus } from "@/lib/status-normalization";
@@ -113,22 +112,38 @@ export async function POST(request: NextRequest) {
 
         // Fetch all visible profiles and statuses in parallel using batched reads.
         const fetchStartTime = Date.now();
-        const [profilesResult, statusesResult] =
+        const profilesResult =
             visibleUserIds.length === 0
-                ? [{ documents: [] }, { documents: [] }]
+                ? { documents: [] as unknown[] }
+                : await dedupeProfilesBatchCache(
+                      `api:profiles-batch:profiles:${stableIdsKey(visibleUserIds)}`,
+                      () =>
+                          databases.listDocuments(
+                              env.databaseId,
+                              env.collections.profiles,
+                              [
+                                  Query.equal("userId", visibleUserIds),
+                                  Query.limit(visibleUserIds.length),
+                              ],
+                          ),
+                  );
+
+        const avatarFramePresetIds = Array.from(
+            new Set(
+                profilesResult.documents.flatMap((document) => {
+                    const profile = document as Record<string, unknown>;
+                    return typeof profile.avatarFramePreset === "string"
+                        ? [profile.avatarFramePreset]
+                        : [];
+                }),
+            ),
+        );
+
+        // Run statuses + avatar frame validation concurrently (both independent of each other).
+        const [statusesResult, existingPredefinedAvatarFrameIds] =
+            visibleUserIds.length === 0
+                ? [{ documents: [] as unknown[] }, new Set<string>()]
                 : await Promise.all([
-                      dedupeProfilesBatchCache(
-                          `api:profiles-batch:profiles:${stableIdsKey(visibleUserIds)}`,
-                          () =>
-                              databases.listDocuments(
-                                  env.databaseId,
-                                  env.collections.profiles,
-                                  [
-                                      Query.equal("userId", visibleUserIds),
-                                      Query.limit(visibleUserIds.length),
-                                  ],
-                              ),
-                      ),
                       dedupeProfilesBatchCache(
                           `api:profiles-batch:statuses:${stableIdsKey(visibleUserIds)}`,
                           () =>
@@ -141,6 +156,11 @@ export async function POST(request: NextRequest) {
                                   ],
                               ),
                       ).catch(() => ({ documents: [] })),
+                      avatarFramePresetIds.length > 0
+                          ? getExistingPredefinedAvatarFrameIds(
+                                avatarFramePresetIds,
+                            )
+                          : Promise.resolve(new Set<string>()),
                   ]);
 
         const fetchDuration = Date.now() - fetchStartTime;
@@ -150,22 +170,6 @@ export async function POST(request: NextRequest) {
                 return [String(profile.userId), profile] as const;
             }),
         );
-        const avatarFramePresetIds = Array.from(
-            new Set(
-                profilesResult.documents.flatMap((document) => {
-                    const profile = document as Record<string, unknown>;
-                    return typeof profile.avatarFramePreset === "string"
-                        ? [profile.avatarFramePreset]
-                        : [];
-                }),
-            ),
-        );
-        const existingPredefinedAvatarFrameIds =
-            avatarFramePresetIds.length > 0
-                ? await getExistingPredefinedAvatarFrameIds(
-                      avatarFramePresetIds,
-                  )
-                : new Set<string>();
         const statusesByUserId = new Map(
             statusesResult.documents.map((document) => {
                 const status = document as Record<string, unknown>;
@@ -266,9 +270,13 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        return compressedResponse({
+        return NextResponse.json({
             profiles: profilesMap,
             visibleUserIds,
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=300',
+            },
         });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {

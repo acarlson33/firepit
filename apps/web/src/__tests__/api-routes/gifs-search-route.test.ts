@@ -41,7 +41,7 @@ vi.mock("@/lib/newrelic-utils", () => ({
     trackApiCall: mockTrackApiCall,
 }));
 
-vi.mock("@/lib/rate-limiter", () => ({
+vi.mock("@/lib/rate-limit", () => ({
     checkRateLimit: mockCheckRateLimit,
 }));
 

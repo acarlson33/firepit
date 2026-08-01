@@ -162,9 +162,16 @@ export default function SearchScreen() {
                         </SafeAreaView>
                     )
                 }
-                renderItem={({ item }) => (
-                    <SearchResultCard result={item} onPress={() => openResult(item)} />
+                renderItem={useCallback(
+                    ({ item }: { item: SearchMessageResult }) => (
+                        <SearchResultCard result={item} onPress={() => openResult(item)} />
+                    ),
+                    [openResult],
                 )}
+                windowSize={5}
+                maxToRenderPerBatch={10}
+                initialNumToRender={10}
+                removeClippedSubviews
                 contentContainerStyle={styles.listContent}
                 style={{ backgroundColor: theme.background, flex: 1 }}
             />

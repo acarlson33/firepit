@@ -67,15 +67,15 @@ export default function HomeScreen() {
         state,
         bootstrapInstance,
         instanceUrl,
-        compatibility,
         error,
         currentUser,
+        resetConnection,
+        refresh,
     } = useFirepitBootstrap();
     const theme = useTheme();
     const [candidateUrl, setCandidateUrl] = useState(instanceUrl ?? "");
     const [instanceError, setInstanceError] = useState<string | null>(null);
 
-    const instanceReady = Boolean(instanceUrl && compatibility?.compatible);
     const needsInstance = !instanceUrl;
     const signedIn = state === "ready" && Boolean(currentUser);
     const canCheckInstance = candidateUrl.trim().length > 0;
@@ -103,20 +103,6 @@ export default function HomeScreen() {
                     { backgroundColor: theme.background },
                 ]}
             >
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
-                    ]}
-                />
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
-                    ]}
-                />
                 <ThemedView
                     type="card"
                     style={[styles.loadingCard, { borderColor: theme.border }]}
@@ -129,16 +115,67 @@ export default function HomeScreen() {
                         themeColor="mutedForeground"
                         style={styles.description}
                     >
-                        Checking the saved instance, restoring your session, and
-                        syncing the app state.
-                    </ThemedText>
-                    <ThemedText
-                        themeColor="mutedForeground"
-                        style={styles.metaText}
-                    >
-                        This usually takes a moment after reopening the app.
+                        Restoring your session…
                     </ThemedText>
                 </ThemedView>
+            </View>
+        );
+    }
+
+    if (state === "instance-unreachable" || state === "instance-error") {
+        return (
+            <View style={[styles.screen, { backgroundColor: theme.background }]}>
+                <SafeAreaView style={styles.safeArea}>
+                    <ScrollView contentContainerStyle={styles.scrollContent}>
+                        <ThemedView style={styles.shell}>
+                            <ThemedView
+                                type="card"
+                                style={[styles.heroCard, { borderColor: theme.border }]}
+                            >
+                                <ThemedText type="code" themeColor="accent">
+                                    {state === "instance-unreachable" ? "Instance not found" : "Instance error"}
+                                </ThemedText>
+                                <ThemedText type="title" style={styles.title}>
+                                    {state === "instance-unreachable"
+                                        ? "This does not look like a Firepit server"
+                                        : "Something went wrong on the server"}
+                                </ThemedText>
+                                <ThemedText
+                                    themeColor="mutedForeground"
+                                    style={styles.description}
+                                >
+                                    {error ?? (state === "instance-unreachable"
+                                        ? "The URL does not appear to be a Firepit instance."
+                                        : "The server returned an error. Please try again later.")}
+                                </ThemedText>
+                            </ThemedView>
+
+                            {instanceUrl ? (
+                                <ThemedText
+                                    themeColor="mutedForeground"
+                                    style={styles.metaText}
+                                >
+                                    Instance {instanceUrl}
+                                </ThemedText>
+                            ) : null}
+
+                            <View style={{ flexDirection: "row", gap: Spacing.two }}>
+                                {state === "instance-error" ? (
+                                    <FirepitButton
+                                        label="Retry"
+                                        variant="secondary"
+                                        onPress={() => void refresh()}
+                                    />
+                                ) : null}
+                                <FirepitButton
+                                    label="Change instance"
+                                    variant="secondary"
+                                    onPress={resetConnection}
+                                />
+                            </View>
+                        </ThemedView>
+                    </ScrollView>
+                </SafeAreaView>
             </View>
         );
     }
@@ -166,214 +203,97 @@ export default function HomeScreen() {
     };
 
     return (
-        <ScrollView
-            style={[styles.scrollView, { backgroundColor: theme.background }]}
-            contentContainerStyle={styles.scrollContent}
-        >
-            <View
-                style={[styles.backdrop, { backgroundColor: theme.background }]}
-            />
-            <View
-                pointerEvents="none"
-                style={[
-                    styles.backdropOrbTop,
-                    { backgroundColor: "rgba(217, 121, 43, 0.16)" },
-                ]}
-            />
-            <View
-                pointerEvents="none"
-                style={[
-                    styles.backdropOrbBottom,
-                    { backgroundColor: "rgba(78, 138, 134, 0.10)" },
-                ]}
-            />
+        <View style={[styles.screen, { backgroundColor: theme.background }]}>
             <SafeAreaView style={styles.safeArea}>
-                <ThemedView style={styles.shell}>
-                    <ThemedView
-                        type="card"
-                        style={[styles.heroCard, { borderColor: theme.border }]}
-                    >
-                        <ThemedText type="code" themeColor="accent">
-                            Firepit mobile instance setup
-                        </ThemedText>
-                        <ThemedText type="title" style={styles.title}>
-                            Start by connecting to your instance.
-                        </ThemedText>
-                        <ThemedText
-                            themeColor="mutedForeground"
-                            style={styles.description}
-                        >
-                            Type the instance URL first, then sign in with that
-                            instance, and you will land in the home tabs.
-                        </ThemedText>
-                    </ThemedView>
-
-                    {needsInstance ? (
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    <ThemedView style={styles.shell}>
                         <ThemedView
                             type="card"
-                            style={[
-                                styles.panel,
-                                { borderColor: theme.border },
-                            ]}
+                            style={[styles.heroCard, { borderColor: theme.border }]}
                         >
-                            <ThemedText type="subtitle">Instance</ThemedText>
+                            <ThemedText type="code" themeColor="accent">
+                                Firepit mobile instance setup
+                            </ThemedText>
+                            <ThemedText type="title" style={styles.title}>
+                                Connect to your instance
+                            </ThemedText>
                             <ThemedText
                                 themeColor="mutedForeground"
-                                style={styles.panelDescription}
+                                style={styles.description}
                             >
-                                Enter the Firepit base URL. The app will
-                                normalize it, validate compatibility, and cache
-                                it locally.
+                                Enter the instance URL to get started.
                             </ThemedText>
-
-                            <TextInput
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                keyboardType="url"
-                                placeholder="https://firepit.example.com"
-                                placeholderTextColor={theme.mutedForeground}
-                                value={candidateUrl}
-                                onChangeText={setCandidateUrl}
-                                style={[
-                                    styles.input,
-                                    {
-                                        borderColor: theme.input,
-                                        backgroundColor: theme.card,
-                                        color: theme.foreground,
-                                    },
-                                ]}
-                            />
-
-                            <FirepitButton
-                                label="Continue to login"
-                                disabled={!canCheckInstance}
-                                onPress={handleInstanceSubmit}
-                            />
-
-                            {instanceError || error ? (
-                                <ThemedText
-                                    themeColor="danger"
-                                    style={styles.metaText}
-                                >
-                                    {instanceError ?? error}
-                                </ThemedText>
-                            ) : null}
                         </ThemedView>
-                    ) : null}
 
-                    <ThemedView
-                        type="card"
-                        style={[styles.panel, { borderColor: theme.border }]}
-                    >
-                        <ThemedText type="subtitle">Status</ThemedText>
-                        <View style={styles.statusRow}>
-                            <StatusPill
-                                label={state === "ready" ? "ready" : state}
-                                tone={
-                                    state === "ready"
-                                        ? "success"
-                                        : state === "incompatible"
-                                          ? "danger"
-                                          : "warning"
-                                }
-                            />
-                            <StatusPill
-                                label={
-                                    instanceReady
-                                        ? "instance ready"
-                                        : "instance pending"
-                                }
-                                tone={instanceReady ? "success" : "warning"}
-                            />
-                            <StatusPill
-                                label={
-                                    signedIn
-                                        ? "signed in"
-                                        : instanceUrl
-                                          ? "login next"
-                                          : "instance required"
-                                }
-                                tone={signedIn ? "success" : "warning"}
-                            />
-                        </View>
-
-                        {compatibility?.reason ? (
-                            <ThemedText
-                                themeColor="danger"
-                                style={styles.metaText}
+                        {needsInstance ? (
+                            <ThemedView
+                                type="card"
+                                style={[
+                                    styles.panel,
+                                    { borderColor: theme.border },
+                                ]}
                             >
-                                {compatibility.reason}
-                            </ThemedText>
-                        ) : null}
+                                <ThemedText type="subtitle">Instance</ThemedText>
+                                <ThemedText
+                                    themeColor="mutedForeground"
+                                    style={styles.panelDescription}
+                                >
+                                    Input the instance base URL.
+                                </ThemedText>
 
-                        {instanceUrl ? (
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.metaText}
-                            >
-                                Instance {instanceUrl}
-                            </ThemedText>
+                                <TextInput
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    keyboardType="url"
+                                    placeholder="https://firepit.example.com"
+                                    placeholderTextColor={theme.mutedForeground}
+                                    value={candidateUrl}
+                                    onChangeText={setCandidateUrl}
+                                    style={[
+                                        styles.input,
+                                        {
+                                            borderColor: theme.input,
+                                            backgroundColor: theme.card,
+                                            color: theme.foreground,
+                                        },
+                                    ]}
+                                />
+
+                                <FirepitButton
+                                    label="Continue to login"
+                                    disabled={!canCheckInstance}
+                                    onPress={handleInstanceSubmit}
+                                />
+
+                                {instanceError || error ? (
+                                    <ThemedText
+                                        themeColor="danger"
+                                        style={styles.metaText}
+                                    >
+                                        {instanceError ?? error}
+                                    </ThemedText>
+                                ) : null}
+                            </ThemedView>
                         ) : null}
                     </ThemedView>
-                </ThemedView>
+                </ScrollView>
             </SafeAreaView>
-        </ScrollView>
-    );
-}
-
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    return (
-        <ThemedView
-            type={tone === "neutral" ? "muted" : tone}
-            style={styles.pill}
-        >
-            <ThemedText
-                type="code"
-                themeColor={
-                    tone === "neutral" ? "mutedForeground" : "foreground"
-                }
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    scrollView: {
+    screen: {
         flex: 1,
     },
     scrollContent: {
         flexGrow: 1,
     },
-    backdrop: {
-        ...StyleSheet.absoluteFill,
-    },
-    backdropOrbTop: {
-        position: "absolute",
-        width: 260,
-        height: 260,
-        borderRadius: 260,
-        top: -90,
-        left: -80,
-    },
-    backdropOrbBottom: {
-        position: "absolute",
-        width: 320,
-        height: 320,
-        borderRadius: 320,
-        right: -120,
-        bottom: 40,
-    },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
@@ -381,6 +301,7 @@ const styles = StyleSheet.create({
         flex: 1,
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.four,
         paddingTop: Spacing.four,
     },
@@ -450,17 +371,6 @@ const styles = StyleSheet.create({
     },
     buttonLabel: {
         fontSize: 16,
-    },
-    statusRow: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: Spacing.one,
-    },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: 6,
-        borderRadius: 999,
-        borderWidth: 1,
     },
     metaText: {
         fontSize: 13,

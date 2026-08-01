@@ -12,8 +12,6 @@ import {
     setTransactionName,
     trackApiCall,
     addTransactionAttributes,
-    returnUnauthorized,
-    returnForbidden,
 } from "@/lib/newrelic-utils";
 
 type RouteContext = {

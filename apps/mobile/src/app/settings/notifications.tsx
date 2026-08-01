@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+    Alert,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -7,9 +8,10 @@ import {
     TextInput,
     View,
 } from "react-native";
+import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AuthRouteGuard } from "@/components/auth-route-guard";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -49,12 +51,24 @@ export default function NotificationSettingsScreen() {
         notificationPreferences ?? DEFAULT_NOTIFICATION_PREFERENCES,
     );
     const [saved, setSaved] = useState(false);
+    const [testStatus, setTestStatus] = useState<null | "sent" | "denied">(null);
+    const [permissionGranted, setPermissionGranted] = useState(false);
 
     useEffect(() => {
         if (notificationPreferences) {
             setPrefs(notificationPreferences);
         }
     }, [notificationPreferences]);
+
+    useEffect(() => {
+        let cancelled = false;
+        Notifications.getPermissionsAsync().then(({ status }) => {
+            if (!cancelled) setPermissionGranted(status === "granted");
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const update = useCallback(
         (partial: Partial<NotificationPreferences>) => {
@@ -72,30 +86,56 @@ export default function NotificationSettingsScreen() {
         setSaved(true);
     }, [prefs, saveNotificationPreferences]);
 
+    const handleTestNotification = useCallback(async () => {
+        try {
+            const { status } = await Notifications.getPermissionsAsync();
+            if (status !== "granted") {
+                const { status: requested } =
+                    await Notifications.requestPermissionsAsync();
+                if (requested !== "granted") {
+                    setTestStatus("denied");
+                    return;
+                }
+            }
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: "Firepit test notification",
+                    body: "If you see this, push notifications are working!",
+                    sound: true,
+                },
+                trigger: null,
+            });
+            Alert.alert(
+                "Test notification sent",
+                "Check your notification tray. If the app is in the foreground, minimize it to see the banner.",
+            );
+            setTestStatus("sent");
+        } catch (_err) {
+            setTestStatus("denied");
+        }
+    }, []);
+
     const enabled = prefs.enabled;
 
     return (
-        <AuthRouteGuard>
-            <ScrollView
+        <ScrollView
                 style={[styles.scrollView, { backgroundColor: theme.background }]}
                 contentContainerStyle={styles.scrollContent}
             >
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
-                    ]}
-                />
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
-                    ]}
-                />
                 <SafeAreaView style={styles.safeArea}>
                     <ThemedView style={styles.shell}>
+                        <View style={styles.header}>
+                            <Pressable
+                                accessibilityRole="button"
+                                onPress={() => router.back()}
+                                style={styles.headerButton}
+                            >
+                                <ThemedText type="smallBold" themeColor="foreground">
+                                    Back
+                                </ThemedText>
+                            </Pressable>
+                            <View style={styles.headerButton} />
+                        </View>
                         <ThemedView
                             type="card"
                             style={[styles.heroCard, { borderColor: theme.border }]}
@@ -112,8 +152,10 @@ export default function NotificationSettingsScreen() {
                             </ThemedText>
                             <View style={styles.pillRow}>
                                 <StatusPill
-                                    label={enabled ? "enabled" : "disabled"}
-                                    tone={enabled ? "success" : "warning"}
+                                    label={
+                                        permissionGranted ? "enabled" : "disabled"
+                                    }
+                                    tone={permissionGranted ? "success" : "warning"}
                                 />
                                 {saved ? (
                                     <StatusPill label="saved" tone="success" />
@@ -133,6 +175,43 @@ export default function NotificationSettingsScreen() {
                                 value={prefs.enabled}
                                 onValueChange={(v) => update({ enabled: v })}
                             />
+                        </ThemedView>
+
+                        {/* Test notification */}
+                        <ThemedView
+                            type="card"
+                            style={[styles.card, { borderColor: theme.border }]}
+                        >
+                            <ThemedText type="smallBold">Test</ThemedText>
+                            <Pressable
+                                accessibilityRole="button"
+                                onPress={() => void handleTestNotification()}
+                                style={({ pressed }) => [
+                                    styles.testButton,
+                                    {
+                                        backgroundColor: theme.accent,
+                                        opacity: pressed ? 0.88 : 1,
+                                    },
+                                ]}
+                            >
+                                <ThemedText
+                                    type="smallBold"
+                                    themeColor="foreground"
+                                >
+                                    Send test notification
+                                </ThemedText>
+                            </Pressable>
+                            {testStatus === "sent" ? (
+                                <ThemedText themeColor="foreground">
+                                    Notification sent! Check your notification tray.
+                                </ThemedText>
+                            ) : null}
+                            {testStatus === "denied" ? (
+                                <ThemedText themeColor="destructive">
+                                    Permission denied. Enable notifications in
+                                    system settings.
+                                </ThemedText>
+                            ) : null}
                         </ThemedView>
 
                         {/* Notification types */}
@@ -254,7 +333,7 @@ export default function NotificationSettingsScreen() {
                                 </ThemedText>
                             </Pressable>
                             {saved ? (
-                                <ThemedText themeColor="accent">
+                                <ThemedText themeColor="foreground">
                                     Preferences saved successfully.
                                 </ThemedText>
                             ) : null}
@@ -262,7 +341,6 @@ export default function NotificationSettingsScreen() {
                     </ThemedView>
                 </SafeAreaView>
             </ScrollView>
-        </AuthRouteGuard>
     );
 }
 
@@ -297,8 +375,8 @@ function ToggleRow({
                 value={value}
                 onValueChange={onValueChange}
                 disabled={disabled}
-                trackColor={{ false: theme.muted, true: theme.primary }}
-                thumbColor={value ? theme.primaryForeground : theme.card}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor={value ? "#FFFFFF" : "#888888"}
             />
         </View>
     );
@@ -306,28 +384,22 @@ function ToggleRow({
 
 const styles = StyleSheet.create({
     scrollView: { flex: 1 },
-    scrollContent: { flexGrow: 1 },
-    backdropOrbTop: {
-        position: "absolute",
-        width: 260,
-        height: 260,
-        borderRadius: 260,
-        top: -100,
-        left: -80,
-    },
-    backdropOrbBottom: {
-        position: "absolute",
-        width: 320,
-        height: 320,
-        borderRadius: 320,
-        right: -140,
-        bottom: 20,
-    },
+    scrollContent: {},
     safeArea: {
-        flex: 1,
         alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
+    },
+    header: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: Spacing.two,
+    },
+    headerButton: {
+        paddingVertical: Spacing.one,
+        paddingHorizontal: Spacing.two,
+        minWidth: 60,
     },
     shell: {
         width: "100%",
@@ -384,6 +456,12 @@ const styles = StyleSheet.create({
     saveButton: {
         borderRadius: 999,
         paddingHorizontal: Spacing.four,
+        paddingVertical: Spacing.two,
+        alignItems: "center",
+    },
+    testButton: {
+        borderRadius: 12,
+        paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
         alignItems: "center",
     },

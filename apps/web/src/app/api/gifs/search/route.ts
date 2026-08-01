@@ -17,7 +17,7 @@ import { logger, setTransactionName, trackApiCall,
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
-import { checkRateLimit } from "@/lib/rate-limiter";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const GIPHY_BASE_URL = "https://api.giphy.com/v1/gifs/search";
 const TENOR_BASE_URL = "https://tenor.googleapis.com/v2/search";

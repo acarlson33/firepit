@@ -95,7 +95,7 @@ describe("inbox route", () => {
     it("returns the normalized inbox payload", async () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
-            counts: { mention: 1, thread: 0 },
+            counts: { message: 0, mention: 1, thread: 0 },
             items: [
                 {
                     authorAvatarUrl: "https://example.com/avatar.png",
@@ -137,7 +137,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "thread_v1",
-            counts: { mention: 0, thread: 0 },
+            counts: { message: 0, mention: 0, thread: 0 },
             items: [],
             unreadCount: 0,
         });
@@ -159,7 +159,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 1, thread: 1 },
+            counts: { message: 0, mention: 1, thread: 1 },
             items: [
                 {
                     authorLabel: "Alice",
@@ -260,7 +260,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 2, thread: 3 },
+            counts: { message: 0, mention: 2, thread: 3 },
             items: [
                 {
                     id: "item-mention-1",
@@ -370,7 +370,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 2, thread: 2 },
+            counts: { message: 0, mention: 2, thread: 2 },
             items: [
                 {
                     id: "item-mention-conv-1",
@@ -482,7 +482,7 @@ describe("inbox route", () => {
         mockSession.mockResolvedValue({ $id: "user-1" });
         mockListInboxItems.mockResolvedValue({
             contractVersion: "message_v2",
-            counts: { mention: 0, thread: 7 },
+            counts: { message: 0, mention: 0, thread: 7 },
             items: [
                 {
                     id: "thread:channel:channel-1:message-2",

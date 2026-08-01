@@ -35,14 +35,16 @@ import {
     parsePollCommand,
     serializePollOptions,
 } from "@/lib/polls";
+import { getPollStateForMessage, getPollStatesForMessages } from "@/lib/polls-server";
 import {
     buildAttachmentDocumentData,
     buildLegacyAttachmentDocumentData,
     isUnknownAttachmentAttributeError,
     normalizeFileAttachmentsInput,
 } from "@/lib/file-attachments";
-import { hasEveryoneMention } from "@/lib/mention-utils";
-import { normalizeMentionIds } from "@/lib/mentions";
+import { hasEveryoneMention, normalizeMentionIds } from "@/lib/mention-utils";
+import { getUserProfile } from "@/lib/appwrite-profiles";
+import { dispatchPushNotification } from "@/lib/push-notifications";
 
 const MESSAGE_ATTACHMENTS_COLLECTION_ID =
     process.env.APPWRITE_MESSAGE_ATTACHMENTS_COLLECTION_ID ||
@@ -149,7 +151,10 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const channelId = searchParams.get("channelId");
         const cursorAfter = searchParams.get("cursorAfter");
-        const limit = normalizeLimit(searchParams.get("limit"), 50);
+        const limit = Math.min(
+            Number.parseInt(searchParams.get("limit") ?? "50", 10) || 50,
+            100,
+        );
 
         if (!channelId) {
             return NextResponse.json(
@@ -160,42 +165,54 @@ export async function GET(request: NextRequest) {
 
         const env = getEnvConfig();
         const { databases } = getServerClient();
-        const access = await getChannelAccessForUser(
-            databases,
-            env,
-            channelId,
-            user.$id,
-        );
+
+        const [access, response] = await Promise.all([
+            getChannelAccessForUser(databases, env, channelId, user.$id),
+            databases.listDocuments(
+                env.databaseId,
+                env.collections.messages,
+                (() => {
+                    const q = [
+                        Query.equal("channelId", channelId),
+                        Query.orderDesc("$createdAt"),
+                        Query.limit(limit),
+                    ];
+                    if (cursorAfter) {
+                        q.splice(1, 0, Query.cursorAfter(cursorAfter));
+                    }
+                    return q;
+                })(),
+            ),
+        ]);
 
         if (!access.canRead) {
             return returnForbidden();
         }
 
-        const queries = [
-            Query.equal("channelId", channelId),
-            Query.orderDesc("$createdAt"),
-            Query.limit(limit),
-        ];
-
-        if (cursorAfter) {
-            queries.splice(1, 0, Query.cursorAfter(cursorAfter));
-        }
-
         const dbStartTime = Date.now();
-        const response = await databases.listDocuments(
-            env.databaseId,
-            env.collections.messages,
-            queries,
-        );
-
         trackApiCall("/api/messages", "GET", 200, Date.now() - dbStartTime, {
             operation: "listDocuments",
             collection: "messages",
         });
 
-        const messages = (response.documents ?? []).map((doc) =>
-            mapMessageDocument(doc as Record<string, unknown>),
+        const messages = await Promise.all(
+          (response.documents ?? []).map(async (doc) => {
+            const msg = mapMessageDocument(doc as Record<string, unknown>);
+            return msg;
+          }),
         );
+
+        // Batch fetch poll states for all messages (single DB call instead of N+1)
+        try {
+          const messageIds = messages.map((m) => m.$id);
+          const pollStates = await getPollStatesForMessages(databases, env, messageIds);
+          for (const msg of messages) {
+            const poll = pollStates.get(msg.$id);
+            if (poll) msg.poll = poll;
+          }
+        } catch {
+          // Poll fetch failed, continue without poll data
+        }
 
         return NextResponse.json<ListMessagesResponse>({
             messages,
@@ -459,7 +476,7 @@ export async function POST(request: NextRequest) {
 
         const messageData: Record<string, unknown> = {
             userId,
-            text: parsedPoll ? parsedPoll.question : normalizedText || "",
+            text: parsedPoll ? "" : normalizedText || "",
             userName,
             channelId: normalizedChannelId,
         };
@@ -656,6 +673,23 @@ export async function POST(request: NextRequest) {
         // Add attachments to message object for response (they'll be fetched when listing messages)
         if (normalizedAttachments.length > 0) {
             message.attachments = normalizedAttachments;
+        }
+
+        // Send push notifications to mentioned users (non-blocking)
+        if (hasValidMentions && validMentions.length > 0) {
+            const senderProfile = await getUserProfile(userId).catch(() => null);
+            const senderName = senderProfile?.displayName || "Someone";
+            const mentionText = text || "Mentioned you in a channel";
+            for (const mentionedUserId of validMentions) {
+                if (mentionedUserId !== userId) {
+                    void dispatchPushNotification(mentionedUserId, `${senderName} mentioned you`, mentionText, {
+                        type: "mention",
+                        serverId: normalizedServerId,
+                        channelId: normalizedChannelId,
+                        messageId: String(res.$id),
+                    }).catch((err) => logger.warn("Push dispatch failed:", err));
+                }
+            }
         }
 
         return NextResponse.json({ message });

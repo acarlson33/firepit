@@ -1,5 +1,3 @@
-export { flushPostHogLogs, loggerProvider } from "./src/lib/posthog-logs";
-
 /**
  * Next.js Instrumentation Hook
  *
@@ -28,12 +26,9 @@ const instrumentationLogger = {
 export async function register() {
     if (process.env.NEXT_RUNTIME === "nodejs") {
         try {
-            const { registerPostHogLoggerProvider } =
-                await import("./src/lib/posthog-logs");
+            const { registerPostHogLoggerProvider, registerPostHogProcessHandlers } =
+                await import("./src/lib/newrelic-utils");
             registerPostHogLoggerProvider();
-
-            const { registerPostHogProcessHandlers } =
-                await import("./src/lib/posthog-server");
             registerPostHogProcessHandlers();
         } catch (error) {
             // PostHog runtime hooks are optional and should not block startup.

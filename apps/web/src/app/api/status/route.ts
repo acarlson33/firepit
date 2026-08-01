@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 
 import { getEnvConfig, perms } from "@/lib/appwrite-core";
 import { getServerClient } from "@/lib/appwrite-server";
-import { compressedResponse } from "@/lib/api-compression";
 import {
     logger,
     recordError,
@@ -263,19 +262,19 @@ export async function GET(request: Request) {
             );
 
             if (existing.documents.length === 0) {
-                return compressedResponse({ status: null }, cacheHeaders);
+                return NextResponse.json({ status: null }, cacheHeaders);
             }
 
             const { normalized } = normalizeStatus(existing.documents[0]);
 
-            return compressedResponse(normalized, cacheHeaders);
+            return NextResponse.json(normalized, cacheHeaders);
         }
 
         // Multiple users query
         if (userIds) {
             const userIdList = userIds.split(",").filter(Boolean);
             if (userIdList.length === 0) {
-                return compressedResponse({ statuses: [] }, cacheHeaders);
+                return NextResponse.json({ statuses: [] }, cacheHeaders);
             }
 
             // Note: Limited to 100 users per request for performance.
@@ -293,7 +292,7 @@ export async function GET(request: Request) {
                 (doc) => normalizeStatus(doc).normalized,
             );
 
-            return compressedResponse(
+            return NextResponse.json(
                 { statuses: normalizedStatuses },
                 cacheHeaders,
             );

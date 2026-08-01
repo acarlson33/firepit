@@ -16,7 +16,7 @@ import { Query, type Models } from "node-appwrite";
 import { apiCache } from "@/lib/cache-utils";
 import { compareInboxVsDmUnreadThreads } from "@/lib/unread-consistency";
 
-const VALID_KINDS: InboxItemKind[] = ["mention", "thread"];
+const VALID_KINDS: InboxItemKind[] = ["message", "mention", "thread"];
 const VALID_CONTEXT_KINDS: InboxContextKind[] = ["channel", "conversation"];
 const VALID_SCOPE_VALUES = ["all", "direct", "server"] as const;
 const DEFAULT_LIMIT = 50;
@@ -180,7 +180,7 @@ function toCounts(items: Array<{ kind: InboxItemKind; unreadCount: number }>) {
             accumulator[item.kind] += item.unreadCount;
             return accumulator;
         },
-        { mention: 0, thread: 0 },
+        { message: 0, mention: 0, thread: 0 },
     );
 }
 
@@ -390,7 +390,7 @@ export async function GET(request: NextRequest) {
           : undefined;
     if (!kinds) {
         return NextResponse.json(
-            { error: "kind must be one or more of mention,thread" },
+            { error: "kind must be one or more of message,mention,thread" },
             { status: 400 },
         );
     }
@@ -554,6 +554,12 @@ export async function PATCH(request: NextRequest) {
             .filter((item) => item.kind === "mention")
             .map((item) => item.id);
 
+        const messageItemIds = scopedItems
+            .filter((item) => item.kind === "message")
+            .map((item) => item.id);
+
+        const persistedItemIds = [...mentionItemIds, ...messageItemIds];
+
         const threadReadWrites = scopedItems
             .filter((item) => item.kind === "thread")
             .reduce<
@@ -591,14 +597,14 @@ export async function PATCH(request: NextRequest) {
 
         const { databases } = getAdminClient();
         let updatedMentionCount = 0;
-        if (mentionItemIds.length > 0) {
+        if (persistedItemIds.length > 0) {
             const documents = await databases.listDocuments(
                 env.databaseId,
                 env.collections.inboxItems,
                 [
-                    Query.equal("$id", mentionItemIds),
+                    Query.equal("$id", persistedItemIds),
                     Query.equal("userId", session.$id),
-                    Query.limit(mentionItemIds.length),
+                    Query.limit(persistedItemIds.length),
                 ],
             );
 
@@ -607,7 +613,7 @@ export async function PATCH(request: NextRequest) {
                 batchSize: UPDATE_BATCH_SIZE,
                 documents: documents.documents,
                 getDocumentId: (document) => String(document.$id),
-                loggerMessage: "Failed to mark mention inbox item as read",
+                loggerMessage: "Failed to mark inbox item as read",
                 updater: (document) =>
                     databases.updateDocument<
                         Models.Document & { readAt?: string | null }

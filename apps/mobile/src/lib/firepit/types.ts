@@ -32,6 +32,16 @@ export type CurrentUser = {
     displayName?: string;
     userName?: string;
     avatarUrl?: string;
+    avatarFileId?: string;
+    pronouns?: string;
+    bio?: string;
+    location?: string;
+    website?: string;
+    profileBackgroundColor?: string;
+    profileBackgroundGradient?: string;
+    profileBackgroundUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
     email?: string;
     roles?: Record<string, unknown>;
 };
@@ -53,6 +63,8 @@ export type ConnectionState =
     | "needs-auth"
     | "ready"
     | "incompatible"
+    | "instance-unreachable"
+    | "instance-error"
     | "error";
 
 export type CompatibilityEvaluation = {
@@ -144,6 +156,42 @@ export type Message = {
     removedAt?: string | null;
     removedBy?: string | null;
     $createdAt?: string;
+    // Enriched profile fields
+    displayName?: string;
+    avatarFileId?: string;
+    avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
+    pronouns?: string;
+    // Reply context (enriched from parent message)
+    replyTo?: {
+        text: string;
+        userName?: string;
+        displayName?: string;
+    };
+    // Threading
+    threadReplyCount?: number;
+    // Pinning
+    isPinned?: boolean;
+    pinnedAt?: string;
+    pinnedBy?: string;
+    // Poll
+    poll?: {
+        id: string;
+        messageId: string;
+        question: string;
+        options: Array<{
+            id: string;
+            text: string;
+            count: number;
+            voterIds: string[];
+        }>;
+        status: "open" | "closed";
+        createdBy: string;
+        closedAt?: string;
+        closedBy?: string;
+    };
+    editedAt?: string;
     [key: string]: unknown;
 };
 
@@ -229,6 +277,8 @@ export type DirectMessage = {
     $id?: string;
     conversationId?: string;
     senderId?: string;
+    senderDisplayName?: string;
+    authorAvatarUrl?: string | null;
     receiverId?: string;
     text?: string;
     isEncrypted?: boolean;
@@ -305,6 +355,72 @@ export type UserProfile = {
         lastSeenAt?: string;
     };
     [key: string]: unknown;
+};
+
+export type RelationshipStatus = {
+    userId: string;
+    friendshipStatus?: string;
+    isFriend: boolean;
+    outgoingRequest: boolean;
+    incomingRequest: boolean;
+    blockedByMe: boolean;
+    blockedMe: boolean;
+    directMessagePrivacy: string;
+    canSendDirectMessage: boolean;
+    canReceiveFriendRequest: boolean;
+};
+
+export type FriendshipEntryUser = {
+    userId: string;
+    displayName?: string;
+    pronouns?: string;
+    avatarUrl?: string;
+    avatarFramePreset?: string;
+    avatarFrameUrl?: string;
+};
+
+export type FriendshipRecord = {
+    $id: string;
+    requesterId: string;
+    addresseeId: string;
+    status: "pending" | "accepted";
+    createdAt: string;
+    respondedAt?: string;
+};
+
+export type FriendshipEntry = {
+    friendship: FriendshipRecord;
+    user: FriendshipEntryUser;
+};
+
+export type BlockedUserRecord = {
+    $id: string;
+    userId: string;
+    blockedUserId: string;
+    blockedAt: string;
+    reason?: string;
+};
+
+export type BlockedUserEntry = {
+    block: BlockedUserRecord;
+    user: {
+        userId: string;
+        displayName?: string;
+        pronouns?: string;
+        avatarUrl?: string;
+    };
+};
+
+export type BlockedUsersResponse = {
+    items?: BlockedUserEntry[];
+    error?: string;
+};
+
+export type FriendsResponse = {
+    friends?: FriendshipEntry[];
+    incoming?: FriendshipEntry[];
+    outgoing?: FriendshipEntry[];
+    error?: string;
 };
 
 export type ThreadMessagesResponse = {
@@ -494,6 +610,45 @@ export type ServerAuditLogResponse = {
     [key: string]: unknown;
 };
 
+export type AdminAuditLogEntry = {
+    $id?: string;
+    action?: string;
+    actorId?: string;
+    actorName?: string;
+    targetId?: string;
+    targetName?: string;
+    timestamp?: string;
+    meta?: Record<string, unknown> | null;
+    [key: string]: unknown;
+};
+
+export type AdminAuditLogResponse = {
+    items?: AdminAuditLogEntry[];
+    nextCursor?: string | null;
+    [key: string]: unknown;
+};
+
+export type AdminReportEntry = {
+    $id?: string;
+    reporterId?: string;
+    reporterName?: string;
+    reportedUserId?: string;
+    reportedUserName?: string;
+    justification?: string;
+    status?: "pending" | "resolved" | "dismissed";
+    resolvedBy?: string;
+    resolvedByName?: string;
+    resolutionNotes?: string;
+    createdAt?: string;
+    [key: string]: unknown;
+};
+
+export type AdminReportResponse = {
+    items?: AdminReportEntry[];
+    nextCursor?: string | null;
+    [key: string]: unknown;
+};
+
 export type ServerStatsResponse = {
     totalMembers?: number;
     totalChannels?: number;
@@ -541,4 +696,75 @@ export type MessageListResponse = {
 export type PublicServerListResponse = {
     servers?: ServerPreview[];
     [key: string]: unknown;
+};
+
+export type EffectivePermissions = {
+    readMessages: boolean;
+    sendMessages: boolean;
+    manageMessages: boolean;
+    manageChannels: boolean;
+    manageRoles: boolean;
+    manageServer: boolean;
+    administrator: boolean;
+    mentionEveryone: boolean;
+    createPolls: boolean;
+    canRead: boolean;
+    canSend: boolean;
+    [key: string]: unknown;
+};
+
+export type CustomEmoji = {
+    fileId: string;
+    url: string;
+    name: string;
+};
+
+export type CustomEmojiListResponse = {
+    emojis?: CustomEmoji[];
+    [key: string]: unknown;
+};
+
+export type AnnouncementCreateMode = "draft" | "schedule" | "send_now";
+
+export type AnnouncementPriority = "normal" | "urgent";
+
+export type AnnouncementStatus =
+    | "draft"
+    | "scheduled"
+    | "dispatching"
+    | "sent"
+    | "failed"
+    | "archived";
+
+export type Announcement = {
+    $id: string;
+    title?: string;
+    body: string;
+    status: AnnouncementStatus;
+    priority: AnnouncementPriority;
+    createdBy: string;
+    scheduledFor?: string;
+    publishedAt?: string;
+    lastDispatchAt?: string;
+    deliverySummary?: {
+        attempted: number;
+        delivered: number;
+        failed: number;
+    };
+    errorDetails?: string;
+    $createdAt?: string;
+    $updatedAt?: string;
+    [key: string]: unknown;
+};
+
+export type ListAnnouncementsResponse = {
+    success?: boolean;
+    items?: Announcement[];
+    nextCursor?: string;
+};
+
+export type CreateAnnouncementResponse = {
+    success?: boolean;
+    announcement?: Announcement;
+    error?: string;
 };

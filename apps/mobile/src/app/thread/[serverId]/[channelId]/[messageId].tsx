@@ -21,6 +21,7 @@ import {
     fetchChannelThreadMessages,
     type TimelineMessage,
 } from "@/lib/firepit";
+import { cacheThreadReplies, getCachedThreadReplies, markAsThreadReply } from "@/lib/cache/ThreadCache";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -82,6 +83,12 @@ export default function ThreadScreen() {
         setLoadState("loading");
         setError(null);
 
+        // Show cached replies instantly
+        const cachedReplies = await getCachedThreadReplies(normalizedMessageId);
+        if (cachedReplies.length > 0) {
+            setReplies(cachedReplies);
+        }
+
         try {
             const response = await fetchChannelThreadMessages(
                 instanceUrl,
@@ -92,8 +99,14 @@ export default function ThreadScreen() {
                 (response.parentMessage as TimelineMessage | null | undefined) ??
                 (response.message as TimelineMessage | null | undefined) ??
                 null;
+            const nextReplies = (response.items ?? response.replies ?? []) as TimelineMessage[];
             setParentMessage(nextParent);
-            setReplies((response.items ?? response.replies ?? []) as TimelineMessage[]);
+            setReplies(nextReplies);
+            // Cache replies and mark them as thread replies for main list filtering
+            void cacheThreadReplies(normalizedMessageId, nextReplies);
+            for (const r of nextReplies) {
+                if (r.$id) void markAsThreadReply(r.$id);
+            }
             setLoadState("ready");
         } catch (loadError) {
             setLoadState("error");

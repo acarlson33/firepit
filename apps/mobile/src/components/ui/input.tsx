@@ -13,8 +13,9 @@ export const Input = forwardRef<TextInput, TextInputProps>(
         placeholderTextColor={colors.textSecondary}
         style={[
           {
-            height: 40,
+            minHeight: 40,
             paddingHorizontal: 10,
+            paddingVertical: 8,
             borderRadius: 8,
             borderWidth: 1,
             borderColor: colors.input,

@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import {
     addTransactionAttributes,
     logger,
-    measureAsync,
     recordError,
     setTransactionName,
     trackApiCall,
@@ -31,13 +30,7 @@ export async function GET(request: NextRequest) {
             method: "GET",
             userAgent,
         });
-        const result = await measureAsync(
-            "example-operation",
-            async () => ({
-                message: "Hello from New Relic instrumented API!",
-            }),
-            { operation: "example" },
-        );
+        const result = { message: "Hello from New Relic instrumented API!" };
 
         const duration = Date.now() - startTime;
         trackApiCall(ENDPOINT, "GET", 200, duration, { cached: false });

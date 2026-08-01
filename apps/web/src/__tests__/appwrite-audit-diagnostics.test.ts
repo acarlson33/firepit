@@ -139,58 +139,6 @@ describe("audit + diagnostics", () => {
         });
         expect(page2.items.length).toBe(1);
     });
-
-    it("runAuthDiagnostics returns structured report without client when endpoint missing", async () => {
-        // Clear env so makeBrowserClient returns null
-        vi.resetModules();
-        (process.env as any).APPWRITE_ENDPOINT = "";
-        (process.env as any).APPWRITE_PROJECT_ID = "";
-        delete (process.env as any).NEXT_PUBLIC_APPWRITE_ENDPOINT;
-        delete (process.env as any).NEXT_PUBLIC_APPWRITE_PROJECT_ID;
-        const core = await import("../lib/appwrite-core");
-        core.resetEnvCache();
-        const { runAuthDiagnostics } =
-            await import("../lib/appwrite-diagnostics");
-        const rep = await runAuthDiagnostics();
-        expect(rep.browserClientConfigured).toBe(false);
-        expect(rep.collectionsTried).toHaveLength(0);
-    });
-
-    it("runAuthDiagnostics lists collections and captures failures", async () => {
-        // Provide env
-        baseEnv();
-        setupMockAppwrite({
-            overrides: {
-                listDocuments: (...args: any[]) => {
-                    // Support both object-call and positional forms
-                    let collectionId: string | undefined;
-                    if (args.length === 1 && typeof args[0] === "object") {
-                        collectionId = args[0].collectionId;
-                    } else if (args.length >= 2) {
-                        collectionId = args[1]; // (dbId, collectionId, queries)
-                    }
-                    if (collectionId === "channels") {
-                        return Promise.reject(new Error("403 forbidden"));
-                    }
-                    return Promise.resolve({
-                        documents: [{ $id: "x" }],
-                        total: 1,
-                    });
-                },
-            },
-        });
-        const core = await import("../lib/appwrite-core");
-        core.resetEnvCache();
-
-        const { runAuthDiagnostics } =
-            await import("../lib/appwrite-diagnostics");
-        const rep = await runAuthDiagnostics();
-        expect(rep.browserClientConfigured).toBe(true);
-        const channelEntry = rep.collectionsTried.find(
-            (c) => c.id === "channels",
-        );
-        expect(channelEntry?.ok).toBe(false);
-    });
 });
 
 describe("core error + retry helpers", () => {

@@ -1090,30 +1090,31 @@ async function setupMessageAttachments() {
         await ensureStringAttribute("message_attachments", key, size, true);
     }
 
+    // messageType is an enum attribute — skip size update for it
+    const stringFieldsForSizeCheck = requiredStringFields.filter(
+        ([key]) => key !== "messageType",
+    );
     await waitForAttribute("message_attachments", "messageType");
-    const messageTypeAttribute = (await tryVariants([
-        () => dbAny.getAttribute(DB_ID, "message_attachments", "messageType"),
-        () =>
-            dbAny.getAttribute?.({
-                databaseId: DB_ID,
-                collectionId: "message_attachments",
-                key: "messageType",
-            }),
-    ])) as {
-        size?: number | string;
-    };
-    const configuredMessageTypeSize = Number(messageTypeAttribute.size ?? 0);
-    if (
-        Number.isFinite(configuredMessageTypeSize) &&
-        configuredMessageTypeSize < 32
-    ) {
-        await updateStringAttributeSize(
-            "message_attachments",
-            "messageType",
-            32,
-            true,
-        );
-        await waitForAttribute("message_attachments", "messageType");
+    for (const [key, size] of stringFieldsForSizeCheck) {
+        const attr = (await tryVariants([
+            () => dbAny.getAttribute(DB_ID, "message_attachments", key),
+            () =>
+                dbAny.getAttribute?.({
+                    databaseId: DB_ID,
+                    collectionId: "message_attachments",
+                    key,
+                }),
+        ])) as { size?: number | string } | undefined;
+        const currentSize = Number(attr?.size ?? 0);
+        if (Number.isFinite(currentSize) && currentSize < size) {
+            await updateStringAttributeSize(
+                "message_attachments",
+                key,
+                size,
+                true,
+            );
+            await waitForAttribute("message_attachments", key);
+        }
     }
 
     const optionalStringFields: [string, number][] = [
@@ -1987,6 +1988,21 @@ async function setupNotificationSettings() {
     ]);
 }
 
+async function setupPushTokens() {
+    await ensureCollection("push_tokens", "Push Tokens");
+    await ensureStringAttribute("push_tokens", "userId", LEN_ID, true);
+    await ensureStringAttribute("push_tokens", "token", 512, true);
+    await ensureStringAttribute("push_tokens", "platform", 16, true);
+    await ensureStringAttribute("push_tokens", "updatedAt", LEN_TS, true);
+    await ensureIndex("push_tokens", "idx_push_userId", "key", [
+        "userId",
+    ]);
+    await ensureIndex("push_tokens", "idx_push_token", "unique", [
+        "userId",
+        "token",
+    ]);
+}
+
 async function setupThreadReads() {
     await ensureCollection("thread_reads", "Thread Reads");
     await ensureStringAttribute("thread_reads", "userId", LEN_ID, true);
@@ -2357,6 +2373,8 @@ async function run() {
     await setupPollVotes();
     info("[setup] Setting up notification settings...");
     await setupNotificationSettings();
+    info("[setup] Setting up push tokens...");
+    await setupPushTokens();
     info("[setup] Setting up inbox items...");
     await setupInboxItems();
     info("[setup] Setting up thread reads...");

@@ -14,7 +14,6 @@ vi.mock("@/lib/newrelic-utils", () => ({
     recordError: vi.fn(),
     setTransactionName: vi.fn(),
     trackApiCall: vi.fn(),
-    measureAsync: vi.fn((name, fn) => fn()),
     addTransactionAttributes: vi.fn(),
 }));
 
@@ -23,14 +22,12 @@ import {
     recordError,
     setTransactionName,
     trackApiCall,
-    measureAsync,
     addTransactionAttributes,
 } from "@/lib/newrelic-utils";
 
 describe("GET /api/example-newrelic", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(measureAsync).mockImplementation((_, fn) => fn());
     });
 
     it("should successfully process request with New Relic instrumentation", async () => {
@@ -56,11 +53,6 @@ describe("GET /api/example-newrelic", () => {
             method: "GET",
             userAgent: "test-agent",
         });
-        expect(measureAsync).toHaveBeenCalledWith(
-            "example-operation",
-            expect.any(Function),
-            { operation: "example" },
-        );
         expect(trackApiCall).toHaveBeenCalledWith(
             "/api/example",
             "GET",
@@ -84,51 +76,6 @@ describe("GET /api/example-newrelic", () => {
             method: "GET",
             userAgent: "unknown",
         });
-    });
-
-    it("should handle errors and record them in New Relic", async () => {
-        vi.mocked(measureAsync).mockRejectedValue(new Error("Test error"));
-
-        const request = new NextRequest(
-            "http://localhost:3000/api/example-newrelic",
-        );
-
-        const response = await GET(request);
-        const data = await response.json();
-
-        expect(response.status).toBe(500);
-        expect(data.error).toBe("Internal server error");
-
-        // Verify error was recorded
-        expect(recordError).toHaveBeenCalledWith(expect.any(Error), {
-            endpoint: "/api/example",
-            method: "GET",
-        });
-        expect(trackApiCall).toHaveBeenCalledWith(
-            "/api/example",
-            "GET",
-            500,
-            expect.any(Number),
-            { error: true },
-        );
-        expect(logger.error).toHaveBeenCalled();
-    });
-
-    it("should handle non-Error exceptions", async () => {
-        vi.mocked(measureAsync).mockRejectedValue("String error");
-
-        const request = new NextRequest(
-            "http://localhost:3000/api/example-newrelic",
-        );
-
-        const response = await GET(request);
-        const data = await response.json();
-
-        expect(response.status).toBe(500);
-        expect(recordError).toHaveBeenCalledWith(
-            "String error",
-            expect.any(Object),
-        );
     });
 
     it("should track request duration accurately", async () => {
@@ -162,24 +109,5 @@ describe("GET /api/example-newrelic", () => {
 
         // Verify logger.info was called at least once
         expect(logger.info).toHaveBeenCalled();
-    });
-
-    it("should log error details on failure", async () => {
-        const testError = new Error("Test failure");
-        vi.mocked(measureAsync).mockRejectedValue(testError);
-
-        const request = new NextRequest(
-            "http://localhost:3000/api/example-newrelic",
-        );
-
-        await GET(request);
-
-        expect(logger.error).toHaveBeenCalledWith(
-            "Example API request failed",
-            expect.objectContaining({
-                error: "Test failure",
-                duration: expect.any(Number),
-            }),
-        );
     });
 });

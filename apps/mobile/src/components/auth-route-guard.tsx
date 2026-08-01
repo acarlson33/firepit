@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
@@ -20,24 +20,40 @@ export function AuthRouteGuard({
   const { accessToken, currentUser, instanceUrl, state } =
     useFirepitBootstrap();
   const theme = useTheme();
+  const mountedRef = useRef(true);
 
   const isAuthenticated =
     state === "ready" && Boolean(accessToken) && Boolean(currentUser);
   const isResolving = state === "loading";
+  const needsRedirect = !isResolving && !isAuthenticated;
   const redirectTarget =
     redirectTo === "/" ? (instanceUrl ? "/login" : "/") : redirectTo;
 
   useEffect(() => {
-    if (isResolving) {
-      return;
-    }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-    if (!isAuthenticated) {
-      router.replace(redirectTarget as never);
-    }
-  }, [isAuthenticated, isResolving, redirectTarget]);
+  // Redirect in a useEffect (runs after paint, so navigation transitions are complete).
+  // The 50ms delay gives React time to process any pending state updates from refresh.
+  useEffect(() => {
+    if (!needsRedirect) return;
 
-  if (isResolving || !isAuthenticated) {
+    const timer = setTimeout(() => {
+      if (!mountedRef.current) return;
+      try {
+        router.replace(redirectTarget as never);
+      } catch {
+        // Stack may have been reset
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [needsRedirect, redirectTarget]);
+
+  if (needsRedirect || isResolving) {
     return (
       <View style={[styles.shell, { backgroundColor: theme.background }]}>
         <ThemedView
