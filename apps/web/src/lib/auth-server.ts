@@ -1,10 +1,45 @@
 import { Account, Client } from "node-appwrite";
 import { cookies, headers } from "next/headers";
+import { createHash } from "crypto";
 
 import { getEnvConfig } from "@/lib/appwrite-core";
 import { getUserRoles } from "./appwrite-roles";
 
 type AuthErrorCode = "UNAUTHORIZED" | "FORBIDDEN";
+
+const SESSION_CACHE_TTL_MS = 30_000;
+const sessionCache = new Map<string, { data: SessionUser | null; ts: number }>();
+
+function cacheKey(
+    endpoint: string,
+    project: string,
+    token: string,
+    authMode: "jwt" | "session",
+): string {
+    return createHash("sha256")
+        .update(`${endpoint}:${project}:${authMode}:${token}`)
+        .digest("hex")
+        .slice(0, 32);
+}
+
+function getCachedSession(key: string): SessionUser | null | undefined {
+    const entry = sessionCache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.ts > SESSION_CACHE_TTL_MS) {
+        sessionCache.delete(key);
+        return undefined;
+    }
+    return entry.data;
+}
+
+function setCachedSession(key: string, data: SessionUser | null): void {
+    sessionCache.set(key, { data, ts: Date.now() });
+    // LRU-ish: cap at 500 entries
+    if (sessionCache.size > 500) {
+        const oldest = sessionCache.keys().next().value;
+        if (oldest) sessionCache.delete(oldest);
+    }
+}
 
 export class AuthError extends Error {
     readonly code: AuthErrorCode;
@@ -32,6 +67,10 @@ async function getSessionForToken(
     systemSenderUserId: string | null,
     authMode: "jwt" | "session",
 ): Promise<SessionUser | null> {
+    const key = cacheKey(endpoint, project, token, authMode);
+    const cached = getCachedSession(key);
+    if (cached !== undefined) return cached;
+
     try {
         const client = new Client().setEndpoint(endpoint).setProject(project);
 
@@ -44,7 +83,9 @@ async function getSessionForToken(
         const account = new Account(client);
         const user = await account.get();
 
-        return validateAndTransformUser(user, systemSenderUserId);
+        const result = validateAndTransformUser(user, systemSenderUserId);
+        setCachedSession(key, result);
+        return result;
     } catch (error) {
         if (process.env.FIREPIT_DEBUG_AUTH === "true") {
             const masked =
@@ -56,6 +97,7 @@ async function getSessionForToken(
                 `[auth-debug] ${authMode} auth failed: token="${masked}", endpoint=${endpoint}, project=${project}, error=${error instanceof Error ? error.message : String(error)}`,
             );
         }
+        setCachedSession(key, null);
         return null;
     }
 }

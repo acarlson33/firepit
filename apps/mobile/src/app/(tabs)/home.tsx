@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+    Image,
     Modal,
     Pressable,
     ScrollView,
@@ -14,12 +15,14 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
-import { fetchMyServers, type Server } from "@/lib/firepit";
+import { getServers } from "@/lib/server-cache";
+import type { Server } from "@/lib/firepit/types";
+import { FirepitHttpError } from "@/lib/firepit/http";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type StatusTone = "neutral" | "success" | "warning" | "danger";
 
-function ActionButton({
+function ActionChip({
     label,
     onPress,
     tone = "primary",
@@ -35,23 +38,27 @@ function ActionButton({
             accessibilityRole="button"
             onPress={onPress}
             style={({ pressed }) => [
-                styles.actionButton,
+                styles.actionChip,
                 {
                     backgroundColor:
                         tone === "primary"
                             ? theme.primary
                             : tone === "secondary"
                               ? theme.secondary
-                              : theme.muted,
+                              : "transparent",
                     borderColor:
-                        tone === "primary" ? theme.primary : theme.border,
+                        tone === "primary"
+                            ? theme.primary
+                            : tone === "secondary"
+                              ? theme.border
+                              : "transparent",
                 },
-                pressed && styles.actionButtonPressed,
+                pressed && styles.actionChipPressed,
             ]}
         >
             <ThemedText
                 type="smallBold"
-                style={styles.actionButtonLabel}
+                style={styles.actionChipLabel}
                 themeColor={
                     tone === "primary" ? "primaryForeground" : "foreground"
                 }
@@ -135,23 +142,30 @@ function ProfileMenu() {
 
     return (
         <>
-            <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Open profile menu"
-                onPress={() => setIsOpen(true)}
-                style={({ pressed }) => [
-                    styles.profileButton,
-                    {
-                        backgroundColor: theme.card,
-                        borderColor: theme.border,
-                        opacity: pressed ? 0.88 : 1,
-                    },
-                ]}
-            >
-                <ThemedText type="smallBold">
-                    {username.slice(0, 1).toUpperCase()}
-                </ThemedText>
-            </Pressable>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open profile menu"
+                    onPress={() => setIsOpen(true)}
+                    style={({ pressed }) => [
+                        styles.profileButton,
+                        {
+                            backgroundColor: theme.card,
+                            borderColor: theme.border,
+                            opacity: pressed ? 0.88 : 1,
+                        },
+                    ]}
+                >
+                    {currentUser?.avatarUrl ? (
+                        <Image
+                            source={{ uri: currentUser.avatarUrl }}
+                            style={styles.avatarImage}
+                        />
+                    ) : (
+                        <ThemedText type="smallBold">
+                            {username.slice(0, 1).toUpperCase()}
+                        </ThemedText>
+                    )}
+                </Pressable>
 
             <Modal
                 visible={isOpen}
@@ -176,11 +190,18 @@ function ProfileMenu() {
                             ]}
                         >
                             <View style={styles.menuHeader}>
-                                <View style={styles.avatarCircle}>
+                            <View style={styles.avatarCircle}>
+                                {currentUser?.avatarUrl ? (
+                                    <Image
+                                        source={{ uri: currentUser.avatarUrl }}
+                                        style={styles.avatarImage}
+                                    />
+                                ) : (
                                     <ThemedText type="smallBold">
                                         {username.slice(0, 1).toUpperCase()}
                                     </ThemedText>
-                                </View>
+                                )}
+                            </View>
                                 <View style={styles.menuHeaderCopy}>
                                     <ThemedText type="smallBold">
                                         {username}
@@ -206,7 +227,7 @@ function ProfileMenu() {
                             </View>
 
                             <View style={styles.menuActions}>
-                                <ActionButton
+                                <ActionChip
                                     label="Sign out"
                                     tone="ghost"
                                     onPress={async () => {
@@ -242,8 +263,8 @@ function useJoinedServers() {
         setLoadError(null);
 
         try {
-            const nextServers = await fetchMyServers(instanceUrl, accessToken);
-            const selectableServers = (nextServers.servers ?? []).filter(
+            const allServers = await getServers(instanceUrl, accessToken);
+            const selectableServers = allServers.filter(
                 (server): server is Server & { $id: string } =>
                     typeof server.$id === "string" && server.$id.length > 0,
             );
@@ -325,14 +346,14 @@ export default function HomeTabScreen() {
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
+                        { backgroundColor: "rgba(217, 121, 43, 0.08)" },
                     ]}
                 />
                 <View
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
+                        { backgroundColor: "rgba(78, 138, 134, 0.06)" },
                     ]}
                 />
                 <SafeAreaView style={styles.safeArea}>
@@ -345,199 +366,125 @@ export default function HomeTabScreen() {
                                 <ThemedText type="title" style={styles.title}>
                                     Welcome back, {username}.
                                 </ThemedText>
-                                <ThemedText
-                                    themeColor="mutedForeground"
-                                    style={styles.copy}
-                                >
-                                    This is your quick-start dashboard for the
-                                    current instance. Jump into chat, browse
-                                    servers, or open your account menu.
-                                </ThemedText>
                             </View>
                             <ProfileMenu />
                         </View>
 
-                        <ThemedView
-                            type="card"
-                            style={[
-                                styles.heroCard,
-                                { borderColor: theme.border },
-                            ]}
-                        >
-                            <View style={styles.pillRow}>
-                                <StatusPill label={statusLabel} tone={statusTone} />
-                                <StatusPill
-                                    label={
-                                        compatibility?.compatible
-                                            ? "compatible"
-                                            : "check version"
-                                    }
-                                    tone={
-                                        compatibility?.compatible
-                                            ? "success"
-                                            : "warning"
-                                    }
-                                />
-                                <StatusPill
-                                    label={version?.version ?? "no version"}
-                                    tone="neutral"
-                                />
-                            </View>
-
-                            <View style={styles.detailGrid}>
-                                <View style={styles.detailItem}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
-                                        Instance
-                                    </ThemedText>
-                                    <ThemedText type="smallBold" numberOfLines={1}>
-                                        {instanceUrl ?? "Not connected"}
-                                    </ThemedText>
-                                </View>
-                                <View style={styles.detailItem}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
-                                        Username
-                                    </ThemedText>
-                                    <ThemedText type="smallBold" numberOfLines={1}>
-                                        {username}
-                                    </ThemedText>
-                                </View>
-                                <View style={styles.detailItem}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
-                                        Status
-                                    </ThemedText>
-                                    <ThemedText type="smallBold" numberOfLines={1}>
-                                        {statusLabel}
-                                    </ThemedText>
-                                </View>
-                            </View>
-                        </ThemedView>
+                        <View style={styles.statusRow}>
+                            <StatusPill label={statusLabel} tone={statusTone} />
+                            <StatusPill
+                                label={
+                                    compatibility?.compatible
+                                        ? "compatible"
+                                        : "check version"
+                                }
+                                tone={
+                                    compatibility?.compatible
+                                        ? "success"
+                                        : "warning"
+                                }
+                            />
+                            <StatusPill
+                                label={version?.version ?? "no version"}
+                                tone="neutral"
+                            />
+                        </View>
 
                         <View style={styles.actionsRow}>
-                            <ActionButton
+                            <ActionChip
                                 label="Open chat"
                                 onPress={() => router.push("/chat")}
                             />
-                            <ActionButton
-                                label="Browse servers"
-                                tone="secondary"
-                                onPress={() => router.push("/home")}
-                            />
                             {featureFlags?.enabled ? (
-                                <ActionButton
+                                <ActionChip
                                     label="Create server"
                                     tone="ghost"
                                     onPress={() => router.push("/create-server")}
                                 />
                             ) : null}
-                            <ActionButton
+                            <ActionChip
                                 label="Settings"
                                 tone="ghost"
                                 onPress={() => router.push("/settings")}
                             />
                         </View>
 
-                        <ThemedView
-                            type="card"
-                            style={[
-                                styles.panel,
-                                { borderColor: theme.border },
-                            ]}
-                        >
-                            <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="smallBold">
-                                    Your joined servers
-                                </ThemedText>
-                                <ActionButton
-                                    label="Refresh"
-                                    tone="ghost"
-                                    onPress={refresh}
-                                />
-                            </View>
-
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Jump into a server to browse channels and read
-                                the latest messages.
+                        <View style={styles.sectionHeaderRow}>
+                            <ThemedText type="smallBold">
+                                Your joined servers
                             </ThemedText>
+                            <ActionChip
+                                label="Refresh"
+                                tone="ghost"
+                                onPress={refresh}
+                            />
+                        </View>
 
-                            {loadState === "loading" ? (
-                                <ThemedText themeColor="mutedForeground">
-                                    Loading servers…
-                                </ThemedText>
-                            ) : null}
+                        {loadState === "loading" ? (
+                            <ThemedText themeColor="mutedForeground">
+                                Loading servers…
+                            </ThemedText>
+                        ) : null}
 
-                            {loadError ? (
-                                <ThemedText themeColor="destructive">
-                                    {loadError}
-                                </ThemedText>
-                            ) : null}
+                        {loadError ? (
+                            <ThemedText themeColor="destructive">
+                                {loadError}
+                            </ThemedText>
+                        ) : null}
 
-                            <View style={styles.serverList}>
-                                {servers.length > 0 ? (
-                                    servers.map((server) => (
-                                        <Pressable
-                                            key={server.$id!}
-                                            accessibilityRole="button"
-                                            onPress={() =>
-                                                router.push({
-                                                    pathname:
-                                                        "/server/[serverId]",
-                                                    params: {
-                                                        serverId: server.$id,
-                                                    },
-                                                })
-                                            }
-                                            style={({ pressed }) => [
-                                                styles.serverCard,
-                                                {
-                                                    backgroundColor:
-                                                        theme.card,
-                                                    borderColor: theme.border,
-                                                    opacity: pressed ? 0.92 : 1,
+                        <View style={styles.serverList}>
+                            {servers.length > 0 ? (
+                                servers.map((server, index) => (
+                                    <Pressable
+                                        key={server.$id!}
+                                        accessibilityRole="button"
+                                        onPress={() =>
+                                            router.push({
+                                                pathname:
+                                                    "/server/[serverId]",
+                                                params: {
+                                                    serverId: server.$id,
                                                 },
-                                            ]}
-                                        >
-                                            <View style={styles.serverCardCopy}>
-                                                <ThemedText type="smallBold">
-                                                    {server.name ??
-                                                        "Untitled server"}
-                                                </ThemedText>
-                                                <ThemedText
-                                                    themeColor="mutedForeground"
-                                                    style={styles.copy}
-                                                >
-                                                    {server.description ??
-                                                        "Open this server to browse channels."}
-                                                </ThemedText>
-                                            </View>
-                                            <ThemedText
-                                                type="code"
-                                                themeColor="accent"
-                                            >
-                                                Open
+                                            })
+                                        }
+                                        style={({ pressed }) => [
+                                            styles.serverRow,
+                                            index < servers.length - 1 && styles.serverRowBorder,
+                                            {
+                                                opacity: pressed ? 0.92 : 1,
+                                            },
+                                        ]}
+                                    >
+                                        <View style={styles.serverRowCopy}>
+                                            <ThemedText type="smallBold">
+                                                {server.name ??
+                                                    "Untitled server"}
                                             </ThemedText>
-                                        </Pressable>
-                                    ))
-                                ) : loadState === "ready" ? (
-                                    <ThemedText themeColor="mutedForeground">
-                                        No joined servers yet. Use the chat tab to
-                                        inspect server membership and open a
-                                        channel.
-                                    </ThemedText>
-                                ) : null}
-                            </View>
-                        </ThemedView>
+                                            <ThemedText
+                                                themeColor="mutedForeground"
+                                                style={styles.serverRowDescription}
+                                                numberOfLines={1}
+                                            >
+                                                {server.description ??
+                                                    "Open this server to browse channels."}
+                                            </ThemedText>
+                                        </View>
+                                        <ThemedText
+                                            type="code"
+                                            themeColor="accent"
+                                        >
+                                            Open
+                                        </ThemedText>
+                                    </Pressable>
+                                ))
+                            ) : loadState === "ready" ? (
+                                <ThemedText themeColor="mutedForeground">
+                                    No joined servers yet. Use the chat tab to
+                                    inspect server membership and open a
+                                    channel.
+                                </ThemedText>
+                            ) : null}
+                        </View>
                     </View>
                 </SafeAreaView>
             </ScrollView>
@@ -556,7 +503,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: "center",
         paddingHorizontal: Spacing.three,
-        paddingBottom: BottomTabInset + Spacing.four,
+        paddingBottom: BottomTabInset + Spacing.three,
     },
     shell: {
         flex: 1,
@@ -569,26 +516,23 @@ const styles = StyleSheet.create({
         alignItems: "flex-start",
         justifyContent: "space-between",
         gap: Spacing.three,
-        paddingTop: Spacing.two,
+        paddingTop: Spacing.three,
     },
     headerCopy: {
         flex: 1,
-        gap: Spacing.one,
+        gap: Spacing.half,
     },
     title: {
         maxWidth: 520,
     },
-    copy: {
-        fontSize: 15,
-        lineHeight: 22,
-    },
     profileButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         borderWidth: 1,
         alignItems: "center",
         justifyContent: "center",
+        overflow: "hidden",
     },
     modalBackdrop: {
         flex: 1,
@@ -596,16 +540,16 @@ const styles = StyleSheet.create({
     },
     modalAnchor: {
         paddingTop: 72,
-        paddingHorizontal: Spacing.three,
+        paddingHorizontal: Spacing.two,
         alignItems: "flex-end",
     },
     menuCard: {
         width: "100%",
         maxWidth: 320,
         borderWidth: 1,
-        borderRadius: 24,
-        padding: Spacing.four,
-        gap: Spacing.three,
+        borderRadius: 16,
+        padding: Spacing.two,
+        gap: Spacing.two,
         shadowColor: "#000000",
         shadowOpacity: 0.14,
         shadowRadius: 24,
@@ -614,67 +558,41 @@ const styles = StyleSheet.create({
     menuHeader: {
         flexDirection: "row",
         alignItems: "center",
-        gap: Spacing.three,
+        gap: Spacing.two,
     },
     avatarCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(217, 121, 43, 0.14)",
+        overflow: "hidden",
+    },
+    avatarImage: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
     },
     menuHeaderCopy: {
         flex: 1,
         gap: 2,
     },
     menuBody: {
-        gap: Spacing.two,
+        gap: Spacing.one,
     },
     menuActions: {
-        gap: Spacing.two,
+        gap: Spacing.one,
     },
     metaText: {
         fontSize: 13,
         lineHeight: 18,
     },
-    heroCard: {
-        borderRadius: 28,
-        padding: Spacing.four,
-        gap: Spacing.three,
-    },
-    panel: {
-        borderRadius: 24,
-        padding: Spacing.four,
-        gap: Spacing.two,
-    },
-    sectionHeaderRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: Spacing.two,
-    },
-    serverList: {
-        gap: Spacing.two,
-    },
-    serverCard: {
-        borderWidth: 1,
-        borderRadius: 20,
-        padding: Spacing.three,
-        gap: Spacing.one,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-    },
-    serverCardCopy: {
-        flex: 1,
-        gap: 2,
-        paddingRight: Spacing.two,
-    },
-    pillRow: {
+    statusRow: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: Spacing.two,
+        gap: Spacing.one,
+        paddingVertical: Spacing.one,
     },
     pill: {
         alignSelf: "flex-start",
@@ -682,38 +600,52 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.one,
         borderRadius: 999,
     },
-    detailGrid: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: Spacing.two,
-    },
-    detailItem: {
-        flexGrow: 1,
-        minWidth: 150,
-        gap: 4,
-        borderRadius: 18,
-        padding: Spacing.three,
-        backgroundColor: "rgba(255, 255, 255, 0.03)",
-    },
     actionsRow: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: Spacing.two,
+        gap: Spacing.one,
+        paddingVertical: Spacing.one,
     },
-    actionButton: {
-        minWidth: 120,
-        paddingHorizontal: Spacing.three,
-        paddingVertical: Spacing.three,
-        borderRadius: 18,
+    actionChip: {
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.one,
+        borderRadius: 12,
         borderWidth: 1,
-        alignItems: "center",
-        justifyContent: "center",
     },
-    actionButtonPressed: {
+    actionChipPressed: {
         opacity: 0.85,
     },
-    actionButtonLabel: {
-        textAlign: "center",
+    actionChipLabel: {
+        fontSize: 13,
+    },
+    sectionHeaderRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: Spacing.two,
+        paddingTop: Spacing.four,
+    },
+    serverList: {
+        gap: 0,
+    },
+    serverRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: Spacing.two,
+        gap: Spacing.two,
+    },
+    serverRowBorder: {
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "rgba(255, 255, 255, 0.06)",
+    },
+    serverRowCopy: {
+        flex: 1,
+        gap: 2,
+    },
+    serverRowDescription: {
+        fontSize: 13,
+        lineHeight: 18,
     },
     backdropOrbTop: {
         position: "absolute",

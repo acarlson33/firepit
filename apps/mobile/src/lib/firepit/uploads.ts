@@ -1,4 +1,5 @@
 import { firepitRequest } from "@/lib/firepit/http";
+import { readAsStringAsync } from "expo-file-system/legacy";
 
 export type NativeAttachment = {
   uri: string;
@@ -22,16 +23,27 @@ export type UploadedFileAttachment = {
   category?: string;
 };
 
-function createUploadFormData(input: NativeAttachment) {
+async function createUploadFormData(input: NativeAttachment) {
   const formData = new FormData();
-  formData.append(
-    "file",
-    {
+  try {
+    const base64 = await readAsStringAsync(input.uri, { encoding: "base64" });
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    formData.append("file", {
+      bytes: () => bytes,
+      name: input.name ?? "upload",
+      type: input.mimeType ?? "application/octet-stream",
+    } as unknown as Blob);
+  } catch {
+    formData.append("file", {
       uri: input.uri,
       name: input.name ?? "upload",
       type: input.mimeType ?? "application/octet-stream",
-    } as unknown as Blob,
-  );
+    } as unknown as Blob);
+  }
   return formData;
 }
 
@@ -45,7 +57,7 @@ export async function uploadImage(
     path: "/api/upload-image",
     method: "POST",
     token,
-    body: createUploadFormData(input),
+    body: await createUploadFormData(input),
   });
 }
 
@@ -59,6 +71,6 @@ export async function uploadFile(
     path: "/api/upload-file",
     method: "POST",
     token,
-    body: createUploadFormData(input),
+    body: await createUploadFormData(input),
   });
 }

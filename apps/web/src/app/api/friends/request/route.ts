@@ -6,7 +6,7 @@ import {
     RelationshipError,
 } from "@/lib/appwrite-friendships";
 import { getServerSession } from "@/lib/auth-server";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { getPostHogClient } from "@/lib/newrelic-utils";
 
 type RequestBody = {
     targetUserId?: string;

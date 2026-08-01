@@ -1,37 +1,17 @@
 import { NextResponse } from "next/server";
-import { Account, Client, Permission, Presences, Role } from "node-appwrite";
-import { cookies } from "next/headers";
+import { Permission, Presences, Role } from "node-appwrite";
 
-import { getEnvConfig } from "@/lib/appwrite-core";
+import { getServerSession } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { logger } from "@/lib/newrelic-utils";
-
-async function getUserIdFromSession(): Promise<string | null> {
-    const env = getEnvConfig();
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get(`a_session_${env.project}`);
-    if (!sessionCookie?.value) return null;
-
-    const client = new Client()
-        .setEndpoint(env.endpoint)
-        .setProject(env.project)
-        .setSession(sessionCookie.value);
-
-    const account = new Account(client);
-    try {
-        const user = await account.get();
-        return user.$id;
-    } catch {
-        return null;
-    }
-}
 
 /**
  * POST /api/typing
  *
- * Upsert a typing presence record. Resolves the userId from the session
- * cookie, then uses the admin API key client to call presences.upsert
- * with an explicit userId and permissions readable by any authenticated user.
+ * Upsert a typing presence record. Resolves the userId from the Bearer token
+ * (mobile) or session cookie (web), then uses the admin API key client to
+ * call presences.upsert with an explicit userId and permissions readable by
+ * any authenticated user.
  */
 export async function POST(request: Request) {
     try {
@@ -50,8 +30,8 @@ export async function POST(request: Request) {
             );
         }
 
-        const userId = await getUserIdFromSession();
-        if (!userId) {
+        const session = await getServerSession();
+        if (!session?.$id) {
             return NextResponse.json(
                 { error: "No session found" },
                 { status: 401 },
@@ -62,7 +42,7 @@ export async function POST(request: Request) {
         const presences = new Presences(client);
         const result = await presences.upsert({
             presenceId,
-            userId,
+            userId: session.$id,
             status: "typing",
             expiresAt:
                 expiresAt ?? new Date(Date.now() + 8000).toISOString(),
@@ -108,8 +88,8 @@ export async function DELETE(request: Request) {
             );
         }
 
-        const userId = await getUserIdFromSession();
-        if (!userId) {
+        const session = await getServerSession();
+        if (!session?.$id) {
             return NextResponse.json(
                 { error: "No session found" },
                 { status: 401 },

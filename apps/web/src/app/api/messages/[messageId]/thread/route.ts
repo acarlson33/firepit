@@ -17,8 +17,7 @@ import {
 } from "@/lib/newrelic-utils";
 import { upsertMentionInboxItems } from "@/lib/inbox-items";
 import { normalizeFileAttachmentsInput } from "@/lib/file-attachments";
-import { hasEveryoneMention } from "@/lib/mention-utils";
-import { normalizeMentionIds } from "@/lib/mentions";
+import { hasEveryoneMention, normalizeMentionIds } from "@/lib/mention-utils";
 import { getServerPermissionsForUser } from "@/lib/server-channel-access";
 
 type RouteContext = {
@@ -71,22 +70,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const env = getEnvConfig();
         const { databases } = getServerClient();
 
-        // First, get the parent message to verify it exists
-        let parentMessage: Message;
-        try {
-            parentMessage = (await databases.getDocument(
-                env.databaseId,
-                env.collections.messages,
-                messageId,
-            )) as unknown as Message;
-        } catch {
-            return NextResponse.json(
-                { error: "Parent message not found" },
-                { status: 404 },
-            );
-        }
-
-        // Build query for thread replies
         const queries = [
             Query.equal("threadId", messageId),
             Query.orderAsc("$createdAt"),
@@ -97,13 +80,27 @@ export async function GET(request: NextRequest, context: RouteContext) {
             queries.push(Query.cursorAfter(cursor));
         }
 
-        // Fetch thread replies
-        const response = await databases.listDocuments(
-            env.databaseId,
-            env.collections.messages,
-            queries,
-        );
+        const [parentResult, response] = await Promise.all([
+            databases.getDocument(
+                env.databaseId,
+                env.collections.messages,
+                messageId,
+            ).catch(() => null),
+            databases.listDocuments(
+                env.databaseId,
+                env.collections.messages,
+                queries,
+            ),
+        ]);
 
+        if (!parentResult) {
+            return NextResponse.json(
+                { error: "Parent message not found" },
+                { status: 404 },
+            );
+        }
+
+        const parentMessage = parentResult as unknown as Message;
         const threadReplies = response.documents as unknown as Message[];
 
         const duration = Date.now() - startTime;

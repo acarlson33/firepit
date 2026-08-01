@@ -688,10 +688,18 @@ export async function buildNotificationSettingsResponse(
  * @param {string} userId - The user id value.
  * @returns {Promise<NotificationSettings | null>} The return value.
  */
+const NOTIF_SETTINGS_CACHE_TTL_MS = 30_000;
+const notifSettingsCache = new Map<string, { data: NotificationSettings | null; ts: number }>();
+
 export async function getNotificationSettings(
     userId: string,
 ): Promise<NotificationSettings | null> {
     try {
+        const cached = notifSettingsCache.get(userId);
+        if (cached && Date.now() - cached.ts < NOTIF_SETTINGS_CACHE_TTL_MS) {
+            return cached.data;
+        }
+
         const { databases } = getAdminClient();
         const env = getEnvConfig();
 
@@ -702,6 +710,7 @@ export async function getNotificationSettings(
         );
 
         if (result.documents.length === 0) {
+            notifSettingsCache.set(userId, { data: null, ts: Date.now() });
             return null;
         }
 
@@ -709,10 +718,85 @@ export async function getNotificationSettings(
             result.documents[0] as unknown as Record<string, unknown>,
         );
 
-        return documentToSettings(document);
+        const settings = documentToSettings(document);
+        notifSettingsCache.set(userId, { data: settings, ts: Date.now() });
+        return settings;
     } catch {
         return null;
     }
+}
+
+/**
+ * Batch-fetch notification settings for multiple users.
+ * Checks cache first, then issues a single DB query for uncached users.
+ *
+ * @param {string[]} userIds - The user ids value.
+ * @returns {Promise<Map<string, NotificationSettings | null>>} The return value.
+ */
+export async function getNotificationSettingsBatch(
+    userIds: string[],
+): Promise<Map<string, NotificationSettings | null>> {
+    const uniqueIds = Array.from(new Set(userIds)).filter(Boolean);
+    if (uniqueIds.length === 0) {
+        return new Map();
+    }
+
+    const result = new Map<string, NotificationSettings | null>();
+    const uncachedIds: string[] = [];
+    const now = Date.now();
+
+    for (const uid of uniqueIds) {
+        const cached = notifSettingsCache.get(uid);
+        if (cached && now - cached.ts < NOTIF_SETTINGS_CACHE_TTL_MS) {
+            result.set(uid, cached.data);
+        } else {
+            uncachedIds.push(uid);
+        }
+    }
+
+    if (uncachedIds.length > 0) {
+        try {
+            const { databases } = getAdminClient();
+            const env = getEnvConfig();
+
+            const BATCH_LIMIT = 100;
+            let offset = 0;
+            while (offset < uncachedIds.length) {
+                const batch = uncachedIds.slice(offset, offset + BATCH_LIMIT);
+                const response = await databases.listDocuments(
+                    env.databaseId,
+                    env.collections.notificationSettings,
+                    [Query.equal("userId", batch)],
+                );
+
+                const found = new Map<string, NotificationSettings>();
+                for (const doc of response.documents) {
+                    const record = doc as unknown as Record<string, unknown>;
+                    const uid = String(record.userId);
+                    const settings = documentToSettings(record);
+                    found.set(uid, settings);
+                    notifSettingsCache.set(uid, { data: settings, ts: now });
+                }
+
+                for (const uid of batch) {
+                    if (!found.has(uid)) {
+                        notifSettingsCache.set(uid, { data: null, ts: now });
+                        result.set(uid, null);
+                    } else {
+                        result.set(uid, found.get(uid)!);
+                    }
+                }
+
+                offset += BATCH_LIMIT;
+            }
+        } catch {
+            for (const uid of uncachedIds) {
+                result.set(uid, null);
+            }
+        }
+    }
+
+    return result;
 }
 
 /**

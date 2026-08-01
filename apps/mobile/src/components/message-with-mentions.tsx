@@ -1,25 +1,67 @@
-import React from "react";
-import { Text, View } from "react-native";
+import React, { useMemo } from "react";
+import { Linking, Text, View, type TextStyle } from "react-native";
 import Markdown from "react-native-markdown-display";
 import { parseMentions } from "@/lib/mention-utils";
-import EmojiRenderer from "@/components/emoji-renderer";
+import { EmojiRenderer, type CustomEmoji } from "@/components/emoji-renderer";
 import { useTheme } from "@/hooks/use-theme";
 
 type MessageWithMentionsProps = {
   text: string;
   currentUserId?: string;
   knownNames?: string[];
+  customEmojis?: CustomEmoji[];
 };
 
-export function MessageWithMentions({ text }: MessageWithMentionsProps) {
-  const colors = useTheme();
-  const MARKDOWN_PATTERN = /(\*\*|__|\*[^*\n]+\*|_[^_\n]+_|~~|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}(?:[-+*]|\d+\.)\s+|^\s{0,3}>\s+|^\s{0,3}#{1,6}\s+)/m;
+const MARKDOWN_PATTERN =
+  /(\*\*|__|\*[^*\n]+\*|_[^_\n]+_|~~|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}(?:[-+*]|\d+\.)\s+|^\s{0,3}>\s+|^\s{0,3}#{1,6}\s+)/;
 
-  // If the text contains block or inline markdown, render with a full markdown renderer
-  if (MARKDOWN_PATTERN.test(text)) {
+export function MessageWithMentions({
+  text,
+  customEmojis = [],
+}: MessageWithMentionsProps) {
+  const colors = useTheme();
+
+  return useMemo(() => {
+    // If the text contains block or inline markdown, render with full markdown renderer
+    if (MARKDOWN_PATTERN.test(text)) {
+      const mdStyles: Record<string, TextStyle> = {
+      body: { color: colors.text, fontSize: 14, lineHeight: 20 },
+      strong: { fontWeight: "700" },
+      em: { fontStyle: "italic" },
+      del: { textDecorationLine: "line-through", opacity: 0.7 },
+      code_inline: {
+        fontFamily: "monospace",
+        backgroundColor: colors.backgroundElement,
+        paddingHorizontal: 4,
+        paddingVertical: 1,
+        borderRadius: 4,
+        fontSize: 13,
+      },
+      fence: {
+        fontFamily: "monospace",
+        backgroundColor: colors.backgroundElement,
+        padding: 8,
+        borderRadius: 6,
+        fontSize: 12,
+        lineHeight: 18,
+      },
+      blockquote: {
+        borderLeftWidth: 2,
+        borderLeftColor: colors.border,
+        paddingLeft: 8,
+        marginVertical: 4,
+        fontStyle: "italic",
+      },
+      link: {
+        color: colors.primary,
+        textDecorationLine: "underline",
+      },
+      list_item: { marginVertical: 2 },
+    };
+
     return (
       <View>
-        <Markdown style={{ body: { color: colors.text } }}>{text}</Markdown>
+        <Markdown style={mdStyles}>{text}</Markdown>
       </View>
     );
   }
@@ -28,7 +70,7 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
   type Renderer = (txt: string, keyBase: string) => React.ReactNode[];
 
   const renderInlineMarkdown: Renderer = (txt, keyBase) => {
-    // Order: code -> link -> bold -> italic -> fallback (emoji)
+    // Code
     const codeRegex = /`([^`]+)`/g;
     if (codeRegex.test(txt)) {
       codeRegex.lastIndex = 0;
@@ -38,43 +80,68 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
       let m: RegExpExecArray | null;
       while ((m = codeRegex.exec(txt)) !== null) {
         if (m.index > last) {
-          parts.push(...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-c${i}-a`));
+          parts.push(
+            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-c${i}-a`),
+          );
         }
         parts.push(
-          <Text key={`${keyBase}-code-${i}`} style={{ fontFamily: "monospace", backgroundColor: colors.backgroundElement, paddingHorizontal: 4 }}>
+          <Text
+            key={`${keyBase}-code-${i}`}
+            style={{
+              fontFamily: "monospace",
+              backgroundColor: colors.backgroundElement,
+              paddingHorizontal: 4,
+              fontSize: 13,
+            }}
+          >
             {m[1]}
           </Text>,
         );
         last = m.index + m[0].length;
         i++;
       }
-      if (last < txt.length) parts.push(...renderInlineMarkdown(txt.slice(last), `${keyBase}-c${i}-b`));
+      if (last < txt.length)
+        parts.push(
+          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-c${i}-b`),
+        );
       return parts;
     }
 
+    // Links
     const linkRegex = /(https?:\/\/[^\s]+)/g;
     if (linkRegex.test(txt)) {
       linkRegex.lastIndex = 0;
       const parts: React.ReactNode[] = [];
       let last = 0;
       let i = 0;
-      let m: RegExpExecArray | null;
-      while ((m = linkRegex.exec(txt)) !== null) {
+      while (true) {
+        const m = linkRegex.exec(txt);
+        if (!m) break;
         if (m.index > last) {
-          parts.push(...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-l${i}-a`));
+          parts.push(
+            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-l${i}-a`),
+          );
         }
         parts.push(
-          <Text key={`${keyBase}-link-${i}`} style={{ color: colors.primary, textDecorationLine: "underline" }} onPress={() => { /* implement linking if desired */ }}>
+          <Text
+            key={`${keyBase}-link-${i}`}
+            style={{ color: colors.primary, textDecorationLine: "underline" }}
+            onPress={() => Linking.openURL(m[0])}
+          >
             {m[0]}
           </Text>,
         );
         last = m.index + m[0].length;
         i++;
       }
-      if (last < txt.length) parts.push(...renderInlineMarkdown(txt.slice(last), `${keyBase}-l${i}-b`));
+      if (last < txt.length)
+        parts.push(
+          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-l${i}-b`),
+        );
       return parts;
     }
 
+    // Bold
     const boldRegex = /\*\*([^*]+)\*\*/g;
     if (boldRegex.test(txt)) {
       boldRegex.lastIndex = 0;
@@ -84,7 +151,9 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
       let m: RegExpExecArray | null;
       while ((m = boldRegex.exec(txt)) !== null) {
         if (m.index > last) {
-          parts.push(...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-b${i}-a`));
+          parts.push(
+            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-b${i}-a`),
+          );
         }
         parts.push(
           <Text key={`${keyBase}-bold-${i}`} style={{ fontWeight: "700" }}>
@@ -94,10 +163,14 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
         last = m.index + m[0].length;
         i++;
       }
-      if (last < txt.length) parts.push(...renderInlineMarkdown(txt.slice(last), `${keyBase}-b${i}-b`));
+      if (last < txt.length)
+        parts.push(
+          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-b${i}-b`),
+        );
       return parts;
     }
 
+    // Italic
     const italicRegex = /\*([^*]+)\*/g;
     if (italicRegex.test(txt)) {
       italicRegex.lastIndex = 0;
@@ -107,7 +180,9 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
       let m: RegExpExecArray | null;
       while ((m = italicRegex.exec(txt)) !== null) {
         if (m.index > last) {
-          parts.push(...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-i${i}-a`));
+          parts.push(
+            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-i${i}-a`),
+          );
         }
         parts.push(
           <Text key={`${keyBase}-italic-${i}`} style={{ fontStyle: "italic" }}>
@@ -117,12 +192,15 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
         last = m.index + m[0].length;
         i++;
       }
-      if (last < txt.length) parts.push(...renderInlineMarkdown(txt.slice(last), `${keyBase}-i${i}-b`));
+      if (last < txt.length)
+        parts.push(
+          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-i${i}-b`),
+        );
       return parts;
     }
 
-    // Fallback: render with emoji renderer which handles :emoji: and standard emoji
-    return [<EmojiRenderer key={keyBase + "-e"} text={txt} />];
+    // Fallback: render with emoji renderer
+    return [<EmojiRenderer key={keyBase + "-e"} text={txt} customEmojis={customEmojis} />];
   };
 
   // Split mentions and render tokens
@@ -131,7 +209,9 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
   if (matches.length === 0) {
     return (
       <View>
-        <Text style={{ color: colors.text }}>{renderInlineMarkdown(text, "root")}</Text>
+        <Text style={{ color: colors.text }}>
+          {renderInlineMarkdown(text, "root")}
+        </Text>
       </View>
     );
   }
@@ -152,15 +232,24 @@ export function MessageWithMentions({ text }: MessageWithMentionsProps) {
     <Text style={{ color: colors.text }}>
       {parts.map((p, i) =>
         p.isMention ? (
-          <Text key={i} style={{ fontWeight: "700", backgroundColor: colors.accent, color: colors.accentForeground, paddingHorizontal: 4 }}>
+          <Text
+            key={i}
+            style={{
+              fontWeight: "700",
+              backgroundColor: colors.accent,
+              color: colors.accentForeground,
+              paddingHorizontal: 4,
+            }}
+          >
             {p.text}
           </Text>
         ) : (
-          <Text key={i}>{renderInlineMarkdown(p.text, `p-${i}`)}</Text>
+          renderInlineMarkdown(p.text, `p-${i}`)
         ),
       )}
     </Text>
   );
+  }, [text, customEmojis, colors]);
 }
 
 export default MessageWithMentions;

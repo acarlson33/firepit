@@ -39,7 +39,7 @@ type InboxContextSummary = {
 
 const EMPTY_INBOX: InboxListResponse = {
     contractVersion: "message_v2",
-    counts: { mention: 0, thread: 0 },
+    counts: { message: 0, mention: 0, thread: 0 },
     items: [],
     unreadCount: 0,
 };
@@ -99,6 +99,7 @@ function removeItemsFromInbox(
 ): InboxListResponse {
     let removedUnread = 0;
     const removedByKind = {
+        message: 0,
         mention: 0,
         thread: 0,
     };
@@ -114,6 +115,7 @@ function removeItemsFromInbox(
     });
 
     const counts = {
+        message: Math.max(0, inbox.counts.message - removedByKind.message),
         mention: Math.max(0, inbox.counts.mention - removedByKind.mention),
         thread: Math.max(0, inbox.counts.thread - removedByKind.thread),
     };

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getUserProfile, getAvatarUrl } from "@/lib/appwrite-profiles";
+import {
+    getUserProfile,
+    getAvatarUrl,
+    getProfileBackgroundUrl,
+    getPredefinedAvatarFrameUrlByPresetId,
+} from "@/lib/appwrite-profiles";
 import { getUserStatus } from "@/lib/appwrite-status";
 
 type Props = {
@@ -17,19 +22,20 @@ export async function GET(_request: Request, { params }: Props) {
 			);
 		}
 
-		const profile = await getUserProfile(userId);
+		const [profile, status] = await Promise.all([
+			getUserProfile(userId),
+			getUserStatus(userId),
+		]);
 
 		if (!profile) {
 			return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 		}
 
-		// Add avatar URL if avatarFileId exists
 		const avatarUrl = profile.avatarFileId
 			? getAvatarUrl(profile.avatarFileId)
 			: undefined;
 
-		// Get user status
-		const status = await getUserStatus(userId);
+		const profileBackgroundImageFileId = profile.profileBackgroundImageFileId;
 
 		return NextResponse.json({
 			userId: profile.userId,
@@ -41,6 +47,14 @@ export async function GET(_request: Request, { params }: Props) {
 			dmEncryptionPublicKey: profile.dmEncryptionPublicKey,
 			avatarFileId: profile.avatarFileId,
 			avatarUrl,
+			profileBackgroundColor: profile.profileBackgroundColor,
+			profileBackgroundGradient: profile.profileBackgroundGradient,
+			profileBackgroundImageFileId,
+			profileBackgroundUrl: profileBackgroundImageFileId
+				? getProfileBackgroundUrl(profileBackgroundImageFileId)
+				: undefined,
+			avatarFramePreset: profile.avatarFramePreset,
+			avatarFrameUrl: getPredefinedAvatarFrameUrlByPresetId(profile.avatarFramePreset),
 			status: status
 				? {
 						status: status.status,

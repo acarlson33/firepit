@@ -95,20 +95,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         );
     }
 
-    if (serverDocument.isPublic !== true) {
-        const access = await getServerPermissionsForUser(
-            databases,
-            env,
-            serverId,
-            session.$id,
-        );
+    const isPublic = serverDocument.isPublic === true;
 
-        if (!access.isMember) {
-            return returnForbidden();
-        }
+    const [access, memberCount] = await Promise.all([
+        isPublic
+            ? Promise.resolve(null)
+            : getServerPermissionsForUser(databases, env, serverId, session.$id),
+        getActualMemberCount(databases, serverId),
+    ]);
+
+    if (!isPublic && (!access || !access.isMember)) {
+        return returnForbidden();
     }
-
-    const memberCount = await getActualMemberCount(databases, serverId);
     return NextResponse.json({
         server: mapServerDocument(serverDocument, memberCount),
     });

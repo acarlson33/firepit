@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RefreshCcw, Home } from "lucide-react";
 import Link from "next/link";
-import { recordClientError } from "@/lib/client-telemetry";
+import { recordClientError } from "@/lib/client-logger";
 
 export default function Error({
     error,

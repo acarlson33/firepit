@@ -1,6 +1,6 @@
 import { Account, Client } from "react-native-appwrite";
 
-import { firepitRequest } from "@/lib/firepit/http";
+import { firepitRequest, FirepitHttpError } from "@/lib/firepit/http";
 import {
     type CompatibilityEvaluation,
     type CurrentUser,
@@ -9,7 +9,7 @@ import {
     type VersionInfo,
 } from "@/lib/firepit/types";
 
-export const MOBILE_MINIMUM_SERVER_VERSION = "1.9.0";
+const MOBILE_MINIMUM_SERVER_VERSION = "1.9.0";
 export type AppwriteConfig = {
     endpoint: string;
     project: string;
@@ -257,23 +257,6 @@ export function normalizeInstanceUrl(value?: string | null) {
     }
 }
 
-function extractToken(response: Record<string, unknown>) {
-    const tokenKeys = [
-        "token",
-        "accessToken",
-        "bearerToken",
-        "sessionToken",
-        "jwt",
-    ];
-    for (const key of tokenKeys) {
-        const value = response[key];
-        if (typeof value === "string" && value.length > 0) {
-            return value;
-        }
-    }
-    return null;
-}
-
 export async function fetchVersion(baseUrl: string) {
     const payload = await firepitRequest<unknown>({
         baseUrl,
@@ -293,8 +276,9 @@ export async function fetchAllowUserServers(baseUrl: string) {
     });
 }
 
-export async function fetchCurrentUser(baseUrl: string, token: string) {
-    return firepitRequest<CurrentUser>({ baseUrl, path: "/api/me", token });
+async function fetchCurrentUser(baseUrl: string, token: string) {
+    const raw = await firepitRequest<CurrentUser>({ baseUrl, path: "/api/me", token });
+    return normalizeCurrentUser(raw);
 }
 
 async function fetchCurrentUserFromAppwrite(
@@ -320,8 +304,58 @@ export async function resolveCurrentUser(
     config?: AppwriteConfig | null,
 ) {
     try {
-        return await fetchCurrentUser(baseUrl, token);
+        const user = await fetchCurrentUser(baseUrl, token);
+        // /api/me doesn't return displayName — fetch it from the profile endpoint
+        if (user?.$id) {
+            try {
+                const profileRes = await fetch(
+                    `${baseUrl.replace(/\/$/, "")}/api/profile/${encodeURIComponent(user.$id)}`,
+                    { headers: { Authorization: `Bearer ${token}` } },
+                );
+                if (profileRes.ok) {
+                    const profile = (await profileRes.json()) as {
+                        displayName?: string;
+                        userName?: string;
+                        avatarUrl?: string;
+                        avatarFileId?: string;
+                        pronouns?: string;
+                        bio?: string;
+                        location?: string;
+                        website?: string;
+                        profileBackgroundColor?: string;
+                        profileBackgroundGradient?: string;
+                        profileBackgroundUrl?: string;
+                        avatarFramePreset?: string;
+                        avatarFrameUrl?: string;
+                    };
+                    return {
+                        ...user,
+                        ...(profile.displayName ? { displayName: profile.displayName } : {}),
+                        ...(profile.userName ? { userName: profile.userName } : {}),
+                        ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+                        ...(profile.avatarFileId ? { avatarFileId: profile.avatarFileId } : {}),
+                        ...(profile.pronouns ? { pronouns: profile.pronouns } : {}),
+                        ...(profile.bio ? { bio: profile.bio } : {}),
+                        ...(profile.location ? { location: profile.location } : {}),
+                        ...(profile.website ? { website: profile.website } : {}),
+                        ...(profile.profileBackgroundColor ? { profileBackgroundColor: profile.profileBackgroundColor } : {}),
+                        ...(profile.profileBackgroundGradient ? { profileBackgroundGradient: profile.profileBackgroundGradient } : {}),
+                        ...(profile.profileBackgroundUrl ? { profileBackgroundUrl: profile.profileBackgroundUrl } : {}),
+                        ...(profile.avatarFramePreset ? { avatarFramePreset: profile.avatarFramePreset } : {}),
+                        ...(profile.avatarFrameUrl ? { avatarFrameUrl: profile.avatarFrameUrl } : {}),
+                    };
+                }
+            } catch {
+                // ignore profile fetch failure — displayName is non-critical
+            }
+        }
+        return user;
     } catch (error) {
+        // If the server rejected the token (401/403), don't fall back to the
+        // client SDK — the token is genuinely invalid and we need re-auth.
+        if (error instanceof FirepitHttpError && (error.status === 401 || error.status === 403)) {
+            throw error;
+        }
         if (!config) {
             throw error;
         }
@@ -333,54 +367,41 @@ export async function resolveCurrentUser(
 export async function authenticateWithPassword(
     email: string,
     password: string,
+    instanceUrl: string,
     config: AppwriteConfig,
 ) {
     if (!config.endpoint || !config.project) {
         throw new Error("Connect to a valid Firepit instance first.");
     }
 
-    const client = createAppwriteClient(config);
-    const account = new Account(client);
+    // POST to the server's /api/auth/session endpoint instead of using the
+    // client SDK directly.  The server endpoint validates credentials via the
+    // public Account API and returns the session secret.  This is the same
+    // type of token the web app stores in its session cookie, so the server
+    // can validate it with client.setSession().
+    const response = await fetch(`${instanceUrl.replace(/\/$/, "")}/api/auth/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+    });
 
-    let session;
-    try {
-        session = await account.createEmailPasswordSession({ email, password });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // Appwrite may reject session creation when a session is already active for
-        // the current client context. Attempt to clear the current session and
-        // retry once.
-        if (
-            message.toLowerCase().includes("session is active") ||
-            message
-                .toLowerCase()
-                .includes("prohibited when a session is active")
-        ) {
-            try {
-                // best-effort: delete the current session then retry
-                // ignore any error from deleteSession and re-attempt login once
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                await (account as any).deleteSession({ sessionId: "current" });
-            } catch (_deleteErr) {
-                // swallow deletion errors and continue to retry
-            }
-
-            session = await account.createEmailPasswordSession({
-                email,
-                password,
-            });
-        } else {
-            throw err;
-        }
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message =
+            (errorData as { error?: string }).error ??
+            `Authentication failed with status ${response.status}`;
+        throw new Error(message);
     }
 
-    // Create a JWT from the authenticated session.
-    // The client has an active session from createEmailPasswordSession above,
-    // so createJWT() will work even for users without the "account" scope.
-    const jwt = await account.createJWT();
-    if (jwt.jwt) {
-        return jwt.jwt;
+    const data = (await response.json()) as {
+        success?: boolean;
+        session?: string;
+        userId?: string;
+    };
+
+    if (!data.session) {
+        throw new Error("Authentication response did not include a session token.");
     }
 
-    throw new Error("Authentication response did not include a JWT token.");
+    return data.session;
 }

@@ -6,20 +6,19 @@ import {
     trackApiCall,
     addTransactionAttributes,
     recordEvent,
-    trackDatabaseQuery,
     recordMetric,
+    __resetPostHogClient,
 } from "@/lib/newrelic-utils";
 
 const {
-    mockCapturePostHogServerError,
-    mockEmitPostHogLog,
-    mockSchedulePostHogLogFlush,
+    mockEmit,
+    mockSetGlobalLoggerProvider,
     mockNewRelic,
-    mockPostHogClient,
+    mockPostHogCapture,
+    mockPostHogCaptureException,
 } = vi.hoisted(() => ({
-    mockCapturePostHogServerError: vi.fn(),
-    mockEmitPostHogLog: vi.fn(),
-    mockSchedulePostHogLogFlush: vi.fn(),
+    mockEmit: vi.fn(),
+    mockSetGlobalLoggerProvider: vi.fn(),
     mockNewRelic: {
         recordCustomEvent: vi.fn(),
         recordMetric: vi.fn(),
@@ -35,34 +34,69 @@ const {
         getBrowserTimingHeader: vi.fn(),
         setLlmTokenCountCallback: vi.fn(),
     },
-    mockPostHogClient: {
-        capture: vi.fn(),
-    },
+    mockPostHogCapture: vi.fn(),
+    mockPostHogCaptureException: vi.fn(),
 }));
 
-// Mock the newrelic module
 vi.mock("newrelic", () => ({
     default: mockNewRelic,
 }));
 
-vi.mock("@/lib/posthog-server", () => ({
-    capturePostHogServerError: mockCapturePostHogServerError,
-    getPostHogClient: vi.fn(() => mockPostHogClient),
+vi.mock("@opentelemetry/sdk-logs", () => ({
+    LoggerProvider: vi.fn().mockImplementation(() => ({
+        getLogger: vi.fn().mockImplementation(() => ({
+            emit: mockEmit,
+        })),
+        forceFlush: vi.fn().mockResolvedValue(undefined),
+    })),
+    BatchLogRecordProcessor: vi.fn(),
+    SimpleLogRecordProcessor: vi.fn(),
 }));
 
-vi.mock("@/lib/posthog-logs", () => ({
-    emitPostHogLog: mockEmitPostHogLog,
-    schedulePostHogLogFlush: mockSchedulePostHogLogFlush,
+vi.mock("@opentelemetry/api-logs", () => ({
+    SeverityNumber: {
+        DEBUG: 5,
+        INFO: 9,
+        WARN: 13,
+        ERROR: 17,
+    },
+    logs: {
+        setGlobalLoggerProvider: mockSetGlobalLoggerProvider,
+    },
+}));
+
+vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
+    OTLPLogExporter: vi.fn(),
+}));
+
+vi.mock("@opentelemetry/resources", () => ({
+    resourceFromAttributes: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("posthog-node", () => ({
+    PostHog: vi.fn().mockImplementation(() => ({
+        capture: mockPostHogCapture,
+        captureException: mockPostHogCaptureException,
+        flush: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+    })),
+}));
+
+vi.mock("next/server", () => ({
+    NextResponse: {
+        json: vi.fn().mockReturnValue({ status: 200 }),
+    },
+    after: vi.fn(),
 }));
 
 describe("newrelic-utils", () => {
     beforeEach(() => {
-        // Clear all mocks before each test
+        __resetPostHogClient();
         Object.values(mockNewRelic).forEach((fn) => fn.mockClear());
-        mockPostHogClient.capture.mockClear();
-        mockCapturePostHogServerError.mockClear();
-        mockEmitPostHogLog.mockClear();
-        mockSchedulePostHogLogFlush.mockClear();
+        mockEmit.mockClear();
+        mockSetGlobalLoggerProvider.mockClear();
+        mockPostHogCapture.mockClear();
+        mockPostHogCaptureException.mockClear();
         delete process.env.TELEMETRY_PROVIDER;
         delete process.env.POSTHOG_PROJECT_API_KEY;
         delete process.env.POSTHOG_HOST;
@@ -70,7 +104,6 @@ describe("newrelic-utils", () => {
         delete process.env.NEXT_PUBLIC_POSTHOG_HOST;
         delete process.env.ENABLE_POSTHOG_IN_TESTS;
 
-        // Mock console methods
         vi.spyOn(console, "log").mockImplementation(() => {});
         vi.spyOn(console, "error").mockImplementation(() => {});
         vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -85,7 +118,7 @@ describe("newrelic-utils", () => {
         it("should log info messages", () => {
             logger.info("Test info message");
             expect(console.log).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test info message",
                     severityNumber: expect.any(Number),
@@ -96,7 +129,7 @@ describe("newrelic-utils", () => {
         it("should log info messages with attributes", () => {
             logger.info("Test info", { userId: "123" });
             expect(console.log).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test info",
                     severityNumber: expect.any(Number),
@@ -108,7 +141,7 @@ describe("newrelic-utils", () => {
         it("should log error messages", () => {
             logger.error("Test error message");
             expect(console.error).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test error message",
                     severityNumber: expect.any(Number),
@@ -119,7 +152,7 @@ describe("newrelic-utils", () => {
         it("should log error messages with attributes", () => {
             logger.error("Test error", { code: 500 });
             expect(console.error).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test error",
                     severityNumber: expect.any(Number),
@@ -131,7 +164,7 @@ describe("newrelic-utils", () => {
         it("should log warn messages", () => {
             logger.warn("Test warning message");
             expect(console.warn).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test warning message",
                     severityNumber: expect.any(Number),
@@ -142,7 +175,7 @@ describe("newrelic-utils", () => {
         it("should log warn messages with attributes", () => {
             logger.warn("Test warning", { threshold: 100 });
             expect(console.warn).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test warning",
                     severityNumber: expect.any(Number),
@@ -154,7 +187,7 @@ describe("newrelic-utils", () => {
         it("should log debug messages", () => {
             logger.debug("Test debug message");
             expect(console.log).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test debug message",
                     severityNumber: expect.any(Number),
@@ -165,35 +198,13 @@ describe("newrelic-utils", () => {
         it("should log debug messages with attributes", () => {
             logger.debug("Test debug", { step: 1 });
             expect(console.log).toHaveBeenCalled();
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test debug",
                     severityNumber: expect.any(Number),
                     attributes: expect.objectContaining({ step: 1 }),
                 }),
             );
-        });
-
-        it("should emit application_log event to PostHog when enabled", () => {
-            process.env.TELEMETRY_PROVIDER = "posthog";
-            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
-            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
-
-            logger.warn("Unauthorized request", {
-                route: "/api/messages",
-                statusCode: 401,
-            });
-
-            expect(mockPostHogClient.capture).toHaveBeenCalledWith({
-                distinctId: "server",
-                event: "application_log",
-                properties: expect.objectContaining({
-                    level: "warn",
-                    message: "Unauthorized request",
-                    route: "/api/messages",
-                    statusCode: 401,
-                }),
-            });
         });
     });
 
@@ -202,7 +213,7 @@ describe("newrelic-utils", () => {
             const error = new Error("Test error");
             recordError(error);
             expect(console.error).toHaveBeenCalledWith("[ERROR]", error, "");
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "Test error",
                     severityNumber: expect.any(Number),
@@ -227,7 +238,7 @@ describe("newrelic-utils", () => {
                 "String error message",
                 "",
             );
-            expect(mockEmitPostHogLog).toHaveBeenCalledWith(
+            expect(mockEmit).toHaveBeenCalledWith(
                 expect.objectContaining({
                     body: "String error message",
                     severityNumber: expect.any(Number),
@@ -252,19 +263,6 @@ describe("newrelic-utils", () => {
         it("should handle undefined error gracefully", () => {
             recordError(undefined as never);
             expect(console.error).toHaveBeenCalled();
-        });
-
-        it("should forward errors to PostHog helper when enabled", () => {
-            process.env.TELEMETRY_PROVIDER = "posthog";
-            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
-            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
-
-            const error = new Error("forwarded error");
-            recordError(error, { route: "/api/test" });
-
-            expect(mockCapturePostHogServerError).toHaveBeenCalledWith(error, {
-                route: "/api/test",
-            });
         });
     });
 
@@ -384,57 +382,6 @@ describe("newrelic-utils", () => {
                 recordEvent("User:Signup:Success", { platform: "web" });
             }).not.toThrow();
         });
-
-        it("should route to PostHog when provider is posthog", () => {
-            process.env.TELEMETRY_PROVIDER = "posthog";
-            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
-            process.env.POSTHOG_HOST = "https://us.i.posthog.com";
-            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
-
-            recordEvent("UserLogin", { userId: "123", method: "oauth" });
-
-            expect(mockPostHogClient.capture).toHaveBeenCalledWith({
-                distinctId: "123",
-                event: "UserLogin",
-                properties: { userId: "123", method: "oauth" },
-            });
-            expect(mockNewRelic.recordCustomEvent).not.toHaveBeenCalled();
-        });
-
-        it("should route to PostHog when provider is both (New Relic unavailable in test env)", () => {
-            process.env.TELEMETRY_PROVIDER = "both";
-            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
-            process.env.POSTHOG_HOST = "https://us.i.posthog.com";
-            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
-
-            recordEvent("UserLogin", { userId: "123" });
-
-            expect(mockPostHogClient.capture).toHaveBeenCalledTimes(1);
-            expect(mockNewRelic.recordCustomEvent).toHaveBeenCalledTimes(0);
-        });
-    });
-
-    describe("trackDatabaseQuery", () => {
-        it("should track database query with basic info without error", () => {
-            expect(() => {
-                trackDatabaseQuery("SELECT", "users", 45);
-            }).not.toThrow();
-        });
-
-        it("should track query with count", () => {
-            expect(() => {
-                trackDatabaseQuery("INSERT", "messages", 120, 1);
-            }).not.toThrow();
-        });
-
-        it("should track query with custom attributes", () => {
-            expect(() => {
-                trackDatabaseQuery("DELETE", "logs", 30, undefined, {
-                    batchSize: 100,
-                    deletedCount: 95,
-                });
-            }).not.toThrow();
-        });
     });
 
     describe("recordMetric", () => {
@@ -466,24 +413,6 @@ describe("newrelic-utils", () => {
             expect(() => {
                 recordMetric("custom.metrics.api.latency", 250);
             }).not.toThrow();
-        });
-
-        it("should emit PostHog metric event when provider is posthog", () => {
-            process.env.TELEMETRY_PROVIDER = "posthog";
-            process.env.POSTHOG_PROJECT_API_KEY = "test-key";
-            process.env.POSTHOG_HOST = "https://us.i.posthog.com";
-            process.env.ENABLE_POSTHOG_IN_TESTS = "true";
-
-            recordMetric("response.time", 150);
-
-            expect(mockPostHogClient.capture).toHaveBeenCalledWith({
-                distinctId: "server",
-                event: "metric_recorded",
-                properties: {
-                    metricName: "response.time",
-                    value: 150,
-                },
-            });
         });
     });
 });

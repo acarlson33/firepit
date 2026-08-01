@@ -339,7 +339,7 @@ describe("inbox", () => {
 
         expect(result.items).toHaveLength(1);
         expect(result.items[0]?.kind).toBe("mention");
-        expect(result.counts).toEqual({ mention: 1, thread: 0 });
+        expect(result.counts).toEqual({ message: 0, mention: 1, thread: 0 });
         expect(result.unreadCount).toBe(1);
         expect(result.contractVersion).toBe("message_v2");
     });

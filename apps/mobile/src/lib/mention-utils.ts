@@ -5,9 +5,16 @@ export interface MentionMatch {
   endIndex: number;
 }
 
+export interface EmojiMatch {
+  fullMatch: string;
+  shortcode: string;
+  startIndex: number;
+  endIndex: number;
+}
+
 const EVERYONE_MENTION_REGEX = /(?:^|\s)@all(?=$|\s|[.,!?;:])/i;
 
-export const MENTION_REGEX = /@(\S+)/g;
+const MENTION_REGEX = /@(\S+)/g;
 
 export function parseMentions(text: string): MentionMatch[] {
   const matches: MentionMatch[] = [];
@@ -77,6 +84,69 @@ export function replaceMentionAtCursor(
   return { newText, newCursorPosition };
 }
 
-export function hasEveryoneMention(text: string): boolean {
+function hasEveryoneMention(text: string): boolean {
   return EVERYONE_MENTION_REGEX.test(text);
+}
+
+export function getEmojiAtCursor(
+  text: string,
+  cursorPosition: number,
+): EmojiMatch | null {
+  const beforeCursor = text.substring(0, cursorPosition);
+  const lastColon = beforeCursor.lastIndexOf(":");
+
+  if (lastColon === -1) {
+    return null;
+  }
+
+  // Don't trigger if colon is preceded by another colon (already :emoji:)
+  const beforeColon = text.substring(0, lastColon);
+  const prevColon = beforeColon.lastIndexOf(":");
+  if (prevColon !== -1 && !/\s/.test(text.substring(prevColon + 1, lastColon))) {
+    return null;
+  }
+
+  // Only trigger if colon is at word boundary
+  if (lastColon > 0 && !/\s/.test(text[lastColon - 1])) {
+    return null;
+  }
+
+  const textAfterColon = text.substring(lastColon + 1, cursorPosition);
+  if (/\s/.test(textAfterColon)) {
+    return null;
+  }
+
+  const textAfterCursor = text.substring(cursorPosition);
+  const nextWhitespace = textAfterCursor.search(/[\s:]/);
+  const endIndex =
+    nextWhitespace === -1 ? text.length : cursorPosition + nextWhitespace;
+
+  const fullMatch = text.substring(lastColon, endIndex);
+  const shortcode = fullMatch.substring(1);
+
+  return {
+    fullMatch,
+    shortcode,
+    startIndex: lastColon,
+    endIndex,
+  };
+}
+
+export function replaceEmojiAtCursor(
+  text: string,
+  cursorPosition: number,
+  emojiShortcode: string,
+): { newText: string; newCursorPosition: number } {
+  const emoji = getEmojiAtCursor(text, cursorPosition);
+
+  if (!emoji) {
+    return { newText: text, newCursorPosition: cursorPosition };
+  }
+
+  const before = text.substring(0, emoji.startIndex);
+  const after = text.substring(emoji.endIndex);
+  const newText = `${before}:${emojiShortcode}: ${after}`;
+  const newCursorPosition = emoji.startIndex + emojiShortcode.length + 3;
+
+  return { newText, newCursorPosition };
 }

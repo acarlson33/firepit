@@ -6,7 +6,6 @@ import { getServerSession } from "@/lib/auth-server";
 import { getServerClient } from "@/lib/appwrite-server";
 import { getEnvConfig } from "@/lib/appwrite-core";
 import type { Server } from "@/lib/types";
-import { compressedResponse } from "@/lib/api-compression";
 import { listPages } from "@/lib/appwrite-pagination";
 import { getActualMemberCounts } from "@/lib/membership-count";
 import { mapServerDocument } from "@/lib/server-metadata";
@@ -100,7 +99,7 @@ export async function GET(request: NextRequest) {
         const { serverIds, truncated } = await loadServerIds();
 
         if (serverIds.length === 0) {
-            return compressedResponse(
+            return NextResponse.json(
                 {
                     servers: [] as Server[],
                     nextCursor: null,
@@ -146,8 +145,7 @@ export async function GET(request: NextRequest) {
         const last = servers.at(-1);
         const nextCursor = servers.length === limit && last ? last.$id : null;
 
-        // Use compressed response for large payloads (60-70% bandwidth reduction)
-        const response = compressedResponse(
+        return NextResponse.json(
             {
                 servers,
                 nextCursor,
@@ -159,8 +157,6 @@ export async function GET(request: NextRequest) {
                 },
             },
         );
-
-        return response;
     } catch (error) {
         return NextResponse.json(
             {

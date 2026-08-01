@@ -2,6 +2,8 @@ import { Platform } from "react-native";
 
 type QueryValue = string | number | boolean | null | undefined;
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export class FirepitHttpError extends Error {
   status: number;
   payload: unknown;
@@ -22,6 +24,7 @@ export type FirepitRequestOptions = {
   body?: unknown;
   query?: Record<string, QueryValue>;
   headers?: HeadersInit;
+  timeoutMs?: number;
 };
 
 function normalizeBaseUrl(baseUrl: string) {
@@ -62,6 +65,7 @@ export async function firepitRequest<T>({
   body,
   query,
   headers,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 }: FirepitRequestOptions): Promise<T> {
   const url = buildUrl(baseUrl, path, query);
   const requestHeaders = new Headers({ Accept: "application/json" });
@@ -78,29 +82,43 @@ export async function firepitRequest<T>({
       requestHeaders.set(key, value);
     });
   }
-  const response = await fetch(url, {
-    method,
-    headers: requestHeaders,
-    body:
-      body === undefined
-        ? undefined
-        : isFormData
-          ? (body as FormData)
-          : JSON.stringify(body),
-    credentials: "omit",
-  });
 
-  const payload = await readResponseBody(response);
-  if (!response.ok) {
-    const message =
-      typeof payload === "object" && payload !== null && "error" in payload
-        ? String(
-            (payload as { error?: unknown }).error ??
-              `Request failed with status ${response.status}`,
-          )
-        : `Request failed with status ${response.status}`;
-    throw new FirepitHttpError(message, response.status, payload);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: requestHeaders,
+      body:
+        body === undefined
+          ? undefined
+          : isFormData
+            ? (body as FormData)
+            : JSON.stringify(body),
+      credentials: "omit",
+      signal: controller.signal,
+    });
+
+    const payload = await readResponseBody(response);
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? String(
+              (payload as { error?: unknown }).error ??
+                `Request failed with status ${response.status}`,
+            )
+          : `Request failed with status ${response.status}`;
+      throw new FirepitHttpError(message, response.status, payload);
+    }
+
+    return payload as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return payload as T;
 }

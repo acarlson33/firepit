@@ -20,10 +20,6 @@ vi.mock("../lib/appwrite-admin", () => ({
     adminDeleteMessage: vi.fn(),
     getAdminMessageAuditContext: vi.fn(),
 }));
-vi.mock("../lib/monitoring", () => ({
-    recordMetric: vi.fn(),
-    recordTiming: vi.fn(),
-}));
 vi.mock("next/headers", () => ({
     cookies: async () => ({ get: () => ({ value: "session" }) }),
 }));

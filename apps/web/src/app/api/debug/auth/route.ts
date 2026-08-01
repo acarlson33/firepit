@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerSession } from "@/lib/auth-server";
+import { headers } from "next/headers";
 
 /**
  * GET /api/debug/auth
@@ -17,20 +18,27 @@ export async function GET() {
 	}
 
 	try {
+		const headerStore = await headers();
+		const authHeader =
+			headerStore.get("Authorization") ?? headerStore.get("authorization");
+		const token = authHeader
+			? authHeader.trim().split(/\s+/, 2)[1] ?? authHeader.trim()
+			: null;
+
+		const isLikelyJwt = token
+			? token.split(".").length === 3 &&
+				token.split(".").every((s: string) => s.length > 0)
+			: null;
+
 		const user = await getServerSession();
 
-		if (!user) {
-			return NextResponse.json({
-				authenticated: false,
-				message: "No session found",
-			});
-		}
-
 		return NextResponse.json({
-			authenticated: true,
-			userId: user.$id,
-			email: user.email,
-			name: user.name,
+			authenticated: Boolean(user),
+			userId: user?.$id ?? null,
+			hasAuthHeader: Boolean(authHeader),
+			tokenPresent: Boolean(token),
+			tokenLength: token?.length ?? 0,
+			isLikelyJwt,
 		});
 	} catch (error) {
 		return NextResponse.json(

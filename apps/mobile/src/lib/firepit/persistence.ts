@@ -9,7 +9,7 @@ import {
   deleteJsonValue,
   getJsonValue,
   setJsonValue,
-} from "@/lib/storage/sqlite";
+} from "@/lib/storage/secure-store";
 
 const keys = {
   instanceUrl: "firepit.instance-url",
@@ -104,7 +104,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   quietHoursEnd: "08:00",
 };
 
-export async function loadNotificationToken() {
+async function loadNotificationToken() {
   return getSecureItem(keys.notificationToken);
 }
 

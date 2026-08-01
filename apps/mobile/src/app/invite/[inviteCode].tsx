@@ -9,6 +9,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { fetchInvitePreview, joinInvite } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { ArrowLeft } from "lucide-react-native";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -126,6 +127,7 @@ export default function InviteScreen() {
         void loadInvite();
     }, [loadInvite]);
 
+    const serverId = invite?.serverId ?? null;
     const handleJoin = useCallback(async () => {
         if (!instanceUrl || !accessToken || !normalizedInviteCode) {
             setError("Sign in first to redeem this invite.");
@@ -136,7 +138,7 @@ export default function InviteScreen() {
             setJoining(true);
             setError(null);
             const response = await joinInvite(instanceUrl, accessToken, normalizedInviteCode);
-            const nextServerId = response.serverId ?? invite?.serverId ?? null;
+            const nextServerId = response.serverId ?? serverId;
             if (!nextServerId) {
                 throw new Error("Invite was redeemed, but no server id was returned.");
             }
@@ -151,7 +153,7 @@ export default function InviteScreen() {
         } finally {
             setJoining(false);
         }
-    }, [accessToken, instanceUrl, invite?.serverId, normalizedInviteCode]);
+    }, [accessToken, instanceUrl, serverId, normalizedInviteCode]);
 
     return (
         <ScrollView
@@ -274,7 +276,7 @@ export default function InviteScreen() {
                                     onPress={() => router.replace("/home")}
                                 />
 
-                                {error && loadState !== "error" ? (
+                                {error ? (
                                     <ThemedText themeColor="danger" style={styles.metaText}>
                                         {error}
                                     </ThemedText>

@@ -55,20 +55,22 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const authError = await requireManageRolesAccess(serverId);
+        const [authError, response] = await Promise.all([
+            requireManageRolesAccess(serverId),
+            databases.listDocuments(
+                databaseId,
+                rolesCollectionId,
+                [
+                    Query.equal("serverId", serverId),
+                    Query.orderDesc("position"),
+                    Query.limit(100),
+                ],
+            ),
+        ]);
+
         if (authError) {
             return authError;
         }
-
-        const response = await databases.listDocuments(
-            databaseId,
-            rolesCollectionId,
-            [
-                Query.equal("serverId", serverId),
-                Query.orderDesc("position"),
-                Query.limit(100),
-            ],
-        );
 
         return NextResponse.json({ roles: response.documents });
     } catch (error) {

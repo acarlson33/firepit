@@ -14,7 +14,7 @@
             },
             "ios": {
                 "env": {
-                    "TMPDIR": "./build-tmp/"
+                    "TMPDIR": "/home/august/eas-build-tmp/"
                 }
             },
             "channel": "development",
@@ -28,7 +28,11 @@
         "production": {
             "autoIncrement": true,
             "channel": "production",
-            "environment": "production"
+            "environment": "production",
+            "developmentClient": false,
+            "android": {
+                "buildType": "apk"
+            }
         }
     },
     "submit": {

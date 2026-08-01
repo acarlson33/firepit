@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
@@ -8,9 +8,12 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
-import type { Channel } from "@/lib/firepit";
-import { fetchChannels, fetchServer } from "@/lib/firepit";
+import type { Channel, ServerCategory } from "@/lib/firepit";
+import { fetchChannels, fetchServer, fetchServerCategories } from "@/lib/firepit";
+import { muteChannel, muteServer } from "@/lib/firepit/messages";
+import { getChannels, getCategories, getServerName as getCachedServerName, invalidateServerCache } from "@/lib/server-cache";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { ArrowLeft, Bell, BellOff } from "lucide-react-native";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -23,6 +26,7 @@ export default function ServerBrowserScreen() {
     const [serverLoadError, setServerLoadError] = useState<string | null>(null);
     const [serverName, setServerName] = useState<string | null>(null);
     const [channels, setChannels] = useState<Channel[]>([]);
+    const [categories, setCategories] = useState<ServerCategory[]>([]);
     const [channelLoadState, setChannelLoadState] = useState<LoadState>("idle");
     const [channelLoadError, setChannelLoadError] = useState<string | null>(
         null,
@@ -31,6 +35,8 @@ export default function ServerBrowserScreen() {
     const normalizedServerId = Array.isArray(serverId) ? serverId[0] : serverId;
     const signedIn = Boolean(state === "ready" && accessToken && currentUser);
     const canManageServer = signedIn && currentUser?.roles != null && Object.keys(currentUser.roles).length > 0;
+    const [mutedChannels, setMutedChannels] = useState<Set<string>>(new Set());
+    const [serverMuted, setServerMuted] = useState(false);
 
     const shellStatus = useMemo(() => {
         if (state === "ready") {
@@ -54,12 +60,12 @@ export default function ServerBrowserScreen() {
         setServerLoadError(null);
 
         try {
-            const nextServer = await fetchServer(
+            const name = await getCachedServerName(
                 instanceUrl,
                 accessToken,
                 normalizedServerId,
             );
-            setServerName(nextServer.server?.name ?? null);
+            setServerName(name);
             setServerLoadState("ready");
         } catch (error) {
             setServerLoadState("error");
@@ -80,12 +86,12 @@ export default function ServerBrowserScreen() {
         setChannelLoadError(null);
 
         try {
-            const nextChannels = await fetchChannels(
-                instanceUrl,
-                accessToken,
-                normalizedServerId,
-            );
-            setChannels(nextChannels.channels ?? []);
+            const [nextChannels, nextCategories] = await Promise.all([
+                getChannels(instanceUrl, accessToken, normalizedServerId),
+                getCategories(instanceUrl, accessToken, normalizedServerId),
+            ]);
+            setChannels(nextChannels);
+            setCategories(nextCategories);
             setChannelLoadState("ready");
         } catch (error) {
             setChannelLoadState("error");
@@ -122,41 +128,86 @@ export default function ServerBrowserScreen() {
         [normalizedServerId],
     );
 
+    const handleChannelMute = useCallback(async (channelId: string, currentlyMuted: boolean, duration: "15m" | "1h" | "8h" | "24h" | "forever" = "forever") => {
+        if (!instanceUrl || !accessToken) return;
+        try {
+            await muteChannel(instanceUrl, accessToken, channelId, !currentlyMuted, duration);
+            setMutedChannels((prev) => {
+                const next = new Set(prev);
+                currentlyMuted ? next.delete(channelId) : next.add(channelId);
+                return next;
+            });
+        } catch {
+            console.error("[server:muteChannel] Failed to toggle channel mute");
+        }
+    }, [instanceUrl, accessToken]);
+
+    const handleServerMute = useCallback(async () => {
+        if (!instanceUrl || !accessToken || !normalizedServerId) return;
+        try {
+            await muteServer(instanceUrl, accessToken, normalizedServerId, !serverMuted);
+            setServerMuted((prev) => !prev);
+        } catch {
+            console.error("[server:muteServer] Failed to toggle server mute");
+        }
+    }, [instanceUrl, accessToken, normalizedServerId, serverMuted]);
+
+    // Group channels by category
+    const groupedChannels = useMemo(() => {
+        const sorted = [...categories].sort((a, b) => {
+            const ap = a.position ?? 0;
+            const bp = b.position ?? 0;
+            if (ap !== bp) return ap - bp;
+            return (a.name ?? "").localeCompare(b.name ?? "");
+        });
+        const catMap = new Map<string, Channel[]>();
+        for (const ch of channels) {
+            const cid = ch.categoryId ?? "";
+            if (!cid) continue;
+            if (!catMap.has(cid)) catMap.set(cid, []);
+            catMap.get(cid)!.push(ch);
+        }
+        return sorted.map((cat) => ({
+            category: cat,
+            channels: (catMap.get(cat.$id ?? "") ?? []).sort((a, b) =>
+                (a.name ?? "").localeCompare(b.name ?? ""),
+            ),
+        }));
+    }, [categories, channels]);
+
+    const uncategorizedChannels = useMemo(() => {
+        return [...channels]
+            .filter((ch) => !ch.categoryId)
+            .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+    }, [channels]);
+
     return (
         <AuthRouteGuard>
-            <ScrollView
-                style={[styles.scrollView, styles.scrollView]}
-                contentContainerStyle={styles.scrollContent}
+            <View
+                style={[styles.root, { backgroundColor: theme.background }]}
             >
-                <View
-                    style={[
-                        styles.backdrop,
-                        { backgroundColor: theme.background },
-                    ]}
-                />
                 <View
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbTop,
-                        { backgroundColor: "rgba(217, 121, 43, 0.16)" },
+                        { backgroundColor: "rgba(217, 121, 43, 0.08)" },
                     ]}
                 />
                 <View
                     pointerEvents="none"
                     style={[
                         styles.backdropOrbBottom,
-                        { backgroundColor: "rgba(78, 138, 134, 0.10)" },
+                        { backgroundColor: "rgba(78, 138, 134, 0.06)" },
                     ]}
                 />
                 <SafeAreaView style={styles.safeArea}>
-                    <ThemedView style={styles.shell}>
-                        <ThemedView
-                            type="card"
-                            style={[
-                                styles.heroCard,
-                                { borderColor: theme.border },
-                            ]}
-                        >
+                    <ScrollView
+                        style={styles.scrollView}
+                        contentContainerStyle={styles.scrollContent}
+                    >
+                        <ThemedView style={styles.shell}>
+                        {/* Simple header replacing hero card */}
+                        <View style={styles.header}>
                             <ThemedText type="code" themeColor="accent">
                                 Server workspace
                             </ThemedText>
@@ -164,12 +215,6 @@ export default function ServerBrowserScreen() {
                                 {serverName ??
                                     normalizedServerId ??
                                     "Unknown server"}
-                            </ThemedText>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Pick a channel to open the message subpage.
                             </ThemedText>
                             <View style={styles.pillRow}>
                                 <StatusPill
@@ -187,143 +232,146 @@ export default function ServerBrowserScreen() {
                                     }
                                 />
                             </View>
-                        </ThemedView>
+                        </View>
 
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
-                            <ThemedText type="smallBold">Navigation</ThemedText>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Open the server browser again if you want to
-                                switch instances or pick another server.
-                            </ThemedText>
-                            <View style={styles.navButtonRow}>
-                                <ThemedView
-                                    type="secondary"
-                                    style={styles.backLink}
-                                >
-                                    <ThemedText
-                                        type="smallBold"
-                                        onPress={() => router.push("/home")}
-                                    >
-                                        Back to server browser
-                                    </ThemedText>
-                                </ThemedView>
-                                {canManageServer ? (
-                                    <>
-                                        <ActionButton
-                                            label="Manage channels"
-                                            tone="secondary"
-                                            onPress={() => {
-                                                if (normalizedServerId) {
-                                                    router.push(
-                                                        `/server/${normalizedServerId}/channels` as never,
-                                                    );
-                                                }
-                                            }}
-                                        />
-                                        <ActionButton
-                                            label="Manage roles"
-                                            tone="ghost"
-                                            onPress={() => {
-                                                if (normalizedServerId) {
-                                                    router.push(
-                                                        `/server/${normalizedServerId}/roles` as never,
-                                                    );
-                                                }
-                                            }}
-                                        />
-                                    </>
-                                ) : null}
-                            </View>
-                        </ThemedView>
-
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
-                            <View style={styles.sectionHeaderRow}>
-                                <ThemedText type="smallBold">
-                                    Channels
-                                </ThemedText>
-                                <ActionButton
-                                    label="Refresh"
-                                    tone="ghost"
-                                    onPress={loadChannels}
-                                />
-                            </View>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Open a channel to read and send messages.
-                            </ThemedText>
-
-                            {channelLoadState === "loading" ? (
-                                <ThemedText themeColor="mutedForeground">
-                                    Loading channels…
-                                </ThemedText>
-                            ) : null}
-                            {channelLoadError ? (
-                                <ThemedText themeColor="destructive">
-                                    {channelLoadError}
-                                </ThemedText>
-                            ) : null}
-
-                            {!signedIn ? (
-                                <ThemedText themeColor="mutedForeground">
-                                    Sign in to load channels for this server.
-                                </ThemedText>
-                            ) : channels.length > 0 ? (
-                                <View style={styles.list}>
-                                    {channels.map((channel) => (
-                                        <ChannelCard
-                                            key={channel.$id ?? channel.name}
-                                            channel={channel}
-                                            onPress={() =>
-                                                openChannel(channel.$id)
+                        {/* Navigation chips */}
+                        <View style={styles.navButtonRow}>
+                            <ActionButton
+                                label="Back to browser"
+                                tone="secondary"
+                                onPress={() => router.push("/home")}
+                            />
+                            {canManageServer ? (
+                                <>
+                                    <ActionButton
+                                        label="Channels"
+                                        tone="ghost"
+                                        onPress={() => {
+                                            if (normalizedServerId) {
+                                                router.push(
+                                                    `/server/${normalizedServerId}/channels` as never,
+                                                );
                                             }
-                                        />
-                                    ))}
-                                </View>
-                            ) : channelLoadState === "ready" ? (
-                                <ThemedText themeColor="mutedForeground">
-                                    No channels were returned for this server.
-                                </ThemedText>
+                                        }}
+                                    />
+                                    <ActionButton
+                                        label="Roles"
+                                        tone="ghost"
+                                        onPress={() => {
+                                            if (normalizedServerId) {
+                                                router.push(
+                                                    `/server/${normalizedServerId}/roles` as never,
+                                                );
+                                            }
+                                        }}
+                                    />
+                                </>
                             ) : null}
-                        </ThemedView>
+                            <ActionButton
+                                label={serverMuted ? "Unmute server" : "Mute server"}
+                                tone="ghost"
+                                onPress={handleServerMute}
+                            />
+                        </View>
 
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
-                            <ThemedText type="smallBold">Navigation</ThemedText>
-                            <ThemedText
-                                themeColor="mutedForeground"
-                                style={styles.copy}
-                            >
-                                Open a message subpage instead of scrolling
-                                through all channel details here.
+                        {/* Channels section */}
+                        <View style={styles.sectionHeaderRow}>
+                            <ThemedText type="smallBold">
+                                Channels
                             </ThemedText>
-                            <ThemedView
-                                type="secondary"
-                                style={styles.backLink}
-                            >
-                                <ThemedText
-                                    type="smallBold"
-                                    onPress={() => router.push("/home")}
-                                >
-                                    Back to server browser
-                                </ThemedText>
-                            </ThemedView>
-                        </ThemedView>
+                            <ActionButton
+                                label="Refresh"
+                                tone="ghost"
+                                onPress={() => {
+                                    if (normalizedServerId) invalidateServerCache(normalizedServerId);
+                                    void loadChannels();
+                                }}
+                            />
+                        </View>
+
+                        {channelLoadState === "loading" ? (
+                            <ThemedText themeColor="mutedForeground">
+                                Loading channels…
+                            </ThemedText>
+                        ) : null}
+                        {channelLoadError ? (
+                            <ThemedText themeColor="destructive">
+                                {channelLoadError}
+                            </ThemedText>
+                        ) : null}
+
+                        {!signedIn ? (
+                            <ThemedText themeColor="mutedForeground">
+                                Sign in to load channels for this server.
+                            </ThemedText>
+                        ) : channels.length > 0 ? (
+                            <View style={styles.list}>
+                                {groupedChannels.map(({ category, channels: catChannels }) => (
+                                    <View key={category.$id} style={styles.categorySection}>
+                                        <View style={styles.categoryHeader}>
+                                            <ThemedText type="smallBold" style={styles.categoryHeaderText}>
+                                                {category.name ?? "Category"}
+                                            </ThemedText>
+                                            <ThemedText type="code" themeColor="mutedForeground">
+                                                {catChannels.length}
+                                            </ThemedText>
+                                        </View>
+                                        {catChannels.map((channel) => (
+                                            <ChannelCard
+                                                key={channel.$id ?? channel.name}
+                                                channel={channel}
+                                                isMuted={mutedChannels.has(channel.$id ?? "")}
+                                                onPress={() =>
+                                                    openChannel(channel.$id)
+                                                }
+                                                onMuteToggle={(duration) => {
+                                                    if (channel.$id) {
+                                                        handleChannelMute(channel.$id, mutedChannels.has(channel.$id), duration);
+                                                    }
+                                                }}
+                                            />
+                                        ))}
+                                    </View>
+                                ))}
+                                {uncategorizedChannels.length > 0 && (
+                                    <View style={styles.categorySection}>
+                                        {groupedChannels.length > 0 && (
+                                            <View style={styles.categoryHeader}>
+                                                <ThemedText type="smallBold" style={styles.categoryHeaderText}>
+                                                    Uncategorized
+                                                </ThemedText>
+                                                <ThemedText type="code" themeColor="mutedForeground">
+                                                    {uncategorizedChannels.length}
+                                                </ThemedText>
+                                            </View>
+                                        )}
+                                        {uncategorizedChannels.map((channel) => (
+                                            <ChannelCard
+                                                key={channel.$id ?? channel.name}
+                                                channel={channel}
+                                                isMuted={mutedChannels.has(channel.$id ?? "")}
+                                                onPress={() =>
+                                                    openChannel(channel.$id)
+                                                }
+                                                onMuteToggle={(duration) => {
+                                                    if (channel.$id) {
+                                                        handleChannelMute(channel.$id, mutedChannels.has(channel.$id), duration);
+                                                    }
+                                                }}
+                                            />
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+                        ) : channelLoadState === "ready" ? (
+                            <ThemedText themeColor="mutedForeground">
+                                No channels were returned for this server.
+                            </ThemedText>
+                        ) : null}
                     </ThemedView>
+                    </ScrollView>
                 </SafeAreaView>
-            </ScrollView>
+            </View>
         </AuthRouteGuard>
     );
 }
@@ -396,24 +444,32 @@ function ActionButton({
 
 function ChannelCard({
     channel,
+    isMuted,
     onPress,
+    onMuteToggle,
 }: {
     channel: Channel;
+    isMuted: boolean;
     onPress: () => void;
+    onMuteToggle?: (duration?: "15m" | "1h" | "8h" | "24h" | "forever") => void;
 }) {
     const theme = useTheme();
+    const [showMuteAction, setShowMuteAction] = useState(false);
 
     return (
         <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Open ${channel.name ?? "channel"}`}
             onPress={onPress}
+            onLongPress={() => setShowMuteAction(true)}
+            delayLongPress={350}
             style={({ pressed }) => [
                 styles.channelCard,
                 pressed && styles.channelCardPressed,
                 {
                     backgroundColor: theme.card,
-                    borderColor: theme.border,
+                    borderColor: isMuted ? theme.destructive + "40" : theme.border,
+                    opacity: isMuted ? 0.65 : 1,
                 },
             ]}
         >
@@ -429,16 +485,23 @@ function ChannelCard({
                         {channel.$id ?? "No channel ID"}
                     </ThemedText>
                 </View>
-                <StatusPill
-                    label={channel.type ?? "text"}
-                    tone={
-                        channel.type === "announcement"
-                            ? "warning"
-                            : channel.type === "voice"
-                              ? "success"
-                              : "neutral"
-                    }
-                />
+                <View style={styles.channelTypeRow}>
+                    {isMuted ? (
+                        <ThemedText type="code" themeColor="destructive" style={styles.channelMutedLabel}>
+                            Muted
+                        </ThemedText>
+                    ) : null}
+                    <StatusPill
+                        label={channel.type ?? "text"}
+                        tone={
+                            channel.type === "announcement"
+                                ? "warning"
+                                : channel.type === "voice"
+                                  ? "success"
+                                  : "neutral"
+                        }
+                    />
+                </View>
             </View>
 
             {channel.topic ? (
@@ -452,7 +515,7 @@ function ChannelCard({
             )}
 
             <View style={styles.channelMetaRow}>
-                {typeof channel.unreadCount === "number" && channel.unreadCount > 0 ? (
+                {typeof channel.unreadCount === "number" && channel.unreadCount > 0 && !isMuted ? (
                     <StatusPill
                         label={`${channel.unreadCount} unread`}
                         tone="warning"
@@ -464,23 +527,70 @@ function ChannelCard({
                         tone="neutral"
                     />
                 ) : null}
-                <ThemedText type="code" themeColor="accent">
-                    Open messages
-                </ThemedText>
+                {showMuteAction ? (
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                            if (isMuted) {
+                                onMuteToggle?.();
+                            } else {
+                                Alert.alert("Mute channel", "For how long?", [
+                                    { text: "Cancel", style: "cancel" },
+                                    { text: "15 minutes", onPress: () => onMuteToggle?.("15m") },
+                                    { text: "1 hour", onPress: () => onMuteToggle?.("1h") },
+                                    { text: "8 hours", onPress: () => onMuteToggle?.("8h") },
+                                    { text: "24 hours", onPress: () => onMuteToggle?.("24h") },
+                                    { text: "Until I turn it off", onPress: () => onMuteToggle?.("forever") },
+                                ]);
+                            }
+                            setShowMuteAction(false);
+                        }}
+                        style={({ pressed }) => [
+                            styles.muteActionButton,
+                            {
+                                backgroundColor: isMuted ? theme.primary + "20" : theme.destructive + "20",
+                                opacity: pressed ? 0.8 : 1,
+                            },
+                        ]}
+                    >
+                        <ThemedText type="smallBold" themeColor={isMuted ? "foreground" : "destructive"}>
+                            {isMuted ? "Unmute" : "Mute"}
+                        </ThemedText>
+                    </Pressable>
+                ) : (
+                    <ThemedText type="code" themeColor="accent">
+                        Open messages
+                    </ThemedText>
+                )}
+                {showMuteAction ? (
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setShowMuteAction(false)}
+                        style={({ pressed }) => [
+                            styles.muteActionButton,
+                            {
+                                backgroundColor: theme.muted,
+                                opacity: pressed ? 0.8 : 1,
+                            },
+                        ]}
+                    >
+                        <ThemedText type="smallBold" themeColor="foreground">
+                            Cancel
+                        </ThemedText>
+                    </Pressable>
+                ) : null}
             </View>
         </Pressable>
     );
 }
 
 const styles = StyleSheet.create({
+    root: { flex: 1 },
     scrollView: {
         flex: 1,
     },
     scrollContent: {
         flexGrow: 1,
-    },
-    backdrop: {
-        ...StyleSheet.absoluteFill,
     },
     backdropOrbTop: {
         position: "absolute",
@@ -500,31 +610,24 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
-        paddingHorizontal: Spacing.three,
-        paddingBottom: BottomTabInset + Spacing.four,
+        paddingHorizontal: Spacing.two,
+        paddingBottom: BottomTabInset + Spacing.two,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
-        gap: Spacing.three,
-        paddingTop: Spacing.four,
+        alignSelf: "center",
+        gap: Spacing.two,
+        paddingTop: Spacing.two,
     },
-    heroCard: {
-        borderRadius: 28,
-        padding: Spacing.four,
-        gap: Spacing.three,
-        borderWidth: 1,
+    header: {
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.two,
+        gap: Spacing.one,
     },
     copy: {
         fontSize: 14,
         lineHeight: 20,
-    },
-    card: {
-        borderRadius: 22,
-        padding: Spacing.three,
-        gap: Spacing.two,
-        borderWidth: 1,
     },
     pillRow: {
         flexDirection: "row",
@@ -536,20 +639,36 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
         gap: Spacing.two,
+        paddingHorizontal: Spacing.two,
     },
     statusPill: {
         paddingHorizontal: Spacing.two,
-        paddingVertical: 6,
+        paddingVertical: 4,
         borderRadius: 999,
         borderWidth: 1,
     },
     list: {
-        gap: Spacing.two,
+        gap: Spacing.one,
+    },
+    categorySection: {
+        gap: Spacing.half,
+    },
+    categoryHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: Spacing.one,
+        paddingVertical: Spacing.half,
+    },
+    categoryHeaderText: {
+        fontSize: 11,
+        letterSpacing: 0.5,
+        textTransform: "uppercase",
     },
     actionButton: {
         borderRadius: 999,
-        paddingHorizontal: Spacing.three,
-        paddingVertical: Spacing.two,
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.one,
         borderWidth: 1,
     },
     actionButtonPressed: {
@@ -559,9 +678,9 @@ const styles = StyleSheet.create({
         textAlign: "center",
     },
     channelCard: {
-        borderRadius: 18,
-        padding: Spacing.three,
-        gap: Spacing.two,
+        borderRadius: 12,
+        padding: Spacing.two,
+        gap: Spacing.one,
         borderWidth: 1,
     },
     channelCardPressed: {
@@ -571,11 +690,11 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "flex-start",
         justifyContent: "space-between",
-        gap: Spacing.two,
+        gap: Spacing.one,
     },
     channelTitleRow: {
         flex: 1,
-        gap: Spacing.one,
+        gap: Spacing.half,
     },
     channelMeta: {
         fontSize: 12,
@@ -586,15 +705,25 @@ const styles = StyleSheet.create({
         gap: Spacing.one,
         alignItems: "center",
     },
-    backLink: {
-        borderRadius: 999,
-        paddingHorizontal: Spacing.three,
-        paddingVertical: Spacing.two,
-    },
     navButtonRow: {
         flexDirection: "row",
         flexWrap: "wrap",
-        gap: Spacing.two,
+        gap: Spacing.one,
         alignItems: "center",
+        paddingHorizontal: Spacing.two,
+    },
+    channelTypeRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: Spacing.one,
+    },
+    channelMutedLabel: {
+        fontSize: 10,
+        letterSpacing: 0.5,
+    },
+    muteActionButton: {
+        borderRadius: 8,
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.half,
     },
 });

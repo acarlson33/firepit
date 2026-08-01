@@ -84,9 +84,30 @@ function chunkValues<T>(values: T[], size: number) {
  * @param {string} userId - The user id value.
  * @returns {Promise<UserProfile | null>} The return value.
  */
+
+const PROFILE_CACHE_TTL_MS = 30_000;
+const PROFILE_CACHE_MAX = 500;
+const profileCache = new Map<string, { data: UserProfile | null; ts: number }>();
+
+function evictProfileCache(): void {
+    if (profileCache.size <= PROFILE_CACHE_MAX) return;
+    const now = Date.now();
+    for (const [key, entry] of profileCache) {
+        if (now - entry.ts > PROFILE_CACHE_TTL_MS || profileCache.size > PROFILE_CACHE_MAX) {
+            profileCache.delete(key);
+        }
+    }
+}
+
 export async function getUserProfile(
     userId: string,
 ): Promise<UserProfile | null> {
+    evictProfileCache();
+    const cached = profileCache.get(userId);
+    if (cached && Date.now() - cached.ts < PROFILE_CACHE_TTL_MS) {
+        return cached.data;
+    }
+
     const { databases } = getAdminClient();
     const env = getEnvConfig();
 
@@ -97,10 +118,63 @@ export async function getUserProfile(
     );
 
     if (profiles.documents.length === 0) {
+        profileCache.set(userId, { data: null, ts: Date.now() });
         return null;
     }
 
-    return profiles.documents[0] as unknown as UserProfile;
+    const result = profiles.documents[0] as unknown as UserProfile;
+    profileCache.set(userId, { data: result, ts: Date.now() });
+    return result;
+}
+
+export async function getUserProfilesBatch(
+    userIds: string[],
+): Promise<Map<string, UserProfile>> {
+    if (userIds.length === 0) return new Map();
+
+    evictProfileCache();
+    const now = Date.now();
+    const result = new Map<string, UserProfile>();
+    const uncached: string[] = [];
+
+    for (const uid of userIds) {
+        const cached = profileCache.get(uid);
+        if (cached && now - cached.ts < PROFILE_CACHE_TTL_MS) {
+            if (cached.data) result.set(uid, cached.data);
+        } else {
+            uncached.push(uid);
+        }
+    }
+
+    if (uncached.length === 0) return result;
+
+    const { databases } = getAdminClient();
+    const env = getEnvConfig();
+
+    const batchSize = 100;
+    for (let i = 0; i < uncached.length; i += batchSize) {
+        const batch = uncached.slice(i, i + batchSize);
+        const response = await databases.listDocuments(
+            env.databaseId,
+            env.collections.profiles,
+            [Query.equal("userId", batch), Query.limit(batchSize)],
+        );
+        for (const doc of response.documents) {
+            const profile = doc as unknown as UserProfile;
+            if (profile.userId) {
+                result.set(profile.userId, profile);
+                profileCache.set(profile.userId, { data: profile, ts: now });
+            }
+        }
+        // Cache misses (IDs with no profile) to avoid re-querying
+        for (const uid of batch) {
+            if (!result.has(uid)) {
+                profileCache.set(uid, { data: null, ts: now });
+            }
+        }
+    }
+
+    return result;
 }
 
 /**

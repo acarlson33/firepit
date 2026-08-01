@@ -114,7 +114,7 @@ vi.mock("@/lib/newrelic-utils", () => ({
     recordEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/rate-limiter", () => ({
+vi.mock("@/lib/rate-limit", () => ({
     checkRateLimit: mockCheckRateLimit,
 }));
 

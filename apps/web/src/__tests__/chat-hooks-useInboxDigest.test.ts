@@ -110,7 +110,7 @@ describe("useInboxDigest", () => {
             limit: undefined,
         });
         expect(result.current.totalUnreadCount).toBe(3);
-        expect(result.current.unreadByKind).toEqual({ mention: 1, thread: 2 });
+        expect(result.current.unreadByKind).toEqual({ message: 0, mention: 1, thread: 2 });
         expect(result.current.contractVersion).toBe("message_v2");
     });
 

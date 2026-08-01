@@ -8,6 +8,7 @@ env.APPWRITE_PROJECT_ID = "test-project";
 // Mock node-appwrite
 vi.mock("node-appwrite", () => ({
     Client: class MockClient {
+        __mockAuthMode: "jwt" | "session" | null = null;
         setEndpoint() {
             return this;
         }
@@ -15,14 +16,32 @@ vi.mock("node-appwrite", () => ({
             return this;
         }
         setJWT() {
+            this.__mockAuthMode = "jwt";
             return this;
         }
         setSession() {
+            this.__mockAuthMode = "session";
             return this;
         }
     },
     Account: class MockAccount {
+        authMode: "jwt" | "session" | null = null;
+        constructor(client?: MockClient) {
+            this.authMode = client?.__mockAuthMode ?? null;
+        }
         async get() {
+            const modeResponses = (globalThis as any).__mockAuthModeResponses;
+            if (
+                modeResponses &&
+                this.authMode &&
+                this.authMode in modeResponses
+            ) {
+                const modeResponse = modeResponses[this.authMode];
+                if (modeResponse === null || modeResponse === undefined) {
+                    throw new Error("No session");
+                }
+                return modeResponse;
+            }
             const mockUser = (globalThis as any).__mockAuthUser;
             if (mockUser === null || mockUser === undefined) {
                 throw new Error("No session");
@@ -91,11 +110,20 @@ function setMockUserRoles(
     mockRoles[userId] = roles;
 }
 
+function setMockAuthModeResponse(
+    mode: "jwt" | "session",
+    user: { $id: string; name: string; email: string } | null,
+) {
+    const modeResponses = ((globalThis as any).__mockAuthModeResponses ||= {});
+    modeResponses[mode] = user;
+}
+
 function clearMocks() {
     (globalThis as any).__mockAuthUser = undefined;
     (globalThis as any).__mockCookies = {};
     (globalThis as any).__mockHeaders = {};
     (globalThis as any).__mockUserRoles = {};
+    (globalThis as any).__mockAuthModeResponses = undefined;
 }
 
 function clearEnvVar(envName: string) {
@@ -105,6 +133,9 @@ function clearEnvVar(envName: string) {
 describe("auth-server", () => {
     beforeEach(() => {
         clearMocks();
+        // Reset the module registry so the auth-server session cache is fresh
+        // for each test (otherwise cached sessions leak across tests).
+        vi.resetModules();
         // Reset env vars
         const env = process.env as Record<string, string>;
         env.APPWRITE_ENDPOINT = "http://localhost";
@@ -170,6 +201,51 @@ describe("auth-server", () => {
             const { getServerSession } = await import("../lib/auth-server");
             const session = await getServerSession();
             expect(session).toEqual(mockUser);
+        });
+
+        it("should fall back to session auth for jwt-like session tokens", async () => {
+            const mockUser = {
+                $id: "user789",
+                name: "Session Secret User",
+                email: "session@example.com",
+            };
+
+            // Appwrite session secrets are JWT-shaped (three dot-separated
+            // segments). JWT auth fails for them; the session fallback must
+            // still be attempted even though jwt auth was tried and failed.
+            setMockHeaders({
+                Authorization: "Bearer header.payload.signature",
+            });
+            setMockAuthModeResponse("jwt", null);
+            setMockAuthModeResponse("session", mockUser);
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
+        });
+
+        it("should not let a failed jwt attempt poison the session fallback cache", async () => {
+            const mockUser = {
+                $id: "user999",
+                name: "Recovered User",
+                email: "recovered@example.com",
+            };
+
+            setMockHeaders({
+                Authorization: "Bearer header.payload.signature",
+            });
+            setMockAuthModeResponse("jwt", null);
+            setMockAuthModeResponse("session", mockUser);
+
+            const { getServerSession } = await import("../lib/auth-server");
+
+            const firstAttempt = await getServerSession();
+            expect(firstAttempt).toEqual(mockUser);
+
+            // Second request (cache hit for jwt, fresh cache hit for session)
+            // must still resolve the user.
+            const secondAttempt = await getServerSession();
+            expect(secondAttempt).toEqual(mockUser);
         });
 
         it("should return user when valid session exists", async () => {

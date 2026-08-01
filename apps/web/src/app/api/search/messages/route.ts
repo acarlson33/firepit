@@ -16,7 +16,6 @@ import {
     returnUnauthorized,
     returnForbidden,
 } from "@/lib/newrelic-utils";
-import { compressedResponse } from "@/lib/api-compression";
 
 type SearchResult = {
     type: "channel" | "dm";
@@ -199,29 +198,87 @@ export async function GET(request: NextRequest) {
         messageQueries.push(Query.limit(50));
         messageQueries.push(Query.orderDesc("$createdAt"));
 
-        // Search channel messages
-        try {
-            const dbStartTime = Date.now();
-            const channelMessages = await databases.listDocuments(
+        // Build DM queries eagerly so both searches can run in parallel
+        let dmQueries: string[] | null = null;
+        if (!channelId && !filters.inChannel) {
+            dmQueries = [];
+
+            if (filters.text) {
+                dmQueries.push(Query.search("text", filters.text));
+            }
+
+            if (userId || filters.fromUser) {
+                dmQueries.push(
+                    Query.equal("senderId", userId || filters.fromUser || ""),
+                );
+            } else {
+                dmQueries.push(
+                    Query.or([
+                        Query.equal("senderId", user.$id),
+                        Query.equal("receiverId", user.$id),
+                    ]),
+                );
+            }
+
+            if (fromDate || filters.afterDate) {
+                const dateStr = fromDate || filters.afterDate || "";
+                dmQueries.push(Query.greaterThanEqual("$createdAt", dateStr));
+            }
+
+            if (toDate || filters.beforeDate) {
+                const dateStr = toDate || filters.beforeDate || "";
+                dmQueries.push(Query.lessThanEqual("$createdAt", dateStr));
+            }
+
+            if (filters.hasImage) {
+                dmQueries.push(Query.isNotNull("imageFileId"));
+            }
+
+            if (filters.mentionsMe) {
+                dmQueries.push(Query.search("mentions", user.$id));
+            }
+
+            dmQueries.push(Query.limit(50));
+            dmQueries.push(Query.orderDesc("$createdAt"));
+        }
+
+        // Run channel and DM searches in parallel
+        const [channelResult, dmResult] = await Promise.all([
+            databases.listDocuments(
                 env.databaseId,
                 env.collections.messages,
                 messageQueries,
-            );
+            ).catch((error) => {
+                logger.error("Failed to search channel messages", {
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                return null;
+            }),
+            dmQueries
+                ? databases.listDocuments(
+                      env.databaseId,
+                      env.collections.directMessages,
+                      dmQueries,
+                  ).catch((error) => {
+                      logger.error("Failed to search direct messages", {
+                          error:
+                              error instanceof Error ? error.message : String(error),
+                      });
+                      return null;
+                  })
+                : Promise.resolve(null),
+        ]);
 
-            logger.info("Search: fetched channel messages", {
-                userId: user.$id,
-                count: channelMessages.documents.length,
-            });
-
+        if (channelResult) {
             trackApiCall(
                 "/api/search/messages",
                 "GET",
                 200,
-                Date.now() - dbStartTime,
+                0,
                 { operation: "listDocuments", collection: "messages" },
             );
 
-            for (const doc of channelMessages.documents) {
+            for (const doc of channelResult.documents) {
                 const message: Message = {
                     $id: String(doc.$id),
                     userId: String(doc.userId),
@@ -260,130 +317,59 @@ export async function GET(request: NextRequest) {
 
                 results.push({ type: "channel", message });
             }
-        } catch (error) {
-            logger.error("Failed to search channel messages", {
-                error: error instanceof Error ? error.message : String(error),
-            });
         }
 
-        // Build query filters for DM messages (only if no channel filter)
-        if (!channelId && !filters.inChannel) {
-            const dmQueries: string[] = [];
+        if (dmResult) {
+            trackApiCall(
+                "/api/search/messages",
+                "GET",
+                200,
+                0,
+                {
+                    operation: "listDocuments",
+                    collection: "directMessages",
+                },
+            );
 
-            // Add text search
-            if (filters.text) {
-                dmQueries.push(Query.search("text", filters.text));
-            }
+            for (const doc of dmResult.documents) {
+                const message: DirectMessage = {
+                    $id: String(doc.$id),
+                    conversationId: String(doc.conversationId),
+                    senderId: String(doc.senderId),
+                    receiverId: String(doc.receiverId),
+                    text: String(doc.text),
+                    $createdAt: String(doc.$createdAt ?? ""),
+                    editedAt: doc.editedAt
+                        ? String(doc.editedAt)
+                        : undefined,
+                    removedAt: doc.removedAt
+                        ? String(doc.removedAt)
+                        : undefined,
+                    removedBy: doc.removedBy
+                        ? String(doc.removedBy)
+                        : undefined,
+                    imageFileId: doc.imageFileId
+                        ? String(doc.imageFileId)
+                        : undefined,
+                    imageUrl: doc.imageUrl
+                        ? String(doc.imageUrl)
+                        : undefined,
+                    replyToId: doc.replyToId
+                        ? String(doc.replyToId)
+                        : undefined,
+                    mentions: Array.isArray(doc.mentions)
+                        ? (doc.mentions as string[])
+                        : undefined,
+                    reactions: Array.isArray(doc.reactions)
+                        ? (doc.reactions as Array<{
+                              emoji: string;
+                              userIds: string[];
+                              count: number;
+                          }>)
+                        : undefined,
+                };
 
-            // For DMs, user must be either sender or receiver
-            if (userId || filters.fromUser) {
-                dmQueries.push(
-                    Query.equal("senderId", userId || filters.fromUser || ""),
-                );
-            } else {
-                // Search DMs where user is participant
-                dmQueries.push(
-                    Query.or([
-                        Query.equal("senderId", user.$id),
-                        Query.equal("receiverId", user.$id),
-                    ]),
-                );
-            }
-
-            // Apply date filters
-            if (fromDate || filters.afterDate) {
-                const dateStr = fromDate || filters.afterDate || "";
-                dmQueries.push(Query.greaterThanEqual("$createdAt", dateStr));
-            }
-
-            if (toDate || filters.beforeDate) {
-                const dateStr = toDate || filters.beforeDate || "";
-                dmQueries.push(Query.lessThanEqual("$createdAt", dateStr));
-            }
-
-            // Apply image filter
-            if (filters.hasImage) {
-                dmQueries.push(Query.isNotNull("imageFileId"));
-            }
-
-            // Apply mentions filter
-            if (filters.mentionsMe) {
-                dmQueries.push(Query.search("mentions", user.$id));
-            }
-
-            // Limit results
-            dmQueries.push(Query.limit(50));
-            dmQueries.push(Query.orderDesc("$createdAt"));
-
-            try {
-                const dbStartTime = Date.now();
-                const directMessages = await databases.listDocuments(
-                    env.databaseId,
-                    env.collections.directMessages,
-                    dmQueries,
-                );
-
-                logger.info("Search: fetched direct messages", {
-                    userId: user.$id,
-                    count: directMessages.documents.length,
-                });
-
-                trackApiCall(
-                    "/api/search/messages",
-                    "GET",
-                    200,
-                    Date.now() - dbStartTime,
-                    {
-                        operation: "listDocuments",
-                        collection: "directMessages",
-                    },
-                );
-
-                for (const doc of directMessages.documents) {
-                    const message: DirectMessage = {
-                        $id: String(doc.$id),
-                        conversationId: String(doc.conversationId),
-                        senderId: String(doc.senderId),
-                        receiverId: String(doc.receiverId),
-                        text: String(doc.text),
-                        $createdAt: String(doc.$createdAt ?? ""),
-                        editedAt: doc.editedAt
-                            ? String(doc.editedAt)
-                            : undefined,
-                        removedAt: doc.removedAt
-                            ? String(doc.removedAt)
-                            : undefined,
-                        removedBy: doc.removedBy
-                            ? String(doc.removedBy)
-                            : undefined,
-                        imageFileId: doc.imageFileId
-                            ? String(doc.imageFileId)
-                            : undefined,
-                        imageUrl: doc.imageUrl
-                            ? String(doc.imageUrl)
-                            : undefined,
-                        replyToId: doc.replyToId
-                            ? String(doc.replyToId)
-                            : undefined,
-                        mentions: Array.isArray(doc.mentions)
-                            ? (doc.mentions as string[])
-                            : undefined,
-                        reactions: Array.isArray(doc.reactions)
-                            ? (doc.reactions as Array<{
-                                  emoji: string;
-                                  userIds: string[];
-                                  count: number;
-                              }>)
-                            : undefined,
-                    };
-
-                    results.push({ type: "dm", message });
-                }
-            } catch (error) {
-                logger.error("Failed to search direct messages", {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
+                results.push({ type: "dm", message });
             }
         }
 
@@ -521,7 +507,7 @@ export async function GET(request: NextRequest) {
             duration: Date.now() - startTime,
         });
 
-        return compressedResponse({ results: limitedResults });
+        return NextResponse.json({ results: limitedResults });
     } catch (error) {
         recordError(error instanceof Error ? error : new Error(String(error)), {
             context: "GET /api/search/messages",

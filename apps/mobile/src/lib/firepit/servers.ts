@@ -1,5 +1,7 @@
 import { firepitRequest } from "@/lib/firepit/http";
 import type {
+    AdminAuditLogResponse,
+    AdminReportResponse,
     CategoryListResponse,
     CategoryResponse,
     ChannelListResponse,
@@ -7,6 +9,7 @@ import type {
     ChannelResponse,
     CreateServerInput,
     CreateServerResponse,
+    EffectivePermissions,
     InviteJoinResponse,
     InvitePreviewResponse,
     JoinResponse,
@@ -176,7 +179,7 @@ export async function fetchServerCategories(
     });
 }
 
-export async function createServerCategory(
+async function createServerCategory(
     baseUrl: string,
     token: string,
     serverId: string,
@@ -191,7 +194,7 @@ export async function createServerCategory(
     });
 }
 
-export async function updateServerCategory(
+async function updateServerCategory(
     baseUrl: string,
     token: string,
     input: {
@@ -210,7 +213,7 @@ export async function updateServerCategory(
     });
 }
 
-export async function deleteServerCategory(
+async function deleteServerCategory(
     baseUrl: string,
     token: string,
     categoryId: string,
@@ -303,7 +306,7 @@ export async function fetchRoleAssignments(
     });
 }
 
-export async function assignRole(
+async function assignRole(
     baseUrl: string,
     token: string,
     input: { serverId: string; userId: string; roleId: string },
@@ -317,7 +320,7 @@ export async function assignRole(
     });
 }
 
-export async function removeRoleAssignment(
+async function removeRoleAssignment(
     baseUrl: string,
     token: string,
     params: { serverId: string; userId: string; roleId: string },
@@ -331,7 +334,7 @@ export async function removeRoleAssignment(
     });
 }
 
-export async function fetchChannelPermissionOverrides(
+async function fetchChannelPermissionOverrides(
     baseUrl: string,
     token: string,
     channelId: string,
@@ -344,7 +347,7 @@ export async function fetchChannelPermissionOverrides(
     });
 }
 
-export async function createChannelPermissionOverride(
+async function createChannelPermissionOverride(
     baseUrl: string,
     token: string,
     input: {
@@ -364,7 +367,7 @@ export async function createChannelPermissionOverride(
     });
 }
 
-export async function updateChannelPermissionOverride(
+async function updateChannelPermissionOverride(
     baseUrl: string,
     token: string,
     input: {
@@ -382,7 +385,7 @@ export async function updateChannelPermissionOverride(
     });
 }
 
-export async function deleteChannelPermissionOverride(
+async function deleteChannelPermissionOverride(
     baseUrl: string,
     token: string,
     overrideId: string,
@@ -427,6 +430,59 @@ export async function fetchServerAuditLogs(
     });
 }
 
+export async function fetchAdminAuditLogs(
+    baseUrl: string,
+    token: string,
+    limit = 50,
+    cursor?: string,
+) {
+    return firepitRequest<AdminAuditLogResponse>({
+        baseUrl,
+        path: "/api/admin/audit-logs",
+        token,
+        query: { limit, ...(cursor ? { cursor } : {}) },
+    });
+}
+
+export async function fetchAdminReports(
+    baseUrl: string,
+    token: string,
+    limit = 50,
+    cursor?: string,
+    status?: "pending" | "resolved" | "dismissed",
+) {
+    return firepitRequest<AdminReportResponse>({
+        baseUrl,
+        path: "/api/admin/reports",
+        token,
+        query: {
+            limit,
+            ...(cursor ? { cursor } : {}),
+            ...(status ? { status } : {}),
+        },
+    });
+}
+
+export async function resolveReport(
+    baseUrl: string,
+    token: string,
+    reportId: string,
+    action: "resolve" | "dismiss",
+    resolutionNotes?: string,
+) {
+    return firepitRequest<{ success: boolean }>({
+        baseUrl,
+        path: "/api/admin/reports",
+        method: "POST",
+        token,
+        body: {
+            reportId,
+            action,
+            ...(resolutionNotes ? { resolutionNotes } : {}),
+        },
+    });
+}
+
 export async function fetchServerStats(baseUrl: string, token: string, serverId: string) {
     return firepitRequest<ServerStatsResponse>({
         baseUrl,
@@ -435,10 +491,25 @@ export async function fetchServerStats(baseUrl: string, token: string, serverId:
     });
 }
 
-export async function fetchServerInvites(baseUrl: string, token: string, serverId: string) {
+async function fetchServerInvites(baseUrl: string, token: string, serverId: string) {
     return firepitRequest<{ invites?: Array<Record<string, unknown>> }>({
         baseUrl,
         path: `/api/servers/${serverId}/invites`,
         token,
+    });
+}
+
+export async function fetchEffectivePermissions(
+    baseUrl: string,
+    token: string,
+    serverId: string,
+    channelId: string,
+    userId: string,
+) {
+    return firepitRequest<EffectivePermissions>({
+        baseUrl,
+        path: `/api/servers/${encodeURIComponent(serverId)}/permissions`,
+        token,
+        query: { channelId, userId },
     });
 }

@@ -5,9 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { adaptChannelMessages } from "@/lib/chat-surface";
-import { canSend } from "@/lib/appwrite-messages";
-import { getEnrichedMessages } from "@/lib/appwrite-messages-enriched";
+import { canSend, listRecentMessages } from "@/lib/appwrite-messages";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { enrichMessagesWithProfiles } from "@/lib/enrich-messages";
+import { enrichMessagesWithPolls } from "@/lib/appwrite-polls";
 import type { Message, MessagePoll } from "@/lib/types";
 import { parseReactions } from "@/lib/reactions-utils";
 import { toggleReaction as toggleReactionRequest } from "@/lib/reactions-client";
@@ -43,6 +44,7 @@ type UseMessagesOptions = {
     serverId?: string | null;
     userId: string | null;
     userName: string | null;
+    contextId?: string | null;
 };
 
 type MessageReaction = NonNullable<Message["reactions"]>[number];
@@ -169,6 +171,7 @@ export function useMessages({
     serverId,
     userId,
     userName,
+    contextId,
 }: UseMessagesOptions) {
     function isTopLevelMessage(message: { threadId?: string }) {
         return !message.threadId;
@@ -256,10 +259,10 @@ export function useMessages({
 
         (async () => {
             try {
-                const initial = await getEnrichedMessages(
-                    pageSize,
-                    undefined,
-                    channelId,
+                const initial = await enrichMessagesWithPolls(
+                    await enrichMessagesWithProfiles(
+                        await listRecentMessages(pageSize, undefined, channelId),
+                    ),
                 );
                 if (cancelled) {
                     return;
@@ -533,7 +536,8 @@ export function useMessages({
     useEffect(() => {
         setTypingUsers({});
 
-        if (!channelId) {
+        const effectiveContextId = contextId ?? channelId;
+        if (!effectiveContextId) {
             return;
         }
 
@@ -552,7 +556,7 @@ export function useMessages({
 
                 const subscription = await realtime.subscribe(
                     presenceChannel,
-                    async (
+                    (
                         event: RealtimeResponseEvent<Record<string, unknown>>,
                     ) => {
                         if (cancelled) {
@@ -576,8 +580,8 @@ export function useMessages({
                             payload.$updatedAt ?? payload.updatedAt ?? "",
                         );
 
-                        // Only process events for the current channel
-                        if (eventChannelId !== channelId) {
+                        // Only process events for the current context (channel or conversation)
+                        if (eventChannelId !== effectiveContextId) {
                             return;
                         }
                         // Skip own user's presence events
@@ -636,7 +640,7 @@ export function useMessages({
                 void updateTypingPresence(false);
             }
         };
-    }, [channelId, userId]);
+    }, [channelId, userId, contextId]);
 
     const {
         activeThreadParent,
@@ -740,10 +744,10 @@ export function useMessages({
         }
         try {
             // Use larger page size for "load more" to reduce number of requests
-            const older = await getEnrichedMessages(
-                loadMoreSize,
-                oldestCursor,
-                channelId,
+            const older = await enrichMessagesWithPolls(
+                await enrichMessagesWithProfiles(
+                    await listRecentMessages(loadMoreSize, oldestCursor, channelId),
+                ),
             );
             const olderTopLevel = older.filter(isTopLevelMessage);
             if (older.length) {
@@ -1108,15 +1112,24 @@ export function useMessages({
     const typingPresenceCreatedRef = useRef<boolean>(false);
     const TYPING_COOLDOWN_MS = 2000;
 
+    // Use refs for values needed in stale closures (scheduleTypingStart/Stop)
+    const userIdRef = useRef(userId);
+    const channelIdRef = useRef(channelId);
+    const contextIdRef = useRef(contextId);
+    userIdRef.current = userId;
+    channelIdRef.current = channelId;
+    contextIdRef.current = contextId;
+
     async function updateTypingPresence(state: boolean) {
-        if (!userId) {
+        const effectiveChannelId = contextIdRef.current ?? channelIdRef.current;
+        if (!userIdRef.current) {
             return;
         }
-        if (!channelId) {
+        if (!effectiveChannelId) {
             return;
         }
         if (state && !typingPresenceIdRef.current) {
-            typingPresenceIdRef.current = userId;
+            typingPresenceIdRef.current = userIdRef.current;
         }
 
         // Throttle: skip re-upsert if we're already typing and the
@@ -1142,7 +1155,7 @@ export function useMessages({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         presenceId: typingPresenceIdRef.current,
-                        channelId,
+                        channelId: effectiveChannelId,
                         userName: userName || undefined,
                         expiresAt: new Date(Date.now() + 4000).toISOString(),
                     }),
@@ -1190,7 +1203,7 @@ export function useMessages({
         if (!userId) {
             return;
         }
-        if (!channelId) {
+        if (!channelId && !contextId) {
             return;
         }
         const isTyping = v.trim().length > 0;
@@ -1204,7 +1217,7 @@ export function useMessages({
             if (typingDebounceRef.current) {
                 clearTimeout(typingDebounceRef.current);
             }
-            updateTypingPresence(false);
+            void updateTypingPresence(false);
             if (typingTimeoutRef.current) {
                 clearTimeout(typingTimeoutRef.current);
             }

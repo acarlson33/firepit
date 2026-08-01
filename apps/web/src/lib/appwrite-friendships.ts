@@ -2,7 +2,7 @@ import { ID, Permission, Query, Role } from "node-appwrite";
 
 import { getAdminClient } from "./appwrite-admin";
 import { getEnvConfig } from "./appwrite-core";
-import { getOrCreateNotificationSettings } from "./notification-settings";
+import { getNotificationSettings, getNotificationSettingsBatch } from "./notification-settings";
 import type { BlockedUser, Friendship, RelationshipStatus } from "./types";
 
 const env = getEnvConfig();
@@ -229,7 +229,7 @@ function assertDistinctUsers(
  * @param {string} targetUserId - The target user id value.
  * @returns {Promise<Friendship | null>} The return value.
  */
-async function getFriendshipByPair(
+export async function getFriendshipByPair(
     userId: string,
     targetUserId: string,
 ) {
@@ -282,11 +282,31 @@ async function getBlockRecord(userId: string, blockedUserId: string) {
  * @param {string} targetUserId - The target user id value.
  * @returns {Promise<{ blockedByMe: BlockedUser | null; blockedMe: BlockedUser | null; isBlocked: boolean; }>} The return value.
  */
-async function getBlockStatus(userId: string, targetUserId: string) {
-    const [blockedByMe, blockedMe] = await Promise.all([
-        getBlockRecord(userId, targetUserId),
-        getBlockRecord(targetUserId, userId),
-    ]);
+export async function getBlockStatus(userId: string, targetUserId: string) {
+    const { databases } = getAdminClient();
+    const response = await readRelationshipData<RelationshipDocumentList>(
+        () =>
+            databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
+                Query.or([
+                    Query.equal("userId", userId),
+                    Query.equal("blockedUserId", userId),
+                ]),
+            ]) as Promise<RelationshipDocumentList>,
+        { documents: [] },
+    );
+
+    let blockedByMe: BlockedUser | null = null;
+    let blockedMe: BlockedUser | null = null;
+
+    for (const doc of response.documents) {
+        const docUserId = String(doc.userId);
+        const docBlockedUserId = String(doc.blockedUserId);
+        if (docUserId === userId && docBlockedUserId === targetUserId) {
+            blockedByMe = toBlockedUser(doc as Record<string, unknown>);
+        } else if (docUserId === targetUserId && docBlockedUserId === userId) {
+            blockedMe = toBlockedUser(doc as Record<string, unknown>);
+        }
+    }
 
     return {
         blockedByMe,
@@ -311,7 +331,7 @@ export async function getRelationshipStatus(
     const [friendship, blockStatus, notificationSettings] = await Promise.all([
         getFriendshipByPair(userId, targetUserId),
         getBlockStatus(userId, targetUserId),
-        getOrCreateNotificationSettings(targetUserId),
+        getNotificationSettings(targetUserId),
     ]);
 
     const isFriend = friendship?.status === "accepted";
@@ -319,7 +339,7 @@ export async function getRelationshipStatus(
         friendship?.status === "pending" && friendship.requesterId === userId;
     const incomingRequest =
         friendship?.status === "pending" && friendship.recipientId === userId;
-    const directMessagePrivacy = notificationSettings.directMessagePrivacy;
+    const directMessagePrivacy = notificationSettings?.directMessagePrivacy ?? "everyone";
     const canSendDirectMessage =
         !blockStatus.blockedByMe &&
         !blockStatus.blockedMe &&
@@ -697,15 +717,103 @@ export async function getRelationshipMap(
         (otherUserId) => otherUserId && otherUserId !== userId,
     );
 
-    const entries = await Promise.all(
-        uniqueUserIds.map(
-            async (otherUserId) =>
-                [
-                    otherUserId,
-                    await getRelationshipStatus(userId, otherUserId),
-                ] as const,
-        ),
+    if (uniqueUserIds.length === 0) {
+        return new Map<string, RelationshipStatus>();
+    }
+
+    // All three queries are independent — run in parallel
+    const pairKeys = uniqueUserIds.map(
+        (uid) => normalizeUserPair(userId, uid).pairKey,
     );
+    const BATCH_LIMIT = 100;
+    const { databases } = getAdminClient();
+    const targetSet = new Set(uniqueUserIds);
+
+    const [friendshipResults, allBlocksResult, notifSettings] =
+        await Promise.all([
+            (async () => {
+                const friendshipsByPairKey = new Map<string, Friendship>();
+                for (let i = 0; i < pairKeys.length; i += BATCH_LIMIT) {
+                    const batch = pairKeys.slice(i, i + BATCH_LIMIT);
+                    const response = await readRelationshipData<RelationshipDocumentList>(
+                        () =>
+                            databases.listDocuments(DATABASE_ID, FRIENDSHIPS_COLLECTION_ID, [
+                                Query.equal("pairKey", batch),
+                            ]) as Promise<RelationshipDocumentList>,
+                        { documents: [] },
+                    );
+                    for (const doc of response.documents) {
+                        const f = toFriendship(doc);
+                        friendshipsByPairKey.set(f.pairKey, f);
+                    }
+                }
+                return friendshipsByPairKey;
+            })(),
+            readRelationshipData<RelationshipDocumentList>(
+                () =>
+                    databases.listDocuments(DATABASE_ID, BLOCKS_COLLECTION_ID, [
+                        Query.or([
+                            Query.equal("userId", userId),
+                            Query.equal("blockedUserId", userId),
+                        ]),
+                    ]) as Promise<RelationshipDocumentList>,
+                { documents: [] },
+            ),
+            getNotificationSettingsBatch(uniqueUserIds),
+        ]);
+
+    const friendshipsByPairKey = friendshipResults;
+    const blocksIBlocked = new Set<string>();
+    const blocksThatBlockedMe = new Set<string>();
+
+    for (const doc of allBlocksResult.documents) {
+        const blockerId = String(doc.userId);
+        const blockedId = String(doc.blockedUserId);
+        if (blockerId === userId && targetSet.has(blockedId)) {
+            blocksIBlocked.add(blockedId);
+        } else if (blockedId === userId && targetSet.has(blockerId)) {
+            blocksThatBlockedMe.add(blockerId);
+        }
+    }
+
+    const dmPrivacyByUser = new Map<string, "everyone" | "friends">();
+    for (const uid of uniqueUserIds) {
+        const settings = notifSettings.get(uid);
+        dmPrivacyByUser.set(uid, settings?.directMessagePrivacy ?? "everyone");
+    }
+
+    // Assemble results
+    const entries: [string, RelationshipStatus][] = uniqueUserIds.map((otherUserId) => {
+        const { pairKey } = normalizeUserPair(userId, otherUserId);
+        const friendship = friendshipsByPairKey.get(pairKey) ?? null;
+        const blockedByMe = blocksIBlocked.has(otherUserId);
+        const blockedMe = blocksThatBlockedMe.has(otherUserId);
+        const directMessagePrivacy = dmPrivacyByUser.get(otherUserId) ?? "everyone";
+
+        const isFriend = friendship?.status === "accepted";
+        const outgoingRequest =
+            friendship?.status === "pending" && friendship.requesterId === userId;
+        const incomingRequest =
+            friendship?.status === "pending" && friendship.recipientId === userId;
+        const canSendDirectMessage =
+            !blockedByMe && !blockedMe &&
+            (directMessagePrivacy === "everyone" || isFriend);
+
+        return [otherUserId, {
+            userId: otherUserId,
+            friendshipStatus: friendship?.status,
+            isFriend,
+            outgoingRequest,
+            incomingRequest,
+            blockedByMe,
+            blockedMe,
+            directMessagePrivacy,
+            canSendDirectMessage,
+            canReceiveFriendRequest:
+                !isFriend && !outgoingRequest && !incomingRequest &&
+                !blockedByMe && !blockedMe,
+        }];
+    });
 
     return new Map(entries);
 }

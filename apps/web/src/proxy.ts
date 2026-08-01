@@ -163,7 +163,6 @@ export async function proxy(request: NextRequest) {
         PUBLIC_ROUTE_PREFIXES.some((routePrefix) =>
             pathname.startsWith(routePrefix),
         );
-    const isAuthRoute = pathname === "/login" || pathname === "/register";
 
     // Get session cookie
     const projectId = process.env.APPWRITE_PROJECT_ID;
@@ -176,21 +175,13 @@ export async function proxy(request: NextRequest) {
     const sessionCookie = request.cookies.get(`a_session_${projectId}`);
     const hasSession = Boolean(sessionCookie?.value);
 
-    // Redirect logic
+    // Redirect unauthenticated users from protected routes to login
     if (!isPublicRoute && !hasSession) {
         // User trying to access protected route without session
         // All routes except public ones require authentication
         const loginUrl = new URL("/login", request.url);
         loginUrl.searchParams.set("redirect", pathname);
         return NextResponse.redirect(loginUrl);
-    }
-
-    if (isAuthRoute && hasSession) {
-        // Logged-in user trying to access auth pages
-        const redirect = request.nextUrl.searchParams.get("redirect");
-        const destination =
-            redirect && /^\/(?!\/)/.test(redirect) ? redirect : "/";
-        return NextResponse.redirect(new URL(destination, request.url));
     }
 
     return NextResponse.next();

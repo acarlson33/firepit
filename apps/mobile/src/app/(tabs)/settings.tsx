@@ -1,12 +1,16 @@
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Notifications from "expo-notifications";
+import { useState, useEffect } from "react";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { useCacheSettings } from "@/providers/cache-settings-context";
+import { APP_VERSION } from "@/lib/update/constants";
 
 function StatusPill({
     label,
@@ -45,8 +49,7 @@ function SettingsRow({
             style={({ pressed }) => [
                 styles.settingsRow,
                 {
-                    backgroundColor: theme.card,
-                    borderColor: theme.border,
+                    backgroundColor: theme.muted,
                     opacity: pressed ? 0.92 : 1,
                 },
             ]}
@@ -64,12 +67,157 @@ function SettingsRow({
     );
 }
 
+type CacheStrategyOption = {
+  value: string;
+  label: string;
+  desc: string;
+};
+
+const CACHE_STRATEGIES: CacheStrategyOption[] = [
+  { value: "aggressive", label: "Aggressive", desc: "Pictures, emojis, messages, media" },
+  { value: "medium", label: "Medium", desc: "Pictures, emojis, DMs" },
+  { value: "minimal", label: "Minimal", desc: "Pictures & emojis only" },
+  { value: "none", label: "None", desc: "No caching" },
+];
+
+function CacheSettingsSection() {
+  const theme = useTheme();
+  const { strategy, setStrategy, cacheSize, refreshCacheSize, clearCache } =
+    useCacheSettings();
+  const [expanded, setExpanded] = useState(false);
+
+  const handleClear = () => {
+    Alert.alert(
+      "Clear Cache",
+      `This will remove ${cacheSize} of cached data. Continue?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            await clearCache();
+            Alert.alert("Cache cleared", "All cached data has been removed.");
+          },
+        },
+      ],
+    );
+  };
+
+  const current = CACHE_STRATEGIES.find((s) => s.value === strategy);
+
+  return (
+    <View style={styles.section}>
+      <ThemedText type="smallBold">Cache & Troubleshooting</ThemedText>
+
+      <View style={[styles.cacheCard, { backgroundColor: theme.muted }]}>
+        <View style={styles.cacheHeader}>
+          <ThemedText type="smallBold">Storage Used</ThemedText>
+          <ThemedText type="code" themeColor="mutedForeground">
+            {cacheSize}
+          </ThemedText>
+        </View>
+
+        <Pressable
+          onPress={() => setExpanded(!expanded)}
+          style={({ pressed }) => [
+            styles.strategySelector,
+            { opacity: pressed ? 0.92 : 1 },
+          ]}
+        >
+          <View>
+            <ThemedText type="smallBold">Caching Strategy</ThemedText>
+            <ThemedText themeColor="mutedForeground" style={styles.strategyDesc}>
+              {current?.label} — {current?.desc}
+            </ThemedText>
+          </View>
+          <ThemedText type="code" themeColor="mutedForeground">
+            {expanded ? "▲" : "▼"}
+          </ThemedText>
+        </Pressable>
+
+        {expanded && (
+          <View style={styles.strategyOptions}>
+            {CACHE_STRATEGIES.map((s) => (
+              <Pressable
+                key={s.value}
+                onPress={async () => {
+                  await setStrategy(s.value as any);
+                  setExpanded(false);
+                }}
+                style={({ pressed }) => [
+                  styles.strategyOption,
+                  {
+                    backgroundColor:
+                      strategy === s.value ? theme.primary + "20" : "transparent",
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+              >
+                <ThemedText
+                  type={strategy === s.value ? "smallBold" : "default"}
+                  themeColor={strategy === s.value ? "foreground" : "mutedForeground"}
+                >
+                  {s.label}
+                </ThemedText>
+                <ThemedText themeColor="mutedForeground" style={styles.optionDesc}>
+                  {s.desc}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.cacheActions}>
+          <Pressable
+            onPress={handleClear}
+            style={({ pressed }) => [
+              styles.clearButton,
+              {
+                backgroundColor: theme.destructive + "15",
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <ThemedText type="smallBold" themeColor="destructive">
+              Clear Cache
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={refreshCacheSize}
+            style={({ pressed }) => [
+              styles.refreshButton,
+              { opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <ThemedText type="code" themeColor="mutedForeground">
+              ↻ Refresh
+            </ThemedText>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function SettingsTabScreen() {
     const theme = useTheme();
     const { currentUser, instanceUrl, notificationPreferences } =
         useFirepitBootstrap();
 
-    const notifEnabled = notificationPreferences?.enabled ?? false;
+    const [notifPermission, setNotifPermission] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        Notifications.getPermissionsAsync().then(({ status }) => {
+            if (!cancelled) setNotifPermission(status === "granted");
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const notifEnabled =
+        notifPermission || (notificationPreferences?.enabled ?? false);
 
     return (
         <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -77,14 +225,14 @@ export default function SettingsTabScreen() {
                 pointerEvents="none"
                 style={[
                     styles.backdropOrbTop,
-                    { backgroundColor: "rgba(217, 121, 43, 0.16)" },
+                    { backgroundColor: "rgba(217, 121, 43, 0.08)" },
                 ]}
             />
             <View
                 pointerEvents="none"
                 style={[
                     styles.backdropOrbBottom,
-                    { backgroundColor: "rgba(78, 138, 134, 0.10)" },
+                    { backgroundColor: "rgba(78, 138, 134, 0.06)" },
                 ]}
             />
             <SafeAreaView style={styles.safeArea}>
@@ -92,11 +240,9 @@ export default function SettingsTabScreen() {
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    <ThemedView style={styles.shell}>
-                        <ThemedView
-                            type="card"
-                            style={[styles.heroCard, { borderColor: theme.border }]}
-                        >
+                    <View style={styles.shell}>
+                        {/* Hero header */}
+                        <View style={styles.heroHeader}>
                             <ThemedText type="code" themeColor="accent">
                                 Firepit settings
                             </ThemedText>
@@ -122,20 +268,14 @@ export default function SettingsTabScreen() {
                                     <StatusPill label="no instance" tone="warning" />
                                 )}
                             </View>
-                        </ThemedView>
+                        </View>
 
                         {/* Account section */}
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
+                        <View style={styles.section}>
                             <ThemedText type="smallBold">Account</ThemedText>
                             <View style={styles.accountInfo}>
                                 <View style={styles.accountRow}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
+                                    <ThemedText type="code" themeColor="mutedForeground">
                                         Display name
                                     </ThemedText>
                                     <ThemedText>
@@ -143,10 +283,7 @@ export default function SettingsTabScreen() {
                                     </ThemedText>
                                 </View>
                                 <View style={styles.accountRow}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
+                                    <ThemedText type="code" themeColor="mutedForeground">
                                         User ID
                                     </ThemedText>
                                     <ThemedText type="code">
@@ -154,10 +291,7 @@ export default function SettingsTabScreen() {
                                     </ThemedText>
                                 </View>
                                 <View style={styles.accountRow}>
-                                    <ThemedText
-                                        type="code"
-                                        themeColor="mutedForeground"
-                                    >
+                                    <ThemedText type="code" themeColor="mutedForeground">
                                         Email
                                     </ThemedText>
                                     <ThemedText>
@@ -165,29 +299,92 @@ export default function SettingsTabScreen() {
                                     </ThemedText>
                                 </View>
                             </View>
-                        </ThemedView>
+                        </View>
 
-                        {/* Preferences section */}
-                        <ThemedView
-                            type="card"
-                            style={[styles.card, { borderColor: theme.border }]}
-                        >
-                            <ThemedText type="smallBold">Preferences</ThemedText>
+                        {/* Profile category */}
+                        <View style={styles.section}>
+                            <ThemedText type="smallBold">Profile</ThemedText>
                             <SettingsRow
-                                label="Notifications"
+                                label="Edit Profile"
+                                description="Display name, pronouns, bio, location, and website"
+                                onPress={() =>
+                                    router.push("/settings/profile" as never)
+                                }
+                            />
+                            <SettingsRow
+                                label="Appearance"
+                                description="Profile background and avatar frame"
+                                onPress={() =>
+                                    router.push("/settings/appearance" as never)
+                                }
+                            />
+                        </View>
+
+                        {/* Notifications category */}
+                        <View style={styles.section}>
+                            <ThemedText type="smallBold">Notifications</ThemedText>
+                            <SettingsRow
+                                label="Push Notifications"
                                 description={
                                     notifEnabled
                                         ? "Push notifications enabled"
                                         : "Push notifications disabled"
                                 }
                                 onPress={() =>
-                                    router.push(
-                                        "/settings/notifications" as never,
-                                    )
+                                    router.push("/settings/notifications" as never)
                                 }
                             />
-                        </ThemedView>
-                    </ThemedView>
+                        </View>
+
+                        {/* Connections category */}
+                        <View style={styles.section}>
+                            <ThemedText type="smallBold">Connections</ThemedText>
+                            <SettingsRow
+                                label="Friends"
+                                description="Manage friends, requests, and blocked users"
+                                onPress={() =>
+                                    router.push("/friends" as never)
+                                }
+                            />
+                            <SettingsRow
+                                label="Privacy & Blocking"
+                                description="View and manage blocked users"
+                                onPress={() =>
+                                    router.push("/settings/privacy" as never)
+                                }
+                            />
+                        </View>
+
+                        {/* App Updates category */}
+                        <View style={styles.section}>
+                            <ThemedText type="smallBold">App Updates</ThemedText>
+                            <SettingsRow
+                                label="Update Settings"
+                                description="Automatic updates and release notifications"
+                                onPress={() =>
+                                    router.push("/settings/updates" as never)
+                                }
+                            />
+                        </View>
+
+                        {/* Cache section */}
+                        <CacheSettingsSection />
+
+                        {/* About section */}
+                        <View style={styles.section}>
+                            <ThemedText type="smallBold">About</ThemedText>
+                            <View style={styles.accountInfo}>
+                                <View style={styles.accountRow}>
+                                    <ThemedText type="code" themeColor="mutedForeground">
+                                        Version
+                                    </ThemedText>
+                                    <ThemedText type="code">
+                                        {APP_VERSION}
+                                    </ThemedText>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
                 </ScrollView>
             </SafeAreaView>
         </View>
@@ -198,8 +395,7 @@ const styles = StyleSheet.create({
     root: { flex: 1 },
     safeArea: {
         flex: 1,
-        alignItems: "center",
-        paddingHorizontal: Spacing.three,
+        paddingHorizontal: Spacing.two,
     },
     scrollContent: {
         flexGrow: 1,
@@ -208,13 +404,13 @@ const styles = StyleSheet.create({
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
-        gap: Spacing.three,
+        alignSelf: "center",
+        gap: Spacing.two,
     },
-    heroCard: {
-        borderRadius: 28,
-        padding: Spacing.four,
-        gap: Spacing.three,
-        borderWidth: 1,
+    heroHeader: {
+        paddingVertical: Spacing.three,
+        paddingHorizontal: Spacing.two,
+        gap: Spacing.two,
     },
     copy: { fontSize: 14, lineHeight: 20 },
     pillRow: {
@@ -222,16 +418,16 @@ const styles = StyleSheet.create({
         flexWrap: "wrap",
         gap: Spacing.one,
     },
-    card: {
-        borderRadius: 22,
-        padding: Spacing.three,
+    section: {
+        borderRadius: 12,
+        backgroundColor: "rgba(255,255,255,0.03)",
+        padding: Spacing.two,
         gap: Spacing.two,
-        borderWidth: 1,
     },
     pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
+        paddingHorizontal: Spacing.one,
+        paddingVertical: Spacing.half,
+        borderRadius: 12,
     },
     accountInfo: { gap: Spacing.two },
     accountRow: {
@@ -245,9 +441,8 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
         gap: Spacing.two,
-        borderRadius: 16,
-        borderWidth: 1,
-        padding: Spacing.three,
+        borderRadius: 12,
+        padding: Spacing.two,
     },
     settingsRowCopy: { flex: 1, gap: 2 },
     settingsRowDesc: { fontSize: 13, lineHeight: 18 },
@@ -266,5 +461,53 @@ const styles = StyleSheet.create({
         borderRadius: 320,
         right: -120,
         bottom: 40,
+    },
+    cacheCard: {
+        borderRadius: 12,
+        padding: Spacing.two,
+        gap: Spacing.two,
+    },
+    cacheHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    strategySelector: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        paddingVertical: Spacing.one,
+    },
+    strategyDesc: {
+        fontSize: 12,
+        marginTop: 2,
+    },
+    strategyOptions: {
+        gap: Spacing.half,
+    },
+    strategyOption: {
+        padding: Spacing.two,
+        borderRadius: 8,
+        gap: 2,
+    },
+    optionDesc: {
+        fontSize: 11,
+    },
+    cacheActions: {
+        flexDirection: "row",
+        gap: Spacing.two,
+        marginTop: Spacing.one,
+    },
+    clearButton: {
+        flex: 1,
+        padding: Spacing.two,
+        borderRadius: 8,
+        alignItems: "center",
+    },
+    refreshButton: {
+        paddingHorizontal: Spacing.two,
+        borderRadius: 8,
+        alignItems: "center",
+        justifyContent: "center",
     },
 });

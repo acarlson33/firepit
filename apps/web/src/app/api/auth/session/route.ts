@@ -1,17 +1,20 @@
 import { NextResponse } from "next/server";
-import { Client, Users } from "node-appwrite";
+import { Account, Client } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
 
 /**
  * POST /api/auth/session
  *
- * Creates an Appwrite session with full user scopes.
+ * Creates an Appwrite session the same way the web login flow does:
+ * Account.createEmailPasswordSession() via the admin SDK (API key).
+ * The returned session secret is what the web app stores in its
+ * a_session_<project> cookie, so the server can validate it with
+ * client.setSession().
  *
- * First validates the email/password by creating a session via the public
- * Account API endpoint (no API key), then creates a user-scoped session via
- * Users.createSession() with the admin API key. The admin-created session
- * is associated with the user's role (not guest), so it has full scopes
- * including presences.write.
+ * Note: we intentionally do NOT use Users.createSession() here. That admin
+ * endpoint returns a malformed secret on Appwrite servers < 1.6.x
+ * (see appwrite/appwrite#9019), while the email/password session secret
+ * is proven to work by the web app's login flow.
  */
 export async function POST(request: Request) {
     try {
@@ -37,69 +40,37 @@ export async function POST(request: Request) {
             );
         }
 
-        // Step 1: Validate credentials via the public Account API.
-        // This confirms the email/password are correct and gives us the userId.
-        const authResponse = await fetch(
-            `${env.endpoint}/account/sessions/email`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Appwrite-Project": env.project,
-                },
-                body: JSON.stringify({ email, password }),
-            },
-        );
-
-        if (!authResponse.ok) {
-            const errorData = await authResponse.json().catch(() => ({}));
-            return NextResponse.json(
-                {
-                    error:
-                        (errorData as { message?: string }).message ??
-                        "Authentication failed",
-                },
-                { status: authResponse.status },
-            );
-        }
-
-        const authData = (await authResponse.json()) as {
-            userId?: string;
-        };
-
-        if (!authData.userId) {
-            return NextResponse.json(
-                { error: "Failed to authenticate user" },
-                { status: 401 },
-            );
-        }
-
-        // Step 2: Create a user-scoped session using the admin SDK.
-        // This session is owned by the user (not guest), so it has full scopes.
-        const adminClient = new Client()
+        const client = new Client()
             .setEndpoint(env.endpoint)
             .setProject(env.project)
             .setKey(apiKey);
 
-        const users = new Users(adminClient);
-        const userSession = await users.createSession(authData.userId);
-
-        // The Session object from admin SDK includes the secret field
-        // because the request was made with an API key.
-        const sessionSecret = (userSession as unknown as { secret: string }).secret;
+        const account = new Account(client);
+        const session = await account.createEmailPasswordSession({
+            email,
+            password,
+        });
 
         return NextResponse.json({
             success: true,
-            session: sessionSecret ?? null,
-            userId: authData.userId,
+            session: session.secret ?? null,
+            userId: session.userId,
         });
     } catch (error) {
+        const status =
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            typeof (error as { code?: unknown }).code === "number"
+                ? (error as { code: number }).code
+                : 500;
+
         return NextResponse.json(
             {
                 error: "Failed to create session",
                 details: error instanceof Error ? error.message : String(error),
             },
-            { status: 500 },
+            { status },
         );
     }
 }

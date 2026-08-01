@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useState, useCallback, useEffect } from "react";
 import {
     ActivityIndicator,
     Modal,
@@ -117,7 +118,8 @@ function ActionButton({
 
 export default function ModerationScreen() {
     const theme = useTheme();
-    const { instanceUrl, accessToken, state } = useFirepitBootstrap();
+    const { instanceUrl, accessToken } = useFirepitBootstrap();
+    const { serverId } = useLocalSearchParams<{ serverId?: string }>();
 
     const [members, setMembers] = useState<MemberInfo[]>([]);
     const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -132,12 +134,12 @@ export default function ModerationScreen() {
     const [actionResult, setActionResult] = useState<string | null>(null);
 
     const loadMembers = useCallback(async () => {
-        if (!instanceUrl || !accessToken) return;
+        if (!instanceUrl || !accessToken || !serverId) return;
         setLoadState("loading");
         setLoadError(null);
         try {
             const res = await fetchRoleAssignments(instanceUrl, accessToken, {
-                serverId: "current",
+                serverId,
             });
             setMembers(res.members ?? []);
             setLoadState("ready");
@@ -147,17 +149,57 @@ export default function ModerationScreen() {
                 error instanceof Error ? error.message : "Unable to load members",
             );
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, instanceUrl, serverId]);
+
+    useEffect(() => {
+        void loadMembers();
+    }, [loadMembers]);
+
+    if (!serverId) {
+        return (
+            <AuthRouteGuard>
+                <View style={[styles.root, { backgroundColor: theme.background }]}>
+                    <View style={styles.centerShell}>
+                        <ThemedView type="card" style={[styles.card, { borderColor: theme.border }]}>
+                            <ThemedText type="title">No server selected</ThemedText>
+                            <ThemedText themeColor="mutedForeground" style={{ fontSize: 14, lineHeight: 20, marginTop: Spacing.one }}>
+                                Select a server from the admin dashboard to moderate its members.
+                            </ThemedText>
+                            <Pressable
+                                accessibilityRole="button"
+                                onPress={() => router.back()}
+                                style={({ pressed }) => [
+                                    {
+                                        borderRadius: 999,
+                                        paddingHorizontal: Spacing.three,
+                                        paddingVertical: Spacing.two,
+                                        backgroundColor: theme.primary,
+                                        marginTop: Spacing.three,
+                                        alignItems: "center",
+                                        opacity: pressed ? 0.85 : 1,
+                                    },
+                                ]}
+                            >
+                                <ThemedText type="smallBold" themeColor="primaryForeground">
+                                    Go back
+                                </ThemedText>
+                            </Pressable>
+                        </ThemedView>
+                    </View>
+                </View>
+            </AuthRouteGuard>
+        );
+    }
 
     const executeAction = async () => {
-        if (!instanceUrl || !accessToken || !targetMember || saving) return;
+        if (!instanceUrl || !accessToken || !targetMember || !serverId || saving) return;
         setSaving(true);
         setActionResult(null);
         try {
             await moderateServerMember(
                 instanceUrl,
                 accessToken,
-                "current",
+                serverId,
                 action,
                 targetMember.userId,
                 reason.trim() || undefined,
@@ -187,10 +229,7 @@ export default function ModerationScreen() {
 
     return (
         <AuthRouteGuard>
-            <ScrollView
-                style={[styles.scrollView, { backgroundColor: theme.background }]}
-                contentContainerStyle={styles.scrollContent}
-            >
+            <View style={styles.root}>
                 <View
                     pointerEvents="none"
                     style={[
@@ -205,7 +244,11 @@ export default function ModerationScreen() {
                         { backgroundColor: "rgba(78, 138, 134, 0.10)" },
                     ]}
                 />
-                <SafeAreaView style={styles.safeArea}>
+                <ScrollView
+                    style={[styles.scrollView, { backgroundColor: theme.background }]}
+                    contentContainerStyle={styles.scrollContent}
+                >
+                    <SafeAreaView style={styles.safeArea}>
                     <ThemedView style={styles.shell}>
                         <ThemedView
                             type="card"
@@ -246,12 +289,16 @@ export default function ModerationScreen() {
                                     <ActionButton
                                         label="Dashboard"
                                         tone="ghost"
-                                        onPress={() => {}}
+                                        onPress={() =>
+                                            router.push(`/admin?serverId=${serverId}` as never)
+                                        }
                                     />
                                     <ActionButton
                                         label="Audit log"
                                         tone="ghost"
-                                        onPress={() => {}}
+                                        onPress={() =>
+                                            router.push(`/admin/audit-log?serverId=${serverId}` as never)
+                                        }
                                     />
                                     <ActionButton
                                         label="Refresh"
@@ -295,6 +342,7 @@ export default function ModerationScreen() {
                     </ThemedView>
                 </SafeAreaView>
             </ScrollView>
+            </View>
 
             {/* Action modal */}
             <Modal
@@ -448,8 +496,15 @@ function MemberRow({
 }
 
 const styles = StyleSheet.create({
+    root: { flex: 1, overflow: "hidden" },
     scrollView: { flex: 1 },
     scrollContent: { flexGrow: 1 },
+    centerShell: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: Spacing.three,
+    },
     backdropOrbTop: {
         position: "absolute",
         width: 260,
@@ -504,6 +559,7 @@ const styles = StyleSheet.create({
     },
     actionRow: {
         flexDirection: "row",
+        flexWrap: "wrap",
         gap: Spacing.two,
     },
     loadingRow: {

@@ -20,11 +20,12 @@ import type { Channel, ServerRole } from "@/lib/firepit";
 import {
     createChannel,
     deleteChannel,
-    fetchChannels,
     fetchServerRoles,
     updateChannel,
 } from "@/lib/firepit";
+import { getChannels, invalidateServerCache } from "@/lib/server-cache";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { ArrowLeft } from "lucide-react-native";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -61,11 +62,13 @@ function ActionButton({
     onPress,
     disabled,
     tone = "primary",
+    icon,
 }: {
     label: string;
     onPress: () => void;
     disabled?: boolean;
     tone?: "primary" | "secondary" | "ghost" | "danger";
+    icon?: string;
 }) {
     const theme = useTheme();
     return (
@@ -90,16 +93,28 @@ function ActionButton({
                 disabled && styles.actionButtonDisabled,
             ]}
         >
-            <ThemedText
-                type="smallBold"
-                themeColor={
-                    tone === "primary" || tone === "danger"
-                        ? "primaryForeground"
-                        : "foreground"
-                }
-            >
-                {label}
-            </ThemedText>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {icon === "back" && (
+                    <ArrowLeft
+                        size={16}
+                        color={
+                            tone === "primary" || tone === "danger"
+                                ? theme.primaryForeground
+                                : theme.foreground
+                        }
+                    />
+                )}
+                <ThemedText
+                    type="smallBold"
+                    themeColor={
+                        tone === "primary" || tone === "danger"
+                            ? "primaryForeground"
+                            : "foreground"
+                    }
+                >
+                    {label}
+                </ThemedText>
+            </View>
         </Pressable>
     );
 }
@@ -139,13 +154,13 @@ export default function ChannelManagementScreen() {
         setLoadError(null);
 
         try {
-            const [channelsRes, rolesRes] = await Promise.all([
-                fetchChannels(instanceUrl, accessToken, normalizedServerId),
+            const [nextChannels, rolesRes] = await Promise.all([
+                getChannels(instanceUrl, accessToken, normalizedServerId),
                 fetchServerRoles(instanceUrl, accessToken, normalizedServerId).catch(
                     () => ({ roles: [] as ServerRole[] }),
                 ),
             ]);
-            setChannels(channelsRes.channels ?? []);
+            setChannels(nextChannels);
             setRoles(rolesRes.roles ?? []);
             setLoadState("ready");
         } catch (error) {
@@ -175,6 +190,7 @@ export default function ChannelManagementScreen() {
             });
             setShowCreate(false);
             setCreateDraft(EMPTY_DRAFT);
+            invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
             setLoadError(
@@ -199,6 +215,7 @@ export default function ChannelManagementScreen() {
             });
             setShowEdit(false);
             setEditingChannel(null);
+            invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
             setLoadError(
@@ -216,6 +233,7 @@ export default function ChannelManagementScreen() {
         try {
             await deleteChannel(instanceUrl, accessToken, deletingChannel.$id!);
             setDeletingChannel(null);
+            invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
             setLoadError(
@@ -313,6 +331,7 @@ export default function ChannelManagementScreen() {
                                     <ActionButton
                                         label="Back to server"
                                         tone="ghost"
+                                        icon="back"
                                         onPress={() => {
                                             if (normalizedServerId) {
                                                 router.replace(

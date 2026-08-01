@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList,
     Pressable,
@@ -15,10 +15,10 @@ import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import {
-    fetchDirectMessageConversations,
     type DirectMessageConversation,
 } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
+import { getConversations, enrichConversations } from "@/lib/server-cache";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -107,15 +107,14 @@ export default function DirectMessageListScreen() {
             setError(null);
 
             try {
-                const response = await fetchDirectMessageConversations(
-                    requestBaseUrl,
-                    requestToken,
-                );
-                if (cancelled) {
-                    return;
-                }
+                const raw = await getConversations(requestBaseUrl, requestToken);
+                if (cancelled) return;
 
-                setConversations(response.conversations ?? []);
+                const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
+                const enriched = await enrichConversations(requestBaseUrl, requestToken, raw, currentUserId);
+                if (cancelled) return;
+
+                setConversations(enriched);
                 setLoadState("ready");
             } catch (loadError) {
                 if (!cancelled) {
@@ -260,9 +259,16 @@ export default function DirectMessageListScreen() {
                                 </ThemedView>
                             ) : null
                         }
-                        renderItem={({ item }) => (
-                            <ConversationCard conversation={item} />
+                        renderItem={useCallback(
+                            ({ item }: { item: DirectMessageConversation }) => (
+                                <ConversationCard conversation={item} />
+                            ),
+                            [],
                         )}
+                        windowSize={7}
+                        maxToRenderPerBatch={10}
+                        initialNumToRender={10}
+                        removeClippedSubviews
                     />
                 </SafeAreaView>
             </View>
@@ -277,11 +283,10 @@ export default function DirectMessageListScreen() {
         setLoadState("loading");
         setError(null);
         try {
-            const response = await fetchDirectMessageConversations(
-                instanceUrl,
-                accessToken,
-            );
-            setConversations(response.conversations ?? []);
+            const raw = await getConversations(instanceUrl, accessToken);
+            const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
+            const enriched = await enrichConversations(instanceUrl, accessToken, raw, currentUserId);
+            setConversations(enriched);
             setLoadState("ready");
         } catch (loadError) {
             setLoadState("error");

@@ -13,6 +13,11 @@ import type {
     UserProfile,
     SearchMessagesResponse,
     ThreadMessagesResponse,
+    CustomEmoji,
+    CustomEmojiListResponse,
+    RelationshipStatus,
+    FriendsResponse,
+    BlockedUsersResponse,
 } from "@/lib/firepit/types";
 
 export type CreateChannelMessageInput = {
@@ -41,6 +46,11 @@ export type SendDirectMessageInput = {
     senderId?: string;
     receiverId?: string;
     text?: string;
+    isEncrypted?: boolean;
+    encryptedText?: string;
+    encryptionNonce?: string;
+    encryptionVersion?: string;
+    encryptionSenderPublicKey?: string;
     imageFileId?: string;
     imageUrl?: string;
     attachments?: MessageAttachment[];
@@ -70,7 +80,7 @@ export async function fetchDirectMessageConversations(
     });
 }
 
-export async function fetchDirectMessageConversation(
+async function fetchDirectMessageConversation(
     baseUrl: string,
     token: string,
     userId1: string,
@@ -84,6 +94,22 @@ export async function fetchDirectMessageConversation(
             type: "conversation",
             userId1,
             userId2,
+        },
+    });
+}
+
+export async function fetchDirectMessageConversationById(
+    baseUrl: string,
+    token: string,
+    conversationId: string,
+) {
+    return firepitRequest<DirectMessageConversationResponse>({
+        baseUrl,
+        path: "/api/direct-messages",
+        token,
+        query: {
+            type: "conversationById",
+            conversationId,
         },
     });
 }
@@ -122,7 +148,143 @@ export async function sendDirectMessage(
     });
 }
 
-export async function fetchUserProfile(
+export type PinsResponse = {
+    items: Array<{
+        pin: { messageId: string; pinnedBy: string; pinnedAt: string };
+        message: DirectMessage;
+    }>;
+    pins: DirectMessage[];
+    total: number;
+};
+
+export async function fetchConversationPins(
+    baseUrl: string,
+    token: string,
+    conversationId: string,
+): Promise<PinsResponse> {
+    return firepitRequest<PinsResponse>({
+        baseUrl,
+        path: `/api/conversations/${encodeURIComponent(conversationId)}/pins`,
+        token,
+    });
+}
+
+export async function muteConversation(
+    baseUrl: string,
+    token: string,
+    conversationId: string,
+    muted: boolean,
+    duration: "15m" | "1h" | "8h" | "24h" | "forever" = "forever",
+) {
+    return firepitRequest<{
+        conversationId: string;
+        muted: boolean;
+        mutedUntil?: string;
+        level: string;
+    }>({
+        baseUrl,
+        path: `/api/conversations/${encodeURIComponent(conversationId)}/mute`,
+        method: "POST",
+        token,
+        body: { muted, duration },
+    });
+}
+
+export async function muteChannel(
+    baseUrl: string,
+    token: string,
+    channelId: string,
+    muted: boolean,
+    duration: "15m" | "1h" | "8h" | "24h" | "forever" = "forever",
+) {
+    return firepitRequest<{
+        channelId: string;
+        muted: boolean;
+        mutedUntil?: string;
+        level: string;
+    }>({
+        baseUrl,
+        path: `/api/channels/${encodeURIComponent(channelId)}/mute`,
+        method: "POST",
+        token,
+        body: { muted, duration },
+    });
+}
+
+export async function muteServer(
+    baseUrl: string,
+    token: string,
+    serverId: string,
+    muted: boolean,
+    duration: "15m" | "1h" | "8h" | "24h" | "forever" = "forever",
+) {
+    return firepitRequest<{
+        serverId: string;
+        muted: boolean;
+        mutedUntil?: string;
+        level: string;
+    }>({
+        baseUrl,
+        path: `/api/servers/${encodeURIComponent(serverId)}/mute`,
+        method: "POST",
+        token,
+        body: { muted, duration },
+    });
+}
+
+export async function pinDirectMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/direct-messages/${encodeURIComponent(messageId)}/pin`,
+        method: "POST",
+        token,
+    });
+}
+
+export async function unpinDirectMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/direct-messages/${encodeURIComponent(messageId)}/pin`,
+        method: "DELETE",
+        token,
+    });
+}
+
+export async function pinChannelMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/messages/${encodeURIComponent(messageId)}/pin`,
+        method: "POST",
+        token,
+    });
+}
+
+export async function unpinChannelMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/messages/${encodeURIComponent(messageId)}/pin`,
+        method: "DELETE",
+        token,
+    });
+}
+
+async function fetchUserProfile(
     baseUrl: string,
     token: string,
     userId: string,
@@ -170,6 +332,7 @@ export async function fetchChannelMessages(
     token: string,
     channelId: string,
     limit = 50,
+    cursorAfter?: string,
 ) {
     return firepitRequest<MessageListResponse>({
         baseUrl,
@@ -178,6 +341,7 @@ export async function fetchChannelMessages(
         query: {
             channelId,
             limit,
+            cursorAfter,
         },
     });
 }
@@ -205,6 +369,33 @@ export async function createChannelThreadReply(
     return firepitRequest<{ message?: Message | null; reply?: Message | null }>({
         baseUrl,
         path: `/api/messages/${encodeURIComponent(messageId)}/thread`,
+        method: "POST",
+        token,
+        body: input,
+    });
+}
+
+export async function fetchDMThreadMessages(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<ThreadMessagesResponse>({
+        baseUrl,
+        path: `/api/direct-messages/${encodeURIComponent(messageId)}/thread`,
+        token,
+    });
+}
+
+export async function createDMThreadReply(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+    input: ThreadReplyInput,
+) {
+    return firepitRequest<{ message?: Message | null; reply?: Message | null }>({
+        baseUrl,
+        path: `/api/direct-messages/${encodeURIComponent(messageId)}/thread`,
         method: "POST",
         token,
         body: input,
@@ -278,7 +469,7 @@ export async function markInboxContextRead(
     });
 }
 
-export async function listThreadReads(
+async function listThreadReads(
     baseUrl: string,
     token: string,
     contextId: string,
@@ -295,7 +486,7 @@ export async function listThreadReads(
     });
 }
 
-export async function persistThreadReads(
+async function persistThreadReads(
     baseUrl: string,
     token: string,
     params: {
@@ -318,4 +509,147 @@ export async function persistThreadReads(
 
 export type TimelineMessage = Message & {
     local?: boolean;
+    senderId?: string;
 };
+
+export async function fetchCustomEmojis(
+    baseUrl: string,
+    token: string,
+): Promise<CustomEmoji[]> {
+    const res = await firepitRequest<CustomEmoji[] | CustomEmojiListResponse>({
+        baseUrl,
+        path: "/api/custom-emojis",
+        token,
+    });
+    return Array.isArray(res) ? res : (res.emojis ?? []);
+}
+
+export async function fetchRelationship(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ relationship?: RelationshipStatus }>({
+        baseUrl,
+        path: `/api/users/${encodeURIComponent(targetUserId)}/relationship`,
+        token,
+    });
+}
+
+export async function sendFriendRequest(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: "/api/friends/request",
+        method: "POST",
+        token,
+        body: { targetUserId },
+    });
+}
+
+export async function acceptFriendRequest(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/friends/${encodeURIComponent(targetUserId)}/accept`,
+        method: "POST",
+        token,
+    });
+}
+
+export async function declineFriendRequest(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/friends/${encodeURIComponent(targetUserId)}/decline`,
+        method: "POST",
+        token,
+    });
+}
+
+export async function removeFriendship(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/friends/${encodeURIComponent(targetUserId)}`,
+        method: "DELETE",
+        token,
+    });
+}
+
+export async function blockUser(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+    reason?: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/users/${encodeURIComponent(targetUserId)}/block`,
+        method: "POST",
+        token,
+        body: reason ? { reason } : undefined,
+    });
+}
+
+export async function unblockUser(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/users/${encodeURIComponent(targetUserId)}/block`,
+        method: "DELETE",
+        token,
+    });
+}
+
+export async function submitReport(
+    baseUrl: string,
+    token: string,
+    targetUserId: string,
+    justification: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: "/api/reports",
+        method: "POST",
+        token,
+        body: { targetUserId, justification },
+    });
+}
+
+export async function fetchFriendsList(
+    baseUrl: string,
+    token: string,
+) {
+    return firepitRequest<FriendsResponse>({
+        baseUrl,
+        path: "/api/friends",
+        token,
+    });
+}
+
+export async function fetchBlockedUsers(
+    baseUrl: string,
+    token: string,
+) {
+    return firepitRequest<BlockedUsersResponse>({
+        baseUrl,
+        path: "/api/users/blocked",
+        token,
+    });
+}

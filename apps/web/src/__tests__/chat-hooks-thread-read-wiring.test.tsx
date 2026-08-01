@@ -46,11 +46,18 @@ vi.mock("@/lib/appwrite-core", () => ({
 
 vi.mock("@/lib/appwrite-messages", () => ({
     canSend: vi.fn(),
+    listRecentMessages: mockGetEnrichedMessages,
     setTyping: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("@/lib/appwrite-messages-enriched", () => ({
-    getEnrichedMessages: mockGetEnrichedMessages,
+vi.mock("@/lib/enrich-messages", () => ({
+    enrichMessagesWithProfiles: vi.fn((_msgs) => Promise.resolve(_msgs)),
+    enrichMessageWithProfile: vi.fn((_msg) => Promise.resolve(_msg)),
+    enrichMessageWithReplyContext: vi.fn((_msg) => Promise.resolve(_msg)),
+}));
+
+vi.mock("@/lib/appwrite-polls", () => ({
+    enrichMessagesWithPolls: vi.fn((_msgs) => Promise.resolve(_msgs)),
 }));
 
 vi.mock("@/lib/appwrite-dms-client", () => ({

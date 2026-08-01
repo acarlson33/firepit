@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
     title: Firepit API
-    version: 1.8.0
+    version: 1.9.0
     description: |
         Firepit is a realtime communication platform built with Next.js 16, React 19, Bun, and Appwrite.
 
@@ -9,7 +9,7 @@ info:
         Internal debug and test-only endpoints are intentionally omitted.
     contact:
         name: Firepit
-        url: https://github.com/acarlson33/firepit
+        url: https://github.com/firepit-chat/firepit
     license:
         name: GNU General Public License v3.0
         url: https://opensource.org/licenses/GPL-3.0
@@ -816,9 +816,9 @@ paths:
             tags: [Servers]
             summary: Create a server
             description: >-
-                  Returns CreateServerResponse containing the created server object and any associated
-                  metadata. The 201 response includes the required non-null server field with the new
-                  server payload; failures are represented by the non-2xx responses.
+                Returns CreateServerResponse containing the created server object and any associated
+                metadata. The 201 response includes the required non-null server field with the new
+                server payload; failures are represented by the non-2xx responses.
             security:
                 - sessionCookie: []
             requestBody:

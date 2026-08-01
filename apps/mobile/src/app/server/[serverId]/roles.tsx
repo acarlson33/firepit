@@ -11,6 +11,7 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ArrowLeft } from "lucide-react-native";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
 import { ThemedText } from "@/components/themed-text";
@@ -64,11 +65,13 @@ function ActionButton({
     onPress,
     disabled,
     tone = "primary",
+    icon,
 }: {
     label: string;
     onPress: () => void;
     disabled?: boolean;
     tone?: "primary" | "secondary" | "ghost" | "danger";
+    icon?: "back";
 }) {
     const theme = useTheme();
     return (
@@ -93,16 +96,19 @@ function ActionButton({
                 disabled && styles.actionButtonDisabled,
             ]}
         >
-            <ThemedText
-                type="smallBold"
-                themeColor={
-                    tone === "primary" || tone === "danger"
-                        ? "primaryForeground"
-                        : "foreground"
-                }
-            >
-                {label}
-            </ThemedText>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {icon === "back" && <ArrowLeft size={16} color={tone === "primary" || tone === "danger" ? theme.primaryForeground : theme.foreground} />}
+                <ThemedText
+                    type="smallBold"
+                    themeColor={
+                        tone === "primary" || tone === "danger"
+                            ? "primaryForeground"
+                            : "foreground"
+                    }
+                >
+                    {label}
+                </ThemedText>
+            </View>
         </Pressable>
     );
 }
@@ -371,6 +377,7 @@ export default function RolesManagementScreen() {
                                     <ActionButton
                                         label="Back to server"
                                         tone="ghost"
+                                        icon="back"
                                         onPress={() => {
                                             if (normalizedServerId) {
                                                 router.replace(

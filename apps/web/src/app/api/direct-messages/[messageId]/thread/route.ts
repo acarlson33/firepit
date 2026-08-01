@@ -11,6 +11,7 @@ import { logger,
     returnForbidden,
 } from "@/lib/newrelic-utils";
 import type { DirectMessage, FileAttachment } from "@/lib/types";
+import { getAvatarUrl, getUserProfile, getUserProfilesBatch, getAvatarFrameUrlForProfile } from "@/lib/appwrite-profiles";
 import {
     MAX_MESSAGE_LENGTH,
     MESSAGE_TOO_LONG_ERROR,
@@ -106,7 +107,7 @@ async function updateThreadMetadataWithRetries(params: {
             replies.total,
         );
         try {
-            await databases.updateDocument(
+            const updatedDoc = await databases.updateDocument(
                 env.databaseId,
                 env.collections.directMessages,
                 actualThreadId,
@@ -117,23 +118,18 @@ async function updateThreadMetadataWithRetries(params: {
                 },
             );
 
-            // Best-effort verification to reduce lost updates when concurrent writes race.
-            const refreshedParent = (await databases.getDocument(
-                env.databaseId,
-                env.collections.directMessages,
-                actualThreadId,
-            )) as unknown as DirectMessage;
+            // Use the updateDocument response directly — it already has the post-write state.
             const refreshedParticipants = Array.isArray(
-                refreshedParent.threadParticipants,
+                (updatedDoc as unknown as DirectMessage).threadParticipants,
             )
-                ? refreshedParent.threadParticipants.filter(
+                ? ((updatedDoc as unknown as DirectMessage).threadParticipants as string[]).filter(
                       (participant): participant is string =>
                           typeof participant === "string",
                   )
                 : [];
             const refreshedCount =
-                typeof refreshedParent.threadMessageCount === "number"
-                    ? refreshedParent.threadMessageCount
+                typeof (updatedDoc as unknown as DirectMessage).threadMessageCount === "number"
+                    ? ((updatedDoc as unknown as DirectMessage).threadMessageCount as number)
                     : 0;
 
             if (
@@ -330,41 +326,102 @@ export async function GET(request: NextRequest, context: RouteContext) {
             );
         }
 
-        const participants = await getConversationParticipants(
-            parent.conversationId,
-        );
+        const [participants, docs] = await Promise.all([
+            getConversationParticipants(parent.conversationId),
+            databases.listDocuments(
+                env.databaseId,
+                env.collections.directMessages,
+                [
+                    Query.equal("conversationId", parent.conversationId),
+                    Query.equal("threadId", actualThreadId),
+                    Query.orderAsc("$createdAt"),
+                    Query.limit(limit),
+                    ...(cursor ? [Query.cursorAfter(cursor)] : []),
+                ],
+            ),
+        ]);
+
         if (!participants.includes(user.$id)) {
             return returnForbidden();
         }
-
-        const docs = await databases.listDocuments(
-            env.databaseId,
-            env.collections.directMessages,
-            [
-                Query.equal("conversationId", parent.conversationId),
-                Query.equal("threadId", actualThreadId),
-                Query.orderAsc("$createdAt"),
-                Query.limit(limit),
-                ...(cursor ? [Query.cursorAfter(cursor)] : []),
-            ],
-        );
 
         const items = docs.documents.map((doc) => {
             return doc as unknown as DirectMessage;
         });
 
-        const parentMessage = parent.threadId
-            ? ((await databases.getDocument(
-                  env.databaseId,
-                  env.collections.directMessages,
-                  actualThreadId,
-              )) as unknown as DirectMessage)
-            : parent;
+        const [parentMessage, profilesBatch] = await Promise.all([
+            parent.threadId
+                ? databases.getDocument(
+                      env.databaseId,
+                      env.collections.directMessages,
+                      actualThreadId,
+                  ).then((doc) => doc as unknown as DirectMessage)
+                : Promise.resolve(parent),
+            (async () => {
+                const allMessages = [
+                    parent,
+                    ...items,
+                ];
+                const senderIds = Array.from(
+                    new Set(
+                        allMessages
+                            .map((m) => m.senderId)
+                            .filter((id): id is string => Boolean(id)),
+                    ),
+                );
+                return getUserProfilesBatch(senderIds);
+            })(),
+        ]);
+
+        const profileMap = new Map<
+            string,
+            {
+                displayName?: string;
+                avatarUrl?: string;
+                pronouns?: string;
+                avatarFrameUrl?: string;
+            }
+        >();
+
+        for (const [senderId, profile] of profilesBatch) {
+            const avatarUrl = profile.avatarFileId
+                ? getAvatarUrl(profile.avatarFileId)
+                : undefined;
+            const avatarFrameUrl =
+                await getAvatarFrameUrlForProfile({
+                    avatarFramePreset: profile.avatarFramePreset,
+                });
+            profileMap.set(senderId, {
+                displayName: profile.displayName,
+                avatarUrl,
+                pronouns: profile.pronouns,
+                avatarFrameUrl,
+            });
+        }
+
+        const enrichMessage = (
+            message: DirectMessage,
+        ): DirectMessage => {
+            const profile = profileMap.get(message.senderId);
+            if (!profile) {
+                return message;
+            }
+            return {
+                ...message,
+                senderDisplayName: profile.displayName,
+                senderAvatarUrl: profile.avatarUrl,
+                senderPronouns: profile.pronouns,
+                senderAvatarFrameUrl: profile.avatarFrameUrl,
+            };
+        };
+
+        const enrichedItems = items.map(enrichMessage);
+        const enrichedParentMessage = enrichMessage(parentMessage);
 
         return NextResponse.json({
-            items,
-            parentMessage,
-            replies: items,
+            items: enrichedItems,
+            parentMessage: enrichedParentMessage,
+            replies: enrichedItems,
             total: docs.total,
             hasMore: docs.documents.length === limit,
         });

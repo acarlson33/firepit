@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
@@ -82,18 +82,19 @@ function ActionButton({
 
 export default function AdminDashboardScreen() {
     const theme = useTheme();
-    const { instanceUrl, accessToken, state } = useFirepitBootstrap();
+    const { instanceUrl, accessToken } = useFirepitBootstrap();
+    const { serverId } = useLocalSearchParams<{ serverId?: string }>();
 
     const [stats, setStats] = useState<ServerStatsResponse | null>(null);
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [loadError, setLoadError] = useState<string | null>(null);
 
     const loadStats = useCallback(async () => {
-        if (!instanceUrl || !accessToken) return;
+        if (!instanceUrl || !accessToken || !serverId) return;
         setLoadState("loading");
         setLoadError(null);
         try {
-            const res = await fetchServerStats(instanceUrl, accessToken, "current");
+            const res = await fetchServerStats(instanceUrl, accessToken, serverId);
             setStats(res);
             setLoadState("ready");
         } catch (error) {
@@ -102,7 +103,7 @@ export default function AdminDashboardScreen() {
                 error instanceof Error ? error.message : "Unable to load stats",
             );
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, instanceUrl, serverId]);
 
     useEffect(() => {
         void loadStats();
@@ -110,10 +111,7 @@ export default function AdminDashboardScreen() {
 
     return (
         <AuthRouteGuard>
-            <ScrollView
-                style={[styles.scrollView, { backgroundColor: theme.background }]}
-                contentContainerStyle={styles.scrollContent}
-            >
+            <View style={styles.root}>
                 <View
                     pointerEvents="none"
                     style={[
@@ -128,7 +126,11 @@ export default function AdminDashboardScreen() {
                         { backgroundColor: "rgba(78, 138, 134, 0.10)" },
                     ]}
                 />
-                <SafeAreaView style={styles.safeArea}>
+                <ScrollView
+                    style={[styles.scrollView, { backgroundColor: theme.background }]}
+                    contentContainerStyle={styles.scrollContent}
+                >
+                    <SafeAreaView style={styles.safeArea}>
                     <ThemedView style={styles.shell}>
                         <ThemedView
                             type="card"
@@ -173,14 +175,14 @@ export default function AdminDashboardScreen() {
                                     label="Moderation"
                                     tone="secondary"
                                     onPress={() =>
-                                        router.push("/admin/reports" as never)
+                                        router.push(`/admin/reports?serverId=${serverId}` as never)
                                     }
                                 />
                                 <ActionButton
                                     label="Audit log"
                                     tone="ghost"
                                     onPress={() =>
-                                        router.push("/admin/audit-log" as never)
+                                        router.push(`/admin/audit-log?serverId=${serverId}` as never)
                                     }
                                 />
                                 <ActionButton
@@ -192,6 +194,17 @@ export default function AdminDashboardScreen() {
                         </ThemedView>
 
                         {/* Stats */}
+                        {!serverId ? (
+                            <ThemedView
+                                type="card"
+                                style={[styles.card, { borderColor: theme.border }]}
+                            >
+                                <ThemedText themeColor="mutedForeground">
+                                    No server selected. Navigate to an admin page from within a server to view its statistics.
+                                </ThemedText>
+                            </ThemedView>
+                        ) : null}
+
                         {loadState === "loading" ? (
                             <View style={styles.loadingRow}>
                                 <ActivityIndicator color={theme.primary} />
@@ -251,6 +264,7 @@ export default function AdminDashboardScreen() {
                     </ThemedView>
                 </SafeAreaView>
             </ScrollView>
+        </View>
         </AuthRouteGuard>
     );
 }
@@ -277,6 +291,7 @@ function StatItem({
 }
 
 const styles = StyleSheet.create({
+    root: { flex: 1, overflow: "hidden" },
     scrollView: { flex: 1 },
     scrollContent: { flexGrow: 1 },
     backdropOrbTop: {

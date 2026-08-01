@@ -101,6 +101,54 @@ async function listRoleAssignmentsForServer(params: {
     };
 }
 
+async function enrichAssignmentsWithProfiles(
+    databases: ReturnType<typeof getDatabases>,
+    assignments: Array<Record<string, unknown>>,
+) {
+    const validAssignments = assignments.filter(
+        (assignment) =>
+            typeof assignment.userId === "string" &&
+            assignment.userId.length > 0,
+    );
+
+    const profileUserIds = validAssignments.map(
+        (assignment) => assignment.userId,
+    ) as string[];
+    const profileChunks = chunkValues(profileUserIds, QUERY_ARRAY_LIMIT);
+    const profileDocuments =
+        profileChunks.length === 0
+            ? []
+            : (
+                  await Promise.all(
+                      profileChunks.map((profileUserIdChunk) =>
+                          databases.listDocuments(
+                              databaseId,
+                              profilesCollectionId,
+                              [
+                                  Query.equal("userId", profileUserIdChunk),
+                                  Query.limit(profileUserIdChunk.length),
+                              ],
+                          ),
+                      ),
+                  )
+              ).flatMap((profilePage) => profilePage.documents);
+
+    const profilesByUserId = new Map(
+        profileDocuments.map((profile) => [String(profile.userId), profile]),
+    );
+
+    return validAssignments.map((assignment) => {
+        const profile = profilesByUserId.get(String(assignment.userId));
+        return {
+            userId: assignment.userId,
+            displayName: profile?.displayName,
+            userName: profile?.userName,
+            avatarUrl: profile?.avatarUrl,
+            roleIds: assignment.roleIds as string[],
+        };
+    });
+}
+
 async function updateRoleMemberCount(roleId: string, serverId: string): Promise<void> {
     try {
         const databases = getDatabases();
@@ -189,49 +237,10 @@ export async function GET(request: NextRequest) {
                 roleId,
                 serverId,
             });
-            const roleAssignments = roleAssignmentsResult.documents;
-            const validRoleAssignments = roleAssignments.filter(
-                (assignment) =>
-                    typeof assignment.userId === "string" &&
-                    assignment.userId.length > 0,
+            const members = await enrichAssignmentsWithProfiles(
+                databases,
+                roleAssignmentsResult.documents,
             );
-
-            const profileUserIds = validRoleAssignments.map(
-                (assignment) => assignment.userId,
-            );
-            const profileChunks = chunkValues(profileUserIds, QUERY_ARRAY_LIMIT);
-            const profileDocuments =
-                profileChunks.length === 0
-                    ? []
-                    : (
-                          await Promise.all(
-                              profileChunks.map((profileUserIdChunk) =>
-                                  databases.listDocuments(
-                                      databaseId,
-                                      profilesCollectionId,
-                                      [
-                                          Query.equal("userId", profileUserIdChunk),
-                                          Query.limit(profileUserIdChunk.length),
-                                      ],
-                                  ),
-                              ),
-                          )
-                      ).flatMap((profilePage) => profilePage.documents);
-
-            const profilesByUserId = new Map(
-                profileDocuments.map((profile) => [String(profile.userId), profile]),
-            );
-
-            const members = validRoleAssignments.map((assignment) => {
-                const profile = profilesByUserId.get(String(assignment.userId));
-                return {
-                    userId: assignment.userId,
-                    displayName: profile?.displayName,
-                    userName: profile?.userName,
-                    avatarUrl: profile?.avatarUrl,
-                    roleIds: assignment.roleIds as string[],
-                };
-            });
 
             return NextResponse.json({
                 members,
@@ -254,7 +263,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(userAssignments.documents);
         }
 
-        const assignments = await listPages({
+        const assignmentsResult = await listPages({
             databases,
             databaseId,
             collectionId: roleAssignmentsCollectionId,
@@ -263,9 +272,15 @@ export async function GET(request: NextRequest) {
             warningContext: "role-assignments-all",
         });
 
+        const members = await enrichAssignmentsWithProfiles(
+            databases,
+            assignmentsResult.documents,
+        );
+
         return NextResponse.json({
-            assignments: assignments.documents,
-            truncated: assignments.truncated,
+            members,
+            total: assignmentsResult.documents.length,
+            truncated: assignmentsResult.truncated,
         });
     } catch (error) {
         logger.error("Failed to list role assignments", {
