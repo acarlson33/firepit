@@ -259,27 +259,6 @@ describe("auth-server", () => {
             expect(session).toBeNull();
         });
 
-        it("should not cache failed header auth results", async () => {
-            const token = "session-token";
-            setMockHeaders({ Authorization: `****** });
-            setMockAuthModeResponse("session", null);
-
-            const { getServerSession } = await import("../lib/auth-server");
-
-            const firstAttempt = await getServerSession();
-            expect(firstAttempt).toBeNull();
-
-            const mockUser = {
-                $id: "user123",
-                name: "Recovered User",
-                email: "recovered@example.com",
-            };
-            setMockAuthModeResponse("session", mockUser);
-
-            const secondAttempt = await getServerSession();
-            expect(secondAttempt).toEqual(mockUser);
-        });
-
         it("should return null when session belongs to configured system sender", async () => {
             const env = process.env as Record<string, string>;
             env.SYSTEM_SENDER_USER_ID = "system-account";

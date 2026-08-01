@@ -97,6 +97,7 @@ async function getSessionForToken(
                 `[auth-debug] ${authMode} auth failed: token="${masked}", endpoint=${endpoint}, project=${project}, error=${error instanceof Error ? error.message : String(error)}`,
             );
         }
+        setCachedSession(key, null);
         return null;
     }
 }
