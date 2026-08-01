@@ -386,7 +386,6 @@ const styles = StyleSheet.create({
     scrollView: { flex: 1 },
     scrollContent: {},
     safeArea: {
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
@@ -404,6 +403,7 @@ const styles = StyleSheet.create({
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.four,
     },

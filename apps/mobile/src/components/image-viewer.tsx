@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { useTheme } from "@/hooks/use-theme";
@@ -6,6 +6,10 @@ import { useTheme } from "@/hooks/use-theme";
 export function ImageViewer({ url, visible, onClose }: { url?: string | null; visible: boolean; onClose: () => void }) {
   const colors = useTheme();
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+  }, [url]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

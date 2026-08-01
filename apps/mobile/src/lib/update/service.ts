@@ -18,7 +18,7 @@ export async function loadUpdateSettings(): Promise<UpdateSettings> {
   return {
     ...DEFAULT_UPDATE_SETTINGS,
     ...stored,
-    setupComplete: stored.setupComplete ?? true,
+    setupComplete: stored.setupComplete ?? false,
   };
 }
 

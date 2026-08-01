@@ -1,35 +1,68 @@
-import { ParsedVersion } from "./types";
+import type { ParsedVersion } from "./types";
 
 /**
  * Parse a version string like "2.1.0", "v2.1.0", "2.1.1s" into components.
  * The "s" suffix indicates a security release.
+ * Prerelease identifiers follow SemVer ordering ("2.0.0-canary.10"),
+ * and "+build" metadata is stripped before storing or comparing.
  */
 export function parseVersion(raw: string): ParsedVersion {
   const cleaned = raw.trim().replace(/^v/, "");
   const isSecurity = cleaned.endsWith("s");
   let numeric = isSecurity ? cleaned.slice(0, -1) : cleaned;
 
+  // Build metadata "+build" never participates in precedence
+  const plusIndex = numeric.indexOf("+");
+  if (plusIndex !== -1) {
+    numeric = numeric.slice(0, plusIndex);
+  }
+
   // Prerelease suffix like "2.0.0-canary.10"
   const dashIndex = numeric.indexOf("-");
   let prerelease: string | null = null;
-  let prereleaseNumber = 0;
+  let prereleaseIdentifiers: Array<number | string> = [];
   if (dashIndex !== -1) {
     prerelease = numeric.slice(dashIndex + 1);
     numeric = numeric.slice(0, dashIndex);
-    const lastSegment = prerelease.split(".").at(-1) ?? "";
-    prereleaseNumber = Number.parseInt(lastSegment, 10) || 0;
+    prereleaseIdentifiers = prerelease.split(".").map((part) => {
+      const n = Number.parseInt(part, 10);
+      return String(n) === part ? n : part;
+    });
   }
 
-  const parts = numeric.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const [major = 0, minor = 0, patch = 0] = numeric
+    .split(".")
+    .map((n) => Number.parseInt(n, 10) || 0);
   return {
-    major: parts[0] ?? 0,
-    minor: parts[1] ?? 0,
-    patch: parts[2] ?? 0,
+    major,
+    minor,
+    patch,
     isSecurity,
     prerelease,
-    prereleaseNumber,
+    prereleaseIdentifiers,
     raw: cleaned,
   };
+}
+
+function comparePrerelease(
+  a: Array<number | string>,
+  b: Array<number | string>,
+): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const x = a[i];
+    const y = b[i];
+    const xIsNum = typeof x === "number";
+    const yIsNum = typeof y === "number";
+    if (xIsNum && yIsNum) {
+      if (x !== y) return x - y;
+    } else if (xIsNum !== yIsNum) {
+      return xIsNum ? -1 : 1; // numeric identifiers sort before non-numeric
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return a.length - b.length;
 }
 
 /**
@@ -50,10 +83,7 @@ export function compareVersions(a: ParsedVersion, b: ParsedVersion): number {
   if (a.prerelease === null && b.prerelease !== null) return 1;
   if (a.prerelease !== null && b.prerelease === null) return -1;
   if (a.prerelease !== null && b.prerelease !== null) {
-    if (a.prereleaseNumber !== b.prereleaseNumber) {
-      return a.prereleaseNumber - b.prereleaseNumber;
-    }
-    return a.prerelease.localeCompare(b.prerelease);
+    return comparePrerelease(a.prereleaseIdentifiers, b.prereleaseIdentifiers);
   }
   return 0;
 }
@@ -82,7 +112,7 @@ export function formatVersion(version: string): string {
 }
 
 // ponytail: self-check runs via `bun src/lib/update/version.ts`, skipped in the app bundle
-if (typeof require !== "undefined" && require.main === module) {
+if (import.meta.main) {
   const assert = (cond: boolean, msg: string) => {
     if (!cond) throw new Error(msg);
   };
@@ -91,7 +121,9 @@ if (typeof require !== "undefined" && require.main === module) {
   assert(compareVersions(parseVersion("2.0.0-canary.10"), parseVersion("2.0.0")) < 0, "stable newer than prerelease");
   assert(compareVersions(parseVersion("2.0.0"), parseVersion("2.0.1")) < 0, "patch compare");
   assert(compareVersions(parseVersion("2.0.0"), parseVersion("2.0.0s")) < 0, "security higher than patch");
+  assert(compareVersions(parseVersion("2.0.0-alpha.10"), parseVersion("2.0.0-beta.1")) < 0, "alpha.10 < beta.1 per SemVer");
+  assert(compareVersions(parseVersion("2.0.0+build.1"), parseVersion("2.0.0+build.2")) === 0, "build metadata ignored");
+  assert(compareVersions(parseVersion("2.0.0-canary.10"), parseVersion("2.0.0-canary.2")) > 0, "numeric prerelease id ordered numerically");
   assert(isNewerVersion("2.0.0-canary.10", "2.0.0-canary.11"), "isNewerVersion");
   assert(!isNewerVersion("2.0.0-canary.11", "2.0.0-canary.10"), "not newer when equal or lower");
-  console.log("version.ts self-check passed");
 }

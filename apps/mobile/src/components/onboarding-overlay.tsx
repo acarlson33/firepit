@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import {
-    Dimensions,
     Pressable,
     ScrollView,
     StyleSheet,
+    useWindowDimensions,
     View,
 } from "react-native";
 
@@ -11,8 +11,6 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const SLIDES = [
     {
@@ -43,6 +41,7 @@ type Props = {
 
 export function OnboardingOverlay({ onComplete }: Props) {
     const theme = useTheme();
+    const { width: screenWidth } = useWindowDimensions();
     const scrollRef = useRef<ScrollView>(null);
     const [currentIndex, setCurrentIndex] = useState(0);
     const isLastSlide = currentIndex === SLIDES.length - 1;
@@ -50,11 +49,11 @@ export function OnboardingOverlay({ onComplete }: Props) {
     const handleScroll = useCallback(
         (e: { nativeEvent: { contentOffset: { x: number } } }) => {
             const index = Math.round(
-                e.nativeEvent.contentOffset.x / SCREEN_WIDTH,
+                e.nativeEvent.contentOffset.x / screenWidth,
             );
             setCurrentIndex(index);
         },
-        [],
+        [screenWidth],
     );
 
     const handleNext = useCallback(() => {
@@ -62,11 +61,11 @@ export function OnboardingOverlay({ onComplete }: Props) {
             onComplete();
         } else {
             scrollRef.current?.scrollTo({
-                x: (currentIndex + 1) * SCREEN_WIDTH,
+                x: (currentIndex + 1) * screenWidth,
                 animated: true,
             });
         }
-    }, [isLastSlide, currentIndex, onComplete]);
+    }, [isLastSlide, currentIndex, screenWidth, onComplete]);
 
     return (
         <View
@@ -102,7 +101,10 @@ export function OnboardingOverlay({ onComplete }: Props) {
                 bounces={false}
             >
                 {SLIDES.map((slide, index) => (
-                    <View key={index} style={styles.slide}>
+                    <View
+                        key={index}
+                        style={[styles.slide, { width: screenWidth }]}
+                    >
                         <ThemedView
                             type="card"
                             style={[
@@ -219,7 +221,6 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.two,
     },
     slide: {
-        width: SCREEN_WIDTH,
         flex: 1,
         justifyContent: "center",
         paddingHorizontal: Spacing.three,

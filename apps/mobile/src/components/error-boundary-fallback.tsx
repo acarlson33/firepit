@@ -10,7 +10,6 @@ interface ErrorBoundaryFallbackProps {
   error: Error;
   resetError: () => void;
   palette: Record<string, string>;
-  themeName: "light" | "dark";
 }
 
 export function ErrorBoundaryFallback({

@@ -22,11 +22,13 @@ import { useTheme } from "@/hooks/use-theme";
 import type { Channel, EffectivePermissions, Message } from "@/lib/firepit";
 import {
   createChannelMessage,
+  deleteChannelMessage,
   fetchChannelMessages,
   fetchChannels,
   fetchServer,
   pinChannelMessage,
   unpinChannelMessage,
+  updateChannelMessage,
 } from "@/lib/firepit";
 import { uploadFile, uploadImage } from "@/lib/firepit/uploads";
 import { parseMentions } from "@/lib/mention-utils";
@@ -46,6 +48,7 @@ import { getAvatarUrl, getMessageAvatarFileId } from "@/lib/avatars";
 import { getProfilesBatch } from "@/lib/profile-cache";
 import { getChannels as getCachedChannels, getServerName as getCachedServerName, getCachedEffectivePermissions } from "@/lib/server-cache";
 import { getLastReadAt, setLastReadAt, countUnread } from "@/lib/channel-read-state";
+import { captureError } from "@/lib/sentry";
 import { UserProfileSheet } from "@/components/user-profile-sheet";
 import { ArrowLeft, Megaphone } from "lucide-react-native";
 
@@ -57,7 +60,7 @@ export default function ServerMessageScreen() {
     serverId?: string;
     channelId?: string;
   }>();
-  const { instanceUrl, accessToken, currentUser, state, instance, customEmojis, appwriteConfig } =
+  const { instanceUrl, accessToken, currentUser, instance, customEmojis, appwriteConfig } =
     useFirepitBootstrap();
   const [serverName, setServerName] = useState<string | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -94,7 +97,6 @@ export default function ServerMessageScreen() {
   const normalizedChannelId = Array.isArray(channelId)
     ? channelId[0]
     : channelId;
-  const signedIn = Boolean(state === "ready" && accessToken && currentUser);
   const currentUserId = currentUser?.$id ?? currentUser?.userId ?? null;
 
   // Typing indicators for this channel
@@ -161,12 +163,12 @@ export default function ServerMessageScreen() {
       setMessageLoadError(null);
 
       // Show cached messages instantly if available
-      const cached = await getCachedMessages(nextChannelId);
+      const cached = (await getCachedMessages(nextChannelId)) as Message[];
       if (cached.length > 0) {
         const knownThreadReplyIds = await getKnownThreadReplyIds();
-        const filtered = cached.filter((m: any) => {
+        const filtered = cached.filter((m: Message) => {
           if (m.threadId) return false;
-          if (knownThreadReplyIds.has(m.$id)) return false;
+          if (m.$id && knownThreadReplyIds.has(m.$id)) return false;
           return true;
         });
         setMessages(filtered);
@@ -175,44 +177,50 @@ export default function ServerMessageScreen() {
       try {
         const appwriteCfg = extractAppwriteConfig(instance ?? {});
 
-        const enrichMessages = async (msgs: any[]) => {
-          const enriched = msgs.map((msg: any) => {
-            const avatarFileId = getMessageAvatarFileId(msg as any);
+        const enrichMessages = async (
+          msgs: Message[],
+        ): Promise<{ enriched: Message[]; filtered: Message[] }> => {
+          const enriched = msgs.map((msg): Message => {
+            const avatarFileId = getMessageAvatarFileId(msg);
             const avatarUrl = getAvatarUrl(avatarFileId, appwriteCfg);
-            if (typeof msg.reactions === "string") {
+            const rawReactions: unknown = msg.reactions;
+            let reactions: Message["reactions"] = undefined;
+            if (typeof rawReactions === "string") {
               try {
-                msg.reactions = JSON.parse(msg.reactions);
+                reactions = JSON.parse(rawReactions) as Message["reactions"];
               } catch {
-                msg.reactions = [];
+                reactions = undefined;
               }
+            } else if (Array.isArray(rawReactions)) {
+              reactions = rawReactions as Message["reactions"];
             }
-            return { ...msg, authorAvatarUrl: avatarUrl } as any;
+            return { ...msg, authorAvatarUrl: avatarUrl, reactions };
           });
 
           const senderIds = new Set<string>();
           for (const msg of enriched) {
-            const senderId = msg.senderId ?? msg.userId;
+            const senderId = (msg.senderId ?? msg.userId) as string | undefined;
             if (senderId) senderIds.add(senderId);
           }
           if (senderIds.size > 0) {
             const profileMap = await getProfilesBatch(instanceUrl, accessToken, Array.from(senderIds));
             for (const msg of enriched) {
-              const senderId = msg.senderId ?? msg.userId;
+              const senderId = (msg.senderId ?? msg.userId) as string | undefined;
               if (senderId && profileMap[senderId]) {
                 if (profileMap[senderId].displayName) {
-                  (msg as any).senderDisplayName = profileMap[senderId].displayName;
+                  msg.senderDisplayName = profileMap[senderId].displayName;
                 }
                 if (profileMap[senderId].avatarUrl) {
-                  (msg as any).authorAvatarUrl = profileMap[senderId].avatarUrl;
+                  msg.authorAvatarUrl = profileMap[senderId].avatarUrl;
                 }
               }
             }
           }
 
           const knownThreadReplyIds = await getKnownThreadReplyIds();
-          const filtered = enriched.filter((m: any) => {
+          const filtered = enriched.filter((m: Message) => {
             if (m.threadId) {
-              void markAsThreadReply(m.$id);
+              if (m.$id) void markAsThreadReply(m.$id);
               return false;
             }
             if (m.$id && knownThreadReplyIds.has(m.$id)) return false;
@@ -231,8 +239,8 @@ export default function ServerMessageScreen() {
         );
         if (cancelledRef.current) return;
 
-        let allEnriched: any[];
-        let allFiltered: any[];
+        let allEnriched: Message[];
+        let allFiltered: Message[];
         let cursor: string | undefined;
         if ((initialRes.messages ?? []).length >= 10) {
           const lastMsg = initialRes.messages![initialRes.messages!.length - 1];
@@ -348,24 +356,12 @@ export default function ServerMessageScreen() {
 
     // Handle edit mode
     if (editingMessage) {
+      const messageId = editingMessage.$id;
+      if (!messageId) return;
       setMessageSendState("loading");
       setMessageError(null);
       try {
-        const editRes = await fetch(
-          `${instanceUrl}/api/messages/${editingMessage.$id}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify({ text }),
-          },
-        );
-        if (!editRes.ok) {
-          const errData = await editRes.json().catch(() => ({}));
-          throw new Error((errData as { error?: string }).error ?? `Edit failed (${editRes.status})`);
-        }
+        await updateChannelMessage(instanceUrl, accessToken, messageId, text);
         if (cancelledRef.current) return;
         setEditingMessage(null);
         setMessageDraft("");
@@ -440,20 +436,32 @@ export default function ServerMessageScreen() {
 
   const handlePollSubmit = useCallback(
     (question: string, options: string[]) => {
-      if (!selectedChannel?.$id || !normalizedServerId) return;
+      const channelId = selectedChannel?.$id;
+      if (!instanceUrl || !accessToken || !channelId || !normalizedServerId) return;
+      if ([question, ...options].some((s) => /["|]/.test(s))) {
+        setMessageError(
+          "Poll question and options cannot contain double quotes or pipe characters.",
+        );
+        return;
+      }
       const quotedOptions = options.map((o) => `"${o}"`).join(" | ");
       const command = `/poll "${question}" | ${quotedOptions}`;
       const serverId = normalizedServerId;
       (async () => {
         try {
-          await createChannelMessage(instanceUrl!, accessToken!, {
-            channelId: selectedChannel.$id!,
+          await createChannelMessage(instanceUrl, accessToken, {
+            channelId,
             serverId,
             text: command,
           });
-          await loadMessages(selectedChannel.$id!);
+          await loadMessages(channelId);
         } catch (e) {
-          console.error("[channel:pollSendMsg] Failed to send poll channel message", e);
+          captureError(e instanceof Error ? e : new Error(String(e)), {
+            handler: "handlePollSubmit",
+          });
+          setMessageError(
+            e instanceof Error ? e.message : "Failed to send poll",
+          );
         }
       })();
     },
@@ -616,6 +624,7 @@ export default function ServerMessageScreen() {
             emoji: string,
             isAdding: boolean,
           ) => {
+            if (!instanceUrl || !accessToken) return;
             try {
               const msgId = message.$id ?? (message as any).id;
               if (!msgId) return;
@@ -624,8 +633,8 @@ export default function ServerMessageScreen() {
                 emoji,
                 isAdding,
                 false,
-                instanceUrl!,
-                accessToken!,
+                instanceUrl,
+                accessToken,
               );
               setMessages((prev) =>
                 prev.map((m) => {
@@ -647,16 +656,20 @@ export default function ServerMessageScreen() {
             }
           }}
           onTogglePin={async () => {
+            if (!instanceUrl || !accessToken) return;
             try {
               const msgId = message.$id ?? (message as any).id;
               if (!msgId) return;
               if (message.isPinned) {
-                await unpinChannelMessage(instanceUrl!, accessToken!, msgId);
+                await unpinChannelMessage(instanceUrl, accessToken, msgId);
               } else {
-                await pinChannelMessage(instanceUrl!, accessToken!, msgId);
+                await pinChannelMessage(instanceUrl, accessToken, msgId);
               }
             } catch (e) {
-              console.error("[channel:togglePin] Failed to pin/unpin message", e);
+              captureError(e instanceof Error ? e : new Error(String(e)), {
+                handler: "channel:togglePin",
+              });
+              setMessageError("Unable to update pin");
             }
           }}
           onOpenImageViewer={(url) => setViewerImageUrl(url)}
@@ -674,21 +687,19 @@ export default function ServerMessageScreen() {
             setMessageDraft(message.text ?? "");
           }}
           onDelete={async () => {
+            if (!instanceUrl || !accessToken) return;
             try {
               const msgId = message.$id ?? (message as any).id;
               if (!msgId) return;
-              await fetch(
-                `${instanceUrl}/api/messages/${msgId}`,
-                {
-                  method: "DELETE",
-                  headers: { Authorization: `Bearer ${accessToken}` },
-                },
-              );
+              await deleteChannelMessage(instanceUrl, accessToken, msgId);
               setMessages((prev) =>
                 prev.filter((m) => m.$id !== msgId),
               );
             } catch (e) {
-              console.error("[channel:deleteMessage] Failed to delete message", e);
+              captureError(e instanceof Error ? e : new Error(String(e)), {
+                handler: "channel:deleteMessage",
+              });
+              setMessageError("Unable to delete message");
             }
           }}
           onOpenThread={() => {
@@ -753,8 +764,8 @@ export default function ServerMessageScreen() {
         {/* Thin header bar */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <View style={styles.headerLeft}>
-            <ThemedText
-              type="smallBold"
+            <Pressable
+              accessibilityRole="button"
               onPress={() => {
                 if (normalizedServerId) {
                   router.replace(`/server/${normalizedServerId}`);
@@ -766,7 +777,7 @@ export default function ServerMessageScreen() {
                 <ArrowLeft size={18} color={theme.foreground} />
                 <ThemedText type="smallBold">Back</ThemedText>
               </View>
-            </ThemedText>
+            </Pressable>
           </View>
           <View style={styles.headerCenter}>
             <View style={styles.headerTitleRow}>
@@ -834,11 +845,11 @@ export default function ServerMessageScreen() {
               />
             ) : null}
 
-            {activeThreadMessageId ? (
+            {activeThreadMessageId && instanceUrl && accessToken ? (
               <ThreadPanel
                 parentMessageId={activeThreadMessageId}
-                instanceUrl={instanceUrl!}
-                accessToken={accessToken!}
+                instanceUrl={instanceUrl}
+                accessToken={accessToken}
                 customEmojis={mappedEmojis}
                 onClose={() => setActiveThreadMessageId(null)}
                 type="channel"
@@ -959,34 +970,36 @@ export default function ServerMessageScreen() {
                     { borderTopColor: theme.border, backgroundColor: theme.background },
                   ]}
                 >
-                  <ChatInput
-                    value={messageDraft}
-                    onChange={setMessageDraft}
-                    onChangeText={handleTypingChange}
-                    placeholder={
-                      isAnnouncement && !channelPermissions?.canSend
-                        ? "Only admins can send announcements"
-                        : `Message #${selectedChannel?.name ?? "channel"}`
-                    }
-                    disabled={
-                      messageSendState === "loading" ||
-                      (isAnnouncement && !channelPermissions?.canSend)
-                    }
-                    onMentionsChange={() => {}}
-                    serverId={normalizedServerId ?? undefined}
-                    canMentionEveryone={channelPermissions?.mentionEveryone ?? false}
-                    instanceUrl={instanceUrl!}
-                    attachments={composerAttachments}
-                    onAttachmentsChange={setComposerAttachments}
-                    onSend={() => void sendMessage()}
-                    sending={messageSendState === "loading"}
-                    customEmojis={mappedEmojis.map((ce) => ({
-                      shortcode: ce.name,
-                      customUrl: ce.url,
-                    }))}
-                    onOpenPollCreate={() => setPollModalVisible(true)}
-                    onOpenGifStickerPicker={() => setGifStickerPickerVisible(true)}
-                  />
+                  {instanceUrl && accessToken ? (
+                    <ChatInput
+                      value={messageDraft}
+                      onChange={setMessageDraft}
+                      onChangeText={handleTypingChange}
+                      placeholder={
+                        isAnnouncement && !channelPermissions?.canSend
+                          ? "Only admins can send announcements"
+                          : `Message #${selectedChannel?.name ?? "channel"}`
+                      }
+                      disabled={
+                        messageSendState === "loading" ||
+                        (isAnnouncement && !channelPermissions?.canSend)
+                      }
+                      onMentionsChange={() => {}}
+                      serverId={normalizedServerId ?? undefined}
+                      canMentionEveryone={channelPermissions?.mentionEveryone ?? false}
+                      instanceUrl={instanceUrl}
+                      attachments={composerAttachments}
+                      onAttachmentsChange={setComposerAttachments}
+                      onSend={() => void sendMessage()}
+                      sending={messageSendState === "loading"}
+                      customEmojis={mappedEmojis.map((ce) => ({
+                        shortcode: ce.name,
+                        customUrl: ce.url,
+                      }))}
+                      onOpenPollCreate={() => setPollModalVisible(true)}
+                      onOpenGifStickerPicker={() => setGifStickerPickerVisible(true)}
+                    />
+                  ) : null}
                 </View>
               </>
             )}
@@ -1010,14 +1023,21 @@ export default function ServerMessageScreen() {
                 visible={emojiPickerVisible}
         onClose={() => setEmojiPickerVisible(false)}
         onSelect={async (emoji) => {
+          if (!instanceUrl || !accessToken) {
+            setEmojiPickerVisible(false);
+            return;
+          }
           if (emojiPickerMsgId) {
             try {
-              await toggleReaction(emojiPickerMsgId, emoji, true, false, instanceUrl!, accessToken!);
+              await toggleReaction(emojiPickerMsgId, emoji, true, false, instanceUrl, accessToken);
               // Refresh messages to show the new reaction
           if (!selectedChannel?.$id) return;
           await loadMessages(selectedChannel.$id);
             } catch (e) {
-              console.error("[channel:toggleReaction] Failed to toggle reaction", e);
+              captureError(e instanceof Error ? e : new Error(String(e)), {
+                handler: "channel:toggleReaction",
+              });
+              setMessageError("Unable to update reaction");
             }
           }
           setEmojiPickerVisible(false);
@@ -1031,11 +1051,12 @@ export default function ServerMessageScreen() {
             onSubmit={handlePollSubmit}
           />
         )}
-        <GifStickerPicker
-          instanceUrl={instanceUrl!}
-          accessToken={accessToken!}
-          visible={gifStickerPickerVisible}
-          onClose={() => setGifStickerPickerVisible(false)}
+        {gifStickerPickerVisible && instanceUrl && accessToken ? (
+          <GifStickerPicker
+            instanceUrl={instanceUrl}
+            accessToken={accessToken}
+            visible={gifStickerPickerVisible}
+            onClose={() => setGifStickerPickerVisible(false)}
           onSelectAttachment={(attachment) => {
             const fileUrl = attachment.fileUrl;
             if (!fileUrl) return;
@@ -1066,6 +1087,7 @@ export default function ServerMessageScreen() {
             }));
           }}
         />
+        ) : null}
         <UserProfileSheet
           userId={profileSheetUser?.userId ?? ""}
           displayName={profileSheetUser?.displayName}

@@ -327,6 +327,34 @@ export async function createChannelMessage(
     });
 }
 
+export async function updateChannelMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+    text: string,
+) {
+    return firepitRequest<{ message?: Message | null }>({
+        baseUrl,
+        path: `/api/messages/${encodeURIComponent(messageId)}`,
+        method: "PATCH",
+        token,
+        body: { text },
+    });
+}
+
+export async function deleteChannelMessage(
+    baseUrl: string,
+    token: string,
+    messageId: string,
+) {
+    return firepitRequest<{ success?: boolean }>({
+        baseUrl,
+        path: `/api/messages/${encodeURIComponent(messageId)}`,
+        method: "DELETE",
+        token,
+    });
+}
+
 export async function fetchChannelMessages(
     baseUrl: string,
     token: string,

@@ -366,32 +366,32 @@ export const STANDARD_EMOJI: Record<string, string> = {
   brown: "🟤",
 };
 
+const EMOJI_TOKEN_PATTERN = /:([a-zA-Z0-9_+-]+):/g;
+
 export function EmojiRenderer({ text, customEmojis = [] }: Props) {
   const parts = useMemo(() => {
-    const pattern = /:([a-zA-Z0-9_+-]+):/g;
-    const result: Array<{ type: "text" | "emoji" | "custom"; content: string; url?: string; name?: string }> = [];
+    const result: Array<{ type: "text" | "emoji" | "custom"; content: string; offset: number; url?: string; name?: string }> = [];
     let lastIndex = 0;
-    let match;
 
-    while ((match = pattern.exec(text)) !== null) {
+    for (const match of text.matchAll(EMOJI_TOKEN_PATTERN)) {
       const [fullMatch, emojiName] = match;
       const matchIndex = match.index;
 
       if (matchIndex > lastIndex) {
-        result.push({ type: "text", content: text.slice(lastIndex, matchIndex) });
+        result.push({ type: "text", content: text.slice(lastIndex, matchIndex), offset: lastIndex });
       }
 
       // Check custom emojis first
       const custom = customEmojis.find((e) => e.name.toLowerCase() === emojiName.toLowerCase());
       if (custom) {
-        result.push({ type: "custom", content: fullMatch, url: custom.url, name: custom.name });
+        result.push({ type: "custom", content: fullMatch, offset: matchIndex, url: custom.url, name: custom.name });
       } else {
         // Check standard emoji
         const unicode = STANDARD_EMOJI[emojiName.toLowerCase()];
         if (unicode) {
-          result.push({ type: "emoji", content: unicode });
+          result.push({ type: "emoji", content: unicode, offset: matchIndex });
         } else {
-          result.push({ type: "text", content: fullMatch });
+          result.push({ type: "text", content: fullMatch, offset: matchIndex });
         }
       }
 
@@ -399,7 +399,7 @@ export function EmojiRenderer({ text, customEmojis = [] }: Props) {
     }
 
     if (lastIndex < text.length) {
-      result.push({ type: "text", content: text.slice(lastIndex) });
+      result.push({ type: "text", content: text.slice(lastIndex), offset: lastIndex });
     }
 
     return result;
@@ -409,18 +409,18 @@ export function EmojiRenderer({ text, customEmojis = [] }: Props) {
 
   return (
     <Text>
-      {parts.map((part, i) => {
+      {parts.map((part) => {
         if (part.type === "custom" && part.url) {
           const emojiName = part.name ?? part.content;
           return (
             <CachedEmojiImage
-              key={i}
+              key={`${part.type}-${part.offset}`}
               name={emojiName}
               url={part.url}
             />
           );
         }
-        return <Text key={i}>{part.content}</Text>;
+        return <Text key={`${part.type}-${part.offset}`}>{part.content}</Text>;
       })}
     </Text>
   );

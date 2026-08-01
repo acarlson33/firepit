@@ -507,12 +507,12 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   safeArea: {
     flex: 1,
-    alignItems: "center",
     paddingHorizontal: Spacing.two,
   },
   shell: {
     width: "100%",
     maxWidth: MaxContentWidth,
+    alignSelf: "center",
   },
   scrollContent: {
     paddingBottom: BottomTabInset + Spacing.two,

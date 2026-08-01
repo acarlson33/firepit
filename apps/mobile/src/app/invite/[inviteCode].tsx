@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -9,7 +9,6 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { fetchInvitePreview, joinInvite } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
-import { ArrowLeft } from "lucide-react-native";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -77,26 +76,9 @@ export default function InviteScreen() {
     } | null>(null);
     const [serverName, setServerName] = useState<string | null>(null);
     const [joining, setJoining] = useState(false);
-    const [joinedServerId, setJoinedServerId] = useState<string | null>(null);
 
     const normalizedInviteCode = Array.isArray(inviteCode) ? inviteCode[0] : inviteCode;
     const signedIn = state === "ready" && Boolean(accessToken && currentUser);
-
-    const pageStatus = useMemo(() => {
-        if (!normalizedInviteCode) {
-            return "missing code";
-        }
-        if (loadState === "loading") {
-            return "loading invite";
-        }
-        if (loadState === "error") {
-            return "invite error";
-        }
-        if (joinedServerId) {
-            return "joined";
-        }
-        return signedIn ? "ready" : "needs login";
-    }, [joinedServerId, loadState, normalizedInviteCode, signedIn]);
 
     const loadInvite = useCallback(async () => {
         if (!instanceUrl || !normalizedInviteCode) {
@@ -142,7 +124,6 @@ export default function InviteScreen() {
             if (!nextServerId) {
                 throw new Error("Invite was redeemed, but no server id was returned.");
             }
-            setJoinedServerId(nextServerId);
             router.replace(`/server/${nextServerId}`);
         } catch (joinError) {
             setError(
@@ -281,14 +262,6 @@ export default function InviteScreen() {
                                         {error}
                                     </ThemedText>
                                 ) : null}
-
-                                <ThemedText
-                                    type="code"
-                                    themeColor="mutedForeground"
-                                    style={styles.metaText}
-                                >
-                                    Status: {pageStatus}
-                                </ThemedText>
                             </View>
                         )}
                     </ThemedView>
@@ -307,7 +280,6 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
@@ -315,6 +287,7 @@ const styles = StyleSheet.create({
         flex: 1,
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.three,
     },

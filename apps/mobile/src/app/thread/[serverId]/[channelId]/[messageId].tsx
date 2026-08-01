@@ -313,11 +313,11 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingBottom: BottomTabInset + Spacing.four,
         paddingHorizontal: Spacing.three,
-        alignItems: "center",
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.four,
     },

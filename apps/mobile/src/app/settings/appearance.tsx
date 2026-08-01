@@ -1,16 +1,11 @@
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useState } from "react";
-import {
-    Alert,
-    Image,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    View,
-} from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AuthRouteGuard } from "@/components/auth-route-guard";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -150,7 +145,8 @@ export default function AppearanceSettingsScreen() {
     const hasBackground = currentColor || currentGradient || currentImageUrl;
 
     return (
-        <View style={[styles.root, { backgroundColor: theme.background }]}>
+        <AuthRouteGuard>
+            <View style={[styles.root, { backgroundColor: theme.background }]}>
             <View
                 pointerEvents="none"
                 style={[styles.backdropOrbTop, { backgroundColor: "rgba(217, 121, 43, 0.08)" }]}
@@ -246,8 +242,9 @@ export default function AppearanceSettingsScreen() {
                                     <Pressable
                                         key={color}
                                         accessibilityRole="button"
+                                        accessibilityLabel={color}
                                         onPress={() => handleSelectColor(color)}
-                                        disabled={saving}
+                                        disabled={saving || uploading}
                                         style={({ pressed }) => [
                                             styles.colorSwatch,
                                             {
@@ -255,7 +252,7 @@ export default function AppearanceSettingsScreen() {
                                                 borderColor: currentColor === color
                                                     ? theme.foreground
                                                     : "transparent",
-                                                opacity: saving ? 0.6 : pressed ? 0.8 : 1,
+                                                opacity: saving || uploading ? 0.6 : pressed ? 0.8 : 1,
                                             },
                                         ]}
                                     >
@@ -286,23 +283,22 @@ export default function AppearanceSettingsScreen() {
                                     <Pressable
                                         key={gradient.name}
                                         accessibilityRole="button"
+                                        accessibilityLabel={gradient.name}
                                         onPress={() => handleSelectGradient(gradient.cssValue)}
-                                        disabled={saving}
+                                        disabled={saving || uploading}
                                         style={({ pressed }) => [
                                             styles.gradientSwatch,
                                             {
                                                 borderColor: currentGradient === gradient.cssValue
                                                     ? theme.foreground
                                                     : theme.border,
-                                                opacity: saving ? 0.6 : pressed ? 0.8 : 1,
+                                                opacity: saving || uploading ? 0.6 : pressed ? 0.8 : 1,
                                             },
                                         ]}
                                     >
-                                        <View
-                                            style={[
-                                                styles.gradientPreview,
-                                                { backgroundColor: gradient.colors[0] },
-                                            ]}
+                                        <LinearGradient
+                                            colors={gradient.colors as [string, string, ...string[]]}
+                                            style={styles.gradientPreview}
                                         />
                                         <ThemedText
                                             type="code"
@@ -332,6 +328,7 @@ export default function AppearanceSettingsScreen() {
                 </ScrollView>
             </SafeAreaView>
         </View>
+        </AuthRouteGuard>
     );
 }
 
@@ -357,7 +354,6 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.two,
     },
     scrollContent: {
@@ -367,6 +363,7 @@ const styles = StyleSheet.create({
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
     },
     header: {

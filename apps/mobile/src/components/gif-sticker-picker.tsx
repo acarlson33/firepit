@@ -20,6 +20,7 @@ import type { FileAttachment } from "@/components/file-attachment-display";
 
 const DEFAULT_GIF_QUERY = "trending";
 const GIF_PAGE_SIZE = 24;
+const REQUEST_TIMEOUT_MS = 15000;
 
 type PickerMode = "gifs" | "stickers";
 
@@ -139,7 +140,8 @@ export function GifStickerPicker({
   const theme = useTheme();
   const [mode, setMode] = useState<PickerMode>("gifs");
   const [query, setQuery] = useState("");
-  const [gifSearchQuery, setGifSearchQuery] = useState(DEFAULT_GIF_QUERY);
+  const gifSearchQueryRef = useRef(DEFAULT_GIF_QUERY);
+  const controllerRef = useRef<AbortController | null>(null);
 
   const [gifResults, setGifResults] = useState<GifSearchItem[]>([]);
   const [gifNextCursor, setGifNextCursor] = useState<string | undefined>();
@@ -155,7 +157,7 @@ export function GifStickerPicker({
     async (options?: { append?: boolean; cursor?: string; query?: string }) => {
       const append = options?.append === true;
       const cursor = options?.cursor;
-      const searchQuery = options?.query?.trim() || gifSearchQuery || DEFAULT_GIF_QUERY;
+      const searchQuery = options?.query?.trim() || gifSearchQueryRef.current || DEFAULT_GIF_QUERY;
 
       if (append) {
         setGifLoadingMore(true);
@@ -163,6 +165,15 @@ export function GifStickerPicker({
         setGifLoading(true);
         setGifError(null);
       }
+
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, REQUEST_TIMEOUT_MS);
 
       try {
         const params = new URLSearchParams({ q: searchQuery, limit: String(GIF_PAGE_SIZE) });
@@ -172,6 +183,7 @@ export function GifStickerPicker({
           `${instanceUrl}/api/gifs/search?${params.toString()}`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
+            signal: controller.signal,
           },
         );
 
@@ -190,31 +202,49 @@ export function GifStickerPicker({
         const payload = (await response.json()) as GifSearchResponse;
         const items = Array.isArray(payload.items) ? payload.items : [];
 
-        if (!append) setGifSearchQuery(searchQuery);
+        if (!append) gifSearchQueryRef.current = searchQuery;
         setGifResults((prev) => (append ? [...prev, ...items] : items));
         setGifNextCursor(payload.next);
         setGifError(null);
       } catch (err) {
+        if (controller.signal.aborted) {
+          if (timedOut) setGifError("Request timed out.");
+          return;
+        }
         setGifError(err instanceof Error ? err.message : "Failed to search GIFs");
         if (!append) {
           setGifResults([]);
           setGifNextCursor(undefined);
         }
       } finally {
-        setGifLoading(false);
-        setGifLoadingMore(false);
+        clearTimeout(timeout);
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+          setGifLoading(false);
+          setGifLoadingMore(false);
+        }
       }
     },
-    [gifSearchQuery, instanceUrl, accessToken],
+    [instanceUrl, accessToken],
   );
 
   const fetchStickers = useCallback(async () => {
     setStickerLoading(true);
     setStickerError(null);
 
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
     try {
       const response = await fetch(`${instanceUrl}/api/stickers`, {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
       });
 
       if (response.status === 404) {
@@ -232,10 +262,18 @@ export function GifStickerPicker({
       setStickerPacks(Array.isArray(payload.packs) ? payload.packs : []);
       setStickerError(null);
     } catch (err) {
+      if (controller.signal.aborted) {
+        if (timedOut) setStickerError("Request timed out.");
+        return;
+      }
       setStickerError(err instanceof Error ? err.message : "Failed to load stickers");
       setStickerPacks([]);
     } finally {
-      setStickerLoading(false);
+      clearTimeout(timeout);
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        setStickerLoading(false);
+      }
     }
   }, [instanceUrl, accessToken]);
 
@@ -247,6 +285,10 @@ export function GifStickerPicker({
       void fetchStickers();
     }
   }, [visible, mode, fetchGifs, fetchStickers]);
+
+  useEffect(() => {
+    return () => controllerRef.current?.abort();
+  }, [visible, mode]);
 
   const handleSelect = useCallback(
     (attachment: FileAttachment) => {
@@ -439,7 +481,7 @@ export function GifStickerPicker({
                   gifNextCursor ? (
                     <Pressable
                       onPress={() =>
-                        void fetchGifs({ append: true, cursor: gifNextCursor, query: gifSearchQuery })
+                        void fetchGifs({ append: true, cursor: gifNextCursor })
                       }
                       disabled={gifLoadingMore}
                       style={({ pressed }) => ({

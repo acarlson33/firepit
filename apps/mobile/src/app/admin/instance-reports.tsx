@@ -415,12 +415,12 @@ const styles = StyleSheet.create({
     root: { flex: 1, overflow: "hidden" },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.four,
     },

@@ -1,24 +1,26 @@
-import { execSync } from "child_process";
-import { platform } from "os";
-import { appendFileSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { execSync } from "node:child_process";
+import { platform } from "node:os";
+import { appendFileSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { ensureEnv } from "./env";
 
 const os = platform();
 const isMac = os === "darwin";
 
-const VALID_ARCHES = ["arm64-v8a", "armeabi-v7a", "x86_64"] as const;
+const VALID_ARCHES = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"] as const;
 type Arch = (typeof VALID_ARCHES)[number];
 
 function parseArgs(): { arch: Arch | null } {
   const args = process.argv.slice(2);
   const archIndex = args.indexOf("--arch");
   if (archIndex === -1 || archIndex + 1 >= args.length) return { arch: null };
-  const arch = args[archIndex + 1] as Arch;
-  if (!VALID_ARCHES.includes(arch)) {
+  const arch = args[archIndex + 1];
+  if (!VALID_ARCHES.includes(arch as Arch)) {
     console.error(`Invalid arch "${arch}". Valid: ${VALID_ARCHES.join(", ")}`);
     process.exit(1);
   }
-  return { arch };
+  return { arch: arch as Arch };
 }
 
 function addAbiSplits(gradlePath: string, arch: Arch | null) {
@@ -45,10 +47,10 @@ function addAbiSplits(gradlePath: string, arch: Arch | null) {
 `;
 
   if (gradle.includes("splits {")) {
-    gradle = gradle.replace(/    splits \{[\s\S]*?    \}\n/, splitsBlock);
+    gradle = gradle.replace(/^ {4}splits \{[\s\S]*?^ {4}\}\n/m, splitsBlock);
   } else {
     gradle = gradle.replace(
-      /(    externalNativeBuild \{[\s\S]*?    \}\n)(\})/,
+      /(^ {4}externalNativeBuild \{[\s\S]*?^ {4}\}\n)(\})/m,
       `$1${splitsBlock}$2`,
     );
   }
@@ -67,19 +69,7 @@ function androidBuild() {
     console.log(
         "Ensuring APP_ENV=production and EXPO_PUBLIC_USE_RN_FETCH=1...",
     );
-    process.env.APP_ENV = "production";
-    const envPath = ".env.local";
-    const envContent = readFileSync(envPath, "utf-8");
-    let updated = envContent;
-    if (!updated.includes("APP_ENV=production")) {
-        console.log("Updating .env.local to APP_ENV=production...");
-        updated = updated.replace(/^APP_ENV=.*$/m, "APP_ENV=production");
-    }
-    if (!updated.includes("EXPO_PUBLIC_USE_RN_FETCH=1")) {
-        console.log("Adding EXPO_PUBLIC_USE_RN_FETCH=1...");
-        updated += "\nEXPO_PUBLIC_USE_RN_FETCH=1";
-    }
-    if (updated !== envContent) writeFileSync(envPath, updated);
+    ensureEnv("production");
 
     console.log("Running expo prebuild...");
     execSync("EAS_BUILD_PROFILE=production npx expo prebuild", {
@@ -111,8 +101,9 @@ function androidBuild() {
         /^org\.gradle\.jvmargs=.*$/m,
         "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m",
     );
+    if (props.length > 0 && !props.endsWith("\n")) props += "\n";
     if (!props.includes("org.gradle.caching=")) {
-        props += "\norg.gradle.caching=true\n";
+        props += "org.gradle.caching=true\n";
     }
     if (!props.includes("org.gradle.daemon=")) {
         props += "org.gradle.daemon=true\n";
@@ -232,8 +223,7 @@ function androidBuild() {
     writeFileSync(gradlePath, withOptimizedProguard);
 
     console.log("Building Android APK...");
-    const gradleArgs = arch ? `-PabiFilter=${arch}` : "";
-    execSync(`cd android && ./gradlew assembleRelease ${gradleArgs}`, {
+    execSync("cd android && ./gradlew assembleRelease", {
         stdio: "inherit",
         env: { ...process.env, SENTRY_DISABLE_AUTO_UPLOAD: "true" },
     });
@@ -249,9 +239,10 @@ function androidBuild() {
       copyFileSync(apkSource, apkDest);
       console.log(`APK saved to ${apkDest}`);
     } else {
-      console.log("APK not found at expected path — checking for alternatives...");
+      console.error(`APK not found at ${apkSource}. Built artifacts:`);
       // Fallback: list what was built
       execSync("ls -la android/app/build/outputs/apk/release/", { stdio: "inherit" });
+      process.exit(1);
     }
 
     console.log("Returning to project root...");
@@ -267,12 +258,7 @@ try {
                 stdio: "inherit",
             },
         );
-        execSync(
-            "bunx eas-cli build --platform android --local --profile production",
-            {
-                stdio: "inherit",
-            },
-        );
+        androidBuild();
     } else {
         console.log("Building for Android...");
         androidBuild();

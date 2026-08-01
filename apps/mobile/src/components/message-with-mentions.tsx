@@ -7,8 +7,6 @@ import { useTheme } from "@/hooks/use-theme";
 
 type MessageWithMentionsProps = {
   text: string;
-  currentUserId?: string;
-  knownNames?: string[];
   customEmojis?: CustomEmoji[];
 };
 
@@ -126,7 +124,11 @@ export function MessageWithMentions({
           <Text
             key={`${keyBase}-link-${i}`}
             style={{ color: colors.primary, textDecorationLine: "underline" }}
-            onPress={() => Linking.openURL(m[0])}
+            onPress={() => {
+              Linking.openURL(m[0]).catch(() => {
+                // Ignore: URL could not be opened.
+              });
+            }}
           >
             {m[0]}
           </Text>,

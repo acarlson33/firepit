@@ -17,11 +17,22 @@ type MentionableRole = {
   memberCount: number;
 };
 
+type MentionableUser = {
+  userId: string;
+  displayName?: string;
+  type?: "user";
+};
+
+type MentionableItem =
+  | { readonly type: "all" }
+  | MentionableRole
+  | MentionableUser;
+
 type MentionAutocompleteProps = {
   query: string;
-  users: any[];
+  users: MentionableUser[];
   roles: MentionableRole[];
-  onSelect: (item: any | null) => void;
+  onSelect: (item: MentionableItem | null) => void;
   onClose?: () => void;
   isLoading?: boolean;
   canMentionEveryone?: boolean;
@@ -42,8 +53,8 @@ export function MentionAutocomplete({
 }: MentionAutocompleteProps) {
   const colors = useTheme();
 
-  const items = [
-    ...(canMentionEveryone ? [{ special: "all" }] : []),
+  const items: MentionableItem[] = [
+    ...(canMentionEveryone ? [{ type: "all" as const }] : []),
     ...roles,
     ...users,
   ];
@@ -67,11 +78,11 @@ export function MentionAutocomplete({
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(it, idx) => (it.id ? String(it.id) : `s-${idx}`)}
+          keyExtractor={(it, idx) => (it.type === "role" ? it.id : `s-${idx}`)}
           renderItem={({ item, index }) => {
             const isSelected = index === selectedIndex;
 
-            if ((item as any).special === "all") {
+            if (item.type === "all") {
               return (
                 <Pressable
                   onPress={() => onSelect(null)}
@@ -85,7 +96,7 @@ export function MentionAutocomplete({
               );
             }
 
-            if ((item as any).type === "role") {
+            if (item.type === "role") {
               return (
                 <Pressable
                   onPress={() => onSelect(item)}

@@ -1,10 +1,11 @@
-import { ExpoConfig, ConfigContext } from "expo/config";
+import type { ExpoConfig, ConfigContext } from "expo/config";
 
 const packageJson = require("./package.json");
 
 // Use APP_ENV instead of NODE_ENV for Expo/EAS compatibility
 const APP_ENV = process.env.APP_ENV || "development";
 const IS_DEV = APP_ENV === "development";
+const IS_PREVIEW = APP_ENV === "preview";
 const IS_PROD = APP_ENV === "production";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -24,7 +25,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             icon: "./assets/images/icon.png",
             bundleIdentifier: IS_DEV
                 ? "com.acarlson33.firepit.dev"
-                : "com.acarlson33.firepit",
+                : IS_PREVIEW
+                  ? "com.acarlson33.firepit.preview"
+                  : "com.acarlson33.firepit",
             bitcode: IS_PROD,
             entitlements: {
                 "aps-environment": IS_PROD ? "production" : "development",
@@ -42,10 +45,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             predictiveBackGestureEnabled: false,
             package: IS_DEV
                 ? "com.acarlson33.firepit.dev"
-                : "com.acarlson33.firepit",
+                : IS_PREVIEW
+                  ? "com.acarlson33.firepit.preview"
+                  : "com.acarlson33.firepit",
             googleServicesFile: IS_DEV
                 ? process.env.GOOGLE_SERVICES_DEV
-                : process.env.GOOGLE_SERVICES,
+                : IS_PREVIEW
+                  ? process.env.GOOGLE_SERVICES_PREVIEW
+                  : process.env.GOOGLE_SERVICES,
             permissions: [
                 "android.permission.REQUEST_INSTALL_PACKAGES",
                 "android.permission.INTERNET",

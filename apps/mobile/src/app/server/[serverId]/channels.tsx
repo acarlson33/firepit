@@ -68,7 +68,7 @@ function ActionButton({
     onPress: () => void;
     disabled?: boolean;
     tone?: "primary" | "secondary" | "ghost" | "danger";
-    icon?: string;
+    icon?: "back";
 }) {
     const theme = useTheme();
     return (
@@ -122,13 +122,13 @@ function ActionButton({
 export default function ChannelManagementScreen() {
     const theme = useTheme();
     const { serverId } = useLocalSearchParams<{ serverId?: string }>();
-    const { instanceUrl, accessToken, currentUser, state } =
-        useFirepitBootstrap();
+    const { instanceUrl, accessToken } = useFirepitBootstrap();
 
     const [channels, setChannels] = useState<Channel[]>([]);
     const [roles, setRoles] = useState<ServerRole[]>([]);
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
     // Create modal
@@ -193,7 +193,7 @@ export default function ChannelManagementScreen() {
             invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to create channel",
             );
         } finally {
@@ -202,13 +202,14 @@ export default function ChannelManagementScreen() {
     };
 
     const handleEdit = async () => {
-        if (!instanceUrl || !accessToken || !editingChannel || saving) return;
+        const channelId = editingChannel?.$id;
+        if (!instanceUrl || !accessToken || !channelId || !normalizedServerId || saving) return;
         const name = editDraft.name.trim();
         if (!name) return;
 
         setSaving(true);
         try {
-            await updateChannel(instanceUrl, accessToken, editingChannel.$id!, {
+            await updateChannel(instanceUrl, accessToken, channelId, {
                 name,
                 type: editDraft.type,
                 topic: editDraft.topic.trim() || null,
@@ -218,7 +219,7 @@ export default function ChannelManagementScreen() {
             invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to update channel",
             );
         } finally {
@@ -236,7 +237,7 @@ export default function ChannelManagementScreen() {
             invalidateServerCache(normalizedServerId);
             await loadData();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to delete channel",
             );
         } finally {
@@ -246,6 +247,7 @@ export default function ChannelManagementScreen() {
 
     const openEdit = (channel: Channel) => {
         setEditingChannel(channel);
+        setActionError(null);
         setEditDraft({
             name: channel.name ?? "",
             type: (channel.type as "text" | "voice" | "announcement") ?? "text",
@@ -344,6 +346,7 @@ export default function ChannelManagementScreen() {
                                         label="Create channel"
                                         onPress={() => {
                                             setCreateDraft(EMPTY_DRAFT);
+                                            setActionError(null);
                                             setShowCreate(true);
                                         }}
                                     />
@@ -371,7 +374,10 @@ export default function ChannelManagementScreen() {
                                 title="Text channels"
                                 channels={textChannels}
                                 onEdit={openEdit}
-                                onDelete={(ch) => setDeletingChannel(ch)}
+                                onDelete={(ch) => {
+                                    setDeletingChannel(ch);
+                                    setActionError(null);
+                                }}
                             />
                         ) : null}
 
@@ -380,7 +386,10 @@ export default function ChannelManagementScreen() {
                                 title="Voice channels"
                                 channels={voiceChannels}
                                 onEdit={openEdit}
-                                onDelete={(ch) => setDeletingChannel(ch)}
+                                onDelete={(ch) => {
+                                    setDeletingChannel(ch);
+                                    setActionError(null);
+                                }}
                             />
                         ) : null}
 
@@ -389,7 +398,10 @@ export default function ChannelManagementScreen() {
                                 title="Announcement channels"
                                 channels={announcementChannels}
                                 onEdit={openEdit}
-                                onDelete={(ch) => setDeletingChannel(ch)}
+                                onDelete={(ch) => {
+                                    setDeletingChannel(ch);
+                                    setActionError(null);
+                                }}
                             />
                         ) : null}
 
@@ -497,6 +509,11 @@ export default function ChannelManagementScreen() {
                                     },
                                 ]}
                             />
+                            {actionError ? (
+                                <ThemedText themeColor="destructive">
+                                    {actionError}
+                                </ThemedText>
+                            ) : null}
                             <View style={styles.modalActions}>
                                 <ActionButton
                                     label="Cancel"
@@ -604,6 +621,11 @@ export default function ChannelManagementScreen() {
                                     },
                                 ]}
                             />
+                            {actionError ? (
+                                <ThemedText themeColor="destructive">
+                                    {actionError}
+                                </ThemedText>
+                            ) : null}
                             <View style={styles.modalActions}>
                                 <ActionButton
                                     label="Cancel"
@@ -648,6 +670,11 @@ export default function ChannelManagementScreen() {
                                 </ThemedText>
                                 ? This action cannot be undone.
                             </ThemedText>
+                            {actionError ? (
+                                <ThemedText themeColor="destructive">
+                                    {actionError}
+                                </ThemedText>
+                            ) : null}
                             <View style={styles.modalActions}>
                                 <ActionButton
                                     label="Cancel"
@@ -782,13 +809,13 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.four,
     },

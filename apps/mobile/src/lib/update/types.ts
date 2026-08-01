@@ -11,7 +11,7 @@ export type UpdateNotificationPreference = "all" | "security_only" | "none";
 
 export type UpdateChannel = "stable" | "beta";
 
-export const UPDATE_FREQUENCY_LABELS: Record<UpdateFrequency, string> = {
+export const UPDATE_FREQUENCY_LABELS = {
   immediate: "Whenever available",
   weekly: "Every week",
   biweekly: "Every two weeks",
@@ -19,23 +19,20 @@ export const UPDATE_FREQUENCY_LABELS: Record<UpdateFrequency, string> = {
   bimonthly: "Every two months",
   security_only: "Security only",
   never: "Never",
-};
+} satisfies Record<UpdateFrequency, string>;
 
-export const UPDATE_NOTIFICATION_LABELS: Record<
-  UpdateNotificationPreference,
-  string
-> = {
+export const UPDATE_NOTIFICATION_LABELS = {
   all: "All releases",
   security_only: "Security only",
   none: "None",
-};
+} satisfies Record<UpdateNotificationPreference, string>;
 
-export const UPDATE_CHANNEL_LABELS: Record<UpdateChannel, string> = {
+export const UPDATE_CHANNEL_LABELS = {
   stable: "Stable",
   beta: "Beta",
-};
+} satisfies Record<UpdateChannel, string>;
 
-export const UPDATE_FREQUENCY_DAILS: Record<UpdateFrequency, number> = {
+export const UPDATE_FREQUENCY_DAYS = {
   immediate: 0,
   weekly: 7,
   biweekly: 14,
@@ -43,7 +40,7 @@ export const UPDATE_FREQUENCY_DAILS: Record<UpdateFrequency, number> = {
   bimonthly: 60,
   security_only: -1, // special: only update on security releases
   never: -2, // special: never auto-update
-};
+} satisfies Record<UpdateFrequency, number>;
 
 export type UpdateSettings = {
   frequency: UpdateFrequency;
@@ -66,7 +63,7 @@ export const DEFAULT_UPDATE_SETTINGS: UpdateSettings = {
   lastCheckedAt: null,
   lastSkippedAt: null,
   lastSkippedVersion: null,
-  setupComplete: true,
+  setupComplete: false,
 };
 
 export type GitHubRelease = {
@@ -93,7 +90,7 @@ export type ParsedVersion = {
   patch: number;
   isSecurity: boolean;
   prerelease: string | null;
-  prereleaseNumber: number;
+  prereleaseIdentifiers: Array<number | string>;
   raw: string;
 };
 

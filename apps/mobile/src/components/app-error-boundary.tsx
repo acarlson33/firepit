@@ -7,7 +7,6 @@ import { ErrorBoundaryFallback } from "@/components/error-boundary-fallback";
 interface AppErrorBoundaryProps {
   children: ReactNode;
   palette: Record<string, string>;
-  themeName: "light" | "dark";
 }
 
 interface AppErrorBoundaryState {
@@ -41,7 +40,6 @@ export class AppErrorBoundary extends Component<
           error={this.state.error}
           resetError={this.handleReset}
           palette={this.props.palette}
-          themeName={this.props.themeName}
         />
       );
     }

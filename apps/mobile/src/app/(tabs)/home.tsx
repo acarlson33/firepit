@@ -501,7 +501,6 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.three,
     },
@@ -509,6 +508,7 @@ const styles = StyleSheet.create({
         flex: 1,
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
     },
     headerRow: {

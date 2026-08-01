@@ -16,7 +16,6 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { createServer } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
-import { ArrowLeft } from "lucide-react-native";
 
 function ActionButton({
     label,
@@ -351,7 +350,6 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
@@ -359,6 +357,7 @@ const styles = StyleSheet.create({
         flex: 1,
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.three,
     },

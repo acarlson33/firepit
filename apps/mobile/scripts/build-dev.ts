@@ -1,25 +1,14 @@
-import { execSync } from "child_process";
-import { appendFileSync, readFileSync, writeFileSync } from "fs";
-import { platform } from "os";
+import { execFileSync, execSync } from "node:child_process";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { platform } from "node:os";
+
+import { ensureEnv } from "./env";
 
 const os = platform();
 const isMac = os === "darwin";
 
 function androidBuild() {
-    console.log("Ensuring APP_ENV=development and EXPO_PUBLIC_USE_RN_FETCH=1...");
-    process.env.APP_ENV = "development";
-    const envPath = ".env.local";
-    const envContent = readFileSync(envPath, "utf-8");
-    let updated = envContent;
-    if (!updated.includes("APP_ENV=development")) {
-        console.log("Updating .env.local to APP_ENV=development...");
-        updated = updated.replace(/^APP_ENV=.*$/m, "APP_ENV=development");
-    }
-    if (!updated.includes("EXPO_PUBLIC_USE_RN_FETCH=1")) {
-        console.log("Adding EXPO_PUBLIC_USE_RN_FETCH=1...");
-        updated += "\nEXPO_PUBLIC_USE_RN_FETCH=1";
-    }
-    if (updated !== envContent) writeFileSync(envPath, updated);
+    ensureEnv("development");
 
     console.log("Running expo prebuild...");
     execSync("npx expo prebuild", { stdio: "inherit" });
@@ -48,21 +37,11 @@ function androidBuild() {
         process.exit(1);
     }
 
-    appendFileSync(
-        "android/gradle.properties",
-        [
-            "",
-            "MYAPP_UPLOAD_STORE_FILE=firepit-upload.keystore",
-            `MYAPP_UPLOAD_KEY_ALIAS=${keyAlias}`,
-            `MYAPP_UPLOAD_STORE_PASSWORD=${storePassword}`,
-            `MYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}`,
-        ].join("\n"),
-    );
-
     console.log("Copying keystore...");
-    execSync("cp credentials/android/firepit-upload.keystore android/app/", {
-        stdio: "inherit",
-    });
+    copyFileSync(
+        "credentials/android/firepit-upload.keystore",
+        "android/app/firepit-upload.keystore",
+    );
 
     console.log("Adding release signing config and switching to it...");
     const buildGradle = readFileSync("android/app/build.gradle", "utf-8");
@@ -91,10 +70,17 @@ function androidBuild() {
     writeFileSync("android/app/build.gradle", withReleaseRef);
 
     console.log("Building Android APK...");
-    execSync("cd android && ./gradlew assembleDebug", { stdio: "inherit" });
-
-    console.log("Returning to project root...");
-    execSync("cd ..", { stdio: "inherit" });
+    execFileSync(
+        "gradlew",
+        [
+            "assembleDebug",
+            "-PMYAPP_UPLOAD_STORE_FILE=firepit-upload.keystore",
+            `-PMYAPP_UPLOAD_KEY_ALIAS=${keyAlias}`,
+            `-PMYAPP_UPLOAD_STORE_PASSWORD=${storePassword}`,
+            `-PMYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}`,
+        ],
+        { cwd: "android", stdio: "inherit" },
+    );
 }
 
 try {

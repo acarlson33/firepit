@@ -47,7 +47,6 @@ function StatusPill({
     label: string;
     tone: "neutral" | "success" | "warning" | "danger";
 }) {
-    const theme = useTheme();
     return (
         <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
             <ThemedText
@@ -163,8 +162,7 @@ function draftFromRole(role: ServerRole): RoleDraft {
 export default function RolesManagementScreen() {
     const theme = useTheme();
     const { serverId } = useLocalSearchParams<{ serverId?: string }>();
-    const { instanceUrl, accessToken, currentUser, state } =
-        useFirepitBootstrap();
+    const { instanceUrl, accessToken } = useFirepitBootstrap();
 
     const [roles, setRoles] = useState<ServerRole[]>([]);
     const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -780,13 +778,13 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.three,
         paddingTop: Spacing.four,
     },

@@ -61,7 +61,7 @@ function TabLayout() {
 
     return (
         <ThemeProvider value={navigationTheme}>
-            <AppErrorBoundary palette={palette} themeName={themeName}>
+            <AppErrorBoundary palette={palette}>
             <OrientationGate>
                 <FirepitProvider>
                     <CacheSettingsProvider>

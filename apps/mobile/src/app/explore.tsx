@@ -571,13 +571,13 @@ const styles = StyleSheet.create({
     },
     safeArea: {
         flex: 1,
-        alignItems: "center",
         paddingHorizontal: Spacing.two,
         paddingBottom: BottomTabInset + Spacing.two,
     },
     shell: {
         width: "100%",
         maxWidth: MaxContentWidth,
+        alignSelf: "center",
         gap: Spacing.two,
         paddingTop: Spacing.two,
     },

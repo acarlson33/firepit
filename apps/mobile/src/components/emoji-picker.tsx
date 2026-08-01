@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   },
   customLabel: {
     fontSize: 11,
-    fontWeight: 600,
+    fontWeight: "600",
     paddingLeft: 12,
     paddingBottom: 4,
   },

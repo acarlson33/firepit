@@ -1,12 +1,13 @@
+"use strict";
+
 const workletsPluginPath = require.resolve("react-native-worklets/plugin");
 const workletsPluginOptions = {
     bundleMode: true,
     strictGlobal: true,
 };
-const isDEV =
-    process.env.APP_ENV === "development" || process.env.APP_ENV === "dev";
+const isDEV = process.env.APP_ENV !== "production";
 if (isDEV) {
-    module.exports = function (api) {
+    module.exports = (api) => {
         api.cache(true);
         return {
             presets: ["babel-preset-expo"],
@@ -17,7 +18,7 @@ if (isDEV) {
         };
     };
 } else {
-    module.exports = function (api) {
+    module.exports = (api) => {
         api.cache(true);
         return {
             presets: ["babel-preset-expo"],

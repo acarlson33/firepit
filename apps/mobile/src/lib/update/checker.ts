@@ -9,7 +9,7 @@ import {
   type UpdateCheckResult,
   type UpdateNotificationPreference,
   type UpdateSettings,
-  UPDATE_FREQUENCY_DAILS,
+  UPDATE_FREQUENCY_DAYS,
 } from "./types";
 import { compareVersions, isSecurityVersion, parseVersion } from "./version";
 import { getLatestReleaseWithApk } from "./github";
@@ -38,7 +38,7 @@ function isFrequencyDue(
     return isSecurityVersion(release.tagName);
   }
 
-  const days = UPDATE_FREQUENCY_DAILS[frequency];
+  const days = UPDATE_FREQUENCY_DAYS[frequency];
   if (days <= 0) return false;
 
   const msInterval = days * 24 * 60 * 60 * 1000;

@@ -4,20 +4,23 @@
  * Stress test script for Firepit DMs.
  *
  * Usage:
- *   node scripts/stress-test.js stress-test --instance <url> --email <e> --password <p> [options]
- *   node scripts/stress-test.js delete --instance <url> --email <e> --password <p> [options]
+ *   node scripts/stress-test.js stress-test --instance <url> --email <e> [options]
+ *   node scripts/stress-test.js delete --instance <url> --email <e> [options]
  *
  * Options:
  *   --instance <url>    Instance base URL (required)
  *   --email <email>     Login email (required)
- *   --password <pass>   Login password (required)
  *   --msgs <n>          Number of messages to send (default: 100)
  *   --data <path>       Path to JSON data file (default: ./stress-test-data.json)
  *   --help              Show this help
+ *
+ * The password is read from the FIREPIT_PASSWORD environment variable, or
+ * prompted on stdin if it is not set. Never pass it on the command line.
  */
 
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
+const readline = require("node:readline");
 
 // ---------------------------------------------------------------------------
 // Config
@@ -59,11 +62,23 @@ function elapsed(start) {
   return ((Date.now() - start) / 1000).toFixed(1);
 }
 
+const FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 async function login(instanceUrl, email, password) {
-  const res = await fetch(`${instanceUrl.replace(/\/+$/, "")}/api/auth/session`, {
+  const res = await fetchWithTimeout(`${instanceUrl.replace(/\/+$/, "")}/api/auth/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -82,14 +97,14 @@ async function login(instanceUrl, email, password) {
 // ---------------------------------------------------------------------------
 async function fetchDmConversations(instanceUrl, token) {
   const url = `${instanceUrl.replace(/\/+$/, "")}/api/direct-messages?type=conversations`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Failed to fetch DMs (${res.status})`);
   const data = await res.json();
   return (data.conversations ?? []).filter((c) => c.$id);
 }
 
 async function sendDmMessage(instanceUrl, token, userId, conversationId, text) {
-  const res = await fetch(`${instanceUrl.replace(/\/+$/, "")}/api/direct-messages`, {
+  const res = await fetchWithTimeout(`${instanceUrl.replace(/\/+$/, "")}/api/direct-messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -107,7 +122,7 @@ async function sendDmMessage(instanceUrl, token, userId, conversationId, text) {
 
 async function deleteDmMessage(instanceUrl, token, messageId) {
   const url = `${instanceUrl.replace(/\/+$/, "")}/api/direct-messages?id=${encodeURIComponent(messageId)}`;
-  const res = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetchWithTimeout(url, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Delete failed for ${messageId} (${res.status}): ${text}`);
@@ -234,6 +249,7 @@ async function cmdDelete(instanceUrl, token, dataPath) {
 
   let ok = 0;
   let fail = 0;
+  const failedIds = [];
   const start = Date.now();
 
   for (let i = 0; i < allIds.length; i++) {
@@ -244,6 +260,7 @@ async function cmdDelete(instanceUrl, token, dataPath) {
       process.stdout.write(`  [${i + 1}/${allIds.length}] Deleted ${id}  (elapsed: ${elapsed(start)}s)\n`);
     } catch (err) {
       fail++;
+      failedIds.push(id);
       process.stdout.write(`  [${i + 1}/${allIds.length}] FAILED ${id}: ${err.message}\n`);
     }
   }
@@ -251,9 +268,13 @@ async function cmdDelete(instanceUrl, token, dataPath) {
   const totalSec = elapsed(start);
   console.log(`\nDone. ${ok} deleted, ${fail} failed in ${totalSec}s`);
 
-  // Clear the data file so re-running delete won't try again
-  saveData(dataPath, { runs: [] });
-  console.log("Tracking data cleared.");
+  if (failedIds.length > 0) {
+    saveData(dataPath, { runs: [{ timestamp: new Date().toISOString(), messageIds: failedIds }] });
+    console.log(`Kept ${failedIds.length} failed ID(s) for a retry.`);
+  } else {
+    saveData(dataPath, { runs: [] });
+    console.log("Tracking data cleared.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -271,10 +292,12 @@ Commands:
 Options:
   --instance <url>    Instance base URL (required)
   --email <email>     Login email (required)
-  --password <pass>   Login password (required)
   --msgs <n>          Number of messages to send (default: 100)
   --data <path>       Path to JSON data file (default: ./stress-test-data.json)
   --help              Show this help
+
+Password:
+  Read from the FIREPIT_PASSWORD environment variable, or prompted on stdin.
 `);
 }
 
@@ -302,20 +325,25 @@ function parseArgs() {
       case "--email":
         opts.email = args[++i];
         break;
-      case "--password":
-        opts.password = args[++i];
-        break;
       case "--msgs":
-        opts.msgCount = parseInt(args[++i], 10);
+        opts.msgCount = Number.parseInt(args[++i], 10);
+        if (!Number.isInteger(opts.msgCount) || opts.msgCount < 1) {
+          console.error("Error: --msgs must be a positive integer.");
+          process.exit(1);
+        }
         break;
       case "--data":
         opts.dataPath = path.resolve(args[++i]);
         break;
+      default:
+        console.error(`Unknown option: ${args[i]}\n`);
+        printHelp();
+        process.exit(1);
     }
   }
 
-  if (!opts.instanceUrl || !opts.email || !opts.password) {
-    console.error("Error: --instance, --email, and --password are required.\n");
+  if (!opts.instanceUrl || !opts.email) {
+    console.error("Error: --instance and --email are required.\n");
     printHelp();
     process.exit(1);
   }
@@ -323,14 +351,35 @@ function parseArgs() {
   return opts;
 }
 
+function promptForPassword() {
+  return new Promise((resolve, reject) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question("Password: ", (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+    rl.on("error", reject);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
   const opts = parseArgs();
-  console.log(`Connecting to ${opts.instanceUrl} as ${opts.email}...\n`);
+  console.log(`Connecting to ${opts.instanceUrl}...\n`);
 
-  const { token, userId } = await login(opts.instanceUrl, opts.email, opts.password);
+  const password =
+    process.env.FIREPIT_PASSWORD || (await promptForPassword());
+  if (!password) {
+    console.error("Error: no password provided. Set FIREPIT_PASSWORD or enter it when prompted.");
+    process.exit(1);
+  }
+
+  const { token, userId } = await login(opts.instanceUrl, opts.email, password);
   console.log(`Authenticated as user ${userId}\n`);
 
   if (opts.command === "stress-test") {
