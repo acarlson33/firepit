@@ -24,6 +24,27 @@ function maskToken(token: string): string {
         : token;
 }
 
+// Debug-only: describe an Authorization header. Basic credentials are decoded
+// so the origin of the header (app vs. external proxy/basic-auth) can be
+// identified from the username; the password portion stays masked.
+function describeAuthHeader(authHeader: string): string {
+    if (!authHeader) return "(missing)";
+    const match = authHeader.trim().match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
+    if (match) {
+        try {
+            const decoded = Buffer.from(match[1], "base64").toString("utf8");
+            const colon = decoded.indexOf(":");
+            const username =
+                colon >= 0 ? decoded.slice(0, colon) : decoded;
+            const password = colon >= 0 ? decoded.slice(colon + 1) : "";
+            return `Basic user="${username}", password="${maskToken(password)}"`;
+        } catch {
+            // fall through to masked raw value
+        }
+    }
+    return maskToken(authHeader);
+}
+
 const SESSION_CACHE_TTL_MS = 30_000;
 const sessionCache = new Map<string, { data: SessionUser | null; ts: number }>();
 
@@ -220,11 +241,8 @@ async function getSessionFromHeader(
             token = extractBearerToken(authHeader);
         }
         if (!token) {
-            const maskedValue = authHeader
-                ? maskToken(authHeader.trim())
-                : "(missing)";
             debugAuth(
-                `no bearer token in Authorization header (value="${maskedValue}"), path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+                `no bearer token in Authorization header (value="${describeAuthHeader(authHeader ?? "")}"), path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
             );
             return null;
         }
