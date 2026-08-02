@@ -193,24 +193,35 @@ async function getSessionFromHeader(
             headerStore.get("Authorization") ??
             headerStore.get("authorization");
 
-        // Extract token: if header starts with Bearer, use the second part; otherwise use the whole header
+        const userAgent = headerStore.get("user-agent") ?? "unknown";
+
+        // Extract token: Bearer scheme takes the second part; a single bare
+        // value (legacy raw secret) is used as-is. Any other scheme (Basic,
+        // Digest, ...) is NOT one of our tokens — don't mistake the scheme
+        // word ("Basic") for a token.
         let token: string | undefined;
         if (authHeader) {
             const parts = authHeader.trim().split(/\s+/, 2);
-            if (parts.length === 2 && parts[0].toLowerCase() === "bearer") {
+            if (parts[0].toLowerCase() === "bearer" && parts[1]) {
                 token = parts[1];
-            } else {
-                token = parts[0]; // treat entire header as token when scheme is missing
+            } else if (parts.length === 1) {
+                token = parts[0];
             }
         }
         if (!token) {
+            const maskedValue = authHeader
+                ? maskToken(authHeader.trim())
+                : "(missing)";
+            debugAuth(
+                `no bearer token in Authorization header (value="${maskedValue}"), ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+            );
             return null;
         }
 
         const chosen = isLikelyJwt(token) ? "jwt" : "session";
 
         debugAuth(
-            `header token present, chosen=${chosen}, token="${maskToken(token)}", endpoint=${endpoint}, project=${project}`,
+            `header token present, chosen=${chosen}, token="${maskToken(token)}", ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
         );
 
         const session = await getSessionForAnyToken(
@@ -221,7 +232,7 @@ async function getSessionFromHeader(
         );
 
         debugAuth(
-            `header auth result: ${session ? `userId=${session.$id}` : "no session"}`,
+            `header auth result: ${session ? `userId=${session.$id}` : `no session (ua="${userAgent}")`}`,
         );
 
         return session;
