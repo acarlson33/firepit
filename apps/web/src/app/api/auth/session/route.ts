@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Account, Client } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
+import { debugAuth } from "@/lib/auth-server";
 
 /**
  * POST /api/auth/session
@@ -17,13 +18,19 @@ import { getEnvConfig } from "@/lib/appwrite-core";
  * is proven to work by the web app's login flow.
  */
 export async function POST(request: Request) {
+    let email: string | undefined;
     try {
-        const { email, password } = (await request.json()) as {
+        const body = (await request.json()) as {
             email?: string;
             password?: string;
         };
+        email = body.email;
+        const { password } = body;
 
         if (!email || !password) {
+            debugAuth(
+                `POST /api/auth/session rejected: missing email/password`,
+            );
             return NextResponse.json(
                 { error: "Email and password are required" },
                 { status: 400 },
@@ -34,6 +41,9 @@ export async function POST(request: Request) {
         const apiKey = process.env.APPWRITE_API_KEY;
 
         if (!apiKey) {
+            debugAuth(
+                `POST /api/auth/session rejected: APPWRITE_API_KEY not configured, endpoint=${env.endpoint}, project=${env.project}`,
+            );
             return NextResponse.json(
                 { error: "Server API key not configured" },
                 { status: 500 },
@@ -51,6 +61,10 @@ export async function POST(request: Request) {
             password,
         });
 
+        debugAuth(
+            `POST /api/auth/session success: email=${email}, userId=${session.userId}, hasSecret=${Boolean(session.secret)}`,
+        );
+
         return NextResponse.json({
             success: true,
             session: session.secret ?? null,
@@ -65,12 +79,12 @@ export async function POST(request: Request) {
                 ? (error as { code: number }).code
                 : 500;
 
-        return NextResponse.json(
-            {
-                error: "Failed to create session",
-                details: error instanceof Error ? error.message : String(error),
-            },
-            { status },
+        const message = error instanceof Error ? error.message : String(error);
+
+        debugAuth(
+            `POST /api/auth/session failed: email=${email ?? "unknown"}, status=${status}, error=${message}`,
         );
+
+        return NextResponse.json({ error: message }, { status });
     }
 }
