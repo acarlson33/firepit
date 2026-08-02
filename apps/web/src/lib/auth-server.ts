@@ -26,7 +26,9 @@ function maskToken(token: string): string {
 
 // Debug-only: describe an Authorization header. Basic credentials are decoded
 // so the origin of the header (app vs. external proxy/basic-auth) can be
-// identified from the username; the password portion stays masked.
+// identified from the username; the password portion stays masked unless
+// FIREPIT_DEBUG_AUTH_FULL=true (admin-only, for matching the full credential
+// against server/CDN configs during diagnosis — disable it afterwards).
 function describeAuthHeader(authHeader: string): string {
     if (!authHeader) return "(missing)";
     const match = authHeader.trim().match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
@@ -37,7 +39,10 @@ function describeAuthHeader(authHeader: string): string {
             const username =
                 colon >= 0 ? decoded.slice(0, colon) : decoded;
             const password = colon >= 0 ? decoded.slice(colon + 1) : "";
-            return `Basic user="${username}", password="${maskToken(password)}"`;
+            const revealFull = process.env.FIREPIT_DEBUG_AUTH_FULL === "true";
+            return `Basic user="${username}", password="${
+                revealFull ? password : maskToken(password)
+            }"`;
         } catch {
             // fall through to masked raw value
         }
