@@ -133,6 +133,9 @@ export async function proxy(request: NextRequest) {
 
         const forwardedHeaders = new Headers(request.headers);
         forwardedHeaders.set("X-Request-ID", requestId);
+        // Stash the request path so server-side auth logging can identify
+        // which route a failed (or successful) auth check was for.
+        forwardedHeaders.set("x-firepit-path", pathname);
 
         const response = NextResponse.next({
             request: {

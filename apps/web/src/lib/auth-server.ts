@@ -194,26 +194,37 @@ async function getSessionFromHeader(
             headerStore.get("authorization");
 
         const userAgent = headerStore.get("user-agent") ?? "unknown";
+        const requestPath =
+            headerStore.get("x-firepit-path") ?? headerStore.get("x-invoke-path") ?? "?";
 
-        // Extract token: Bearer scheme takes the second part; a single bare
-        // value (legacy raw secret) is used as-is. Any other scheme (Basic,
-        // Digest, ...) is NOT one of our tokens — don't mistake the scheme
-        // word ("Basic") for a token.
+        // Prefer any Bearer token across (possibly comma-joined) header values,
+        // e.g. "Basic <creds>, Bearer <token>". A single bare value is treated
+        // as a legacy raw session secret. Other schemes (Basic, Digest, ...)
+        // are never mistaken for a token.
+        function extractBearerToken(authHeader: string): string | undefined {
+            const values = authHeader.split(",").map((v) => v.trim());
+            for (const value of values) {
+                const parts = value.split(/\s+/, 2);
+                if (parts[0].toLowerCase() === "bearer" && parts[1]) {
+                    return parts[1];
+                }
+            }
+            if (values.length === 1 && !/\s/.test(values[0])) {
+                return values[0];
+            }
+            return undefined;
+        }
+
         let token: string | undefined;
         if (authHeader) {
-            const parts = authHeader.trim().split(/\s+/, 2);
-            if (parts[0].toLowerCase() === "bearer" && parts[1]) {
-                token = parts[1];
-            } else if (parts.length === 1) {
-                token = parts[0];
-            }
+            token = extractBearerToken(authHeader);
         }
         if (!token) {
             const maskedValue = authHeader
                 ? maskToken(authHeader.trim())
                 : "(missing)";
             debugAuth(
-                `no bearer token in Authorization header (value="${maskedValue}"), ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+                `no bearer token in Authorization header (value="${maskedValue}"), path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
             );
             return null;
         }
@@ -221,7 +232,7 @@ async function getSessionFromHeader(
         const chosen = isLikelyJwt(token) ? "jwt" : "session";
 
         debugAuth(
-            `header token present, chosen=${chosen}, token="${maskToken(token)}", ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+            `header token present, chosen=${chosen}, token="${maskToken(token)}", path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
         );
 
         const session = await getSessionForAnyToken(
@@ -232,7 +243,7 @@ async function getSessionFromHeader(
         );
 
         debugAuth(
-            `header auth result: ${session ? `userId=${session.$id}` : `no session (ua="${userAgent}")`}`,
+            `header auth result: ${session ? `userId=${session.$id}` : `no session (path=${requestPath}, ua="${userAgent}")`}`,
         );
 
         return session;

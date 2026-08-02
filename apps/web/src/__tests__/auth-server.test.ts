@@ -171,6 +171,36 @@ describe("auth-server", () => {
             expect(session).toBeNull();
         });
 
+        it("should not mistake a Basic auth scheme for a token", async () => {
+            const mockUser = {
+                $id: "user123",
+                name: "Test User",
+                email: "test@example.com",
+            };
+            setMockUser(mockUser);
+            setMockHeaders({ Authorization: "Basic dXNlcjpwYXNzd29yZA==" });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toBeNull();
+        });
+
+        it("should prefer a Bearer token over other comma-joined schemes", async () => {
+            const mockUser = {
+                $id: "user123",
+                name: "Test User",
+                email: "test@example.com",
+            };
+            setMockUser(mockUser);
+            setMockHeaders({
+                Authorization: "Basic dXNlcjpwYXNz, Bearer session-token-123",
+            });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
+        });
+
         it("should return user when bearer session token exists", async () => {
             const mockUser = {
                 $id: "user123",
