@@ -216,6 +216,41 @@ describe("auth-server", () => {
             expect(session).toEqual(mockUser);
         });
 
+        it("should return user from x-firepit-token header", async () => {
+            const mockUser = {
+                $id: "user123",
+                name: "Test User",
+                email: "test@example.com",
+            };
+
+            setMockUser(mockUser);
+            setMockHeaders({ "x-firepit-token": "session-token-123" });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
+        });
+
+        it("should prefer x-firepit-token over edge-clobbered Authorization", async () => {
+            // Appwrite Cloud's edge rewrites Authorization to its operator
+            // credential; the token survives in x-firepit-token instead.
+            const mockUser = {
+                $id: "user123",
+                name: "Test User",
+                email: "test@example.com",
+            };
+
+            setMockUser(mockUser);
+            setMockHeaders({
+                Authorization: "Basic dXNlcjpwYXNzd29yZA==",
+                "x-firepit-token": "session-token-123",
+            });
+
+            const { getServerSession } = await import("../lib/auth-server");
+            const session = await getServerSession();
+            expect(session).toEqual(mockUser);
+        });
+
         it("should return user when bearer jwt token exists", async () => {
             const mockUser = {
                 $id: "user456",

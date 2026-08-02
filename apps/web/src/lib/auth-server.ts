@@ -220,6 +220,14 @@ async function getSessionFromHeader(
             headerStore.get("Authorization") ??
             headerStore.get("authorization");
 
+        // Appwrite Cloud's edge replaces the client's Authorization header with
+        // its own operator credential (Basic opr:<deploy-secret>), so the mobile
+        // app sends the session token in x-firepit-token, which the edge passes
+        // through untouched. Authorization: Bearer stays as a fallback for local
+        // dev and non-Appwrite hosts.
+        const firepitTokenHeader =
+            headerStore.get("x-firepit-token")?.trim() || null;
+
         const userAgent = headerStore.get("user-agent") ?? "unknown";
         const requestPath =
             headerStore.get("x-firepit-path") ?? headerStore.get("x-invoke-path") ?? "?";
@@ -243,12 +251,18 @@ async function getSessionFromHeader(
         }
 
         let token: string | undefined;
-        if (authHeader) {
+        let tokenSource: string | null = null;
+        if (firepitTokenHeader) {
+            token = extractBearerToken(firepitTokenHeader);
+            tokenSource = "x-firepit-token";
+        }
+        if (!token && authHeader) {
             token = extractBearerToken(authHeader);
+            tokenSource = "authorization";
         }
         if (!token) {
             debugAuth(
-                `no bearer token in Authorization header (value="${describeAuthHeader(authHeader ?? "")}"), path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+                `no bearer token in headers (authorization="${describeAuthHeader(authHeader ?? "")}", x-firepit-token="${firepitTokenHeader ? maskToken(firepitTokenHeader) : "(missing)"}"), path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
             );
             return null;
         }
@@ -256,7 +270,7 @@ async function getSessionFromHeader(
         const chosen = isLikelyJwt(token) ? "jwt" : "session";
 
         debugAuth(
-            `header token present, chosen=${chosen}, token="${maskToken(token)}", path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
+            `header token present via ${tokenSource}, chosen=${chosen}, token="${maskToken(token)}", path=${requestPath}, ua="${userAgent}", endpoint=${endpoint}, project=${project}`,
         );
 
         const session = await getSessionForAnyToken(
