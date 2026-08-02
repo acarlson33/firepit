@@ -29,7 +29,8 @@ function maskToken(token: string): string {
 // identified from the username; the password portion stays masked unless
 // FIREPIT_DEBUG_AUTH_FULL=true (admin-only, for matching the full credential
 // against server/CDN configs during diagnosis — disable it afterwards).
-function describeAuthHeader(authHeader: string): string {
+export function describeAuthHeader(authHeader: string): string {
+    if (!authHeader) return "(missing)";
     if (!authHeader) return "(missing)";
     const match = authHeader.trim().match(/^Basic\s+([A-Za-z0-9+/=]+)/i);
     if (match) {

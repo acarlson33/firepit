@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Account, Client } from "node-appwrite";
 import { getEnvConfig } from "@/lib/appwrite-core";
-import { debugAuth } from "@/lib/auth-server";
+import { debugAuth, describeAuthHeader } from "@/lib/auth-server";
 
 /**
  * POST /api/auth/session
@@ -20,6 +20,10 @@ import { debugAuth } from "@/lib/auth-server";
 export async function POST(request: Request) {
     let email: string | undefined;
     try {
+        debugAuth(
+            `POST /api/auth/session received: auth="${describeAuthHeader(request.headers.get("Authorization") ?? "")}"`,
+        );
+
         const body = (await request.json()) as {
             email?: string;
             password?: string;
