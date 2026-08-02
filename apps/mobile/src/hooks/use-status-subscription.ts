@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { authHeaders } from "@/lib/firepit/http";
 
 export type UserStatus = {
   userId: string;
@@ -56,7 +57,7 @@ export function useStatusSubscription(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...authHeaders(accessToken),
         },
         body: JSON.stringify({ userIds: normalizedIds }),
       });
@@ -117,7 +118,7 @@ export function useStatusSubscription(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...authHeaders(accessToken),
         },
         body: JSON.stringify({ userIds: normalizedIds }),
       })

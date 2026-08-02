@@ -1,5 +1,6 @@
 import sodium, { base64_variants } from "react-native-libsodium";
 import * as SecureStore from "expo-secure-store";
+import { authHeaders } from "@/lib/firepit/http";
 import type { DirectMessage } from "@/lib/firepit/types";
 
 const KEY_VERSION = "xchacha20poly1305-v1";
@@ -355,7 +356,7 @@ export async function ensurePublishedDmEncryptionKey(
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${accessToken}`,
+                ...authHeaders(accessToken),
             },
             body: JSON.stringify({
                 dmEncryptionPublicKey: keyPair.publicKeyBase64,

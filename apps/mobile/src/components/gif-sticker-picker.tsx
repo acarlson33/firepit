@@ -15,6 +15,7 @@ import { Search, Film, Sticker } from "lucide-react-native";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
+import { authHeaders } from "@/lib/firepit/http";
 import { useTheme } from "@/hooks/use-theme";
 import type { FileAttachment } from "@/components/file-attachment-display";
 
@@ -182,7 +183,7 @@ export function GifStickerPicker({
         const response = await fetch(
           `${instanceUrl}/api/gifs/search?${params.toString()}`,
           {
-            headers: { Authorization: `Bearer ${accessToken}` },
+            headers: authHeaders(accessToken),
             signal: controller.signal,
           },
         );
@@ -243,7 +244,7 @@ export function GifStickerPicker({
 
     try {
       const response = await fetch(`${instanceUrl}/api/stickers`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: authHeaders(accessToken),
         signal: controller.signal,
       });
 

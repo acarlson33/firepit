@@ -1,3 +1,5 @@
+import { authHeaders } from "@/lib/firepit/http";
+
 type ProfileData = {
   displayName?: string;
   avatarUrl?: string;
@@ -70,7 +72,7 @@ export async function getProfilesBatch(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...authHeaders(accessToken),
         },
         body: JSON.stringify({ userIds: uncached }),
       });
@@ -120,7 +122,7 @@ export async function getCachedUserProfile(
   try {
     const res = await fetch(
       `${instanceUrl.replace(/\/$/, "")}/api/users/${encodeURIComponent(userId)}/profile`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
+      { headers: authHeaders(accessToken) },
     );
     if (res.ok) {
       const data = await res.json() as Record<string, unknown>;

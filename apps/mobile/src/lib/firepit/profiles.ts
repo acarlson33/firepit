@@ -1,4 +1,4 @@
-import { firepitRequest } from "@/lib/firepit/http";
+import { authHeaders, firepitRequest } from "@/lib/firepit/http";
 import { readAsStringAsync } from "expo-file-system/legacy";
 
 export type UpdateProfileInput = {
@@ -72,9 +72,7 @@ export async function uploadAvatar(
     const url = `${baseUrl.replace(/\/$/, "")}/api/profile/avatar`;
     const response = await fetch(url, {
         method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
+        headers: authHeaders(token),
         body: formData,
     });
 
@@ -111,9 +109,7 @@ export async function uploadProfileBackground(
     const url = `${baseUrl.replace(/\/$/, "")}/api/profile/background`;
     const response = await fetch(url, {
         method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
+        headers: authHeaders(token),
         body: formData,
     });
 

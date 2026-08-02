@@ -49,6 +49,7 @@ import { cacheMessages, getCachedMessages } from "@/lib/cache/MessageCache";
 import { getKnownThreadReplyIds, markAsThreadReply } from "@/lib/cache/ThreadCache";
 import { toggleReaction } from "@/lib/reactions-client";
 import { uploadFile, uploadImage } from "@/lib/firepit/uploads";
+import { authHeaders } from "@/lib/firepit/http";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 import { extractAppwriteConfig } from "@/lib/firepit/bootstrap";
 import { getAvatarUrl, getEmojiUrl, getMessageAvatarFileId } from "@/lib/avatars";
@@ -570,7 +571,7 @@ export default function DirectMessageScreen() {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
+              ...authHeaders(accessToken),
             },
             body: JSON.stringify({ text }),
           },
@@ -865,12 +866,12 @@ export default function DirectMessageScreen() {
           onDelete={async () => {
             try {
               const msgId = item.$id;
-              if (!msgId) return;
+              if (!msgId || !accessToken) return;
               const res = await fetch(
                 `${instanceUrl}/api/direct-messages/${msgId}`,
                 {
                   method: "DELETE",
-                  headers: { Authorization: `Bearer ${accessToken}` },
+                  headers: authHeaders(accessToken),
                 },
               );
               if (!res.ok) throw new Error(`Delete failed (${res.status})`);
@@ -882,8 +883,8 @@ export default function DirectMessageScreen() {
             }
           }}
           onOpenThread={() => {
-            const msgId = item.$id;
-            if (!msgId) return;
+              const msgId = item.$id;
+              if (!msgId || !accessToken) return;
             setActiveThreadMessageId(msgId);
           }}
           threadReplyCount={(item as any).threadMessageCount ?? null}

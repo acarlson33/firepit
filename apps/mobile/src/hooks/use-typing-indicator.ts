@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { Client, Realtime } from "react-native-appwrite";
 import { getProfilesBatch } from "@/lib/profile-cache";
+import { authHeaders } from "@/lib/firepit/http";
 
 type TypingUser = {
     userId: string;
@@ -65,7 +66,7 @@ export function useTypingIndicator(
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${accessToken}`,
+                            ...authHeaders(accessToken),
                         },
                         body: JSON.stringify({
                             presenceId: typingPresenceIdRef.current,
@@ -84,7 +85,7 @@ export function useTypingIndicator(
                         method: "DELETE",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${accessToken}`,
+                            ...authHeaders(accessToken),
                         },
                         body: JSON.stringify({
                             presenceId: typingPresenceIdRef.current,

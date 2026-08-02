@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { router } from "expo-router";
 
 import { saveNotificationToken } from "@/lib/firepit/persistence";
+import { authHeaders } from "@/lib/firepit/http";
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -147,7 +148,7 @@ export async function registerPushToken(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
+          ...authHeaders(accessToken),
         },
         body: JSON.stringify({ token }),
       });

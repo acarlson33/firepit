@@ -27,6 +27,19 @@ export type FirepitRequestOptions = {
   timeoutMs?: number;
 };
 
+/**
+ * Auth headers for Firepit instance API calls.
+ * Appwrite Cloud's edge rewrites Authorization to its own operator credential,
+ * so the session token is sent in x-firepit-token (which the edge passes
+ * through) in addition to Authorization (for non-Appwrite hosts).
+ */
+export function authHeaders(token: string): Record<string, string> {
+  return {
+    "x-firepit-token": token,
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 }
@@ -75,6 +88,7 @@ export async function firepitRequest<T>({
     requestHeaders.set("Content-Type", "application/json");
   }
   if (token) {
+    requestHeaders.set("x-firepit-token", token);
     requestHeaders.set("Authorization", `Bearer ${token}`);
   }
   if (headers) {

@@ -1,6 +1,6 @@
 import { Account, Client } from "react-native-appwrite";
 
-import { firepitRequest, FirepitHttpError } from "@/lib/firepit/http";
+import { authHeaders, firepitRequest, FirepitHttpError } from "@/lib/firepit/http";
 import {
     type CompatibilityEvaluation,
     type CurrentUser,
@@ -310,7 +310,7 @@ export async function resolveCurrentUser(
             try {
                 const profileRes = await fetch(
                     `${baseUrl.replace(/\/$/, "")}/api/profile/${encodeURIComponent(user.$id)}`,
-                    { headers: { Authorization: `Bearer ${token}` } },
+                    { headers: authHeaders(token) },
                 );
                 if (profileRes.ok) {
                     const profile = (await profileRes.json()) as {
