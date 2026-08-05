@@ -142,7 +142,8 @@ export function GifStickerPicker({
   const [mode, setMode] = useState<PickerMode>("gifs");
   const [query, setQuery] = useState("");
   const gifSearchQueryRef = useRef(DEFAULT_GIF_QUERY);
-  const controllerRef = useRef<AbortController | null>(null);
+  const gifControllerRef = useRef<AbortController | null>(null);
+  const stickerControllerRef = useRef<AbortController | null>(null);
 
   const [gifResults, setGifResults] = useState<GifSearchItem[]>([]);
   const [gifNextCursor, setGifNextCursor] = useState<string | undefined>();
@@ -167,9 +168,9 @@ export function GifStickerPicker({
         setGifError(null);
       }
 
-      controllerRef.current?.abort();
+      gifControllerRef.current?.abort();
       const controller = new AbortController();
-      controllerRef.current = controller;
+      gifControllerRef.current = controller;
       let timedOut = false;
       const timeout = setTimeout(() => {
         timedOut = true;
@@ -204,7 +205,11 @@ export function GifStickerPicker({
         const items = Array.isArray(payload.items) ? payload.items : [];
 
         if (!append) gifSearchQueryRef.current = searchQuery;
-        setGifResults((prev) => (append ? [...prev, ...items] : items));
+        setGifResults((prev) => {
+          if (!append) return items;
+          const seen = new Set(prev.map((it) => `${it.source}-${it.id}`));
+          return [...prev, ...items.filter((it) => !seen.has(`${it.source}-${it.id}`))];
+        });
         setGifNextCursor(payload.next);
         setGifError(null);
       } catch (err) {
@@ -219,11 +224,11 @@ export function GifStickerPicker({
         }
       } finally {
         clearTimeout(timeout);
-        if (controllerRef.current === controller) {
-          controllerRef.current = null;
-          setGifLoading(false);
-          setGifLoadingMore(false);
+        if (gifControllerRef.current === controller) {
+          gifControllerRef.current = null;
         }
+        setGifLoading(false);
+        setGifLoadingMore(false);
       }
     },
     [instanceUrl, accessToken],
@@ -233,9 +238,9 @@ export function GifStickerPicker({
     setStickerLoading(true);
     setStickerError(null);
 
-    controllerRef.current?.abort();
+    stickerControllerRef.current?.abort();
     const controller = new AbortController();
-    controllerRef.current = controller;
+    stickerControllerRef.current = controller;
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -271,10 +276,10 @@ export function GifStickerPicker({
       setStickerPacks([]);
     } finally {
       clearTimeout(timeout);
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
-        setStickerLoading(false);
+      if (stickerControllerRef.current === controller) {
+        stickerControllerRef.current = null;
       }
+      setStickerLoading(false);
     }
   }, [instanceUrl, accessToken]);
 
@@ -288,7 +293,10 @@ export function GifStickerPicker({
   }, [visible, mode, fetchGifs, fetchStickers]);
 
   useEffect(() => {
-    return () => controllerRef.current?.abort();
+    return () => {
+      gifControllerRef.current?.abort();
+      stickerControllerRef.current?.abort();
+    };
   }, [visible, mode]);
 
   const handleSelect = useCallback(
@@ -345,31 +353,6 @@ export function GifStickerPicker({
             {item.title}
           </Text>
         ) : null}
-      </Pressable>
-    ),
-    [handleSelect, theme],
-  );
-
-  const renderStickerItem = useCallback(
-    ({ item }: { item: StickerItem }) => (
-      <Pressable
-        onPress={() => handleSelect(toStickerAttachment(item))}
-        style={({ pressed }) => ({
-          width: "30%",
-          margin: 4,
-          borderRadius: 8,
-          overflow: "hidden",
-          borderWidth: 1,
-          borderColor: theme.border,
-          backgroundColor: theme.muted,
-          opacity: pressed ? 0.8 : 1,
-        })}
-      >
-        <Image
-          source={{ uri: item.previewUrl || item.mediaUrl }}
-          style={{ width: "100%", aspectRatio: 1 }}
-          contentFit="cover"
-        />
       </Pressable>
     ),
     [handleSelect, theme],

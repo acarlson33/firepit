@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -21,6 +21,7 @@ import type {
   InboxDigestResponse,
 } from "@/lib/firepit/types";
 import { listInboxDigest, markInboxContextRead } from "@/lib/firepit/messages";
+import { captureError } from "@/lib/sentry";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 import { Search } from "lucide-react-native";
 import { Users } from "lucide-react-native";
@@ -70,10 +71,46 @@ function filterItems(items: InboxDigestItem[], filter: Filter): InboxDigestItem[
 }
 
 const INBOX_CACHE_TTL = 30_000;
-let inboxCache: { items: InboxDigestItem[]; totalUnread: number; cachedAt: number } | null = null;
+type InboxCacheEntry = {
+  items: InboxDigestItem[];
+  totalUnread: number;
+  cachedAt: number;
+};
+const inboxCacheMap = new Map<string, InboxCacheEntry>();
+
+function inboxCacheKey(
+  instanceUrl?: string | null,
+  accessToken?: string | null,
+): string | null {
+  return instanceUrl && accessToken ? `${instanceUrl}|${accessToken}` : null;
+}
+
+function getInboxCache(
+  instanceUrl?: string | null,
+  accessToken?: string | null,
+): InboxCacheEntry | null {
+  const key = inboxCacheKey(instanceUrl, accessToken);
+  if (!key) return null;
+  const entry = inboxCacheMap.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt >= INBOX_CACHE_TTL) {
+    inboxCacheMap.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setInboxCache(
+  instanceUrl: string,
+  accessToken: string,
+  entry: InboxCacheEntry,
+) {
+  const key = inboxCacheKey(instanceUrl, accessToken);
+  if (key) inboxCacheMap.set(key, entry);
+}
 
 function invalidateInboxCache() {
-  inboxCache = null;
+  inboxCacheMap.clear();
 }
 
 export default function InboxScreen() {
@@ -81,8 +118,12 @@ export default function InboxScreen() {
   const { instanceUrl, accessToken, state } = useFirepitBootstrap();
   const canLoad = state === "ready" && !!instanceUrl && !!accessToken;
 
-  const [items, setItems] = useState<InboxDigestItem[]>(inboxCache && Date.now() - inboxCache.cachedAt < INBOX_CACHE_TTL ? inboxCache.items : []);
-  const [totalUnread, setTotalUnread] = useState(inboxCache && Date.now() - inboxCache.cachedAt < INBOX_CACHE_TTL ? inboxCache.totalUnread : 0);
+  const [items, setItems] = useState<InboxDigestItem[]>(
+    getInboxCache(instanceUrl, accessToken)?.items ?? [],
+  );
+  const [totalUnread, setTotalUnread] = useState(
+    getInboxCache(instanceUrl, accessToken)?.totalUnread ?? 0,
+  );
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -95,7 +136,13 @@ export default function InboxScreen() {
         contextKind: item.contextKind,
       })
         .then(() => invalidateInboxCache())
-        .catch((e) => console.error("[inbox:markRead] Failed to mark inbox context read", e));
+        .catch((e) => {
+          captureError(e instanceof Error ? e : new Error(String(e)), {
+            context: "inbox:markRead",
+            contextId: item.contextId,
+            contextKind: item.contextKind,
+          });
+        });
     }
 
     if (item.contextKind === "channel" && item.serverId) {
@@ -109,21 +156,19 @@ export default function InboxScreen() {
     }
   }, [instanceUrl, accessToken]);
 
-  const loadInbox = useCallback(async () => {
-    if (!canLoad) return;
-    if (inboxCache && Date.now() - inboxCache.cachedAt < INBOX_CACHE_TTL) {
-      setItems(inboxCache.items);
-      setTotalUnread(inboxCache.totalUnread);
-      setLoadState("ready");
-      return;
-    }
+  const fetchDigest = useCallback(async () => {
+    if (!instanceUrl || !accessToken) return;
     setLoadState("loading");
     setError(null);
     try {
-      const res = await listInboxDigest(instanceUrl!, accessToken!);
+      const res = await listInboxDigest(instanceUrl, accessToken);
       const newItems = res.items ?? [];
       const newTotal = res.totalUnreadCount ?? 0;
-      inboxCache = { items: newItems, totalUnread: newTotal, cachedAt: Date.now() };
+      setInboxCache(instanceUrl, accessToken, {
+        items: newItems,
+        totalUnread: newTotal,
+        cachedAt: Date.now(),
+      });
       setItems(newItems);
       setTotalUnread(newTotal);
       setLoadState("ready");
@@ -133,35 +178,46 @@ export default function InboxScreen() {
       );
       setLoadState("error");
     }
-  }, [canLoad, instanceUrl, accessToken]);
+  }, [instanceUrl, accessToken]);
+
+  const loadInbox = useCallback(async () => {
+    if (!canLoad) return;
+    const cached = getInboxCache(instanceUrl, accessToken);
+    if (cached) {
+      setItems(cached.items);
+      setTotalUnread(cached.totalUnread);
+      setLoadState("ready");
+      return;
+    }
+    await fetchDigest();
+  }, [canLoad, instanceUrl, accessToken, fetchDigest]);
 
   useEffect(() => {
     void loadInbox();
   }, [loadInbox]);
 
+  // Drop any cached/rendered inbox data when the instance or session changes
+  const prevScopeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = inboxCacheKey(instanceUrl, accessToken);
+    if (prevScopeRef.current !== null && key !== prevScopeRef.current) {
+      invalidateInboxCache();
+      setItems([]);
+      setTotalUnread(0);
+      setLoadState("idle");
+      setError(null);
+    }
+    prevScopeRef.current = key;
+  }, [instanceUrl, accessToken]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     invalidateInboxCache();
     if (canLoad) {
-      setLoadState("loading");
-      setError(null);
-      try {
-        const res = await listInboxDigest(instanceUrl!, accessToken!);
-        const newItems = res.items ?? [];
-        const newTotal = res.totalUnreadCount ?? 0;
-        inboxCache = { items: newItems, totalUnread: newTotal, cachedAt: Date.now() };
-        setItems(newItems);
-        setTotalUnread(newTotal);
-        setLoadState("ready");
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load inbox",
-        );
-        setLoadState("error");
-      }
+      await fetchDigest();
     }
     setRefreshing(false);
-  }, [canLoad, instanceUrl, accessToken]);
+  }, [canLoad, fetchDigest]);
 
   const filtered = useMemo(() => filterItems(items, filter), [items, filter]);
 

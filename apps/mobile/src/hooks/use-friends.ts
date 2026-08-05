@@ -15,14 +15,20 @@ type FriendsData = {
 };
 
 const FRIENDS_CACHE_TTL = 30_000;
-let friendsCache: { data: FriendsData; cachedAt: number } | null = null;
+const friendsCache = new Map<string, { data: FriendsData; cachedAt: number }>();
+
+function friendsCacheKey(instanceUrl: string | null, currentUserId: string | null) {
+    return `${instanceUrl ?? "anon"}:${currentUserId ?? "anon"}`;
+}
 
 export function useFriends() {
     const { instanceUrl, accessToken, currentUser } = useFirepitBootstrap();
     const currentUserId = currentUser?.$id ?? currentUser?.userId ?? null;
+    const cacheKey = friendsCacheKey(instanceUrl, currentUserId);
     const [data, setData] = useState<FriendsData>(() => {
-        if (friendsCache && Date.now() - friendsCache.cachedAt < FRIENDS_CACHE_TTL) {
-            return friendsCache.data;
+        const cached = friendsCache.get(cacheKey);
+        if (cached && Date.now() - cached.cachedAt < FRIENDS_CACHE_TTL) {
+            return cached.data;
         }
         return { friends: [], incoming: [], outgoing: [] };
     });
@@ -45,7 +51,7 @@ export function useFriends() {
                 incoming: res.incoming ?? [],
                 outgoing: res.outgoing ?? [],
             };
-            friendsCache = { data: next, cachedAt: Date.now() };
+            friendsCache.set(cacheKey, { data: next, cachedAt: Date.now() });
             setData(next);
         } catch (fetchError) {
             setError(
@@ -56,14 +62,15 @@ export function useFriends() {
         } finally {
             setLoading(false);
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, cacheKey, instanceUrl]);
 
     useEffect(() => {
-        if (friendsCache && Date.now() - friendsCache.cachedAt < FRIENDS_CACHE_TTL) {
+        const cached = friendsCache.get(cacheKey);
+        if (cached && Date.now() - cached.cachedAt < FRIENDS_CACHE_TTL) {
             return;
         }
         void refetch();
-    }, [refetch]);
+    }, [refetch, cacheKey]);
 
     const runMutation = useCallback(
         async (

@@ -22,45 +22,50 @@ export function OrientationGate({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  if (portrait) {
-    return <>{children}</>;
-  }
-
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: theme.background },
-      ]}
-    >
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.card, borderColor: theme.border },
-        ]}
-      >
-        <ThemedText style={styles.icon}>📱</ThemedText>
-        <ThemedText type="title" style={styles.title}>
-          Rotate your device
-        </ThemedText>
-        <ThemedText
-          themeColor="mutedForeground"
-          style={styles.message}
+    <View style={styles.root}>
+      {children}
+      {!portrait && (
+        <View
+          style={[
+            styles.overlay,
+            { backgroundColor: theme.background },
+          ]}
         >
-          Firepit is designed for portrait mode. Please rotate your device to
-          continue.
-        </ThemedText>
-      </View>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            <ThemedText style={styles.icon}>📱</ThemedText>
+            <ThemedText type="title" style={styles.title}>
+              Rotate your device
+            </ThemedText>
+            <ThemedText
+              themeColor="mutedForeground"
+              style={styles.message}
+            >
+              Firepit is designed for portrait mode. Please rotate your device to
+              continue.
+            </ThemedText>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     padding: Spacing.four,
+    zIndex: 10,
   },
   card: {
     borderRadius: 24,

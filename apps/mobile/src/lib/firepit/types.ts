@@ -85,6 +85,7 @@ export type Server = {
     isPublic?: boolean;
     defaultOnSignup?: boolean;
     memberCount?: number;
+    unreadCount?: number;
     $createdAt?: string;
     [key: string]: unknown;
 };
@@ -170,7 +171,6 @@ export type Message = {
         displayName?: string;
     };
     // Threading
-    threadReplyCount?: number;
     // Pinning
     isPinned?: boolean;
     pinnedAt?: string;
@@ -270,6 +270,7 @@ export type DirectMessageConversation = {
     dmEncryptionPeerPublicKey?: string;
     isSystemAnnouncementThread?: boolean;
     announcementThreadKey?: string;
+    unreadCount?: number;
     [key: string]: unknown;
 };
 
@@ -302,6 +303,29 @@ export type DirectMessage = {
     removedBy?: string | null;
     $createdAt?: string;
     local?: boolean;
+    // Enriched profile fields
+    pronouns?: string;
+    avatarFrameUrl?: string;
+    // Threading
+    threadMessageCount?: number | null;
+    // Pinning
+    isPinned?: boolean;
+    // Poll
+    poll?: {
+        id: string;
+        messageId: string;
+        question: string;
+        options: Array<{
+            id: string;
+            text: string;
+            count: number;
+            voterIds: string[];
+        }>;
+        status: "open" | "closed";
+        createdBy: string;
+        closedAt?: string;
+        closedBy?: string;
+    } | null;
     [key: string]: unknown;
 };
 

@@ -55,13 +55,19 @@ export function FileAttachmentDisplay({ attachment, onPress }: Props) {
   const url = attachment.fileUrl || attachment.downloadUrl;
 
   const handlePress = useCallback(() => {
-    if (url) {
-      if (onPress) {
-        onPress(url);
-      } else {
-        Linking.openURL(url);
-      }
+    if (!url) return;
+    if (onPress) {
+      onPress(url);
+      return;
     }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+    Linking.openURL(url).catch(() => {});
   }, [url, onPress]);
 
   // Image / GIF / Sticker — render inline with expo-image

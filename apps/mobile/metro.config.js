@@ -18,17 +18,19 @@ config.server.enhanceMiddleware = (middleware) => {
     };
 };
 
-config.transformer.getTransformOptions = async () => ({
-    transform: {
-        experimentalImportSupport: true,
-        inlineRequires: true,
-    },
-});
-
-config.transformer.minifierConfig = {
-    compress: {
-        // Remove console logs in production builds
-        drop_console: process.env.APP_ENV === "production",
+config.transformer = {
+    ...config.transformer,
+    getTransformOptions: async () => ({
+        transform: {
+            experimentalImportSupport: true,
+            inlineRequires: true,
+        },
+    }),
+    minifierConfig: {
+        compress: {
+            // Remove console logs in production builds
+            drop_console: process.env.APP_ENV === "production",
+        },
     },
 };
 config = getBundleModeMetroConfig(config);

@@ -19,15 +19,26 @@ function CachedEmojiImage({ name, url }: { name: string; url: string }) {
 
   useEffect(() => {
     if (!cacheManager.shouldCacheEmojis()) return;
-    cacheManager.getCachedEmoji(name).then((cached) => {
-      if (cached) {
-        setCachedUri(cached);
-      } else {
-        cacheManager.cacheEmoji(name, url).then((downloaded) => {
-          if (downloaded) setCachedUri(downloaded);
-        });
-      }
-    });
+    let cancelled = false;
+    cacheManager
+      .getCachedEmoji(name)
+      .then((cached) => {
+        if (cancelled) return;
+        if (cached) {
+          setCachedUri(cached);
+        } else {
+          cacheManager
+            .cacheEmoji(name, url)
+            .then((downloaded) => {
+              if (!cancelled && downloaded) setCachedUri(downloaded);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [name, url]);
 
   return (
@@ -194,7 +205,7 @@ export const STANDARD_EMOJI: Record<string, string> = {
   anger: "💢",
   sweat_drops: "💦",
   dash: "💨",
-  hole: "🕕",
+  hole: "🕳",
   speech_balloon: "💬",
   eye_in_speech_bubble: "👁‍🗨",
   right_anger_bubble: "🗯",

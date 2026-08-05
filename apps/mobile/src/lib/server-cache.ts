@@ -17,6 +17,10 @@ const serverNamesCache = new Map<string, CacheEntry<string>>();
 const serversCache = new Map<string, CacheEntry<Server[]>>();
 const conversationsCache = new Map<string, CacheEntry<DirectMessageConversation[]>>();
 
+function scopeKey(baseUrl: string, id: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}|${id}`;
+}
+
 function isValid(entry: CacheEntry<unknown>, ttl = CACHE_TTL): boolean {
   return Date.now() - entry.cachedAt < ttl;
 }
@@ -36,12 +40,13 @@ export async function getChannels(
   token: string,
   serverId: string,
 ): Promise<Channel[]> {
-  const cached = channelsCache.get(serverId);
+  const key = scopeKey(baseUrl, serverId);
+  const cached = channelsCache.get(key);
   if (cached && isValid(cached)) return cached.data;
 
   const res = await fetchChannels(baseUrl, token, serverId);
   const channels = res.channels ?? [];
-  channelsCache.set(serverId, { data: channels, cachedAt: Date.now() });
+  channelsCache.set(key, { data: channels, cachedAt: Date.now() });
   evictOldest(channelsCache, MAX_ENTRIES);
   return channels;
 }
@@ -51,12 +56,13 @@ export async function getCategories(
   token: string,
   serverId: string,
 ): Promise<ServerCategory[]> {
-  const cached = categoriesCache.get(serverId);
+  const key = scopeKey(baseUrl, serverId);
+  const cached = categoriesCache.get(key);
   if (cached && isValid(cached)) return cached.data;
 
   const res = await fetchServerCategories(baseUrl, token, serverId);
   const categories = res.categories ?? [];
-  categoriesCache.set(serverId, { data: categories, cachedAt: Date.now() });
+  categoriesCache.set(key, { data: categories, cachedAt: Date.now() });
   evictOldest(categoriesCache, MAX_ENTRIES);
   return categories;
 }
@@ -66,38 +72,41 @@ export async function getServerName(
   token: string,
   serverId: string,
 ): Promise<string | null> {
-  const cached = serverNamesCache.get(serverId);
+  const key = scopeKey(baseUrl, serverId);
+  const cached = serverNamesCache.get(key);
   if (cached && isValid(cached)) return cached.data;
 
   const res = await fetchServer(baseUrl, token, serverId);
   const name = res.server?.name ?? null;
   if (name) {
-    serverNamesCache.set(serverId, { data: name, cachedAt: Date.now() });
+    serverNamesCache.set(key, { data: name, cachedAt: Date.now() });
     evictOldest(serverNamesCache, MAX_ENTRIES);
   }
   return name;
 }
 
-export function invalidateServerCache(serverId: string): void {
-  channelsCache.delete(serverId);
-  categoriesCache.delete(serverId);
-  serverNamesCache.delete(serverId);
+export function invalidateServerCache(baseUrl: string, serverId: string): void {
+  const key = scopeKey(baseUrl, serverId);
+  channelsCache.delete(key);
+  categoriesCache.delete(key);
+  serverNamesCache.delete(key);
 }
 
-const CONVERSATIONS_CACHE_KEY = "__all__";
+const ALL_ENTRIES_KEY = "__all__";
 
 export async function getServers(
   baseUrl: string,
   token: string,
 ): Promise<Server[]> {
-  const cached = serversCache.get(CONVERSATIONS_CACHE_KEY);
+  const key = scopeKey(baseUrl, ALL_ENTRIES_KEY);
+  const cached = serversCache.get(key);
   if (cached && isValid(cached)) return cached.data;
 
   const res = await fetchMyServers(baseUrl, token);
   const servers = (res.servers ?? []).filter(
     (s): s is Server & { $id: string } => typeof s.$id === "string" && s.$id.length > 0,
   );
-  serversCache.set(CONVERSATIONS_CACHE_KEY, { data: servers, cachedAt: Date.now() });
+  serversCache.set(key, { data: servers, cachedAt: Date.now() });
   evictOldest(serversCache, MAX_ENTRIES);
   return servers;
 }
@@ -106,14 +115,15 @@ export async function getConversations(
   baseUrl: string,
   token: string,
 ): Promise<DirectMessageConversation[]> {
-  const cached = conversationsCache.get(CONVERSATIONS_CACHE_KEY);
+  const key = scopeKey(baseUrl, ALL_ENTRIES_KEY);
+  const cached = conversationsCache.get(key);
   if (cached && isValid(cached)) return cached.data;
 
   const res = await fetchDirectMessageConversations(baseUrl, token);
   const conversations = (res.conversations ?? []).filter(
     (c): c is DirectMessageConversation & { $id: string } => typeof c.$id === "string" && c.$id.length > 0,
   );
-  conversationsCache.set(CONVERSATIONS_CACHE_KEY, { data: conversations, cachedAt: Date.now() });
+  conversationsCache.set(key, { data: conversations, cachedAt: Date.now() });
   evictOldest(conversationsCache, MAX_ENTRIES);
   return conversations;
 }
@@ -156,12 +166,21 @@ export async function enrichConversations(
   }
 }
 
-export function invalidateConversationsCache(): void {
-  conversationsCache.delete(CONVERSATIONS_CACHE_KEY);
+export function invalidateConversationsCache(baseUrl: string): void {
+  conversationsCache.delete(scopeKey(baseUrl, ALL_ENTRIES_KEY));
 }
 
-export function invalidateServersCache(): void {
-  serversCache.delete(CONVERSATIONS_CACHE_KEY);
+export function invalidateServersCache(baseUrl: string): void {
+  serversCache.delete(scopeKey(baseUrl, ALL_ENTRIES_KEY));
+}
+
+export function resetServerCache(): void {
+  channelsCache.clear();
+  categoriesCache.clear();
+  serverNamesCache.clear();
+  serversCache.clear();
+  conversationsCache.clear();
+  permissionsCache.clear();
 }
 
 const PERMISSIONS_CACHE_TTL = 60_000;
@@ -174,7 +193,7 @@ export async function getCachedEffectivePermissions(
   channelId: string,
   userId: string,
 ) {
-  const key = `${serverId}:${channelId}:${userId}`;
+  const key = scopeKey(baseUrl, `${serverId}:${channelId}:${userId}`);
   const cached = permissionsCache.get(key);
   if (cached && isValid(cached, PERMISSIONS_CACHE_TTL)) return cached.data;
 
@@ -184,13 +203,14 @@ export async function getCachedEffectivePermissions(
   return res;
 }
 
-export function invalidatePermissionsCache(serverId?: string): void {
-  if (!serverId) {
+export function invalidatePermissionsCache(baseUrl?: string, serverId?: string): void {
+  if (!baseUrl) {
     permissionsCache.clear();
     return;
   }
+  const prefix = `${baseUrl.replace(/\/+$/, "")}|${serverId ?? ""}`;
   for (const key of permissionsCache.keys()) {
-    if (key.startsWith(`${serverId}:`)) {
+    if (key.startsWith(prefix)) {
       permissionsCache.delete(key);
     }
   }

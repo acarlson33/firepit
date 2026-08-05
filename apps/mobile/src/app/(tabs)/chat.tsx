@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -22,6 +22,7 @@ import {
   type ServerCategory,
 } from "@/lib/firepit";
 import { getChannels, getCategories, getServers, getConversations, enrichConversations } from "@/lib/server-cache";
+import { captureError } from "@/lib/sentry";
 import { router } from "expo-router";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -48,7 +49,7 @@ function ChannelItem({
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const chUnread = (channel as any).unreadCount ?? 0;
+  const chUnread = channel.unreadCount ?? 0;
   return (
     <Pressable
       onPress={onPress}
@@ -97,60 +98,64 @@ export default function ChatTabScreen() {
   const theme = useTheme();
   const { instanceUrl, accessToken, state, currentUser } = useFirepitBootstrap();
 
-  const [servers, setServers] = useState<Server[]>([]);
+  const [servers, setServers] = useState<(Server & { $id: string })[]>([]);
   const [serverLoadState, setServerLoadState] = useState<LoadState>("idle");
-  const [dms, setDms] = useState<DirectMessageConversation[]>([]);
+  const [dms, setDms] = useState<(DirectMessageConversation & { $id: string })[]>([]);
   const [dmLoadState, setDmLoadState] = useState<LoadState>("idle");
   const [mutedConversations, setMutedConversations] = useState<Set<string>>(new Set());
 
   // Expanded server to show channels
   const [expandedServerId, setExpandedServerId] = useState<string | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<(Channel & { $id: string })[]>([]);
   const [channelLoadState, setChannelLoadState] = useState<LoadState>("idle");
   const [categories, setCategories] = useState<ServerCategory[]>([]);
 
   const canLoad = state === "ready" && !!instanceUrl && !!accessToken;
 
-  // Load servers
+  const cancelledRef = useRef(false);
   useEffect(() => {
-    if (!canLoad) return;
-    let cancelled = false;
-    async function load() {
-      setServerLoadState("loading");
-      try {
-        const serverList = await getServers(instanceUrl!, accessToken!);
-        if (cancelled) return;
-        setServers(serverList);
-        setServerLoadState("ready");
-      } catch {
-        if (!cancelled) setServerLoadState("error");
-      }
+    cancelledRef.current = false;
+    return () => { cancelledRef.current = true; };
+  }, []);
+
+  // Load servers
+  const loadServers = useCallback(async () => {
+    if (!instanceUrl || !accessToken) return;
+    setServerLoadState("loading");
+    try {
+      const serverList = await getServers(instanceUrl, accessToken);
+      if (cancelledRef.current) return;
+      setServers(serverList.filter(hasId));
+      setServerLoadState("ready");
+    } catch {
+      if (!cancelledRef.current) setServerLoadState("error");
     }
-    void load();
-    return () => { cancelled = true; };
-  }, [canLoad, instanceUrl, accessToken]);
+  }, [instanceUrl, accessToken]);
 
   // Load DMs
-  useEffect(() => {
-    if (!canLoad) return;
-    let cancelled = false;
-    async function load() {
-      setDmLoadState("loading");
-      try {
-        const raw = await getConversations(instanceUrl!, accessToken!);
-        if (cancelled) return;
-        const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
-        const enriched = await enrichConversations(instanceUrl!, accessToken!, raw, currentUserId);
-        if (cancelled) return;
-        setDms(enriched);
-        setDmLoadState("ready");
-      } catch {
-        if (!cancelled) setDmLoadState("error");
-      }
+  const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
+  const loadDMs = useCallback(async () => {
+    if (!instanceUrl || !accessToken) return;
+    setDmLoadState("loading");
+    try {
+      const raw = await getConversations(instanceUrl, accessToken);
+      if (cancelledRef.current) return;
+      const enriched = await enrichConversations(instanceUrl, accessToken, raw, currentUserId);
+      if (cancelledRef.current) return;
+      setDms(enriched.filter(hasId));
+      setDmLoadState("ready");
+    } catch {
+      if (!cancelledRef.current) setDmLoadState("error");
     }
-    void load();
-    return () => { cancelled = true; };
-  }, [canLoad, instanceUrl, accessToken]);
+  }, [instanceUrl, accessToken, currentUserId]);
+
+  useEffect(() => {
+    if (canLoad) void loadServers();
+  }, [canLoad, loadServers]);
+
+  useEffect(() => {
+    if (canLoad) void loadDMs();
+  }, [canLoad, loadDMs]);
 
   // Load channels when a server is expanded
   const expandServer = useCallback(async (serverId: string) => {
@@ -178,8 +183,8 @@ export default function ChatTabScreen() {
   // Sort: items with unread first, then alphabetically
   const sortedServers = useMemo(() => {
     return [...servers].sort((a, b) => {
-      const aUnread = (a as any).unreadCount ?? 0;
-      const bUnread = (b as any).unreadCount ?? 0;
+      const aUnread = a.unreadCount ?? 0;
+      const bUnread = b.unreadCount ?? 0;
       if (aUnread > 0 && bUnread === 0) return -1;
       if (bUnread > 0 && aUnread === 0) return 1;
       return (a.name ?? "").localeCompare(b.name ?? "");
@@ -188,8 +193,8 @@ export default function ChatTabScreen() {
 
   const sortedDms = useMemo(() => {
     return [...dms].sort((a, b) => {
-      const aUnread = (a as any).unreadCount ?? 0;
-      const bUnread = (b as any).unreadCount ?? 0;
+      const aUnread = a.unreadCount ?? 0;
+      const bUnread = b.unreadCount ?? 0;
       if (aUnread > 0 && bUnread === 0) return -1;
       if (bUnread > 0 && aUnread === 0) return 1;
       // For DMs, sort by last message time if available
@@ -222,7 +227,10 @@ export default function ChatTabScreen() {
         return next;
       });
     } catch (e) {
-      console.error("[chat:muteConversation] Failed to mute conversation", e);
+      captureError(e instanceof Error ? e : new Error(String(e)), {
+        context: "chat:muteConversation",
+        conversationId,
+      });
     }
   }, [instanceUrl, accessToken]);
 
@@ -234,7 +242,7 @@ export default function ChatTabScreen() {
       if (ap !== bp) return ap - bp;
       return (a.name ?? "").localeCompare(b.name ?? "");
     });
-    const catMap = new Map<string, Channel[]>();
+    const catMap = new Map<string, (Channel & { $id: string })[]>();
     for (const ch of channels) {
       const cid = ch.categoryId ?? "";
       if (!cid) continue;
@@ -288,11 +296,56 @@ export default function ChatTabScreen() {
             </ThemedText>
           </View>
 
+          {/* Connection status */}
+          {state !== "ready" && (
+            <View style={styles.statusRow}>
+              {(state === "idle" || state === "loading") && (
+                <ActivityIndicator size="small" color={theme.primary} />
+              )}
+              <ThemedText themeColor="mutedForeground" style={styles.statusText}>
+                {state === "idle" || state === "loading"
+                  ? "Connecting to your instance…"
+                  : state === "needs-auth"
+                    ? "Sign in to load servers and direct messages."
+                    : "Couldn't connect to your instance."}
+              </ThemedText>
+            </View>
+          )}
+
           {/* Server list */}
           <View style={styles.section}>
             <ThemedText type="smallBold" style={styles.sectionHeader}>
               Servers ({servers.length})
             </ThemedText>
+            {serverLoadState === "loading" && sortedServers.length === 0 && (
+              <View style={styles.statusRow}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <ThemedText themeColor="mutedForeground" style={styles.statusText}>
+                  Loading servers…
+                </ThemedText>
+              </View>
+            )}
+            {serverLoadState === "error" && sortedServers.length === 0 && (
+              <View style={styles.statusRow}>
+                <ThemedText themeColor="destructive" style={styles.statusText}>
+                  Couldn&apos;t load servers. Check your connection and try again.
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void loadServers()}
+                  style={({ pressed }) => [
+                    styles.retryButton,
+                    {
+                      backgroundColor: theme.backgroundSelected,
+                      borderColor: theme.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <ThemedText type="smallBold">Retry</ThemedText>
+                </Pressable>
+              </View>
+            )}
             {serverLoadState === "ready" && sortedServers.length === 0 && (
               <ThemedText themeColor="mutedForeground" style={styles.emptyText}>
                 You haven&apos;t joined any servers yet.
@@ -300,11 +353,11 @@ export default function ChatTabScreen() {
             )}
             {sortedServers.map((server) => {
               const isExpanded = expandedServerId === server.$id;
-              const unread = (server as any).unreadCount ?? 0;
+              const unread = server.unreadCount ?? 0;
               return (
                 <View key={server.$id}>
                   <Pressable
-                    onPress={() => void expandServer(server.$id!)}
+                    onPress={() => void expandServer(server.$id)}
                     style={({ pressed }) => [
                       styles.listItem,
                       {
@@ -379,7 +432,7 @@ export default function ChatTabScreen() {
                             <ChannelItem
                               key={channel.$id}
                               channel={channel}
-                              onPress={() => navigateToChannel(server.$id!, channel.$id!)}
+                              onPress={() => navigateToChannel(server.$id, channel.$id)}
                             />
                           ))}
                         </View>
@@ -398,7 +451,7 @@ export default function ChatTabScreen() {
                             <ChannelItem
                               key={channel.$id}
                               channel={channel}
-                              onPress={() => navigateToChannel(server.$id!, channel.$id!)}
+                              onPress={() => navigateToChannel(server.$id, channel.$id)}
                             />
                           ))}
                         </View>
@@ -415,28 +468,55 @@ export default function ChatTabScreen() {
             <ThemedText type="smallBold" style={styles.sectionHeader}>
               Direct Messages ({dms.length})
             </ThemedText>
+            {dmLoadState === "loading" && sortedDms.length === 0 && (
+              <View style={styles.statusRow}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <ThemedText themeColor="mutedForeground" style={styles.statusText}>
+                  Loading direct messages…
+                </ThemedText>
+              </View>
+            )}
+            {dmLoadState === "error" && sortedDms.length === 0 && (
+              <View style={styles.statusRow}>
+                <ThemedText themeColor="destructive" style={styles.statusText}>
+                  Couldn&apos;t load direct messages. Check your connection and try again.
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void loadDMs()}
+                  style={({ pressed }) => [
+                    styles.retryButton,
+                    {
+                      backgroundColor: theme.backgroundSelected,
+                      borderColor: theme.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <ThemedText type="smallBold">Retry</ThemedText>
+                </Pressable>
+              </View>
+            )}
             {dmLoadState === "ready" && sortedDms.length === 0 && (
               <ThemedText themeColor="mutedForeground" style={styles.emptyText}>
                 No direct messages yet.
               </ThemedText>
             )}
             {sortedDms.map((dm) => {
-              const unread = (dm as any).unreadCount ?? 0;
+              const unread = dm.unreadCount ?? 0;
               const otherUser = dm.otherUser;
               const dmName = dm.isGroup
                 ? dm.name ?? "Group DM"
                 : otherUser?.displayName ?? otherUser?.userId ?? "Unknown";
               const dmAvatar = otherUser?.avatarUrl;
-              const isMuted = mutedConversations.has(dm.$id!);
+              const isMuted = mutedConversations.has(dm.$id);
 
               return (
                 <Pressable
                   key={dm.$id}
-                  onPress={() => navigateToDm(dm.$id!)}
+                  onPress={() => navigateToDm(dm.$id)}
                   onLongPress={() => {
-                    if (dm.$id) {
-                      handleMute(dm.$id, isMuted);
-                    }
+                    handleMute(dm.$id, isMuted);
                   }}
                   style={({ pressed }) => [
                     styles.listItem,
@@ -481,9 +561,7 @@ export default function ChatTabScreen() {
                     </View>
                   )}
                   <Pressable
-                    onPress={() => {
-                      if (dm.$id) handleMute(dm.$id, isMuted);
-                    }}
+                    onPress={() => handleMute(dm.$id, isMuted)}
                     style={({ pressed }) => [
                       styles.muteBtn,
                       { opacity: pressed ? 0.6 : 1 },
@@ -534,6 +612,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     paddingVertical: Spacing.two,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+  },
+  statusText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   listItem: {
     flexDirection: "row",

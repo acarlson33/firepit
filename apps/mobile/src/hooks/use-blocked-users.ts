@@ -7,13 +7,22 @@ import type { BlockedUserEntry } from "@/lib/firepit/types";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 const BLOCKED_CACHE_TTL = 30_000;
-let blockedCache: { data: BlockedUserEntry[]; cachedAt: number } | null = null;
+const blockedCache = new Map<string, { data: BlockedUserEntry[]; cachedAt: number }>();
+
+function blockedCacheKey(instanceUrl: string, accountId: string): string {
+    return `${instanceUrl}|${accountId}`;
+}
 
 export function useBlockedUsers() {
-    const { instanceUrl, accessToken } = useFirepitBootstrap();
+    const { instanceUrl, accessToken, currentUser } = useFirepitBootstrap();
+    const accountId = currentUser?.$id;
+    const key = instanceUrl && accountId ? blockedCacheKey(instanceUrl, accountId) : null;
     const [items, setItems] = useState<BlockedUserEntry[]>(() => {
-        if (blockedCache && Date.now() - blockedCache.cachedAt < BLOCKED_CACHE_TTL) {
-            return blockedCache.data;
+        if (key) {
+            const cached = blockedCache.get(key);
+            if (cached && Date.now() - cached.cachedAt < BLOCKED_CACHE_TTL) {
+                return cached.data;
+            }
         }
         return [];
     });
@@ -22,17 +31,18 @@ export function useBlockedUsers() {
     const [error, setError] = useState<string | null>(null);
 
     const refetch = useCallback(async () => {
-        if (!instanceUrl || !accessToken) {
+        if (!instanceUrl || !accessToken || !accountId) {
             setItems([]);
             return;
         }
 
+        const cacheKey = blockedCacheKey(instanceUrl, accountId);
         setLoading(true);
         setError(null);
         try {
             const res = await fetchBlockedUsers(instanceUrl, accessToken);
             const data = res.items ?? [];
-            blockedCache = { data, cachedAt: Date.now() };
+            blockedCache.set(cacheKey, { data, cachedAt: Date.now() });
             setItems(data);
         } catch (fetchError) {
             setError(
@@ -43,18 +53,21 @@ export function useBlockedUsers() {
         } finally {
             setLoading(false);
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, accountId, instanceUrl]);
 
     useEffect(() => {
-        if (blockedCache && Date.now() - blockedCache.cachedAt < BLOCKED_CACHE_TTL) {
-            return;
+        if (key) {
+            const cached = blockedCache.get(key);
+            if (cached && Date.now() - cached.cachedAt < BLOCKED_CACHE_TTL) {
+                return;
+            }
         }
         void refetch();
-    }, [refetch]);
+    }, [key, refetch]);
 
     const unblock = useCallback(
         async (userId: string) => {
-            if (!instanceUrl || !accessToken) return false;
+            if (!instanceUrl || !accessToken || !accountId) return false;
             setActionLoading(userId);
             setError(null);
             try {
@@ -72,7 +85,7 @@ export function useBlockedUsers() {
                 setActionLoading(null);
             }
         },
-        [accessToken, instanceUrl, refetch],
+        [accessToken, accountId, instanceUrl, refetch],
     );
 
     return {

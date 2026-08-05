@@ -61,6 +61,33 @@ async function fileToFormDataPart(uri: string, name: string, mimeType: string) {
     }
 }
 
+const UPLOAD_TIMEOUT_MS = 30_000;
+
+async function postFormData<T>(
+    baseUrl: string,
+    path: string,
+    token: string,
+    formData: FormData,
+    failureLabel: string,
+): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
+            method: "POST",
+            headers: authHeaders(token),
+            body: formData,
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`${failureLabel} failed (${response.status})`);
+        }
+        return response.json() as Promise<T>;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 export async function uploadAvatar(
     baseUrl: string,
     token: string,
@@ -69,21 +96,13 @@ export async function uploadAvatar(
     const formData = new FormData();
     formData.append("avatar", await fileToFormDataPart(imageUri, "avatar.jpg", "image/jpeg"));
 
-    const url = `${baseUrl.replace(/\/$/, "")}/api/profile/avatar`;
-    const response = await fetch(url, {
-        method: "POST",
-        headers: authHeaders(token),
-        body: formData,
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(
-            `Avatar upload failed (${response.status}): ${errorBody}`,
-        );
-    }
-
-    return response.json() as Promise<AvatarUploadResponse>;
+    return postFormData<AvatarUploadResponse>(
+        baseUrl,
+        "/api/profile/avatar",
+        token,
+        formData,
+        "Avatar upload",
+    );
 }
 
 export async function removeAvatar(
@@ -106,19 +125,11 @@ export async function uploadProfileBackground(
     const formData = new FormData();
     formData.append("background", await fileToFormDataPart(imageUri, "background.jpg", "image/jpeg"));
 
-    const url = `${baseUrl.replace(/\/$/, "")}/api/profile/background`;
-    const response = await fetch(url, {
-        method: "POST",
-        headers: authHeaders(token),
-        body: formData,
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(
-            `Background upload failed (${response.status}): ${errorBody}`,
-        );
-    }
-
-    return response.json() as Promise<BackgroundUploadResponse>;
+    return postFormData<BackgroundUploadResponse>(
+        baseUrl,
+        "/api/profile/background",
+        token,
+        formData,
+        "Background upload",
+    );
 }

@@ -71,16 +71,23 @@ export function ThreadPanel({
         (response.parentMessage ?? response.message ?? null) as Record<string, unknown> | null;
       const nextReplies = (response.replies ?? response.items ?? []) as Record<string, unknown>[];
 
+      const authorIdOf = (msg: Record<string, unknown>) =>
+        (msg.senderId as string | undefined) ?? (msg.userId as string | undefined);
+
       const senderIds = new Set<string>();
-      if (nextParent?.senderId) senderIds.add(nextParent.senderId as string);
+      if (nextParent) {
+        const id = authorIdOf(nextParent);
+        if (id) senderIds.add(id);
+      }
       for (const r of nextReplies) {
-        if (r.senderId) senderIds.add(r.senderId as string);
+        const id = authorIdOf(r);
+        if (id) senderIds.add(id);
       }
       if (senderIds.size > 0) {
         const profileMap = await getProfilesBatch(instanceUrl, accessToken, Array.from(senderIds));
         if (Object.keys(profileMap).length > 0) {
           const enrich = (msg: Record<string, unknown>): Record<string, unknown> => {
-            const profile = profileMap[msg.senderId as string ?? ""];
+            const profile = profileMap[authorIdOf(msg) ?? ""];
             if (!profile) return msg;
             return {
               ...msg,
@@ -141,7 +148,9 @@ export function ThreadPanel({
 
   const renderItem = useCallback(
     ({ item, index }: { item: Record<string, unknown>; index: number }) => {
-      const isParent = index === 0 && (item.$id as string) === (parentMessage as any)?.$id;
+      const isParent =
+        index === 0 &&
+        (item.$id as string) === (parentMessage?.$id as string | undefined);
       return (
         <View style={isParent ? styles.parentWrapper : undefined}>
           {isParent && (

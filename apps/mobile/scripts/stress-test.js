@@ -42,6 +42,7 @@ const MIN_DELAY_MS = 1000;
 const MAX_ADDITIONAL_MS = 500; // random 0-500ms added to MIN_DELAY_MS
 const BATCH_INTERVAL_EVERY = 7; // every Nth message uses the longer delay
 const BATCH_DELAY_MS = 2000;
+const DELETE_CONCURRENCY = 5;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -134,10 +135,17 @@ async function deleteDmMessage(instanceUrl, token, messageId) {
 // Data file helpers
 // ---------------------------------------------------------------------------
 function loadData(dataPath) {
+  if (!fs.existsSync(dataPath)) {
+    return { runs: [], loadFailed: false };
+  }
   try {
-    return JSON.parse(fs.readFileSync(dataPath, "utf-8"));
-  } catch {
-    return { runs: [] };
+    return { runs: JSON.parse(fs.readFileSync(dataPath, "utf-8")), loadFailed: false };
+  } catch (err) {
+    console.error(
+      `Warning: could not read tracking file ${dataPath}: ${err.message}`,
+    );
+    console.error("Leaving it untouched; prior run history was not loaded.");
+    return { runs: [], loadFailed: true };
   }
 }
 
@@ -221,9 +229,13 @@ async function cmdStressTest(instanceUrl, token, userId, msgCount, dataPath) {
 
   // 4. Save tracking data
   const data = loadData(dataPath);
-  data.runs.push(runRecord);
-  saveData(dataPath, data);
-  console.log(`Tracking data saved to ${dataPath}`);
+  if (data.loadFailed) {
+    console.error("Skipping tracking save to avoid overwriting the unreadable data file.");
+  } else {
+    data.runs.push(runRecord);
+    saveData(dataPath, data);
+    console.log(`Tracking data saved to ${dataPath}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,18 +264,22 @@ async function cmdDelete(instanceUrl, token, dataPath) {
   const failedIds = [];
   const start = Date.now();
 
-  for (let i = 0; i < allIds.length; i++) {
-    const id = allIds[i];
-    try {
-      await deleteDmMessage(instanceUrl, token, id);
-      ok++;
-      process.stdout.write(`  [${i + 1}/${allIds.length}] Deleted ${id}  (elapsed: ${elapsed(start)}s)\n`);
-    } catch (err) {
-      fail++;
-      failedIds.push(id);
-      process.stdout.write(`  [${i + 1}/${allIds.length}] FAILED ${id}: ${err.message}\n`);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < allIds.length) {
+      const id = allIds[cursor++];
+      try {
+        await deleteDmMessage(instanceUrl, token, id);
+        ok++;
+        process.stdout.write(`  [${cursor}/${allIds.length}] Deleted ${id}  (elapsed: ${elapsed(start)}s)\n`);
+      } catch (err) {
+        fail++;
+        failedIds.push(id);
+        process.stdout.write(`  [${cursor}/${allIds.length}] FAILED ${id}: ${err.message}\n`);
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: DELETE_CONCURRENCY }, worker));
 
   const totalSec = elapsed(start);
   console.log(`\nDone. ${ok} deleted, ${fail} failed in ${totalSec}s`);
@@ -357,7 +373,16 @@ function promptForPassword() {
       input: process.stdin,
       output: process.stdout,
     });
+    const originalWrite = rl._writeToOutput.bind(rl);
+    rl._writeToOutput = (string) => {
+      if (string.includes("Password:")) {
+        originalWrite(string);
+      } else {
+        originalWrite("\x1B[2K\x1B[0G" + "*".repeat(string.length));
+      }
+    };
     rl.question("Password: ", (answer) => {
+      rl._writeToOutput = originalWrite;
       rl.close();
       resolve(answer.trim());
     });

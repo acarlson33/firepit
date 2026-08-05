@@ -14,12 +14,37 @@ export type AutocompleteEmoji = {
   customUrl?: string;
 };
 
+export function filterEmojis(
+  query: string,
+  standardEmojis: Record<string, string>,
+  customEmojis: AutocompleteEmoji[],
+): AutocompleteEmoji[] {
+  const q = query.toLowerCase().trim();
+  if (!q) {
+    return [
+      ...customEmojis.slice(0, 20),
+      ...Object.entries(standardEmojis).slice(0, 20).map(([shortcode, unicode]) => ({ shortcode, unicode })),
+    ];
+  }
+
+  const custom: AutocompleteEmoji[] = customEmojis
+    .filter((e) => e.shortcode.toLowerCase().includes(q))
+    .slice(0, 10)
+    .map((e) => ({ shortcode: e.shortcode, unicode: e.unicode, customUrl: e.customUrl }));
+
+  const standard: AutocompleteEmoji[] = Object.entries(standardEmojis)
+    .filter(([shortcode]) => shortcode.toLowerCase().includes(q))
+    .slice(0, 10)
+    .map(([shortcode, unicode]) => ({ shortcode, unicode }));
+
+  return [...custom, ...standard];
+}
+
 type EmojiAutocompleteProps = {
   query: string;
   standardEmojis: Record<string, string>;
   customEmojis: AutocompleteEmoji[];
   onSelect: (emoji: AutocompleteEmoji) => void;
-  onClose?: () => void;
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
 };
@@ -29,34 +54,15 @@ export function EmojiAutocomplete({
   standardEmojis,
   customEmojis,
   onSelect,
-  onClose,
   selectedIndex,
   onSelectedIndexChange,
 }: EmojiAutocompleteProps) {
   const colors = useTheme();
 
-  const items = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) {
-      const defaults: AutocompleteEmoji[] = [
-        ...customEmojis.slice(0, 20),
-        ...Object.entries(standardEmojis).slice(0, 20).map(([shortcode, unicode]) => ({ shortcode, unicode })),
-      ];
-      return defaults;
-    }
-
-    const custom: AutocompleteEmoji[] = customEmojis
-      .filter((e) => e.shortcode.toLowerCase().includes(q))
-      .slice(0, 10)
-      .map((e) => ({ shortcode: e.shortcode, unicode: e.unicode, customUrl: e.customUrl }));
-
-    const standard: AutocompleteEmoji[] = Object.entries(standardEmojis)
-      .filter(([shortcode]) => shortcode.toLowerCase().includes(q))
-      .slice(0, 10)
-      .map(([shortcode, unicode]) => ({ shortcode, unicode }));
-
-    return [...custom, ...standard];
-  }, [query, standardEmojis, customEmojis]);
+  const items = useMemo(
+    () => filterEmojis(query, standardEmojis, customEmojis),
+    [query, standardEmojis, customEmojis],
+  );
 
   if (items.length === 0) return null;
 

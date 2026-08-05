@@ -49,14 +49,33 @@ function frameEmojiForPreset(preset?: string): string | null {
     return "\u2728";
 }
 
+function splitGradientParts(input: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (const ch of input) {
+        if (ch === "(") depth++;
+        else if (ch === ")") depth--;
+        if (ch === "," && depth === 0) {
+            parts.push(current);
+            current = "";
+        } else {
+            current += ch;
+        }
+    }
+    parts.push(current);
+    return parts;
+}
+
 function parseGradient(value: string): { colors: string[]; start: { x: number; y: number }; end: { x: number; y: number } } | null {
     const match = value.match(/linear-gradient\((.+?)\)/);
     if (!match) return null;
-    const parts = match[1].split(",").map((s) => s.trim());
+    const parts = splitGradientParts(match[1]).map((s) => s.trim());
     if (parts.length < 2) return null;
-    const angle = parseFloat(parts[0]) || 180;
+    const isAngle = /^-?\d+(\.\d+)?deg$/i.test(parts[0]);
+    const angle = isAngle ? parseFloat(parts[0]) : 180;
     const rad = (angle * Math.PI) / 180;
-    const colors = parts.slice(1).map((c) => c.replace(/"/g, "").trim()).filter(Boolean);
+    const colors = (isAngle ? parts.slice(1) : parts).map((c) => c.replace(/"/g, "").trim()).filter(Boolean);
     if (colors.length < 2) return null;
     return {
         colors: colors as [string, string, ...string[]],
@@ -239,7 +258,7 @@ export function UserProfileSheet({
                                 {/* Actions */}
                                 {!isSelf ? (
                                     <View style={styles.section}>
-                                        <RelationshipActions targetUserId={userId} displayName={name} />
+                                        <RelationshipActions targetUserId={userId} />
                                     </View>
                                 ) : null}
 

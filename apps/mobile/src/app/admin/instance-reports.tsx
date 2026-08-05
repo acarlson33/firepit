@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import { StatusPill } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -22,26 +23,6 @@ import {
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
-
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
-            <ThemedText
-                type="code"
-                themeColor={tone === "neutral" ? "mutedForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
 
 function statusTone(
     status?: string,
@@ -101,7 +82,12 @@ export default function InstanceReportsScreen() {
             );
             setReports((prev) => [...prev, ...(res.items ?? [])]);
             setNextCursor(res.nextCursor ?? null);
-        } catch {
+        } catch (error) {
+            setLoadError(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to load more reports",
+            );
         } finally {
             setLoadingMore(false);
         }
@@ -223,7 +209,9 @@ export default function InstanceReportsScreen() {
 
                     <FlatList
                         data={reports}
-                        keyExtractor={(item) => item.$id ?? item.createdAt ?? "unknown"}
+                        keyExtractor={(item, index) =>
+                            item.$id ?? item.createdAt ?? `report-${index}`
+                        }
                         contentContainerStyle={styles.listContent}
                         initialNumToRender={10}
                         maxToRenderPerBatch={10}
@@ -361,9 +349,9 @@ function ReportCard({
                             <Pressable
                                 accessibilityRole="button"
                                 disabled={isSaving}
-                                onPress={() =>
-                                    onResolve(entry.$id!, "resolve")
-                                }
+                                onPress={() => {
+                                    if (entry.$id) onResolve(entry.$id, "resolve");
+                                }}
                                 style={({ pressed }) => [
                                     styles.actionButton,
                                     styles.resolveButton,
@@ -387,9 +375,9 @@ function ReportCard({
                             <Pressable
                                 accessibilityRole="button"
                                 disabled={isSaving}
-                                onPress={() =>
-                                    onResolve(entry.$id!, "dismiss")
-                                }
+                                onPress={() => {
+                                    if (entry.$id) onResolve(entry.$id, "dismiss");
+                                }}
                                 style={({ pressed }) => [
                                     styles.actionButton,
                                     styles.dismissButton,
@@ -461,11 +449,6 @@ const styles = StyleSheet.create({
         gap: Spacing.three,
         paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
-    },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
     },
     listContent: {
         paddingHorizontal: Spacing.three,

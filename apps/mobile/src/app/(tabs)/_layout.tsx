@@ -7,12 +7,18 @@ import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 import AppTabs from "@/components/app-tabs";
 
-const ONBOARDING_KEY = "hasSeenOnboarding";
+const ONBOARDING_KEY_PREFIX = "hasSeenOnboarding";
+
+function onboardingKey(userId: string) {
+    return `${ONBOARDING_KEY_PREFIX}:${userId}`;
+}
 
 function OnboardingGate({ children }: { children: ReactNode }) {
     const { currentUser } = useFirepitBootstrap();
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [checking, setChecking] = useState(true);
+
+    const userId = currentUser?.$id ?? currentUser?.userId ?? "";
 
     useEffect(() => {
         if (!currentUser) {
@@ -20,16 +26,21 @@ function OnboardingGate({ children }: { children: ReactNode }) {
             return;
         }
 
-        AsyncStorage.getItem(ONBOARDING_KEY).then((seen) => {
+        let cancelled = false;
+        AsyncStorage.getItem(onboardingKey(userId)).then((seen) => {
+            if (cancelled) return;
             if (seen !== "true") {
                 setShowOnboarding(true);
             }
             setChecking(false);
         });
-    }, [currentUser]);
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser, userId]);
 
     const handleComplete = async () => {
-        await AsyncStorage.setItem(ONBOARDING_KEY, "true");
+        await AsyncStorage.setItem(onboardingKey(userId), "true");
         setShowOnboarding(false);
     };
 

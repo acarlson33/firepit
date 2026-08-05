@@ -7,7 +7,7 @@ const KEY_VERSION = "xchacha20poly1305-v1";
 const KEY_CONTEXT = "firepit-dm-v1";
 const STORAGE_KEY_PREFIX = "firepit.dm.encryption";
 
-let volatileKeyPair: DmEncryptionKeyPair | null = null;
+const volatileKeyPairs = new Map<string, DmEncryptionKeyPair>();
 
 type DmEncryptionKeyPair = {
     privateKeyBase64: string;
@@ -59,8 +59,9 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
 }
 
 async function loadKeyPairFromStorage(userId: string): Promise<DmEncryptionKeyPair | null> {
-    if (volatileKeyPair) {
-        return volatileKeyPair;
+    const cached = volatileKeyPairs.get(userId);
+    if (cached) {
+        return cached;
     }
 
     try {
@@ -76,7 +77,7 @@ async function loadKeyPairFromStorage(userId: string): Promise<DmEncryptionKeyPa
                 publicKeyBase64,
                 version: version ?? KEY_VERSION,
             };
-            volatileKeyPair = keyPair;
+            volatileKeyPairs.set(userId, keyPair);
             return keyPair;
         }
 
@@ -87,7 +88,7 @@ async function loadKeyPairFromStorage(userId: string): Promise<DmEncryptionKeyPa
 }
 
 async function saveKeyPairToStorage(userId: string, keyPair: DmEncryptionKeyPair): Promise<void> {
-    volatileKeyPair = keyPair;
+    volatileKeyPairs.set(userId, keyPair);
 
     try {
         await Promise.all([
@@ -300,6 +301,13 @@ export async function decryptMessageTextIfNeeded(params: {
         return message;
     }
 
+    if (message.encryptionVersion && message.encryptionVersion !== KEY_VERSION) {
+        return {
+            ...message,
+            text: "[Encrypted message unavailable]",
+        };
+    }
+
     const keyPair = await loadKeyPairFromStorage(userId);
     if (!keyPair) {
         return {
@@ -317,11 +325,12 @@ export async function decryptMessageTextIfNeeded(params: {
         };
     }
 
+    const peerKey = peerPublicKeyBase64!;
     const decryptedText = isOwnSentMessage
         ? await decryptDmTextForSender({
               encryptedText: message.encryptedText,
               encryptionNonce: message.encryptionNonce,
-              recipientPublicKeyBase64: peerPublicKeyBase64!,
+              recipientPublicKeyBase64: peerKey,
               senderKeyPair: keyPair,
           })
         : await decryptDmText({
@@ -351,37 +360,25 @@ export async function ensurePublishedDmEncryptionKey(
 ): Promise<DmEncryptionKeyPair> {
     const keyPair = await ensureDmEncryptionKeyPair(userId);
 
-    try {
-        const response = await fetch(`${instanceUrl}/api/me/dm-encryption-key`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                ...authHeaders(accessToken),
-            },
-            body: JSON.stringify({
-                dmEncryptionPublicKey: keyPair.publicKeyBase64,
-            }),
-        });
+    const response = await fetch(`${instanceUrl}/api/me/dm-encryption-key`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(accessToken),
+        },
+        body: JSON.stringify({
+            dmEncryptionPublicKey: keyPair.publicKeyBase64,
+        }),
+    });
 
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || "Failed to publish encryption key");
-        }
-    } catch {
-        // Key still usable locally
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to publish encryption key");
     }
 
     return keyPair;
 }
 
-function serializeEncryptionKey(keyPair: DmEncryptionKeyPair): string {
-    return JSON.stringify({
-        publicKeyBase64: keyPair.publicKeyBase64,
-        privateKeyBase64: keyPair.privateKeyBase64,
-        version: keyPair.version,
-    });
-}
-
-function deserializeEncryptionKey(json: string): DmEncryptionKeyPair {
-    return JSON.parse(json) as DmEncryptionKeyPair;
+export function clearDmEncryptionKeyPairs(): void {
+    volatileKeyPairs.clear();
 }

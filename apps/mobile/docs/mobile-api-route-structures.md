@@ -6,7 +6,7 @@ Use the route handler code as the primary source of truth when the handler and t
 
 ## Contract Rules
 
-- Authentication is cookie-based through the Appwrite session cookie.
+- Mobile clients authenticate with an Appwrite session secret sent as an `Authorization: Bearer <session secret>` header. On Appwrite Cloud the same secret is also sent as `x-firepit-token`, because the edge rewrites `Authorization` to its own operator credential. There is no cookie bootstrap: clients obtain the session secret from `POST /api/auth/session` and reuse it across Firepit API calls (cookies are omitted).
 - Most client routes require an authenticated session; public discovery and preview routes are the main exceptions.
 - `serverId`, `channelId`, `conversationId`, and `messageId` are the core identifiers used across the app.
 - `contextKind` is always `channel` or `conversation` when a route needs context typing.

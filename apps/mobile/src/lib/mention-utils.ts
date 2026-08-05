@@ -12,9 +12,7 @@ export interface EmojiMatch {
   endIndex: number;
 }
 
-const EVERYONE_MENTION_REGEX = /(?:^|\s)@all(?=$|\s|[.,!?;:])/i;
-
-const MENTION_REGEX = /@(\S+)/g;
+const MENTION_REGEX = /(?<![\w@])@([a-zA-Z0-9_]+)/g;
 
 export function parseMentions(text: string): MentionMatch[] {
   const matches: MentionMatch[] = [];
@@ -37,25 +35,25 @@ export function getMentionAtCursor(
   text: string,
   cursorPosition: number,
 ): MentionMatch | null {
-  const beforeCursor = text.substring(0, cursorPosition);
+  const beforeCursor = text.slice(0, cursorPosition);
   const lastAtSymbol = beforeCursor.lastIndexOf("@");
 
   if (lastAtSymbol === -1) {
     return null;
   }
 
-  const textAfterAt = text.substring(lastAtSymbol + 1, cursorPosition);
+  const textAfterAt = text.slice(lastAtSymbol + 1, cursorPosition);
   if (/\s/.test(textAfterAt)) {
     return null;
   }
 
-  const textAfterCursor = text.substring(cursorPosition);
+  const textAfterCursor = text.slice(cursorPosition);
   const nextWhitespace = textAfterCursor.search(/\s/);
   const endIndex =
     nextWhitespace === -1 ? text.length : cursorPosition + nextWhitespace;
 
-  const fullMatch = text.substring(lastAtSymbol, endIndex);
-  const username = fullMatch.substring(1);
+  const fullMatch = text.slice(lastAtSymbol, endIndex);
+  const username = fullMatch.slice(1);
 
   return {
     fullMatch,
@@ -76,23 +74,19 @@ export function replaceMentionAtCursor(
     return { newText: text, newCursorPosition: cursorPosition };
   }
 
-  const before = text.substring(0, mention.startIndex);
-  const after = text.substring(mention.endIndex);
+  const before = text.slice(0, mention.startIndex);
+  const after = text.slice(mention.endIndex);
   const newText = `${before}@${newUsername} ${after}`;
   const newCursorPosition = mention.startIndex + newUsername.length + 2;
 
   return { newText, newCursorPosition };
 }
 
-function hasEveryoneMention(text: string): boolean {
-  return EVERYONE_MENTION_REGEX.test(text);
-}
-
 export function getEmojiAtCursor(
   text: string,
   cursorPosition: number,
 ): EmojiMatch | null {
-  const beforeCursor = text.substring(0, cursorPosition);
+  const beforeCursor = text.slice(0, cursorPosition);
   const lastColon = beforeCursor.lastIndexOf(":");
 
   if (lastColon === -1) {
@@ -100,35 +94,59 @@ export function getEmojiAtCursor(
   }
 
   // Don't trigger if colon is preceded by another colon (already :emoji:)
-  const beforeColon = text.substring(0, lastColon);
+  const beforeColon = text.slice(0, lastColon);
   const prevColon = beforeColon.lastIndexOf(":");
-  if (prevColon !== -1 && !/\s/.test(text.substring(prevColon + 1, lastColon))) {
+  if (prevColon !== -1 && !/\s/.test(text.slice(prevColon + 1, lastColon))) {
     return null;
   }
 
   // Only trigger if colon is at word boundary
-  if (lastColon > 0 && !/\s/.test(text[lastColon - 1])) {
+  if (lastColon > 0 && !/\s/.test(text.at(lastColon - 1) ?? "")) {
     return null;
   }
 
-  const textAfterColon = text.substring(lastColon + 1, cursorPosition);
+  const textAfterColon = text.slice(lastColon + 1, cursorPosition);
   if (/\s/.test(textAfterColon)) {
     return null;
   }
 
-  const textAfterCursor = text.substring(cursorPosition);
+  const textAfterCursor = text.slice(cursorPosition);
   const nextWhitespace = textAfterCursor.search(/[\s:]/);
   const endIndex =
     nextWhitespace === -1 ? text.length : cursorPosition + nextWhitespace;
 
-  const fullMatch = text.substring(lastColon, endIndex);
-  const shortcode = fullMatch.substring(1);
+  const fullMatch = text.slice(lastColon, endIndex);
+  const shortcode = fullMatch.slice(1);
 
   return {
     fullMatch,
     shortcode,
     startIndex: lastColon,
     endIndex,
+  };
+}
+
+export type PollCommandResult =
+  | { ok: true; command: string; error: null }
+  | { ok: false; command: null; error: string };
+
+export function buildPollCommand(
+  question: string,
+  options: string[],
+): PollCommandResult {
+  if ([question, ...options].some((s) => /["|]/.test(s))) {
+    return {
+      ok: false,
+      command: null,
+      error:
+        "Poll question and options cannot contain double quotes or pipe characters.",
+    };
+  }
+  const quotedOptions = options.map((o) => `"${o}"`).join(" | ");
+  return {
+    ok: true,
+    command: `/poll "${question}" | ${quotedOptions}`,
+    error: null,
   };
 }
 
@@ -143,8 +161,8 @@ export function replaceEmojiAtCursor(
     return { newText: text, newCursorPosition: cursorPosition };
   }
 
-  const before = text.substring(0, emoji.startIndex);
-  const after = text.substring(emoji.endIndex);
+  const before = text.slice(0, emoji.startIndex);
+  const after = text.slice(emoji.endIndex);
   const newText = `${before}:${emojiShortcode}: ${after}`;
   const newCursorPosition = emoji.startIndex + emojiShortcode.length + 3;
 

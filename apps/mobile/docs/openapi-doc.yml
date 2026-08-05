@@ -59,6 +59,11 @@ components:
             in: cookie
             name: a_session_*
             description: Appwrite session cookie used by authenticated first-party clients
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+            description: Appwrite session secret (or JWT) sent as a Bearer token in the Authorization header. The mobile client also mirrors it in the x-firepit-token header so Appwrite Cloud edge rewrites still pass it through.
 
     schemas:
         Error:
@@ -763,6 +768,7 @@ paths:
             summary: Get the current authenticated user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Current user
@@ -796,6 +802,7 @@ paths:
             summary: List servers available to the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Server list
@@ -821,6 +828,7 @@ paths:
                   server payload; failures are represented by the non-2xx responses.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -877,6 +885,7 @@ paths:
             summary: Join a server directly
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -907,6 +916,7 @@ paths:
             summary: Resolve the server configured as default for new user signup
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Current signup default server (admin only). Returns minimal server metadata for admin selectors.
@@ -942,6 +952,7 @@ paths:
                 - instance admin required when updating defaultOnSignup
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1010,6 +1021,7 @@ paths:
             summary: Get server statistics
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1030,6 +1042,7 @@ paths:
             summary: List server members
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1069,6 +1082,7 @@ paths:
             summary: Get effective permissions for the current user in a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1089,6 +1103,7 @@ paths:
             summary: Mute the current user at the server level
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1109,6 +1124,7 @@ paths:
             summary: Execute a moderation action against a server member
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1142,6 +1158,7 @@ paths:
             summary: Get audit logs for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1169,6 +1186,7 @@ paths:
             summary: Export server audit logs
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -1199,6 +1217,7 @@ paths:
             summary: List channels for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: query
@@ -1236,6 +1255,7 @@ paths:
             summary: Create a channel for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1266,6 +1286,7 @@ paths:
             summary: Update channel category assignment, order, or name
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: path
@@ -1323,6 +1344,7 @@ paths:
             summary: Delete a channel
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: path
@@ -1351,6 +1373,7 @@ paths:
             summary: List channel categories for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: query
@@ -1380,6 +1403,7 @@ paths:
             summary: Create a new channel category
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1413,6 +1437,7 @@ paths:
             summary: Rename or reorder a channel category
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1448,6 +1473,7 @@ paths:
             summary: Delete a channel category and return linked channels to uncategorized
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: categoryId
                   in: query
@@ -1475,6 +1501,7 @@ paths:
             description: Returns pinned channel messages with their existing message identifiers so clients can reopen the channel context and jump to the pinned message.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: path
@@ -1500,6 +1527,7 @@ paths:
             summary: Mute a channel for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: path
@@ -1520,6 +1548,7 @@ paths:
             summary: Create a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1564,6 +1593,7 @@ paths:
             summary: Edit a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1591,6 +1621,7 @@ paths:
             summary: Delete a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: query
@@ -1611,6 +1642,7 @@ paths:
             summary: Add or update a reaction on a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1642,6 +1674,7 @@ paths:
             summary: Remove a reaction from a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1668,6 +1701,7 @@ paths:
             description: Returns the thread rooted at the specified channel message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1691,6 +1725,7 @@ paths:
             summary: Create a thread reply for a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1727,6 +1762,7 @@ paths:
             summary: Pin a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1745,6 +1781,7 @@ paths:
             summary: Unpin a channel message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1765,6 +1802,7 @@ paths:
             summary: List conversations, fetch or create a conversation, or list direct messages
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: type
                   in: query
@@ -1797,6 +1835,7 @@ paths:
             summary: Create a direct message or conversation
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1817,6 +1856,7 @@ paths:
             summary: Edit a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -1842,6 +1882,7 @@ paths:
             summary: Delete a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: query
@@ -1862,6 +1903,7 @@ paths:
             summary: Add or update a reaction on a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1893,6 +1935,7 @@ paths:
             summary: Remove a reaction from a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1919,6 +1962,7 @@ paths:
             description: Returns the thread rooted at the specified direct message. Clients use the parent message identifier for consistent thread-entry and message-highlight navigation.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1938,6 +1982,7 @@ paths:
             summary: Create a thread reply for a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1972,6 +2017,7 @@ paths:
             summary: Pin a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -1990,6 +2036,7 @@ paths:
             summary: Unpin a direct message
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: messageId
                   in: path
@@ -2011,6 +2058,7 @@ paths:
             description: Returns pinned direct messages with the conversation context needed for consistent jump-to-message flows in DM chat.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: conversationId
                   in: path
@@ -2032,6 +2080,7 @@ paths:
             summary: Mute a conversation for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: conversationId
                   in: path
@@ -2052,6 +2101,7 @@ paths:
             summary: Create or update typing state for a channel or conversation
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2078,6 +2128,7 @@ paths:
             summary: Clear typing state for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: query
@@ -2099,6 +2150,9 @@ paths:
         get:
             tags: [Presence]
             summary: Get status for one user or a batch query string list
+            security:
+                - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: userId
                   in: query
@@ -2121,6 +2175,9 @@ paths:
         post:
             tags: [Presence]
             summary: Create or update status
+            security:
+                - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2137,6 +2194,9 @@ paths:
         patch:
             tags: [Presence]
             summary: Partially update status
+            security:
+                - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2154,6 +2214,9 @@ paths:
         delete:
             tags: [Presence]
             summary: Remove a status record
+            security:
+                - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: userId
                   in: query
@@ -2171,6 +2234,9 @@ paths:
         post:
             tags: [Presence]
             summary: Fetch status for multiple users
+            security:
+                - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2198,6 +2264,7 @@ paths:
             summary: Upload an image for message use
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2262,6 +2329,7 @@ paths:
             summary: Delete an uploaded image
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: fileId
                   in: query
@@ -2311,6 +2379,7 @@ paths:
             summary: Upload a generic attachment
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2395,6 +2464,7 @@ paths:
             summary: Delete an uploaded attachment
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: fileId
                   in: query
@@ -2444,6 +2514,7 @@ paths:
             summary: List custom emojis available to the client
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Custom emoji list
@@ -2464,6 +2535,7 @@ paths:
             summary: Upload a custom emoji asset
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2489,6 +2561,7 @@ paths:
             summary: Delete a custom emoji asset
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: fileId
                   in: query
@@ -2530,6 +2603,7 @@ paths:
             description: Returns message matches with enough channel or conversation context for the client to deep-link into the correct chat surface and highlight the selected message.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: query
                   in: query
@@ -2555,6 +2629,7 @@ paths:
             summary: Search users for discovery or mention autocomplete
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: query
                   in: query
@@ -2580,6 +2655,7 @@ paths:
             summary: Get profile data by user identifier
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: userId
                   in: path
@@ -2600,6 +2676,7 @@ paths:
             summary: Get enriched profile data by user identifier
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: userId
                   in: path
@@ -2620,6 +2697,7 @@ paths:
             summary: Resolve multiple profiles in a single request
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2647,6 +2725,7 @@ paths:
             summary: List memberships for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Membership list
@@ -2662,6 +2741,7 @@ paths:
             summary: Get notification settings for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             responses:
                 "200":
                     description: Notification settings
@@ -2674,6 +2754,7 @@ paths:
             summary: Update notification settings for the current user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2694,6 +2775,7 @@ paths:
             summary: Get unified unread inbox items and counts
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: kind
                   in: query
@@ -2729,7 +2811,7 @@ paths:
                       enum: [channel, conversation]
             responses:
                 "200":
-                    description: Inbox list response. When both contextId and contextKind are provided, returns the context-scoped variant.
+                    description: Inbox list response. When both contextId and contextKind are provided, items are filtered to that single context; the response shape (contractVersion, counts, items, unreadCount) is the same in both cases.
                     content:
                         application/json:
                             schema:
@@ -2751,6 +2833,7 @@ paths:
             summary: Mark inbox items or contexts as read
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2829,6 +2912,7 @@ paths:
             summary: Get scoped unread digest payload
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: limit
                   in: query
@@ -2871,6 +2955,7 @@ paths:
             summary: Get persisted thread read state for a context
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: contextId
                   in: query
@@ -2907,6 +2992,7 @@ paths:
             summary: Persist thread read state updates for a context
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2939,6 +3025,7 @@ paths:
             summary: List roles for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: query
@@ -2962,6 +3049,7 @@ paths:
             summary: Create a role
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2980,6 +3068,7 @@ paths:
             summary: Update a role
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -2998,6 +3087,7 @@ paths:
             summary: Delete a role
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: roleId
                   in: query
@@ -3022,6 +3112,7 @@ paths:
                 object form with assignments and truncated.
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: query
@@ -3061,6 +3152,7 @@ paths:
             summary: Assign a role to a user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -3079,6 +3171,7 @@ paths:
             summary: Remove a role assignment from a user
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: userId
                   in: query
@@ -3109,6 +3202,7 @@ paths:
             summary: List channel permission overrides
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: channelId
                   in: query
@@ -3132,6 +3226,7 @@ paths:
             summary: Create a channel permission override
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -3150,6 +3245,7 @@ paths:
             summary: Update a channel permission override
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             requestBody:
                 required: true
                 content:
@@ -3168,6 +3264,7 @@ paths:
             summary: Delete a channel permission override
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: overrideId
                   in: query
@@ -3188,6 +3285,7 @@ paths:
             summary: List invites for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -3208,6 +3306,7 @@ paths:
             summary: Create an invite for a server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: serverId
                   in: path
@@ -3272,6 +3371,7 @@ paths:
             summary: Revoke an invite
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: code
                   in: path
@@ -3292,6 +3392,7 @@ paths:
             summary: Redeem an invite and join its server
             security:
                 - sessionCookie: []
+                - bearerAuth: []
             parameters:
                 - name: code
                   in: path

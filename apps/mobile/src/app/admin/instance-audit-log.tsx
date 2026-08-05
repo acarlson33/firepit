@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import { StatusPill } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -20,26 +21,6 @@ import {
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
-
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
-            <ThemedText
-                type="code"
-                themeColor={tone === "neutral" ? "mutedForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
 
 function actionTone(action?: string): "neutral" | "success" | "warning" | "danger" {
     if (!action) return "neutral";
@@ -101,8 +82,12 @@ export default function InstanceAuditLogScreen() {
             );
             setEntries((prev) => [...prev, ...(res.items ?? [])]);
             setNextCursor(res.nextCursor ?? null);
-        } catch {
-            // silently fail on pagination
+        } catch (error) {
+            setLoadError(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to load more entries",
+            );
         } finally {
             setLoadingMore(false);
         }
@@ -334,11 +319,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
     },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
-    },
     listContent: {
         paddingHorizontal: Spacing.three,
         paddingBottom: BottomTabInset + Spacing.four,
@@ -362,12 +342,4 @@ const styles = StyleSheet.create({
         gap: Spacing.two,
     },
     entryBody: { gap: 4 },
-    backdropOrbTop: {
-        position: "absolute",
-        width: 260,
-        height: 260,
-        borderRadius: 260,
-        top: -100,
-        left: -80,
-    },
 });

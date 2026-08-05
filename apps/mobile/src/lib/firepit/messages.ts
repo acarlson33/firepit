@@ -10,7 +10,6 @@ import type {
     Message,
     MessageAttachment,
     MessageListResponse,
-    UserProfile,
     SearchMessagesResponse,
     ThreadMessagesResponse,
     CustomEmoji,
@@ -76,24 +75,6 @@ export async function fetchDirectMessageConversations(
         token,
         query: {
             type: "conversations",
-        },
-    });
-}
-
-async function fetchDirectMessageConversation(
-    baseUrl: string,
-    token: string,
-    userId1: string,
-    userId2: string,
-) {
-    return firepitRequest<DirectMessageConversationResponse>({
-        baseUrl,
-        path: "/api/direct-messages",
-        token,
-        query: {
-            type: "conversation",
-            userId1,
-            userId2,
         },
     });
 }
@@ -280,18 +261,6 @@ export async function unpinChannelMessage(
         baseUrl,
         path: `/api/messages/${encodeURIComponent(messageId)}/pin`,
         method: "DELETE",
-        token,
-    });
-}
-
-async function fetchUserProfile(
-    baseUrl: string,
-    token: string,
-    userId: string,
-) {
-    return firepitRequest<UserProfile>({
-        baseUrl,
-        path: `/api/users/${encodeURIComponent(userId)}/profile`,
         token,
     });
 }
@@ -497,44 +466,6 @@ export async function markInboxContextRead(
     });
 }
 
-async function listThreadReads(
-    baseUrl: string,
-    token: string,
-    contextId: string,
-    contextKind: InboxContextKind,
-) {
-    return firepitRequest<{ reads?: Record<string, string> }>({
-        baseUrl,
-        path: "/api/thread-reads",
-        token,
-        query: {
-            contextId,
-            contextKind,
-        },
-    });
-}
-
-async function persistThreadReads(
-    baseUrl: string,
-    token: string,
-    params: {
-        contextId: string;
-        contextKind: InboxContextKind;
-        reads: Record<string, string>;
-    },
-) {
-    return firepitRequest<{ reads?: Record<string, string> }>({
-        baseUrl,
-        path: "/api/thread-reads",
-        method: "PATCH",
-        token,
-        body: {
-            ...params,
-            contextKind: params.contextKind,
-        },
-    });
-}
-
 export type TimelineMessage = Message & {
     local?: boolean;
     senderId?: string;
@@ -650,14 +581,22 @@ export async function submitReport(
     token: string,
     targetUserId: string,
     justification: string,
-) {
-    return firepitRequest<{ success?: boolean }>({
-        baseUrl,
-        path: "/api/reports",
-        method: "POST",
-        token,
-        body: { targetUserId, justification },
-    });
+): Promise<{ success: true } | { success: false; error: string }> {
+    try {
+        await firepitRequest<{ success?: boolean }>({
+            baseUrl,
+            path: "/api/reports",
+            method: "POST",
+            token,
+            body: { targetUserId, justification },
+        });
+        return { success: true };
+    } catch (err) {
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Failed to submit report",
+        };
+    }
 }
 
 export async function fetchFriendsList(

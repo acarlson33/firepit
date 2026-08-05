@@ -10,6 +10,12 @@ import { useTheme } from "@/hooks/use-theme";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 import { fetchMyServers, type Server } from "@/lib/firepit";
 
+function actionToneToViewType(tone: "primary" | "secondary" | "ghost") {
+    if (tone === "primary") return "primary";
+    if (tone === "secondary") return "secondary";
+    return "muted";
+}
+
 function AdminRow({
     title,
     description,
@@ -39,7 +45,7 @@ function AdminRow({
                 ]}
             >
                 <ThemedView
-                    type={actionTone === "primary" ? "primary" : actionTone === "secondary" ? "secondary" : "muted"}
+                    type={actionToneToViewType(actionTone)}
                     style={styles.actionButtonInner}
                 >
                     <ThemedText
@@ -122,7 +128,7 @@ export default function AdminTabScreen() {
     const serverId = selectedServerId ?? paramServerId;
 
     const loadServers = useCallback(async () => {
-        if (!instanceUrl || !accessToken) return;
+        if (state !== "ready" || !instanceUrl || !accessToken) return;
         setLoadState("loading");
         setLoadError(null);
         try {
@@ -135,7 +141,7 @@ export default function AdminTabScreen() {
                 error instanceof Error ? error.message : "Unable to load servers",
             );
         }
-    }, [accessToken, instanceUrl]);
+    }, [accessToken, instanceUrl, state]);
 
     useEffect(() => {
         void loadServers();

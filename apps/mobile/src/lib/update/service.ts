@@ -2,6 +2,9 @@ import { Platform } from "react-native";
 import {
   type UpdateCheckResult,
   type UpdateSettings,
+  type UpdateFrequency,
+  type UpdateNotificationPreference,
+  type UpdateChannel,
   DEFAULT_UPDATE_SETTINGS,
 } from "@/lib/update/types";
 import { checkForUpdates } from "@/lib/update/checker";
@@ -12,12 +15,38 @@ import {
 
 const STORAGE_KEY = "firepit.update-settings";
 
+const FREQUENCIES: UpdateFrequency[] = [
+  "immediate",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "bimonthly",
+  "security_only",
+  "never",
+];
+const NOTIFY_PREFERENCES: UpdateNotificationPreference[] = [
+  "all",
+  "security_only",
+  "none",
+];
+const CHANNELS: UpdateChannel[] = ["stable", "beta"];
+
 export async function loadUpdateSettings(): Promise<UpdateSettings> {
   const stored = await getJsonValue<UpdateSettings>(STORAGE_KEY);
   if (!stored) return { ...DEFAULT_UPDATE_SETTINGS };
   return {
     ...DEFAULT_UPDATE_SETTINGS,
     ...stored,
+    // Reject unknown enum values from stale/corrupt storage
+    frequency: FREQUENCIES.includes(stored.frequency)
+      ? stored.frequency
+      : DEFAULT_UPDATE_SETTINGS.frequency,
+    notifyPreference: NOTIFY_PREFERENCES.includes(stored.notifyPreference)
+      ? stored.notifyPreference
+      : DEFAULT_UPDATE_SETTINGS.notifyPreference,
+    channel: CHANNELS.includes(stored.channel)
+      ? stored.channel
+      : DEFAULT_UPDATE_SETTINGS.channel,
     setupComplete: stored.setupComplete ?? false,
   };
 }

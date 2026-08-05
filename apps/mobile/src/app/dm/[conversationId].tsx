@@ -14,7 +14,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
 import { ArrowLeft, Lock } from "lucide-react-native";
 import { Avatar } from "@/components/ui/avatar";
 
@@ -55,6 +54,7 @@ import { extractAppwriteConfig } from "@/lib/firepit/bootstrap";
 import { getAvatarUrl, getEmojiUrl, getMessageAvatarFileId } from "@/lib/avatars";
 import { getProfilesBatch } from "@/lib/profile-cache";
 import { getLastReadAt, setLastReadAt, countUnread } from "@/lib/channel-read-state";
+import { buildPollCommand } from "@/lib/mention-utils";
 import {
     decryptMessageTextIfNeeded,
     encryptDmText,
@@ -81,22 +81,6 @@ function hasId<T extends { $id?: string }>(item: T): item is T & { $id: string }
   return typeof item.$id === "string" && item.$id.length > 0;
 }
 
-function formatTime(value?: string) {
-  if (!value) {
-    return "now";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "now";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function conversationTitle(conversation: DirectMessageConversation | null) {
   if (!conversation) {
     return "Conversation";
@@ -115,30 +99,6 @@ function conversationTitle(conversation: DirectMessageConversation | null) {
     conversation.otherUser?.userId ||
     "Direct message"
   );
-}
-
-function conversationSubtitle(conversation: DirectMessageConversation | null) {
-  if (!conversation) {
-    return "Loading conversation details";
-  }
-
-  if (conversation.readOnly) {
-    return conversation.readOnlyReason ?? "Replies are disabled";
-  }
-
-  if (conversation.otherUser?.pronouns) {
-    return conversation.otherUser.pronouns;
-  }
-
-  if (conversation.isGroup) {
-    return conversation.participantCount
-      ? `${conversation.participantCount} participants`
-      : "Group conversation";
-  }
-
-  return conversation.participants?.length
-    ? `${conversation.participants.length} participants`
-    : "Direct conversation";
 }
 
 type DmUserStatus = { status: string };
@@ -187,7 +147,9 @@ export default function DirectMessageScreen() {
   const [composerAttachments, setComposerAttachments] =
     useState<ComposerAttachmentState>({ image: null, files: [] });
   const composerAttachmentsRef = useRef(composerAttachments);
-  composerAttachmentsRef.current = composerAttachments;
+  useEffect(() => {
+    composerAttachmentsRef.current = composerAttachments;
+  }, [composerAttachments]);
   const [pinnedMessages, setPinnedMessages] = useState<DirectMessage[]>([]);
   const [showPinnedPanel, setShowPinnedPanel] = useState(false);
   const [pinsLoading, setPinsLoading] = useState(false);
@@ -245,7 +207,6 @@ export default function DirectMessageScreen() {
   );
 
   const title = conversationTitle(conversation);
-  const subtitle = conversationSubtitle(conversation);
   const messageIndex = useMemo(() => {
     if (!normalizedMessageId) {
       return -1;
@@ -301,9 +262,9 @@ export default function DirectMessageScreen() {
       if (cancelledRef.current) return;
       if (cached.length > 0) {
         const knownThreadReplyIds = await getKnownThreadReplyIds();
-        const filtered = cached.filter((m: any) => {
+        const filtered = cached.filter((m) => {
           if (m.threadId) return false;
-          if (knownThreadReplyIds.has(m.$id)) return false;
+          if (m.$id && knownThreadReplyIds.has(m.$id)) return false;
           return true;
         });
         setMessages(filtered);
@@ -319,18 +280,18 @@ export default function DirectMessageScreen() {
       );
       if (cancelledRef.current) return;
 
-      const peerKey = (response as any).dmEncryptionPeerPublicKey as string | undefined;
+      const peerKey = response.dmEncryptionPeerPublicKey;
       if (peerKey) {
         setPeerPublicKeyBase64(peerKey);
       }
-      const isMutualEnabled = Boolean((response as any).dmEncryptionMutualEnabled);
+      const isMutualEnabled = Boolean(response.dmEncryptionMutualEnabled);
       setDmEncryptionEnabled(isMutualEnabled);
 
       const appwriteCfg = extractAppwriteConfig(instance ?? {});
 
-      const processMessages = async (msgs: any[], peerPublicKey?: string) => {
-        const raw = msgs.map((msg: any) => {
-          const avatarFileId = getMessageAvatarFileId(msg as any);
+      const processMessages = async (msgs: DirectMessage[], peerPublicKey?: string) => {
+        const raw: DirectMessage[] = msgs.map((msg) => {
+          const avatarFileId = getMessageAvatarFileId(msg);
           const avatarUrl = getAvatarUrl(avatarFileId, appwriteCfg);
           if (typeof msg.reactions === "string") {
             try {
@@ -339,7 +300,7 @@ export default function DirectMessageScreen() {
               msg.reactions = [];
             }
           }
-          return { ...msg, authorAvatarUrl: avatarUrl } as any;
+          return { ...msg, authorAvatarUrl: avatarUrl };
         });
 
         const senderIds = new Set<string>();
@@ -350,17 +311,18 @@ export default function DirectMessageScreen() {
           const profileMap = await getProfilesBatch(instanceUrl, accessToken, Array.from(senderIds));
           for (const msg of raw) {
             if (msg.senderId && profileMap[msg.senderId]) {
-              (msg as any).senderDisplayName = profileMap[msg.senderId].displayName;
+              msg.senderDisplayName = profileMap[msg.senderId].displayName;
               if (profileMap[msg.senderId].avatarUrl) {
-                (msg as any).authorAvatarUrl = profileMap[msg.senderId].avatarUrl;
+                msg.authorAvatarUrl = profileMap[msg.senderId].avatarUrl;
               }
             }
           }
         }
 
-        if (currentUserId && (peerPublicKey || raw.some((m: any) => m.isEncrypted))) {
+        let display: DirectMessage[] = raw;
+        if (currentUserId && (peerPublicKey || raw.some((m) => m.isEncrypted))) {
           const decrypted = await Promise.all(
-            raw.map((msg: any) =>
+            raw.map((msg) =>
               decryptMessageTextIfNeeded({
                 message: msg,
                 peerPublicKeyBase64: peerPublicKey,
@@ -368,13 +330,14 @@ export default function DirectMessageScreen() {
               }),
             ),
           );
-          for (let i = 0; i < raw.length; i++) {
-            raw[i].text = decrypted[i].text;
-          }
+          display = raw.map((msg, i) => ({
+            ...msg,
+            text: decrypted[i].text,
+          }));
         }
 
         const knownThreadReplyIds = await getKnownThreadReplyIds();
-        const filtered = raw.filter((m: any) => {
+        const filtered: DirectMessage[] = display.filter((m) => {
           if (!hasId(m)) return false;
           if (m.threadId) {
             void markAsThreadReply(m.$id);
@@ -448,7 +411,7 @@ export default function DirectMessageScreen() {
         const profileMap = await getProfilesBatch(instanceUrl, accessToken, Array.from(senderIds));
         for (const m of msgs) {
           if (m.senderId && profileMap[m.senderId]) {
-            (m as any).senderDisplayName = profileMap[m.senderId].displayName;
+            m.senderDisplayName = profileMap[m.senderId].displayName;
           }
         }
       }
@@ -550,7 +513,6 @@ export default function DirectMessageScreen() {
     ) {
       return;
     }
-    sendingRef.current = true;
 
     const text = draft.trim();
     const ca = composerAttachmentsRef.current;
@@ -559,6 +521,7 @@ export default function DirectMessageScreen() {
     if (!text && !hasImage && !hasFiles) {
       return;
     }
+    sendingRef.current = true;
 
     // Handle edit mode
     if (editingMessage) {
@@ -659,7 +622,7 @@ export default function DirectMessageScreen() {
       if (sentMsg?.$id) {
         setMessages((prev) => {
           if (prev.some((m) => m.$id === sentMsg.$id)) return prev;
-          return [...prev, sentMsg as DirectMessage];
+          return [...prev, sentMsg];
         });
       }
 
@@ -688,27 +651,29 @@ export default function DirectMessageScreen() {
 
   const handlePollSubmit = useCallback(
     (question: string, options: string[]) => {
-      const quotedOptions = options.map((o) => `"${o}"`).join(" | ");
-      const command = `/poll "${question}" | ${quotedOptions}`;
-      setDraft(command);
-      // Force send after state update
-      setTimeout(() => {
-        (async () => {
-          if (!instanceUrl || !accessToken || !normalizedConversationId) return;
-          try {
-            await sendDirectMessage(instanceUrl, accessToken, {
-              conversationId: normalizedConversationId,
-              senderId: currentUserId ?? undefined,
-              receiverId: otherUserId ?? undefined,
-              text: command,
-            });
-            setDraft("");
-            await loadMessages(true);
-          } catch (e) {
-            console.error("[dm:pollSendDM] Failed to send poll DM message", e);
-          }
-        })();
-      }, 0);
+      const built = buildPollCommand(question, options);
+      if (!built.ok) {
+        setSendError(built.error);
+        return;
+      }
+      const command = built.command;
+      (async () => {
+        if (!instanceUrl || !accessToken || !normalizedConversationId) return;
+        try {
+          await sendDirectMessage(instanceUrl, accessToken, {
+            conversationId: normalizedConversationId,
+            senderId: currentUserId ?? undefined,
+            receiverId: otherUserId ?? undefined,
+            text: command,
+          });
+          setDraft("");
+          await loadMessages(true);
+        } catch (e) {
+          setSendError(
+            e instanceof Error ? e.message : "Failed to send poll",
+          );
+        }
+      })();
     },
     [instanceUrl, accessToken, normalizedConversationId, currentUserId, otherUserId, loadMessages],
   );
@@ -762,22 +727,14 @@ export default function DirectMessageScreen() {
           authorId={item.senderId ?? ""}
           authorName={senderLabel}
           authorAvatarUrl={avatarUrl}
-          authorAvatarFrameUrl={
-            typeof (item as any).avatarFrameUrl === "string"
-              ? (item as any).avatarFrameUrl
-              : undefined
-          }
-          authorPronouns={
-            typeof (item as any).pronouns === "string"
-              ? (item as any).pronouns
-              : undefined
-          }
+          authorAvatarFrameUrl={item.avatarFrameUrl}
+          authorPronouns={item.pronouns}
           text={item.text ?? ""}
           createdAt={item.$createdAt}
           editedAt={item.editedAt}
           removedAt={item.removedAt}
           removedBy={item.removedBy}
-          isPinned={(item as any).isPinned === true}
+          isPinned={item.isPinned === true}
           isMine={isMine}
           currentUserId={currentUserId ?? undefined}
           canManageMessages={true}
@@ -796,13 +753,14 @@ export default function DirectMessageScreen() {
           reactions={reactions}
           attachments={item.attachments}
           mentions={item.mentions}
-          poll={(item as any).poll ?? null}
+          poll={item.poll ?? null}
           customEmojis={mappedEmojis}
           onToggleReaction={async (emoji, isAdding) => {
+            if (!instanceUrl || !accessToken) return;
             try {
               const msgId = item.$id;
               if (!msgId) return;
-              await toggleReaction(String(msgId), emoji, isAdding, true, instanceUrl!, accessToken!);
+              await toggleReaction(String(msgId), emoji, isAdding, true, instanceUrl, accessToken);
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.$id !== msgId || !Array.isArray(m.reactions)) return m;
@@ -823,17 +781,18 @@ export default function DirectMessageScreen() {
             }
           }}
           onTogglePin={async () => {
+            if (!instanceUrl || !accessToken) return;
             try {
               const msgId = item.$id;
               if (!msgId) return;
-              if ((item as any).isPinned) {
-                await unpinDirectMessage(instanceUrl!, accessToken!, msgId);
+              if (item.isPinned) {
+                await unpinDirectMessage(instanceUrl, accessToken, msgId);
               } else {
-                await pinDirectMessage(instanceUrl!, accessToken!, msgId);
+                await pinDirectMessage(instanceUrl, accessToken, msgId);
               }
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.$id === msgId ? { ...m, isPinned: !(m as any).isPinned } as DirectMessage : m,
+                  m.$id === msgId ? { ...m, isPinned: !m.isPinned } : m,
                 ),
               );
             } catch (e) {
@@ -866,7 +825,7 @@ export default function DirectMessageScreen() {
           onDelete={async () => {
             try {
               const msgId = item.$id;
-              if (!msgId || !accessToken) return;
+              if (!msgId || !instanceUrl || !accessToken) return;
               const res = await fetch(
                 `${instanceUrl}/api/direct-messages/${msgId}`,
                 {
@@ -884,10 +843,10 @@ export default function DirectMessageScreen() {
           }}
           onOpenThread={() => {
               const msgId = item.$id;
-              if (!msgId || !accessToken) return;
+              if (!msgId || !instanceUrl || !accessToken) return;
             setActiveThreadMessageId(msgId);
           }}
-          threadReplyCount={(item as any).threadMessageCount ?? null}
+          threadReplyCount={item.threadMessageCount ?? null}
         />
       );
     },
@@ -1215,7 +1174,8 @@ export default function DirectMessageScreen() {
                 disabled={!signedIn || conversation?.readOnly}
                 onMentionsChange={() => {}}
                 canMentionEveryone={false}
-                instanceUrl={instanceUrl!}
+                instanceUrl={instanceUrl ?? ""}
+                accessToken={accessToken ?? ""}
                 attachments={composerAttachments}
                 onAttachmentsChange={setComposerAttachments}
                 onSend={() => void sendMessage()}
@@ -1244,9 +1204,9 @@ export default function DirectMessageScreen() {
             setEmojiPickerVisible(false);
           }}
           onSelect={async (emoji) => {
-            if (emojiPickerMsgId) {
+            if (emojiPickerMsgId && instanceUrl && accessToken) {
               try {
-                await toggleReaction(emojiPickerMsgId, emoji, true, true, instanceUrl!, accessToken!);
+                await toggleReaction(emojiPickerMsgId, emoji, true, true, instanceUrl, accessToken);
                 // Refresh messages to show the new reaction
                 if (loadMessages) await loadMessages(true);
               } catch (e) {
@@ -1266,41 +1226,43 @@ export default function DirectMessageScreen() {
           />
         )}
 
-        <GifStickerPicker
-          instanceUrl={instanceUrl!}
-          accessToken={accessToken!}
-          visible={gifStickerPickerVisible}
-          onClose={() => setGifStickerPickerVisible(false)}
-          onSelectAttachment={(attachment) => {
-            const fileUrl = attachment.fileUrl;
-            if (!fileUrl) return;
-            setComposerAttachments((prev) => ({
-              ...prev,
-              files: [
-                ...prev.files,
-                {
-                  uri: fileUrl,
-                  name: attachment.fileName,
-                  mimeType: attachment.fileType,
-                  size: attachment.fileSize,
-                  remoteAttachment: {
-                    fileId: attachment.fileId,
-                    fileName: attachment.fileName,
-                    fileSize: attachment.fileSize,
-                    fileType: attachment.fileType,
-                    fileUrl,
-                    thumbnailUrl: attachment.thumbnailUrl,
-                    previewUrl: attachment.previewUrl,
-                    mediaKind: attachment.mediaKind,
-                    source: attachment.source,
-                    packId: attachment.packId,
-                    itemId: attachment.itemId,
+        {gifStickerPickerVisible && instanceUrl && accessToken ? (
+          <GifStickerPicker
+            instanceUrl={instanceUrl}
+            accessToken={accessToken}
+            visible={gifStickerPickerVisible}
+            onClose={() => setGifStickerPickerVisible(false)}
+            onSelectAttachment={(attachment) => {
+              const fileUrl = attachment.fileUrl;
+              if (!fileUrl) return;
+              setComposerAttachments((prev) => ({
+                ...prev,
+                files: [
+                  ...prev.files,
+                  {
+                    uri: fileUrl,
+                    name: attachment.fileName,
+                    mimeType: attachment.fileType,
+                    size: attachment.fileSize,
+                    remoteAttachment: {
+                      fileId: attachment.fileId,
+                      fileName: attachment.fileName,
+                      fileSize: attachment.fileSize,
+                      fileType: attachment.fileType,
+                      fileUrl,
+                      thumbnailUrl: attachment.thumbnailUrl,
+                      previewUrl: attachment.previewUrl,
+                      mediaKind: attachment.mediaKind,
+                      source: attachment.source,
+                      packId: attachment.packId,
+                      itemId: attachment.itemId,
+                    },
                   },
-                },
-              ],
-            }));
-          }}
-        />
+                ],
+              }));
+            }}
+          />
+        ) : null}
 
         <Modal
           visible={showPinnedPanel}
@@ -1338,7 +1300,7 @@ export default function DirectMessageScreen() {
                     >
                       <EmojiRenderer text={msg.text ?? ""} customEmojis={mappedEmojis} />
                       <ThemedText type="code" themeColor="mutedForeground" style={{ fontSize: 11, marginTop: 4 }}>
-                        {(msg as any).senderDisplayName ?? msg.senderId ?? "Unknown"}
+                        {msg.senderDisplayName ?? msg.senderId ?? "Unknown"}
                       </ThemedText>
                     </View>
                   ))}

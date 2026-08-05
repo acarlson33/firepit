@@ -190,7 +190,16 @@ export default function LoginScreen() {
                                 label="Change instance"
                                 variant="secondary"
                                 onPress={async () => {
-                                    await resetConnection();
+                                    try {
+                                        await resetConnection();
+                                    } catch (resetError) {
+                                        setAuthError(
+                                            resetError instanceof Error
+                                                ? resetError.message
+                                                : "Unable to change instance",
+                                        );
+                                        return;
+                                    }
                                     router.replace("/");
                                 }}
                             />

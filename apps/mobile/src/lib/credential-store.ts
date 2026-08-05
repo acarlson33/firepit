@@ -55,26 +55,39 @@ export type StoredCredentials = {
 };
 
 /**
- * Tests whether the native AES-GCM crypto module is available.
- * Caches the result to avoid repeated native calls.
+ * Decision (2026-08): the password is intentionally kept on device, encrypted
+ * at rest with XChaCha20-Poly1305 in expo-secure-store, to enable silent
+ * re-auth. The server exposes no refresh-token endpoint: /api/auth/session
+ * creates a fresh Appwrite email/password session whose secret expires with
+ * the session, and that secret is identical to the bearer token already stored
+ * at rest. Replacing the password with the session secret would therefore
+ * remove the only silent re-auth path (after expiry the user would degrade to
+ * manual sign-in) while gaining nothing over the current at-rest secret.
+ * Tradeoff: a device compromise exposes the account password, not just a
+ * session. If a refresh-token/device-code flow is ever added server-side,
+ * store that instead and drop this field.
+ */
+
+/**
+ * Tests whether the native crypto module is available.
+ * Caches the positive result; a failed probe is NOT cached so a transient
+ * native failure can recover on the next attempt.
  */
 async function isCryptoAvailable(): Promise<boolean> {
   const stored = await getSecureItem(CRYPTO_AVAILABLE_KEY);
   if (stored === "true") return true;
-  if (stored === "false") return false;
 
   try {
     await generateKey();
     await setSecureItem(CRYPTO_AVAILABLE_KEY, "true");
     return true;
   } catch {
-    await setSecureItem(CRYPTO_AVAILABLE_KEY, "false");
     return false;
   }
 }
 
 /**
- * Encrypts and stores credentials using AES-256-GCM via the native sodium module.
+ * Encrypts and stores credentials using XChaCha20-Poly1305 via the native sodium module.
  * Throws if encryption is unavailable — plaintext fallback is intentionally avoided.
  */
 export async function storeCredentials(creds: StoredCredentials): Promise<void> {
@@ -97,18 +110,25 @@ export async function storeCredentials(creds: StoredCredentials): Promise<void> 
 
 /**
  * Loads and decrypts stored credentials.
- * Returns null if no credentials are stored or decryption fails.
+ * Returns null if no credentials are stored or the data is corrupt.
+ * Stored credentials are only cleared on decrypt/parse corruption — a
+ * transient secure-store read failure or temporarily unavailable crypto
+ * must not wipe credentials that could be decrypted on the next attempt.
  */
 export async function loadCredentials(): Promise<StoredCredentials | null> {
+  let stored: string | null = null;
   try {
-    const stored = await getSecureItem(CREDS_STORAGE_KEY);
-    if (!stored) return null;
+    stored = await getSecureItem(CREDS_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (!stored) return null;
 
-    if (!(await isCryptoAvailable())) {
-      throw new Error(
-        "Native encryption module unavailable — cannot decrypt stored credentials",
-      );
-    }
+  if (!(await isCryptoAvailable())) {
+    return null;
+  }
+
+  try {
     const key = await getOrCreateEncryptionKey();
     const plaintext = await decrypt(key, stored);
     return JSON.parse(plaintext) as StoredCredentials;

@@ -1,15 +1,15 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
-import { Spacing } from "@/constants/theme";
-import type { ThemeColor } from "@/constants/theme";
+import { Spacing, type ThemeColor } from "@/constants/theme";
+import { captureError } from "@/lib/sentry";
 
 interface ErrorBoundaryFallbackProps {
   error: Error;
   resetError: () => void;
-  palette: Record<string, string>;
+  palette: Record<ThemeColor, string>;
 }
 
 export function ErrorBoundaryFallback({
@@ -17,9 +17,14 @@ export function ErrorBoundaryFallback({
   resetError,
   palette,
 }: ErrorBoundaryFallbackProps) {
+  const [reported, setReported] = useState(false);
   const handleReport = useCallback(() => {
-    // Future: open a feedback form or email composer
-  }, []);
+    captureError(error, {
+      source: "error-boundary-fallback",
+      userReported: true,
+    });
+    setReported(true);
+  }, [error]);
 
   return (
     <SafeAreaView
@@ -56,7 +61,7 @@ export function ErrorBoundaryFallback({
           <ThemedText
             style={[styles.linkText, { color: palette.primary }]}
           >
-            Report this issue
+            {reported ? "Reported — thank you" : "Report this issue"}
           </ThemedText>
         </Pressable>
       </View>

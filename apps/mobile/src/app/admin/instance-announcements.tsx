@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import { StatusPill } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, Spacing } from "@/constants/theme";
@@ -18,8 +19,6 @@ import {
     createAnnouncement,
     listAnnouncements,
     type Announcement,
-    type AnnouncementCreateMode,
-    type AnnouncementPriority,
     type AnnouncementStatus,
 } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
@@ -27,31 +26,6 @@ import { useFirepitBootstrap } from "@/providers/firepit-provider";
 type LoadState = "idle" | "loading" | "ready" | "error";
 type Mode = "draft" | "schedule" | "send_now";
 type Priority = "normal" | "urgent";
-
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView
-            type={tone === "neutral" ? "muted" : tone}
-            style={styles.pill}
-        >
-            <ThemedText
-                type="code"
-                themeColor={
-                    tone === "neutral" ? "mutedForeground" : "foreground"
-                }
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
 
 function statusTone(
     status?: AnnouncementStatus,
@@ -537,7 +511,9 @@ export default function InstanceAnnouncementsScreen() {
                         windowSize={5}
                         removeClippedSubviews
                         onEndReached={
-                            nextCursor ? () => void loadAnnouncements(nextCursor) : undefined
+                            nextCursor && !loadingMore
+                                ? () => void loadAnnouncements(nextCursor)
+                                : undefined
                         }
                         onEndReachedThreshold={0.5}
                         ListHeaderComponent={listHeader}
@@ -705,11 +681,6 @@ const styles = StyleSheet.create({
         gap: Spacing.three,
         paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
-    },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
     },
     listContent: {
         paddingHorizontal: Spacing.three,

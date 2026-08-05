@@ -4,12 +4,16 @@ import { Image } from "expo-image";
 import { useTheme } from "@/hooks/use-theme";
 import { cacheManager } from "@/lib/cache/CacheManager";
 
-type AvatarProps = {
-  uri?: string | null;
-  size?: number;
-  initials?: string;
-  frameUrl?: string;
-  frameInset?: number; // percentage 0-35
+type CacheState = {
+  requestedUri: string;
+  cachedUri: string | null;
+  loadFailed: boolean;
+};
+
+const EMPTY_CACHE_STATE: CacheState = {
+  requestedUri: "",
+  cachedUri: null,
+  loadFailed: false,
 };
 
 export function Avatar({
@@ -18,30 +22,44 @@ export function Avatar({
   initials,
   frameUrl,
   frameInset = 12,
-}: AvatarProps) {
+}: {
+  uri?: string | null;
+  size?: number;
+  initials?: string;
+  frameUrl?: string;
+  frameInset?: number; // percentage 0-35
+}) {
   const colors = useTheme();
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [cachedUri, setCachedUri] = useState<string | null>(null);
+  const [cacheState, setCacheState] = useState<CacheState>(EMPTY_CACHE_STATE);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!uri || uri.trim() === "") {
-      setCachedUri(null);
+    const requested = uri?.trim() ?? "";
+    setCacheState({ requestedUri: requested, cachedUri: null, loadFailed: false });
+
+    if (!requested || !cacheManager.shouldCacheProfilePictures()) {
       return;
     }
-    if (!cacheManager.shouldCacheProfilePictures()) return;
+
+    let cancelled = false;
 
     (async () => {
       try {
-        const cached = await cacheManager.getCachedImage(uri);
+        const cached = await cacheManager.getCachedImage(requested);
+        if (cancelled) return;
         if (cached) {
-          if (!cancelled) setCachedUri(cached);
+          setCacheState((prev) =>
+            prev.requestedUri === requested ? { ...prev, cachedUri: cached } : prev,
+          );
           return;
         }
-        const downloaded = await cacheManager.cacheImage(uri);
-        if (!cancelled) setCachedUri(downloaded);
+        const downloaded = await cacheManager.cacheImage(requested);
+        if (!cancelled) {
+          setCacheState((prev) =>
+            prev.requestedUri === requested ? { ...prev, cachedUri: downloaded } : prev,
+          );
+        }
       } catch {
-        if (!cancelled) setCachedUri(null);
+        // Leave cachedUri null for the fresh URI; nothing to reset here.
       }
     })();
 
@@ -50,10 +68,15 @@ export function Avatar({
     };
   }, [uri]);
 
-  const sourceUri = cachedUri || uri;
+  const requestedUri = uri?.trim() ?? "";
+  const stateMatches = cacheState.requestedUri === requestedUri;
+  const sourceUri =
+    stateMatches && cacheState.cachedUri ? cacheState.cachedUri : uri;
+  const loadFailed = stateMatches && cacheState.loadFailed;
 
   const hasFrame = Boolean(frameUrl && frameUrl.length > 0);
-  const insetPx = hasFrame ? Math.round((size * Math.min(frameInset, 35)) / 100) : 0;
+  const frameInsetClamped = Math.max(0, Math.min(frameInset, 35));
+  const insetPx = hasFrame ? Math.round((size * frameInsetClamped) / 100) : 0;
   const innerSize = Math.max(0, size - insetPx * 2);
 
   const getInitials = (): string => {
@@ -74,7 +97,11 @@ export function Avatar({
         style={{ width: innerSize, height: innerSize }}
         contentFit="cover"
         transition={150}
-        onError={() => setLoadFailed(true)}
+        onError={() =>
+          setCacheState((prev) =>
+            prev.requestedUri === requestedUri ? { ...prev, loadFailed: true } : prev,
+          )
+        }
       />
     ) : (
       <View
@@ -99,12 +126,12 @@ export function Avatar({
       </View>
     );
 
-  if (hasFrame) {
+  if (frameUrl) {
     return (
       <View style={{ width: size, height: size }}>
         {/* Frame image — fills entire container */}
         <Image
-          source={{ uri: frameUrl!}}
+          source={{ uri: frameUrl }}
           style={StyleSheet.absoluteFill}
           contentFit="fill"
         />

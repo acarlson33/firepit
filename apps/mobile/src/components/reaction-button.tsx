@@ -28,6 +28,9 @@ export function ReactionButton({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${reaction.emoji} reaction, ${reaction.count}`}
+      accessibilityState={{ selected: Boolean(reaction.reactedByMe) }}
       onPress={() => onToggle(reaction.emoji, !reaction.reactedByMe)}
       style={{
         padding: 6,

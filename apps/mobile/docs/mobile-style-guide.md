@@ -1,4 +1,4 @@
-[text](../../firepit/docs/MOBILE_COLOR_PALETTE.md)# Firepit Mobile Style Guide
+# Firepit Mobile Style Guide
 
 This guide is for the model that will implement the separate mobile app. The goal is to stay behaviorally aligned with Firepit, not to invent a new product language.
 

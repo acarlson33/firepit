@@ -2,17 +2,14 @@ import { StyleSheet, Text, View } from "react-native";
 import { useTheme } from "@/hooks/use-theme";
 import { Spacing } from "@/constants/theme";
 
-type Props = {
-  names: string[];
-};
-
 function safeName(name: string): string {
-  if (!name) return "Someone";
-  if (name.length > 12 && /^[a-zA-Z0-9]+$/.test(name)) return "Someone";
-  return name;
+  const trimmed = name.trim();
+  if (!trimmed) return "Someone";
+  if (trimmed.length > 12 && /^[a-zA-Z0-9]+$/.test(trimmed)) return "Someone";
+  return trimmed;
 }
 
-export function TypingIndicator({ names }: Props) {
+export function TypingIndicator({ names }: { names: string[] }) {
   const theme = useTheme();
 
   if (names.length === 0) return null;

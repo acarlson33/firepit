@@ -30,22 +30,27 @@ export function CacheSettingsProvider({ children }: { children: React.ReactNode 
   }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(CACHE_STRATEGY_KEY).then((saved) => {
-      if (saved && ["aggressive", "medium", "minimal", "none"].includes(saved)) {
-        const s = saved as CacheStrategy;
-        setStrategyState(s);
-        cacheManager.setStrategy(s);
+    let cancelled = false;
+    (async () => {
+      try {
+        // Load the stored strategy before init so caching honors the
+        // saved preference from the first write.
+        const saved = await AsyncStorage.getItem(CACHE_STRATEGY_KEY);
+        if (cancelled) return;
+        if (saved && ["aggressive", "medium", "minimal", "none"].includes(saved)) {
+          const s = saved as CacheStrategy;
+          setStrategyState(s);
+          cacheManager.setStrategy(s);
+        }
+        await cacheManager.init();
+        if (!cancelled) await refreshCacheSize();
+      } catch {
+        // cache settings are best-effort
       }
-    });
-    cacheManager.init().then(refreshCacheSize);
-
-    // Refresh cache size periodically so the UI stays accurate
-    const interval = setInterval(() => {
-      cacheManager.getCacheSize().then((size) => {
-        setCacheSize(cacheManager.formatSize(size));
-      });
-    }, 10000);
-    return () => clearInterval(interval);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshCacheSize]);
 
   const setStrategy = useCallback(async (newStrategy: CacheStrategy) => {

@@ -75,6 +75,7 @@ export default function HomeScreen() {
     const theme = useTheme();
     const [candidateUrl, setCandidateUrl] = useState(instanceUrl ?? "");
     const [instanceError, setInstanceError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
 
     const needsInstance = !instanceUrl;
     const signedIn = state === "ready" && Boolean(currentUser);
@@ -189,6 +190,7 @@ export default function HomeScreen() {
 
         try {
             setInstanceError(null);
+            setSubmitting(true);
             const nextCompatibility = await bootstrapInstance(normalized);
             if (nextCompatibility?.compatible) {
                 router.replace("/login");
@@ -199,6 +201,8 @@ export default function HomeScreen() {
                     ? bootstrapError.message
                     : "Unable to reach this instance.",
             );
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -264,7 +268,7 @@ export default function HomeScreen() {
 
                                 <FirepitButton
                                     label="Continue to login"
-                                    disabled={!canCheckInstance}
+                                    disabled={!canCheckInstance || submitting}
                                     onPress={handleInstanceSubmit}
                                 />
 

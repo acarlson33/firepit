@@ -7,8 +7,11 @@ export function initSentry(): void {
   if (initialized) return;
   initialized = true;
 
+  const dsn = Constants.expoConfig?.extra?.sentryDsn as string | undefined;
+  if (!dsn) return;
+
   Sentry.init({
-    dsn: "https://74183b0682fef4020487ca90ca072b1f@o4508242166153216.ingest.us.sentry.io/4511684848123904",
+    dsn,
 
     sendDefaultPii: false,
     enableLogs: false,

@@ -79,7 +79,6 @@ export default function SearchScreen() {
                 params: {
                     serverId: result.serverId,
                     channelId: result.channelId,
-                    messageId: result.message.$id,
                 },
             });
             return;
@@ -91,6 +90,13 @@ export default function SearchScreen() {
             );
         }
     }, []);
+
+    const renderItem = useCallback(
+        ({ item }: { item: SearchMessageResult }) => (
+            <SearchResultCard result={item} onPress={() => openResult(item)} />
+        ),
+        [openResult],
+    );
 
     return (
         <AuthRouteGuard>
@@ -162,12 +168,7 @@ export default function SearchScreen() {
                         </SafeAreaView>
                     )
                 }
-                renderItem={useCallback(
-                    ({ item }: { item: SearchMessageResult }) => (
-                        <SearchResultCard result={item} onPress={() => openResult(item)} />
-                    ),
-                    [openResult],
-                )}
+                renderItem={renderItem}
                 windowSize={5}
                 maxToRenderPerBatch={10}
                 initialNumToRender={10}

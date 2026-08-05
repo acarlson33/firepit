@@ -43,10 +43,11 @@ function normalizeParam(value?: string | string[]) {
 export default function DMThreadScreen() {
     const theme = useTheme();
     const { conversationId, messageId } = useLocalSearchParams<RouteParams>();
-    const { instanceUrl, accessToken, state, customEmojis } = useFirepitBootstrap();
+    const { instanceUrl, accessToken, state, customEmojis, currentUser } = useFirepitBootstrap();
     const normalizedConversationId = normalizeParam(conversationId);
     const normalizedMessageId = normalizeParam(messageId);
     const signedIn = Boolean(state === "ready" && instanceUrl && accessToken);
+    const currentUserId = currentUser?.$id ?? currentUser?.userId ?? null;
 
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [error, setError] = useState<string | null>(null);
@@ -62,13 +63,13 @@ export default function DMThreadScreen() {
         setLoadState("loading");
         setError(null);
 
-        // Show cached replies instantly
-        const cachedReplies = await getCachedThreadReplies(normalizedMessageId);
-        if (cachedReplies.length > 0) {
-            setReplies(cachedReplies);
-        }
-
         try {
+            // Show cached replies instantly
+            const cachedReplies = await getCachedThreadReplies(normalizedMessageId);
+            if (cachedReplies.length > 0) {
+                setReplies(cachedReplies);
+            }
+
             const response = await fetchDMThreadMessages(
                 instanceUrl,
                 accessToken,
@@ -205,13 +206,16 @@ export default function DMThreadScreen() {
                         }
                         text={item.text ?? ""}
                         createdAt={item.$createdAt}
-                        isMine={false}
+                        isMine={Boolean(
+                            currentUserId &&
+                                (item.senderId ?? item.userId) === currentUserId,
+                        )}
                         customEmojis={mappedEmojis}
                     />
                 </View>
             );
         },
-        [parentMessage, customEmojis, instanceUrl],
+        [parentMessage, customEmojis, instanceUrl, currentUserId],
     );
 
     return (
@@ -225,8 +229,8 @@ export default function DMThreadScreen() {
                     {/* Header */}
                     <View style={[styles.header, { borderBottomColor: theme.border }]}>
                         <View style={styles.headerLeft}>
-                            <ThemedText
-                                type="smallBold"
+                            <Pressable
+                                accessibilityRole="button"
                                 onPress={() => router.back()}
                                 style={styles.backButton}
                             >
@@ -234,7 +238,7 @@ export default function DMThreadScreen() {
                   <ArrowLeft size={18} color={theme.foreground} />
                   <ThemedText type="smallBold">Back</ThemedText>
                 </View>
-                            </ThemedText>
+                            </Pressable>
                         </View>
                         <View style={styles.headerCenter}>
                             <ThemedText type="smallBold" numberOfLines={1}>

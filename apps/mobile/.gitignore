@@ -53,3 +53,5 @@ build-tmp/**
 credentials/
 
 reports/
+
+scripts/build-counter.json

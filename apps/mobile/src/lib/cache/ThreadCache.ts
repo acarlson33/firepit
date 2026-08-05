@@ -1,34 +1,48 @@
 import * as SQLite from "expo-sqlite";
 import { cacheManager } from "./CacheManager";
+import type { TimelineMessage } from "@/lib/firepit";
 
-let db: SQLite.SQLiteDatabase | null = null;
+let dbPromise: Promise<SQLite.SQLiteDatabase | null> | null = null;
 let dbError = false;
 
-async function getDb(): Promise<SQLite.SQLiteDatabase | null> {
-  if (dbError) return null;
-  if (!db) {
-    try {
-      db = await SQLite.openDatabaseAsync("firepit_thread_cache.db");
-      await db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        CREATE TABLE IF NOT EXISTS thread_replies (
-          id TEXT PRIMARY KEY,
-          parent_id TEXT NOT NULL,
-          data TEXT NOT NULL,
-          cached_at INTEGER NOT NULL
+function getDb(): Promise<SQLite.SQLiteDatabase | null> {
+  if (dbError) return Promise.resolve(null);
+  if (!dbPromise) {
+    dbPromise = (async () => {
+      try {
+        const database = await SQLite.openDatabaseAsync("firepit_thread_cache.db");
+        await database.execAsync(`
+          PRAGMA journal_mode = WAL;
+          CREATE TABLE IF NOT EXISTS thread_replies (
+            id TEXT PRIMARY KEY,
+            parent_id TEXT NOT NULL,
+            data TEXT NOT NULL,
+            cached_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_thread_replies_parent ON thread_replies(parent_id);
+          CREATE TABLE IF NOT EXISTS known_thread_replies (
+            message_id TEXT PRIMARY KEY
+          );
+        `);
+        const legacy = await database.getAllAsync<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'known_thread_parents'",
         );
-        CREATE INDEX IF NOT EXISTS idx_thread_replies_parent ON thread_replies(parent_id);
-        CREATE TABLE IF NOT EXISTS known_thread_parents (
-          message_id TEXT PRIMARY KEY
-        );
-      `);
-    } catch {
-      dbError = true;
-      console.warn("[ThreadCache] SQLite unavailable, thread caching disabled");
-      return null;
-    }
+        if (legacy.length > 0) {
+          await database.execAsync(`
+            INSERT OR IGNORE INTO known_thread_replies (message_id)
+              SELECT message_id FROM known_thread_parents;
+            DROP TABLE known_thread_parents;
+          `);
+        }
+        return database;
+      } catch {
+        dbError = true;
+        console.warn("[ThreadCache] SQLite unavailable, thread caching disabled");
+        return null;
+      }
+    })();
   }
-  return db;
+  return dbPromise;
 }
 
 /**
@@ -36,11 +50,11 @@ async function getDb(): Promise<SQLite.SQLiteDatabase | null> {
  */
 export async function getKnownThreadReplyIds(): Promise<Set<string>> {
   if (!cacheManager.shouldCacheMessages()) return new Set();
-  const db = await getDb();
-  if (!db) return new Set();
+  const database = await getDb();
+  if (!database) return new Set();
   try {
-    const rows = await db.getAllAsync<{ message_id: string }>(
-      "SELECT message_id FROM known_thread_parents",
+    const rows = await database.getAllAsync<{ message_id: string }>(
+      "SELECT message_id FROM known_thread_replies",
     );
     return new Set(rows.map((r) => r.message_id));
   } catch {
@@ -53,11 +67,11 @@ export async function getKnownThreadReplyIds(): Promise<Set<string>> {
  */
 export async function markAsThreadReply(messageId: string): Promise<void> {
   if (!cacheManager.shouldCacheMessages()) return;
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
   try {
-    await db.runAsync(
-      "INSERT OR IGNORE INTO known_thread_parents (message_id) VALUES (?)",
+    await database.runAsync(
+      "INSERT OR IGNORE INTO known_thread_replies (message_id) VALUES (?)",
       messageId,
     );
   } catch {
@@ -70,19 +84,21 @@ export async function markAsThreadReply(messageId: string): Promise<void> {
  */
 export async function cacheThreadReplies(
   parentId: string,
-  replies: any[],
+  replies: TimelineMessage[],
 ): Promise<void> {
   if (!cacheManager.shouldCacheMessages()) return;
   if (replies.length === 0) return;
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
   const now = Date.now();
   try {
-    await db.withTransactionAsync(async () => {
+    await database.withTransactionAsync(async () => {
       for (const reply of replies) {
-        const id = reply.$id ?? reply.id;
-        if (!id) continue;
-        await db.runAsync(
+        const rawId =
+          reply.$id ?? (reply as TimelineMessage & { id?: string }).id;
+        if (!rawId) continue;
+        const id: string = rawId;
+        await database.runAsync(
           "INSERT OR REPLACE INTO thread_replies (id, parent_id, data, cached_at) VALUES (?, ?, ?, ?)",
           id,
           parentId,
@@ -90,8 +106,8 @@ export async function cacheThreadReplies(
           now,
         );
         // Also mark each reply as a known thread reply for filtering
-        await db.runAsync(
-          "INSERT OR IGNORE INTO known_thread_parents (message_id) VALUES (?)",
+        await database.runAsync(
+          "INSERT OR IGNORE INTO known_thread_replies (message_id) VALUES (?)",
           id,
         );
       }
@@ -106,16 +122,16 @@ export async function cacheThreadReplies(
  */
 export async function getCachedThreadReplies(
   parentId: string,
-): Promise<any[]> {
+): Promise<TimelineMessage[]> {
   if (!cacheManager.shouldCacheMessages()) return [];
-  const db = await getDb();
-  if (!db) return [];
+  const database = await getDb();
+  if (!database) return [];
   try {
-    const rows = await db.getAllAsync<{ data: string }>(
+    const rows = await database.getAllAsync<{ data: string }>(
       "SELECT data FROM thread_replies WHERE parent_id = ? ORDER BY cached_at ASC",
       parentId,
     );
-    return rows.map((row) => JSON.parse(row.data));
+    return rows.map((row) => JSON.parse(row.data) as TimelineMessage);
   } catch {
     return [];
   }
@@ -125,11 +141,11 @@ export async function getCachedThreadReplies(
  * Clear all thread cache.
  */
 export async function clearThreadCache(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
   try {
-    await db.runAsync("DELETE FROM thread_replies");
-    await db.runAsync("DELETE FROM known_thread_parents");
+    await database.runAsync("DELETE FROM thread_replies");
+    await database.runAsync("DELETE FROM known_thread_replies");
   } catch {
     // ignore
   }

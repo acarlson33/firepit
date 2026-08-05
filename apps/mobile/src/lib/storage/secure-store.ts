@@ -101,6 +101,10 @@ function jsonKey(key: string) {
 export async function setJsonValue(key: string, value: unknown) {
   const storedKey = jsonKey(key);
   const serialized = JSON.stringify(value);
+  if (serialized === undefined) {
+    await deleteJsonValue(key);
+    return;
+  }
   memoryCache.set(storedKey, serialized);
 
   if (Platform.OS === "web") {
@@ -193,14 +197,15 @@ export async function clearJsonStorage() {
 
   // On native, we can't enumerate SecureStore keys, so delete known ones
   if (Platform.OS !== "web") {
-    for (const k of keysToDelete) {
-      try {
-        if (await isNativeSecureStoreAvailable()) {
+    if (!(await isNativeSecureStoreAvailable())) return;
+    await Promise.all(
+      keysToDelete.map(async (k) => {
+        try {
           await SecureStore.deleteItemAsync(k);
+        } catch {
+          // Best effort.
         }
-      } catch {
-        // Best effort.
-      }
-    }
+      }),
+    );
   }
 }

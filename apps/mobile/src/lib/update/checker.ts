@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system";
-import { getContentUriAsync } from "expo-file-system/legacy";
+import { getContentUriAsync, readAsStringAsync } from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Notifications from "expo-notifications";
 
@@ -27,6 +27,12 @@ function isFrequencyDue(
   const { frequency, lastCheckedAt, lastSkippedAt, lastSkippedVersion } =
     settings;
 
+  // If we already skipped this exact version, don't re-prompt for it —
+  // this applies to every frequency, including immediate/security_only.
+  if (lastSkippedVersion === release.tagName && lastSkippedAt) {
+    return false;
+  }
+
   // Immediate: always update on every check
   if (frequency === "immediate") return true;
 
@@ -43,11 +49,6 @@ function isFrequencyDue(
 
   const msInterval = days * 24 * 60 * 60 * 1000;
   const now = Date.now();
-
-  // If we already skipped this exact version, don't re-prompt for it
-  if (lastSkippedVersion === release.tagName && lastSkippedAt) {
-    return false;
-  }
 
   // If we've never checked, or enough time has passed since last check
   if (!lastCheckedAt || now - lastCheckedAt >= msInterval) {
@@ -153,6 +154,7 @@ export async function checkForUpdates(
  */
 export async function downloadApk(
   apkUrl: string,
+  tagName: string,
   onProgress?: (progress: number) => void,
 ): Promise<string> {
   // Ensure URL is absolute — GitHub API sometimes returns relative URLs
@@ -160,11 +162,15 @@ export async function downloadApk(
     ? apkUrl
     : `https://github.com${apkUrl.startsWith("/") ? "" : "/"}${apkUrl}`;
 
-  const fileName = absoluteUrl.split("/").pop() ?? "firepit-update.apk";
-  const destFile = new FileSystem.File(FileSystem.Paths.cache, fileName);
+  const safeTag = tagName.replace(/[^a-zA-Z0-9._-]/g, "_") || "latest";
+  const destFile = new FileSystem.File(
+    FileSystem.Paths.cache,
+    `firepit-update-${safeTag}.apk`,
+  );
 
   // Use the modern File.downloadFileAsync API
   // On Android, this streams directly to the destination file
+  // (rejects on non-2xx; no file is left behind on failure)
   const downloadedFile = await FileSystem.File.downloadFileAsync(
     absoluteUrl,
     destFile,
@@ -175,6 +181,19 @@ export async function downloadApk(
       idempotent: true,
     },
   );
+
+  // Validate the result is a real APK (zip magic "PK\x03\x04"), not an
+  // HTML error page or truncated download. Reads only the first 4 bytes —
+  // File.slice() would build a Blob from an ArrayBuffer, which React
+  // Native's Blob polyfill rejects.
+  const head = await readAsStringAsync(downloadedFile.uri, {
+    encoding: "base64",
+    position: 0,
+    length: 4,
+  });
+  if (head !== "UEsDBA==") {
+    throw new Error("Downloaded update is not a valid APK file.");
+  }
 
   onProgress?.(1);
   return downloadedFile.uri;

@@ -1,7 +1,7 @@
 import * as SQLite from "expo-sqlite";
 import { cacheManager } from "./CacheManager";
+import type { TimelineMessage } from "@/lib/firepit";
 
-let db: SQLite.SQLiteDatabase | null = null;
 let dbError = false;
 let dbPromise: Promise<SQLite.SQLiteDatabase | null> | null = null;
 
@@ -28,24 +28,25 @@ async function initDb(): Promise<SQLite.SQLiteDatabase | null> {
 
 async function getDb(): Promise<SQLite.SQLiteDatabase | null> {
   if (dbError) return null;
-  if (db) return db;
   if (!dbPromise) dbPromise = initDb();
-  db = await dbPromise;
-  return db;
+  return dbPromise;
 }
+
+type CacheableMessage = { $id?: string };
 
 export async function cacheMessages(
   conversationId: string,
-  messages: any[],
+  messages: CacheableMessage[],
 ): Promise<void> {
   if (!cacheManager.shouldCacheMessages()) return;
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
   const now = Date.now();
   try {
-    await db.withTransactionAsync(async () => {
+    await database.withTransactionAsync(async () => {
       for (const msg of messages) {
-        await db.runAsync(
+        if (!msg.$id) continue;
+        await database.runAsync(
           "INSERT OR REPLACE INTO messages (id, conversation_id, data, cached_at) VALUES (?, ?, ?, ?)",
           msg.$id,
           conversationId,
@@ -54,10 +55,12 @@ export async function cacheMessages(
         );
       }
       // Prune stale entries no longer in the fetched set
-      const ids = messages.map((m: any) => m.$id).filter(Boolean);
+      const ids = messages
+        .map((m) => m.$id)
+        .filter((id): id is string => Boolean(id));
       if (ids.length > 0) {
         const placeholders = ids.map(() => "?").join(",");
-        await db.runAsync(
+        await database.runAsync(
           `DELETE FROM messages WHERE conversation_id = ? AND id NOT IN (${placeholders})`,
           conversationId,
           ...ids,
@@ -71,17 +74,19 @@ export async function cacheMessages(
 
 export async function getCachedMessages(
   conversationId: string,
-): Promise<any[]> {
+): Promise<TimelineMessage[]> {
   if (!cacheManager.shouldCacheMessages()) return [];
-  const db = await getDb();
-  if (!db) return [];
+  const database = await getDb();
+  if (!database) return [];
   try {
-    const rows = await db.getAllAsync(
+    const rows = await database.getAllAsync(
       "SELECT data FROM messages WHERE conversation_id = ?",
       conversationId,
     );
-    const messages = rows.map((row: any) => JSON.parse(row.data));
-    messages.sort((a: any, b: any) => {
+    const messages = rows.map(
+      (row) => JSON.parse((row as { data: string }).data) as TimelineMessage,
+    );
+    messages.sort((a, b) => {
       const ta = a.$createdAt ? new Date(a.$createdAt).getTime() : 0;
       const tb = b.$createdAt ? new Date(b.$createdAt).getTime() : 0;
       return tb - ta;
@@ -93,10 +98,10 @@ export async function getCachedMessages(
 }
 
 export async function clearMessageCache(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
   try {
-    await db.runAsync("DELETE FROM messages");
+    await database.runAsync("DELETE FROM messages");
   } catch {
     // ignore
   }

@@ -6,6 +6,7 @@ import {
   type UpdateChannel,
 } from "./types";
 import type { CpuArch } from "../cpu-arch";
+import { compareVersions, parseVersion } from "./version";
 
 /**
  * Fetch all releases from the GitHub API.
@@ -13,16 +14,29 @@ import type { CpuArch } from "../cpu-arch";
 export async function fetchReleases(
   channel: UpdateChannel = "stable",
 ): Promise<GitHubRelease[]> {
-  const url = GITHUB_RELEASES_URL;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "Firepit/2.0",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const url = `${GITHUB_RELEASES_URL}?per_page=100`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Firepit/2.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error(
+        "GitHub API rate limit reached. Try again later.",
+      );
+    }
     const body = await response.text().catch(() => "");
     throw new Error(
       `GitHub releases fetch failed (${response.status}): ${body}`,
@@ -84,7 +98,13 @@ export async function getLatestReleaseWithApk(
 ): Promise<{ release: GitHubRelease; apk: GitHubReleaseAsset } | null> {
   const releases = await fetchReleases(channel);
 
-  for (const release of releases) {
+  // GitHub returns releases newest-first by creation date; sort by version so
+  // ordering is deterministic regardless of API behavior.
+  const sorted = [...releases].sort((a, b) =>
+    compareVersions(parseVersion(b.tagName), parseVersion(a.tagName)),
+  );
+
+  for (const release of sorted) {
     const apk = findApkAsset(release, arch);
     if (apk) {
       return { release, apk };
@@ -97,29 +117,35 @@ export async function getLatestReleaseWithApk(
 /**
  * Extract a short changelog from the release body.
  * Takes the first ~500 characters, stopping at a double newline boundary.
+ * `truncated` is true when the body was longer than the excerpt.
  */
-export function extractChangelog(body: string, maxLength = 500): string {
-  if (!body) return "No changelog available.";
+export function extractChangelog(
+  body: string,
+  maxLength = 500,
+): { text: string; truncated: boolean } {
+  if (!body) return { text: "No changelog available.", truncated: false };
 
   const cleaned = body
     .replace(/^#{1,3}\s+/gm, "") // strip markdown headings
     .replace(/\r\n/g, "\n")
     .trim();
 
-  if (cleaned.length <= maxLength) return cleaned;
+  if (cleaned.length <= maxLength) {
+    return { text: cleaned, truncated: false };
+  }
 
   // Find the last double-newline before maxLength
   const truncated = cleaned.slice(0, maxLength);
   const lastBreak = truncated.lastIndexOf("\n\n");
   if (lastBreak > maxLength * 0.4) {
-    return truncated.slice(0, lastBreak) + "\n…";
+    return { text: truncated.slice(0, lastBreak) + "\n…", truncated: true };
   }
 
   // Fall back to last single newline
   const lastSingle = truncated.lastIndexOf("\n");
   if (lastSingle > maxLength * 0.5) {
-    return truncated.slice(0, lastSingle) + "\n…";
+    return { text: truncated.slice(0, lastSingle) + "\n…", truncated: true };
   }
 
-  return truncated + "…";
+  return { text: truncated + "…", truncated: true };
 }

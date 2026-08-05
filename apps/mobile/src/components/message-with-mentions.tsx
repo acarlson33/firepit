@@ -13,6 +13,17 @@ type MessageWithMentionsProps = {
 const MARKDOWN_PATTERN =
   /(\*\*|__|\*[^*\n]+\*|_[^_\n]+_|~~|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}(?:[-+*]|\d+\.)\s+|^\s{0,3}>\s+|^\s{0,3}#{1,6}\s+)/;
 
+const CODE_REGEX = /`([^`]+)`/g;
+const LINK_REGEX = /(https?:\/\/[^\s]+)/g;
+const BOLD_REGEX = /\*\*([^*]+)\*\*/g;
+const ITALIC_REGEX = /\*([^*]+)\*/g;
+
+type InlineRule = {
+  regex: RegExp;
+  recurseKey: string;
+  render: (match: RegExpExecArray, key: string) => React.ReactNode;
+};
+
 export function MessageWithMentions({
   text,
   customEmojis = [],
@@ -20,6 +31,53 @@ export function MessageWithMentions({
   const colors = useTheme();
 
   return useMemo(() => {
+    // Render emoji + mention tokens in a plain-text fragment (used by markdown text rule)
+    const renderPlainText = (txt: string, keyBase: string): React.ReactNode[] => {
+      const mentionMatches = parseMentions(txt);
+      if (mentionMatches.length === 0) {
+        return [
+          <EmojiRenderer key={`${keyBase}-e`} text={txt} customEmojis={customEmojis} />,
+        ];
+      }
+      const nodes: React.ReactNode[] = [];
+      let lastIndex = 0;
+      for (const m of mentionMatches) {
+        if (m.startIndex > lastIndex) {
+          nodes.push(
+            <EmojiRenderer
+              key={`${keyBase}-t${lastIndex}`}
+              text={txt.slice(lastIndex, m.startIndex)}
+              customEmojis={customEmojis}
+            />,
+          );
+        }
+        nodes.push(
+          <Text
+            key={`${keyBase}-m${m.startIndex}`}
+            style={{
+              fontWeight: "700",
+              backgroundColor: colors.accent,
+              color: colors.accentForeground,
+              paddingHorizontal: 4,
+            }}
+          >
+            {m.fullMatch}
+          </Text>,
+        );
+        lastIndex = m.endIndex;
+      }
+      if (lastIndex < txt.length) {
+        nodes.push(
+          <EmojiRenderer
+            key={`${keyBase}-t${lastIndex}`}
+            text={txt.slice(lastIndex)}
+            customEmojis={customEmojis}
+          />,
+        );
+      }
+      return nodes;
+    };
+
     // If the text contains block or inline markdown, render with full markdown renderer
     if (MARKDOWN_PATTERN.test(text)) {
       const mdStyles: Record<string, TextStyle> = {
@@ -59,7 +117,14 @@ export function MessageWithMentions({
 
     return (
       <View>
-        <Markdown style={mdStyles}>{text}</Markdown>
+        <Markdown
+          style={mdStyles}
+          rules={{
+            text: (node) => renderPlainText(node.content ?? "", "md"),
+          }}
+        >
+          {text}
+        </Markdown>
       </View>
     );
   }
@@ -67,137 +132,93 @@ export function MessageWithMentions({
   // Enhanced inline markdown renderer (bold, italic, code, links)
   type Renderer = (txt: string, keyBase: string) => React.ReactNode[];
 
+  const inlineRules: InlineRule[] = [
+    {
+      regex: CODE_REGEX,
+      recurseKey: "c",
+      render: (m, key) => (
+        <Text
+          key={key}
+          style={{
+            fontFamily: "monospace",
+            backgroundColor: colors.backgroundElement,
+            paddingHorizontal: 4,
+            fontSize: 13,
+          }}
+        >
+          {m[1]}
+        </Text>
+      ),
+    },
+    {
+      regex: LINK_REGEX,
+      recurseKey: "l",
+      render: (m, key) => (
+        <Text
+          key={key}
+          style={{ color: colors.primary, textDecorationLine: "underline" }}
+          onPress={() => {
+            Linking.openURL(m[0]).catch(() => {
+              // Ignore: URL could not be opened.
+            });
+          }}
+        >
+          {m[0]}
+        </Text>
+      ),
+    },
+    {
+      regex: BOLD_REGEX,
+      recurseKey: "b",
+      render: (m, key) => (
+        <Text key={key} style={{ fontWeight: "700" }}>
+          {m[1]}
+        </Text>
+      ),
+    },
+    {
+      regex: ITALIC_REGEX,
+      recurseKey: "i",
+      render: (m, key) => (
+        <Text key={key} style={{ fontStyle: "italic" }}>
+          {m[1]}
+        </Text>
+      ),
+    },
+  ];
+
   const renderInlineMarkdown: Renderer = (txt, keyBase) => {
-    // Code
-    const codeRegex = /`([^`]+)`/g;
-    if (codeRegex.test(txt)) {
-      codeRegex.lastIndex = 0;
+    for (const rule of inlineRules) {
+      const regex = rule.regex;
+      regex.lastIndex = 0;
+      if (!regex.test(txt)) continue;
+      regex.lastIndex = 0;
+
       const parts: React.ReactNode[] = [];
       let last = 0;
       let i = 0;
       let m: RegExpExecArray | null;
-      while ((m = codeRegex.exec(txt)) !== null) {
+      while ((m = regex.exec(txt)) !== null) {
         if (m.index > last) {
           parts.push(
-            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-c${i}-a`),
+            ...renderInlineMarkdown(
+              txt.slice(last, m.index),
+              `${keyBase}-${rule.recurseKey}${i}-a`,
+            ),
           );
         }
-        parts.push(
-          <Text
-            key={`${keyBase}-code-${i}`}
-            style={{
-              fontFamily: "monospace",
-              backgroundColor: colors.backgroundElement,
-              paddingHorizontal: 4,
-              fontSize: 13,
-            }}
-          >
-            {m[1]}
-          </Text>,
-        );
+        parts.push(rule.render(m, `${keyBase}-${rule.recurseKey}-${i}`));
         last = m.index + m[0].length;
         i++;
       }
-      if (last < txt.length)
+      if (last < txt.length) {
         parts.push(
-          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-c${i}-b`),
+          ...renderInlineMarkdown(
+            txt.slice(last),
+            `${keyBase}-${rule.recurseKey}${i}-b`,
+          ),
         );
-      return parts;
-    }
-
-    // Links
-    const linkRegex = /(https?:\/\/[^\s]+)/g;
-    if (linkRegex.test(txt)) {
-      linkRegex.lastIndex = 0;
-      const parts: React.ReactNode[] = [];
-      let last = 0;
-      let i = 0;
-      while (true) {
-        const m = linkRegex.exec(txt);
-        if (!m) break;
-        if (m.index > last) {
-          parts.push(
-            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-l${i}-a`),
-          );
-        }
-        parts.push(
-          <Text
-            key={`${keyBase}-link-${i}`}
-            style={{ color: colors.primary, textDecorationLine: "underline" }}
-            onPress={() => {
-              Linking.openURL(m[0]).catch(() => {
-                // Ignore: URL could not be opened.
-              });
-            }}
-          >
-            {m[0]}
-          </Text>,
-        );
-        last = m.index + m[0].length;
-        i++;
       }
-      if (last < txt.length)
-        parts.push(
-          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-l${i}-b`),
-        );
-      return parts;
-    }
-
-    // Bold
-    const boldRegex = /\*\*([^*]+)\*\*/g;
-    if (boldRegex.test(txt)) {
-      boldRegex.lastIndex = 0;
-      const parts: React.ReactNode[] = [];
-      let last = 0;
-      let i = 0;
-      let m: RegExpExecArray | null;
-      while ((m = boldRegex.exec(txt)) !== null) {
-        if (m.index > last) {
-          parts.push(
-            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-b${i}-a`),
-          );
-        }
-        parts.push(
-          <Text key={`${keyBase}-bold-${i}`} style={{ fontWeight: "700" }}>
-            {m[1]}
-          </Text>,
-        );
-        last = m.index + m[0].length;
-        i++;
-      }
-      if (last < txt.length)
-        parts.push(
-          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-b${i}-b`),
-        );
-      return parts;
-    }
-
-    // Italic
-    const italicRegex = /\*([^*]+)\*/g;
-    if (italicRegex.test(txt)) {
-      italicRegex.lastIndex = 0;
-      const parts: React.ReactNode[] = [];
-      let last = 0;
-      let i = 0;
-      let m: RegExpExecArray | null;
-      while ((m = italicRegex.exec(txt)) !== null) {
-        if (m.index > last) {
-          parts.push(
-            ...renderInlineMarkdown(txt.slice(last, m.index), `${keyBase}-i${i}-a`),
-          );
-        }
-        parts.push(
-          <Text key={`${keyBase}-italic-${i}`} style={{ fontStyle: "italic" }}>
-            {m[1]}
-          </Text>,
-        );
-        last = m.index + m[0].length;
-        i++;
-      }
-      if (last < txt.length)
-        parts.push(
-          ...renderInlineMarkdown(txt.slice(last), `${keyBase}-i${i}-b`),
-        );
       return parts;
     }
 
@@ -206,7 +227,7 @@ export function MessageWithMentions({
   };
 
   // Split mentions and render tokens
-  const parts: Array<{ text: string; isMention?: boolean }> = [];
+  const parts: Array<{ text: string; isMention?: boolean; offset: number }> = [];
   const matches = parseMentions(text);
   if (matches.length === 0) {
     return (
@@ -221,13 +242,13 @@ export function MessageWithMentions({
   let lastIndex = 0;
   for (const m of matches) {
     if (m.startIndex > lastIndex) {
-      parts.push({ text: text.slice(lastIndex, m.startIndex) });
+      parts.push({ text: text.slice(lastIndex, m.startIndex), offset: lastIndex });
     }
-    parts.push({ text: m.fullMatch, isMention: true });
+    parts.push({ text: m.fullMatch, isMention: true, offset: m.startIndex });
     lastIndex = m.endIndex;
   }
   if (lastIndex < text.length) {
-    parts.push({ text: text.slice(lastIndex) });
+    parts.push({ text: text.slice(lastIndex), offset: lastIndex });
   }
 
   return (
@@ -235,7 +256,7 @@ export function MessageWithMentions({
       {parts.map((p, i) =>
         p.isMention ? (
           <Text
-            key={i}
+            key={`${p.offset}-${p.text}`}
             style={{
               fontWeight: "700",
               backgroundColor: colors.accent,

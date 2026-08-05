@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useTheme } from "@/hooks/use-theme";
 
 export function ImageViewer({ url, visible, onClose }: { url?: string | null; visible: boolean; onClose: () => void }) {
   const colors = useTheme();
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setFailed(false);
   }, [url]);
 
   return (
@@ -21,7 +23,14 @@ export function ImageViewer({ url, visible, onClose }: { url?: string | null; vi
               source={{ uri: url }}
               style={{ width: "90%", height: "70%" }}
               contentFit="contain"
-              onLoad={() => setLoading(false)}
+              onLoad={() => {
+                setLoading(false);
+                setFailed(false);
+              }}
+              onError={() => {
+                setLoading(false);
+                setFailed(true);
+              }}
               cachePolicy="memory-disk"
             />
             {loading ? (
@@ -30,6 +39,11 @@ export function ImageViewer({ url, visible, onClose }: { url?: string | null; vi
                 color={colors.foreground}
                 size="large"
               />
+            ) : null}
+            {failed ? (
+              <Text style={{ position: "absolute", color: colors.textSecondary }}>
+                Failed to load image
+              </Text>
             ) : null}
           </>
         ) : null}

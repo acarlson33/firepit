@@ -1,7 +1,6 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Image,
     Modal,
     Pressable,
     ScrollView,
@@ -9,6 +8,7 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
 import { ThemedText } from "@/components/themed-text";
@@ -22,6 +22,13 @@ import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type StatusTone = "neutral" | "success" | "warning" | "danger";
 
+function statusToneFor(state: string): StatusTone {
+    if (state === "ready") return "success";
+    if (state === "needs-auth") return "warning";
+    if (state === "incompatible") return "danger";
+    return "neutral";
+}
+
 function ActionChip({
     label,
     onPress,
@@ -33,35 +40,34 @@ function ActionChip({
 }) {
     const theme = useTheme();
 
+    const toneStyles: Record<
+        "primary" | "secondary" | "ghost",
+        { backgroundColor: string; borderColor: string }
+    > = {
+        primary: { backgroundColor: theme.primary, borderColor: theme.primary },
+        secondary: { backgroundColor: theme.secondary, borderColor: theme.border },
+        ghost: { backgroundColor: "transparent", borderColor: "transparent" },
+    };
+    const labelColor: Record<"primary" | "secondary" | "ghost", "primaryForeground" | "foreground"> = {
+        primary: "primaryForeground",
+        secondary: "foreground",
+        ghost: "foreground",
+    };
+
     return (
         <Pressable
             accessibilityRole="button"
             onPress={onPress}
             style={({ pressed }) => [
                 styles.actionChip,
-                {
-                    backgroundColor:
-                        tone === "primary"
-                            ? theme.primary
-                            : tone === "secondary"
-                              ? theme.secondary
-                              : "transparent",
-                    borderColor:
-                        tone === "primary"
-                            ? theme.primary
-                            : tone === "secondary"
-                              ? theme.border
-                              : "transparent",
-                },
+                toneStyles[tone],
                 pressed && styles.actionChipPressed,
             ]}
         >
             <ThemedText
                 type="smallBold"
                 style={styles.actionChipLabel}
-                themeColor={
-                    tone === "primary" ? "primaryForeground" : "foreground"
-                }
+                themeColor={labelColor[tone]}
             >
                 {label}
             </ThemedText>
@@ -116,14 +122,7 @@ function useProfileSummary() {
         return state;
     }, [accessToken, instanceUrl, state]);
 
-    const statusTone: StatusTone =
-        state === "ready"
-            ? "success"
-            : state === "needs-auth"
-              ? "warning"
-              : state === "incompatible"
-                ? "danger"
-                : "neutral";
+    const statusTone: StatusTone = statusToneFor(state);
 
     return {
         currentUser,
@@ -290,51 +289,13 @@ function useJoinedServers() {
 
 export default function HomeTabScreen() {
     const {
-        state,
-        instanceUrl,
         compatibility,
         version,
-        accessToken,
-        currentUser,
         featureFlags,
     } = useFirepitBootstrap();
     const theme = useTheme();
     const { servers, loadState, loadError, refresh } = useJoinedServers();
-
-    const username = useMemo(() => {
-        return (
-            currentUser?.displayName ??
-            currentUser?.userName ??
-            currentUser?.name ??
-            currentUser?.email ??
-            currentUser?.$id ??
-            "You"
-        );
-    }, [currentUser]);
-
-    const signedIn = state === "ready" && Boolean(currentUser && accessToken);
-
-    const statusLabel = useMemo(() => {
-        if (signedIn) {
-            return "online";
-        }
-        if (state === "needs-auth") {
-            return "needs login";
-        }
-        if (state === "incompatible") {
-            return "blocked";
-        }
-        return state;
-    }, [signedIn, state]);
-
-    const statusTone: StatusTone =
-        state === "ready"
-            ? "success"
-            : state === "needs-auth"
-              ? "warning"
-              : state === "incompatible"
-                ? "danger"
-                : "neutral";
+    const { username, statusLabel, statusTone } = useProfileSummary();
 
     return (
         <AuthRouteGuard>

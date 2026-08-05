@@ -83,13 +83,13 @@ export default function ThreadScreen() {
         setLoadState("loading");
         setError(null);
 
-        // Show cached replies instantly
-        const cachedReplies = await getCachedThreadReplies(normalizedMessageId);
-        if (cachedReplies.length > 0) {
-            setReplies(cachedReplies);
-        }
-
         try {
+            // Show cached replies instantly
+            const cachedReplies = await getCachedThreadReplies(normalizedMessageId);
+            if (cachedReplies.length > 0) {
+                setReplies(cachedReplies);
+            }
+
             const response = await fetchChannelThreadMessages(
                 instanceUrl,
                 accessToken,

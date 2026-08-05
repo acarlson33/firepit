@@ -1,8 +1,9 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ActionButton } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -11,53 +12,6 @@ import { fetchInvitePreview, joinInvite } from "@/lib/firepit";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
-
-function ActionButton({
-    label,
-    onPress,
-    disabled,
-    tone = "primary",
-}: {
-    label: string;
-    onPress: () => void;
-    disabled?: boolean;
-    tone?: "primary" | "secondary" | "ghost";
-}) {
-    const theme = useTheme();
-
-    return (
-        <Pressable
-            accessibilityRole="button"
-            disabled={disabled}
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.actionButton,
-                {
-                    backgroundColor:
-                        tone === "primary"
-                            ? theme.primary
-                            : tone === "secondary"
-                              ? theme.secondary
-                              : theme.muted,
-                    borderColor:
-                        tone === "primary" ? theme.primary : theme.border,
-                },
-                pressed && !disabled && styles.actionButtonPressed,
-                disabled && styles.actionButtonDisabled,
-            ]}
-        >
-            <ThemedText
-                type="smallBold"
-                style={styles.actionButtonLabel}
-                themeColor={
-                    tone === "primary" ? "primaryForeground" : "foreground"
-                }
-            >
-                {label}
-            </ThemedText>
-        </Pressable>
-    );
-}
 
 export default function InviteScreen() {
     const { inviteCode } = useLocalSearchParams<{ inviteCode?: string }>();
@@ -77,23 +31,30 @@ export default function InviteScreen() {
     const [serverName, setServerName] = useState<string | null>(null);
     const [joining, setJoining] = useState(false);
 
-    const normalizedInviteCode = Array.isArray(inviteCode) ? inviteCode[0] : inviteCode;
+    const normalizedInviteCode = Array.isArray(inviteCode)
+        ? inviteCode.at(0)
+        : inviteCode;
     const signedIn = state === "ready" && Boolean(accessToken && currentUser);
+
+    const loadTokenRef = useRef(0);
 
     const loadInvite = useCallback(async () => {
         if (!instanceUrl || !normalizedInviteCode) {
             return;
         }
 
+        const token = ++loadTokenRef.current;
         setLoadState("loading");
         setError(null);
 
         try {
             const response = await fetchInvitePreview(instanceUrl, normalizedInviteCode);
+            if (loadTokenRef.current !== token) return;
             setInvite(response.invite ?? null);
             setServerName(response.server?.name ?? null);
             setLoadState("ready");
         } catch (inviteError) {
+            if (loadTokenRef.current !== token) return;
             setInvite(null);
             setServerName(null);
             setLoadState("error");
@@ -322,27 +283,6 @@ const styles = StyleSheet.create({
     metaText: {
         fontSize: 13,
         lineHeight: 18,
-    },
-    actionButton: {
-        minHeight: 44,
-        borderRadius: 999,
-        alignItems: "center",
-        justifyContent: "center",
-        paddingHorizontal: Spacing.four,
-        borderWidth: 1,
-        shadowColor: "#d9792b",
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 5 },
-    },
-    actionButtonPressed: {
-        opacity: 0.85,
-    },
-    actionButtonDisabled: {
-        opacity: 0.5,
-    },
-    actionButtonLabel: {
-        fontSize: 14,
     },
     backdropOrbTop: {
         position: "absolute",

@@ -19,12 +19,15 @@ export function ThemedView({
 }: ThemedViewProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
-  const backgroundColor =
-    type !== undefined
-      ? theme[type]
-      : scheme === "dark"
-      ? darkColor ?? lightColor ?? theme.background
-      : lightColor ?? darkColor ?? theme.background;
+
+  let backgroundColor: string;
+  if (type !== undefined) {
+    backgroundColor = theme[type];
+  } else if (scheme === "dark") {
+    backgroundColor = darkColor ?? theme.background;
+  } else {
+    backgroundColor = lightColor ?? theme.background;
+  }
 
   return <View style={[{ backgroundColor }, style]} {...otherProps} />;
 }

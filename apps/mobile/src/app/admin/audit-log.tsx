@@ -10,6 +10,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import {
+    ActionButton,
+    StatusPill,
+} from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -22,63 +26,12 @@ import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
-            <ThemedText
-                type="code"
-                themeColor={tone === "neutral" ? "mutedForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
-
-function ActionButton({
-    label,
-    onPress,
-    tone = "primary",
-}: {
-    label: string;
-    onPress: () => void;
-    tone?: "primary" | "secondary" | "ghost";
-}) {
-    const theme = useTheme();
-    return (
-        <Pressable
-            accessibilityRole="button"
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.actionButton,
-                {
-                    backgroundColor:
-                        tone === "primary"
-                            ? theme.primary
-                            : tone === "secondary"
-                              ? theme.secondary
-                              : theme.muted,
-                    borderColor: theme.border,
-                },
-                pressed && { opacity: 0.85 },
-            ]}
-        >
-            <ThemedText
-                type="smallBold"
-                themeColor={tone === "primary" ? "primaryForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </Pressable>
-    );
-}
+const LOAD_STATE_TONES: Record<LoadState, "success" | "warning" | "danger"> = {
+    idle: "warning",
+    loading: "warning",
+    ready: "success",
+    error: "danger",
+};
 
 function actionTone(action?: string): "neutral" | "success" | "warning" | "danger" {
     if (!action) return "neutral";
@@ -122,6 +75,7 @@ export default function AuditLogScreen() {
             setEntries(res.items ?? []);
             setLoadState("ready");
         } catch (error) {
+            setEntries([]);
             setLoadState("error");
             setLoadError(
                 error instanceof Error
@@ -198,13 +152,7 @@ export default function AuditLogScreen() {
                                             ? `${entries.length} entries`
                                             : "loading"
                                     }
-                                    tone={
-                                        loadState === "ready"
-                                            ? "success"
-                                            : loadState === "error"
-                                              ? "danger"
-                                              : "warning"
-                                    }
+                                    tone={LOAD_STATE_TONES[loadState]}
                                 />
                             </View>
                         </ThemedView>
@@ -388,16 +336,6 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         gap: Spacing.three,
-        paddingHorizontal: Spacing.three,
-        paddingVertical: Spacing.two,
-    },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
-    },
-    actionButton: {
-        borderRadius: 999,
         paddingHorizontal: Spacing.three,
         paddingVertical: Spacing.two,
     },

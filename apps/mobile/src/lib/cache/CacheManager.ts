@@ -46,13 +46,23 @@ const STRATEGY_CONFIG: Record<
 class CacheManager {
   private strategy: CacheStrategy = "medium";
   private initialized = false;
+  private initPromise: Promise<void> | null = null;
 
   async init(force = false): Promise<void> {
     if (this.initialized && !force) return;
-    await FileSystem.makeDirectoryAsync(IMAGES_DIR, { intermediates: true });
-    await FileSystem.makeDirectoryAsync(EMOJIS_DIR, { intermediates: true });
-    await FileSystem.makeDirectoryAsync(MESSAGES_DIR, { intermediates: true });
-    this.initialized = true;
+    if (!force && this.initPromise) return this.initPromise;
+    const run = async () => {
+      try {
+        await FileSystem.makeDirectoryAsync(IMAGES_DIR, { intermediates: true });
+        await FileSystem.makeDirectoryAsync(EMOJIS_DIR, { intermediates: true });
+        await FileSystem.makeDirectoryAsync(MESSAGES_DIR, { intermediates: true });
+        this.initialized = true;
+      } finally {
+        this.initPromise = null;
+      }
+    };
+    this.initPromise = run();
+    return this.initPromise;
   }
 
   setStrategy(strategy: CacheStrategy): void {
@@ -108,7 +118,7 @@ class CacheManager {
   async cacheEmoji(name: string, url: string): Promise<string | null> {
     if (!this.shouldCacheEmojis()) return null;
     try {
-      const localUri = `${EMOJIS_DIR}${name}`;
+      const localUri = `${EMOJIS_DIR}${this.sanitizeUrl(name)}`;
       const fileInfo = await FileSystem.getInfoAsync(localUri);
       if (fileInfo.exists) return localUri;
       const result = await FileSystem.downloadAsync(url, localUri);
@@ -121,7 +131,7 @@ class CacheManager {
 
   async getCachedEmoji(name: string): Promise<string | null> {
     try {
-      const localUri = `${EMOJIS_DIR}${name}`;
+      const localUri = `${EMOJIS_DIR}${this.sanitizeUrl(name)}`;
       const fileInfo = await FileSystem.getInfoAsync(localUri);
       if (fileInfo.exists) return localUri;
       return null;
@@ -141,17 +151,17 @@ class CacheManager {
       if (!info.exists) return 0;
       if (!info.isDirectory) return info.size ?? 0;
       const items = await FileSystem.readDirectoryAsync(dir);
-      let total = 0;
-      for (const item of items) {
-        const itemPath = `${dir}${item}`;
-        const itemInfo = await FileSystem.getInfoAsync(itemPath);
-        if (itemInfo.isDirectory) {
-          total += await this.getDirSize(`${itemPath}/`);
-        } else if ((itemInfo as { size?: number }).size) {
-          total += (itemInfo as { size: number }).size;
-        }
-      }
-      return total;
+      const totals = await Promise.all(
+        items.map(async (item) => {
+          const itemPath = `${dir}${item}`;
+          const itemInfo = await FileSystem.getInfoAsync(itemPath);
+          if (itemInfo.isDirectory) {
+            return this.getDirSize(`${itemPath}/`);
+          }
+          return (itemInfo as { size?: number }).size ?? 0;
+        }),
+      );
+      return totals.reduce((sum, size) => sum + size, 0);
     } catch {
       return 0;
     }
@@ -160,8 +170,11 @@ class CacheManager {
   formatSize(bytes: number): string {
     if (bytes === 0) return "0 B";
     const units = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    const size = (bytes / Math.pow(1024, i)).toFixed(1);
+    const i = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+    const size = (bytes / 1024 ** i).toFixed(1);
     return `${size} ${units[i]}`;
   }
 

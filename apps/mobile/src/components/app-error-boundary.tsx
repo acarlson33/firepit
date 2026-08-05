@@ -3,10 +3,11 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { captureError } from "@/lib/sentry";
 
 import { ErrorBoundaryFallback } from "@/components/error-boundary-fallback";
+import type { ThemeColor } from "@/constants/theme";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
-  palette: Record<string, string>;
+  palette: Record<ThemeColor, string>;
 }
 
 interface AppErrorBoundaryState {

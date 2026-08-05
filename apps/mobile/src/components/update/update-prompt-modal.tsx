@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -34,7 +35,9 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
 
   const changelog = result?.release
     ? extractChangelog(result.release.body)
-    : "";
+    : null;
+  const releaseNotesUrl = changelog?.truncated ? result?.release?.htmlUrl : undefined;
+  const progressPercent = Math.round(progress * 100);
 
   const handleDownload = useCallback(async () => {
     if (!result?.release) return;
@@ -54,17 +57,24 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
         return;
       }
 
-      const apkUri = await downloadApk(apkAsset.browserDownloadUrl, (p) => {
-        setProgress(p);
-      });
+      const apkUri = await downloadApk(
+        apkAsset.browserDownloadUrl,
+        result.release.tagName,
+        (p) => {
+          setProgress(p);
+        },
+      );
 
       await installApk(apkUri);
+      setDownloading(false);
       // If install succeeds, the app will be closed by the installer; the
       // delayed delete covers the cancelled case, startup cleanup the rest.
       // ponytail: fixed 30s delay; the installer reads the file asynchronously,
       // delete immediately risks a failed install. No knob needed unless a
       // device shows install failures.
-      setTimeout(() => void deleteApk(apkUri), 30_000);
+      setTimeout(() => {
+        deleteApk(apkUri).catch(() => undefined);
+      }, 30_000);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Download failed. Try again later.",
@@ -111,12 +121,27 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
               </ThemedText>
             </View>
 
-            {changelog ? (
+            {changelog?.text ? (
               <ThemedText
                 themeColor="mutedForeground"
                 style={styles.changelog}
               >
-                {changelog}
+                {changelog.text}
+              </ThemedText>
+            ) : null}
+
+            {releaseNotesUrl ? (
+              <ThemedText themeColor="mutedForeground" style={styles.changelog}>
+                Full release notes not shown, you can view it here:{" "}
+                <ThemedText
+                  type="link"
+                  themeColor="accent"
+                  onPress={() => {
+                    Linking.openURL(releaseNotesUrl).catch(() => undefined);
+                  }}
+                >
+                  {releaseNotesUrl}
+                </ThemedText>
               </ThemedText>
             ) : null}
 
@@ -132,13 +157,13 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
                   style={[
                     styles.progressBar,
                     {
-                      width: `${Math.round(progress * 100)}%`,
+                      width: `${progressPercent}%`,
                       backgroundColor: theme.primary,
                     },
                   ]}
                 />
                 <ThemedText type="code" themeColor="mutedForeground">
-                  {Math.round(progress * 100)}%
+                  {progressPercent}%
                 </ThemedText>
               </View>
             ) : null}
@@ -147,6 +172,7 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
+              disabled={downloading}
               onPress={() => onDismiss(true)}
               style={({ pressed }) => [
                 styles.secondaryButton,
@@ -161,6 +187,7 @@ export function UpdatePromptModal({ result, onDismiss, onSettings }: Props) {
 
             <Pressable
               accessibilityRole="button"
+              disabled={downloading}
               onPress={() => onSettings()}
               style={({ pressed }) => [
                 styles.secondaryButton,

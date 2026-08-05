@@ -1,5 +1,3 @@
-import { Platform } from "react-native";
-
 type QueryValue = string | number | boolean | null | undefined;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -88,8 +86,9 @@ export async function firepitRequest<T>({
     requestHeaders.set("Content-Type", "application/json");
   }
   if (token) {
-    requestHeaders.set("x-firepit-token", token);
-    requestHeaders.set("Authorization", `Bearer ${token}`);
+    Object.entries(authHeaders(token)).forEach(([key, value]) => {
+      requestHeaders.set(key, value);
+    });
   }
   if (headers) {
     new Headers(headers).forEach((value, key) => {
@@ -97,42 +96,54 @@ export async function firepitRequest<T>({
     });
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Appwrite Cloud hibernates the instance after idle; the first request after
+  // a cold start can exceed the timeout. Retry once on timeout for idempotent
+  // methods (the retry lands on a warm container). Mutating methods are skipped
+  // so a timed-out write is never double-applied.
+  const idempotent = ["GET", "HEAD", "PUT", "DELETE", "OPTIONS", "TRACE"];
+  const attempts = idempotent.includes(method.toUpperCase()) ? 2 : 1;
 
-  try {
-    const response = await fetch(url, {
-      method,
-      headers: requestHeaders,
-      body:
-        body === undefined
-          ? undefined
-          : isFormData
-            ? (body as FormData)
-            : JSON.stringify(body),
-      credentials: "omit",
-      signal: controller.signal,
-    });
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const payload = await readResponseBody(response);
-    if (!response.ok) {
-      const message =
-        typeof payload === "object" && payload !== null && "error" in payload
-          ? String(
-              (payload as { error?: unknown }).error ??
-                `Request failed with status ${response.status}`,
-            )
-          : `Request failed with status ${response.status}`;
-      throw new FirepitHttpError(message, response.status, payload);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: requestHeaders,
+        body:
+          body === undefined
+            ? undefined
+            : isFormData
+              ? (body as FormData)
+              : JSON.stringify(body),
+        credentials: "omit",
+        signal: controller.signal,
+      });
+
+      const payload = await readResponseBody(response);
+      if (!response.ok) {
+        const message =
+          typeof payload === "object" && payload !== null && "error" in payload
+            ? String(
+                (payload as { error?: unknown }).error ??
+                  `Request failed with status ${response.status}`,
+              )
+            : `Request failed with status ${response.status}`;
+        throw new FirepitHttpError(message, response.status, payload);
+      }
+
+      return payload as T;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        if (attempt < attempts) continue;
+        throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-
-    return payload as T;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw new Error(`Request timed out after ${timeoutMs}ms: ${path}`);
 }

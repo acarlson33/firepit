@@ -10,6 +10,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
 import { useCacheSettings } from "@/providers/cache-settings-context";
+import { type CacheStrategy } from "@/lib/cache/CacheManager";
 import { APP_VERSION } from "@/lib/update/constants";
 
 function StatusPill({
@@ -68,7 +69,7 @@ function SettingsRow({
 }
 
 type CacheStrategyOption = {
-  value: string;
+  value: CacheStrategy;
   label: string;
   desc: string;
 };
@@ -142,7 +143,7 @@ function CacheSettingsSection() {
               <Pressable
                 key={s.value}
                 onPress={async () => {
-                  await setStrategy(s.value as any);
+                  await setStrategy(s.value);
                   setExpanded(false);
                 }}
                 style={({ pressed }) => [
@@ -198,6 +199,14 @@ function CacheSettingsSection() {
       </View>
     </View>
   );
+}
+
+function safeHostname(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 export default function SettingsTabScreen() {
@@ -261,7 +270,7 @@ export default function SettingsTabScreen() {
                                 />
                                 {instanceUrl ? (
                                     <StatusPill
-                                        label={new URL(instanceUrl).hostname}
+                                        label={safeHostname(instanceUrl)}
                                         tone="neutral"
                                     />
                                 ) : (

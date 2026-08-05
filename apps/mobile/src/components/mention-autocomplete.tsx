@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -29,27 +29,21 @@ type MentionableItem =
   | MentionableUser;
 
 type MentionAutocompleteProps = {
-  query: string;
   users: MentionableUser[];
   roles: MentionableRole[];
   onSelect: (item: MentionableItem | null) => void;
-  onClose?: () => void;
   isLoading?: boolean;
   canMentionEveryone?: boolean;
   selectedIndex?: number;
-  onSelectedIndexChange?: (index: number) => void;
 };
 
 export function MentionAutocomplete({
-  query,
   users,
   roles,
   onSelect,
-  onClose,
   isLoading,
   canMentionEveryone,
   selectedIndex,
-  onSelectedIndexChange,
 }: MentionAutocompleteProps) {
   const colors = useTheme();
 
@@ -78,7 +72,13 @@ export function MentionAutocomplete({
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(it, idx) => (it.type === "role" ? it.id : `s-${idx}`)}
+          keyExtractor={(it) =>
+            it.type === "role"
+              ? `role-${it.id}`
+              : it.type === "all"
+                ? "all"
+                : `user-${it.userId}`
+          }
           renderItem={({ item, index }) => {
             const isSelected = index === selectedIndex;
 

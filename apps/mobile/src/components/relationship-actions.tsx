@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
@@ -6,7 +7,6 @@ import { useRelationship } from "@/hooks/use-relationship";
 
 type RelationshipActionsProps = {
     targetUserId: string;
-    displayName: string;
 };
 
 type ActionButtonProps = {
@@ -90,7 +90,6 @@ function StatusBadge({ label, tone }: { label: string; tone: "neutral" | "succes
 
 export function RelationshipActions({
     targetUserId,
-    displayName,
 }: RelationshipActionsProps) {
     const {
         relationship,
@@ -106,6 +105,8 @@ export function RelationshipActions({
         unblockUser,
     } = useRelationship(targetUserId);
 
+    const [blockConfirming, setBlockConfirming] = useState(false);
+
     if (isSelf) return null;
     if (loading && !relationship) {
         return (
@@ -116,10 +117,6 @@ export function RelationshipActions({
     }
 
     const disabled = loading || actionLoading;
-
-    async function handleAction(action: () => Promise<boolean>) {
-        await action();
-    }
 
     return (
         <View style={styles.container}>
@@ -151,13 +148,13 @@ export function RelationshipActions({
                     <>
                         <ActionPill
                             label="Accept"
-                            onPress={() => void handleAction(acceptFriendRequest)}
+                            onPress={() => void acceptFriendRequest()}
                             disabled={disabled}
                             tone="primary"
                         />
                         <ActionPill
                             label="Decline"
-                            onPress={() => void handleAction(declineFriendRequest)}
+                            onPress={() => void declineFriendRequest()}
                             disabled={disabled}
                             tone="ghost"
                         />
@@ -165,21 +162,21 @@ export function RelationshipActions({
                 ) : relationship?.isFriend ? (
                     <ActionPill
                         label="Remove Friend"
-                        onPress={() => void handleAction(removeFriendship)}
+                        onPress={() => void removeFriendship()}
                         disabled={disabled}
                         tone="secondary"
                     />
                 ) : relationship?.outgoingRequest ? (
                     <ActionPill
                         label="Cancel Request"
-                        onPress={() => void handleAction(removeFriendship)}
+                        onPress={() => void removeFriendship()}
                         disabled={disabled}
                         tone="secondary"
                     />
                 ) : relationship?.canReceiveFriendRequest ? (
                     <ActionPill
                         label="Add Friend"
-                        onPress={() => void handleAction(sendFriendRequest)}
+                        onPress={() => void sendFriendRequest()}
                         disabled={disabled}
                         tone="primary"
                     />
@@ -188,14 +185,32 @@ export function RelationshipActions({
                 {relationship?.blockedByMe ? (
                     <ActionPill
                         label="Unblock"
-                        onPress={() => void handleAction(unblockUser)}
+                        onPress={() => void unblockUser()}
                         disabled={disabled}
                         tone="secondary"
                     />
+                ) : blockConfirming ? (
+                    <>
+                        <ActionPill
+                            label="Confirm Block"
+                            onPress={() => {
+                                void blockUser();
+                                setBlockConfirming(false);
+                            }}
+                            disabled={disabled}
+                            tone="destructive"
+                        />
+                        <ActionPill
+                            label="Cancel"
+                            onPress={() => setBlockConfirming(false)}
+                            disabled={disabled}
+                            tone="ghost"
+                        />
+                    </>
                 ) : (
                     <ActionPill
                         label="Block"
-                        onPress={() => void handleAction(() => blockUser())}
+                        onPress={() => setBlockConfirming(true)}
                         disabled={disabled || relationship?.blockedMe}
                         tone="destructive"
                     />

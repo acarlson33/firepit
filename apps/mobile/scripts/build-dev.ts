@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { platform } from "node:os";
+import { resolve } from "node:path";
 
 import { ensureEnv } from "./env";
 
@@ -70,16 +71,24 @@ function androidBuild() {
     writeFileSync("android/app/build.gradle", withReleaseRef);
 
     console.log("Building Android APK...");
+    // Passwords go through ORG_GRADLE_PROJECT_ env so they never appear in
+    // the process argument list; store file + alias are non-secret -P props.
     execFileSync(
-        "gradlew",
+        resolve("android", "gradlew"),
         [
             "assembleDebug",
             "-PMYAPP_UPLOAD_STORE_FILE=firepit-upload.keystore",
             `-PMYAPP_UPLOAD_KEY_ALIAS=${keyAlias}`,
-            `-PMYAPP_UPLOAD_STORE_PASSWORD=${storePassword}`,
-            `-PMYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}`,
         ],
-        { cwd: "android", stdio: "inherit" },
+        {
+            cwd: "android",
+            stdio: "inherit",
+            env: {
+                ...process.env,
+                ORG_GRADLE_PROJECT_MYAPP_UPLOAD_STORE_PASSWORD: storePassword,
+                ORG_GRADLE_PROJECT_MYAPP_UPLOAD_KEY_PASSWORD: keyPassword,
+            },
+        },
     );
 }
 

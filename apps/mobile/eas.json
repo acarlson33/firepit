@@ -7,16 +7,6 @@
         "development": {
             "developmentClient": true,
             "distribution": "internal",
-            "android": {
-                "env": {
-                    "TMPDIR": "/home/august/eas-build-tmp/"
-                }
-            },
-            "ios": {
-                "env": {
-                    "TMPDIR": "/home/august/eas-build-tmp/"
-                }
-            },
             "channel": "development",
             "environment": "development"
         },

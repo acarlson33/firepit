@@ -29,7 +29,6 @@ function StatusPill({
     label: string;
     tone: "neutral" | "success" | "warning" | "danger";
 }) {
-    const theme = useTheme();
     return (
         <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
             <ThemedText

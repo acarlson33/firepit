@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { router } from "expo-router";
 
@@ -65,15 +66,13 @@ export function usePushNotificationHandler() {
 
   const navigateTo = useCallback((data: PushNotificationData) => {
     if (data.type === "dm" && data.conversationId && data.messageId) {
-      router.push(`/dm/${data.conversationId}/${data.messageId}` as never);
-    } else if (data.channelId && data.messageId) {
-      if (data.serverId) {
-        router.push(
-          `/server/messages/${data.serverId}/${data.channelId}/${data.messageId}` as never,
-        );
-      } else {
-        router.push(`/server/messages/${data.channelId}/${data.messageId}` as never);
-      }
+      router.push(
+        `/thread/${data.conversationId}/${data.messageId}` as never,
+      );
+    } else if (data.type === "message" && data.serverId && data.channelId && data.messageId) {
+      router.push(
+        `/thread/${data.serverId}/${data.channelId}/${data.messageId}` as never,
+      );
     }
   }, []);
 
@@ -136,7 +135,12 @@ export async function registerPushToken(
       return null;
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
+    const tokenData = projectId
+      ? await Notifications.getExpoPushTokenAsync({ projectId })
+      : await Notifications.getExpoPushTokenAsync();
     const token = tokenData.data;
 
     // Store locally
@@ -152,13 +156,12 @@ export async function registerPushToken(
         },
         body: JSON.stringify({ token }),
       });
-    } catch (error) {
-      console.error("[push] Failed to register token server-side:", error);
+    } catch {
+      // token is still returned even if server-side registration fails
     }
 
     return token;
-  } catch (error) {
-    console.error("[push] Registration failed:", error);
+  } catch {
     return null;
   }
 }

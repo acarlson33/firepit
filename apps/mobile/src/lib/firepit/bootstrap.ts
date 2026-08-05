@@ -97,25 +97,6 @@ function normalizeVersionInfo(payload: unknown): VersionInfo {
     } as VersionInfo;
 }
 
-function normalizeConfiguredUrl(value: unknown) {
-    if (typeof value !== "string") {
-        return "";
-    }
-
-    const trimmed = value.trim();
-    if (!trimmed) {
-        return "";
-    }
-
-    try {
-        return new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`)
-            .toString()
-            .replace(/\/$/, "");
-    } catch {
-        return "";
-    }
-}
-
 function createAppwriteClient(config: AppwriteConfig) {
     return new Client()
         .setEndpoint(config.endpoint)
@@ -166,14 +147,11 @@ function normalizeCurrentUser(user: unknown): CurrentUser | null {
 export function extractAppwriteConfig(
     instance: InstanceMetadata,
 ): AppwriteConfig | null {
-    const endpoint = normalizeConfiguredUrl(
-        instance.appwriteEndpoint ?? instance["appwriteEndpoint"],
-    );
+    const endpoint = normalizeInstanceUrl(instance.appwriteEndpoint);
     const project =
         (typeof instance.appwriteProjectId === "string" &&
             instance.appwriteProjectId.trim()) ||
-        (typeof instance["appwriteProjectId"] === "string" &&
-            instance["appwriteProjectId"].trim()) ||
+        // appwriteProject is the legacy alias used by older instances
         (typeof instance["appwriteProject"] === "string" &&
             instance["appwriteProject"].trim()) ||
         "";
@@ -290,11 +268,81 @@ async function fetchCurrentUserFromAppwrite(
         const sessionClient = createAppwriteClient(config).setSession(token);
         const sessionAccount = new Account(sessionClient);
         return normalizeCurrentUser(await sessionAccount.get());
-    } catch {
+    } catch (sessionError) {
+        // Only fall back to JWT for auth failures (401 / invalid session);
+        // rethrow genuine errors so real failures surface.
+        const code = (sessionError as { code?: unknown })?.code;
+        const type = (sessionError as { type?: unknown })?.type;
+        const message = String(
+            (sessionError as { message?: unknown })?.message ?? "",
+        ).toLowerCase();
+        const isAuthError =
+            code === 401 ||
+            type === "user_unauthorized" ||
+            message.includes("unauthorized") ||
+            message.includes("invalid session");
+        if (!isAuthError) throw sessionError;
+
         // Fallback: try as JWT token
         const jwtClient = createAppwriteClient(config).setJWT(token);
         const jwtAccount = new Account(jwtClient);
         return normalizeCurrentUser(await jwtAccount.get());
+    }
+}
+
+const PROFILE_ENRICHMENT_KEYS = [
+    "displayName",
+    "userName",
+    "avatarUrl",
+    "avatarFileId",
+    "pronouns",
+    "bio",
+    "location",
+    "website",
+    "profileBackgroundColor",
+    "profileBackgroundGradient",
+    "profileBackgroundUrl",
+    "avatarFramePreset",
+    "avatarFrameUrl",
+] as const;
+
+async function fetchProfileEnrichment(
+    baseUrl: string,
+    token: string,
+    userId: string,
+): Promise<Partial<CurrentUser>> {
+    try {
+        const profile = await firepitRequest<Record<string, unknown>>({
+            baseUrl,
+            path: `/api/profile/${encodeURIComponent(userId)}`,
+            token,
+        });
+        const merged: Partial<CurrentUser> = {};
+        for (const key of PROFILE_ENRICHMENT_KEYS) {
+            if (typeof profile[key] === "string" && (profile[key] as string).length > 0) {
+                (merged as Record<string, unknown>)[key] = profile[key];
+            }
+        }
+        return merged;
+    } catch {
+        // ignore profile fetch failure — displayName is non-critical
+        return {};
+    }
+}
+
+async function fetchMyRoles(
+    baseUrl: string,
+    token: string,
+): Promise<Record<string, unknown> | undefined> {
+    try {
+        const res = await fetch(`${baseUrl.replace(/\/$/, "")}/api/me`, {
+            headers: authHeaders(token),
+        });
+        if (!res.ok) return undefined;
+        const data = (await res.json()) as { roles?: Record<string, unknown> };
+        return data.roles;
+    } catch {
+        return undefined;
     }
 }
 
@@ -303,51 +351,35 @@ export async function resolveCurrentUser(
     token: string,
     config?: AppwriteConfig | null,
 ) {
+    // Prefer a direct Appwrite call for identity: one warm round trip to the
+    // always-on Appwrite backend instead of two round trips through the
+    // (potentially hibernating) Next.js container. Profile + roles still come
+    // from the server, fetched in parallel.
+    if (config) {
+        try {
+            const directUser = await fetchCurrentUserFromAppwrite(config, token);
+            if (directUser?.$id) {
+                const [profile, roles] = await Promise.all([
+                    fetchProfileEnrichment(baseUrl, token, directUser.$id),
+                    fetchMyRoles(baseUrl, token),
+                ]);
+                return {
+                    ...directUser,
+                    ...profile,
+                    ...(roles ? { roles } : {}),
+                };
+            }
+        } catch {
+            // fall through to the server path below
+        }
+    }
+
     try {
         const user = await fetchCurrentUser(baseUrl, token);
-        // /api/me doesn't return displayName — fetch it from the profile endpoint
+        // /api/me returns identity + roles; profile fields come from the profile endpoint
         if (user?.$id) {
-            try {
-                const profileRes = await fetch(
-                    `${baseUrl.replace(/\/$/, "")}/api/profile/${encodeURIComponent(user.$id)}`,
-                    { headers: authHeaders(token) },
-                );
-                if (profileRes.ok) {
-                    const profile = (await profileRes.json()) as {
-                        displayName?: string;
-                        userName?: string;
-                        avatarUrl?: string;
-                        avatarFileId?: string;
-                        pronouns?: string;
-                        bio?: string;
-                        location?: string;
-                        website?: string;
-                        profileBackgroundColor?: string;
-                        profileBackgroundGradient?: string;
-                        profileBackgroundUrl?: string;
-                        avatarFramePreset?: string;
-                        avatarFrameUrl?: string;
-                    };
-                    return {
-                        ...user,
-                        ...(profile.displayName ? { displayName: profile.displayName } : {}),
-                        ...(profile.userName ? { userName: profile.userName } : {}),
-                        ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-                        ...(profile.avatarFileId ? { avatarFileId: profile.avatarFileId } : {}),
-                        ...(profile.pronouns ? { pronouns: profile.pronouns } : {}),
-                        ...(profile.bio ? { bio: profile.bio } : {}),
-                        ...(profile.location ? { location: profile.location } : {}),
-                        ...(profile.website ? { website: profile.website } : {}),
-                        ...(profile.profileBackgroundColor ? { profileBackgroundColor: profile.profileBackgroundColor } : {}),
-                        ...(profile.profileBackgroundGradient ? { profileBackgroundGradient: profile.profileBackgroundGradient } : {}),
-                        ...(profile.profileBackgroundUrl ? { profileBackgroundUrl: profile.profileBackgroundUrl } : {}),
-                        ...(profile.avatarFramePreset ? { avatarFramePreset: profile.avatarFramePreset } : {}),
-                        ...(profile.avatarFrameUrl ? { avatarFrameUrl: profile.avatarFrameUrl } : {}),
-                    };
-                }
-            } catch {
-                // ignore profile fetch failure — displayName is non-critical
-            }
+            const profile = await fetchProfileEnrichment(baseUrl, token, user.$id);
+            return { ...user, ...profile };
         }
         return user;
     } catch (error) {

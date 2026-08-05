@@ -9,11 +9,9 @@ import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import type { Channel, ServerCategory } from "@/lib/firepit";
-import { fetchChannels, fetchServer, fetchServerCategories } from "@/lib/firepit";
 import { muteChannel, muteServer } from "@/lib/firepit/messages";
 import { getChannels, getCategories, getServerName as getCachedServerName, invalidateServerCache } from "@/lib/server-cache";
 import { useFirepitBootstrap } from "@/providers/firepit-provider";
-import { ArrowLeft, Bell, BellOff } from "lucide-react-native";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -37,19 +35,6 @@ export default function ServerBrowserScreen() {
     const canManageServer = signedIn && currentUser?.roles != null && Object.keys(currentUser.roles).length > 0;
     const [mutedChannels, setMutedChannels] = useState<Set<string>>(new Set());
     const [serverMuted, setServerMuted] = useState(false);
-
-    const shellStatus = useMemo(() => {
-        if (state === "ready") {
-            return "connected";
-        }
-        if (state === "needs-auth") {
-            return "needs login";
-        }
-        if (state === "incompatible") {
-            return "blocked";
-        }
-        return state;
-    }, [state]);
 
     const loadServer = useCallback(async () => {
         if (!instanceUrl || !accessToken || !normalizedServerId) {
@@ -134,7 +119,11 @@ export default function ServerBrowserScreen() {
             await muteChannel(instanceUrl, accessToken, channelId, !currentlyMuted, duration);
             setMutedChannels((prev) => {
                 const next = new Set(prev);
-                currentlyMuted ? next.delete(channelId) : next.add(channelId);
+                if (currentlyMuted) {
+                    next.delete(channelId);
+                } else {
+                    next.add(channelId);
+                }
                 return next;
             });
         } catch {
@@ -283,7 +272,7 @@ export default function ServerBrowserScreen() {
                                 label="Refresh"
                                 tone="ghost"
                                 onPress={() => {
-                                    if (normalizedServerId) invalidateServerCache(normalizedServerId);
+                                    if (instanceUrl && normalizedServerId) invalidateServerCache(instanceUrl, normalizedServerId);
                                     void loadChannels();
                                 }}
                             />

@@ -54,8 +54,8 @@ function conversationTitle(conversation: DirectMessageConversation) {
     }
 
     return (
-        conversation.otherUser?.displayName?.trim() ??
-        conversation.otherUser?.userId ??
+        conversation.otherUser?.displayName?.trim() ||
+        conversation.otherUser?.userId ||
         "Direct message"
     );
 }
@@ -87,6 +87,31 @@ export default function DirectMessageListScreen() {
     const requestBaseUrl = instanceUrl ?? "";
     const requestToken = accessToken ?? "";
     const readyToFetch = signedIn && requestBaseUrl.length > 0 && requestToken.length > 0;
+
+    const loadConversations = useCallback(async () => {
+        if (!instanceUrl || !accessToken) {
+            return;
+        }
+
+        setLoadState("loading");
+        setError(null);
+        try {
+            const raw = await getConversations(instanceUrl, accessToken);
+            const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
+            const enriched = await enrichConversations(instanceUrl, accessToken, raw, currentUserId);
+            setConversations(enriched);
+            setLoadState("ready");
+        } catch (loadError) {
+            setConversations([]);
+            setLoadState("error");
+            setError(
+                loadError instanceof Error
+                    ? loadError.message
+                    : "Unable to load conversations",
+            );
+        }
+    }, [accessToken, instanceUrl, currentUser?.$id, currentUser?.userId]);
+
     const normalizedConversations = useMemo(
         () => conversations.filter(hasId),
         [conversations],
@@ -100,41 +125,8 @@ export default function DirectMessageListScreen() {
             return;
         }
 
-        let cancelled = false;
-
-        async function loadConversations() {
-            setLoadState("loading");
-            setError(null);
-
-            try {
-                const raw = await getConversations(requestBaseUrl, requestToken);
-                if (cancelled) return;
-
-                const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
-                const enriched = await enrichConversations(requestBaseUrl, requestToken, raw, currentUserId);
-                if (cancelled) return;
-
-                setConversations(enriched);
-                setLoadState("ready");
-            } catch (loadError) {
-                if (!cancelled) {
-                    setConversations([]);
-                    setLoadState("error");
-                    setError(
-                        loadError instanceof Error
-                            ? loadError.message
-                            : "Unable to load conversations",
-                    );
-                }
-            }
-        }
-
         void loadConversations();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [accessToken, instanceUrl, signedIn]);
+    }, [readyToFetch, loadConversations]);
 
     return (
         <AuthRouteGuard>
@@ -207,7 +199,7 @@ export default function DirectMessageListScreen() {
                                         </ThemedText>
                                         <Pressable
                                             accessibilityRole="button"
-                                            onPress={() => void loadConversationsAgain()}
+                                            onPress={() => void loadConversations()}
                                             style={({ pressed }) => [
                                                 styles.inlineButton,
                                                 {
@@ -259,12 +251,7 @@ export default function DirectMessageListScreen() {
                                 </ThemedView>
                             ) : null
                         }
-                        renderItem={useCallback(
-                            ({ item }: { item: DirectMessageConversation }) => (
-                                <ConversationCard conversation={item} />
-                            ),
-                            [],
-                        )}
+                        renderItem={renderConversationItem}
                         windowSize={7}
                         maxToRenderPerBatch={10}
                         initialNumToRender={10}
@@ -274,30 +261,11 @@ export default function DirectMessageListScreen() {
             </View>
         </AuthRouteGuard>
     );
-
-    async function loadConversationsAgain() {
-        if (!instanceUrl || !accessToken) {
-            return;
-        }
-
-        setLoadState("loading");
-        setError(null);
-        try {
-            const raw = await getConversations(instanceUrl, accessToken);
-            const currentUserId = currentUser?.$id ?? currentUser?.userId ?? "";
-            const enriched = await enrichConversations(instanceUrl, accessToken, raw, currentUserId);
-            setConversations(enriched);
-            setLoadState("ready");
-        } catch (loadError) {
-            setLoadState("error");
-            setError(
-                loadError instanceof Error
-                    ? loadError.message
-                    : "Unable to load conversations",
-            );
-        }
-    }
 }
+
+const renderConversationItem = ({ item }: { item: DirectMessageConversation }) => (
+    <ConversationCard conversation={item} />
+);
 
 function ConversationCard({ conversation }: { conversation: DirectMessageConversation }) {
     const theme = useTheme();

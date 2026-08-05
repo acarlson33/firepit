@@ -35,6 +35,9 @@ import {
   listInboxDigest,
   markInboxContextRead,
 } from "@/lib/firepit/messages";
+import { clearDmEncryptionKeyPairs } from "@/lib/firepit/dm-encryption";
+import { clearProfileCache } from "@/lib/profile-cache";
+import { resetServerCache } from "@/lib/server-cache";
 import type {
   BootstrapSnapshot,
   CompatibilityEvaluation,
@@ -87,7 +90,13 @@ function toErrorMessage(error: unknown) {
 
 function isJwtExpired(token: string, bufferSeconds = 300): boolean {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const part = token.split(".")[1];
+    if (!part) return false;
+    const base64 = part
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(part.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(base64)) as { exp?: unknown };
     if (typeof payload.exp === "number") {
       return payload.exp * 1000 < Date.now() + bufferSeconds * 1000;
     }
@@ -189,6 +198,9 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
   const resetConnection = useCallback(async () => {
     await clearFirepitPersistence();
+    clearProfileCache();
+    clearDmEncryptionKeyPairs();
+    resetServerCache();
     clearRuntimeState();
   }, [clearRuntimeState]);
 
@@ -226,7 +238,6 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
       const token = await authenticateWithPassword(stored.email, stored.password, url, config);
 
       // setSessionToken reads instanceUrl from ref internally
-      if (!url) throw new Error("Set an instance URL first.");
       await saveBearerToken(token);
       setAccessToken(token);
       setBearerTokenPresent(true);
@@ -301,7 +312,9 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
           throw firstReason;
         }
 
-        const [nextVersion, nextInstance, nextFlags, nextToken] = results.map(r => (r as PromiseFulfilledResult<any>).value);
+        const [nextVersion, nextInstance, nextFlags, nextToken] = results.map(
+          (r) => (r as PromiseFulfilledResult<unknown>).value,
+        ) as [VersionInfo, InstanceMetadata, FeatureFlagState, string | null];
 
         if (!mountedRef.current) return null;
 
@@ -505,34 +518,48 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
 
           // Token missing, expired, or invalid — try silent re-auth
           if (!cancelled) {
+            const clearStaleSession = async () => {
+              await clearBearerToken();
+              if (cancelled) return;
+              setAccessToken(null);
+              setBearerTokenPresent(false);
+              setCurrentUser(null);
+              setState("needs-auth");
+              setError("Session expired. Sign in again.");
+            };
+
             const creds = await loadCredentials();
             if (creds) {
               try {
                 const config = storedAppwriteConfig
                   ? { endpoint: storedAppwriteConfig.endpoint, project: storedAppwriteConfig.project }
                   : null;
-                if (config) {
-                    const token = await authenticateWithPassword(
-                      creds.email,
-                      creds.password,
-                      storedInstanceUrl,
-                      config,
-                    );
-                    await saveBearerToken(token);
-                    setAccessToken(token);
-                    setBearerTokenPresent(true);
-                    const user = await resolveCurrentUser(
-                      storedInstanceUrl,
-                      token,
-                      config,
-                    );
-                    setCurrentUser(user);
-                    setState("ready");
-                    void refresh(storedInstanceUrl, true);
+                if (!config) {
+                  await clearStaleSession();
+                  return;
                 }
+                const token = await authenticateWithPassword(
+                  creds.email,
+                  creds.password,
+                  storedInstanceUrl,
+                  config,
+                );
+                await saveBearerToken(token);
+                setAccessToken(token);
+                setBearerTokenPresent(true);
+                const user = await resolveCurrentUser(
+                  storedInstanceUrl,
+                  token,
+                  config,
+                );
+                setCurrentUser(user);
+                setState("ready");
+                void refresh(storedInstanceUrl, true);
               } catch {
-                if (!cancelled) setError("Session expired. Sign in again.");
+                await clearStaleSession();
               }
+            } else {
+              await clearStaleSession();
             }
           }
 
@@ -674,6 +701,9 @@ export function FirepitProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await clearBearerToken();
     await clearCredentials();
+    clearProfileCache();
+    clearDmEncryptionKeyPairs();
+    resetServerCache();
     setAccessToken(null);
     setBearerTokenPresent(false);
     setCurrentUser(null);

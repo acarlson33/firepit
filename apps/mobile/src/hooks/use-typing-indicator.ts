@@ -29,7 +29,7 @@ export function useTypingIndicator(
 
     const typingPresenceIdRef = useRef<string | null>(null);
     const typingPresenceCreatedRef = useRef<boolean>(false);
-    let lastTypingSentAt = useRef<number>(0);
+    const lastTypingSentAt = useRef<number>(0);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
@@ -181,10 +181,15 @@ export function useTypingIndicator(
     useEffect(() => {
         if (!instanceUrl || !accessToken || !contextId || !currentUserId) return;
         let cancelled = false;
+        // Generation guards against a stale subscribe resolving after a newer
+        // subscribe started (e.g. background/foreground churn), which would
+        // otherwise overwrite subHandle and leak the wrong subscription.
+        let generation = 0;
         let subHandle: { unsubscribe: () => Promise<void>; close: () => Promise<void> } | undefined;
         let realtimeInstance: Realtime | undefined;
 
         const doSubscribe = () => {
+            const currentGeneration = generation;
             try {
                 const endpoint = appwriteEndpoint || instanceUrl;
                 const url = new URL(endpoint);
@@ -242,7 +247,7 @@ export function useTypingIndicator(
                         }
                     },
                 ).then((handle) => {
-                    if (cancelled) {
+                    if (cancelled || generation !== currentGeneration) {
                         void handle.unsubscribe();
                     } else {
                         subHandle = handle;
@@ -256,6 +261,7 @@ export function useTypingIndicator(
         };
 
         const doUnsubscribe = () => {
+            generation += 1;
             if (subHandle) {
                 try {
                     void subHandle.unsubscribe();
@@ -288,10 +294,10 @@ export function useTypingIndicator(
         };
     }, [instanceUrl, accessToken, contextId, currentUserId, enrichProfiles, projectId, appwriteEndpoint]);
 
-    // Stale typing cleanup interval - skips when no users are typing
+    // Stale typing cleanup interval - only runs while users are typing
     useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | null = null;
-        interval = setInterval(() => {
+        if (Object.keys(typingUsers).length === 0) return;
+        const interval = setInterval(() => {
             const now = Date.now();
             setTypingUsers((prev) => {
                 if (Object.keys(prev).length === 0) return prev;
@@ -309,7 +315,7 @@ export function useTypingIndicator(
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [typingUsers]);
 
     // Cleanup typing presence on unmount
     useEffect(() => {

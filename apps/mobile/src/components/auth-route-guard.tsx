@@ -26,8 +26,14 @@ export function AuthRouteGuard({
     state === "ready" && Boolean(accessToken) && Boolean(currentUser);
   const isResolving = state === "loading";
   const needsRedirect = !isResolving && !isAuthenticated;
-  const redirectTarget =
-    redirectTo === "/" ? (instanceUrl ? "/login" : "/") : redirectTo;
+  let redirectTarget = redirectTo;
+  if (redirectTo === "/") {
+    if (instanceUrl) {
+      redirectTarget = "/login";
+    } else {
+      redirectTarget = "/";
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true;

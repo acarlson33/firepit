@@ -14,10 +14,20 @@ type CachedProfile = ProfileData & {
 const MAX_CACHE_SIZE = 500;
 const MAX_FULL_PROFILE_CACHE_SIZE = 200;
 const CACHE_TTL = 5 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 10_000;
 
 const cache = new Map<string, CachedProfile>();
 const inflight = new Map<string, Promise<Record<string, ProfileData>>>();
 const fullProfileCache = new Map<string, { data: Record<string, unknown>; cachedAt: number }>();
+const profileInflight = new Map<string, Promise<Record<string, unknown> | null>>();
+
+function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
 
 function isExpired(entry: CachedProfile): boolean {
   return Date.now() - entry.cachedAt > CACHE_TTL;
@@ -68,7 +78,7 @@ export async function getProfilesBatch(
 
   const promise = (async () => {
     try {
-      const res = await fetch(`${instanceUrl}/api/profiles/batch`, {
+      const res = await fetchWithTimeout(`${instanceUrl}/api/profiles/batch`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -104,9 +114,11 @@ export async function getProfilesBatch(
   return promise;
 }
 
-function clearProfileCache(): void {
+export function clearProfileCache(): void {
   cache.clear();
   fullProfileCache.clear();
+  inflight.clear();
+  profileInflight.clear();
 }
 
 export async function getCachedUserProfile(
@@ -119,20 +131,29 @@ export async function getCachedUserProfile(
     return cached.data;
   }
 
-  try {
-    const res = await fetch(
-      `${instanceUrl.replace(/\/$/, "")}/api/users/${encodeURIComponent(userId)}/profile`,
-      { headers: authHeaders(accessToken) },
-    );
-    if (res.ok) {
-      const data = await res.json() as Record<string, unknown>;
-      fullProfileCache.set(userId, { data, cachedAt: Date.now() });
-      evictOldest(fullProfileCache, MAX_FULL_PROFILE_CACHE_SIZE);
-      return data;
-    }
-  } catch {
-    // ignore fetch failure
-  }
+  const inFlight = profileInflight.get(userId);
+  if (inFlight) return inFlight;
 
-  return null;
+  const promise = (async () => {
+    try {
+      const res = await fetchWithTimeout(
+        `${instanceUrl.replace(/\/$/, "")}/api/users/${encodeURIComponent(userId)}/profile`,
+        { headers: authHeaders(accessToken) },
+      );
+      if (res.ok) {
+        const data = await res.json() as Record<string, unknown>;
+        fullProfileCache.set(userId, { data, cachedAt: Date.now() });
+        evictOldest(fullProfileCache, MAX_FULL_PROFILE_CACHE_SIZE);
+        return data;
+      }
+    } catch {
+      // ignore fetch failure
+    } finally {
+      profileInflight.delete(userId);
+    }
+    return null;
+  })();
+
+  profileInflight.set(userId, promise);
+  return promise;
 }

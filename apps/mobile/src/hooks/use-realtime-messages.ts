@@ -3,11 +3,12 @@ import { AppState } from "react-native";
 import { Channel, Client, Query } from "react-native-appwrite";
 import type { RealtimeResponseEvent } from "react-native-appwrite";
 import { extractAppwriteConfig } from "@/lib/firepit/bootstrap";
+import type { InstanceMetadata } from "@/lib/firepit/types";
 
 const DATABASE_ID = "main";
 
 interface UseRealtimeMessagesOptions {
-    instance: any;
+    instance: InstanceMetadata | null;
     accessToken: string | null;
     collectionId: string;
     filterField: string;

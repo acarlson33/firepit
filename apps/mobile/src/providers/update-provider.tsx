@@ -27,7 +27,7 @@ type UpdateContextValue = {
   showPrompt: boolean;
   updateSettings: (partial: Partial<UpdateSettings>) => Promise<void>;
   checkNow: () => Promise<void>;
-  dismissPrompt: (skipVersion: boolean) => void;
+  dismissPrompt: (skipVersion: boolean) => Promise<void>;
   openSettings: () => void;
 };
 
@@ -41,6 +41,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const settingsRef = useRef(settings);
+  const checkInFlightRef = useRef(false);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
@@ -50,10 +51,12 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
     void loadUpdateSettings().then((s) => setSettings(s));
   }, []);
 
-  // Remove leftover downloaded APKs from previous sessions
+  // Remove leftover downloaded APKs from previous sessions. Deferred so the
+  // directory scan never blocks the first frame.
   useEffect(() => {
     if (Platform.OS !== "android") return;
-    cleanupDownloadedApks();
+    const timer = setTimeout(cleanupDownloadedApks, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   const updateSettings = useCallback(
@@ -68,6 +71,8 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
 
   const checkNow = useCallback(async () => {
     if (Platform.OS !== "android") return;
+    if (checkInFlightRef.current) return;
+    checkInFlightRef.current = true;
     setChecking(true);
     try {
       const checkResult = await runUpdateCheck(settingsRef.current);
@@ -91,12 +96,16 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Record that we checked
+      // Record that we checked, merging so concurrent settings changes win
       const updated = await recordCheck(settingsRef.current);
-      setSettings(updated);
+      setSettings((prev) => ({
+        ...prev,
+        lastCheckedAt: updated.lastCheckedAt,
+      }));
     } catch {
       // Silently fail
     } finally {
+      checkInFlightRef.current = false;
       setChecking(false);
     }
   }, []);

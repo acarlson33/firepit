@@ -2,7 +2,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
-    Pressable,
     ScrollView,
     StyleSheet,
     View,
@@ -10,6 +9,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import {
+    ActionButton,
+    StatusPill,
+} from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -22,63 +25,19 @@ import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
-            <ThemedText
-                type="code"
-                themeColor={tone === "neutral" ? "mutedForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
+const LOAD_STATE_LABELS: Record<LoadState, string> = {
+    idle: "loading",
+    loading: "loading",
+    ready: "stats loaded",
+    error: "load error",
+};
 
-function ActionButton({
-    label,
-    onPress,
-    tone = "primary",
-}: {
-    label: string;
-    onPress: () => void;
-    tone?: "primary" | "secondary" | "ghost";
-}) {
-    const theme = useTheme();
-    return (
-        <Pressable
-            accessibilityRole="button"
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.actionButton,
-                {
-                    backgroundColor:
-                        tone === "primary"
-                            ? theme.primary
-                            : tone === "secondary"
-                              ? theme.secondary
-                              : theme.muted,
-                    borderColor: theme.border,
-                },
-                pressed && styles.actionButtonPressed,
-            ]}
-        >
-            <ThemedText
-                type="smallBold"
-                themeColor={tone === "primary" ? "primaryForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </Pressable>
-    );
-}
+const LOAD_STATE_TONES: Record<LoadState, "success" | "warning" | "danger"> = {
+    idle: "warning",
+    loading: "warning",
+    ready: "success",
+    error: "danger",
+};
 
 export default function AdminDashboardScreen() {
     const theme = useTheme();
@@ -111,7 +70,7 @@ export default function AdminDashboardScreen() {
 
     return (
         <AuthRouteGuard>
-            <View style={styles.root}>
+            <View style={[styles.root, { backgroundColor: theme.background }]}>
                 <View
                     pointerEvents="none"
                     style={[
@@ -127,7 +86,7 @@ export default function AdminDashboardScreen() {
                     ]}
                 />
                 <ScrollView
-                    style={[styles.scrollView, { backgroundColor: theme.background }]}
+                    style={styles.scrollView}
                     contentContainerStyle={styles.scrollContent}
                 >
                     <SafeAreaView style={styles.safeArea}>
@@ -146,20 +105,8 @@ export default function AdminDashboardScreen() {
                             <View style={styles.pillRow}>
                                 <StatusPill label="admin" tone="warning" />
                                 <StatusPill
-                                    label={
-                                        loadState === "ready"
-                                            ? "stats loaded"
-                                            : loadState === "error"
-                                              ? "load error"
-                                              : "loading"
-                                    }
-                                    tone={
-                                        loadState === "ready"
-                                            ? "success"
-                                            : loadState === "error"
-                                              ? "danger"
-                                              : "warning"
-                                    }
+                                    label={LOAD_STATE_LABELS[loadState]}
+                                    tone={LOAD_STATE_TONES[loadState]}
                                 />
                             </View>
                         </ThemedView>
@@ -171,20 +118,28 @@ export default function AdminDashboardScreen() {
                         >
                             <ThemedText type="smallBold">Tools</ThemedText>
                             <View style={styles.toolGrid}>
-                                <ActionButton
-                                    label="Moderation"
-                                    tone="secondary"
-                                    onPress={() =>
-                                        router.push(`/admin/reports?serverId=${serverId}` as never)
-                                    }
-                                />
-                                <ActionButton
-                                    label="Audit log"
-                                    tone="ghost"
-                                    onPress={() =>
-                                        router.push(`/admin/audit-log?serverId=${serverId}` as never)
-                                    }
-                                />
+                                {serverId ? (
+                                    <>
+                                        <ActionButton
+                                            label="Moderation"
+                                            tone="secondary"
+                                            onPress={() =>
+                                                router.push(
+                                                    `/admin/reports?serverId=${encodeURIComponent(serverId)}` as never,
+                                                )
+                                            }
+                                        />
+                                        <ActionButton
+                                            label="Audit log"
+                                            tone="ghost"
+                                            onPress={() =>
+                                                router.push(
+                                                    `/admin/audit-log?serverId=${encodeURIComponent(serverId)}` as never,
+                                                )
+                                            }
+                                        />
+                                    </>
+                                ) : null}
                                 <ActionButton
                                     label="Back"
                                     tone="ghost"

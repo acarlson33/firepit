@@ -1,5 +1,4 @@
 import { firepitRequest } from "@/lib/firepit/http";
-import { readAsStringAsync } from "expo-file-system/legacy";
 
 export type NativeAttachment = {
   uri: string;
@@ -25,25 +24,11 @@ export type UploadedFileAttachment = {
 
 async function createUploadFormData(input: NativeAttachment) {
   const formData = new FormData();
-  try {
-    const base64 = await readAsStringAsync(input.uri, { encoding: "base64" });
-    const binaryStr = atob(base64);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) {
-      bytes[i] = binaryStr.charCodeAt(i);
-    }
-    formData.append("file", {
-      bytes: () => bytes,
-      name: input.name ?? "upload",
-      type: input.mimeType ?? "application/octet-stream",
-    } as unknown as Blob);
-  } catch {
-    formData.append("file", {
-      uri: input.uri,
-      name: input.name ?? "upload",
-      type: input.mimeType ?? "application/octet-stream",
-    } as unknown as Blob);
-  }
+  formData.append("file", {
+    uri: input.uri,
+    name: input.name ?? "upload",
+    type: input.mimeType ?? "application/octet-stream",
+  } as unknown as Blob);
   return formData;
 }
 

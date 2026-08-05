@@ -11,8 +11,6 @@ import { Avatar } from "@/components/ui/avatar";
 import { ActionButton } from "@/components/action-button";
 import MessageWithMentions from "@/components/message-with-mentions";
 import { ReactionButton } from "@/components/reaction-button";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { MessagePoll, type PollData } from "@/components/message-poll";
@@ -50,7 +48,6 @@ export type ChatBubbleMessageProps = {
   reactions?: Reaction[];
   attachments?: FileAttachment[];
   threadReplyCount?: number | null;
-  threadHasUnread?: boolean;
   mentions?: string[];
   customEmojis?: CustomEmoji[];
   customEmojiUrls?: Record<string, string>;
@@ -107,10 +104,8 @@ function getInitials(name: string): string {
 
 function ChatBubbleMessageInner({
   messageId,
-  authorId,
   authorName,
   authorAvatarUrl,
-  authorAvatarFramePreset,
   authorAvatarFrameUrl,
   authorPronouns,
   text,
@@ -125,7 +120,6 @@ function ChatBubbleMessageInner({
   reactions,
   attachments,
   threadReplyCount,
-  mentions,
   customEmojis = [],
   customEmojiUrls: propCustomEmojiUrls,
   poll,
@@ -348,7 +342,7 @@ function ChatBubbleMessageInner({
           ) : null}
 
           {/* Thread indicator */}
-          {typeof threadReplyCount === "number" && threadReplyCount > 0 && handleOpenThread ? (
+          {typeof threadReplyCount === "number" && threadReplyCount > 0 && onOpenThread ? (
             <Pressable
               onPress={handleOpenThread}
               style={[
@@ -379,11 +373,11 @@ function ChatBubbleMessageInner({
           {/* Action sheet */}
           {showActions && !removed ? (
             <View style={[styles.actionsRow, isMine && styles.actionsRowMine]}>
-              {handleToggleReaction ? (
+              {onToggleReaction ? (
                 <ActionButton
                   label="React"
                   onPress={() => {
-                    if (handleShowEmojiPicker) {
+                    if (onShowEmojiPicker) {
                       handleShowEmojiPicker();
                     } else {
                       handleToggleReaction("❤️", true);
@@ -393,7 +387,7 @@ function ChatBubbleMessageInner({
                   tone="ghost"
                 />
               ) : null}
-              {handleStartReply ? (
+              {onStartReply ? (
                 <ActionButton
                   label="Reply"
                   onPress={() => {
@@ -403,7 +397,7 @@ function ChatBubbleMessageInner({
                   tone="ghost"
                 />
               ) : null}
-              {handleOpenThread ? (
+              {onOpenThread ? (
                 <ActionButton
                   label="Thread"
                   onPress={() => {
@@ -413,7 +407,7 @@ function ChatBubbleMessageInner({
                   tone="ghost"
                 />
               ) : null}
-              {isMine && handleStartEdit ? (
+              {isMine && onStartEdit ? (
                 <ActionButton
                   label="Edit"
                   onPress={() => {
@@ -423,7 +417,7 @@ function ChatBubbleMessageInner({
                   tone="ghost"
                 />
               ) : null}
-              {(isMine || canManageMessages) && handleTogglePin ? (
+              {(isMine || canManageMessages) && onTogglePin ? (
                 <ActionButton
                   label={isPinned ? "Unpin" : "Pin"}
                   onPress={() => {
@@ -433,7 +427,7 @@ function ChatBubbleMessageInner({
                   tone="ghost"
                 />
               ) : null}
-              {isMine && handleDelete ? (
+              {isMine && onDelete ? (
                 deleteConfirming ? (
                   <View style={styles.deleteConfirmRow}>
                     <ActionButton
@@ -560,6 +554,7 @@ const styles = StyleSheet.create({
 export const ChatBubbleMessage = React.memo(ChatBubbleMessageInner, (prev, next) => {
   if (prev.messageId !== next.messageId) return false;
   if (prev.authorId !== next.authorId) return false;
+  if (prev.currentUserId !== next.currentUserId) return false;
   if (prev.authorName !== next.authorName) return false;
   if (prev.authorAvatarUrl !== next.authorAvatarUrl) return false;
   if (prev.authorAvatarFramePreset !== next.authorAvatarFramePreset) return false;

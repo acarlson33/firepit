@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Keyboard,
   Modal,
@@ -20,22 +20,27 @@ type Props = {
   onSubmit: (question: string, options: string[]) => void;
 };
 
+type Option = { id: string; text: string };
+
 export function PollCreationModal({ visible, onClose, onSubmit }: Props) {
   const theme = useTheme();
   const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState(["", ""]);
+  const optionIdRef = useRef(0);
+  const createOption = (): Option => ({
+    id: `poll-option-${++optionIdRef.current}`,
+    text: "",
+  });
+  const [options, setOptions] = useState<Option[]>([createOption(), createOption()]);
 
   const updateOption = (index: number, text: string) => {
-    setOptions((prev) => {
-      const next = [...prev];
-      next[index] = text;
-      return next;
-    });
+    setOptions((prev) =>
+      prev.map((opt, i) => (i === index ? { ...opt, text } : opt)),
+    );
   };
 
   const addOption = () => {
     if (options.length < 10) {
-      setOptions((prev) => [...prev, ""]);
+      setOptions((prev) => [...prev, createOption()]);
     }
   };
 
@@ -47,25 +52,26 @@ export function PollCreationModal({ visible, onClose, onSubmit }: Props) {
 
   const canSubmit =
     question.trim().length > 0 &&
-    options.filter((o) => o.trim().length > 0).length >= 2;
+    options.filter((o) => o.text.trim().length > 0).length >= 2;
 
   const handleSubmit = () => {
-    const validOptions = options.filter((o) => o.trim().length > 0);
+    const validOptions = options.filter((o) => o.text.trim().length > 0);
     if (validOptions.length < 2 || !question.trim()) return;
-    onSubmit(question.trim(), validOptions.map((o) => o.trim()));
+    onSubmit(question.trim(), validOptions.map((o) => o.text.trim()));
     setQuestion("");
-    setOptions(["", ""]);
+    setOptions([createOption(), createOption()]);
+    onClose();
   };
 
   const handleClose = () => {
     setQuestion("");
-    setOptions(["", ""]);
+    setOptions([createOption(), createOption()]);
     onClose();
   };
 
   return (
     <Modal
-      visible
+      visible={visible}
       transparent
       animationType="slide"
       onRequestClose={handleClose}
@@ -104,9 +110,9 @@ export function PollCreationModal({ visible, onClose, onSubmit }: Props) {
             </ThemedText>
 
             {options.map((option, index) => (
-              <View key={index} style={styles.optionRow}>
+              <View key={option.id} style={styles.optionRow}>
                 <TextInput
-                  value={option}
+                  value={option.text}
                   onChangeText={(text) => updateOption(index, text)}
                   placeholder={`Option ${index + 1}`}
                   placeholderTextColor={theme.mutedForeground}
@@ -149,10 +155,7 @@ export function PollCreationModal({ visible, onClose, onSubmit }: Props) {
                 <ThemedText type="smallBold">Cancel</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => {
-                  handleSubmit();
-                  handleClose();
-                }}
+                onPress={handleSubmit}
                 disabled={!canSubmit}
                 style={[
                   styles.actionBtn,

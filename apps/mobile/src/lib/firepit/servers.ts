@@ -3,9 +3,7 @@ import type {
     AdminAuditLogResponse,
     AdminReportResponse,
     CategoryListResponse,
-    CategoryResponse,
     ChannelListResponse,
-    ChannelPermissionOverridesResponse,
     ChannelResponse,
     CreateServerInput,
     CreateServerResponse,
@@ -110,7 +108,7 @@ export async function fetchServer(
 ) {
     return firepitRequest<ServerResponse>({
         baseUrl,
-        path: `/api/servers/${serverId}`,
+        path: `/api/servers/${encodeURIComponent(serverId)}`,
         token,
     });
 }
@@ -176,54 +174,6 @@ export async function fetchServerCategories(
         path: "/api/categories",
         token,
         query: { serverId },
-    });
-}
-
-async function createServerCategory(
-    baseUrl: string,
-    token: string,
-    serverId: string,
-    name: string,
-) {
-    return firepitRequest<CategoryResponse>({
-        baseUrl,
-        path: "/api/categories",
-        method: "POST",
-        token,
-        body: { serverId, name },
-    });
-}
-
-async function updateServerCategory(
-    baseUrl: string,
-    token: string,
-    input: {
-        categoryId: string;
-        name?: string;
-        position?: number;
-        allowedRoleIds?: string[] | null;
-    },
-) {
-    return firepitRequest<CategoryResponse>({
-        baseUrl,
-        path: "/api/categories",
-        method: "PUT",
-        token,
-        body: input,
-    });
-}
-
-async function deleteServerCategory(
-    baseUrl: string,
-    token: string,
-    categoryId: string,
-) {
-    return firepitRequest<{ success?: boolean }>({
-        baseUrl,
-        path: "/api/categories",
-        method: "DELETE",
-        token,
-        query: { categoryId },
     });
 }
 
@@ -306,99 +256,6 @@ export async function fetchRoleAssignments(
     });
 }
 
-async function assignRole(
-    baseUrl: string,
-    token: string,
-    input: { serverId: string; userId: string; roleId: string },
-) {
-    return firepitRequest<RoleAssignmentListResponse>({
-        baseUrl,
-        path: "/api/role-assignments",
-        method: "POST",
-        token,
-        body: input,
-    });
-}
-
-async function removeRoleAssignment(
-    baseUrl: string,
-    token: string,
-    params: { serverId: string; userId: string; roleId: string },
-) {
-    return firepitRequest<{ success?: boolean }>({
-        baseUrl,
-        path: "/api/role-assignments",
-        method: "DELETE",
-        token,
-        query: params,
-    });
-}
-
-async function fetchChannelPermissionOverrides(
-    baseUrl: string,
-    token: string,
-    channelId: string,
-) {
-    return firepitRequest<ChannelPermissionOverridesResponse>({
-        baseUrl,
-        path: "/api/channel-permissions",
-        token,
-        query: { channelId },
-    });
-}
-
-async function createChannelPermissionOverride(
-    baseUrl: string,
-    token: string,
-    input: {
-        channelId: string;
-        roleId?: string;
-        userId?: string;
-        allow: string[];
-        deny: string[];
-    },
-) {
-    return firepitRequest<ChannelPermissionOverridesResponse>({
-        baseUrl,
-        path: "/api/channel-permissions",
-        method: "POST",
-        token,
-        body: input,
-    });
-}
-
-async function updateChannelPermissionOverride(
-    baseUrl: string,
-    token: string,
-    input: {
-        overrideId: string;
-        allow: string[];
-        deny: string[];
-    },
-) {
-    return firepitRequest<ChannelPermissionOverridesResponse>({
-        baseUrl,
-        path: "/api/channel-permissions",
-        method: "PUT",
-        token,
-        body: input,
-    });
-}
-
-async function deleteChannelPermissionOverride(
-    baseUrl: string,
-    token: string,
-    overrideId: string,
-) {
-    return firepitRequest<{ success?: boolean }>({
-        baseUrl,
-        path: "/api/channel-permissions",
-        method: "DELETE",
-        token,
-        query: { overrideId },
-    });
-}
-
 export async function moderateServerMember(
     baseUrl: string,
     token: string,
@@ -409,7 +266,7 @@ export async function moderateServerMember(
 ) {
     return firepitRequest<ServerModerationResponse>({
         baseUrl,
-        path: `/api/servers/${serverId}/moderation`,
+        path: `/api/servers/${encodeURIComponent(serverId)}/moderation`,
         method: "POST",
         token,
         body: { action, userId, reason },
@@ -424,7 +281,7 @@ export async function fetchServerAuditLogs(
 ) {
     return firepitRequest<ServerAuditLogResponse>({
         baseUrl,
-        path: `/api/servers/${serverId}/audit-logs`,
+        path: `/api/servers/${encodeURIComponent(serverId)}/audit-logs`,
         token,
         query: { limit },
     });
@@ -486,15 +343,7 @@ export async function resolveReport(
 export async function fetchServerStats(baseUrl: string, token: string, serverId: string) {
     return firepitRequest<ServerStatsResponse>({
         baseUrl,
-        path: `/api/servers/${serverId}/stats`,
-        token,
-    });
-}
-
-async function fetchServerInvites(baseUrl: string, token: string, serverId: string) {
-    return firepitRequest<{ invites?: Array<Record<string, unknown>> }>({
-        baseUrl,
-        path: `/api/servers/${serverId}/invites`,
+        path: `/api/servers/${encodeURIComponent(serverId)}/stats`,
         token,
     });
 }

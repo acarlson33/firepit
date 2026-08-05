@@ -542,7 +542,6 @@ export default function UserProfileScreen() {
                                         <View style={styles.divider} />
                                         <RelationshipActions
                                             targetUserId={normalizedUserId}
-                                            displayName={name}
                                         />
                                     </>
                                 ) : null}
@@ -562,15 +561,16 @@ export default function UserProfileScreen() {
                                                 </ThemedText>
                                                 {"isLink" in field && field.isLink ? (
                                                     <Pressable
+                                                        accessibilityRole="link"
                                                         onPress={() => {
                                                             const url = field.value;
-                                                            if (url) {
-                                                                Linking.openURL(
-                                                                    url.startsWith("http")
-                                                                        ? url
-                                                                        : `https://${url}`,
-                                                                );
-                                                            }
+                                                            if (!url) return;
+                                                            const link = /^https?:\/\//i.test(url)
+                                                                ? url
+                                                                : `https://${url}`;
+                                                            Linking.openURL(link).catch(
+                                                                () => undefined,
+                                                            );
                                                         }}
                                                     >
                                                         <ThemedText themeColor="foreground" style={styles.linkText}>

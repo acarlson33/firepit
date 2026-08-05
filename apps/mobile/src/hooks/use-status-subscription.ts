@@ -31,66 +31,73 @@ export function useStatusSubscription(
     [userIds],
   );
 
-  const doFetch = useCallback(async () => {
-    if (!instanceUrl || !accessToken) {
-      setStatuses({});
-      setLoading(false);
-      return;
+  const applyStatuses = useCallback((data: { statuses?: Record<string, unknown> } | null) => {
+    if (!data?.statuses || cancelledRef.current) return;
+    const statusMap: Record<string, UserStatus> = {};
+    for (const [uid, raw] of Object.entries(data.statuses)) {
+      const s = raw as {
+        userId?: string;
+        status?: string;
+        customMessage?: string;
+        lastSeenAt?: string;
+      };
+      statusMap[uid] = {
+        userId: s.userId ?? uid,
+        status: mapStatus(s.status),
+        customMessage: s.customMessage,
+        lastSeenAt: s.lastSeenAt,
+      };
     }
+    setStatuses(statusMap);
+  }, []);
 
-    let normalizedIds: string[];
-    try {
-      normalizedIds = JSON.parse(idsKey);
-    } catch {
-      normalizedIds = [];
-    }
+  const fetchStatuses = useCallback(
+    async (withLoading: boolean) => {
+      if (!instanceUrl || !accessToken) {
+        setStatuses({});
+        if (withLoading) setLoading(false);
+        return;
+      }
 
-    if (normalizedIds.length === 0) {
-      setStatuses({});
-      setLoading(false);
-      return;
-    }
+      let normalizedIds: string[];
+      try {
+        normalizedIds = JSON.parse(idsKey);
+      } catch {
+        normalizedIds = [];
+      }
 
-    try {
-      setLoading(true);
-      const response = await fetch(`${instanceUrl}/api/status/batch`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(accessToken),
-        },
-        body: JSON.stringify({ userIds: normalizedIds }),
-      });
+      if (normalizedIds.length === 0) {
+        setStatuses({});
+        if (withLoading) setLoading(false);
+        return;
+      }
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.statuses && !cancelledRef.current) {
-          const statusMap: Record<string, UserStatus> = {};
-          for (const [uid, raw] of Object.entries(data.statuses)) {
-            const s = raw as {
-              userId?: string;
-              status?: string;
-              customMessage?: string;
-              lastSeenAt?: string;
-            };
-            statusMap[uid] = {
-              userId: s.userId ?? uid,
-              status: mapStatus(s.status),
-              customMessage: s.customMessage,
-              lastSeenAt: s.lastSeenAt,
-            };
-          }
-          setStatuses(statusMap);
+      if (withLoading) setLoading(true);
+      try {
+        const response = await fetch(`${instanceUrl}/api/status/batch`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(accessToken),
+          },
+          body: JSON.stringify({ userIds: normalizedIds }),
+        });
+
+        if (response.ok) {
+          applyStatuses(await response.json());
+        }
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelledRef.current && withLoading) {
+          setLoading(false);
         }
       }
-    } catch {
-      // ignore
-    } finally {
-      if (!cancelledRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [instanceUrl, accessToken, idsKey]);
+    },
+    [instanceUrl, accessToken, idsKey, applyStatuses],
+  );
+
+  const doFetch = useCallback(() => fetchStatuses(true), [fetchStatuses]);
 
   // Fetch on mount, ids change, or auth change
   useEffect(() => {
@@ -106,48 +113,12 @@ export function useStatusSubscription(
     if (!instanceUrl || !accessToken) return;
 
     const tick = () => {
-      if (!instanceUrl || !accessToken) return;
-      let normalizedIds: string[];
-      try {
-        normalizedIds = JSON.parse(idsKey);
-      } catch {
-        return;
-      }
-      if (normalizedIds.length === 0) return;
-      fetch(`${instanceUrl}/api/status/batch`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(accessToken),
-        },
-        body: JSON.stringify({ userIds: normalizedIds }),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!data?.statuses || cancelledRef.current) return;
-          const statusMap: Record<string, UserStatus> = {};
-          for (const [uid, raw] of Object.entries(data.statuses)) {
-            const s = raw as {
-              userId?: string;
-              status?: string;
-              customMessage?: string;
-              lastSeenAt?: string;
-            };
-            statusMap[uid] = {
-              userId: s.userId ?? uid,
-              status: mapStatus(s.status),
-              customMessage: s.customMessage,
-              lastSeenAt: s.lastSeenAt,
-            };
-          }
-          setStatuses(statusMap);
-        })
-        .catch(() => {});
+      void fetchStatuses(false);
     };
 
     const interval = setInterval(tick, 30_000);
     return () => clearInterval(interval);
-  }, [instanceUrl, accessToken, idsKey]);
+  }, [instanceUrl, accessToken, idsKey, fetchStatuses]);
 
   return { statuses, loading, refresh: doFetch };
 }

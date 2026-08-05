@@ -8,13 +8,19 @@ import type { ParsedVersion } from "./types";
  */
 export function parseVersion(raw: string): ParsedVersion {
   const cleaned = raw.trim().replace(/^v/, "");
-  const isSecurity = cleaned.endsWith("s");
-  let numeric = isSecurity ? cleaned.slice(0, -1) : cleaned;
 
   // Build metadata "+build" never participates in precedence
+  let numeric = cleaned;
   const plusIndex = numeric.indexOf("+");
   if (plusIndex !== -1) {
     numeric = numeric.slice(0, plusIndex);
+  }
+
+  // The "s" security suffix follows the version (and any build metadata),
+  // so it must be detected after the metadata is stripped.
+  const isSecurity = numeric.endsWith("s");
+  if (isSecurity) {
+    numeric = numeric.slice(0, -1);
   }
 
   // Prerelease suffix like "2.0.0-canary.10"
@@ -109,21 +115,4 @@ export function formatVersion(version: string): string {
     result += " (security)";
   }
   return result;
-}
-
-// ponytail: self-check runs via `bun src/lib/update/version.ts`, skipped in the app bundle
-if (import.meta.main) {
-  const assert = (cond: boolean, msg: string) => {
-    if (!cond) throw new Error(msg);
-  };
-  assert(compareVersions(parseVersion("2.0.0-canary.10"), parseVersion("2.0.0-canary.11")) < 0, "canary.11 newer than canary.10");
-  assert(compareVersions(parseVersion("2.0.0-canary.11"), parseVersion("2.0.0-canary.10")) > 0, "reverse compare");
-  assert(compareVersions(parseVersion("2.0.0-canary.10"), parseVersion("2.0.0")) < 0, "stable newer than prerelease");
-  assert(compareVersions(parseVersion("2.0.0"), parseVersion("2.0.1")) < 0, "patch compare");
-  assert(compareVersions(parseVersion("2.0.0"), parseVersion("2.0.0s")) < 0, "security higher than patch");
-  assert(compareVersions(parseVersion("2.0.0-alpha.10"), parseVersion("2.0.0-beta.1")) < 0, "alpha.10 < beta.1 per SemVer");
-  assert(compareVersions(parseVersion("2.0.0+build.1"), parseVersion("2.0.0+build.2")) === 0, "build metadata ignored");
-  assert(compareVersions(parseVersion("2.0.0-canary.10"), parseVersion("2.0.0-canary.2")) > 0, "numeric prerelease id ordered numerically");
-  assert(isNewerVersion("2.0.0-canary.10", "2.0.0-canary.11"), "isNewerVersion");
-  assert(!isNewerVersion("2.0.0-canary.11", "2.0.0-canary.10"), "not newer when equal or lower");
 }

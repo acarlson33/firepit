@@ -167,6 +167,7 @@ export default function RolesManagementScreen() {
     const [roles, setRoles] = useState<ServerRole[]>([]);
     const [loadState, setLoadState] = useState<LoadState>("idle");
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
     // Create modal
@@ -217,6 +218,7 @@ export default function RolesManagementScreen() {
         if (!name) return;
 
         setSaving(true);
+        setActionError(null);
         try {
             await createServerRole(instanceUrl, accessToken, {
                 serverId: normalizedServerId,
@@ -237,7 +239,7 @@ export default function RolesManagementScreen() {
             setCreateDraft(EMPTY_DRAFT);
             await loadRoles();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to create role",
             );
         } finally {
@@ -247,13 +249,16 @@ export default function RolesManagementScreen() {
 
     const handleEdit = async () => {
         if (!instanceUrl || !accessToken || !editingRole || saving) return;
+        const roleId = editingRole.$id;
+        if (!roleId) return;
         const name = editDraft.name.trim();
         if (!name) return;
 
         setSaving(true);
+        setActionError(null);
         try {
             await updateServerRole(instanceUrl, accessToken, {
-                $id: editingRole.$id!,
+                $id: roleId,
                 name,
                 color: editDraft.color.trim() || undefined,
                 mentionable: editDraft.mentionable,
@@ -271,7 +276,7 @@ export default function RolesManagementScreen() {
             setEditingRole(null);
             await loadRoles();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to update role",
             );
         } finally {
@@ -281,18 +286,21 @@ export default function RolesManagementScreen() {
 
     const handleDelete = async () => {
         if (!instanceUrl || !accessToken || !deletingRole || saving) return;
+        const roleId = deletingRole.$id;
+        if (!roleId) return;
 
         setSaving(true);
+        setActionError(null);
         try {
             await deleteServerRole(
                 instanceUrl,
                 accessToken,
-                deletingRole.$id!,
+                roleId,
             );
             setDeletingRole(null);
             await loadRoles();
         } catch (error) {
-            setLoadError(
+            setActionError(
                 error instanceof Error ? error.message : "Unable to delete role",
             );
         } finally {
@@ -303,6 +311,7 @@ export default function RolesManagementScreen() {
     const openEdit = (role: ServerRole) => {
         setEditingRole(role);
         setEditDraft(draftFromRole(role));
+        setActionError(null);
         setShowEdit(true);
     };
 
@@ -387,6 +396,7 @@ export default function RolesManagementScreen() {
                                     <ActionButton
                                         label="Create role"
                                         onPress={() => {
+                                            setActionError(null);
                                             setCreateDraft(EMPTY_DRAFT);
                                             setShowCreate(true);
                                         }}
@@ -442,8 +452,12 @@ export default function RolesManagementScreen() {
                 onDraftChange={setCreateDraft}
                 saving={saving}
                 submitLabel="Create"
+                error={actionError}
                 onSubmit={() => void handleCreate()}
-                onClose={() => setShowCreate(false)}
+                onClose={() => {
+                    setActionError(null);
+                    setShowCreate(false);
+                }}
             />
 
             {/* Edit modal */}
@@ -454,8 +468,12 @@ export default function RolesManagementScreen() {
                 onDraftChange={setEditDraft}
                 saving={saving}
                 submitLabel="Save"
+                error={actionError}
                 onSubmit={() => void handleEdit()}
-                onClose={() => setShowEdit(false)}
+                onClose={() => {
+                    setActionError(null);
+                    setShowEdit(false);
+                }}
             />
 
             {/* Delete confirmation modal */}
@@ -470,35 +488,45 @@ export default function RolesManagementScreen() {
                     onPress={() => setDeletingRole(null)}
                 >
                     <View pointerEvents="box-none" style={styles.modalAnchor}>
-                        <ThemedView
-                            type="card"
-                            style={[
-                                styles.modalCard,
-                                { borderColor: theme.border },
-                            ]}
-                        >
-                            <ThemedText type="smallBold">Delete role</ThemedText>
-                            <ThemedText themeColor="mutedForeground">
-                                Are you sure you want to delete the role{" "}
-                                <ThemedText type="smallBold">
-                                    {deletingRole?.name}
+                        <Pressable onPress={() => undefined}>
+                            <ThemedView
+                                type="card"
+                                style={[
+                                    styles.modalCard,
+                                    { borderColor: theme.border },
+                                ]}
+                            >
+                                <ThemedText type="smallBold">Delete role</ThemedText>
+                                <ThemedText themeColor="mutedForeground">
+                                    Are you sure you want to delete the role{" "}
+                                    <ThemedText type="smallBold">
+                                        {deletingRole?.name}
+                                    </ThemedText>
+                                    ? This action cannot be undone.
                                 </ThemedText>
-                                ? This action cannot be undone.
-                            </ThemedText>
-                            <View style={styles.modalActions}>
-                                <ActionButton
-                                    label="Cancel"
-                                    tone="ghost"
-                                    onPress={() => setDeletingRole(null)}
-                                />
-                                <ActionButton
-                                    label={saving ? "Deleting…" : "Delete"}
-                                    tone="danger"
-                                    disabled={saving}
-                                    onPress={() => void handleDelete()}
-                                />
-                            </View>
-                        </ThemedView>
+                                {actionError ? (
+                                    <ThemedText themeColor="destructive">
+                                        {actionError}
+                                    </ThemedText>
+                                ) : null}
+                                <View style={styles.modalActions}>
+                                    <ActionButton
+                                        label="Cancel"
+                                        tone="ghost"
+                                        onPress={() => {
+                                            setActionError(null);
+                                            setDeletingRole(null);
+                                        }}
+                                    />
+                                    <ActionButton
+                                        label={saving ? "Deleting…" : "Delete"}
+                                        tone="danger"
+                                        disabled={saving}
+                                        onPress={() => void handleDelete()}
+                                    />
+                                </View>
+                            </ThemedView>
+                        </Pressable>
                     </View>
                 </Pressable>
             </Modal>
@@ -594,6 +622,7 @@ function RoleEditorModal({
     onDraftChange,
     saving,
     submitLabel,
+    error,
     onSubmit,
     onClose,
 }: {
@@ -603,6 +632,7 @@ function RoleEditorModal({
     onDraftChange: (draft: RoleDraft) => void;
     saving: boolean;
     submitLabel: string;
+    error: string | null;
     onSubmit: () => void;
     onClose: () => void;
 }) {
@@ -629,6 +659,12 @@ function RoleEditorModal({
                             ]}
                         >
                             <ThemedText type="smallBold">{title}</ThemedText>
+
+                            {error ? (
+                                <ThemedText themeColor="destructive">
+                                    {error}
+                                </ThemedText>
+                            ) : null}
 
                             <TextInput
                                 autoCapitalize="words"

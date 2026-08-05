@@ -14,7 +14,13 @@ type Arch = (typeof VALID_ARCHES)[number];
 function parseArgs(): { arch: Arch | null } {
   const args = process.argv.slice(2);
   const archIndex = args.indexOf("--arch");
-  if (archIndex === -1 || archIndex + 1 >= args.length) return { arch: null };
+  if (archIndex === -1) return { arch: null };
+  if (archIndex + 1 >= args.length) {
+    console.error(
+      `--arch requires a value. Valid: ${VALID_ARCHES.join(", ")}`,
+    );
+    process.exit(1);
+  }
   const arch = args[archIndex + 1];
   if (!VALID_ARCHES.includes(arch as Arch)) {
     console.error(`Invalid arch "${arch}". Valid: ${VALID_ARCHES.join(", ")}`);
@@ -178,18 +184,17 @@ function androidBuild() {
     appendFileSync(
         "android/gradle.properties",
         [
-            "",
             "MYAPP_UPLOAD_STORE_FILE=firepit-upload.keystore",
             `MYAPP_UPLOAD_KEY_ALIAS=${keyAlias}`,
-            `MYAPP_UPLOAD_STORE_PASSWORD=${storePassword}`,
-            `MYAPP_UPLOAD_KEY_PASSWORD=${keyPassword}`,
+            "",
         ].join("\n"),
     );
 
     console.log("Copying keystore...");
-    execSync("cp credentials/android/firepit-upload.keystore android/app/", {
-        stdio: "inherit",
-    });
+    copyFileSync(
+      "credentials/android/firepit-upload.keystore",
+      "android/app/firepit-upload.keystore",
+    );
 
     console.log("Adding release signing config and switching to it...");
     gradle = readFileSync(gradlePath, "utf-8");
@@ -225,7 +230,12 @@ function androidBuild() {
     console.log("Building Android APK...");
     execSync("cd android && ./gradlew assembleRelease", {
         stdio: "inherit",
-        env: { ...process.env, SENTRY_DISABLE_AUTO_UPLOAD: "true" },
+        env: {
+            ...process.env,
+            SENTRY_DISABLE_AUTO_UPLOAD: "true",
+            ORG_GRADLE_PROJECT_MYAPP_UPLOAD_STORE_PASSWORD: storePassword,
+            ORG_GRADLE_PROJECT_MYAPP_UPLOAD_KEY_PASSWORD: keyPassword,
+        },
     });
 
     console.log("Copying APK to project root...");

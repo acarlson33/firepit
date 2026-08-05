@@ -44,7 +44,6 @@ function StatusPill({
     label: string;
     tone: "neutral" | "success" | "warning" | "danger";
 }) {
-    const theme = useTheme();
     return (
         <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
             <ThemedText
@@ -190,7 +189,7 @@ export default function ChannelManagementScreen() {
             });
             setShowCreate(false);
             setCreateDraft(EMPTY_DRAFT);
-            invalidateServerCache(normalizedServerId);
+            invalidateServerCache(instanceUrl, normalizedServerId);
             await loadData();
         } catch (error) {
             setActionError(
@@ -216,7 +215,7 @@ export default function ChannelManagementScreen() {
             });
             setShowEdit(false);
             setEditingChannel(null);
-            invalidateServerCache(normalizedServerId);
+            invalidateServerCache(instanceUrl, normalizedServerId);
             await loadData();
         } catch (error) {
             setActionError(
@@ -229,12 +228,14 @@ export default function ChannelManagementScreen() {
 
     const handleDelete = async () => {
         if (!instanceUrl || !accessToken || !deletingChannel || saving) return;
+        const channelId = deletingChannel.$id;
+        if (!channelId || !normalizedServerId) return;
 
         setSaving(true);
         try {
-            await deleteChannel(instanceUrl, accessToken, deletingChannel.$id!);
+            await deleteChannel(instanceUrl, accessToken, channelId);
             setDeletingChannel(null);
-            invalidateServerCache(normalizedServerId);
+            invalidateServerCache(instanceUrl, normalizedServerId);
             await loadData();
         } catch (error) {
             setActionError(

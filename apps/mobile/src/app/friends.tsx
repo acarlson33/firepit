@@ -19,7 +19,12 @@ import { useTheme } from "@/hooks/use-theme";
 import { useFriends } from "@/hooks/use-friends";
 import { useBlockedUsers } from "@/hooks/use-blocked-users";
 import type { FriendshipEntry, BlockedUserEntry } from "@/lib/firepit/types";
-import { useRelationship } from "@/hooks/use-relationship";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+  removeFriendship,
+} from "@/lib/firepit/messages";
+import { useFirepitBootstrap } from "@/providers/firepit-provider";
 
 type Tab = "friends" | "incoming" | "outgoing" | "blocked";
 
@@ -29,6 +34,13 @@ const TABS: { label: string; value: Tab }[] = [
   { label: "Outgoing", value: "outgoing" },
   { label: "Blocked", value: "blocked" },
 ];
+
+const EMPTY_STATE_COPY: Record<Tab, string> = {
+  friends: "No friends yet. Send a friend request to get started.",
+  incoming: "No incoming friend requests.",
+  outgoing: "No outgoing friend requests.",
+  blocked: "You have not blocked anyone.",
+};
 
 function getInitials(name: string): string {
   if (!name) return "?";
@@ -41,26 +53,42 @@ function getInitials(name: string): string {
 function FriendshipActions({
   entry,
   tab,
+  onActionDone,
 }: {
   entry: FriendshipEntry;
   tab: Tab;
+  onActionDone: () => void;
 }) {
   const theme = useTheme();
-  const {
-    acceptFriendRequest,
-    declineFriendRequest,
-    removeFriendship,
-  } = useRelationship(entry.user.userId);
+  const { instanceUrl, accessToken } = useFirepitBootstrap();
   const [actionLoading, setActionLoading] = useState(false);
+  const userId = entry.user.userId;
+
+  const runAction = useCallback(
+    async (action: () => Promise<{ success?: boolean }>) => {
+      if (!instanceUrl || !accessToken) return;
+      setActionLoading(true);
+      try {
+        await action();
+        onActionDone();
+      } catch {
+        // ignore individual action failures; list refetches below
+      } finally {
+        setActionLoading(false);
+      }
+    },
+    [instanceUrl, accessToken, onActionDone],
+  );
 
   if (tab === "incoming") {
     return (
       <View style={styles.actionRow}>
         <Pressable
-          onPress={async () => {
-            setActionLoading(true);
-            await acceptFriendRequest();
-            setActionLoading(false);
+          onPress={() => {
+            if (!instanceUrl || !accessToken) return;
+            void runAction(() =>
+              acceptFriendRequest(instanceUrl, accessToken, userId),
+            );
           }}
           disabled={actionLoading}
           style={({ pressed }) => ({
@@ -79,10 +107,11 @@ function FriendshipActions({
           </ThemedText>
         </Pressable>
         <Pressable
-          onPress={async () => {
-            setActionLoading(true);
-            await declineFriendRequest();
-            setActionLoading(false);
+          onPress={() => {
+            if (!instanceUrl || !accessToken) return;
+            void runAction(() =>
+              declineFriendRequest(instanceUrl, accessToken, userId),
+            );
           }}
           disabled={actionLoading}
           style={({ pressed }) => ({
@@ -103,10 +132,11 @@ function FriendshipActions({
   if (tab === "outgoing") {
     return (
       <Pressable
-        onPress={async () => {
-          setActionLoading(true);
-          await removeFriendship();
-          setActionLoading(false);
+        onPress={() => {
+          if (!instanceUrl || !accessToken) return;
+          void runAction(() =>
+            removeFriendship(instanceUrl, accessToken, userId),
+          );
         }}
         disabled={actionLoading}
         style={({ pressed }) => ({
@@ -125,10 +155,11 @@ function FriendshipActions({
 
   return (
     <Pressable
-      onPress={async () => {
-        setActionLoading(true);
-        await removeFriendship();
-        setActionLoading(false);
+      onPress={() => {
+        if (!instanceUrl || !accessToken) return;
+        void runAction(() =>
+          removeFriendship(instanceUrl, accessToken, userId),
+        );
       }}
       disabled={actionLoading}
       style={({ pressed }) => ({
@@ -148,9 +179,11 @@ function FriendshipActions({
 function FriendRow({
   entry,
   tab,
+  onActionDone,
 }: {
   entry: FriendshipEntry;
   tab: Tab;
+  onActionDone: () => void;
 }) {
   const theme = useTheme();
   const initials = getInitials(entry.user.displayName ?? "Unknown");
@@ -205,7 +238,11 @@ function FriendRow({
         ) : null}
       </View>
 
-      <FriendshipActions entry={entry} tab={tab} />
+      <FriendshipActions
+        entry={entry}
+        tab={tab}
+        onActionDone={onActionDone}
+      />
     </Pressable>
   );
 }
@@ -335,9 +372,15 @@ export default function FriendsScreen() {
       if (tab === "blocked") {
         return <BlockedRow entry={item as BlockedUserEntry} />;
       }
-      return <FriendRow entry={item as FriendshipEntry} tab={tab} />;
+      return (
+        <FriendRow
+          entry={item as FriendshipEntry}
+          tab={tab}
+          onActionDone={() => void refetch()}
+        />
+      );
     },
-    [tab],
+    [tab, refetch],
   );
 
   return (
@@ -439,13 +482,7 @@ export default function FriendsScreen() {
           <View style={styles.emptyState}>
             <ThemedText type="smallBold">Nothing here</ThemedText>
             <ThemedText themeColor="mutedForeground" style={styles.emptySubtext}>
-              {tab === "blocked"
-                ? "You have not blocked anyone."
-                : tab === "friends"
-                  ? "No friends yet. Send a friend request to get started."
-                  : tab === "incoming"
-                    ? "No incoming friend requests."
-                    : "No outgoing friend requests."}
+              {EMPTY_STATE_COPY[tab]}
             </ThemedText>
           </View>
         ) : (

@@ -1,14 +1,12 @@
 import type { BootstrapSnapshot } from "@/lib/firepit/types";
 import {
-  deleteSecureItem,
-  getSecureItem,
-  setSecureItem,
-} from "@/lib/storage/secure-store";
-import {
   clearJsonStorage,
+  deleteSecureItem,
   deleteJsonValue,
   getJsonValue,
+  getSecureItem,
   setJsonValue,
+  setSecureItem,
 } from "@/lib/storage/secure-store";
 
 const keys = {
@@ -76,10 +74,8 @@ export async function clearBearerToken() {
 
 export async function clearFirepitPersistence() {
   await Promise.all([
-    clearStoredInstanceUrl(),
-    clearBootstrapSnapshot(),
-    clearStoredAppwriteConfig(),
     clearBearerToken(),
+    deleteSecureItem(keys.notificationToken),
   ]);
   await clearJsonStorage();
 }
@@ -103,10 +99,6 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   quietHoursStart: "22:00",
   quietHoursEnd: "08:00",
 };
-
-async function loadNotificationToken() {
-  return getSecureItem(keys.notificationToken);
-}
 
 export async function saveNotificationToken(token: string) {
   await setSecureItem(keys.notificationToken, token);

@@ -12,9 +12,14 @@ export async function setLastReadAt(channelId: string, iso: string): Promise<voi
 
 export function countUnread(messages: { $createdAt?: string }[], lastReadAt: string | null): number {
   if (!lastReadAt) return messages.length;
+  const lastReadMs = new Date(lastReadAt).getTime();
+  if (Number.isNaN(lastReadMs)) return messages.length;
   let count = 0;
   for (const msg of messages) {
-    if (msg.$createdAt && msg.$createdAt > lastReadAt) count++;
+    if (msg.$createdAt) {
+      const createdMs = new Date(msg.$createdAt).getTime();
+      if (!Number.isNaN(createdMs) && createdMs > lastReadMs) count++;
+    }
   }
   return count;
 }

@@ -16,8 +16,9 @@ import { cacheDirectory, readAsStringAsync, writeAsStringAsync } from "expo-file
 import PasteInput from "@mattermost/react-native-paste-input";
 import type { PastedFile } from "@mattermost/react-native-paste-input";
 import { useTheme } from "@/hooks/use-theme";
+import { authHeaders } from "@/lib/firepit/http";
 import MentionAutocomplete from "@/components/mention-autocomplete";
-import EmojiAutocomplete from "@/components/emoji-autocomplete";
+import EmojiAutocomplete, { filterEmojis } from "@/components/emoji-autocomplete";
 import type { AutocompleteEmoji } from "@/components/emoji-autocomplete";
 import { STANDARD_EMOJI } from "@/components/emoji-renderer";
 import {
@@ -71,6 +72,7 @@ type ChatInputProps = {
   serverId?: string;
   canMentionEveryone?: boolean;
   instanceUrl: string;
+  accessToken: string;
   attachments: ComposerAttachmentState;
   onAttachmentsChange: (attachments: ComposerAttachmentState) => void;
   onSend?: () => void;
@@ -101,6 +103,7 @@ function ChatInputInner({
   serverId,
   canMentionEveryone,
   instanceUrl,
+  accessToken,
   attachments,
   onAttachmentsChange,
   onSend,
@@ -133,7 +136,6 @@ function ChatInputInner({
     {},
   );
   const mentionQueryRequestRef = useRef<AbortController | null>(null);
-  const [inputHeight, setInputHeight] = useState(36);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
 
@@ -216,13 +218,14 @@ function ChatInputInner({
       const controller = new AbortController();
       mentionQueryRequestRef.current?.abort();
       mentionQueryRequestRef.current = controller;
+      const timeout = setTimeout(() => controller.abort(), 10_000);
       const query = mentionQuery || "";
       const queryLower = query.toLowerCase();
 
       try {
         const response = await fetch(
           `${instanceUrl}/api/users/search?q=${encodeURIComponent(query)}&limit=10`,
-          { signal: controller.signal },
+          { signal: controller.signal, headers: authHeaders(accessToken) },
         );
         if (controller.signal.aborted) return;
         if (response.ok) {
@@ -239,6 +242,7 @@ function ChatInputInner({
 
       if (!serverId) {
         if (!controller.signal.aborted) setMentionableRoles([]);
+        clearTimeout(timeout);
         return;
       }
 
@@ -248,7 +252,7 @@ function ChatInputInner({
         if (!cachedRoles) {
           const rolesResponse = await fetch(
             `${instanceUrl}/api/servers/${serverId}/mentionable-roles`,
-            { signal: controller.signal },
+            { signal: controller.signal, headers: authHeaders(accessToken) },
           );
           if (controller.signal.aborted) return;
           if (rolesResponse.ok) {
@@ -272,7 +276,10 @@ function ChatInputInner({
       } catch (error) {
         if (!controller.signal.aborted) setMentionableRoles([]);
       } finally {
-        if (!controller.signal.aborted) setIsLoadingUsers(false);
+        clearTimeout(timeout);
+        if (mentionQueryRequestRef.current === controller) {
+          setIsLoadingUsers(false);
+        }
       }
     };
 
@@ -284,7 +291,7 @@ function ChatInputInner({
       clearTimeout(debounce);
       mentionQueryRequestRef.current?.abort();
     };
-  }, [mentionQuery, showMentionAutocomplete, serverId]);
+  }, [mentionQuery, showMentionAutocomplete, serverId, instanceUrl, accessToken]);
 
   useEffect(() => {
     setSelectedMentionIndex(0);
@@ -414,6 +421,11 @@ function ChatInputInner({
     return count;
   }, [canMentionEveryone, mentionableRoles, availableUsers]);
 
+  const emojiItems = useMemo(
+    () => filterEmojis(emojiQuery, STANDARD_EMOJI, customEmojis ?? []),
+    [emojiQuery, customEmojis],
+  );
+
   const handleKeyPress = useCallback(
     (e: any) => {
       const key = e.nativeEvent.key;
@@ -469,7 +481,7 @@ function ChatInputInner({
       }
 
       if (showEmojiAutocomplete) {
-        const emojiItemsCount = (customEmojis?.length ?? 0) + Object.keys(STANDARD_EMOJI).length;
+        const emojiItemsCount = emojiItems.length;
         if (emojiItemsCount === 0) return;
 
         if (key === "ArrowDown") {
@@ -482,12 +494,22 @@ function ChatInputInner({
           setSelectedEmojiIndex((prev) => (prev - 1 + emojiItemsCount) % emojiItemsCount);
           return;
         }
+        if (key === "Enter") {
+          e.preventDefault?.();
+          const emoji = emojiItems[selectedEmojiIndex];
+          if (emoji) {
+            handleEmojiSelect(emoji);
+          }
+          return;
+        }
       }
     },
     [
       showMentionAutocomplete,
       showEmojiAutocomplete,
       mentionItemsCount,
+      emojiItems,
+      handleEmojiSelect,
       selectedMentionIndex,
       selectedEmojiIndex,
       customEmojis,
@@ -597,20 +619,12 @@ function ChatInputInner({
     <View style={{ position: 'relative' }}>
       {showMentionAutocomplete && (
         <MentionAutocomplete
-          query={mentionQuery}
           users={availableUsers}
           roles={mentionableRoles}
           onSelect={handleMentionSelect}
-          onClose={() => {
-            setShowMentionAutocomplete(false);
-            setMentionQuery("");
-            setAvailableUsers([]);
-            setMentionableRoles([]);
-          }}
           isLoading={isLoadingUsers}
           canMentionEveryone={canMentionEveryone}
           selectedIndex={selectedMentionIndex}
-          onSelectedIndexChange={setSelectedMentionIndex}
         />
       )}
 
@@ -620,10 +634,6 @@ function ChatInputInner({
           standardEmojis={STANDARD_EMOJI}
           customEmojis={customEmojis ?? []}
           onSelect={handleEmojiSelect}
-          onClose={() => {
-            setShowEmojiAutocomplete(false);
-            setEmojiQuery("");
-          }}
           selectedIndex={selectedEmojiIndex}
           onSelectedIndexChange={setSelectedEmojiIndex}
         />
@@ -692,10 +702,6 @@ function ChatInputInner({
             onBlur={() => setInputFocused(false)}
             onPaste={handlePaste}
             multiline
-            onContentSizeChange={(e) => {
-              const h = Math.min(Math.max(36, e.nativeEvent.contentSize.height), 120);
-              setInputHeight(h);
-            }}
             style={{
               maxHeight: 120,
               minHeight: 36,
@@ -720,13 +726,13 @@ function ChatInputInner({
             paddingHorizontal: 10,
             borderRadius: 999,
             borderWidth: 1,
-            borderColor: "#999",
+            borderColor: theme.border,
             alignItems: "center",
             justifyContent: "center",
             opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
           })}
         >
-          <Text style={{ fontSize: 12, fontWeight: "600", color: "#fff" }}>Media</Text>
+          <Text style={{ fontSize: 12, fontWeight: "600", color: theme.text }}>Media</Text>
         </Pressable>
 
         {/* Send button */}
@@ -767,7 +773,7 @@ function ChatInputInner({
             position: "absolute",
             bottom: 44,
             right: 0,
-            backgroundColor: "#fff",
+            backgroundColor: theme.popover,
             borderRadius: 10,
             paddingVertical: 4,
             elevation: 12,
@@ -780,11 +786,20 @@ function ChatInputInner({
           <Pressable
             onPress={() => {
               setShowMediaMenu(false);
+              void addSelectedFile();
+            }}
+            style={{ paddingHorizontal: 16, paddingVertical: 10 }}
+          >
+            <Text style={{ fontSize: 14, color: theme.text }}>Upload file</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setShowMediaMenu(false);
               void addSelectedImage();
             }}
             style={{ paddingHorizontal: 16, paddingVertical: 10 }}
           >
-            <Text style={{ fontSize: 14 }}>Upload file</Text>
+            <Text style={{ fontSize: 14, color: theme.text }}>Upload image</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -793,7 +808,7 @@ function ChatInputInner({
             }}
             style={{ paddingHorizontal: 16, paddingVertical: 10 }}
           >
-            <Text style={{ fontSize: 14 }}>Paste image</Text>
+            <Text style={{ fontSize: 14, color: theme.text }}>Paste image</Text>
           </Pressable>
           {onOpenPollCreate ? (
             <Pressable
@@ -803,7 +818,7 @@ function ChatInputInner({
               }}
               style={{ paddingHorizontal: 16, paddingVertical: 10 }}
             >
-              <Text style={{ fontSize: 14 }}>Create poll</Text>
+              <Text style={{ fontSize: 14, color: theme.text }}>Create poll</Text>
             </Pressable>
           ) : null}
           {onOpenGifStickerPicker ? (
@@ -814,7 +829,7 @@ function ChatInputInner({
               }}
               style={{ paddingHorizontal: 16, paddingVertical: 10 }}
             >
-              <Text style={{ fontSize: 14 }}>Browse GIFs</Text>
+              <Text style={{ fontSize: 14, color: theme.text }}>Browse GIFs</Text>
             </Pressable>
           ) : null}
         </View>

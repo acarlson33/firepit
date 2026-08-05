@@ -41,7 +41,8 @@ export default function EmojiPickerSheet({
       onRequestClose={onClose}
     >
       <Pressable style={styles.overlay} onPress={onClose}>
-        <View
+        <Pressable
+          onPress={() => {}}
           style={[
             styles.container,
             { backgroundColor: theme.background, borderTopColor: theme.border },
@@ -93,7 +94,7 @@ export default function EmojiPickerSheet({
               </ScrollView>
             </View>
           )}
-        </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );

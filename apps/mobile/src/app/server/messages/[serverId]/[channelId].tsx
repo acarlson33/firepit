@@ -7,7 +7,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -31,7 +30,7 @@ import {
   updateChannelMessage,
 } from "@/lib/firepit";
 import { uploadFile, uploadImage } from "@/lib/firepit/uploads";
-import { parseMentions } from "@/lib/mention-utils";
+import { parseMentions, buildPollCommand } from "@/lib/mention-utils";
 import { toggleReaction } from "@/lib/reactions-client";
 import { cacheMessages, getCachedMessages } from "@/lib/cache/MessageCache";
 import { getKnownThreadReplyIds, markAsThreadReply } from "@/lib/cache/ThreadCache";
@@ -87,9 +86,10 @@ export default function ServerMessageScreen() {
     avatarUrl?: string;
   } | null>(null);
   const composerAttachmentsRef = useRef(composerAttachments);
-  composerAttachmentsRef.current = composerAttachments;
+  useEffect(() => {
+    composerAttachmentsRef.current = composerAttachments;
+  }, [composerAttachments]);
   const cancelledRef = useRef(false);
-  const inputRef = useRef<TextInput>(null);
   const [lastReadAt, setLastReadAtState] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -119,9 +119,7 @@ export default function ServerMessageScreen() {
 
   const isAnnouncement = selectedChannel?.type === "announcement";
   const [channelPermissions, setChannelPermissions] = useState<EffectivePermissions | null>(null);
-  const announcementReadOnly = isAnnouncement && !channelPermissions?.canSend;
   const listRef = useRef<FlatList>(null);
-  const atBottomRef = useRef(true);
   const markChannelReadRef = useRef<() => Promise<void>>(undefined);
 
   const loadServer = useCallback(async () => {
@@ -438,14 +436,12 @@ export default function ServerMessageScreen() {
     (question: string, options: string[]) => {
       const channelId = selectedChannel?.$id;
       if (!instanceUrl || !accessToken || !channelId || !normalizedServerId) return;
-      if ([question, ...options].some((s) => /["|]/.test(s))) {
-        setMessageError(
-          "Poll question and options cannot contain double quotes or pipe characters.",
-        );
+      const built = buildPollCommand(question, options);
+      if (!built.ok) {
+        setMessageError(built.error);
         return;
       }
-      const quotedOptions = options.map((o) => `"${o}"`).join(" | ");
-      const command = `/poll "${question}" | ${quotedOptions}`;
+      const command = built.command;
       const serverId = normalizedServerId;
       (async () => {
         try {
@@ -475,13 +471,21 @@ export default function ServerMessageScreen() {
   }, []);
 
   // Realtime message subscription
+  const lastRealtimeReloadRef = useRef(0);
   useRealtimeMessages({
     instance,
     accessToken,
     collectionId: "messages",
     filterField: "channelId",
     filterValue: normalizedChannelId,
-    onMessageEvent: () => void loadMessages(normalizedChannelId),
+    onMessageEvent: () => {
+      if (!normalizedChannelId) return;
+      // ponytail: coalesce bursts (reaction/typing events) so a full reload isn't fired per event
+      const now = Date.now();
+      if (now - lastRealtimeReloadRef.current < 1500) return;
+      lastRealtimeReloadRef.current = now;
+      void loadMessages(normalizedChannelId);
+    },
   });
 
   // Fallback: refresh messages when app returns to foreground
@@ -626,7 +630,7 @@ export default function ServerMessageScreen() {
           ) => {
             if (!instanceUrl || !accessToken) return;
             try {
-              const msgId = message.$id ?? (message as any).id;
+              const msgId = message.$id;
               if (!msgId) return;
               await toggleReaction(
                 String(msgId),
@@ -658,7 +662,7 @@ export default function ServerMessageScreen() {
           onTogglePin={async () => {
             if (!instanceUrl || !accessToken) return;
             try {
-              const msgId = message.$id ?? (message as any).id;
+              const msgId = message.$id;
               if (!msgId) return;
               if (message.isPinned) {
                 await unpinChannelMessage(instanceUrl, accessToken, msgId);
@@ -689,7 +693,7 @@ export default function ServerMessageScreen() {
           onDelete={async () => {
             if (!instanceUrl || !accessToken) return;
             try {
-              const msgId = message.$id ?? (message as any).id;
+              const msgId = message.$id;
               if (!msgId) return;
               await deleteChannelMessage(instanceUrl, accessToken, msgId);
               setMessages((prev) =>
@@ -703,7 +707,7 @@ export default function ServerMessageScreen() {
             }
           }}
           onOpenThread={() => {
-            const msgId = message.$id ?? (message as any).id;
+            const msgId = message.$id;
             if (!msgId) return;
             setActiveThreadMessageId(msgId);
           }}
@@ -869,16 +873,12 @@ export default function ServerMessageScreen() {
                   viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
                   onViewableItemsChanged={({ viewableItems }) => {
                     if (viewableItems.length > 0 && viewableItems[0].index === 0) {
-                      atBottomRef.current = true;
                       markChannelReadRef.current?.();
-                    } else {
-                      atBottomRef.current = false;
                     }
                   }}
                   onScrollEndDrag={(e) => {
                     const y = e.nativeEvent.contentOffset.y;
                     if (y <= 10) {
-                      atBottomRef.current = true;
                       markChannelReadRef.current?.();
                     }
                   }}
@@ -988,6 +988,7 @@ export default function ServerMessageScreen() {
                       serverId={normalizedServerId ?? undefined}
                       canMentionEveryone={channelPermissions?.mentionEveryone ?? false}
                       instanceUrl={instanceUrl}
+                      accessToken={accessToken}
                       attachments={composerAttachments}
                       onAttachmentsChange={setComposerAttachments}
                       onSend={() => void sendMessage()}

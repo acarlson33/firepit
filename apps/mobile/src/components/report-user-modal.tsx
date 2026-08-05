@@ -48,7 +48,12 @@ export function ReportUserModal({
     }
 
     async function handleSubmit() {
-        if (!isValid || submitting || !instanceUrl || !accessToken) return;
+        if (!isValid || submitting) return;
+        if (!instanceUrl || !accessToken) {
+            setResult("error");
+            setResultMessage("You are signed out. Sign in and try again.");
+            return;
+        }
         setSubmitting(true);
         setResult("idle");
         try {
@@ -64,9 +69,7 @@ export function ReportUserModal({
                 setJustification("");
             } else {
                 setResult("error");
-                setResultMessage(
-                    (res as { error?: string }).error ?? "Failed to submit report",
-                );
+                setResultMessage(res.error);
             }
         } catch {
             setResult("error");
@@ -83,18 +86,23 @@ export function ReportUserModal({
             animationType="slide"
             onRequestClose={handleClose}
         >
-            <Pressable style={styles.overlay} onPress={handleClose}>
-                <View
-                    style={[
-                        styles.container,
-                        {
-                            backgroundColor: theme.background,
-                            borderTopColor: theme.border,
-                        },
-                    ]}
-                >
-                    <Pressable onPress={() => {}}>
-                        <View style={styles.header}>
+        <View style={styles.overlay}>
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close report dialog"
+                style={StyleSheet.absoluteFill}
+                onPress={handleClose}
+            />
+            <View
+                style={[
+                    styles.container,
+                    {
+                        backgroundColor: theme.background,
+                        borderTopColor: theme.border,
+                    },
+                ]}
+            >
+                <View style={styles.header}>
                             <ThemedText type="title">
                                 Report {targetDisplayName}
                             </ThemedText>
@@ -231,9 +239,8 @@ export function ReportUserModal({
                                 </View>
                             </>
                         )}
-                    </Pressable>
                 </View>
-            </Pressable>
+            </View>
         </Modal>
     );
 }

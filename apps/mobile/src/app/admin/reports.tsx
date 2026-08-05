@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AuthRouteGuard } from "@/components/auth-route-guard";
+import { StatusPill } from "@/components/action-button";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -41,26 +42,6 @@ const ACTION_META: Record<ModerationAction, { label: string; tone: "danger" | "w
     unmute: { label: "Unmute", tone: "neutral", description: "Allow the user to send messages again" },
     kick: { label: "Kick", tone: "warning", description: "Remove the user from the server (they can rejoin)" },
 };
-
-function StatusPill({
-    label,
-    tone,
-}: {
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-}) {
-    const theme = useTheme();
-    return (
-        <ThemedView type={tone === "neutral" ? "muted" : tone} style={styles.pill}>
-            <ThemedText
-                type="code"
-                themeColor={tone === "neutral" ? "mutedForeground" : "foreground"}
-            >
-                {label}
-            </ThemedText>
-        </ThemedView>
-    );
-}
 
 function ActionButton({
     label,
@@ -567,18 +548,13 @@ const styles = StyleSheet.create({
         alignItems: "center",
         gap: Spacing.three,
     },
-    pill: {
-        paddingHorizontal: Spacing.two,
-        paddingVertical: Spacing.one,
-        borderRadius: 999,
-    },
     actionButton: {
         minHeight: 36,
         borderRadius: 999,
         alignItems: "center",
         justifyContent: "center",
-        paddingHorizontal: Spacing.three,
-        borderWidth: 1,
+        paddingHorizontal: Spacing.two,
+        paddingVertical: Spacing.one,
     },
     actionButtonPressed: { opacity: 0.85 },
     actionButtonDisabled: { opacity: 0.5 },
