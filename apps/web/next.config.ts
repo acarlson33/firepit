@@ -126,7 +126,7 @@ const nextConfig: NextConfig = {
         cssChunking: true,
         inlineCss: true,
         useTypeScriptCli: true,
-        //turbopackRustReactCompiler: true,
+        turbopackRustReactCompiler: true,
         useOffline: true,
         turbopackChunking: {
             generateComponentChunks: true,
